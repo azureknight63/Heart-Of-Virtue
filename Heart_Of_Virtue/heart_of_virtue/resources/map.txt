@@ -1,0 +1,6 @@
+				LeaveCaveRoom		Boundary
+		GiantSpiderRoom	EmptyCavePath	EmptyCavePath		Boundary
+		EmptyCavePath				Boundary
+		EmptyCavePath				Boundary
+GiantSpiderRoom	EmptyCavePath	StartingRoom	EmptyCavePath	FindDaggerRoom		Boundary
+		EmptyCavePath				Boundary
