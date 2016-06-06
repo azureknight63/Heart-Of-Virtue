@@ -5,6 +5,10 @@ class Player():
     def __init__(self):
         self.inventory = [items.Gold(15), items.Rock()]
         self.hp = 100
+        self.strength = 10
+        self.finesse = 10
+        self.speed = 10
+        self.endurance = 10
         self.location_x, self.location_y = world.starting_position
         self.victory = False
 
