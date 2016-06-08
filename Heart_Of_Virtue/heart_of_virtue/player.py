@@ -3,12 +3,16 @@ import items, world
 
 class Player():
     def __init__(self):
-        self.inventory = [items.Gold(15), items.Rock()]
+        self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
         self.hp = 100
-        self.strength = 10
-        self.finesse = 10
-        self.speed = 10
-        self.endurance = 10
+        self.strength = 10 #attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
+        self.finesse = 10 #attack damage with finesse-based weapons, parry and dodge rating
+        self.speed = 10 #dodge rating, combat action frequency, combat cooldown
+        self.endurance = 10 #combat cooldown, fatigue rate
+        self.charisma = 10 #influence ability, yielding in combat
+        self.intelligence = 10 #sacred arts, influence ability, parry and dodge rating
+        self.faith = 10 #sacred arts, influence ability, dodge rating
+        self.eq_weapon = None
         self.location_x, self.location_y = world.starting_position
         self.victory = False
 
@@ -16,8 +20,30 @@ class Player():
         return self.hp > 0
 
     def print_inventory(self):
+        num_gold = 0
+        num_consumables = 0
+        num_weapon = 0
+        num_armor = 0
+        num_boots = 0
+        num_helm = 0
+        num_gloves = 0
+        for item in self.inventory:
+            #TODO: Count all of the items of a specific type in inventory, then offer the player a choice of what type to view
         for item in self.inventory:
             print(item, '\n')
+
+    def equip_item(self, e_item):
+        if e_item.isequipped == True:
+            print("{} is already equipped.".format(e_item.name))
+            return
+        else:
+            item_class = e_item.__name__
+            for item in self.inventory:
+                if isinstance(item, item_class) and item.isequipped == True:
+                    item.isequipped = False
+                    print("You removed {}.".format(item.name))
+            e_item.isequipped = True
+            print("You equipped {}!".format(e_item.name))
 
     def move(self, dx, dy):
         self.location_x += dx
