@@ -1,5 +1,7 @@
 import random
-import items, world
+import world
+from switch import switch
+import items
 
 class Player():
     def __init__(self):
@@ -21,16 +23,74 @@ class Player():
 
     def print_inventory(self):
         num_gold = 0
-        num_consumables = 0
+        num_consumable = 0
         num_weapon = 0
         num_armor = 0
         num_boots = 0
         num_helm = 0
         num_gloves = 0
-        for item in self.inventory:
-            #TODO: Count all of the items of a specific type in inventory, then offer the player a choice of what type to view
-        for item in self.inventory:
-            print(item, '\n')
+        while True:
+            for item in self.inventory: #get the counts of each item in each category
+                if isinstance(item, items.Gold):
+                    num_gold = item.amt
+                else:
+                    if issubclass(item.__class__, items.Consumable):
+                        num_consumable += 1
+                    if issubclass(item.__class__, items.Weapon):
+                        num_weapon += 1
+                    if issubclass(item.__class__, items.Armor):
+                        num_armor += 1
+                    if issubclass(item.__class__, items.Boots):
+                        num_boots += 1
+                    if issubclass(item.__class__, items.Helm):
+                        num_helm += 1
+                    if issubclass(item.__class__, items.Gloves):
+                        num_gloves += 1
+                    else:
+                        pass
+            print("=====\nInventory\n=====\nGold: {}\nSelect a category to view:\n\n(c) Consumables: {}\n"
+                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(x) Cancel\n"
+                  .format(num_gold,num_consumable,num_weapon,num_armor,num_boots,num_helm,num_gloves))
+
+            inventory_selection = input('Selection: ')
+            for case in switch(inventory_selection):
+                if case('c', 'Consumables', 'consumables'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Consumable):
+                            print(item, '\n')
+                    break
+                if case('w', 'Weapons', 'weapons'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Weapon):
+                            print(item, '\n')
+                    break
+                if case('a', 'Armor', 'armor'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Armor):
+                            print(item, '\n')
+                    break
+                if case('b', 'Boots', 'boots'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Boots):
+                            print(item, '\n')
+                    break
+                if case('h', 'Helms', 'helms'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Helm):
+                            print(item, '\n')
+                    break
+                if case('g', 'Gloves', 'gloves'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Gloves):
+                            print(item, '\n')
+                    break
+                if case():
+                    break
+            num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+            if inventory_selection == 'x':
+                break
+        # for item in self.inventory:
+        #     print(item, '\n')
 
     def equip_item(self, e_item):
         if e_item.isequipped == True:
