@@ -20,6 +20,7 @@ def play():
             available_actions = room.available_actions()
             for action in available_actions:
                 print(action)
+            print("Other common actions: equip, unequip, look, peer (direction)\n")
             action_input = input('Action: ')
             for action in available_actions:
                 if action_input == action.hotkey:

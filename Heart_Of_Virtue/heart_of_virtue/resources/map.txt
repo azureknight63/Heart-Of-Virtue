@@ -1,6 +1,6 @@
 		EmptyCavePath				Boundary
-		GiantSpiderRoom	EmptyCavePath	EmptyCavePath		Boundary
+		EmptyCavePath	EmptyCavePath	EmptyCavePath		Boundary
 		EmptyCavePath				Boundary
 LeaveCaveRoom		EmptyCavePath				Boundary
-GiantSpiderRoom	EmptyCavePath	StartingRoom	EmptyCavePath			Boundary
+EmptyCavePath	EmptyCavePath	StartingRoom	EmptyCavePath			Boundary
 		EmptyCavePath				Boundary

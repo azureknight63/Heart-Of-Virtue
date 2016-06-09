@@ -14,6 +14,8 @@ class MapTile:
         """
         self.x = x
         self.y = y
+        self.enemies_here = []
+        self.items_here = []
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
