@@ -1,21 +1,31 @@
+import random
+import genericng
+
 class Enemy:
-    def __init__(self, name, hp, damage):
+    def __init__(self, name, description, idle_message, alert_message, hp, damage,
+                 armor, speed, finesse, resistance, awareness, aggro):
         self.name = name
+        self.description = description
+        self.idle_message = " is shuffling about."
+        self.alert_message = " glares sharply at you!"
         self.hp = hp
         self.damage = damage
+        self.armor = armor
+        self.speed = speed
+        self.finesse = finesse
+        self.resistance = resistance
+        self.awareness = awareness
+        self.aggro = aggro
 
     def is_alive(self):
         return self.hp > 0
 
-class GiantSpider(Enemy):
-    def __init__(self):
-        super().__init__(name="Giant Spider", hp=10, damage=2)
-
-class Ogre(Enemy):
-    def __init__(self):
-        super().__init__(name="Ogre", hp=30, damage=15)
-
-
 class RockRumbler(Enemy):
     def __init__(self):
-        super().__init__(name="Rock Rumbler", hp=30, damage=3)
+        description = "A burly creature covered in a rock-like carapace somewhat resembling a stout crocodile." \
+                           "Highly resistant to most weapons. You'd probably be better off avoiding combat with this" \
+                           "one."
+        super().__init__(name="Rock Rumbler " + genericng.generate(2,4), description=description, hp=30,
+                         damage=3, armor=30, speed=10, finesse=10,
+                         resistance=0, awareness=12, aggro=True)
+

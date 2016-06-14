@@ -45,6 +45,9 @@ class MapTile:
 
         return moves
 
+    def spawn_enemy(self, enemy_type):
+        enemies.enemy_type(location=(self.x,self.y))
+
 class Boundary(MapTile):
     def intro_text(self):
         return """
@@ -111,7 +114,6 @@ class Find5GoldRoom(LootRoom):
         Someone dropped a 5 gold piece. You pick it up.
         """
 
-
 class EnemyRoom(MapTile):
     def __init__(self, x, y, enemy):
         self.enemy = enemy
@@ -127,48 +129,6 @@ class EnemyRoom(MapTile):
             return [actions.Flee(tile=self), actions.Attack(enemy=self.enemy)]
         else:
             return self.adjacent_moves()
-
-
-class GiantSpiderRoom(EnemyRoom):
-    def __init__(self, x, y):
-        super().__init__(x, y, enemies.GiantSpider())
-
-    def intro_text(self):
-        if self.enemy.is_alive():
-            return """
-            A giant spider jumps down from its web in front of you!
-            """
-        else:
-            return """
-            The corpse of a dead spider rots on the ground.
-            """
-
-
-class OgreRoom(EnemyRoom):
-    def __init__(self, x, y):
-        super().__init__(x, y, enemies.Ogre())
-
-    def intro_text(self):
-        if self.enemy.is_alive():
-            return """
-            An ogre is blocking your path!
-            """
-        else:
-            return """
-            A dead ogre reminds you of your triumph.
-            """
-
-
-class SnakePitRoom(MapTile):
-    def intro_text(self):
-        return """
-        You have fallen into a pit of deadly snakes!
-
-        You have died!
-        """
-
-    def modify_player(self, player):
-        player.hp = 0
 
 
 class LeaveCaveRoom(MapTile):
