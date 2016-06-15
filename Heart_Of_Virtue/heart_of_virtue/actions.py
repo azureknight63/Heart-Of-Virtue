@@ -1,6 +1,7 @@
 from player import Player
 
 
+
 class Action():
     def __init__(self, method, name, hotkey, **kwargs):
         self.method = method
@@ -56,4 +57,3 @@ class ListCommands(Action):
 #           "i: Inspect your inventory\n"
 #           "q: Equip or unequip an item from your inventory\n"
 #           "u: Use an item from your inventory\n"
-#           "z: Enter a custom command (ex. 'pull switch', 'press button', 'cut rope', etc.")
