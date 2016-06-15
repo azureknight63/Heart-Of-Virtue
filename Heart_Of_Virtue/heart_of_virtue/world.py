@@ -1,6 +1,6 @@
 __author__ = 'Phillip Johnson'
 
-import enemies
+import functions, enemies
 
 _world = {}
 starting_position = (0, 0)
@@ -35,7 +35,7 @@ def place_enemies():
             y = _world[tile].y
             # List all of the different enemy/NPC types and locations here. Duplicates will create multiple enemies.
             rock_rumblers = [(3,4)]
-            for i in rock_rumblers:
-                if x == rock_rumblers[0] and y == rock_rumblers[1]:
-                    tile.spawn_enemy(enemies.RockRumbler())
+            for i,v in enumerate(rock_rumblers):
+                if x == rock_rumblers[i][0] and y == rock_rumblers[i][1]:
+                    functions.spawn_enemy(enemies.RockRumbler(), _world[tile])
 

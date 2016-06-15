@@ -1,7 +1,6 @@
 import random
-import world
 from switch import switch
-import items
+import items, functions, world
 
 class Player():
     def __init__(self):
@@ -148,3 +147,17 @@ class Player():
         available_moves = tile.adjacent_moves()
         r = random.randint(0, len(available_moves) - 1)
         self.do_action(available_moves[r])
+
+    def look(self):
+        tile = world.tile_exists(self.location_x, self.location_y)
+        print(tile.intro_text())
+        functions.check_for_enemies(tile)
+        functions.check_for_items(tile)
+
+    def commands(self):
+        print("l: Look around\n"
+              "v: View details on a person, creature, or object\n"
+              "i: Inspect your inventory\n"
+              "q: Equip or unequip an item from your inventory\n"
+              "u: Use an item from your inventory\n"
+              "z: Enter a custom command (ex. 'pull switch', 'press button', 'cut rope', etc.\n")
