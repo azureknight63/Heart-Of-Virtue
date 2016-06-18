@@ -15,8 +15,16 @@ class Player():
         self.intelligence = 10 #sacred arts, influence ability, parry and dodge rating
         self.faith = 10 #sacred arts, influence ability, dodge rating
         self.eq_weapon = None
+        self.exp = 0 #exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
+        self.level = 0
         self.location_x, self.location_y = world.starting_position
         self.victory = False
+
+    def gain_exp(self, amt):
+        """
+        Give the player amt exp, then check to see if he gained a level and act accordingly
+        """
+
 
     def is_alive(self):
         return self.hp > 0
