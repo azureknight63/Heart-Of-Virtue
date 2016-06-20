@@ -16,7 +16,6 @@ def play():
     while player.is_alive() and not player.victory:
         room = world.tile_exists(player.location_x, player.location_y)
         room.modify_player(player)
-        functions.check_for_enemies(room)
         # combat_list = list(functions.check_for_enemies(room, player))
         # if combat_list != []:
         #     pass # begin combat, not yet implemented

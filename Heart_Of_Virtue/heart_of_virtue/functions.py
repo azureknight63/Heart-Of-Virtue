@@ -19,6 +19,7 @@ def check_for_enemies(room): # Check to see what NPCs are in the room. Does not 
         print("You notice something moving.\n")
         for npc in room.enemies_here:
             print(npc.name + npc.idle_message)
+        print("\n")
 
 def spawn_enemy(enemy_name, tile):
     tile.enemies_here.append(enemy_name)
@@ -43,6 +44,7 @@ def spawn_enemy(enemy_name, tile):
 
 
 def check_for_items(room):
+    print("You see something.\n")
     if len(room.items_here) > 0:
         return room.items_here
     else:
