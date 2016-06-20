@@ -20,8 +20,10 @@ def play():
         room.modify_player(player)
         functions.check_for_enemies(room)
         functions.check_for_items(room)
-        # if combat_list != []:
-        #     pass # begin combat, not yet implemented
+        combat_list = functions.check_for_combat(player)
+        if len(combat_list) > 0:
+            print("You ready yourself for battle!") #todo: initiate combat loop
+            #todo: Figure out how to color text
 
 
 

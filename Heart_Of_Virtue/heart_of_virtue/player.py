@@ -109,7 +109,7 @@ class Player():
         self.location_x += dx
         self.location_y += dy
         print(world.tile_exists(self.location_x, self.location_y).intro_text())
-        functions.check_for_enemies(world.tile_exists(self.location_x, self.location_y))
+        # functions.check_for_enemies(world.tile_exists(self.location_x, self.location_y))
 
     def move_north(self):
         self.move(dx=0, dy=-1)
