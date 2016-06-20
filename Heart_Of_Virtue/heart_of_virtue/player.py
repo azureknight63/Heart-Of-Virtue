@@ -15,6 +15,7 @@ class Player():
         self.faith = 10 #sacred arts, influence ability, dodge rating
         self.eq_weapon = None
         self.location_x, self.location_y = world.starting_position
+        self.current_room = world.starting_position
         self.victory = False
 
     def is_alive(self):
@@ -154,6 +155,22 @@ class Player():
         print(tile.intro_text())
         functions.check_for_enemies(tile)
         functions.check_for_items(tile)
+
+    def view(self):
+        stuff_here = {}
+        for i, thing in enumerate(self.current_room.enemies_here + self.current_room.items_here):
+            stuff_here[str(i+1)] = thing # The +1 is to make the list player-friendly
+        if len(stuff_here) > 0:
+            print("What would you like to view?\n\n")
+            for k, v in stuff_here.items():
+                print(k, ": ", v.name)
+            choice = input("Selection: ")
+            if choice in stuff_here:
+                print(stuff_here[choice])
+            else:
+                print("Invalid selection.")
+        else:
+            print("You don't see anything remarkable here to look at.\n")
 
     def commands(self):
         print("l: Look around\n"

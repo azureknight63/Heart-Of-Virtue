@@ -42,10 +42,14 @@ def spawn_enemy(enemy_name, tile):
 #             break  # we don't need to scan any more since the alarm has been raised
 # return enemy_combat_list
 
+def spawn_item(item_name, tile):
+    tile.items_here.append(item_name)
 
 def check_for_items(room):
-    print("You see something.\n")
+    # print("You see something.\n")
     if len(room.items_here) > 0:
-        return room.items_here
+        for item in room.items_here:
+            print(item.announce)
+        print("\n")
     else:
         return None

@@ -13,6 +13,7 @@ class Gold(Item):
         self.amt = amt
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
                          value=self.amt)
+        self.announce = "There's a small pouch of gold on the ground."
 
 class Weapon(Item):
     def __init__(self, name, description, value, damage, isequipped, str_req, fin_req, str_mod, fin_mod, weight):
@@ -24,6 +25,7 @@ class Weapon(Item):
         self.weight = weight
         self.isequipped = isequipped
         super().__init__(name, description, value)
+        self.announce = "There's a {} here.".format(self.name)
 
     def __str__(self):
         if self.isequipped:
@@ -40,7 +42,7 @@ class Armor(Item):
         self.str_mod = str_mod
         self.weight = weight
         self.isequipped = isequipped
-        super().__init__(name, description, value)
+        super().__init__(name, description, value) #announce="{} can be seen on the ground.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -57,7 +59,7 @@ class Boots(Item):
         self.str_mod = str_mod
         self.weight = weight
         self.isequipped = isequipped
-        super().__init__(name, description, value)
+        super().__init__(name, description, value) #announce="A set of {} is laying here.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -74,7 +76,7 @@ class Helm(Item):
         self.str_mod = str_mod
         self.weight = weight
         self.isequipped = isequipped
-        super().__init__(name, description, value)
+        super().__init__(name, description, value) # announce="A {} can be seen on the ground.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -91,7 +93,7 @@ class Gloves(Item):
         self.str_mod = str_mod
         self.weight = weight
         self.isequipped = isequipped
-        super().__init__(name, description, value)
+        super().__init__(name, description, value) # announce="There is a pair of {} here.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -104,7 +106,7 @@ class Gloves(Item):
 class Consumable(Item):
     def __init__(self, name, description, value, weight):
         self.weight = weight
-        super().__init__(name, description, value)
+        super().__init__(name, description, value) # announce="You notice a {} sitting here.".format(self.name))
 
     def __str__(self):
          return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(

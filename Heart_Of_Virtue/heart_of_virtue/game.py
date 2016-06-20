@@ -8,15 +8,18 @@ print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
     world.load_tiles()
-    world.place_enemies()
+    world.place_enemies() #loads the default enemies into world tiles
+    world.place_items() #same thing for items
     player = Player()
     room = world.tile_exists(player.location_x, player.location_y)
     # intro_scene.intro() # Comment this out to disable the intro sequence
     print(room.intro_text())
     while player.is_alive() and not player.victory:
         room = world.tile_exists(player.location_x, player.location_y)
+        player.current_room = room
         room.modify_player(player)
-        # combat_list = list(functions.check_for_enemies(room, player))
+        functions.check_for_enemies(room)
+        functions.check_for_items(room)
         # if combat_list != []:
         #     pass # begin combat, not yet implemented
 

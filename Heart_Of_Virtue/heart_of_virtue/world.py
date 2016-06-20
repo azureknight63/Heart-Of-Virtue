@@ -1,6 +1,6 @@
 __author__ = 'Phillip Johnson'
 
-import functions, enemies, items
+import functions, enemies, items, random
 
 _world = {}
 starting_position = (0, 0)
@@ -48,4 +48,4 @@ def place_items():
             gold_pouches = [(2,3), (3,4)]
             for i,v in enumerate(gold_pouches):
                 if x == gold_pouches[i][0] and y == gold_pouches[i][1]:
-                    functions.spawn_item(items.RockRumbler(), _world[tile]) #TODO: implement this
+                    functions.spawn_item(items.Gold(random.randint(13,26)), _world[tile])

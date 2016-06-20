@@ -50,6 +50,10 @@ class ListCommands(Action):
     def __init__(self):
         super().__init__(method=Player.commands, name="List Commands", hotkey='c')
 
+class View(Action):
+    def __init__(self):
+        super().__init__(method=Player.view, name="View", hotkey='v')
+
 
 # def commands(self):
 #     print("l: Look around\n"

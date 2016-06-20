@@ -3,7 +3,7 @@ import genericng
 
 class Enemy:
     def __init__(self, name, description,
-                 hp, damage, armor, speed, finesse, resistance, awareness, aggro,
+                 hp, damage, armor, speed, finesse, resistance, awareness, aggro, exp_award,
                  idle_message = ' is shuffling about.', alert_message = 'glares sharply at you!'):
         self.name = name
         self.description = description
@@ -17,9 +17,18 @@ class Enemy:
         self.resistance = resistance
         self.awareness = awareness
         self.aggro = aggro
+        self.exp_award = exp_award
 
     def is_alive(self):
         return self.hp > 0
+
+class Slime(Enemy): #target practice
+    def __init__(self):
+        description = "Goop that moves. Gross."
+        super().__init__(name="Slime " + genericng.generate(4,5), description=description, hp=30,
+                         damage=1, armor=0, speed=10, finesse=10,
+                         resistance=0, awareness=12, aggro=True, exp_award=1, idle_message=" is glopping about.",
+                         alert_message=" burbles angrily at you!")
 
 class RockRumbler(Enemy):
     def __init__(self):
@@ -28,5 +37,5 @@ class RockRumbler(Enemy):
                            "one."
         super().__init__(name="Rock Rumbler " + genericng.generate(2,4), description=description, hp=30,
                          damage=3, armor=30, speed=10, finesse=10,
-                         resistance=0, awareness=12, aggro=True)
+                         resistance=0, awareness=12, aggro=True, exp_award=100)
 
