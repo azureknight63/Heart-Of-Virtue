@@ -161,3 +161,10 @@ class Player():
               "q: Equip or unequip an item from your inventory\n" #TODO: implement this
               "u: Use an item from your inventory\n" #TODO: implement this
               ) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
+
+    def equip(self):
+        print("Select the item you wish to equip or unequip.\n")
+        equipment = []
+        for index, item in enumerate(self.inventory):
+            if hasattr(item, self.isequipped):
+                equipment.append(item)
