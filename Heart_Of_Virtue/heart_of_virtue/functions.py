@@ -2,6 +2,7 @@ import string, textwrap, os
 import sys, time, random
 import enemies, tiles
 from player import Player
+from termcolor import colored
 
 ### This module contains general functions to use throughout the game
 
@@ -46,3 +47,4 @@ def check_for_items(room):
         for item in room.items_here:
             print(item.announce)
         print("\n")
+

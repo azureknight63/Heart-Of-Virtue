@@ -4,6 +4,7 @@ A simple text adventure designed as a learning experience for new programmers.
 __author__ = 'Phillip Johnson'
 import world, functions, intro_scene
 from player import Player
+
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
@@ -12,6 +13,7 @@ def play():
     world.place_items() #same thing for items
     player = Player()
     room = world.tile_exists(player.location_x, player.location_y)
+    functions.test_color()
     # intro_scene.intro() # Comment this out to disable the intro sequence
     print(room.intro_text())
     while player.is_alive() and not player.victory:
