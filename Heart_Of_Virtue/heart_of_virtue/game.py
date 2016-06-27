@@ -1,9 +1,10 @@
 """
-A simple text adventure designed as a learning experience for new programmers.
+My take on Phillip Johnson's text adventure tutorial
 """
-__author__ = 'Phillip Johnson'
+__author__ = 'Alex Egbert'
 import world, functions, intro_scene
 from player import Player
+from termcolor import colored
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -24,8 +25,7 @@ def play():
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)
         if len(combat_list) > 0:
-            print("You ready yourself for battle!") #todo: initiate combat loop
-            #todo: Figure out how to color text
+            print(colored("You ready yourself for battle!","red")) #todo: initiate combat loop
 
 
 

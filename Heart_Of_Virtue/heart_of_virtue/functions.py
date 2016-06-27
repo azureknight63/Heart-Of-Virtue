@@ -1,6 +1,6 @@
 import string, textwrap, os
 import sys, time, random
-import enemies, tiles
+import enemies, tiles, moves
 from player import Player
 from termcolor import colored
 
@@ -48,3 +48,6 @@ def check_for_items(room):
             print(item.announce)
         print("\n")
 
+def refresh_moves(player):
+    player.known_moves = [moves.Rest(), moves.PlayerAttack()]
+    # add other moves based on logic and stuff

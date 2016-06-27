@@ -1,11 +1,12 @@
 import random
 from switch import switch
-import items, functions, world
+import items, functions, world, moves
 
 class Player():
     def __init__(self):
         self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
         self.hp = 100
+        self.fatigue = 100 #cannot perform moves without enough of this stuff
         self.strength = 10 #attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
         self.finesse = 10 #attack damage with finesse-based weapons, parry and dodge rating
         self.speed = 10 #dodge rating, combat action frequency, combat cooldown
@@ -19,6 +20,8 @@ class Player():
         self.location_x, self.location_y = world.starting_position
         self.current_room = world.starting_position
         self.victory = False
+        self.known_moves = [moves.Rest(self), moves.PlayerAttack(self)]
+        self.current_move = None
 
     def gain_exp(self, amt):
         """
