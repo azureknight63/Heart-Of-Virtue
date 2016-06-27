@@ -1,6 +1,7 @@
 from player import Player
 
 
+
 class Action():
     def __init__(self, method, name, hotkey, **kwargs):
         self.method = method
@@ -13,7 +14,7 @@ class Action():
 
 class MoveNorth(Action):
     def __init__(self):
-        super().__init__(method=Player.move_north, name='Move north', hotkey='w')
+        super().__init__(method=Player.move_north, name='Move north', hotkey='n')
 
 class MoveSouth(Action):
     def __init__(self):
@@ -21,11 +22,11 @@ class MoveSouth(Action):
 
 class MoveEast(Action):
     def __init__(self):
-        super().__init__(method=Player.move_east, name='Move east', hotkey='d')
+        super().__init__(method=Player.move_east, name='Move east', hotkey='e')
 
 class MoveWest(Action):
     def __init__(self):
-        super().__init__(method=Player.move_west, name='Move west', hotkey='a')
+        super().__init__(method=Player.move_west, name='Move west', hotkey='w')
 
 class ViewInventory(Action):
     """Prints the player's inventory"""
@@ -35,8 +36,24 @@ class ViewInventory(Action):
 
 class Attack(Action):
     def __init__(self, enemy):
-        super().__init__(method=Player.attack, name="Attack", hotkey='q', enemy=enemy)
+        super().__init__(method=Player.attack, name="Attack", hotkey='a', enemy=enemy)
 
 class Flee(Action):
     def __init__(self, tile):
-        super().__init__(method=Player.flee, name="Flee", hotkey='f', tile=tile)
+        super().__init__(method=Player.flee, name="Flee", hotkey='flee', tile=tile)
+
+class Look(Action):
+    def __init__(self):
+        super().__init__(method=Player.look, name="Look", hotkey='l')
+
+class ListCommands(Action):
+    def __init__(self):
+        super().__init__(method=Player.commands, name="List Commands", hotkey='c')
+
+
+# def commands(self):
+#     print("l: Look around\n"
+#           "v: View details on a person, creature, or object\n"
+#           "i: Inspect your inventory\n"
+#           "q: Equip or unequip an item from your inventory\n"
+#           "u: Use an item from your inventory\n"

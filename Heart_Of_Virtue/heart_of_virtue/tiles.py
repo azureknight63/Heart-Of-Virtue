@@ -41,7 +41,9 @@ class MapTile:
     def available_actions(self):
         """Returns all of the available actions in this room."""
         moves = self.adjacent_moves()
+        moves.append(actions.ListCommands())
         moves.append(actions.ViewInventory())
+        moves.append(actions.Look())
 
         return moves
 

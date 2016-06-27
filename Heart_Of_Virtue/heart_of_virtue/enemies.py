@@ -2,12 +2,13 @@ import random
 import genericng
 
 class Enemy:
-    def __init__(self, name, description, idle_message, alert_message, hp, damage,
-                 armor, speed, finesse, resistance, awareness, aggro):
+    def __init__(self, name, description,
+                 hp, damage, armor, speed, finesse, resistance, awareness, aggro,
+                 idle_message = ' is shuffling about.', alert_message = 'glares sharply at you!'):
         self.name = name
         self.description = description
-        self.idle_message = " is shuffling about."
-        self.alert_message = " glares sharply at you!"
+        self.idle_message = idle_message
+        self.alert_message = alert_message
         self.hp = hp
         self.damage = damage
         self.armor = armor
