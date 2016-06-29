@@ -1,5 +1,4 @@
-from termcolor import colored
-from termcolor import cprint
+from termcolor import colored, cprint
 
 def combat(player, enemy_list):
     """
@@ -11,26 +10,60 @@ def combat(player, enemy_list):
     beat = 0 # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     heat = 1.0 # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     while len(enemy_list) > 0 or player.hp > 0: #combat will loop until there are no aggro enemies or the player is dead
-        cprint("BEAT " + str(beat), "yellow", "on_grey", "bold") #declare current Beat
-        cprint("HEAT: " + (str(heat * 100)) + "%", "red", "on_grey", "bold") #declare current Heat
-        cprint("FATIGUE: " + str(player.fatigue), "green", "on_grey", "bold") #declare current fatigue level
+        beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
+        heat_str = colored("HEAT: ", "red") + colored(str(heat), "red")
+        print("\n" + beat_str + "                    " + heat_str)
+        player.show_bars()
         while player.current_move == None: #the player must choose to do something
-            print("What will you do?")
+            print("\nWhat will you do?\n")
+            available_moves = "\n"
             for i, move in enumerate(player.known_moves):
-                print(str(i) + ": " + move.name + " ||| F: " + move.fatigue_cost + ", CD: " + move.cooldown_left)
-            selected_move = input("Selection ")
+                if not move.current_stage == 3:
+                    move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
+                else:
+                    move_str = (str(i) + ": " + str(move.name) + " ||| Available in {} beats".format(move.beats_left))
+                    move_str = colored(move_str, "red") + "\n"
+                available_moves += move_str
+            print(available_moves)
+            selected_move = int(input("Selection "))
             for i, move in enumerate(player.known_moves):
                 if i == selected_move:
-                    if player.fatigue >= move.fatigue_cost & move.cooldown_left == 0:
+                    if player.fatigue >= move.fatigue_cost and move.current_stage == 0:
                         player.current_move = move
+                        player.current_move.user = player
+                        if player.current_move.targeted:
+                            target = None
+                            if len(enemy_list) > 1:
+                                while target == None:
+                                    print("Select a target: \n")
+                                    for i, enemy in enumerate(enemy_list):
+                                        print(colored(str(i), "magenta") + ": " + colored(enemy.name, "magenta"))
+                                    choice = int(input("Target: "))
+                                    for i, enemy in enumerate(enemy_list):
+                                        if choice == i:
+                                            target = enemy
+                            else:
+                                target = enemy_list[0]
+                            player.current_move.target = target
+                        else:
+                            player.current_move.target = player
+                        player.current_move.cast(player)
                     elif player.fatigue < move.fatigue_cost:
                         cprint("You'll need to rest a bit before you can do that.", "red")
-                    elif move.cooldown_left > 0:
+                    elif move.current_stage == 3:
                         cprint("You're not yet ready to do that again.", "red")
+
+        for move in player.known_moves: #advances moves one beat along the path toward cooldown zero.
+            move.advance(player)
+
         for i, enemy in enumerate(enemy_list):
             if not enemy.is_alive:
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
+                for i, enemy_in_room in enumerate(player.current_room.enemies_here):
+                    if enemy_in_room == enemy:
+                        player.current_room.enemies_here.pop([i])
                 enemy_list.pop([i])
             else:
                 pass
 
+        beat += 1

@@ -1,12 +1,15 @@
 import random
 from switch import switch
 import items, functions, world, moves
+from termcolor import colored
 
 class Player():
     def __init__(self):
         self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
         self.hp = 100
+        self.maxhp = 100
         self.fatigue = 100 #cannot perform moves without enough of this stuff
+        self.maxfatigue = 100
         self.strength = 10 #attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
         self.finesse = 10 #attack damage with finesse-based weapons, parry and dodge rating
         self.speed = 10 #dodge rating, combat action frequency, combat cooldown
@@ -20,14 +23,14 @@ class Player():
         self.location_x, self.location_y = world.starting_position
         self.current_room = world.starting_position
         self.victory = False
-        self.known_moves = [moves.Rest(self), moves.PlayerAttack(self)]
+        self.known_moves = [moves.Rest(self)]
         self.current_move = None
+        self.game_tick = 0
 
     def gain_exp(self, amt):
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
         """
-
 
     def is_alive(self):
         return self.hp > 0
@@ -117,10 +120,13 @@ class Player():
             print("You equipped {}!".format(e_item.name))
 
     def move(self, dx, dy):
+        self.game_tick += 1
         self.location_x += dx
         self.location_y += dy
         print(world.tile_exists(self.location_x, self.location_y).intro_text())
-        # functions.check_for_enemies(world.tile_exists(self.location_x, self.location_y))
+        if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
+                self.location_x, self.location_y).respawn_rate:
+            pass #todo: enable enemy and item respawn
 
     def move_north(self):
         self.move(dx=0, dy=-1)
@@ -134,21 +140,21 @@ class Player():
     def move_west(self):
         self.move(dx=-1, dy=0)
 
-    def attack(self, enemy):
-        best_weapon = None
-        max_dmg = 0
-        for i in self.inventory:
-            if isinstance(i, items.Weapon):
-                if i.damage > max_dmg:
-                    max_dmg = i.damage
-                    best_weapon = i
-
-        print("You use {} against {}!".format(best_weapon.name, enemy.name))
-        enemy.hp -= best_weapon.damage
-        if not enemy.is_alive():
-            print("You killed {}!".format(enemy.name))
-        else:
-            print("{} HP is {}.".format(enemy.name, enemy.hp))
+    # def attack(self, enemy):
+    #     best_weapon = None
+    #     max_dmg = 0
+    #     for i in self.inventory:
+    #         if isinstance(i, items.Weapon):
+    #             if i.damage > max_dmg:
+    #                 max_dmg = i.damage
+    #                 best_weapon = i
+    #
+    #     print("You use {} against {}!".format(best_weapon.name, enemy.name))
+    #     enemy.hp -= best_weapon.damage
+    #     if not enemy.is_alive():
+    #         print("You killed {}!".format(enemy.name))
+    #     else:
+    #         print("{} HP is {}.".format(enemy.name, enemy.hp))
 
     def do_action(self, action, **kwargs):
         action_method = getattr(self, action.method.__name__)
@@ -184,9 +190,35 @@ class Player():
             print("You don't see anything remarkable here to look at.\n")
 
     def commands(self):
-        print("l: Look around\n"
+        print(colored("l: Look around\n"
               "v: View details on a person, creature, or object\n"
               "i: Inspect your inventory\n"
               "q: Equip or unequip an item from your inventory\n" #TODO: implement this
               "u: Use an item from your inventory\n" #TODO: implement this
-              ) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
+              , "blue")) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
+
+    def show_bars(self): #show HP and Fatigue bars
+        hp_pcnt = float(self.hp) / float(self.maxhp)
+        hp_pcnt = int(hp_pcnt * 10)
+        hp_string = colored("HP: ", "red") + "["
+        for bar in range(0,hp_pcnt):
+            hp_string += colored("█", "red")
+        for blank in range(hp_pcnt + 1, 10):
+            hp_string += " "
+        hp_string += "]   "
+
+        fat_pcnt = float(self.fatigue) / float(self.maxfatigue)
+        fat_pcnt = int(fat_pcnt * 10)
+        fat_string = colored("FAT: ", "green") + "["
+        for bar in range(0,fat_pcnt):
+            fat_string += colored("█", "green")
+        for blank in range(fat_pcnt + 1, 10):
+            fat_string += " "
+        fat_string += "]"
+        print(hp_string + fat_string)
+
+    def refresh_moves(self):
+        self.known_moves = [moves.Rest(self)]
+        if not self.eq_weapon == None:
+            self.known_moves.append(moves.Attack(self))
+        #todo: if certain criteria are met, add additional moves

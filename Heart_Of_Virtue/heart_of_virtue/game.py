@@ -2,9 +2,9 @@
 My take on Phillip Johnson's text adventure tutorial
 """
 __author__ = 'Alex Egbert'
-import world, functions, intro_scene
+import world, functions, intro_scene, moves, combat
 from player import Player
-from termcolor import colored
+from termcolor import colored, cprint
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -14,18 +14,23 @@ def play():
     world.place_items() #same thing for items
     player = Player()
     room = world.tile_exists(player.location_x, player.location_y)
-    functions.test_color()
     # intro_scene.intro() # Comment this out to disable the intro sequence
+    for item in player.inventory:
+        if item.name == "Rock":
+            player.eq_weapon = item
     print(room.intro_text())
     while player.is_alive() and not player.victory:
         room = world.tile_exists(player.location_x, player.location_y)
         player.current_room = room
         room.modify_player(player)
+        player.show_bars()
+        player.refresh_moves()
         functions.check_for_enemies(room)
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)
         if len(combat_list) > 0:
-            print(colored("You ready yourself for battle!","red")) #todo: initiate combat loop
+            print(colored("You ready yourself for battle!","red"))
+            combat.combat(player, combat_list)
 
 
 
@@ -33,11 +38,12 @@ def play():
         if player.is_alive() and not player.victory:
             # Check the state of the room to see if there are any enemies
 
-            print("Choose an action:\n")
+            print("\nChoose an action:\n")
             available_actions = room.adjacent_moves()
-            print('| ',end='')
+            available_moves = colored('| ', "cyan")
             for action in available_actions:
-                print(action, end=' | ')
+                available_moves += (colored(action, "green")) + colored(' | ',"cyan")
+            print(available_moves)
             print("\n\nFor a list of additional commands, enter 'c'.\n")
             action_input = input('Action: ')
             available_actions = room.available_actions()
