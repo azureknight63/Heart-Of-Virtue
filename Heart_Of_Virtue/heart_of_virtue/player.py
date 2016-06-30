@@ -28,6 +28,26 @@ class Player():
         self.game_tick = 0
         self.heat = 1.0
 
+    IDLE_MESSAGES = dict(
+        list(zip([
+            'You breathe heavily.',
+            'You anxiously shift your weight back and forth.',
+            'You stomp your foot impatiently.',
+            'You carefully consider your enemy.',
+            'You spit on the ground.',
+            'A bead of sweat runs down your brow.',
+            'You become conscious of your own heart beating loudly.',
+            'In a flash, you remember the face of your dear, sweet Amelia smiling at you.',
+            'With a smug grin, you wonder how you got yourself into this mess.',
+            'Sweat drips into your eye, causing you to blink rapidly.',
+            'You miss the sound of your daughter laughing happily.',
+            'You recall the sensation of consuming the Eucharist and wonder when - if - that might happen again.',
+            'You mutter a quick prayer under your breath.',
+        ],
+            list(range(0, X))
+        ))
+    )
+
     def gain_exp(self, amt):
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
