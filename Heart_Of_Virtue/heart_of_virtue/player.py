@@ -26,11 +26,22 @@ class Player():
         self.known_moves = [moves.Rest(self)]
         self.current_move = None
         self.game_tick = 0
+        self.heat = 1.0
 
     def gain_exp(self, amt):
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
         """
+
+    def change_heat(self, mult=1, add=0): #enforces boundaries with min and max heat levels
+        self.heat *= mult
+        self.heat += add
+        self.heat = int((self.heat * 100)+ 0.5) / 100.0 # enforce 2 decimals
+        if self.heat > 10:
+            self.heat = 10
+        if self.heat < 0.5:
+            self.heat = 0.5
+
 
     def is_alive(self):
         return self.hp > 0

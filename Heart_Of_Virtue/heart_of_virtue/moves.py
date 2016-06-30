@@ -25,7 +25,7 @@ class Move: #master class for all moves
             if self.current_stage == 0:
                 self.prep(player)
             elif self.current_stage == 1:
-                self.execute(player, self.target)
+                self.execute(player)
             elif self.current_stage == 2:
                 self.recoil(player)
             elif self.current_stage == 3:
@@ -53,15 +53,19 @@ class Move: #master class for all moves
                     self.beats_left = self.stage_beat[self.current_stage] # set beats remaining for current stage
 
     def prep(self, player): #what happens during these stages. Each move will overwrite prep/execute/recoil/cooldown depending on whether something is supposed to happen at that stage
+        # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
         pass
 
-    def execute(self, player, target):
+    def execute(self, player):
+        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         pass
 
     def recoil(self, player):
+        # print("######{}: I'm in the recoil stage now".format(self.name)) #debug message
         pass
 
     def cooldown(self, player):
+        # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
         pass
 
 class Attack(Move): #basic attack function, always uses equipped weapon
@@ -90,28 +94,27 @@ class Attack(Move): #basic attack function, always uses equipped weapon
         self.power = power
 
     def prep(self, player):
-        print("######I'm prepping now") #debug message #todo: left off here. Still working on the move mechanics
+        # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
         if self.beats_left == self.stage_beat[0]:
             print(self.stage_announce[0])
 
-    def execute(self, player, target):
-        print("######I'm executing now") #debug message
-        if self.beats_left == self.stage_beat[1]:
-            print(self.stage_announce[1])
-            hit_chance = 95 - target.finesse + player.finesse
-            roll = random.randint(0, 100)
-            damage = self.power - target.armor
-            if hit_chance >= roll: #a hit!
-                print(colored(target.name, "magenta") + colored(" was struck for ", "yellow") +
-                      colored(damage, "red") + colored(" damage!", "yellow"))
-                target.hp -= damage
-            else:
-                print(colored("Just missed!", "white"))
-
-
-
-
-
+    def execute(self, player):
+        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
+        print(self.stage_announce[1])
+        hit_chance = 95 - self.target.finesse + player.finesse
+        roll = random.randint(0, 100)
+        damage = ((self.power - self.target.armor) * player.heat) * random.uniform(0.8, 1.2)
+        damage = int(damage)
+        if hit_chance >= roll: #a hit!
+            print(colored(self.target.name, "magenta") + colored(" was struck for ", "yellow") +
+                  colored(damage, "red") + colored(" damage!", "yellow"))
+            self.target.hp -= damage
+            # print("######{}'s HP is {}".format(self.target.name, self.target.hp)) #debug msg
+            player.change_heat(1.25)
+        else:
+            print(colored("Just missed!", "white"))
+            player.change_heat(0.75)
+        player.fatigue -= self.fatigue_cost
 
 class Rest(Move): #basic attack function, always uses equipped weapon
     def __init__(self, player):

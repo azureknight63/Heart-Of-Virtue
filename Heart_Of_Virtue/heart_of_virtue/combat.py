@@ -8,13 +8,20 @@ def combat(player, enemy_list):
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
     beat = 0 # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
-    heat = 1.0 # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
-    while len(enemy_list) > 0 or player.hp > 0: #combat will loop until there are no aggro enemies or the player is dead
-        beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
-        heat_str = colored("HEAT: ", "red") + colored(str(heat), "red")
-        print("\n" + beat_str + "                    " + heat_str)
-        player.show_bars()
+    player.heat = 1.0 # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
+    while True: #combat will loop until there are no aggro enemies or the player is dead
+        if len(enemy_list) == 0:
+            print("Victory!")
+            break
+        if player.hp <= 0:
+            #todo: process player death
+            break
         while player.current_move == None: #the player must choose to do something
+            beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
+            heat_display = player.heat * 100
+            heat_str = colored("HEAT: ", "red") + colored(str(heat_display), "red") + colored("%", "red")
+            print("\n" + beat_str + "                  " + heat_str)
+            player.show_bars()
             print("\nWhat will you do?\n")
             available_moves = "\n"
             for i, move in enumerate(player.known_moves):
@@ -25,7 +32,7 @@ def combat(player, enemy_list):
                     move_str = colored(move_str, "red") + "\n"
                 available_moves += move_str
             print(available_moves)
-            selected_move = int(input("Selection "))
+            selected_move = int(input("Selection: "))
             for i, move in enumerate(player.known_moves):
                 if i == selected_move:
                     if player.fatigue >= move.fatigue_cost and move.current_stage == 0:
@@ -57,13 +64,10 @@ def combat(player, enemy_list):
             move.advance(player)
 
         for i, enemy in enumerate(enemy_list):
-            if not enemy.is_alive:
+            if not enemy.is_alive():
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
-                for i, enemy_in_room in enumerate(player.current_room.enemies_here):
-                    if enemy_in_room == enemy:
-                        player.current_room.enemies_here.pop([i])
-                enemy_list.pop([i])
-            else:
-                pass
+                player.current_room.enemies_here.remove(enemy)
+                enemy_list.remove(enemy)
+                # print("##### " + str(len(enemy_list)) + "enemies left") # debug message
 
         beat += 1
