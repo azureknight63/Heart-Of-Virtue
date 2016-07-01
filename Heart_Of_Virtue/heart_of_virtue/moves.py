@@ -54,21 +54,24 @@ class Move: #master class for all moves
 
     def prep(self, player): #what happens during these stages. Each move will overwrite prep/execute/recoil/cooldown depending on whether something is supposed to happen at that stage
         # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
-        pass
+        if self.beats_left == self.stage_beat[0]:
+            print(self.stage_announce[0])
 
     def execute(self, player):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
-        pass
+        if self.beats_left == self.stage_beat[0]:
+            print(self.stage_announce[1])
 
     def recoil(self, player):
         # print("######{}: I'm in the recoil stage now".format(self.name)) #debug message
-        pass
+        if self.beats_left == self.stage_beat[0]:
+            print(self.stage_announce[2])
 
     def cooldown(self, player):
         # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
         pass
 
-class Attack(Move): #basic attack function, always uses equipped weapon
+class Attack(Move): #basic attack function, always uses equipped weapon, player only
     def __init__(self, player):
         description = "Strike at your enemy with your equipped weapon."
         power = player.eq_weapon.damage + \
@@ -89,14 +92,9 @@ class Attack(Move): #basic attack function, always uses equipped weapon
                          stage_announce=["You wind up for a strike...",
                                          colored("You strike with your " + weapon + "!", "green"),
                                          "You brace yourself as your weapon recoils.",
-                                         "You are ready to attack again."], fatigue_cost=fatigue_cost, beats_left=prep,
+                                         " "], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = power
-
-    def prep(self, player):
-        # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
-        if self.beats_left == self.stage_beat[0]:
-            print(self.stage_announce[0])
 
     def execute(self, player):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
@@ -123,12 +121,30 @@ class Rest(Move): #basic attack function, always uses equipped weapon
         execute = 3
         recoil = 0
         cooldown = 0
-        fatigue_cost = -1 * (40 + player.endurance)
+        fatigue_cost = 0
         super().__init__(name="Rest", description=description, xp_gain=0, heat_gain=0.1, current_stage=0,
                          targeted=False,
                          stage_beat=[prep,execute,recoil,cooldown],
                          stage_announce=["You relax your muscles for a moment.",
                                          colored("You are resting.", "green"),
-                                         "You brace yourself as your weapon recoils.",
-                                         "You are ready to attack again."], fatigue_cost=fatigue_cost,
+                                         " ",
+                                         " "], fatigue_cost=fatigue_cost,
                          beats_left=execute, target=player, user=player)
+
+    def execute(self, player):
+        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
+        print(self.stage_announce[1])
+        hit_chance = 95 - self.target.finesse + player.finesse
+        roll = random.randint(0, 100)
+        damage = ((self.power - self.target.armor) * player.heat) * random.uniform(0.8, 1.2)
+        damage = int(damage)
+        if hit_chance >= roll:  # a hit!
+            print(colored(self.target.name, "magenta") + colored(" was struck for ", "yellow") +
+                  colored(damage, "red") + colored(" damage!", "yellow"))
+            self.target.hp -= damage
+            # print("######{}'s HP is {}".format(self.target.name, self.target.hp)) #debug msg
+            player.change_heat(1.25)
+        else:
+            print(colored("Just missed!", "white"))
+            player.change_heat(0.75)
+        player.fatigue -= self.fatigue_cost

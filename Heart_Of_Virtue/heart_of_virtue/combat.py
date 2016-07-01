@@ -70,5 +70,8 @@ def combat(player, enemy_list):
                 player.current_room.enemies_here.remove(enemy)
                 enemy_list.remove(enemy)
                 # print("##### " + str(len(enemy_list)) + "enemies left") # debug message
+
+        player.combat_idle()
+
         time.sleep(0.5)
         beat += 1
