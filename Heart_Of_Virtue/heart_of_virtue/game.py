@@ -19,6 +19,8 @@ def play():
         if item.name == "Rock":
             player.eq_weapon = item
             item.isequipped = True
+        if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
+            item.isequipped = True
     print(room.intro_text())
     while player.is_alive() and not player.victory:
         room = world.tile_exists(player.location_x, player.location_y)

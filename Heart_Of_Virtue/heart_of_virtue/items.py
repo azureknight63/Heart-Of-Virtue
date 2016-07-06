@@ -1,3 +1,5 @@
+import random
+
 class Item():
     """The base class for all items"""
     def __init__(self, name, description, value, type, subtype):
@@ -163,3 +165,12 @@ class ClothHood(Helm):
                          protection=0, str_req=1, str_mod=0.1, weight= 0.5, type="Helm", subtype="Light Helm")
         self.add_fin = 1
         #minimum protection of 1
+
+class Restorative(Consumable):
+    def __init__(self):
+        super().__init__(name="Restorative",
+                         description="A strange pink fluid of questionable contents.\n"
+                                     "Drinking it seems to cause your wounds to immediately mend"
+                                     "themselves",
+                         value=100, weight=0.25, type="Consumable", subtype="Potion")
+        self.power = random.randint(50, 100)

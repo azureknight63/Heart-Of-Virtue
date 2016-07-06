@@ -172,24 +172,24 @@ class Player():
                             choices.append(item)
                     break
                 if case('a', 'Armor', 'armor'):
-                    for i, item in enumerate(self.inventory):
+                    for item in self.inventory:
                         if issubclass(item.__class__, items.Armor):
-                            print(i, ': ', item, '\n')
+                            choices.append(item)
                     break
                 if case('b', 'Boots', 'boots'):
-                    for i, item in enumerate(self.inventory):
+                    for item in self.inventory:
                         if issubclass(item.__class__, items.Boots):
-                            print(i, ': ', item, '\n')
+                            choices.append(item)
                     break
                 if case('h', 'Helms', 'helms'):
-                    for i, item in enumerate(self.inventory):
+                    for item in self.inventory:
                         if issubclass(item.__class__, items.Helm):
-                            print(i, ': ', item, '\n')
+                            choices.append(item)
                     break
                 if case('g', 'Gloves', 'gloves'):
-                    for i, item in enumerate(self.inventory):
+                    for item in self.inventory:
                         if issubclass(item.__class__, items.Gloves):
-                            print(i, ': ', item, '\n')
+                            choices.append(item)
                     break
                 if case():
                     break
@@ -203,7 +203,7 @@ class Player():
                 if not functions.is_input_integer(inventory_selection):
                     num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
                     continue
-                for i, item in enumerate(choices): #todo BUG - won't work for armor or other items, fix this
+                for i, item in enumerate(choices):
                     if i == int(inventory_selection):
                         e_item = item
                         if e_item.isequipped == True:
