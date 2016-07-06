@@ -18,6 +18,7 @@ def play():
     for item in player.inventory:
         if item.name == "Rock":
             player.eq_weapon = item
+            item.isequipped = True
     print(room.intro_text())
     while player.is_alive() and not player.victory:
         room = world.tile_exists(player.location_x, player.location_y)

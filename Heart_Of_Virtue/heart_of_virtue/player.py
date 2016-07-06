@@ -139,18 +139,91 @@ class Player():
         # for item in self.inventory:
         #     print(item, '\n')
 
-    def equip_item(self, e_item):
-        if e_item.isequipped == True:
-            print("{} is already equipped.".format(e_item.name))
-            return
-        else:
-            item_class = e_item.__name__
-            for item in self.inventory:
-                if isinstance(item, item_class) and item.isequipped == True:
-                    item.isequipped = False
-                    print("You removed {}.".format(item.name))
-            e_item.isequipped = True
-            print("You equipped {}!".format(e_item.name))
+    def equip_item(self):
+        num_weapon = 0
+        num_armor = 0
+        num_boots = 0
+        num_helm = 0
+        num_gloves = 0
+        while True:
+            for item in self.inventory:  # get the counts of each item in each category
+                if issubclass(item.__class__, items.Weapon):
+                    num_weapon += 1
+                if issubclass(item.__class__, items.Armor):
+                    num_armor += 1
+                if issubclass(item.__class__, items.Boots):
+                    num_boots += 1
+                if issubclass(item.__class__, items.Helm):
+                    num_helm += 1
+                if issubclass(item.__class__, items.Gloves):
+                    num_gloves += 1
+                else:
+                    pass
+            print("=====\nInventory\n=====\nSelect a category to view:\n\n"
+                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(x) Cancel\n"
+                  .format(num_weapon, num_armor, num_boots, num_helm, num_gloves))
+
+            choices = []
+            inventory_selection = input('Selection: ')
+            for case in switch(inventory_selection):
+                if case('w', 'Weapons', 'weapons'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Weapon):
+                            choices.append(item)
+                    break
+                if case('a', 'Armor', 'armor'):
+                    for i, item in enumerate(self.inventory):
+                        if issubclass(item.__class__, items.Armor):
+                            print(i, ': ', item, '\n')
+                    break
+                if case('b', 'Boots', 'boots'):
+                    for i, item in enumerate(self.inventory):
+                        if issubclass(item.__class__, items.Boots):
+                            print(i, ': ', item, '\n')
+                    break
+                if case('h', 'Helms', 'helms'):
+                    for i, item in enumerate(self.inventory):
+                        if issubclass(item.__class__, items.Helm):
+                            print(i, ': ', item, '\n')
+                    break
+                if case('g', 'Gloves', 'gloves'):
+                    for i, item in enumerate(self.inventory):
+                        if issubclass(item.__class__, items.Gloves):
+                            print(i, ': ', item, '\n')
+                    break
+                if case():
+                    break
+            if len(choices) > 0:
+                for i, item in enumerate(choices):
+                    if item.isequipped:
+                        print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                    else:
+                        print(i, ': ', item.name, '\n')
+                inventory_selection = input('Equip which? ')
+                if not functions.is_input_integer(inventory_selection):
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+                    continue
+                for i, item in enumerate(choices): #todo BUG - won't work for armor or other items, fix this
+                    if i == int(inventory_selection):
+                        e_item = item
+                        if e_item.isequipped == True:
+                            print("{} is already equipped.".format(e_item.name))
+                            answer = input("Would you like to remove it? (y/n) ")
+                            if answer == 'y':
+                                e_item.isequipped = False
+                                print("You put {} back into your bag.".format(e_item.name))
+                        else:
+                            for item in self.inventory:
+                                if e_item.type == item.type and item.isequipped == True:
+                                    item.isequipped = False
+                                    print("You put {} back into your bag.".format(item.name))
+                            e_item.isequipped = True
+                            print("You equipped {}!".format(e_item.name))
+                        break
+
+            num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+            if inventory_selection == 'x':
+                break
 
     def move(self, dx, dy):
         self.game_tick += 1
@@ -172,22 +245,6 @@ class Player():
 
     def move_west(self):
         self.move(dx=-1, dy=0)
-
-    # def attack(self, enemy):
-    #     best_weapon = None
-    #     max_dmg = 0
-    #     for i in self.inventory:
-    #         if isinstance(i, items.Weapon):
-    #             if i.damage > max_dmg:
-    #                 max_dmg = i.damage
-    #                 best_weapon = i
-    #
-    #     print("You use {} against {}!".format(best_weapon.name, enemy.name))
-    #     enemy.hp -= best_weapon.damage
-    #     if not enemy.is_alive():
-    #         print("You killed {}!".format(enemy.name))
-    #     else:
-    #         print("{} HP is {}.".format(enemy.name, enemy.hp))
 
     def do_action(self, action, **kwargs):
         action_method = getattr(self, action.method.__name__)
@@ -226,7 +283,7 @@ class Player():
         print(colored("l: Look around\n"
               "v: View details on a person, creature, or object\n"
               "i: Inspect your inventory\n"
-              "q: Equip or unequip an item from your inventory\n" #TODO: implement this
+              "q: Equip or unequip an item from your inventory\n"
               "u: Use an item from your inventory\n" #TODO: implement this
               , "blue")) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
 

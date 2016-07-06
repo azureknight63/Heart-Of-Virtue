@@ -54,6 +54,9 @@ class View(Action):
     def __init__(self):
         super().__init__(method=Player.view, name="View", hotkey='v')
 
+class Equip(Action):
+    def __init__(self):
+        super().__init__(method=Player.equip_item, name="Change Equipment", hotkey='q')
 
 # def commands(self):
 #     print("l: Look around\n"

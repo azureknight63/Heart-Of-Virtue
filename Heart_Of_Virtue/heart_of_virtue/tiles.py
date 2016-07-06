@@ -47,6 +47,7 @@ class MapTile:
         moves.append(actions.ViewInventory())
         moves.append(actions.Look())
         moves.append(actions.View())
+        moves.append(actions.Equip())
 
         return moves
 

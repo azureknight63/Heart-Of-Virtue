@@ -51,3 +51,10 @@ def check_for_items(room):
 def refresh_moves(player):
     player.known_moves = [moves.Rest(), moves.PlayerAttack()]
     # add other moves based on logic and stuff
+
+def is_input_integer(input): #useful for checking to see if the player's input can be converted to int
+    try:
+        int(input)
+        return True
+    except ValueError:
+        return False
