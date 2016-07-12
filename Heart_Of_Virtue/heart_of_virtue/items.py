@@ -129,6 +129,17 @@ class Consumable(Item):
          return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
             self.name, self.description, self.value, self.weight)
 
+class Special(Item):
+    def __init__(self, name, description, value, weight, type, subtype):
+        self.weight = weight
+        self.type = type
+        self.subtype = subtype
+        super().__init__(name, description, value, type, subtype) # announce="You notice a {} sitting here.".format(self.name))
+
+    def __str__(self):
+         return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
+            self.name, self.description, self.value, self.weight)
+
 class Rock(Weapon):
     def __init__(self):
         super().__init__(name="Rock",
@@ -169,8 +180,24 @@ class ClothHood(Helm):
 class Restorative(Consumable):
     def __init__(self):
         super().__init__(name="Restorative",
-                         description="A strange pink fluid of questionable contents.\n"
+                         description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend"
                                      "themselves",
                          value=100, weight=0.25, type="Consumable", subtype="Potion")
-        self.power = random.randint(50, 100)
+        self.power = 60
+        self.count = 1  # this will allow stacking of homogeneous items. When the player acquires this in inventory,
+                        # the game searches the inventory for other copies and increases that count by self.count,
+                        # then removes this object todo: implement item stacking on item pickup
+        self.announce = "You notice a small glass bottle on the ground with an odd pink fluid inside and a label " \
+                        "reading, 'Restorative.'"
+
+    def use(self, player):
+        print("You quaff down the restorative. The liquid burns slightly in your throat for a moment, before the"
+              "sensation is replaced with a period of numbness. You feel your limbs getting a bit lighter, your"
+              "muscles relaxing, and the myriad of scratches and cuts closing up.")
+        player.hp += (self.power * random.random(0.8, 1.2))
+        if player.hp > player.maxhp:
+            player.hp = player.maxhp
+        self.count -= 1
+        if self.count <= 0:
+            player.inventory.pop(self)

@@ -58,6 +58,14 @@ class Equip(Action):
     def __init__(self):
         super().__init__(method=Player.equip_item, name="Change Equipment", hotkey='q')
 
+class Use(Action):
+    def __init__(self):
+        super().__init__(method=Player.use_item, name="Use Item", hotkey='u')
+
+class Take(Action):
+    def __init__(self):
+        super().__init__(method=Player.take, name="Take Item", hotkey='take')
+
 # def commands(self):
 #     print("l: Look around\n"
 #           "v: View details on a person, creature, or object\n"

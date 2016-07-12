@@ -50,6 +50,10 @@ def place_items():
             y = _world[tile].y
             # List all of the different enemy/NPC types and locations here. Duplicates will create multiple enemies.
             gold_pouches = [(2,3), (3,4)]
+            restoratives = [(2,5), (2,3), (2,2), (2,2)]
             for i,v in enumerate(gold_pouches):
                 if x == gold_pouches[i][0] and y == gold_pouches[i][1]:
                     functions.spawn_item(items.Gold(random.randint(13,26)), _world[tile])
+            for i, v in enumerate(restoratives):
+                if x == restoratives[i][0] and y == restoratives[i][1]:
+                    functions.spawn_item(items.Restorative(), _world[tile])

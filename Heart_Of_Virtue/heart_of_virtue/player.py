@@ -1,7 +1,7 @@
 import random
 from switch import switch
 import items, functions, world, moves
-from termcolor import colored
+from termcolor import colored, cprint
 
 class Player():
     def __init__(self):
@@ -76,6 +76,7 @@ class Player():
         num_boots = 0
         num_helm = 0
         num_gloves = 0
+        num_special = 0
         while True:
             for item in self.inventory: #get the counts of each item in each category
                 if isinstance(item, items.Gold):
@@ -93,47 +94,77 @@ class Player():
                         num_helm += 1
                     if issubclass(item.__class__, items.Gloves):
                         num_gloves += 1
+                    if issubclass(item.__class__, items.Special):
+                        num_special += 1
                     else:
                         pass
             print("=====\nInventory\n=====\nGold: {}\nSelect a category to view:\n\n(c) Consumables: {}\n"
-                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(x) Cancel\n"
-                  .format(num_gold,num_consumable,num_weapon,num_armor,num_boots,num_helm,num_gloves))
+                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(s) Special: {}\n"
+                  "(x) Cancel\n"
+                  .format(num_gold,num_consumable,num_weapon,num_armor,num_boots,num_helm,num_gloves, num_special))
 
+            choices = []
             inventory_selection = input('Selection: ')
             for case in switch(inventory_selection):
                 if case('c', 'Consumables', 'consumables'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Consumable):
-                            print(item, '\n')
+                            choices.append(item)
                     break
                 if case('w', 'Weapons', 'weapons'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Weapon):
-                            print(item, '\n')
+                            choices.append(item)
                     break
                 if case('a', 'Armor', 'armor'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Armor):
-                            print(item, '\n')
+                            choices.append(item)
                     break
                 if case('b', 'Boots', 'boots'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Boots):
-                            print(item, '\n')
+                            choices.append(item)
                     break
                 if case('h', 'Helms', 'helms'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Helm):
-                            print(item, '\n')
+                            choices.append(item)
                     break
                 if case('g', 'Gloves', 'gloves'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Gloves):
-                            print(item, '\n')
+                            choices.append(item)
+                    break
+                if case('s', 'Special', 'special'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Special):
+                            choices.append(item)
                     break
                 if case():
                     break
-            num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+
+            if len(choices) > 0:
+                for i, item in enumerate(choices):
+                    if hasattr(item, 'isequipped'):
+                        if item.isequipped:
+                            print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                        else:
+                            print(i, ': ', item.name, '\n')
+                    else:
+                        if hasattr(item, 'count'):
+                            print(i, ': ', item.name, ' (', item.count, ')\n')
+                        else:
+                            print(i, ': ', item.name, '\n')
+                inventory_selection = input('View which? ')
+                if not functions.is_input_integer(inventory_selection):
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
+                    continue
+                for i, item in enumerate(choices):
+                    if i == int(inventory_selection):
+                        print(item, '\n')
+
+            num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
             if inventory_selection == 'x':
                 break
         # for item in self.inventory:
@@ -159,7 +190,7 @@ class Player():
                     num_gloves += 1
                 else:
                     pass
-            print("=====\nInventory\n=====\nSelect a category to view:\n\n"
+            print("=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
                   "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(x) Cancel\n"
                   .format(num_weapon, num_armor, num_boots, num_helm, num_gloves))
 
@@ -225,6 +256,61 @@ class Player():
             if inventory_selection == 'x':
                 break
 
+    def use_item(self):
+        num_consumables = 0
+        num_special = 0
+
+        while True:
+            for item in self.inventory:  # get the counts of each item in each category
+                if issubclass(item.__class__, items.Consumable):
+                    num_consumables += 1
+                if issubclass(item.__class__, items.Special):
+                    num_special += 1
+                else:
+                    pass
+            print("=====\nUse Item\n=====\nSelect a category to view:\n\n"
+                  "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
+                  .format(num_consumables, num_special))
+
+            choices = []
+            inventory_selection = input('Selection: ')
+            for case in switch(inventory_selection):
+                if case('c', 'Consumables', 'consumables'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Consumable):
+                            choices.append(item)
+                    break
+                if case('s', 'Special', 'special'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Special):
+                            choices.append(item)
+                    break
+                if case():
+                    break
+            if len(choices) > 0:
+                for i, item in enumerate(choices):
+                    if hasattr(item, 'isequipped'):
+                        if item.isequipped:
+                            print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                    else:
+                        if hasattr(item, 'count'):
+                            print(i, ': ', item.name, ' (', item.count, ')\n')
+                        else:
+                            print(i, ': ', item.name, '\n')
+                inventory_selection = input('Use which? ')
+                if not functions.is_input_integer(inventory_selection):
+                    num_consumables = num_special = 0
+                    continue
+                for i, item in enumerate(choices):
+                    if i == int(inventory_selection):
+                        print("You used {}!".format(item.name))
+                        item.use(self)
+                        break
+
+            num_consumables = num_special = 0
+            if inventory_selection == 'x':
+                break
+
     def move(self, dx, dy):
         self.game_tick += 1
         self.location_x += dx
@@ -279,12 +365,43 @@ class Player():
         else:
             print("You don't see anything remarkable here to look at.\n")
 
+    def take(self, **kwargs):
+        if not kwargs: # player entered general take command with no args. Show a list of items that can be taken.
+            if len(self.current_room.items_here) > 0:
+                print("What are you trying to take?")
+                for i, item in enumerate(self.current_room.items_here):
+                    print('{}: {}\n'.format(i,item.name))
+                selection = input('Selection: ')
+                if not functions.is_input_integer(selection):
+                    cprint("You aren't sure exactly what you're trying to do.", 'red')
+                else:
+                    self.inventory.append(self.current_room.items_here[int(selection)])
+                    print('You take {}.'.format(self.current_room.items_here[int(selection)].name))
+                    self.current_room.items_here.pop(int(selection))
+            else:
+                cprint("There doesn't seem to be anything here for you to take.", 'red')
+        else:
+            if kwargs == 'all':
+                for item in self.current_room.items_here:
+                    self.inventory.append(item)
+                    print('You take {}.'.format(item.name))
+                self.current_room.items_here = []
+            else:
+                for item in self.current_room.items_here:
+                    if kwargs in item.name:
+                        self.inventory.append(item)
+                        print('You take {}.'.format(item.name))
+                        self.current_room.items_here.pop(item)
+                        break
+
     def commands(self):
         print(colored("l: Look around\n"
               "v: View details on a person, creature, or object\n"
               "i: Inspect your inventory\n"
               "q: Equip or unequip an item from your inventory\n"
-              "u: Use an item from your inventory\n" #TODO: implement this
+              "u: Use an item from your inventory\n"
+              "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
+                      "Entering 'take' by itself will show a list of items in the room."
               , "blue")) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
 
     def show_bars(self): #show HP and Fatigue bars

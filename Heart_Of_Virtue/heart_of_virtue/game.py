@@ -5,6 +5,7 @@ __author__ = 'Alex Egbert'
 import world, functions, intro_scene, moves, combat
 from player import Player
 from termcolor import colored, cprint
+import time
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -31,16 +32,11 @@ def play():
         functions.check_for_enemies(room)
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)
-        if len(combat_list) > 0:
+        if len(combat_list) > 0: # Check the state of the room to see if there are any enemies
             print(colored("You ready yourself for battle!","red"))
             combat.combat(player, combat_list)
-
-
-
         # Check again since the room could have changed the player's state
         if player.is_alive() and not player.victory:
-            # Check the state of the room to see if there are any enemies
-
             print("\nChoose an action:\n")
             available_actions = room.adjacent_moves()
             available_moves = colored('| ', "cyan")
@@ -50,10 +46,21 @@ def play():
             print("\n\nFor a list of additional commands, enter 'c'.\n")
             action_input = input('Action: ')
             available_actions = room.available_actions()
-            for action in available_actions:
-                if action_input == action.hotkey:
-                    player.do_action(action, **action.kwargs)
-                    break
+            count_args = action_input.split(' ')
+            if len(count_args) == 1:
+                for action in available_actions:
+                    if action_input == action.hotkey:
+                        player.do_action(action, **action.kwargs)
+                        break
+            elif len(count_args) == 2:
+                for action in available_actions:
+                    if count_args[0] == action.hotkey:
+                        try:
+                            player.do_action(action, count_args[1])
+                        except:
+                            cprint("You aren't sure exactly what you're trying to do.", 'red')
+                        break
+        time.sleep(0.5)
 
 
 
