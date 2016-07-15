@@ -42,6 +42,7 @@ class Player():
             'You miss the sound of your daughter laughing happily.',
             'You recall the sensation of consuming the Eucharist and wonder when - if - that might happen again.',
             'You mutter a quick prayer under your breath.',
+            'You briefly recall your mother folding laundry and humming softly to herself.',
             ]
 
     def combat_idle(self):
@@ -256,60 +257,70 @@ class Player():
             if inventory_selection == 'x':
                 break
 
-    def use_item(self):
-        num_consumables = 0
-        num_special = 0
-
-        while True:
-            for item in self.inventory:  # get the counts of each item in each category
-                if issubclass(item.__class__, items.Consumable):
-                    num_consumables += 1
-                if issubclass(item.__class__, items.Special):
-                    num_special += 1
-                else:
-                    pass
-            print("=====\nUse Item\n=====\nSelect a category to view:\n\n"
-                  "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
-                  .format(num_consumables, num_special))
-
-            choices = []
-            inventory_selection = input('Selection: ')
-            for case in switch(inventory_selection):
-                if case('c', 'Consumables', 'consumables'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Consumable):
-                            choices.append(item)
-                    break
-                if case('s', 'Special', 'special'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Special):
-                            choices.append(item)
-                    break
-                if case():
-                    break
-            if len(choices) > 0:
-                for i, item in enumerate(choices):
-                    if hasattr(item, 'isequipped'):
-                        if item.isequipped:
-                            print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+    def use_item(self, phrase=''):
+        if phrase == '':
+            num_consumables = 0
+            num_special = 0
+            while True:
+                for item in self.inventory:  # get the counts of each item in each category
+                    if issubclass(item.__class__, items.Consumable):
+                        num_consumables += 1
+                    if issubclass(item.__class__, items.Special):
+                        num_special += 1
                     else:
-                        if hasattr(item, 'count'):
-                            print(i, ': ', item.name, ' (', item.count, ')\n')
-                        else:
-                            print(i, ': ', item.name, '\n')
-                inventory_selection = input('Use which? ')
-                if not functions.is_input_integer(inventory_selection):
-                    num_consumables = num_special = 0
-                    continue
-                for i, item in enumerate(choices):
-                    if i == int(inventory_selection):
-                        print("You used {}!".format(item.name))
-                        item.use(self)
+                        pass
+                print("=====\nUse Item\n=====\nSelect a category to view:\n\n"
+                      "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
+                      .format(num_consumables, num_special))
+                choices = []
+                inventory_selection = input('Selection: ')
+                for case in switch(inventory_selection):
+                    if case('c', 'Consumables', 'consumables'):
+                        for item in self.inventory:
+                            if issubclass(item.__class__, items.Consumable):
+                                choices.append(item)
                         break
+                    if case('s', 'Special', 'special'):
+                        for item in self.inventory:
+                            if issubclass(item.__class__, items.Special):
+                                choices.append(item)
+                        break
+                    if case():
+                        break
+                if len(choices) > 0:
+                    for i, item in enumerate(choices):
+                        if hasattr(item, 'isequipped'):
+                            if item.isequipped:
+                                print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                        else:
+                            if hasattr(item, 'count'):
+                                print(i, ': ', item.name, ' (', item.count, ')\n')
+                            else:
+                                print(i, ': ', item.name, '\n')
+                    inventory_selection = input('Use which? ')
+                    if not functions.is_input_integer(inventory_selection):
+                        num_consumables = num_special = 0
+                        continue
+                    for i, item in enumerate(choices):
+                        if i == int(inventory_selection):
+                            print("You used {}!".format(item.name))
+                            item.use(self)
+                            break
 
-            num_consumables = num_special = 0
-            if inventory_selection == 'x':
-                break
+                num_consumables = num_special = 0
+                if inventory_selection == 'x':
+                    break
+
+        else:
+            lower_phrase = phrase.lower()
+            for i, item in enumerate(self.inventory):
+                if issubclass(item.__class__, items.Consumable) or issubclass(item.__class__, items.Special):
+                    search_item = item.name.lower() + ' ' + item.announce.lower()
+                    if lower_phrase in search_item:
+                        confirm = input("Use {}? (y/n)".format(item.name))
+                        if confirm == 'y' or 'Y' or 'yes' or 'Yes' or 'YES':
+                            item.use(self)
+                            break
 
     def move(self, dx, dy):
         self.game_tick += 1
@@ -332,10 +343,14 @@ class Player():
     def move_west(self):
         self.move(dx=-1, dy=0)
 
-    def do_action(self, action, **kwargs):
+    def do_action(self, action, phrase=''):
         action_method = getattr(self, action.method.__name__)
-        if action_method:
-            action_method(**kwargs)
+        if phrase == '':
+            if action_method:
+                action_method()
+        else:
+            if action_method:
+                action_method(phrase)
 
     def flee(self, tile):
         """Moves the player randomly to an adjacent tile"""
@@ -365,8 +380,8 @@ class Player():
         else:
             print("You don't see anything remarkable here to look at.\n")
 
-    def take(self, **kwargs):
-        if not kwargs: # player entered general take command with no args. Show a list of items that can be taken.
+    def take(self, phrase=''):
+        if phrase == '': # player entered general take command with no args. Show a list of items that can be taken.
             if len(self.current_room.items_here) > 0:
                 print("What are you trying to take?")
                 for i, item in enumerate(self.current_room.items_here):
@@ -381,17 +396,19 @@ class Player():
             else:
                 cprint("There doesn't seem to be anything here for you to take.", 'red')
         else:
-            if kwargs == 'all':
+            if phrase == 'all':
                 for item in self.current_room.items_here:
                     self.inventory.append(item)
                     print('You take {}.'.format(item.name))
                 self.current_room.items_here = []
             else:
-                for item in self.current_room.items_here:
-                    if kwargs in item.name:
+                lower_phrase = phrase.lower()
+                for i, item in enumerate(self.current_room.items_here):
+                    search_item = item.name.lower() + ' ' + item.announce.lower()
+                    if lower_phrase in search_item:
                         self.inventory.append(item)
                         print('You take {}.'.format(item.name))
-                        self.current_room.items_here.pop(item)
+                        self.current_room.items_here.pop(i)
                         break
 
     def commands(self):
@@ -399,29 +416,36 @@ class Player():
               "v: View details on a person, creature, or object\n"
               "i: Inspect your inventory\n"
               "q: Equip or unequip an item from your inventory\n"
-              "u: Use an item from your inventory\n"
+              "use <item>: Use an item from your inventory\n"
               "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
                       "Entering 'take' by itself will show a list of items in the room."
               , "blue")) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
 
-    def show_bars(self): #show HP and Fatigue bars
-        hp_pcnt = float(self.hp) / float(self.maxhp)
-        hp_pcnt = int(hp_pcnt * 10)
-        hp_string = colored("HP: ", "red") + "["
-        for bar in range(0,hp_pcnt):
-            hp_string += colored("█", "red")
-        for blank in range(hp_pcnt + 1, 10):
-            hp_string += " "
-        hp_string += "]   "
+    def show_bars(self, hp=True, fp=True): #show HP and Fatigue bars
+        if hp:
+            hp_pcnt = float(self.hp) / float(self.maxhp)
+            hp_pcnt = int(hp_pcnt * 10)
+            hp_string = colored("HP: ", "red") + "["
+            for bar in range(0,hp_pcnt):
+                hp_string += colored("█", "red")
+            for blank in range(hp_pcnt + 1, 10):
+                hp_string += " "
+            hp_string += "]   "
+        else:
+            hp_string = ''
 
-        fat_pcnt = float(self.fatigue) / float(self.maxfatigue)
-        fat_pcnt = int(fat_pcnt * 10)
-        fat_string = colored("FAT: ", "green") + "["
-        for bar in range(0,fat_pcnt):
-            fat_string += colored("█", "green")
-        for blank in range(fat_pcnt + 1, 10):
-            fat_string += " "
-        fat_string += "]"
+        if fp:
+            fat_pcnt = float(self.fatigue) / float(self.maxfatigue)
+            fat_pcnt = int(fat_pcnt * 10)
+            fat_string = colored("FP: ", "green") + "["
+            for bar in range(0,fat_pcnt):
+                fat_string += colored("█", "green")
+            for blank in range(fat_pcnt + 1, 10):
+                fat_string += " "
+            fat_string += "]"
+        else:
+            fat_string = ''
+
         print(hp_string + fat_string)
 
     def refresh_moves(self):

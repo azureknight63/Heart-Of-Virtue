@@ -60,7 +60,7 @@ class Equip(Action):
 
 class Use(Action):
     def __init__(self):
-        super().__init__(method=Player.use_item, name="Use Item", hotkey='u')
+        super().__init__(method=Player.use_item, name="Use Item", hotkey='use')
 
 class Take(Action):
     def __init__(self):

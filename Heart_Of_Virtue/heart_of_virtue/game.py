@@ -27,7 +27,7 @@ def play():
         room = world.tile_exists(player.location_x, player.location_y)
         player.current_room = room
         room.modify_player(player)
-        player.show_bars()
+        player.show_bars(True,False)
         player.refresh_moves()
         functions.check_for_enemies(room)
         functions.check_for_items(room)
@@ -52,14 +52,14 @@ def play():
                     if action_input == action.hotkey:
                         player.do_action(action, **action.kwargs)
                         break
-            elif len(count_args) == 2:
+            elif len(count_args) > 1:
                 for action in available_actions:
                     if count_args[0] == action.hotkey:
-                        try:
-                            player.do_action(action, count_args[1])
-                        except:
-                            cprint("You aren't sure exactly what you're trying to do.", 'red')
+                        join_args = ' '.join(count_args[1:])
+                        player.do_action(action, join_args)
                         break
+            else:
+                cprint("You aren't sure exactly what you're trying to do.", 'red')
         time.sleep(0.5)
 
 

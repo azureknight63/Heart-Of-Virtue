@@ -13,6 +13,7 @@ def combat(player, enemy_list):
     while True: #combat will loop until there are no aggro enemies or the player is dead
         if len(enemy_list) == 0:
             print("Victory!")
+            player.fatigue = player.maxfatigue
             break
         if player.hp <= 0:
             #todo: process player death

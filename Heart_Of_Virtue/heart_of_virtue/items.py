@@ -181,7 +181,7 @@ class Restorative(Consumable):
     def __init__(self):
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
-                                     "Drinking it seems to cause your wounds to immediately mend"
+                                     "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves",
                          value=100, weight=0.25, type="Consumable", subtype="Potion")
         self.power = 60
@@ -192,12 +192,15 @@ class Restorative(Consumable):
                         "reading, 'Restorative.'"
 
     def use(self, player):
-        print("You quaff down the restorative. The liquid burns slightly in your throat for a moment, before the"
-              "sensation is replaced with a period of numbness. You feel your limbs getting a bit lighter, your"
-              "muscles relaxing, and the myriad of scratches and cuts closing up.")
-        player.hp += (self.power * random.random(0.8, 1.2))
-        if player.hp > player.maxhp:
-            player.hp = player.maxhp
-        self.count -= 1
-        if self.count <= 0:
-            player.inventory.pop(self)
+        if player.hp < player.maxhp:
+            print("You quaff down the restorative. The liquid burns slightly in your throat for a moment, before the "
+                  "sensation is replaced with a period of numbness. You feel your limbs getting a bit lighter, your "
+                  "muscles relaxing, and the myriad of scratches and cuts closing up.")
+            player.hp += (self.power * random.uniform(0.8, 1.2))
+            if player.hp > player.maxhp:
+                player.hp = player.maxhp
+            self.count -= 1
+            if self.count <= 0:
+                player.inventory.remove(self)
+        else:
+            print("You are already at full health. You place the Restorative back in your bag.")

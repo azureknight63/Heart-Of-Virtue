@@ -18,6 +18,7 @@ class Enemy:
         self.awareness = awareness
         self.aggro = aggro
         self.exp_award = exp_award
+        #todo: set up targeting for NPCs during combat
 
     def is_alive(self):
         return self.hp > 0
