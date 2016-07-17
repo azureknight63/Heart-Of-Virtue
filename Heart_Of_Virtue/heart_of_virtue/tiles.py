@@ -2,7 +2,7 @@
 __author__ = 'Phillip Johnson'
 
 import items, enemies, actions, world
-
+from termcolor import colored
 
 class MapTile:
     """The base class for a tile within the world space"""
@@ -16,6 +16,8 @@ class MapTile:
         self.y = y
         self.enemies_here = []
         self.items_here = []
+        self.last_entered = 0 # describes the game_tick when the player last entered. Useful for monster/item respawns.
+        self.respawn_rate = 9999 # tiles which respawn enemies will adjust this number.
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
@@ -44,6 +46,10 @@ class MapTile:
         moves.append(actions.ListCommands())
         moves.append(actions.ViewInventory())
         moves.append(actions.Look())
+        moves.append(actions.View())
+        moves.append(actions.Equip())
+        moves.append(actions.Take())
+        moves.append(actions.Use())
 
         return moves
 
@@ -52,9 +58,9 @@ class MapTile:
 
 class Boundary(MapTile):
     def intro_text(self):
-        return """
+        return colored("""
         You should not be here.
-        """
+        """, "cyan")
 
     def modify_player(self, the_player):
         #Room has no action on player
@@ -62,10 +68,10 @@ class Boundary(MapTile):
 
 class StartingRoom(MapTile):
     def intro_text(self):
-        return """
+        return colored("""
         You find yourself in a cave with a flickering torch on the wall.
         You can make out four paths, each equally as dark and foreboding.
-        """
+        """, "cyan")
 
     def modify_player(self, the_player):
         #Room has no action on player
@@ -74,9 +80,9 @@ class StartingRoom(MapTile):
 
 class EmptyCavePath(MapTile):
     def intro_text(self):
-        return """
+        return colored("""
         Another unremarkable part of the cave. You must forge onwards.
-        """
+        ""","cyan")
 
     def modify_player(self, the_player):
         #Room has no action on player

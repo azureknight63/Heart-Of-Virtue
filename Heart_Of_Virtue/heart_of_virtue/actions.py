@@ -50,6 +50,21 @@ class ListCommands(Action):
     def __init__(self):
         super().__init__(method=Player.commands, name="List Commands", hotkey='c')
 
+class View(Action):
+    def __init__(self):
+        super().__init__(method=Player.view, name="View", hotkey='v')
+
+class Equip(Action):
+    def __init__(self):
+        super().__init__(method=Player.equip_item, name="Change Equipment", hotkey='q')
+
+class Use(Action):
+    def __init__(self):
+        super().__init__(method=Player.use_item, name="Use Item", hotkey='use')
+
+class Take(Action):
+    def __init__(self):
+        super().__init__(method=Player.take, name="Take Item", hotkey='take')
 
 # def commands(self):
 #     print("l: Look around\n"
