@@ -3,6 +3,8 @@ from switch import switch
 import items, functions, world, moves
 from termcolor import colored, cprint
 
+#test
+
 class Player():
     def __init__(self):
         self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
