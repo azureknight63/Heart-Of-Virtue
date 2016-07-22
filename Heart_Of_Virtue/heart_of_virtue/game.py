@@ -37,6 +37,7 @@ def play():
             combat.combat(player, combat_list)
         # Check again since the room could have changed the player's state
         if player.is_alive() and not player.victory:
+            player.stack_inv_items()
             print("\nChoose an action:\n")
             available_actions = room.adjacent_moves()
             available_moves = colored('| ', "cyan")

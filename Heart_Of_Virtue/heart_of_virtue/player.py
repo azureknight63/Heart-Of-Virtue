@@ -8,17 +8,18 @@ class Player():
         self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
         self.hp = 100
         self.maxhp = 100
-        self.fatigue = 100 #cannot perform moves without enough of this stuff
+        self.fatigue = 100  # cannot perform moves without enough of this stuff
         self.maxfatigue = 100
-        self.strength = 10 #attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
-        self.finesse = 10 #attack damage with finesse-based weapons, parry and dodge rating
-        self.speed = 10 #dodge rating, combat action frequency, combat cooldown
-        self.endurance = 10 #combat cooldown, fatigue rate
-        self.charisma = 10 #influence ability, yielding in combat
-        self.intelligence = 10 #sacred arts, influence ability, parry and dodge rating
-        self.faith = 10 #sacred arts, influence ability, dodge rating
+        self.strength = 10  # attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
+        self.finesse = 10  # attack damage with finesse-based weapons, parry and dodge rating
+        self.speed = 10  # dodge rating, combat action frequency, combat cooldown
+        self.endurance = 10  # combat cooldown, fatigue rate
+        self.charisma = 10  # influence ability, yielding in combat
+        self.intelligence = 10  # sacred arts, influence ability, parry and dodge rating
+        self.faith = 10  # sacred arts, influence ability, dodge rating
+        self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
         self.eq_weapon = None
-        self.exp = 0 #exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
+        self.exp = 0  # exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
         self.level = 0
         self.location_x, self.location_y = world.starting_position
         self.current_room = world.starting_position
@@ -27,6 +28,7 @@ class Player():
         self.current_move = None
         self.game_tick = 0
         self.heat = 1.0
+        self.protection = 0
 
         self.combat_idle_msg = [
             'You breathe heavily.',
@@ -56,10 +58,10 @@ class Player():
         Give the player amt exp, then check to see if he gained a level and act accordingly
         """
 
-    def change_heat(self, mult=1, add=0): #enforces boundaries with min and max heat levels
+    def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult
         self.heat += add
-        self.heat = int((self.heat * 100)+ 0.5) / 100.0 # enforce 2 decimals
+        self.heat = int((self.heat * 100)+ 0.5) / 100.0  # enforce 2 decimals
         if self.heat > 10:
             self.heat = 10
         if self.heat < 0.5:
@@ -79,7 +81,7 @@ class Player():
         num_gloves = 0
         num_special = 0
         while True:
-            for item in self.inventory: #get the counts of each item in each category
+            for item in self.inventory:  # get the counts of each item in each category
                 if isinstance(item, items.Gold):
                     num_gold = item.amt
                 else:
@@ -168,8 +170,6 @@ class Player():
             num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
             if inventory_selection == 'x':
                 break
-        # for item in self.inventory:
-        #     print(item, '\n')
 
     def equip_item(self):
         num_weapon = 0
@@ -367,7 +367,7 @@ class Player():
     def view(self):
         stuff_here = {}
         for i, thing in enumerate(self.current_room.enemies_here + self.current_room.items_here):
-            stuff_here[str(i+1)] = thing # The +1 is to make the list player-friendly
+            stuff_here[str(i+1)] = thing  # The +1 is to make the list player-friendly
         if len(stuff_here) > 0:
             print("What would you like to view?\n\n")
             for k, v in stuff_here.items():
@@ -381,7 +381,7 @@ class Player():
             print("You don't see anything remarkable here to look at.\n")
 
     def take(self, phrase=''):
-        if phrase == '': # player entered general take command with no args. Show a list of items that can be taken.
+        if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
             if len(self.current_room.items_here) > 0:
                 print("What are you trying to take?")
                 for i, item in enumerate(self.current_room.items_here):
@@ -411,6 +411,14 @@ class Player():
                         self.current_room.items_here.pop(i)
                         break
 
+    def stack_inv_items(self):
+        for master_item in self.inventory:  # traverse the inventory for stackable items, then stack them
+            if hasattr(master_item, "count"):
+                for duplicate_item in self.inventory:
+                    if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
+                        master_item.count += 1
+                        self.inventory.remove(duplicate_item)
+
     def commands(self):
         print(colored("l: Look around\n"
               "v: View details on a person, creature, or object\n"
@@ -421,7 +429,7 @@ class Player():
                       "Entering 'take' by itself will show a list of items in the room."
               , "blue")) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
 
-    def show_bars(self, hp=True, fp=True): #show HP and Fatigue bars
+    def show_bars(self, hp=True, fp=True):  # show HP and Fatigue bars
         if hp:
             hp_pcnt = float(self.hp) / float(self.maxhp)
             hp_pcnt = int(hp_pcnt * 10)
@@ -453,3 +461,15 @@ class Player():
         if not self.eq_weapon == None:
             self.known_moves.append(moves.Attack(self))
         #todo: if certain criteria are met, add additional moves
+
+    def refresh_protection_rating(self):
+        self.protection = (self.endurance / 10)  # base level of protection from player stats
+        for item in self.inventory:
+            if hasattr(item, "isequipped"):
+                if item.isequipped == True:  # check the protection level of all equipped items and add to base
+                    add_prot = item.protection
+                    if hasattr(item, "str_mod"):
+                        add_prot += item.str_mod * self.strength
+                    if hasattr(item, "fin_mod"):
+                        add_prot += item.fin_mod * self.finesse
+                    self.protection += add_prot

@@ -79,7 +79,9 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         power = player.eq_weapon.damage + \
                     (player.strength * player.eq_weapon.str_mod) + \
                     (player.finesse * player.eq_weapon.fin_mod)
-        prep = 1
+        prep = 50 / player.speed #starting prep of 5
+        if prep < 1:
+            prep = 1
         execute = 1
         recoil = 1 + player.eq_weapon.weight
         cooldown = 5 - (player.speed/10)
@@ -167,17 +169,20 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
 class NPC_Attack(Move): #basic attack function, NPCs only
     def __init__(self, npc):
         description = ""
-        power = npc.damage + \
-                    (player.strength * player.eq_weapon.str_mod) + \
-                    (player.finesse * player.eq_weapon.fin_mod)
-        prep = 1
+        power = (npc.damage * random.uniform(0.8, 1.2)) - npc.target.protection
+        if power < 0:
+            power = 0
+        prep = 50 / npc.speed
+        if prep < 1:
+            prep = 1
         execute = 1
-        recoil = 1 + player.eq_weapon.weight
-        cooldown = 5 - (player.speed/10)
+        recoil = 50 / npc.speed
+        if recoil < 0:
+            recoil = 0
+        cooldown = 5 - (npc.speed/10)
         if cooldown < 0:
             cooldown = 0
-        weapon = player.eq_weapon.name
-        fatigue_cost = 100 - (5 * player.endurance)
+        fatigue_cost = 100 - (5 * npc.endurance)
         if fatigue_cost <= 10:
             fatigue_cost = 10
         super().__init__(name="Attack", description=description, xp_gain=1, heat_gain= 0.1, current_stage=0,

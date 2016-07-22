@@ -185,9 +185,9 @@ class Restorative(Consumable):
                                      "themselves",
                          value=100, weight=0.25, type="Consumable", subtype="Potion")
         self.power = 60
-        self.count = 1  # this will allow stacking of homogeneous items. When the player acquires this in inventory,
+        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
-                        # then removes this object todo: implement item stacking on item pickup
+                        # then removes this object
         self.announce = "You notice a small glass bottle on the ground with an odd pink fluid inside and a label " \
                         "reading, 'Restorative.'"
 
