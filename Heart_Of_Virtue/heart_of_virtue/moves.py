@@ -105,7 +105,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         print(self.stage_announce[1])
         hit_chance = 95 - self.target.finesse + player.finesse
         roll = random.randint(0, 100)
-        damage = ((self.power - self.target.armor) * player.heat) * random.uniform(0.8, 1.2)
+        damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         damage = int(damage)
         if hit_chance >= roll: #a hit!
             print(colored(self.target.name, "magenta") + colored(" was struck for ", "yellow") +
@@ -169,45 +169,49 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
 class NPC_Attack(Move): #basic attack function, NPCs only
     def __init__(self, npc):
         description = ""
-        power = (npc.damage * random.uniform(0.8, 1.2)) - npc.target.protection
-        if power < 0:
-            power = 0
+        power = (npc.damage * random.uniform(0.8, 1.2))
+
         prep = 50 / npc.speed
         if prep < 1:
             prep = 1
+
         execute = 1
+
         recoil = 50 / npc.speed
         if recoil < 0:
             recoil = 0
+
         cooldown = 5 - (npc.speed/10)
         if cooldown < 0:
             cooldown = 0
+
         fatigue_cost = 100 - (5 * npc.endurance)
         if fatigue_cost <= 10:
             fatigue_cost = 10
+
         super().__init__(name="Attack", description=description, xp_gain=1, heat_gain= 0.1, current_stage=0,
                          stage_beat=[prep,execute,recoil,cooldown], targeted=True,
-                         stage_announce=["You wind up for a strike...",
-                                         colored("You strike with your " + weapon + "!", "green"),
-                                         "You brace yourself as your weapon recoils.",
-                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player)
+                         stage_announce=[colored("{} coils in preparation for an attack!".format(npc.name), "red",
+                                         colored("{} lashes out at you with extreme violence!".format(npc.name), "red")),
+                                         "{} recoils from the attack.".format(npc.name),
+                                         ""],
+                         fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=npc.target, user=npc)
         self.power = power
 
-    def execute(self, player):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
+    def execute(self, npc):
         print(self.stage_announce[1])
-        hit_chance = 95 - self.target.finesse + player.finesse
+        hit_chance = 95 - self.target.finesse + npc.finesse
         roll = random.randint(0, 100)
-        damage = ((self.power - self.target.armor) * player.heat) * random.uniform(0.8, 1.2)
+        damage = (self.power - self.target.protection)
         damage = int(damage)
         if hit_chance >= roll: #a hit!
-            print(colored(self.target.name, "magenta") + colored(" was struck for ", "yellow") +
+            print(colored(self.user.name, "magenta") + colored(" hit you for ", "yellow") +
                   colored(damage, "red") + colored(" damage!", "yellow"))
             self.target.hp -= damage
-            # print("######{}'s HP is {}".format(self.target.name, self.target.hp)) #debug msg
-            player.change_heat(1.25)
+            self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to
+            #  maxhp
         else:
-            print(colored("Just missed!", "white"))
+            print(colored("Just missed!", "white")) #todo finish this
             player.change_heat(0.75)
         player.fatigue -= self.fatigue_cost
