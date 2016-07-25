@@ -6,7 +6,7 @@ import random
 
 class Move: #master class for all moves
     def __init__(self, name, description, xp_gain, heat_gain, current_stage, beats_left,
-                 stage_announce, fatigue_cost, target, user, stage_beat, targeted):
+                 stage_announce, target, user, stage_beat, targeted, fatigue_cost=0):
         self.name = name
         self.description = description
         self.xp_gain = xp_gain
@@ -16,9 +16,11 @@ class Move: #master class for all moves
         self.beats_left = beats_left
         self.stage_announce = stage_announce
         self.fatigue_cost = fatigue_cost
-        self.target = target # can be the same as the user in abilities with no targets
+        self.target = target  # can be the same as the user in abilities with no targets
         self.user = user
-        self.targeted = targeted # Is the move targeted at something?
+        self.targeted = targeted  # Is the move targeted at something?
+        self.interrupted = False  # When a move is interrupted, skip all remaining actions for that move, set the
+        # move's cooldown
 
     def process_stage(self,player):
         if player.current_move == self:
@@ -29,7 +31,8 @@ class Move: #master class for all moves
             elif self.current_stage == 2:
                 self.recoil(player)
             elif self.current_stage == 3:
-                self.cooldown(player)  # the cooldown stage will typically never be rewritten, so this will usually just pass
+                self.cooldown(player)  # the cooldown stage will typically never be rewritten,
+                # so this will usually just pass
 
     def cast(self, player): # this is what happens when the ability is first chosen by the player
         self.current_stage = 0 # initialize prep stage
@@ -37,22 +40,27 @@ class Move: #master class for all moves
         self.beats_left = self.stage_beat[0]
 
     def advance(self, player):
-        if player.current_move == self or self.current_stage == 3: # only advance the move if it's the player's current move or if it's in cooldown
+        if player.current_move == self or self.current_stage == 3: # only advance the move if it's the player's
+            # current move or if it's in cooldown
             if self.beats_left > 0:
                 self.beats_left -= 1
             else:
-                while self.beats_left == 0: # this loop will advance stages until the current stage has a beat count, effectively skipping unused stages
+                while self.beats_left == 0: # this loop will advance stages until the current stage has a beat count,
+                    # effectively skipping unused stages
                     self.process_stage(player)
                     self.current_stage += 1  # switch to next stage
-                    if self.current_stage == 3: # when the move enters cooldown, detach it from the player so he can do something else.
+                    if self.current_stage == 3: # when the move enters cooldown, detach it from the player so he can
+                        # do something else.
                         player.current_move = None
-                    if self.current_stage > 3: # if the move is coming out of cooldown, switch back to the prep stage and break the while loop
+                    if self.current_stage > 3: # if the move is coming out of cooldown, switch back to the prep stage
+                        # and break the while loop
                         self.current_stage = 0
                         self.beats_left = self.stage_beat[self.current_stage]
                         break
                     self.beats_left = self.stage_beat[self.current_stage] # set beats remaining for current stage
 
-    def prep(self, player): #what happens during these stages. Each move will overwrite prep/execute/recoil/cooldown depending on whether something is supposed to happen at that stage
+    def prep(self, player): #what happens during these stages. Each move will overwrite prep/execute/recoil/cooldown
+        # depending on whether something is supposed to happen at that stage
         # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
         if self.beats_left == self.stage_beat[0]:
             print(self.stage_announce[0])
@@ -103,7 +111,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
     def execute(self, player):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
-        hit_chance = 95 - self.target.finesse + player.finesse
+        hit_chance = (95 - self.target.finesse) + self.user.finesse
         roll = random.randint(0, 100)
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         damage = int(damage)
@@ -116,9 +124,9 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         else:
             print(colored("Just missed!", "white"))
             player.change_heat(0.75)
-        player.fatigue -= self.fatigue_cost
+        self.user.fatigue -= self.fatigue_cost
 
-class Rest(Move): #basic attack function, always uses equipped weapon
+class Rest(Move):  # standard rest to restore fatigue.
     def __init__(self, player):
         description = "Rest for a moment to restore fatigue."
         prep = 0
@@ -167,7 +175,7 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
 ### NPC MOVES ###
 
 class NPC_Attack(Move): #basic attack function, NPCs only
-    def __init__(self, npc):
+    def __init__(self, npc):  #todo Fix this - getting an error; something to do with targeting
         description = ""
         power = (npc.damage * random.uniform(0.8, 1.2))
 
@@ -189,10 +197,10 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         if fatigue_cost <= 10:
             fatigue_cost = 10
 
-        super().__init__(name="Attack", description=description, xp_gain=1, heat_gain= 0.1, current_stage=0,
+        super().__init__(name="NPC_Attack", description=description, xp_gain=1, heat_gain= 0.1, current_stage=0,
                          stage_beat=[prep,execute,recoil,cooldown], targeted=True,
-                         stage_announce=[colored("{} coils in preparation for an attack!".format(npc.name), "red",
-                                         colored("{} lashes out at you with extreme violence!".format(npc.name), "red")),
+                         stage_announce=[colored("{} coils in preparation for an attack!".format(npc.name), "red"),
+                                         colored("{} lashes out at you with extreme violence!".format(npc.name), "red"),
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
@@ -201,7 +209,7 @@ class NPC_Attack(Move): #basic attack function, NPCs only
 
     def execute(self, npc):
         print(self.stage_announce[1])
-        hit_chance = 95 - self.target.finesse + npc.finesse
+        hit_chance = (95 - self.target.finesse)  # + self.user.finesse
         roll = random.randint(0, 100)
         damage = (self.power - self.target.protection)
         damage = int(damage)
@@ -212,6 +220,51 @@ class NPC_Attack(Move): #basic attack function, NPCs only
             self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to
             #  maxhp
         else:
-            print(colored("Just missed!", "white")) #todo finish this
-            player.change_heat(0.75)
-        player.fatigue -= self.fatigue_cost
+            print(colored("{}'s attack just missed!".format(self.user.name), "white")) #todo finish this
+        self.user.fatigue -= self.fatigue_cost
+
+class NPC_Rest(Move):  # standard rest to restore fatigue for NPCs.
+    def __init__(self, npc):
+        description = "Rest for a moment to restore fatigue."
+        prep = 0
+        execute = 1
+        recoil = 2
+        cooldown = 0
+        fatigue_cost = 0
+        super().__init__(name="Rest", description=description, xp_gain=0, heat_gain=0.0, current_stage=0,
+                         targeted=False,
+                         stage_beat=[prep,execute,recoil,cooldown],
+                         stage_announce=["{} rests for a moment.".format(npc.name),
+                                         colored("{} is resting.".format(npc.name), "white"),
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost,
+                         beats_left=execute, target=npc, user=npc)
+
+    def execute(self, npc):
+        print(self.stage_announce[1])
+        recovery_amt = (self.user.maxfatigue * 0.25) * random.uniform(0.8, 1.2)
+        recovery_amt = int(recovery_amt)
+        if recovery_amt > self.user.maxfatigue - self.user.fatigue:
+            recovery_amt = self.user.maxfatigue - self.user.fatigue
+        self.user.fatigue += recovery_amt
+
+
+class NPC_Idle(Move):  # NPC does nothing for a few beats.
+    def __init__(self, npc):
+        description = "What?"
+        prep = 0
+        execute = 3
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 0
+        super().__init__(name="Idle", description=description, xp_gain=0, heat_gain=0.0, current_stage=0,
+                         targeted=False,
+                         stage_beat=[prep,execute,recoil,cooldown],
+                         stage_announce=["",
+                                         str(npc.name + " " + npc.idle_message),
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost,
+                         beats_left=execute, target=npc, user=npc)
+
+    def execute(self, npc):
+        print(self.stage_announce[1])

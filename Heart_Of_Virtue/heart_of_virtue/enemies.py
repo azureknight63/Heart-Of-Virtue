@@ -1,5 +1,5 @@
 import random
-import genericng
+import genericng, moves
 
 class Enemy:
     def __init__(self, name, description, damage, aggro, exp_award,
@@ -30,10 +30,21 @@ class Enemy:
         self.faith = faith
         self.fatigue = self.maxfatigue
         self.target = target
-        #todo: set up targeting for NPCs during combat
+        self.known_moves = [moves.NPC_Rest(self)]
+        self.current_move = None
 
     def is_alive(self):
         return self.hp > 0
+
+    def select_move(self):
+
+        #  simple random selection
+        num_choices = len(self.known_moves) - 1
+        while self.current_move == None:
+            choice = random.randint(0, num_choices)
+            if self.known_moves[choice].fatigue_cost <= self.fatigue:
+                self.current_move = self.known_moves[choice]
+
 
 
 class Slime(Enemy):  # target practice
@@ -43,6 +54,8 @@ class Slime(Enemy):  # target practice
                          damage=1, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
                          alert_message=" burbles angrily at you!")
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Idle(self))
 
 class RockRumbler(Enemy):
     def __init__(self):

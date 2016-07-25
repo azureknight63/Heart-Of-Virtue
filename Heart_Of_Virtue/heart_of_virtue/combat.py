@@ -70,7 +70,14 @@ def combat(player, enemy_list):
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
                 player.current_room.enemies_here.remove(enemy)
                 enemy_list.remove(enemy)
-                # print("##### " + str(len(enemy_list)) + "enemies left") # debug message
+            else:
+                if enemy.current_move == None:
+                    enemy.target = player
+                    enemy.select_move()
+                    enemy.current_move.cast(enemy)
+
+            for move in enemy.known_moves:
+                move.advance(enemy)
 
         player.combat_idle()
 
