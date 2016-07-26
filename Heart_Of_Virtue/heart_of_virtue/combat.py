@@ -74,10 +74,11 @@ def combat(player, enemy_list):
                 if enemy.current_move == None:
                     enemy.target = player
                     enemy.select_move()
+                    enemy.current_move.target = player
                     enemy.current_move.cast(enemy)
 
-            for move in enemy.known_moves:
-                move.advance(enemy)
+                for move in enemy.known_moves:
+                    move.advance(enemy)
 
         player.combat_idle()
 

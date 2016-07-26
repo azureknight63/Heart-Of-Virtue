@@ -29,6 +29,7 @@ class Player():
         self.game_tick = 0
         self.heat = 1.0
         self.protection = 0
+        self.states = []
 
         self.combat_idle_msg = [
             'You breathe heavily.',
@@ -49,7 +50,7 @@ class Player():
 
     def combat_idle(self):
         chance = random.randint(0,100)
-        if chance > 96:
+        if chance > 98:
             message = random.randint(0,len(self.combat_idle_msg))
             print(self.combat_idle_msg[message])
 

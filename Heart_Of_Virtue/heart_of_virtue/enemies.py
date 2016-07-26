@@ -32,6 +32,7 @@ class Enemy:
         self.target = target
         self.known_moves = [moves.NPC_Rest(self)]
         self.current_move = None
+        self.states = []
 
     def is_alive(self):
         return self.hp > 0
@@ -43,14 +44,13 @@ class Enemy:
         while self.current_move == None:
             choice = random.randint(0, num_choices)
             if self.known_moves[choice].fatigue_cost <= self.fatigue:
-                self.current_move = self.known_moves[choice]
-
+                self.current_move = self.known_moves[choice]  #todo make this a little more complex...
 
 
 class Slime(Enemy):  # target practice
     def __init__(self):
         description = "Goop that moves. Gross."
-        super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=30,
+        super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=75,
                          damage=1, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
                          alert_message=" burbles angrily at you!")
