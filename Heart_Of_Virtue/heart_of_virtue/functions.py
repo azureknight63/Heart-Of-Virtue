@@ -1,6 +1,6 @@
 import string, textwrap, os
 import sys, time, random
-import enemies, tiles, moves
+import npc, tiles, moves
 from player import Player
 from termcolor import colored
 
