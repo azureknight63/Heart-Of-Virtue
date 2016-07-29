@@ -58,3 +58,16 @@ def is_input_integer(input): #useful for checking to see if the player's input c
         return True
     except ValueError:
         return False
+
+
+def reset_stats(target):  # resets all stats to base level
+    target.strength = target.strength_base
+    target.finesse = target.finesse_base
+    target.maxhp = target.maxhp_base
+    target.maxfatigue = target.maxfatigue_base
+    target.speed = target.speed_base
+    target.endurance = target.endurance_base
+    target.charisma = target.charisma_base
+    target.intelligence = target.intelligence_base
+    target.faith = target.faith_base
+    target.resistance = target.resistance_base

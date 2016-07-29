@@ -10,6 +10,9 @@ def combat(player, enemy_list):
     """
     beat = 0 # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     player.heat = 1.0 # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
+    player.in_combat = True
+    for enemy in enemy_list:
+        enemy.in_combat = True
     while True: #combat will loop until there are no aggro enemies or the player is dead
         if len(enemy_list) == 0:
             print("Victory!")
@@ -80,7 +83,12 @@ def combat(player, enemy_list):
                 for move in enemy.known_moves:
                     move.advance(enemy)
 
+                enemy.cycle_states()
+
         player.combat_idle()
+
+        player.cycle_states()
 
         time.sleep(0.5)
         beat += 1
+    player.in_combat = False

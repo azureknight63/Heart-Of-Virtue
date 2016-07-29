@@ -8,16 +8,26 @@ class Player():
         self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
         self.hp = 100
         self.maxhp = 100
+        self.maxhp_base = 100
         self.fatigue = 100  # cannot perform moves without enough of this stuff
         self.maxfatigue = 100
+        self.maxfatigue_base = 100
         self.strength = 10  # attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
+        self.strength_base = 10
         self.finesse = 10  # attack damage with finesse-based weapons, parry and dodge rating
+        self.finesse_base = 10
         self.speed = 10  # dodge rating, combat action frequency, combat cooldown
+        self.speed_base = 10
         self.endurance = 10  # combat cooldown, fatigue rate
+        self.endurance_base = 10
         self.charisma = 10  # influence ability, yielding in combat
+        self.charisma_base = 10
         self.intelligence = 10  # sacred arts, influence ability, parry and dodge rating
+        self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rating
+        self.faith_base = 10
         self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
+        self.resistance_base = [0,0,0,0,0,0]
         self.eq_weapon = None
         self.exp = 0  # exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
         self.level = 0
@@ -30,6 +40,7 @@ class Player():
         self.heat = 1.0
         self.protection = 0
         self.states = []
+        self.in_combat = False
 
         self.combat_idle_msg = [
             'You breathe heavily.',
@@ -47,6 +58,10 @@ class Player():
             'You mutter a quick prayer under your breath.',
             'You briefly recall your mother folding laundry and humming softly to herself.',
             ]
+
+    def cycle_states(self):
+        for state in self.states:
+            state.process(self)
 
     def combat_idle(self):
         chance = random.randint(0,100)
@@ -474,3 +489,47 @@ class Player():
                     if hasattr(item, "fin_mod"):
                         add_prot += item.fin_mod * self.finesse
                     self.protection += add_prot
+
+    def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
+        functions.reset_stats(self)
+        bonuses = ["add_str", "add_fin", "add_maxhp", "add_maxfatigue", "add_speed", "add_endurance", "add_charisma",
+                   "add_intelligence", "add_faith", "add_resistance"]
+        adder_group = []
+        for item in self.inventory:
+            if hasattr(item, "is_equipped"):
+                if item.is_equipped:
+                    for bonus in bonuses:
+                        if hasattr(item, bonus):
+                            adder_group.append(item)
+                            break
+        for state in self.states:
+            for bonus in bonuses:
+                if hasattr(state, bonus):
+                    adder_group.append(state)
+                    break
+        for adder in adder_group:
+            if hasattr(adder, bonuses[0]):
+                self.strength += adder.add_str
+            if hasattr(adder, bonuses[1]):
+                self.finesse += adder.add_fin
+            if hasattr(adder, bonuses[2]):
+                self.maxhp += adder.add_maxhp
+            if hasattr(adder, bonuses[3]):
+                self.maxfatigue += adder.add_maxfatigue
+            if hasattr(adder, bonuses[4]):
+                self.speed += adder.add_speed
+            if hasattr(adder, bonuses[5]):
+                self.endurance += adder.add_endurance
+            if hasattr(adder, bonuses[6]):
+                self.charisma += adder.add_charisma
+            if hasattr(adder, bonuses[7]):
+                self.intelligence += adder.add_intelligence
+            if hasattr(adder, bonuses[8]):
+                self.faith += adder.add_faith
+            if hasattr(adder, bonuses[9]):
+                for i, v in enumerate(self.resistance):
+                    self.resistance[i] += adder.add_resistance[i]
+
+        #todo add some states or items that modify stats to test this
+
+
