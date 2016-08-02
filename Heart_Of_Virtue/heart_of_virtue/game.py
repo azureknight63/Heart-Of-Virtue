@@ -11,7 +11,7 @@ print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
     world.load_tiles()
-    world.place_enemies() #loads the default enemies into world tiles
+    world.place_npcs() #loads the default enemies into world tiles
     world.place_items() #same thing for items
     player = Player()
     room = world.tile_exists(player.location_x, player.location_y)
@@ -33,7 +33,7 @@ def play():
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)
         if len(combat_list) > 0: # Check the state of the room to see if there are any enemies
-            print(colored("You ready yourself for battle!","red"))
+            print(colored("Jean readies himself for battle!","red"))
             combat.combat(player, combat_list)
         # Check again since the room could have changed the player's state
         if player.is_alive() and not player.victory:
@@ -60,7 +60,7 @@ def play():
                         player.do_action(action, join_args)
                         break
             else:
-                cprint("You aren't sure exactly what you're trying to do.", 'red')
+                cprint("Jean isn't sure exactly what he's trying to do.", 'red')
         time.sleep(0.5)
 
 

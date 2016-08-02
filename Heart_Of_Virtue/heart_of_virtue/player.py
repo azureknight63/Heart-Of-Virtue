@@ -6,6 +6,8 @@ from termcolor import colored, cprint
 class Player():
     def __init__(self):
         self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
+        self.name = "Jean"
+        self.name_long = "Jean Claire"
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
@@ -43,21 +45,35 @@ class Player():
         self.in_combat = False
 
         self.combat_idle_msg = [
-            'You breathe heavily.',
-            'You anxiously shift your weight back and forth.',
-            'You stomp your foot impatiently.',
-            'You carefully consider your enemy.',
-            'You spit on the ground.',
-            'A bead of sweat runs down your brow.',
-            'You become conscious of your own heart beating loudly.',
-            'In a flash, you remember the face of your dear, sweet Amelia smiling at you.',
-            'With a smug grin, you wonder how you got yourself into this mess.',
-            'Sweat drips into your eye, causing you to blink rapidly.',
-            'You miss the sound of your daughter laughing happily.',
-            'You recall the sensation of consuming the Eucharist and wonder when - if - that might happen again.',
-            'You mutter a quick prayer under your breath.',
-            'You briefly recall your mother folding laundry and humming softly to herself.',
+            'Jean breathes heavily.',
+            'Jean anxiously shifts his weight back and forth.',
+            'Jean stomps his foot impatiently.',
+            'Jean carefully considers his enemy.',
+            'Jean spits on the ground.',
+            "A bead of sweat runs down Jean's brow.",
+            'Jean becomes conscious of his own heart beating loudly.',
+            'In a flash, Jean remembers the face of his dear, sweet Amelia smiling at him.',
+            'With a smug grin, Jean wonders how he got himself into this mess.',
+            "Sweat drips into Jean's eye, causing him to blink rapidly.",
+            'Jean misses the sound of his daughter laughing happily.',
+            'Jean recalls the sensation of consuming the Eucharist and wonders when - if - that might happen again.',
+            'Jean mutters a quick prayer under his breath.',
+            'Jean briefly recalls his mother folding laundry and humming softly to herself.',
             ]
+
+        self.combat_hurt_msg = [
+            'Jean tastes blood in his mouth and spits it out.',
+            'Jean winces in pain.',
+            'Jean grimaces.',
+            "There's a loud ringing in Jean's ears.",
+            'Jean staggers for a moment.',
+            "Jean's body shudders from the abuse it's received.",
+            'Jean coughs spasmodically.',
+            "A throbbing heading sears into Jean's consciousness."
+            "Jean's vision becomes cloudy and unfocused for a moment.",
+            'Jean vomits blood and bile onto the ground.',
+            '''Jean whispers quietly, "Amelia... Regina...''',
+        ]
 
     def cycle_states(self):
         for state in self.states:
@@ -259,14 +275,14 @@ class Player():
                             answer = input("Would you like to remove it? (y/n) ")
                             if answer == 'y':
                                 e_item.isequipped = False
-                                print("You put {} back into your bag.".format(e_item.name))
+                                print("Jean puts {} back into his bag.".format(e_item.name))
                         else:
                             for item in self.inventory:
                                 if e_item.type == item.type and item.isequipped == True:
                                     item.isequipped = False
-                                    print("You put {} back into your bag.".format(item.name))
+                                    print("Jean puts {} back into his bag.".format(item.name))
                             e_item.isequipped = True
-                            print("You equipped {}!".format(e_item.name))
+                            print("Jean equipped {}!".format(e_item.name))
                         break
 
             num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
@@ -319,7 +335,7 @@ class Player():
                         continue
                     for i, item in enumerate(choices):
                         if i == int(inventory_selection):
-                            print("You used {}!".format(item.name))
+                            print("Jean used {}!".format(item.name))
                             item.use(self)
                             break
 
@@ -382,7 +398,7 @@ class Player():
 
     def view(self):
         stuff_here = {}
-        for i, thing in enumerate(self.current_room.enemies_here + self.current_room.items_here):
+        for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here):
             stuff_here[str(i+1)] = thing  # The +1 is to make the list player-friendly
         if len(stuff_here) > 0:
             print("What would you like to view?\n\n")
@@ -394,7 +410,7 @@ class Player():
             else:
                 print("Invalid selection.")
         else:
-            print("You don't see anything remarkable here to look at.\n")
+            print("Jean doesn't see anything remarkable here to look at.\n")
 
     def take(self, phrase=''):
         if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
@@ -404,18 +420,18 @@ class Player():
                     print('{}: {}\n'.format(i,item.name))
                 selection = input('Selection: ')
                 if not functions.is_input_integer(selection):
-                    cprint("You aren't sure exactly what you're trying to do.", 'red')
+                    cprint("JEan isn't sure exactly what he's trying to do.", 'red')
                 else:
                     self.inventory.append(self.current_room.items_here[int(selection)])
-                    print('You take {}.'.format(self.current_room.items_here[int(selection)].name))
+                    print('Jean takes {}.'.format(self.current_room.items_here[int(selection)].name))
                     self.current_room.items_here.pop(int(selection))
             else:
-                cprint("There doesn't seem to be anything here for you to take.", 'red')
+                cprint("There doesn't seem to be anything here for Jean to take.", 'red')
         else:
             if phrase == 'all':
                 for item in self.current_room.items_here:
                     self.inventory.append(item)
-                    print('You take {}.'.format(item.name))
+                    print('Jean takes {}.'.format(item.name))
                 self.current_room.items_here = []
             else:
                 lower_phrase = phrase.lower()
@@ -423,7 +439,7 @@ class Player():
                     search_item = item.name.lower() + ' ' + item.announce.lower()
                     if lower_phrase in search_item:
                         self.inventory.append(item)
-                        print('You take {}.'.format(item.name))
+                        print('Jean takes {}.'.format(item.name))
                         self.current_room.items_here.pop(i)
                         break
 

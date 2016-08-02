@@ -1,7 +1,7 @@
 """Describes the tiles in the world space."""
 __author__ = 'Phillip Johnson'
 
-import items, enemies, actions, world
+import items, npc, actions, world
 from termcolor import colored
 
 class MapTile:
@@ -14,7 +14,7 @@ class MapTile:
         """
         self.x = x
         self.y = y
-        self.enemies_here = []
+        self.npcs_here = []
         self.items_here = []
         self.last_entered = 0 # describes the game_tick when the player last entered. Useful for monster/item respawns.
         self.respawn_rate = 9999 # tiles which respawn enemies will adjust this number.
@@ -53,8 +53,8 @@ class MapTile:
 
         return moves
 
-    def spawn_enemy(self, enemy_type):
-        enemies.enemy_type(location=(self.x,self.y))
+    def spawn_npc(self, npc_type):
+        npc.npc_type(location=(self.x,self.y))
 
 class Boundary(MapTile):
     def intro_text(self):
@@ -69,8 +69,8 @@ class Boundary(MapTile):
 class StartingRoom(MapTile):
     def intro_text(self):
         return colored("""
-        You find yourself in a cave with a flickering torch on the wall.
-        You can make out four paths, each equally as dark and foreboding.
+        Jean finds himself in a cave with a flickering torch on the wall.
+        He can make out four paths, each equally as dark and foreboding.
         """, "cyan")
 
     def modify_player(self, the_player):
@@ -81,7 +81,7 @@ class StartingRoom(MapTile):
 class EmptyCavePath(MapTile):
     def intro_text(self):
         return colored("""
-        Another unremarkable part of the cave. You must forge onwards.
+        Another unremarkable part of the cave. Jean must forge onwards.
         ""","cyan")
 
     def modify_player(self, the_player):

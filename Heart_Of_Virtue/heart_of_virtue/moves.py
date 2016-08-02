@@ -103,9 +103,9 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
             fatigue_cost = 10
         super().__init__(name="Attack", description=description, xp_gain=1, heat_gain= 0.1, current_stage=0,
                          stage_beat=[prep,execute,recoil,cooldown], targeted=True,
-                         stage_announce=["You wind up for a strike...",
-                                         colored("You strike with your " + weapon + "!", "green"),
-                                         "You brace yourself as your weapon recoils.",
+                         stage_announce=["Jean winds up for a strike...",
+                                         colored("Jean strikes with his " + weapon + "!", "green"),
+                                         "Jean braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = power
@@ -139,8 +139,8 @@ class Rest(Move):  # standard rest to restore fatigue.
         super().__init__(name="Rest", description=description, xp_gain=0, heat_gain=0.1, current_stage=0,
                          targeted=False,
                          stage_beat=[prep,execute,recoil,cooldown],
-                         stage_announce=["You relax your muscles for a moment.",
-                                         colored("You are resting.", "green"),
+                         stage_announce=["Jean relaxes his muscles for a moment.",
+                                         colored("Jean is resting.", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
                          beats_left=execute, target=player, user=player)
@@ -165,9 +165,9 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
         super().__init__(name="Use Item", description=description, xp_gain=0, heat_gain=0.0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep,execute,recoil,cooldown],
-                         stage_announce=["You open your bag.",
+                         stage_announce=["JEan opens his bag.",
                                          "",
-                                         "You close your bag.",
+                                         "Jean closes his bag.",
                                          ""], fatigue_cost=fatigue_cost,
                          beats_left=execute, target=player, user=player)
 
@@ -202,7 +202,8 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         super().__init__(name="NPC_Attack", description=description, xp_gain=1, heat_gain= 0.1, current_stage=0,
                          stage_beat=[prep,execute,recoil,cooldown], targeted=True,
                          stage_announce=[colored("{} coils in preparation for an attack!".format(npc.name), "red"),
-                                         colored("{} lashes out at you with extreme violence!".format(npc.name), "red"),
+                                         colored("{} lashes out at {} with "
+                                                 "extreme violence!".format(npc.name, self.target.name), "red"),
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
@@ -216,13 +217,13 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         damage = (self.power - self.target.protection)
         damage = int(damage)
         if hit_chance >= roll: #a hit!
-            print(colored(self.user.name, "magenta") + colored(" hit you for ", "yellow") +
+            print(colored(self.user.name, "magenta") + colored(" hit {} for ", "yellow".format(self.target.name)) +
                   colored(damage, "red") + colored(" damage!", "yellow"))
             self.target.hp -= damage
             self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to
             #  maxhp
         else:
-            print(colored("{}'s attack just missed!".format(self.user.name), "white")) #todo finish this
+            print(colored("{}'s attack just missed!".format(self.user.name), "white"))  # todo finish this
         self.user.fatigue -= self.fatigue_cost
 
 class NPC_Rest(Move):  # standard rest to restore fatigue for NPCs.

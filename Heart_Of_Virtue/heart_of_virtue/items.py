@@ -188,13 +188,13 @@ class Restorative(Consumable):
         self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
-        self.announce = "You notice a small glass bottle on the ground with an odd pink fluid inside and a label " \
+        self.announce = "Jean notices a small glass bottle on the ground with an odd pink fluid inside and a label " \
                         "reading, 'Restorative.'"
 
     def use(self, player):
         if player.hp < player.maxhp:
-            print("You quaff down the restorative. The liquid burns slightly in your throat for a moment, before the "
-                  "sensation is replaced with a period of numbness. You feel your limbs getting a bit lighter, your "
+            print("Jean quaffs down the restorative. The liquid burns slightly in his throat for a moment, before the "
+                  "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his "
                   "muscles relaxing, and the myriad of scratches and cuts closing up.")
             player.hp += (self.power * random.uniform(0.8, 1.2))
             if player.hp > player.maxhp:
@@ -203,4 +203,4 @@ class Restorative(Consumable):
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            print("You are already at full health. You place the Restorative back in your bag.")
+            print("Jean is already at full health. He places the Restorative back into his bag.")

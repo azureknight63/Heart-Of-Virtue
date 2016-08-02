@@ -61,9 +61,9 @@ def combat(player, enemy_list):
                             player.current_move.target = player
                         player.current_move.cast(player)
                     elif player.fatigue < move.fatigue_cost:
-                        cprint("You'll need to rest a bit before you can do that.", "red")
+                        cprint("Jean will need to rest a bit before he can do that.", "red")
                     elif move.current_stage == 3:
-                        cprint("You're not yet ready to do that again.", "red")
+                        cprint("Jean's not yet ready to do that again.", "red")
 
         for move in player.known_moves: #advances moves one beat along the path toward cooldown zero.
             move.advance(player)
@@ -71,7 +71,7 @@ def combat(player, enemy_list):
         for i, enemy in enumerate(enemy_list):
             if not enemy.is_alive():
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
-                player.current_room.enemies_here.remove(enemy)
+                player.current_room.npcs_here.remove(enemy)
                 enemy_list.remove(enemy)
             else:
                 if enemy.current_move == None:

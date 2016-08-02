@@ -6,7 +6,7 @@ class NPC:
                  inventory = None, maxhp = 100, protection = 0, speed = 10, finesse = 10,
                  awareness = 10, maxfatigue = 100, endurance = 10, strength = 10, charisma = 10, intelligence = 10,
                  faith = 10,
-                 idle_message = ' is shuffling about.', alert_message = 'glares sharply at you!', target = None):
+                 idle_message = ' is shuffling about.', alert_message = 'glares sharply at Jean!', target = None):
         self.name = name
         self.description = description
         self.inventory = inventory
@@ -71,7 +71,7 @@ class Slime(NPC):  # target practice
         super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=75,
                          damage=1, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
-                         alert_message=" burbles angrily at you!")
+                         alert_message=" burbles angrily at Jean!")
         self.known_moves.append(moves.NPC_Attack(self))
         self.known_moves.append(moves.NPC_Idle(self))
 

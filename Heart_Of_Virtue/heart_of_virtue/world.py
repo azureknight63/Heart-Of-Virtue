@@ -1,6 +1,6 @@
 __author__ = 'Phillip Johnson'
 
-import functions, enemies, items, random
+import functions, npc, items, random
 
 _world = {}
 starting_position = (0, 0)
@@ -28,7 +28,7 @@ def load_tiles():
                 starting_position = (x, y)
             _world[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(x, y)
 
-def place_enemies():
+def place_npcs():
     for tile in _world:
         if _world[tile] != None:
             x = _world[tile].x
@@ -37,11 +37,11 @@ def place_enemies():
             rock_rumblers = [(3,4)]
             for i,v in enumerate(rock_rumblers):
                 if x == rock_rumblers[i][0] and y == rock_rumblers[i][1]:
-                    functions.spawn_enemy(enemies.RockRumbler(), _world[tile])
+                    functions.spawn_npc(npc.RockRumbler(), _world[tile])
             slimes = [(1,4)]
             for i,v in enumerate(slimes):
                 if x == slimes[i][0] and y == slimes[i][1]:
-                    functions.spawn_enemy(enemies.Slime(), _world[tile])
+                    functions.spawn_npc(npc.Slime(), _world[tile])
 
 def place_items():
     for tile in _world:
