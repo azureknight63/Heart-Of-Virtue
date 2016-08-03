@@ -1,5 +1,5 @@
 import random
-import genericng, moves
+import genericng, moves, functions
 
 class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
@@ -46,6 +46,7 @@ class NPC:
         self.known_moves = [moves.NPC_Rest(self)]
         self.current_move = None
         self.states = []
+        self.inventory = []
         self.in_combat = False
 
     def is_alive(self):
@@ -65,15 +66,60 @@ class NPC:
                 self.current_move = self.known_moves[choice]  #todo make this a little more complex...
 
 
+    def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
+        functions.reset_stats(self)
+        bonuses = ["add_str", "add_fin", "add_maxhp", "add_maxfatigue", "add_speed", "add_endurance", "add_charisma",
+                   "add_intelligence", "add_faith", "add_resistance"]
+        adder_group = []
+        for item in self.inventory:
+            if hasattr(item, "is_equipped"):
+                if item.is_equipped:
+                    for bonus in bonuses:
+                        if hasattr(item, bonus):
+                            adder_group.append(item)
+                            break
+        for state in self.states:
+            for bonus in bonuses:
+                if hasattr(state, bonus):
+                    adder_group.append(state)
+                    break
+        for adder in adder_group:
+            if hasattr(adder, bonuses[0]):
+                self.strength += adder.add_str
+            if hasattr(adder, bonuses[1]):
+                self.finesse += adder.add_fin
+            if hasattr(adder, bonuses[2]):
+                self.maxhp += adder.add_maxhp
+            if hasattr(adder, bonuses[3]):
+                self.maxfatigue += adder.add_maxfatigue
+            if hasattr(adder, bonuses[4]):
+                self.speed += adder.add_speed
+            if hasattr(adder, bonuses[5]):
+                self.endurance += adder.add_endurance
+            if hasattr(adder, bonuses[6]):
+                self.charisma += adder.add_charisma
+            if hasattr(adder, bonuses[7]):
+                self.intelligence += adder.add_intelligence
+            if hasattr(adder, bonuses[8]):
+                self.faith += adder.add_faith
+            if hasattr(adder, bonuses[9]):
+                for i, v in enumerate(self.resistance):
+                    self.resistance[i] += adder.add_resistance[i]
+
 class Slime(NPC):  # target practice
     def __init__(self):
         description = "Goop that moves. Gross."
         super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=75,
-                         damage=1, awareness=12, aggro=True, exp_award=1,
+                         damage=20, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
                          alert_message=" burbles angrily at Jean!")
         self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
         self.known_moves.append(moves.NPC_Idle(self))
+        self.known_moves.append(moves.Dodge(self))
 
 
 class RockRumbler(NPC):

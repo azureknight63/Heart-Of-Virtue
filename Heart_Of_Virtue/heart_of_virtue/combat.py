@@ -18,12 +18,17 @@ def combat(player, enemy_list):
             print("Victory!")
             player.fatigue = player.maxfatigue
             break
-        if player.hp <= 0:
-            #todo: process player death
+        if not player.is_alive():
+            player.death()
             break
+
+        player.refresh_stat_bonuses()
+        for enemy in enemy_list:
+            enemy.refresh_stat_bonuses()
+
         while player.current_move == None: #the player must choose to do something
             beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
-            heat_display = player.heat * 100
+            heat_display = int(player.heat * 100)
             heat_str = colored("HEAT: ", "red") + colored(str(heat_display), "red") + colored("%", "red")
             print("\n" + beat_str + "                  " + heat_str)
             player.show_bars()
@@ -31,10 +36,19 @@ def combat(player, enemy_list):
             available_moves = "\n"
             for i, move in enumerate(player.known_moves):
                 if not move.current_stage == 3:
-                    move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
+                    if move.fatigue_cost > player.fatigue:
+                        move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
+                        move_str = colored(move_str, "red")
+                    else:
+                        move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
                 else:
-                    move_str = (str(i) + ": " + str(move.name) + " ||| Available in {} beats".format(move.beats_left))
-                    move_str = colored(move_str, "red") + "\n"
+                    if move.beats_left > 0:
+                        move_str = (str(i) + ": " + str(move.name) + " ||| "
+                                                                     "Available after {} beats\n".format(move.beats_left))
+                    else:
+                        move_str = (str(i) + ": " + str(move.name) + " ||| "
+                                                                     "Available next beat\n")
+                    move_str = colored(move_str, "red")
                 available_moves += move_str
             print(available_moves)
             selected_move = int(input("Selection: "))

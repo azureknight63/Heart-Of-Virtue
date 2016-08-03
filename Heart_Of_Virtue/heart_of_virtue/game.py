@@ -11,8 +11,8 @@ print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
     world.load_tiles()
-    world.place_npcs() #loads the default enemies into world tiles
-    world.place_items() #same thing for items
+    world.place_npcs()  # loads the default npcs into world tiles
+    world.place_items()  # same thing for items
     player = Player()
     room = world.tile_exists(player.location_x, player.location_y)
     # intro_scene.intro() # Comment this out to disable the intro sequence
@@ -32,10 +32,10 @@ def play():
         functions.check_for_enemies(room)
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)
-        if len(combat_list) > 0: # Check the state of the room to see if there are any enemies
+        if len(combat_list) > 0:  # Check the state of the room to see if there are any enemies
             print(colored("Jean readies himself for battle!","red"))
             combat.combat(player, combat_list)
-        # Check again since the room could have changed the player's state
+
         if player.is_alive() and not player.victory:
             player.stack_inv_items()
             print("\nChoose an action:\n")

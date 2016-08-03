@@ -11,9 +11,10 @@ class State: #master class for all states
 
     '''
     def __init__(self, name, target,
-                 source=None, apply_announce="", description="", beats_max=0, steps_max=0, combat=True, world=False):
+                 source=None, apply_announce="", description="", beats_max=0, steps_max=0, combat=True, world=False,
+                 hidden=False):
         self.name = name
-        self.description = description  # todo finish this
+        self.description = description
         self.beats_max = beats_max  # combat beats
         self.beats_left = self.beats_max
         self.steps_max = steps_max  # world steps
@@ -24,6 +25,7 @@ class State: #master class for all states
         self.source = source
         self.combat = combat
         self.world = world
+        self.hidden = hidden
 
     def effect(self, target):
         """
@@ -46,3 +48,15 @@ class State: #master class for all states
                 self.steps_left -= 1
                 if self.steps_left == 0:
                     target.states.remove(self)
+
+
+class Dodging(State):
+    def __init__(self, target):  # increases the target's finesse for a short duration
+        super().__init__(name="Dodging", target=target, beats_max=5,hidden=True)
+        f = 50 + int(target.finesse / 3)
+        self.add_fin = f
+
+
+class Parrying(State):
+    def __init__(self, target):  # parries the next attack, giving the aggressor a large recoil duration
+        super().__init__(name="Parrying", target=target, beats_max=5,hidden=True)

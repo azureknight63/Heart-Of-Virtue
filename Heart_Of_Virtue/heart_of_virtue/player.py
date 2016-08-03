@@ -1,4 +1,4 @@
-import random
+import random, time
 from switch import switch
 import items, functions, world, moves
 from termcolor import colored, cprint
@@ -32,11 +32,11 @@ class Player():
         self.resistance_base = [0,0,0,0,0,0]
         self.eq_weapon = None
         self.exp = 0  # exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
-        self.level = 0
+        self.level = 1
         self.location_x, self.location_y = world.starting_position
         self.current_room = world.starting_position
         self.victory = False
-        self.known_moves = [moves.Rest(self)]
+        self.known_moves = [moves.Rest(self), moves.Use_Item(self)]
         self.current_move = None
         self.game_tick = 0
         self.heat = 1.0
@@ -69,10 +69,14 @@ class Player():
             'Jean staggers for a moment.',
             "Jean's body shudders from the abuse it's received.",
             'Jean coughs spasmodically.',
-            "A throbbing heading sears into Jean's consciousness."
+            "A throbbing headache sears into Jean's consciousness."
             "Jean's vision becomes cloudy and unfocused for a moment.",
             'Jean vomits blood and bile onto the ground.',
             '''Jean whispers quietly, "Amelia... Regina...''',
+            '''A ragged wheezing escapes Jean's throat.''',
+            '''A searing pain lances Jean's side.'''
+            '''A sense of panic wells up inside of Jean.'''
+            '''For a brief moment, a wave of fear washes over Jean.'''
         ]
 
     def cycle_states(self):
@@ -80,15 +84,23 @@ class Player():
             state.process(self)
 
     def combat_idle(self):
-        chance = random.randint(0,100)
-        if chance > 98:
-            message = random.randint(0,len(self.combat_idle_msg))
-            print(self.combat_idle_msg[message])
+        if (self.hp * 100) / self.maxhp > 20:  # combat idle (healthy)
+            chance = random.randint(0,1000)
+            if chance > 995:
+                message = random.randint(0, len(self.combat_idle_msg)-1)
+                print(self.combat_idle_msg[message])
+        else:
+            chance = random.randint(0, 1000)  # combat hurt (injured)
+            if chance > 950:
+                message = random.randint(0, len(self.combat_hurt_msg)-1)
+                print(self.combat_hurt_msg[message])
 
     def gain_exp(self, amt):
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
         """
+        if self.level > 100:
+            self.exp += amt  #todo: finish this
 
     def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult
@@ -99,9 +111,55 @@ class Player():
         if self.heat < 0.5:
             self.heat = 0.5
 
-
     def is_alive(self):
         return self.hp > 0
+
+    def death(self):
+        for i in range(random.randint(2,5)):
+            message = random.randint(0, len(self.combat_hurt_msg)-1)
+            print(self.combat_hurt_msg[message])
+            time.sleep(0.5)
+
+        cprint('Jean wavers, then collapses heavily on the ground.', "red")
+        time.sleep(2)
+
+        cprint("""Jean's eyes seem to focus on something distant. A rush of memories enters his mind.""", "red")
+        time.sleep(3)
+
+        cprint("""Jean gasps as the unbearable pain wracks his body. As his sight begins to dim,
+        he lets out a barely audible whisper:""", "red")
+        time.sleep(3)
+
+        cprint('''"...Amelia... ...Regina... ...I'm sorry..."''', "red")
+        time.sleep(3)
+
+        cprint("Darkness finally envelopes Jean. His struggle is over now. It's time to rest.\n\n", "red")
+        time.sleep(5)
+
+        cprint('''
+                   .o oOOOOOOOo                                            OOOo
+                    Ob.OOOOOOOo  OOOo.      oOOo.                      .adOOOOOOO
+                    OboO"""""""""""".OOo. .oOOOOOo.    OOOo.oOOOOOo.."""""""""'OO
+                    OOP.oOOOOOOOOOOO "POOOOOOOOOOOo.   `"OOOOOOOOOP,OOOOOOOOOOOB'
+                    `O'OOOO'     `OOOOo"OOOOOOOOOOO` .adOOOOOOOOO"oOOO'    `OOOOo
+                    .OOOO'            `OOOOOOOOOOOOOOOOOOOOOOOOOO'            `OO
+                    OOOOO                 '"OOOOOOOOOOOOOOOO"`                oOO
+                   oOOOOOba.                .adOOOOOOOOOOba               .adOOOOo.
+                  oOOOOOOOOOOOOOba.    .adOOOOOOOOOO@^OOOOOOOba.     .adOOOOOOOOOOOO
+                 OOOOOOOOOOOOOOOOO.OOOOOOOOOOOOOO"`  '"OOOOOOOOOOOOO.OOOOOOOOOOOOOO
+                 "OOOO"       "YOoOOOOMOIONODOO"`  .   '"OOROAOPOEOOOoOY"     "OOO"
+                    Y           'OOOOOOOOOOOOOO: .oOOo. :OOOOOOOOOOO?'         :`
+                    :            .oO%OOOOOOOOOOo.OOOOOO.oOOOOOOOOOOOO?         .
+                    .            oOOP"%OOOOOOOOoOOOOOOO?oOOOOO?OOOO"OOo
+                                 '%o  OOOO"%OOOO%"%OOOOO"OOOOOO"OOO':
+                                      `$"  `OOOO' `O"Y ' `OOOO'  o             .
+                    .                  .     OP"          : o     .
+                                              :
+                                              .
+               ''', "red")
+        time.sleep(0.5)
+        print('\n\n')
+        cprint('Jean has died!', "red")
 
     def print_inventory(self):
         num_gold = 0
@@ -293,7 +351,8 @@ class Player():
         if phrase == '':
             num_consumables = 0
             num_special = 0
-            while True:
+            exit = False
+            while exit == False:
                 for item in self.inventory:  # get the counts of each item in each category
                     if issubclass(item.__class__, items.Consumable):
                         num_consumables += 1
@@ -337,11 +396,13 @@ class Player():
                         if i == int(inventory_selection):
                             print("Jean used {}!".format(item.name))
                             item.use(self)
+                            if self.in_combat == True:
+                                exit = True
                             break
 
                 num_consumables = num_special = 0
                 if inventory_selection == 'x':
-                    break
+                    exit = True
 
         else:
             lower_phrase = phrase.lower()
@@ -359,9 +420,9 @@ class Player():
         self.location_x += dx
         self.location_y += dy
         print(world.tile_exists(self.location_x, self.location_y).intro_text())
-        if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
-                self.location_x, self.location_y).respawn_rate:
-            pass #todo: enable enemy and item respawn
+        # if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
+        #         self.location_x, self.location_y).respawn_rate:
+        #     pass
 
     def move_north(self):
         self.move(dx=0, dy=-1)
@@ -489,10 +550,9 @@ class Player():
         print(hp_string + fat_string)
 
     def refresh_moves(self):
-        self.known_moves = [moves.Rest(self)]
+        self.known_moves = [moves.Wait(self), moves.Rest(self), moves.Use_Item(self), moves.Dodge(self)]
         if not self.eq_weapon == None:
             self.known_moves.append(moves.Attack(self))
-        #todo: if certain criteria are met, add additional moves
 
     def refresh_protection_rating(self):
         self.protection = (self.endurance / 10)  # base level of protection from player stats
@@ -545,7 +605,5 @@ class Player():
             if hasattr(adder, bonuses[9]):
                 for i, v in enumerate(self.resistance):
                     self.resistance[i] += adder.add_resistance[i]
-
-        #todo add some states or items that modify stats to test this
 
 
