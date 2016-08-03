@@ -33,6 +33,7 @@ class Player():
         self.eq_weapon = None
         self.exp = 0  # exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
         self.level = 1
+        self.exp_to_level = 100
         self.location_x, self.location_y = world.starting_position
         self.current_room = world.starting_position
         self.victory = False
@@ -100,7 +101,42 @@ class Player():
         Give the player amt exp, then check to see if he gained a level and act accordingly
         """
         if self.level > 100:
-            self.exp += amt  #todo: finish this
+            self.exp += amt
+        if self.exp >= self.exp_to_level:
+            self.level_up()
+
+    def level_up(self):
+        cprint("Jean has reached a new level!", "cyan")
+        self.level += 1
+        print(colored("He is now level {}".format(self.level)))
+        self.exp -= self.exp_to_level
+        self.exp_to_level = self.level * (150 - self.intelligence)
+        cprint("{} exp needed for the next level.".format(self.exp_to_level - self.exp), "yellow")
+
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.strength_base += bonus
+            cprint("Strength went up by {}".format(bonus))
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.finesse_base += bonus
+            cprint("Finesse went up by {}".format(bonus))
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.finesse_base += bonus
+            cprint("Finesse went up by {}".format(bonus))
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.speed_base += bonus
+            cprint("Speed went up by {}".format(bonus))
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.charisma_base += bonus
+            cprint("Charisma went up by {}".format(bonus))
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.intelligence_base += bonus
+            cprint("Intelligence went up by {}".format(bonus))  # todo give the player the ability to pick stats
 
     def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult
