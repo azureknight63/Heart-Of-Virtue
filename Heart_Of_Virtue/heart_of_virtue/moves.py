@@ -210,6 +210,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         roll = random.randint(0, 100)
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         damage = int(damage)
+        player.combat_exp += 500  # todo change this back to 10 when testing is done
         if hit_chance >= roll: #a hit!
             if self.check_parry(self.target):
                 print(colored(self.target.name, "magenta") + colored(" parried the attack!", "red"))
@@ -251,6 +252,7 @@ class Rest(Move):  # standard rest to restore fatigue.
             recovery_amt = player.maxfatigue - player.fatigue
         player.fatigue += recovery_amt
         cprint("You recovered {} FP!".format(recovery_amt), "green")
+        player.combat_exp += 2
 
 class Use_Item(Move): #basic attack function, always uses equipped weapon
     def __init__(self, player):
@@ -271,6 +273,7 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
 
     def execute(self, player):
         player.use_item() # opens the category view for the standard "use item" action
+        player.combat_exp += 1
 
 ### NPC MOVES ###
 

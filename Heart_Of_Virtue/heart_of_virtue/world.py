@@ -38,7 +38,7 @@ def place_npcs():
             for i,v in enumerate(rock_rumblers):
                 if x == rock_rumblers[i][0] and y == rock_rumblers[i][1]:
                     functions.spawn_npc(npc.RockRumbler(), _world[tile])
-            slimes = [(1,4)]
+            slimes = [(1,4), (1,4)]
             for i,v in enumerate(slimes):
                 if x == slimes[i][0] and y == slimes[i][1]:
                     functions.spawn_npc(npc.Slime(), _world[tile])

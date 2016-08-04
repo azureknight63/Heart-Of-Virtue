@@ -31,6 +31,7 @@ class Player():
         self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
         self.resistance_base = [0,0,0,0,0,0]
         self.eq_weapon = None
+        self.combat_exp = 0  # place to pool all exp gained from a single combat before distribution
         self.exp = 0  # exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
         self.level = 1
         self.exp_to_level = 100
@@ -100,12 +101,21 @@ class Player():
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
         """
-        if self.level > 100:
+        if self.level < 100:
             self.exp += amt
-        if self.exp >= self.exp_to_level:
+        while self.exp >= self.exp_to_level:
             self.level_up()
 
     def level_up(self):
+        cprint(r"""
+                         .'  '.____.' '.           ..
+        '''';;;,~~~,,~~''   /  *    ,\  ''~~,,,..''  '.,_
+                           / ,    *   \
+                          /*    * .  * \
+                         /  . *     ,   \
+                        / *     ,  *   , \
+                       /  .  *       *  . \
+        """, "yellow")
         cprint("Jean has reached a new level!", "cyan")
         self.level += 1
         print(colored("He is now level {}".format(self.level)))
@@ -121,14 +131,14 @@ class Player():
         if bonus != 0:
             self.finesse_base += bonus
             cprint("Finesse went up by {}".format(bonus))
-        bonus = random.randint(0,2)
-        if bonus != 0:
-            self.finesse_base += bonus
-            cprint("Finesse went up by {}".format(bonus))
-        bonus = random.randint(0,2)
+        bonus = random.randint(0, 2)
         if bonus != 0:
             self.speed_base += bonus
             cprint("Speed went up by {}".format(bonus))
+        bonus = random.randint(0,2)
+        if bonus != 0:
+            self.endurance_base += bonus
+            cprint("Endurance went up by {}".format(bonus))
         bonus = random.randint(0,2)
         if bonus != 0:
             self.charisma_base += bonus
@@ -137,6 +147,71 @@ class Player():
         if bonus != 0:
             self.intelligence_base += bonus
             cprint("Intelligence went up by {}".format(bonus))  # todo give the player the ability to pick stats
+
+        points = random.randint(5,10)
+
+        while points > 0:
+            selection = ''
+            while selection == '':
+                print('You have {} attribute points to distribute. Please select an attribute to increase.\n\n'
+                      '(1) Strength     - {}\n'
+                      '(2) Finesse      - {}\n'
+                      '(3) Speed        - {}\n'
+                      '(4) Endurance    - {}\n'
+                      '(5) Charisma     - {}\n'
+                      '(6) Intelligence - {}\n\n'.format(points, self.strength_base, self.finesse_base, self.speed_base,
+                                                       self.endurance_base, self.charisma_base, self.intelligence_base))
+                selection = input("Selection: ")
+                if functions.is_input_integer(selection):
+                    if int(selection) < 1 or int(selection) > 6:
+                        cprint("Invalid selection. You must enter a choice between 1 and 6.", "red")
+                        selection = ''
+                else:
+                    cprint("Invalid selection. You must enter a choice between 1 and 6.", "red")
+                    selection = ''
+            selection = int(selection)
+
+            amt = ''
+            while amt == '':
+                amt = input("How many points would you like to allocate? ({} available, 0 to cancel)".format(points))
+                if functions.is_input_integer(amt):
+                    if int(amt) < 0 or int(amt) > points:
+                        cprint("Invalid selection. You must enter an amount between 0 and {}.".format(points), "red")
+                        amt = ''
+                else:
+                    cprint("Invalid selection. You must enter an amount between 0 and {}.".format(points), "red")
+                    amt = ''
+            amt = int(amt)
+
+            if amt > 0:
+                if selection == 1:
+                    self.strength_base += amt
+                    points -= amt
+                    cprint("Strength increased by {}!".format(amt), "green")
+                if selection == 2:
+                    self.finesse_base += amt
+                    points -= amt
+                    cprint("Finesse increased by {}!".format(amt), "green")
+                if selection == 3:
+                    self.speed_base += amt
+                    points -= amt
+                    cprint("Speed increased by {}!".format(amt), "green")
+                if selection == 4:
+                    self.endurance_base += amt
+                    points -= amt
+                    cprint("Endurance increased by {}!".format(amt), "green")
+                if selection == 5:
+                    self.charisma_base += amt
+                    points -= amt
+                    cprint("Charisma increased by {}!".format(amt), "green")
+                if selection == 6:
+                    self.intelligence_base += amt
+                    points -= amt
+                    cprint("Intelligence increased by {}!".format(amt), "green")
+
+
+
+
 
     def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult

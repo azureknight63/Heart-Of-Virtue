@@ -109,7 +109,7 @@ class NPC:
 class Slime(NPC):  # target practice
     def __init__(self):
         description = "Goop that moves. Gross."
-        super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=75,
+        super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=10,
                          damage=20, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
                          alert_message=" burbles angrily at Jean!")

@@ -17,6 +17,9 @@ def combat(player, enemy_list):
         if len(enemy_list) == 0:
             print("Victory!")
             player.fatigue = player.maxfatigue
+            print("Jean gained {} exp!".format(player.combat_exp))
+            player.gain_exp(player.combat_exp)
+            player.combat_exp = 0
             break
         if not player.is_alive():
             player.death()
