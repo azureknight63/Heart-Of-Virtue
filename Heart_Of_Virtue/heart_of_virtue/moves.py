@@ -90,8 +90,6 @@ class Move: #master class for all moves
                 break
         return parry
 
-
-
 ### ANY MOVES ###
 
 class Dodge(Move):
@@ -117,6 +115,7 @@ class Dodge(Move):
         print(self.stage_announce[1])
         self.user.states.append(states.Dodging(user))
         self.user.fatigue -= self.fatigue_cost
+
 
 class Parry(Move):
     def __init__(self, user):
@@ -173,7 +172,6 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         self.stage_beat[2] = duration - 2
 
 
-
 class Attack(Move): #basic attack function, always uses equipped weapon, player only
     def __init__(self, player):
         description = "Strike at your enemy with your equipped weapon."
@@ -210,7 +208,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         roll = random.randint(0, 100)
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         damage = int(damage)
-        player.combat_exp += 500  # todo change this back to 10 when testing is done
+        player.combat_exp += 10
         if hit_chance >= roll: #a hit!
             if self.check_parry(self.target):
                 print(colored(self.target.name, "magenta") + colored(" parried the attack!", "red"))
@@ -226,6 +224,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
             print(colored("Just missed!", "white"))
             player.change_heat(0.75)
         self.user.fatigue -= self.fatigue_cost
+
 
 class Rest(Move):  # standard rest to restore fatigue.
     def __init__(self, player):
@@ -253,6 +252,7 @@ class Rest(Move):  # standard rest to restore fatigue.
         player.fatigue += recovery_amt
         cprint("You recovered {} FP!".format(recovery_amt), "green")
         player.combat_exp += 2
+
 
 class Use_Item(Move): #basic attack function, always uses equipped weapon
     def __init__(self, player):
@@ -336,6 +336,7 @@ class NPC_Attack(Move): #basic attack function, NPCs only
                 self.stage_beat[2] += 10
                 if self.target.name == "Jean":
                     self.target.change_heat(1.4)
+                    self.target.combat_exp += 15
             print(colored(self.user.name, "magenta") + colored(" hit {} for ".format(self.target.name), "yellow") +
                   colored(damage, "red") + colored(" damage!", "yellow"))
             self.target.hp -= damage
@@ -347,9 +348,12 @@ class NPC_Attack(Move): #basic attack function, NPCs only
                 for state in self.user.target.states:
                     if state.name == "Dodging":
                         self.user.target.change_heat(1.25)
+                        self.target.combat_exp += 10
                         break
                 self.user.target.change_heat(1.1)
+                self.target.combat_exp += 5
         self.user.fatigue -= self.fatigue_cost
+
 
 class NPC_Rest(Move):  # standard rest to restore fatigue for NPCs.
     def __init__(self, npc):

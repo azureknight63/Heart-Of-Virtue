@@ -32,7 +32,7 @@ class Player():
         self.resistance_base = [0,0,0,0,0,0]
         self.eq_weapon = None
         self.combat_exp = 0  # place to pool all exp gained from a single combat before distribution
-        self.exp = 0  # exp to be gained from doing stuff rather than killing things TODO: add in exp gains to certain actions
+        self.exp = 0  # exp to be gained from doing stuff rather than killing things
         self.level = 1
         self.exp_to_level = 100
         self.location_x, self.location_y = world.starting_position
@@ -146,7 +146,7 @@ class Player():
         bonus = random.randint(0,2)
         if bonus != 0:
             self.intelligence_base += bonus
-            cprint("Intelligence went up by {}".format(bonus))  # todo give the player the ability to pick stats
+            cprint("Intelligence went up by {}".format(bonus))
 
         points = random.randint(5,10)
 
@@ -208,10 +208,6 @@ class Player():
                     self.intelligence_base += amt
                     points -= amt
                     cprint("Intelligence increased by {}!".format(amt), "green")
-
-
-
-
 
     def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult

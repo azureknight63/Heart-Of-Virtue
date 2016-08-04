@@ -63,7 +63,7 @@ class NPC:
         while self.current_move == None:
             choice = random.randint(0, num_choices)
             if self.known_moves[choice].fatigue_cost <= self.fatigue:
-                self.current_move = self.known_moves[choice]  #todo make this a little more complex...
+                self.current_move = self.known_moves[choice]
 
 
     def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
