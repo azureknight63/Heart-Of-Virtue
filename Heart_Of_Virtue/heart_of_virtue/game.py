@@ -10,7 +10,7 @@ import time
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
-    world.load_tiles("map")
+    world.load_tiles()
     world.place_npcs()  # loads the default npcs into world tiles
     world.place_items()  # same thing for items
     player = Player()

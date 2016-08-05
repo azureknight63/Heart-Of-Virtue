@@ -5,8 +5,9 @@ class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
                  inventory = None, maxhp = 100, protection = 0, speed = 10, finesse = 10,
                  awareness = 10, maxfatigue = 100, endurance = 10, strength = 10, charisma = 10, intelligence = 10,
-                 faith = 10,
-                 idle_message = ' is shuffling about.', alert_message = 'glares sharply at Jean!', target = None):
+                 faith = 10, hidden = False, hide_factor = 0,
+                 idle_message = ' is shuffling about.', alert_message = 'glares sharply at Jean!',
+                 discovery_message = 'something interesting.', target = None):
         self.name = name
         self.description = description
         self.inventory = inventory
@@ -48,6 +49,9 @@ class NPC:
         self.states = []
         self.inventory = []
         self.in_combat = False
+        self.hidden = hidden
+        self.hide_factor = hide_factor
+        self.discovery_message = discovery_message
 
     def is_alive(self):
         return self.hp > 0
@@ -106,6 +110,8 @@ class NPC:
                 for i, v in enumerate(self.resistance):
                     self.resistance[i] += adder.add_resistance[i]
 
+### Monsters ###
+
 class Slime(NPC):  # target practice
     def __init__(self):
         description = "Goop that moves. Gross."
@@ -120,6 +126,7 @@ class Slime(NPC):  # target practice
         self.known_moves.append(moves.NPC_Attack(self))
         self.known_moves.append(moves.NPC_Idle(self))
         self.known_moves.append(moves.Dodge(self))
+
 
 
 class RockRumbler(NPC):

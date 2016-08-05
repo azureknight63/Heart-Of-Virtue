@@ -611,6 +611,19 @@ class Player():
                         self.current_room.items_here.pop(i)
                         break
 
+    def search(self):
+        print("Jean searches around the area...")
+        search_ability = int(((self.finesse * 2) + (self.intelligence * 3) + self.faith) * random.uniform(0.5, 1.5))
+        time.sleep(5)
+        something_found = False
+        for hidden in self.current_room.npcs_here:
+            if hidden.hidden == True:
+                if search_ability > hidden.hide_factor:
+                    print("Jean uncovered " + hidden.discovery_message)
+                    something_found = True
+        if not something_found:
+            print("...but he couldn't find anything of interest.")
+
     def stack_inv_items(self):
         for master_item in self.inventory:  # traverse the inventory for stackable items, then stack them
             if hasattr(master_item, "count"):

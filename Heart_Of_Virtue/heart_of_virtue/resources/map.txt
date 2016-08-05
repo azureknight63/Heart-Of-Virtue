@@ -1,6 +1,30 @@
-		EmptyCavePath				Boundary
-		EmptyCavePath	EmptyCavePath	EmptyCavePath		Boundary
-		EmptyCavePath				Boundary
-LeaveCaveRoom		EmptyCavePath				Boundary
-EmptyCavePath	EmptyCavePath	StartingRoom	EmptyCavePath			Boundary
-		EmptyCavePath				Boundary
+																																											Boundary
+	AA_EmptyCave	AA_EmptyCave	AA_EmptyCave																																								Boundary
+	AA_EmptyCave	StartingRoom	AA_EmptyCave																																								Boundary
+	AA_EmptyCave	AA_EmptyCave	AA_EmptyCave																																								Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary
+																																											Boundary

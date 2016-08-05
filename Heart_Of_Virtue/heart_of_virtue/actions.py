@@ -66,6 +66,10 @@ class Take(Action):
     def __init__(self):
         super().__init__(method=Player.take, name="Take Item", hotkey='take')
 
+class Search(Action):
+    def __init__(self):
+        super().__init__(method=Player.take, name="Search", hotkey='search')
+
 # def commands(self):
 #     print("l: Look around\n"
 #           "v: View details on a person, creature, or object\n"

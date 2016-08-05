@@ -69,8 +69,10 @@ class Boundary(MapTile):
 class StartingRoom(MapTile):
     def intro_text(self):
         return colored("""
-        Jean finds himself in a cave with a flickering torch on the wall.
-        He can make out four paths, each equally as dark and foreboding.
+        Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large
+        rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source
+        of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The
+        darkness seems to extend endlessly in all directions.
         """, "cyan")
 
     def modify_player(self, the_player):
@@ -78,76 +80,13 @@ class StartingRoom(MapTile):
         pass
 
 
-class EmptyCavePath(MapTile):
+class AA_EmptyCave(MapTile):
     def intro_text(self):
         return colored("""
-        Another unremarkable part of the cave. Jean must forge onwards.
+        The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step
+        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.
         ""","cyan")
 
     def modify_player(self, the_player):
         #Room has no action on player
         pass
-
-
-class LootRoom(MapTile):
-    """A room that adds something to the player's inventory"""
-    def __init__(self, x, y, item):
-        self.item = item
-        super().__init__(x, y)
-
-    def add_loot(self, the_player):
-        the_player.inventory.append(self.item)
-
-    def modify_player(self, the_player):
-        self.add_loot(the_player)
-
-
-class FindDaggerRoom(LootRoom):
-    def __init__(self, x, y):
-        super().__init__(x, y, items.Dagger())
-
-    def intro_text(self):
-        return """
-        You notice something shiny in the corner.
-        It's a dagger! You pick it up.
-        """
-
-
-class Find5GoldRoom(LootRoom):
-    def __init__(self, x, y):
-        super().__init__(x, y, items.Gold(5))
-
-    def intro_text(self):
-        return """
-        Someone dropped a 5 gold piece. You pick it up.
-        """
-
-class EnemyRoom(MapTile):
-    def __init__(self, x, y, enemy):
-        self.enemy = enemy
-        super().__init__(x, y)
-
-    def modify_player(self, the_player):
-        if self.enemy.is_alive():
-            the_player.hp = the_player.hp - self.enemy.damage
-            print("Enemy does {} damage. You have {} HP remaining.".format(self.enemy.damage, the_player.hp))
-
-    def available_actions(self):
-        if self.enemy.is_alive():
-            return [actions.Flee(tile=self), actions.Attack(enemy=self.enemy)]
-        else:
-            return self.adjacent_moves()
-
-
-class LeaveCaveRoom(MapTile):
-    def intro_text(self):
-        return """
-        You see a bright light in the distance...
-        ... it grows as you get closer! It's sunlight!
-
-
-        Victory is yours!
-        """
-
-    def modify_player(self, player):
-        player.victory = True

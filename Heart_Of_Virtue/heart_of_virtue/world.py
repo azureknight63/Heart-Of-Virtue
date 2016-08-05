@@ -14,10 +14,9 @@ def tile_exists(x, y):
         """
         return _world.get((x, y))
 
-def load_tiles(map):  # todo: fix this. Trying to split the game into multiple maps.
+def load_tiles():
     """Parses a file that describes the world space into the _world object"""
-    _world = {}
-    with open('resources/{}.txt'.format(map), 'r') as f:
+    with open('resources/map.txt', 'r') as f:
         rows = f.readlines()
     x_max = len(rows[0].split('\t'))
     for y in range(len(rows)):
