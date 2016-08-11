@@ -1,5 +1,5 @@
 import string, textwrap, os
-import sys, time, random
+import sys, time, random, pickle
 import npc, tiles, moves
 from player import Player
 from termcolor import colored
@@ -72,3 +72,8 @@ def reset_stats(target):  # resets all stats to base level
     target.intelligence = target.intelligence_base
     target.faith = target.faith_base
     target.resistance = target.resistance_base
+
+def load():
+
+
+# def save(player, world):

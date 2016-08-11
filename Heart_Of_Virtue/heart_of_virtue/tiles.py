@@ -80,7 +80,7 @@ class StartingRoom(MapTile):
         pass
 
 
-class AA_EmptyCave(MapTile):
+class EmptyCave(MapTile):
     def intro_text(self):
         return colored("""
         The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step

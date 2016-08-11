@@ -1,4 +1,4 @@
-import random
+import random, time
 import functions
 
 class Object:
@@ -15,18 +15,17 @@ class Object:
 class Hidden_Wall_Switch(Object):
     '''
     A hidden wall switch that does something when pressed.
-    block: a direction which is revealed when the switch is pressed
     '''
-    def __init__(self, block=''):
+    def __init__(self):
         description = "A small depression in the wall."
         super().__init__(name="Wall Switch", description=description, hidden=True, hide_factor=0,
                          idle_message="There's a small depression in the wall.",
                          discovery_message=" a small depression in the wall!")
         self.position = False
-        self.block = block
 
     def use(self):
-        print("Jean hears a faint 'click,' followed by a momentary pause.")
+        print("Jean hears a faint 'click.'")
+        time.sleep(0.5)
         if self.position == False:
             self.position = True
         else:

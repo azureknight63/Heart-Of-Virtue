@@ -40,7 +40,6 @@ class Player():
         self.victory = False
         self.known_moves = [moves.Rest(self), moves.Use_Item(self)]
         self.current_move = None
-        self.game_tick = 0
         self.heat = 1.0
         self.protection = 0
         self.states = []
