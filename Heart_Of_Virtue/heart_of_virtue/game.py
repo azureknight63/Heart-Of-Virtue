@@ -2,34 +2,44 @@
 My take on Phillip Johnson's text adventure tutorial
 """
 __author__ = 'Alex Egbert'
-import world, functions, intro_scene, moves, combat
+import universe, functions, intro_scene, moves, combat
 from player import Player
+from universe import Universe
 from termcolor import colored, cprint
 import time
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
-    world.load_tiles()
-    world.place_npcs()  # loads the default npcs into world tiles
-    world.place_items()  # same thing for items
+    universe = Universe()
+    # world.load_tiles()
+    # world.place_npcs()  # loads the default npcs into world tiles
+    # world.place_items()  # same thing for items
     player = Player()
-    room = world.tile_exists(player.location_x, player.location_y)
+    player.universe = universe
+    #todo if continuing from a previous game, load the save files into player.savestat and player.saveuniv
+    newgame = True  # change this once the Continue feature is implemented
+    player.universe.build(player)  # load all of the player stats and map state
+    if newgame == True:
+        player.map = player.universe.starting_map
+        player.location_x, player.location_y = (player.universe.starting_position)
+    room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
     # intro_scene.intro() # Comment this out to disable the intro sequence
-    for item in player.inventory:
-        if item.name == "Rock":
-            player.eq_weapon = item
-            item.isequipped = True
-        if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
-            item.isequipped = True
+    if newgame == True:
+        for item in player.inventory:
+            if item.name == "Rock":
+                player.eq_weapon = item
+                item.isequipped = True
+            if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
+                item.isequipped = True
     print(room.intro_text())
     while player.is_alive() and not player.victory:
-        room = world.tile_exists(player.location_x, player.location_y)
+        room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
         player.current_room = room
         room.modify_player(player)
-        player.show_bars(True,False)
+        player.show_bars(True,False)  # show just the health bar
         player.refresh_moves()
-        functions.check_for_enemies(room)
+        functions.check_for_npcs(room)
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)
         if len(combat_list) > 0:  # Check the state of the room to see if there are any enemies

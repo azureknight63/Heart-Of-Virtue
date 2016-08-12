@@ -24,10 +24,12 @@ def check_for_npcs(room): # Check to see what NPCs are in the room. Does not eva
 
 def check_for_combat(player): # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
-    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and notice the player.
+    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and
+        # notice the player.
         finesse_check = player.finesse + random.randint((-1 * (player.finesse * 0.2)), (player.finesse * 0.2))
         for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
-            if finesse_check <= e.awareness and e.aggro == True:  # finesse check fails, break and rescan the list, adding all aggro enemies
+            if finesse_check <= e.awareness and e.aggro == True:  # finesse check fails, break and rescan the list,
+                # adding all aggro enemies
                 print(e.name + e.alert_message)  # player's been spotted
                 enemy_combat_list.append(e)
                 for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
@@ -73,7 +75,11 @@ def reset_stats(target):  # resets all stats to base level
     target.faith = target.faith_base
     target.resistance = target.resistance_base
 
-def load():
+
+def load(type):  # type should be 'savestat' for player stats or 'saveuniv' for the universe.
+    with open('{}'.format(type)) as f:
+        data = pickle.load(f)
+    return data
 
 
 # def save(player, world):

@@ -7,16 +7,24 @@ class Universe():  # "globals" for the game state can be stored here, as well as
         self.game_tick = 0
         self.maps = []
         self.starting_position = (0, 0)
+        self.starting_map = None
 
-    def build(self):  # builds all of the maps as they are, then loads them into self.maps
-        try:  # load the existing game, if there is one
-            functions.load()
-        except:  # new game
-            load_tiles("start_area")
+    def build(self, player):  # builds all of the maps as they are, then loads them into self.maps
+        if player.saveuniv != None and player.savestat != None:  # there's data here, so the game continues from where
+            # it left off
+            self.maps = player.saveuniv
+
+        else:  # new game
+            map_list = ["start_area"]  # as more maps are built, add them to this list
+            for map in map_list:
+                self.load_tiles(map)
+            for map in self.maps:
+                if "start_area" in map['name']:
+                    self.starting_map = map
 
     def tile_exists(self, map, x, y):
             """Returns the tile at the given coordinates or None if there is no tile.
-
+            :param map: the dictionary object containing the tile
             :param x: the x-coordinate in the worldspace
             :param y: the y-coordinate in the worldspace
             :return: the tile at the given coordinates or None if there is no tile
@@ -28,7 +36,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
 
     def load_tiles(self, mapname):  #todo find a way to load an individual map from the file
         """Parses a file that describes the world space into the _world object"""
-        map = {}
+        map = {'name': mapname}
         with open('resources/{}.txt'.format(mapname), 'r') as f:
             rows = f.readlines()
         x_max = len(rows[0].split('\t'))
@@ -39,7 +47,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                 if block_contents != '':
                     block_list = block_contents.split(",")
                     tile_name = block_list[0]
-                    map[(x, y)] = getattr(__import__('tiles'), tile_name)(x, y)
+                    map[(x, y)] = getattr(__import__('tiles'), tile_name)(self, map, x, y)
                     if len(block_list) > 1:
                         for i, param in enumerate(block_list):
                             if i != 0:
@@ -47,12 +55,15 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     parameter = param.split('=')
                                     if hasattr(self.tile_exists(map, x, y), parameter[0]):
                                         setattr(self.tile_exists(map, x, y), parameter[0], parameter[1])
+                                elif '$' in param:  # spawns any declared NPCs
+                                    npc_type = param.replace('$', '')
+                                    self.tile_exists(map, x, y).spawn_npc(npc_type)  #todo make this work
 
                 else:
                     tile_name = block_contents
-                if tile_name == 'StartingRoom':
+                if tile_name == 'StartingRoom':  # there can only be one of these in the game
                     self.starting_position = (x, y)
-                map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(x, y)
+                map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self, map, x, y)
         self.maps.append(map)
 
     # def place_npcs(self):

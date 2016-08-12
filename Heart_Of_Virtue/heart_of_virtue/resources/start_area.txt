@@ -1,6 +1,6 @@
-							Boundary
-	EmptyCave	EmptyCave	EmptyCave				Boundary
-	EmptyCave	StartingRoom	EmptyCave				Boundary
-	EmptyCave	EmptyCave	EmptyCave				Boundary
-							Boundary
-							Boundary
+									Boundary
+	EmptyCave	EmptyCave,$Slime	EmptyCave						Boundary
+	EmptyCave	StartingRoom	EmptyCave						Boundary
+	EmptyCave	EmptyCave	EmptyCave						Boundary
+									Boundary
+									Boundary

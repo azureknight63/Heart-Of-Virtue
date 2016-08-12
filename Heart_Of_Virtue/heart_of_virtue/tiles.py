@@ -1,17 +1,19 @@
 """Describes the tiles in the world space."""
 __author__ = 'Phillip Johnson'
 
-import items, npc, actions, world
+import items, actions, universe, npc
 from termcolor import colored
 
 class MapTile:
     """The base class for a tile within the world space"""
-    def __init__(self, x, y):
+    def __init__(self, universe, map, x, y):
         """Creates a new tile.
 
         :param x: the x-coordinate of the tile
         :param y: the y-coordinate of the tile
         """
+        self.universe = universe
+        self.map = map
         self.x = x
         self.y = y
         self.npcs_here = []
@@ -30,13 +32,13 @@ class MapTile:
     def adjacent_moves(self):
         """Returns all move actions for adjacent tiles."""
         moves = []
-        if world.tile_exists(self.x + 1, self.y):
+        if self.universe.tile_exists(self.map, self.x + 1, self.y):
             moves.append(actions.MoveEast())
-        if world.tile_exists(self.x - 1, self.y):
+        if self.universe.tile_exists(self.map, self.x - 1, self.y):
             moves.append(actions.MoveWest())
-        if world.tile_exists(self.x, self.y - 1):
+        if self.universe.tile_exists(self.map, self.x, self.y - 1):
             moves.append(actions.MoveNorth())
-        if world.tile_exists(self.x, self.y + 1):
+        if self.universe.tile_exists(self.map, self.x, self.y + 1):
             moves.append(actions.MoveSouth())
         return moves
 
@@ -50,11 +52,10 @@ class MapTile:
         moves.append(actions.Equip())
         moves.append(actions.Take())
         moves.append(actions.Use())
-
         return moves
 
     def spawn_npc(self, npc_type):
-        npc.npc_type(location=(self.x,self.y))
+        self.npcs_here.append(getattr(__import__('npc'), npc_type))
 
 class Boundary(MapTile):
     def intro_text(self):
