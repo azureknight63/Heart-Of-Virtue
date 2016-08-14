@@ -57,7 +57,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                         setattr(self.tile_exists(map, x, y), parameter[0], parameter[1])
                                 elif '$' in param:  # spawns any declared NPCs
                                     npc_type = param.replace('$', '')
-                                    self.tile_exists(map, x, y).spawn_npc(npc_type)  #todo make this work
+                                    self.tile_exists(map, x, y).spawn_npc(npc_type)  #todo make this work; for some reason npcs_here is being overwritten when the next tile is evaluated
 
                 else:
                     tile_name = block_contents

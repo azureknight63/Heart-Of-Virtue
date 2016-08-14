@@ -2,7 +2,7 @@
 My take on Phillip Johnson's text adventure tutorial
 """
 __author__ = 'Alex Egbert'
-import universe, functions, intro_scene, moves, combat
+import universe, functions, intro_scene, moves, combat, npc
 from player import Player
 from universe import Universe
 from termcolor import colored, cprint
@@ -39,6 +39,7 @@ def play():
         room.modify_player(player)
         player.show_bars(True,False)  # show just the health bar
         player.refresh_moves()
+        # room.spawn_npc('Slime')
         functions.check_for_npcs(room)
         functions.check_for_items(room)
         combat_list = functions.check_for_combat(player)

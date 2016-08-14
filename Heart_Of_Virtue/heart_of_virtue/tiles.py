@@ -55,7 +55,8 @@ class MapTile:
         return moves
 
     def spawn_npc(self, npc_type):
-        self.npcs_here.append(getattr(__import__('npc'), npc_type))
+        npc = getattr(__import__('npc'), npc_type)()
+        self.npcs_here.append(npc)
 
 class Boundary(MapTile):
     def intro_text(self):
