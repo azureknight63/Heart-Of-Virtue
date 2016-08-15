@@ -43,6 +43,7 @@ class Move: #master class for all moves
         self.beats_left = self.stage_beat[0]
 
     def advance(self, user):
+        self.evaluate()
         if user.current_move == self or self.current_stage == 3: # only advance the move if it's the player's
             # current move or if it's in cooldown
             if self.beats_left > 0:
@@ -82,6 +83,9 @@ class Move: #master class for all moves
         # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
         pass
 
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        pass
+
     def check_parry(self, target):
         parry = False
         for state in target.states:
@@ -99,9 +103,7 @@ class Dodge(Move):
         execute = 1
         recoil = 5
         cooldown = 2
-        fatigue_cost = 75 - ((2 * user.endurance) + (3 * user.speed))
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = 0
         super().__init__(name="Dodge", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep,execute,recoil,cooldown], targeted=False,
                          stage_announce=["",
@@ -109,6 +111,13 @@ class Dodge(Move):
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=user, user=user)
+        self.evaluate()
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        self.stage_beat = [1,1,5,2]
+        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        if self.fatigue_cost <= 10:
+            self.fatigue_cost = 10
 
     def execute(self, user):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
@@ -124,7 +133,7 @@ class Parry(Move):
         execute = 1
         recoil = 5
         cooldown = 2
-        fatigue_cost = 75 - ((2 * user.endurance) + (3 * user.speed))
+        fatigue_cost = 0
         if fatigue_cost <= 10:
             fatigue_cost = 10
         super().__init__(name="Parry", description=description, xp_gain=1, current_stage=0,
@@ -134,6 +143,13 @@ class Parry(Move):
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=user, user=user)
+        self.evaluate()
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        self.stage_beat = [1,1,5,2]
+        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        if self.fatigue_cost <= 10:
+            self.fatigue_cost = 10
 
     def execute(self, user):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
@@ -175,9 +191,6 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
 class Attack(Move): #basic attack function, always uses equipped weapon, player only
     def __init__(self, player):
         description = "Strike at your enemy with your equipped weapon."
-        power = player.eq_weapon.damage + \
-                    (player.strength * player.eq_weapon.str_mod) + \
-                    (player.finesse * player.eq_weapon.fin_mod)
         prep = int(50 / player.speed) #starting prep of 5
         if prep < 1:
             prep = 1
@@ -197,9 +210,33 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
                                          "Jean braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
-        self.power = power
+        self.evaluate()
 
-    def execute(self, player):
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        power = self.user.eq_weapon.damage + \
+                    (self.user.strength * self.user.eq_weapon.str_mod) + \
+                    (self.user.finesse * self.user.eq_weapon.fin_mod)
+        prep = int(50 / self.user.speed) #starting prep of 5
+        if prep < 1:
+            prep = 1
+        recoil = int(1 + self.user.eq_weapon.weight)
+        cooldown = 5 - int(self.user.speed / 10)
+        if cooldown < 0:
+            cooldown = 0
+        fatigue_cost = 100 - (5 * self.user.endurance)
+        if fatigue_cost <= 10:
+            fatigue_cost = 10
+
+        self.power = power
+        self.stage_beat[0] = prep
+        self.stage_beat[1] = 1
+        self.stage_beat[2] = recoil
+        self.stage_beat[3] = cooldown
+        self.fatigue_cost = fatigue_cost
+
+
+
+    def execute(self, player):  #todo put this function in each remaining move
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
         hit_chance = (95 - self.target.finesse) + self.user.finesse

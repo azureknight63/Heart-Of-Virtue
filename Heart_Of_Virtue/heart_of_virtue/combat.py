@@ -109,3 +109,4 @@ def combat(player, enemy_list):
         time.sleep(0.5)
         beat += 1
     player.in_combat = False
+    player.current_move = None

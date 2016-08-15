@@ -1,6 +1,6 @@
 import random, time
 from switch import switch
-import items, functions, world, moves
+import items, functions, universe, moves
 from termcolor import colored, cprint
 
 class Player():
@@ -35,17 +35,19 @@ class Player():
         self.exp = 0  # exp to be gained from doing stuff rather than killing things
         self.level = 1
         self.exp_to_level = 100
-        self.location_x, self.location_y = world.starting_position
-        self.current_room = world.starting_position
+        self.location_x, self.location_y = (0, 0)
+        self.current_room = None
         self.victory = False
         self.known_moves = [moves.Rest(self), moves.Use_Item(self)]
         self.current_move = None
-        self.game_tick = 0
         self.heat = 1.0
         self.protection = 0
         self.states = []
         self.in_combat = False
-
+        self.savestat = None
+        self.saveuniv = None
+        self.universe = None
+        self.map = None
         self.combat_idle_msg = [
             'Jean breathes heavily.',
             'Jean anxiously shifts his weight back and forth.',
@@ -74,7 +76,7 @@ class Player():
             "A throbbing headache sears into Jean's consciousness."
             "Jean's vision becomes cloudy and unfocused for a moment.",
             'Jean vomits blood and bile onto the ground.',
-            '''Jean whispers quietly, "Amelia... Regina...''',
+            '''Jean whispers quietly, "Amelia... Regina..."''',
             '''A ragged wheezing escapes Jean's throat.''',
             '''A searing pain lances Jean's side.'''
             '''A sense of panic wells up inside of Jean.'''
@@ -523,10 +525,10 @@ class Player():
                             break
 
     def move(self, dx, dy):
-        self.game_tick += 1
+        self.universe.game_tick += 1
         self.location_x += dx
         self.location_y += dy
-        print(world.tile_exists(self.location_x, self.location_y).intro_text())
+        print(self.universe.tile_exists(self.map, self.location_x, self.location_y).intro_text())
         # if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
         #         self.location_x, self.location_y).respawn_rate:
         #     pass
@@ -559,7 +561,7 @@ class Player():
         self.do_action(available_moves[r])
 
     def look(self):
-        tile = world.tile_exists(self.location_x, self.location_y)
+        tile = self.universe.tile_exists(self.map, self.location_x, self.location_y)
         print(tile.intro_text())
         functions.check_for_enemies(tile)
         functions.check_for_items(tile)

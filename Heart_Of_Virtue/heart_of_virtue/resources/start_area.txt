@@ -1,0 +1,6 @@
+									Boundary
+	EmptyCave	EmptyCave,$Slime.2	EmptyCave,$Slime						Boundary
+	EmptyCave	StartingRoom	EmptyCave						Boundary
+	EmptyCave	EmptyCave	EmptyCave						Boundary
+									Boundary
+									Boundary
