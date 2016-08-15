@@ -234,9 +234,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         self.stage_beat[3] = cooldown
         self.fatigue_cost = fatigue_cost
 
-
-
-    def execute(self, player):  #todo put this function in each remaining move
+    def execute(self, player):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
         hit_chance = (95 - self.target.finesse) + self.user.finesse
@@ -317,29 +315,21 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
 class NPC_Attack(Move): #basic attack function, NPCs only
     def __init__(self, npc):
         description = ""
-        power = (npc.damage * random.uniform(0.8, 1.2))
-
         prep = int(50 / npc.speed)
         if prep < 1:
             prep = 1
-
         execute = 1
-
         recoil = int(50 / npc.speed)
         if recoil < 0:
             recoil = 0
-
         cooldown = 5 - int(npc.speed/10)
         if cooldown < 0:
             cooldown = 0
-
         fatigue_cost = 100 - (5 * npc.endurance)
         if fatigue_cost <= 10:
             fatigue_cost = 10
-
         if npc.target == None:
             npc.target = npc
-
         super().__init__(name="NPC_Attack", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep,execute,recoil,cooldown], targeted=True,
                          stage_announce=[colored("{} coils in preparation for an attack!".format(npc.name), "red"),
@@ -349,7 +339,31 @@ class NPC_Attack(Move): #basic attack function, NPCs only
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
                          target=npc.target, user=npc)
+        self.evaluate()
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        #todo left off here
+        power = (self.user.damage * random.uniform(0.8, 1.2))
+        prep = int(50 / self.user.speed) #starting prep of 5
+        if prep < 1:
+            prep = 1
+        recoil = int(50 / self.user.speed)
+        if recoil < 0:
+            recoil = 0
+        cooldown = 5 - int(self.user.speed / 10)
+        if cooldown < 0:
+            cooldown = 0
+        fatigue_cost = 100 - (5 * self.user.endurance)
+        if fatigue_cost <= 10:
+            fatigue_cost = 10
+
         self.power = power
+        self.stage_beat[0] = prep
+        self.stage_beat[1] = 1
+        self.stage_beat[2] = recoil
+        self.stage_beat[3] = cooldown
+        self.fatigue_cost = fatigue_cost
+
 
     def refresh_announcements(self, npc):
         self.stage_announce = [colored("{} coils in preparation for an attack!".format(npc.name), "red"),
