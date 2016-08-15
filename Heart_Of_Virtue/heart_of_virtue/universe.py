@@ -56,14 +56,23 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     if hasattr(self.tile_exists(map, x, y), parameter[0]):
                                         setattr(self.tile_exists(map, x, y), parameter[0], parameter[1])
                                 elif '$' in param:  # spawns any declared NPCs
-                                    npc_type = param.replace('$', '')
-                                    self.tile_exists(map, x, y).spawn_npc(npc_type)  #todo make this work; for some reason npcs_here is being overwritten when the next tile is evaluated
+                                    amt = 1
+                                    param = param.replace('$', '')
+                                    if '.' in param:
+                                        p_list = param.split('.')
+                                        npc_type = p_list[0]
+                                        amt = int(p_list[1])
+                                    else:
+                                        npc_type = param
+                                    for i in range(0, amt):
+                                        self.tile_exists(map, x, y).spawn_npc(npc_type)
 
                 else:
                     tile_name = block_contents
+                    map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self, map, x, y)
                 if tile_name == 'StartingRoom':  # there can only be one of these in the game
                     self.starting_position = (x, y)
-                map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self, map, x, y)
+
         self.maps.append(map)
 
     # def place_npcs(self):

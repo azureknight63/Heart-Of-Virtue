@@ -76,7 +76,7 @@ class Player():
             "A throbbing headache sears into Jean's consciousness."
             "Jean's vision becomes cloudy and unfocused for a moment.",
             'Jean vomits blood and bile onto the ground.',
-            '''Jean whispers quietly, "Amelia... Regina...''',
+            '''Jean whispers quietly, "Amelia... Regina..."''',
             '''A ragged wheezing escapes Jean's throat.''',
             '''A searing pain lances Jean's side.'''
             '''A sense of panic wells up inside of Jean.'''
