@@ -76,10 +76,12 @@ def reset_stats(target):  # resets all stats to base level
     target.resistance = target.resistance_base
 
 
-def load(type):  # type should be 'savestat' for player stats or 'saveuniv' for the universe.
-    with open('{}'.format(type)) as f:
+def load():
+    with open('save.dat'.format(type), 'rb') as f:
         data = pickle.load(f)
     return data
 
 
-# def save(player, world):
+def save(player):  # player is the player object
+    with open('save.dat', 'wb') as f:
+        pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)

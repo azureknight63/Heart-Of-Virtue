@@ -3,31 +3,6 @@ import functions
 from termcolor import colored, cprint
 
 def intro():
-    cprint(r"""
-                _
-               (_)
-               |=|              __  __
-               |=|              ||  ||  ____  ___     ____    __||__
-           /|__|_|__|\          ||__||  ||    ||\\    || ))   --||--
-          (    ( )    )         ||__||  ||-   ||_\\   || \\     ||
-           \|\/\"/\/|/          ||  ||  ||__  ||  \\  ||  \\    ||
-             |  Y  |            ||  ||
-             |  |  |           '--''--'              OF
-             |  |  |
-            _|  |  |                     __           __
-         __/ |  |  |\                    \ \         / /
-        /  \ |  |  |  \                   \ \       / / ___     __       ____   ____
-           __|  |  |   |                   \ \     / /  ||\\    ||      //  \\  || ))
-        /\/  |  |  |   |\                   \ \   / /   ||_\\   ||____  ||  ||  || \\
-         <   +\ |  |\ />  \                  \ \_/ /    ||  \\  \|----  \\__//  ||  \\
-          >   + \  | LJ    |                  \___/
-                + \|+  \  < \
-          (O)      +    |    )                        By Alexander Egbert
-           |             \  /\
-         ( | )   (o)      \/  )
-        _\\|//__( | )______)_/
-                \\|//
-    """, "cyan")
     functions.print_slow("Darkness. Silence. Jean is surrounded by these. They seem to hang around him like a thick "
             "fog, suffocating his senses, his consciousness. He tries to cry out into the void, but he can't feel"
             " his mouth moving. He can't feel anything. He'd panic but that all seems so pointless now, here"

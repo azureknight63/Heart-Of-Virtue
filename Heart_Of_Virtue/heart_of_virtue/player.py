@@ -563,7 +563,7 @@ class Player():
     def look(self):
         tile = self.universe.tile_exists(self.map, self.location_x, self.location_y)
         print(tile.intro_text())
-        functions.check_for_enemies(tile)
+        functions.check_for_npcs(tile)
         functions.check_for_items(tile)
 
     def view(self):
@@ -613,7 +613,7 @@ class Player():
                         self.current_room.items_here.pop(i)
                         break
 
-    def search(self):
+    def search(self):  #todo add this to available actions
         print("Jean searches around the area...")
         search_ability = int(((self.finesse * 2) + (self.intelligence * 3) + self.faith) * random.uniform(0.5, 1.5))
         time.sleep(5)
@@ -642,7 +642,7 @@ class Player():
               "use <item>: Use an item from your inventory\n"
               "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
                       "Entering 'take' by itself will show a list of items in the room."
-              , "blue")) #TODO: Figure out how player can type arbitrary command like 'pull rope' 'push button' etc.
+              , "blue"))
 
     def show_bars(self, hp=True, fp=True):  # show HP and Fatigue bars
         if hp:
