@@ -219,6 +219,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         prep = int(50 / self.user.speed) #starting prep of 5
         if prep < 1:
             prep = 1
+        execute = 1
         recoil = int(1 + self.user.eq_weapon.weight)
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
@@ -229,7 +230,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
 
         self.power = power
         self.stage_beat[0] = prep
-        self.stage_beat[1] = 1
+        self.stage_beat[1] = execute
         self.stage_beat[2] = recoil
         self.stage_beat[3] = cooldown
         self.fatigue_cost = fatigue_cost
@@ -315,19 +316,11 @@ class Use_Item(Move): #basic attack function, always uses equipped weapon
 class NPC_Attack(Move): #basic attack function, NPCs only
     def __init__(self, npc):
         description = ""
-        prep = int(50 / npc.speed)
-        if prep < 1:
-            prep = 1
+        prep = 0
         execute = 1
-        recoil = int(50 / npc.speed)
-        if recoil < 0:
-            recoil = 0
-        cooldown = 5 - int(npc.speed/10)
-        if cooldown < 0:
-            cooldown = 0
-        fatigue_cost = 100 - (5 * npc.endurance)
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 0
         if npc.target == None:
             npc.target = npc
         super().__init__(name="NPC_Attack", description=description, xp_gain=1, current_stage=0,
@@ -342,11 +335,11 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         self.evaluate()
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
-        #todo left off here
         power = (self.user.damage * random.uniform(0.8, 1.2))
-        prep = int(50 / self.user.speed) #starting prep of 5
+        prep = int(50 / self.user.speed)
         if prep < 1:
             prep = 1
+        execute = 1
         recoil = int(50 / self.user.speed)
         if recoil < 0:
             recoil = 0
@@ -356,10 +349,9 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         fatigue_cost = 100 - (5 * self.user.endurance)
         if fatigue_cost <= 10:
             fatigue_cost = 10
-
         self.power = power
         self.stage_beat[0] = prep
-        self.stage_beat[1] = 1
+        self.stage_beat[1] = execute
         self.stage_beat[2] = recoil
         self.stage_beat[3] = cooldown
         self.fatigue_cost = fatigue_cost
