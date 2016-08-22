@@ -105,6 +105,19 @@ def load(filename):
     return data
 
 
+def save_select(player):
+    while True:
+        print("Save as a new file or overwrite existing?\nn: New file\no: Overwrite existing\nx: Cancel")
+        choice = input("Selection: ")
+        if choice == 'n':
+            filename = input("Enter a name for your save: ")  #todo left off here
+            while True:
+                try:
+                    save(player, filename)
+                    break
+                except:
+                    cprint("Invalid file name. Please enter a valid file name (no spaces or special characters): ")
+
 def save(player, filename):  # player is the player object
     if filename.endswith('.sav'):
         with open('{}'.format(filename), 'wb') as f:
@@ -117,4 +130,9 @@ def save(player, filename):  # player is the player object
 def saves_list():
     path = os.path.dirname(os.path.abspath(__file__))
     savefiles = [f for f in listdir(path) if isfile(join(path, f)) and f.endswith('.sav')]
+    savefiles.sort(key=lambda x: os.stat(os.path.join(path, x)).st_mtime)
     return savefiles
+
+
+def autosave():  # automatically saves progress. Selects file names from 1 thru 5 depending on age
+    pass
