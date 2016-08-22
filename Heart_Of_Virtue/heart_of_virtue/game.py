@@ -14,41 +14,40 @@ def play():  #todo set up a way to save/load from player-selected files, as well
     game = True
     while game == True:
         cprint(r"""
-                        _
-                       (_)
-                       |=|              __  __
-                       |=|              ||  ||  ____  ___     ____    __||__
-                   /|__|_|__|\          ||__||  ||    ||\\    || ))   --||--
-                  (    ( )    )         ||__||  ||-   ||_\\   || \\     ||
-                   \|\/\"/\/|/          ||  ||  ||__  ||  \\  ||  \\    ||
-                     |  Y  |            ||  ||
-                     |  |  |           '--''--'              OF
-                     |  |  |
-                    _|  |  |                     __           __
-                 __/ |  |  |\                    \ \         / /
-                /  \ |  |  |  \                   \ \       / / ___     __       ____   ____
-                   __|  |  |   |                   \ \     / /  ||\\    ||      //  \\  || ))
-                /\/  |  |  |   |\                   \ \   / /   ||_\\   ||____  ||  ||  || \\
-                 <   +\ |  |\ />  \                  \ \_/ /    ||  \\  \|----  \\__//  ||  \\
-                  >   + \  | LJ    |                  \___/
-                        + \|+  \  < \
-                  (O)      +    |    )                        By Alexander Egbert
-                   |             \  /\
-                 ( | )   (o)      \/  )
-                _\\|//__( | )______)_/
-                        \\|//
+        _
+       (_)
+       |=|              __  __
+       |=|              ||  ||  ____  ___     ____    __||__
+   /|__|_|__|\          ||__||  ||    ||\\    || ))   --||--
+  (    ( )    )         ||__||  ||-   ||_\\   || \\     ||
+   \|\/\"/\/|/          ||  ||  ||__  ||  \\  ||  \\    ||
+     |  Y  |            ||  ||
+     |  |  |           '--''--'              OF
+     |  |  |
+    _|  |  |                     __           __
+ __/ |  |  |\                    \ \         / /
+/  \ |  |  |  \                   \ \       / / ___     __       ____   ____
+   __|  |  |   |                   \ \     / /  ||\\    ||      //  \\  || ))
+/\/  |  |  |   |\                   \ \   / /   ||_\\   ||____  ||  ||  || \\
+ <   +\ |  |\ />  \                  \ \_/ /    ||  \\  \|----  \\__//  ||  \\
+  >   + \  | LJ    |                  \___/
+        + \|+  \  < \
+  (O)      +    |    )                        By Alexander Egbert
+   |             \  /\
+ ( | )   (o)      \/  )
+_\\|//__( | )______)_/
+        \\|//
 
             """, "cyan")
         newgame = True
-        try:
-            test = functions.load()
+        if functions.saves_list() != []:
             save_exists = True
-        except:
+        else:
             save_exists = False
 
         menu = ['NEW GAME', 'QUIT TO DESKTOP']
         if save_exists:
-            menu.insert(0, 'CONTINUE')
+            menu.insert(0, 'LOAD GAME')
         for i, option in enumerate(menu):
             print('{}'.format(i) + colored(': {}'.format(option), 'red'))
         choice = input('Selection: ')
@@ -58,7 +57,7 @@ def play():  #todo set up a way to save/load from player-selected files, as well
         choice = int(choice)
         if menu[choice] == 'NEW GAME':
             pass  # proceed as new game
-        elif menu[choice] == 'CONTINUE':
+        elif menu[choice] == 'LOAD GAME':
             newgame = False
         elif menu[choice] == 'QUIT TO DESKTOP':
             game = False
@@ -66,7 +65,7 @@ def play():  #todo set up a way to save/load from player-selected files, as well
 
         if newgame == False:
             try:
-                player = functions.load()
+                player = functions.load_select()
             except:  # if something's broken, proceed as if it were a new game
                 player = Player()
                 universe = Universe()
@@ -78,7 +77,7 @@ def play():  #todo set up a way to save/load from player-selected files, as well
             player.universe = universe
 
         if newgame == True:
-            intro_scene.intro()  # Comment this out to disable the intro sequence
+            # intro_scene.intro()  # Comment this out to disable the intro sequence
             player.universe.build(player)
             player.map = player.universe.starting_map
             player.location_x, player.location_y = (player.universe.starting_position)
@@ -93,7 +92,7 @@ def play():  #todo set up a way to save/load from player-selected files, as well
                     item.isequipped = True
         print(room.intro_text())
         while player.is_alive() and not player.victory:
-            functions.save(player)
+            functions.save(player, 'autosave')
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
             room.modify_player(player)

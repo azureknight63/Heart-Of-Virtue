@@ -2,7 +2,9 @@ import string, textwrap, os
 import sys, time, random, pickle
 import npc, tiles, moves
 from player import Player
-from termcolor import colored
+from termcolor import colored, cprint
+from os import listdir
+from os.path import isfile, join
 
 ### This module contains general functions to use throughout the game
 
@@ -76,12 +78,43 @@ def reset_stats(target):  # resets all stats to base level
     target.resistance = target.resistance_base
 
 
-def load():
-    with open('save.dat'.format(type), 'rb') as f:
+def load_select():
+    if saves_list() != []:
+        while True:
+            print("Select the file you wish to load.")
+            for i, file in enumerate(saves_list()):
+                print('{}: {}'.format(i, file))
+            print('x: Cancel')
+            choice = input("Selection: ")
+            if choice == 'x':
+                print('Load operation cancelled.')
+                return SyntaxError
+            if is_input_integer(choice):
+                try:
+                    return load(saves_list()[int(choice)])
+                except:
+                    cprint("Invalid selection.", "red")
+    else:
+        cprint("No save files detected.", "red")
+        return SyntaxError
+
+
+def load(filename):
+    with open(filename, 'rb') as f:
         data = pickle.load(f)
     return data
 
 
-def save(player):  # player is the player object
-    with open('save.dat', 'wb') as f:
-        pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+def save(player, filename):  # player is the player object
+    if filename.endswith('.sav'):
+        with open('{}'.format(filename), 'wb') as f:
+            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+    else:
+        with open('{}.sav'.format(filename), 'wb') as f:
+            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+
+
+def saves_list():
+    path = os.path.dirname(os.path.abspath(__file__))
+    savefiles = [f for f in listdir(path) if isfile(join(path, f)) and f.endswith('.sav')]
+    return savefiles
