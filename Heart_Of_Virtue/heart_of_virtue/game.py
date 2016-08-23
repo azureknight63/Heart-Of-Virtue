@@ -66,24 +66,24 @@ _\\|//__( | )______)_/
         if newgame == False:
             try:
                 player = functions.load_select()
-            except:  # if something's broken, proceed as if it were a new game
-                player = Player()
-                universe = Universe()
-                player.universe = universe
-                newgame = True
+                if player == SyntaxError:  # if something's broken, go back to main menu
+                    continue
+            except:  # if something's broken, go back to main menu
+                continue
+
         else:
             player = Player()
             universe = Universe()
             player.universe = universe
 
-        if newgame == True:
+        if newgame:
             # intro_scene.intro()  # Comment this out to disable the intro sequence
             player.universe.build(player)
             player.map = player.universe.starting_map
             player.location_x, player.location_y = (player.universe.starting_position)
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
-        if newgame == True:
+        if newgame:
             for item in player.inventory:
                 if item.name == "Rock":
                     player.eq_weapon = item

@@ -1,5 +1,5 @@
 import string, textwrap, os
-import sys, time, random, pickle
+import sys, time, random, pickle, datetime
 import npc, tiles, moves
 from player import Player
 from termcolor import colored, cprint
@@ -83,7 +83,9 @@ def load_select():
         while True:
             print("Select the file you wish to load.")
             for i, file in enumerate(saves_list()):
-                print('{}: {}'.format(i, file))
+                timestamp = str(datetime.datetime.fromtimestamp(os.path.getmtime(file)))
+                timestamp = timestamp[:-7]
+                print('{}: {} (last modified {})'.format(i, file, timestamp))
             print('x: Cancel')
             choice = input("Selection: ")
             if choice == 'x':
@@ -124,7 +126,9 @@ def save_select(player):
                 print("Select a file to overwrite.\n")
                 for i, filename in enumerate(saves_list()):
                     if 'autosave' not in filename:
-                        print('{}: {}'.format(i, filename))
+                        timestamp = str(datetime.datetime.fromtimestamp(os.path.getmtime(filename)))
+                        timestamp = timestamp[:-7]
+                        print('{}: {} (last modified {})'.format(i, filename, timestamp))
                 print('x: Cancel')
                 choice = input("Selection: ")
                 if is_input_integer(choice):
@@ -136,7 +140,6 @@ def save_select(player):
                             break
                 elif choice == 'x':
                     overwrite_complete = True
-
 
 
 def save(player, filename):  # player is the player object
@@ -155,16 +158,10 @@ def saves_list():
     return savefiles
 
 
-def autosave(player):  # automatically saves progress. Selects file names from 1 thru 5 depending on age
-    autosave_count = 0
-    for filename in saves_list():
-        if 'autosave' in filename:
-            autosave_count += 1
-    if autosave_count <= 4:  # if there are 4 or fewer autosaves, create a new one
-        save(player, ('autosave{}.sav'.format(autosave_count + 1)))
-    else:  # otherwise, replace the oldest autosave
-        savefile = saves_list()
-        for file in savefile:
-            if 'autosave' not in file:
-                savefile.remove(file)
-        save(player, savefile[-1])  #todo left off here
+def autosave(player):  #todo left off here. Cascading saves won't work, not iterable
+    saves = saves_list()
+    for file in saves.reverse():  # cascade the autosaves, trimming off number 5
+        if 'autosave' in file and file != 'autosave5.sav':
+            overwrite = load(file)
+            save(overwrite, 'autosave{}.sav'.format(int(file[8]) + 1))
+    save(player, 'autosave1.sav')
