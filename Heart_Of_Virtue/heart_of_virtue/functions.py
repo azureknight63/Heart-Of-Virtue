@@ -106,17 +106,38 @@ def load(filename):
 
 
 def save_select(player):
-    while True:
+    save_complete = False
+    while save_complete == False:
         print("Save as a new file or overwrite existing?\nn: New file\no: Overwrite existing\nx: Cancel")
         choice = input("Selection: ")
         if choice == 'n':
-            filename = input("Enter a name for your save: ")  #todo left off here
             while True:
+                filename = input("Enter a name for your save: ")
                 try:
                     save(player, filename)
-                    break
+                    save_complete = True
                 except:
                     cprint("Invalid file name. Please enter a valid file name (no spaces or special characters): ")
+        elif choice == 'o':
+            overwrite_complete = False
+            while overwrite_complete == False:
+                print("Select a file to overwrite.\n")
+                for i, filename in enumerate(saves_list()):
+                    if 'autosave' not in filename:
+                        print('{}: {}'.format(i, filename))
+                print('x: Cancel')
+                choice = input("Selection: ")
+                if is_input_integer(choice):
+                    for i, filename in enumerate(saves_list()):
+                        if int(choice) == i:
+                            save(player, filename)
+                            overwrite_complete = True
+                            save_complete = True
+                            break
+                elif choice == 'x':
+                    overwrite_complete = True
+
+
 
 def save(player, filename):  # player is the player object
     if filename.endswith('.sav'):
@@ -134,5 +155,16 @@ def saves_list():
     return savefiles
 
 
-def autosave():  # automatically saves progress. Selects file names from 1 thru 5 depending on age
-    pass
+def autosave(player):  # automatically saves progress. Selects file names from 1 thru 5 depending on age
+    autosave_count = 0
+    for filename in saves_list():
+        if 'autosave' in filename:
+            autosave_count += 1
+    if autosave_count <= 4:  # if there are 4 or fewer autosaves, create a new one
+        save(player, ('autosave{}.sav'.format(autosave_count + 1)))
+    else:  # otherwise, replace the oldest autosave
+        savefile = saves_list()
+        for file in savefile:
+            if 'autosave' not in file:
+                savefile.remove(file)
+        save(player, savefile[-1])  #todo left off here

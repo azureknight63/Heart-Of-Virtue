@@ -92,7 +92,7 @@ _\\|//__( | )______)_/
                     item.isequipped = True
         print(room.intro_text())
         while player.is_alive() and not player.victory:
-            functions.save(player, 'autosave')
+            functions.autosave(player)
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
             room.modify_player(player)
