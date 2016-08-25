@@ -85,7 +85,10 @@ def load_select():
             for i, file in enumerate(saves_list()):
                 timestamp = str(datetime.datetime.fromtimestamp(os.path.getmtime(file)))
                 timestamp = timestamp[:-7]
-                print('{}: {} (last modified {})'.format(i, file, timestamp))
+                check_playtime = load(file)
+                playtime = str(datetime.timedelta(seconds=check_playtime.time_elapsed))
+                playtime = playtime[:-7]
+                print('{}: {} (last modified {}) (play time: {})'.format(i, file, timestamp, playtime))
             print('x: Cancel')
             choice = input("Selection: ")
             if choice == 'x':
@@ -118,6 +121,7 @@ def save_select(player):
                 try:
                     save(player, filename)
                     save_complete = True
+                    break
                 except:
                     cprint("Invalid file name. Please enter a valid file name (no spaces or special characters): ")
         elif choice == 'o':
@@ -154,14 +158,14 @@ def save(player, filename):  # player is the player object
 def saves_list():
     path = os.path.dirname(os.path.abspath(__file__))
     savefiles = [f for f in listdir(path) if isfile(join(path, f)) and f.endswith('.sav')]
-    savefiles.sort(key=lambda x: os.stat(os.path.join(path, x)).st_mtime)
+    savefiles.sort(key=lambda x: os.stat(os.path.join(path, x)).st_mtime, reverse=True)
     return savefiles
 
 
-def autosave(player):  #todo left off here. Cascading saves won't work, not iterable
-    saves = saves_list()
-    for file in saves.reverse():  # cascade the autosaves, trimming off number 5
-        if 'autosave' in file and file != 'autosave5.sav':
-            overwrite = load(file)
-            save(overwrite, 'autosave{}.sav'.format(int(file[8]) + 1))
+def autosave(player):
+    for i in range(4,0,-1):
+        for file in saves_list():  # cascade the autosaves, trimming off number 5
+            if file == 'autosave{}.sav'.format(i):
+                save(load('autosave{}.sav'.format(i)), 'autosave{}.sav'.format(i+1))
+                break
     save(player, 'autosave1.sav')

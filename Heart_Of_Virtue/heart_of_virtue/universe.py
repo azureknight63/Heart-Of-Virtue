@@ -34,7 +34,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
     # def transition(old_world, new_world, new_position):
     #     pass
 
-    def load_tiles(self, mapname):  #todo find a way to load an individual map from the file
+    def load_tiles(self, mapname):
         """Parses a file that describes the world space into the _world object"""
         map = {'name': mapname}
         with open('resources/{}.txt'.format(mapname), 'r') as f:

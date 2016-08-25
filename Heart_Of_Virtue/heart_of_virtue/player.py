@@ -48,6 +48,8 @@ class Player():
         self.saveuniv = None
         self.universe = None
         self.map = None
+        self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
+        self.time_elapsed = 0  # total seconds of gameplay
         self.combat_idle_msg = [
             'Jean breathes heavily.',
             'Jean anxiously shifts his weight back and forth.',
@@ -582,38 +584,7 @@ class Player():
         else:
             print("Jean doesn't see anything remarkable here to look at.\n")
 
-    def take(self, phrase=''):
-        if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
-            if len(self.current_room.items_here) > 0:
-                print("What are you trying to take?")
-                for i, item in enumerate(self.current_room.items_here):
-                    print('{}: {}\n'.format(i,item.name))
-                selection = input('Selection: ')
-                if not functions.is_input_integer(selection):
-                    cprint("JEan isn't sure exactly what he's trying to do.", 'red')
-                else:
-                    self.inventory.append(self.current_room.items_here[int(selection)])
-                    print('Jean takes {}.'.format(self.current_room.items_here[int(selection)].name))
-                    self.current_room.items_here.pop(int(selection))
-            else:
-                cprint("There doesn't seem to be anything here for Jean to take.", 'red')
-        else:
-            if phrase == 'all':
-                for item in self.current_room.items_here:
-                    self.inventory.append(item)
-                    print('Jean takes {}.'.format(item.name))
-                self.current_room.items_here = []
-            else:
-                lower_phrase = phrase.lower()
-                for i, item in enumerate(self.current_room.items_here):
-                    search_item = item.name.lower() + ' ' + item.announce.lower()
-                    if lower_phrase in search_item:
-                        self.inventory.append(item)
-                        print('Jean takes {}.'.format(item.name))
-                        self.current_room.items_here.pop(i)
-                        break
-
-    def search(self):  #todo add this to available actions
+    def search(self):
         print("Jean searches around the area...")
         search_ability = int(((self.finesse * 2) + (self.intelligence * 3) + self.faith) * random.uniform(0.5, 1.5))
         time.sleep(5)
@@ -625,6 +596,13 @@ class Player():
                     something_found = True
         if not something_found:
             print("...but he couldn't find anything of interest.")
+
+    def menu(self):
+        functions.autosave(self)
+        self.main_menu = True
+
+    def save(self):
+        functions.save_select(self)
 
     def stack_inv_items(self):
         for master_item in self.inventory:  # traverse the inventory for stackable items, then stack them
@@ -641,7 +619,9 @@ class Player():
               "q: Equip or unequip an item from your inventory\n"
               "use <item>: Use an item from your inventory\n"
               "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
-                      "Entering 'take' by itself will show a list of items in the room."
+                      "Entering 'take' by itself will show a list of items in the room.\n"
+              "menu: Return to the main menu. Autosaves your current position."
+              "save: Save your current progress to a file."
               , "blue"))
 
     def show_bars(self, hp=True, fp=True):  # show HP and Fatigue bars
@@ -728,4 +708,34 @@ class Player():
                 for i, v in enumerate(self.resistance):
                     self.resistance[i] += adder.add_resistance[i]
 
+    def take(self, phrase=''):
+        if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
+            if len(self.current_room.items_here) > 0:
+                print("What are you trying to take?")
+                for i, item in enumerate(self.current_room.items_here):
+                    print('{}: {}\n'.format(i, item.name))
+                selection = input('Selection: ')
+                if not functions.is_input_integer(selection):
+                    cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+                else:
+                    self.inventory.append(self.current_room.items_here[int(selection)])
+                    print('Jean takes {}.'.format(self.current_room.items_here[int(selection)].name))
+                    self.current_room.items_here.pop(int(selection))
+            else:
+                cprint("There doesn't seem to be anything here for Jean to take.", 'red')
+        else:
+            if phrase == 'all':
+                for item in self.current_room.items_here:
+                    self.inventory.append(item)
+                    print('Jean takes {}.'.format(item.name))
+                self.current_room.items_here = []
+            else:
+                lower_phrase = phrase.lower()
+                for i, item in enumerate(self.current_room.items_here):
+                    search_item = item.name.lower() + ' ' + item.announce.lower()
+                    if lower_phrase in search_item:
+                        self.inventory.append(item)
+                        print('Jean takes {}.'.format(item.name))
+                        self.current_room.items_here.pop(i)
+                        break
 

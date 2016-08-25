@@ -62,13 +62,21 @@ class Use(Action):
     def __init__(self):
         super().__init__(method=Player.use_item, name="Use Item", hotkey='use')
 
-class Take(Action):
-    def __init__(self):
-        super().__init__(method=Player.take, name="Take Item", hotkey='take')
-
 class Search(Action):
     def __init__(self):
         super().__init__(method=Player.take, name="Search", hotkey='search')
+
+class Menu(Action):
+    def __init__(self):
+        super().__init__(method=Player.menu, name="Menu", hotkey='menu')
+
+class Save(Action):
+    def __init__(self):
+        super().__init__(method=Player.save, name="Save", hotkey='save')
+
+class Take(Action):
+    def __init__(self):
+        super().__init__(method=Player.take, name="Take Item", hotkey='take')
 
 # def commands(self):
 #     print("l: Look around\n"

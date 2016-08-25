@@ -52,6 +52,9 @@ class MapTile:
         moves.append(actions.Equip())
         moves.append(actions.Take())
         moves.append(actions.Use())
+        moves.append(actions.Search())
+        moves.append(actions.Menu())
+        moves.append(actions.Save())
         return moves
 
     def spawn_npc(self, npc_type):

@@ -10,7 +10,7 @@ import time
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
-def play():  #todo set up a way to save/load from player-selected files, as well as autosave
+def play():
     game = True
     while game == True:
         cprint(r"""
@@ -91,7 +91,11 @@ _\\|//__( | )______)_/
                 if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
                     item.isequipped = True
         print(room.intro_text())
-        while player.is_alive() and not player.victory:
+        player.main_menu = False
+        check_time = time.time()
+        while player.is_alive() and not player.victory and not player.main_menu:
+            player.time_elapsed += (time.time() - check_time)
+            check_time = time.time()
             functions.autosave(player)
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
