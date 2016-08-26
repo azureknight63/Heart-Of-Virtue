@@ -1,6 +1,6 @@
 									Boundary
-	EmptyCave	EmptyCave,$Slime.2	EmptyCave,$Slime						Boundary
-	EmptyCave	StartingRoom	EmptyCave						Boundary
-	EmptyCave	EmptyCave	EmptyCave						Boundary
+	EmptyCave	EmptyCave,$Slime.2	EmptyCave						Boundary
+	EmptyCave,#Gold.23.h0	StartingRoom	EmptyCave						Boundary
+	EmptyCave	EmptyCave	EmptyCave,#Restorative.1.h0						Boundary
 									Boundary
 									Boundary

@@ -594,6 +594,13 @@ class Player():
                 if search_ability > hidden.hide_factor:
                     print("Jean uncovered " + hidden.discovery_message)
                     something_found = True
+                    hidden.hidden = False
+        for hidden in self.current_room.items_here:
+            if hidden.hidden == True:
+                if search_ability > hidden.hide_factor:
+                    print("Jean found " + hidden.discovery_message)
+                    something_found = True
+                    hidden.hidden = False
         if not something_found:
             print("...but he couldn't find anything of interest.")
 

@@ -64,7 +64,7 @@ class Use(Action):
 
 class Search(Action):
     def __init__(self):
-        super().__init__(method=Player.take, name="Search", hotkey='search')
+        super().__init__(method=Player.search, name="Search", hotkey='search')
 
 class Menu(Action):
     def __init__(self):

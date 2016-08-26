@@ -24,6 +24,13 @@ def check_for_npcs(room): # Check to see what NPCs are in the room. Does not eva
                 print(npc.name + npc.idle_message)
         print("\n")
 
+def check_for_items(room):
+    if len(room.items_here) > 0:
+        for item in room.items_here:
+            if item.hidden == False:
+                print(item.announce)
+        print("\n")
+
 def check_for_combat(player): # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
     if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and
@@ -46,12 +53,6 @@ def spawn_npc(npc_name, tile):
 
 def spawn_item(item_name, tile):
     tile.items_here.append(item_name)
-
-def check_for_items(room):
-    if len(room.items_here) > 0:
-        for item in room.items_here:
-            print(item.announce)
-        print("\n")
 
 def refresh_moves(player):
     player.known_moves = [moves.Rest(), moves.PlayerAttack()]

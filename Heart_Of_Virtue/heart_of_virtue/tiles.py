@@ -57,9 +57,23 @@ class MapTile:
         moves.append(actions.Save())
         return moves
 
-    def spawn_npc(self, npc_type):
+    def spawn_npc(self, npc_type, hidden=False, hfactor=0):
         npc = getattr(__import__('npc'), npc_type)()
+        if hidden == True:
+            npc.hidden = True
+            npc.hide_factor = hfactor
         self.npcs_here.append(npc)
+
+    def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0):
+        if item_type == 'Gold':
+            item = getattr(__import__('items'), item_type)(amt)
+        else:
+            item = getattr(__import__('items'), item_type)()
+        if hidden == True:
+            item.hidden = True
+            item.hide_factor = hfactor
+        self.items_here.append(item)
+
 
 class Boundary(MapTile):
     def intro_text(self):

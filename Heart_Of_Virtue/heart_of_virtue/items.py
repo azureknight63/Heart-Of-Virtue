@@ -2,26 +2,29 @@ import random
 
 class Item():
     """The base class for all items"""
-    def __init__(self, name, description, value, type, subtype):
+    def __init__(self, name, description, value, type, subtype, discovery_message, hidden=False, hide_factor=0):
         self.name = name
         self.description = description
         self.value = value
         self.type = type #is it currency, a weapon, key item? This should be a string since it will be printed to the player at times
         self.subtype = subtype #is it gold, a dagger, a door key? This should be a string since it will be printed to the player at times
+        self.hidden = hidden
+        self.hide_factor = hide_factor
+        self.discovery_message = discovery_message
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
 
 class Gold(Item):
-    def __init__(self, amt):
+    def __init__(self, amt=1):
         self.amt = amt
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
-                         value=self.amt, type="Currency", subtype="Gold")
+                         value=self.amt, type="Currency", subtype="Gold", discovery_message="a small pouch of gold.")
         self.announce = "There's a small pouch of gold on the ground."
 
 class Weapon(Item):
     def __init__(self, name, description, value, damage, isequipped, str_req,
-                 fin_req, str_mod, fin_mod, weight, type, subtype):
+                 fin_req, str_mod, fin_mod, weight, type, subtype, discovery_message=' a kind of weapon.'):
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -31,7 +34,7 @@ class Weapon(Item):
         self.isequipped = isequipped
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype)
+        super().__init__(name, description, value, type, subtype, discovery_message)
         self.announce = "There's a {} here.".format(self.name)
 
     def __str__(self):
@@ -43,7 +46,8 @@ class Weapon(Item):
                                                                  self.value, self.damage, self.weight)
 
 class Armor(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype):
+    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype,
+                 discovery_message='a piece of armor.'):
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -51,7 +55,7 @@ class Armor(Item):
         self.isequipped = isequipped
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype) #announce="{} can be seen on the ground.".format(self.name))
+        super().__init__(name, description, value, type, subtype, discovery_message) #announce="{} can be seen on the ground.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -62,7 +66,8 @@ class Armor(Item):
                 self.name, self.description, self.value, self.protection, self.weight)
 
 class Boots(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype):
+    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype,
+                 discovery_message='a pair of footgear.'):
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -70,7 +75,7 @@ class Boots(Item):
         self.isequipped = isequipped
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype) #announce="A set of {} is laying here.".format(self.name))
+        super().__init__(name, description, value, type, subtype, discovery_message) #announce="A set of {} is laying here.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -81,7 +86,8 @@ class Boots(Item):
                 self.name, self.description, self.value, self.protection, self.weight)
 
 class Helm(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype):
+    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype,
+                 discovery_message='a kind of head covering.'):
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -89,7 +95,7 @@ class Helm(Item):
         self.isequipped = isequipped
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype) # announce="A {} can be seen on the ground.".format(self.name))
+        super().__init__(name, description, value, type, subtype, discovery_message) # announce="A {} can be seen on the ground.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -100,7 +106,8 @@ class Helm(Item):
                 self.name, self.description, self.value, self.protection, self.weight)
 
 class Gloves(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype):
+    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype,
+                 discovery_message=' a pair of gloves.'):
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -108,7 +115,7 @@ class Gloves(Item):
         self.isequipped = isequipped
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype) # announce="There is a pair of {} here.".format(self.name))
+        super().__init__(name, description, value, type, subtype, discovery_message) # announce="There is a pair of {} here.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -119,22 +126,22 @@ class Gloves(Item):
                 self.name, self.description, self.value, self.protection, self.weight)
 
 class Consumable(Item):
-    def __init__(self, name, description, value, weight, type, subtype):
+    def __init__(self, name, description, value, weight, type, subtype, discovery_message='a useful item.'):
         self.weight = weight
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype) # announce="You notice a {} sitting here.".format(self.name))
+        super().__init__(name, description, value, type, subtype, discovery_message) # announce="You notice a {} sitting here.".format(self.name))
 
     def __str__(self):
          return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
             self.name, self.description, self.value, self.weight)
 
 class Special(Item):
-    def __init__(self, name, description, value, weight, type, subtype):
+    def __init__(self, name, description, value, weight, type, subtype, discovery_message=' a strange object.'):
         self.weight = weight
         self.type = type
         self.subtype = subtype
-        super().__init__(name, description, value, type, subtype) # announce="You notice a {} sitting here.".format(self.name))
+        super().__init__(name, description, value, type, subtype, discovery_message) # announce="You notice a {} sitting here.".format(self.name))
 
     def __str__(self):
          return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(

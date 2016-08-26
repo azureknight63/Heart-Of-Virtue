@@ -56,16 +56,35 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     if hasattr(self.tile_exists(map, x, y), parameter[0]):
                                         setattr(self.tile_exists(map, x, y), parameter[0], parameter[1])
                                 elif '$' in param:  # spawns any declared NPCs
-                                    amt = 1
                                     param = param.replace('$', '')
-                                    if '.' in param:
-                                        p_list = param.split('.')
-                                        npc_type = p_list[0]
-                                        amt = int(p_list[1])
-                                    else:
-                                        npc_type = param
+                                    p_list = param.split('.')
+                                    npc_type = p_list[0]
+                                    amt = int(p_list[1])
+                                    hidden = False
+                                    hfactor = 0
+                                    if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
+                                        hidden = True
+                                        hfactor = int(p_list[2][1:])
                                     for i in range(0, amt):
-                                        self.tile_exists(map, x, y).spawn_npc(npc_type)
+                                        self.tile_exists(map, x, y).spawn_npc(npc_type, hidden=hidden,
+                                                                              hfactor=hfactor)
+                                elif '#' in param:  # spawns any declared items
+                                    param = param.replace('#', '')
+                                    p_list = param.split('.')
+                                    item_type = p_list[0]
+                                    amt = int(p_list[1])
+                                    hidden = False
+                                    hfactor = 0
+                                    gold_amt = 0
+                                    if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
+                                        hidden = True
+                                        hfactor = int(p_list[2][1:])
+                                    if p_list[0] == 'Gold':
+                                        gold_amt = amt
+                                        amt = 1
+                                    for i in range(0, amt):
+                                        self.tile_exists(map, x, y).spawn_item(item_type,  amt=gold_amt,
+                                                                               hidden=hidden, hfactor=hfactor)
 
                 else:
                     tile_name = block_contents
@@ -74,33 +93,3 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                     self.starting_position = (x, y)
 
         self.maps.append(map)
-
-    # def place_npcs(self):
-    #     for tile in _world:
-    #         if _world[tile] != None:
-    #             x = _world[tile].x
-    #             y = _world[tile].y
-    #             # List all of the different enemy/NPC types and locations here. Duplicates will create multiple enemies.
-    #             rock_rumblers = [(3,4)]
-    #             for i,v in enumerate(rock_rumblers):
-    #                 if x == rock_rumblers[i][0] and y == rock_rumblers[i][1]:
-    #                     functions.spawn_npc(npc.RockRumbler(), _world[tile])
-    #             slimes = [(1,4), (1,4)]
-    #             for i,v in enumerate(slimes):
-    #                 if x == slimes[i][0] and y == slimes[i][1]:
-    #                     functions.spawn_npc(npc.Slime(), _world[tile])
-
-    # def place_items(self):
-    #     for tile in _world:
-    #         if _world[tile] != None:
-    #             x = _world[tile].x
-    #             y = _world[tile].y
-    #             # List all of the different enemy/NPC types and locations here. Duplicates will create multiple enemies.
-    #             gold_pouches = [(2,3), (3,4)]
-    #             restoratives = [(2,5), (2,3), (2,2), (2,2)]
-    #             for i,v in enumerate(gold_pouches):
-    #                 if x == gold_pouches[i][0] and y == gold_pouches[i][1]:
-    #                     functions.spawn_item(items.Gold(random.randint(13,26)), _world[tile])
-    #             for i, v in enumerate(restoratives):
-    #                 if x == restoratives[i][0] and y == restoratives[i][1]:
-    #                     functions.spawn_item(items.Restorative(), _world[tile])

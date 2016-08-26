@@ -93,6 +93,7 @@ _\\|//__( | )______)_/
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()
+        mark_health = player.hp
         while player.is_alive() and not player.victory and not player.main_menu:
             player.time_elapsed += (time.time() - check_time)
             check_time = time.time()
@@ -100,9 +101,10 @@ _\\|//__( | )______)_/
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
             room.modify_player(player)
-            player.show_bars(True,False)  # show just the health bar
+            if mark_health != player.hp:
+                player.show_bars(True,False)  # show just the health bar if the player's current HP has changed
+                mark_health = player.hp
             player.refresh_moves()
-            # room.spawn_npc('Slime')
             functions.check_for_npcs(room)
             functions.check_for_items(room)
             combat_list = functions.check_for_combat(player)
