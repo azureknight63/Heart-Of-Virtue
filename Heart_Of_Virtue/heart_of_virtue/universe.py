@@ -85,6 +85,20 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     for i in range(0, amt):
                                         self.tile_exists(map, x, y).spawn_item(item_type,  amt=gold_amt,
                                                                                hidden=hidden, hfactor=hfactor)
+                                elif '!' in param:  # spawns any declared events
+                                    param = param.replace('!', '')
+                                    event_type = param
+                                    repeat = False
+                                    parallel = False
+                                    if '.' in param:
+                                        p_list = param.split('.')
+                                        event_type = p_list[0]
+                                        if 'r' in p_list[1:]:
+                                            repeat = True
+                                        if 'p' in p_list[1:]:
+                                            parallel = True
+                                    self.tile_exists(map, x, y).spawn_event(event_type, repeat=repeat,
+                                                                          parallel=parallel) #todo left off here, need to test event creation
 
                 else:
                     tile_name = block_contents

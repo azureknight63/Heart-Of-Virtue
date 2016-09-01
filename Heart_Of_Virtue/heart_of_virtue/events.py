@@ -10,11 +10,13 @@ class Event: #master class for all events
     '''
     Events are added to tiles much like NPCs and items. These are evaluated each game loop to see if the conditions
     of the event are met. If so, execute the 'process' function, else pass.
+    Set repeat to True to automatically repeat for each game loop; setting parallel to True opens a new thread
 
     '''
-    def __init__(self, name, player, repeat=False, parallel=False):
+    def __init__(self, name, player, tile, repeat=False, parallel=False):
         self.name = name
         self.player = player
+        self.tile = tile
         self.repeat = repeat
         self.parallel = parallel
         self.has_run = False
@@ -23,11 +25,10 @@ class Event: #master class for all events
         if self.repeat:
             self.call_process()
         else:
-            if not self.has_run:
-                self.call_process()
-                self.has_run = True
+            self.call_process()
+            self.tile.events_here.remove(self)  # if this is a one-time event, kill it after it executes
 
-    def call_process(self):
+    def call_process(self):  # allows switching between parallel and standard processing
         if self.parallel:
             threading._start_new_thread(self.process(), self)
         else:
@@ -43,26 +44,15 @@ class Event: #master class for all events
         """
         pass
 
-#todo left off here; not sure auto is needed
 
-class Auto(Event):  # Event subclass that automatically runs
-    def __init__(self, name, player, repeat=False, parallel=False):  # Set repeat to True to automatically repeat
-        # for each game loop; setting parallel to True opens a new thread
-        super().__init__(name=name, player=player)
-        self.repeat = repeat
-        self.parallel = parallel
-        self.has_run = False
+class Gold_from_heaven(Event):  # Gives the player a random amount of gold... for testing? Or just fun.
+    def __init__(self, player, tile, name='Gold From Heaven', repeat=False, parallel=False):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel)
 
     def check_conditions(self):
         if True:
             self.pass_conditions_to_process()
 
     def process(self):
-        """
-        to be overwritten by an event subclass
-        """
-        pass
-
-class Parrying(State):
-    def __init__(self, target):  # parries the next attack, giving the aggressor a large recoil duration
-        super().__init__(name="Parrying", target=target, beats_max=5,hidden=True)
+        print("Oddly enough, a pouch of gold materializes in front of you.")
+        self.tile.spawn_item('Gold', amt=77)
