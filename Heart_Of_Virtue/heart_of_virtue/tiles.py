@@ -21,6 +21,7 @@ class MapTile:
         self.events_here = []
         self.last_entered = 0 # describes the game_tick when the player last entered. Useful for monster/item respawns.
         self.respawn_rate = 9999 # tiles which respawn enemies will adjust this number.
+        self.block_exit = []  # append a direction to block it
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
@@ -33,13 +34,13 @@ class MapTile:
     def adjacent_moves(self):
         """Returns all move actions for adjacent tiles."""
         moves = []
-        if self.universe.tile_exists(self.map, self.x + 1, self.y):
+        if self.universe.tile_exists(self.map, self.x + 1, self.y) and "east" not in self.block_exit:
             moves.append(actions.MoveEast())
-        if self.universe.tile_exists(self.map, self.x - 1, self.y):
+        if self.universe.tile_exists(self.map, self.x - 1, self.y) and "west" not in self.block_exit:
             moves.append(actions.MoveWest())
-        if self.universe.tile_exists(self.map, self.x, self.y - 1):
+        if self.universe.tile_exists(self.map, self.x, self.y - 1) and "north" not in self.block_exit:
             moves.append(actions.MoveNorth())
-        if self.universe.tile_exists(self.map, self.x, self.y + 1):
+        if self.universe.tile_exists(self.map, self.x, self.y + 1) and "south" not in self.block_exit:
             moves.append(actions.MoveSouth())
         return moves
 
@@ -57,6 +58,10 @@ class MapTile:
         moves.append(actions.Menu())
         moves.append(actions.Save())
         return moves
+
+    def evaluate_events(self):
+        for event in self.events_here:
+            event.check_conditions()
 
     def spawn_npc(self, npc_type, hidden=False, hfactor=0):
         npc = getattr(__import__('npc'), npc_type)()
@@ -76,8 +81,8 @@ class MapTile:
         self.items_here.append(item)
 
 
-    def spawn_event(self, event_type, player, tile, repeat=False, parallel=False):
-        event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel)
+    def spawn_event(self, event_type, player, tile, repeat=False, parallel=False, params=None):
+        event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, params)
         self.events_here.append(event)
 
 class Boundary(MapTile):

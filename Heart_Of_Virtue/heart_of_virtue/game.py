@@ -100,6 +100,7 @@ _\\|//__( | )______)_/
             functions.autosave(player)
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
+            room.evaluate_events()
             room.modify_player(player)
             if mark_health != player.hp:
                 player.show_bars(True,False)  # show just the health bar if the player's current HP has changed

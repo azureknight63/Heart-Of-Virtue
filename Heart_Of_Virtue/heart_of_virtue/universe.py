@@ -17,7 +17,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
         else:  # new game
             map_list = ["start_area"]  # as more maps are built, add them to this list
             for map in map_list:
-                self.load_tiles(map)
+                self.load_tiles(player, map)
             for map in self.maps:
                 if "start_area" in map['name']:
                     self.starting_map = map
@@ -34,7 +34,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
     # def transition(old_world, new_world, new_position):
     #     pass
 
-    def load_tiles(self, mapname):
+    def load_tiles(self, player, mapname):
         """Parses a file that describes the world space into the _world object"""
         map = {'name': mapname}
         with open('resources/{}.txt'.format(mapname), 'r') as f:
@@ -90,16 +90,24 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     event_type = param
                                     repeat = False
                                     parallel = False
+                                    params = None
                                     if '.' in param:
                                         p_list = param.split('.')
                                         event_type = p_list[0]
-                                        if 'r' in p_list[1:]:
-                                            repeat = True
-                                        if 'p' in p_list[1:]:
-                                            parallel = True
-                                    self.tile_exists(map, x, y).spawn_event(event_type, repeat=repeat,
-                                                                          parallel=parallel) #todo left off here, need to test event creation
-
+                                        for param in p_list:
+                                            if param == 'r':
+                                                repeat = True
+                                                p_list.remove(param)
+                                            elif param == 'p':
+                                                parallel = True
+                                                p_list.remove(param)
+                                        params = p_list[1:]
+                                    self.tile_exists(map, x, y).spawn_event(event_type,
+                                                                            player,
+                                                                            self.tile_exists(map, x, y),
+                                                                            repeat=repeat,
+                                                                            parallel=parallel,
+                                                                            params=params)
                 else:
                     tile_name = block_contents
                     map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self, map, x, y)

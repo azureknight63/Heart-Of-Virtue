@@ -1,6 +1,6 @@
 									Boundary
 	EmptyCave	EmptyCave,$Slime.2	EmptyCave						Boundary
-	EmptyCave,#Gold.23.h0	StartingRoom	EmptyCave						Boundary
-	EmptyCave	EmptyCave,!Gold_from_heaven.0.0	EmptyCave,#Restorative.1.h0						Boundary
+	EmptyCave,#Gold.23.h0	StartingRoom	EmptyCave,!Block.east	EmptyCave					Boundary
+	EmptyCave,!Block	EmptyCave,!GoldFromHeaven	EmptyCave,#Restorative.1.h0						Boundary
 									Boundary
 									Boundary
