@@ -90,10 +90,10 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     event_type = param
                                     repeat = False
                                     parallel = False
-                                    params = None
+                                    params = []
                                     if '.' in param:
                                         p_list = param.split('.')
-                                        event_type = p_list[0]
+                                        event_type = p_list.pop(0)
                                         for param in p_list:
                                             if param == 'r':
                                                 repeat = True
@@ -101,7 +101,8 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                             elif param == 'p':
                                                 parallel = True
                                                 p_list.remove(param)
-                                        params = p_list[1:]
+                                        for param in p_list:
+                                            params.append(param)  # todo left off here
                                     self.tile_exists(map, x, y).spawn_event(event_type,
                                                                             player,
                                                                             self.tile_exists(map, x, y),

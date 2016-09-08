@@ -93,11 +93,15 @@ _\\|//__( | )______)_/
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()
+        auto_save_timer = check_time
         mark_health = player.hp
         while player.is_alive() and not player.victory and not player.main_menu:
             player.time_elapsed += (time.time() - check_time)
+            auto_save_timer += (time.time() - check_time)
+            if auto_save_timer > 300:  # autosave timer
+                functions.autosave(player)
+                auto_save_timer = 0
             check_time = time.time()
-            functions.autosave(player)
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
             room.evaluate_events()

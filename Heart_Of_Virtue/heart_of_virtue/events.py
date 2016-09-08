@@ -72,13 +72,12 @@ class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for
 
 class Block(Event):  # blocks exit in tile, blocks all if none are declared
     def __init__(self, player, tile, name='Block', repeat=False, parallel=False, params=None):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel)
-        self.directions = params
-        if self.directions == None:
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+        if not params:
             self.directions = ['north', 'south', 'east', 'west']
-        if type(self.directions) is not list:
-            self.directions = list(params)
-        print(tile, '@ [', tile.x, tile.y, '] blocking ', self.directions)  #todo left off here... not sure why east isn't being blocked on tile 3,2
+        else:
+            self.directions = params
+        print(tile, '@ [', tile.x, tile.y, '] blocking ', self.directions)  # todo left off here... not sure why east isn't being blocked on tile 3,2
 
     def check_conditions(self):
         if True:
