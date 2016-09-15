@@ -73,6 +73,7 @@ class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for
 class Block(Event):  # blocks exit in tile, blocks all if none are declared
     def __init__(self, player, tile, name='Block', repeat=False, parallel=False, params=None):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+        self.directions = []
         if not params:
             self.directions = ['north', 'south', 'east', 'west']
         else:
