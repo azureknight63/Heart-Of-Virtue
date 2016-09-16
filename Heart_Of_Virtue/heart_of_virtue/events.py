@@ -23,7 +23,7 @@ class Event: #master class for all events
     params is a list of additional parameters, None if omitted.
 
     '''
-    def __init__(self, name, player, tile, repeat=False, parallel=False, params=None):
+    def __init__(self, name, player, tile, repeat, parallel, params):
         self.name = name
         self.player = player
         self.tile = tile
@@ -58,8 +58,8 @@ class Event: #master class for all events
 
 
 class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for testing? Or just fun.
-    def __init__(self, player, tile, name='Gold From Heaven', repeat=False, parallel=False):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel)
+    def __init__(self, player, tile, repeat, parallel, name='Gold From Heaven'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=None)
 
     def check_conditions(self):
         if True:
@@ -71,14 +71,13 @@ class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for
 
 
 class Block(Event):  # blocks exit in tile, blocks all if none are declared
-    def __init__(self, player, tile, name='Block', repeat=False, parallel=False, params=None):
+    def __init__(self, player, tile, repeat, parallel, params, name='Block'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
         self.directions = []
         if not params:
             self.directions = ['north', 'south', 'east', 'west']
         else:
             self.directions = params
-        print(tile, '@ [', tile.x, tile.y, '] blocking ', self.directions)  # todo left off here... not sure why east isn't being blocked on tile 3,2
 
     def check_conditions(self):
         if True:

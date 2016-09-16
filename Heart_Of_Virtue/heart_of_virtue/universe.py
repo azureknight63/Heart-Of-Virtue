@@ -94,15 +94,17 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     if '.' in param:
                                         p_list = param.split('.')
                                         event_type = p_list.pop(0)
-                                        for param in p_list:
-                                            if param == 'r':
+                                        for setting in p_list:
+                                            if setting == 'r':
                                                 repeat = True
-                                                p_list.remove(param)
-                                            elif param == 'p':
+                                                p_list.remove(setting)
+                                                continue
+                                            elif setting == 'p':
                                                 parallel = True
-                                                p_list.remove(param)
-                                        for param in p_list:
-                                            params.append(param)  # todo left off here
+                                                p_list.remove(setting)
+                                                continue
+                                            params.append(setting)
+                                    # print("Event created: ", self.tile_exists(map, x, y), event_type, repeat, parallel, params)
                                     self.tile_exists(map, x, y).spawn_event(event_type,
                                                                             player,
                                                                             self.tile_exists(map, x, y),

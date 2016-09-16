@@ -81,7 +81,7 @@ class MapTile:
         self.items_here.append(item)
 
 
-    def spawn_event(self, event_type, player, tile, repeat=False, parallel=False, params=None):
+    def spawn_event(self, event_type, player, tile, repeat, parallel, params):
         event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, params)
         self.events_here.append(event)
 
