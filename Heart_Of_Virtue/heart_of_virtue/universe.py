@@ -111,6 +111,19 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                                                             repeat=repeat,
                                                                             parallel=parallel,
                                                                             params=params)
+                                elif '@' in param:  # spawns any declared objects
+                                    param = param.replace('@', '')
+                                    p_list = param.split('.')
+                                    obj_type = p_list[0]
+                                    amt = int(p_list[1])
+                                    hidden = False
+                                    hfactor = 0
+                                    if len(p_list) == 3:  # if the obj is declared hidden, set appropriate values
+                                        hidden = True
+                                        hfactor = int(p_list[2][1:])
+                                    for i in range(0, amt):
+                                        self.tile_exists(map, x, y).spawn_object(obj_type, hidden=hidden,
+                                                                              hfactor=hfactor)
                 else:
                     tile_name = block_contents
                     map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self, map, x, y)

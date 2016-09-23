@@ -6,7 +6,7 @@ import universe, functions, intro_scene, moves, combat, npc
 from player import Player
 from universe import Universe
 from termcolor import colored, cprint
-import time
+import time, sys
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -112,6 +112,7 @@ _\\|//__( | )______)_/
             player.refresh_moves()
             functions.check_for_npcs(room)
             functions.check_for_items(room)
+            functions.check_for_objects(room)
             combat_list = functions.check_for_combat(player)
             if len(combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!","red"))
@@ -129,22 +130,34 @@ _\\|//__( | )______)_/
                 action_input = input('Action: ')
                 available_actions = room.available_actions()
                 count_args = action_input.split(' ')
+                arbitrary_action = True
                 if len(count_args) == 1:
                     for action in available_actions:
                         if action_input == action.hotkey:
+                            arbitrary_action = False
                             player.do_action(action, **action.kwargs)
-                            break
                 elif len(count_args) > 1:
                     for action in available_actions:
                         if count_args[0] == action.hotkey:
                             join_args = ' '.join(count_args[1:])
                             player.do_action(action, join_args)
+                            arbitrary_action = False
                             break
+                    if arbitrary_action:
+                        lower_phrase = count_args[1].lower()
+                        for i, object in enumerate(room.objects_here):
+                            search_item = object.name.lower() + ' ' + object.idle_message.lower()
+                            if lower_phrase in search_item and not object.hidden:
+                                for keyword in object.keywords:
+                                    if count_args[0] == keyword:
+                                        object.__getattribute__(keyword)()
+                                break
+
                 else:
                     cprint("Jean isn't sure exactly what he's trying to do.", 'red')
             time.sleep(0.5)
 
-
+#todo Make some stuff happen! Start pushing onward with the story!
 
 if __name__ == "__main__":
     play()

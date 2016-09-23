@@ -5,6 +5,7 @@ Combat states to be used within combat module. May also spill over to the standa
 from termcolor import colored, cprint
 import threading
 import random
+import time
 
 class EventThread(threading.Thread):
     def __init__(self, event):
@@ -96,11 +97,13 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 
 
 # class Unblock(Event):  # unblocks exit in tile, unblocks all if none are declared
-#     def __init__(self, player, tile, name='Unblock', params=None, repeat=False, parallel=False):
-#         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel)
-#         self.directions = params
-#         if self.directions == None:
+#     def __init__(self, player, tile, repeat, parallel, params, name='Unblock'):
+#         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+#         self.directions = []
+#         if not params:
 #             self.directions = ['north', 'south', 'east', 'west']
+#         else:
+#             self.directions = params
 #
 #     def check_conditions(self):
 #         if True:
@@ -116,3 +119,36 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 #                 self.tile.block_exit.remove('north')
 #             if direction == 'south' and 'south' in self.tile.block_exit:
 #                 self.tile.block_exit.remove('south')
+
+
+class Story(Event):  # Executes the story event with the given ID number, where params=ID#
+    def __init__(self, player, tile, repeat, parallel, params, name='Story'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+        self.disable = {}  # key is the story ID, value is whether it's disabled
+        for id in params:
+            self.disable[id] = False
+
+    def check_conditions(self):
+        if True:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        if '0' in self.params:
+            if not self.disable['0']:
+                wall_switch = None
+                for object in self.tile.objects_here:
+                    if object.name == 'Wall Switch':
+                        wall_switch = object
+                if wall_switch.position == True:
+                    print("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
+                          " east.")
+                    self.tile.block_exit.remove('east')
+                    self.disable['0'] = True
+                    time.sleep(0.5)
+
+        else:
+            temp = '!!!param error: params='
+            for p in self.params:
+                temp += p
+                temp += ', '
+            print(temp)

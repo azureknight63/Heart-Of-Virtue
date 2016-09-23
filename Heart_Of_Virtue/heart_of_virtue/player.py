@@ -568,21 +568,34 @@ class Player():
         functions.check_for_npcs(tile)
         functions.check_for_items(tile)
 
-    def view(self):
-        stuff_here = {}
-        for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here):
-            stuff_here[str(i+1)] = thing  # The +1 is to make the list player-friendly
-        if len(stuff_here) > 0:
-            print("What would you like to view?\n\n")
-            for k, v in stuff_here.items():
-                print(k, ": ", v.name)
-            choice = input("Selection: ")
-            if choice in stuff_here:
-                print(stuff_here[choice])
+    def view(self, phrase=''):
+        print(phrase)
+        if phrase == '':
+            stuff_here = {}
+            for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
+                                              self.current_room.objects_here):
+                if not thing.hidden:
+                    stuff_here[str(i)] = thing
+            if len(stuff_here) > 0:
+                print("What would you like to view?\n\n")
+                for k, v in stuff_here.items():
+                    print(k, ": ", v.name)
+                choice = input("Selection: ")
+                if choice in stuff_here:
+                    print(stuff_here[choice].description)
+                else:
+                    print("Invalid selection.")
             else:
-                print("Invalid selection.")
+                print("Jean doesn't see anything remarkable here to look at.\n")
         else:
-            print("Jean doesn't see anything remarkable here to look at.\n")
+            lower_phrase = phrase.lower()
+            for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
+                                              self.current_room.objects_here):
+                if not thing.hidden:
+                    search_item = thing.name.lower() + ' ' + thing.announce.lower()
+                    if lower_phrase in search_item:
+                        print(thing.description)
+                        break
 
     def search(self):
         print("Jean searches around the area...")
@@ -596,6 +609,12 @@ class Player():
                     something_found = True
                     hidden.hidden = False
         for hidden in self.current_room.items_here:
+            if hidden.hidden == True:
+                if search_ability > hidden.hide_factor:
+                    print("Jean found " + hidden.discovery_message)
+                    something_found = True
+                    hidden.hidden = False
+        for hidden in self.current_room.objects_here:
             if hidden.hidden == True:
                 if search_ability > hidden.hide_factor:
                     print("Jean found " + hidden.discovery_message)

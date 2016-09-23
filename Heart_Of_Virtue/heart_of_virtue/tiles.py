@@ -19,6 +19,7 @@ class MapTile:
         self.npcs_here = []
         self.items_here = []
         self.events_here = []
+        self.objects_here = []
         self.last_entered = 0 # describes the game_tick when the player last entered. Useful for monster/item respawns.
         self.respawn_rate = 9999 # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
@@ -80,10 +81,16 @@ class MapTile:
             item.hide_factor = hfactor
         self.items_here.append(item)
 
-
     def spawn_event(self, event_type, player, tile, repeat, parallel, params):
         event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, params)
         self.events_here.append(event)
+
+    def spawn_object(self, obj_type, hidden=False, hfactor=0):
+        obj = getattr(__import__('objects'), obj_type)()
+        if hidden == True:
+            obj.hidden = True
+            obj.hide_factor = hfactor
+        self.objects_here.append(obj)
 
 class Boundary(MapTile):
     def intro_text(self):

@@ -17,7 +17,8 @@ def print_slow(str):
 def screen_clear():
     print("\n" * 100)
 
-def check_for_npcs(room): # Check to see what NPCs are in the room. Does not evaluate combat aggro - that's a different function
+def check_for_npcs(room):  # Check to see what NPCs are in the room.
+    # Does not evaluate combat aggro - that's a different function
     if len(room.npcs_here) > 0:  # Evaluate the room's NPCs.
         for npc in room.npcs_here:
             if npc.hidden == False:
@@ -30,6 +31,14 @@ def check_for_items(room):
             if item.hidden == False:
                 print(item.announce)
         print("\n")
+
+def check_for_objects(room): # Check to see what objects are in the room.
+    if len(room.objects_here) > 0:
+        for obj in room.objects_here:
+            if obj.hidden == False:
+                print(obj.idle_message)
+        print("\n")
+
 
 def check_for_combat(player): # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
