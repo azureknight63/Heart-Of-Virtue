@@ -137,7 +137,7 @@ class Story(Event):  # Executes the story event with the given ID number, where 
             if not self.disable['0']:
                 wall_switch = None
                 for object in self.tile.objects_here:
-                    if object.name == 'Wall Switch':
+                    if object.name == 'Wall Depression':
                         wall_switch = object
                 if wall_switch.position == True:
                     print("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"

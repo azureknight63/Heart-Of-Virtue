@@ -33,3 +33,20 @@ class Hidden_Wall_Switch(Object):
             self.position = True
         else:
             self.position = False
+
+
+class Wall_Inscription(Object):
+    '''
+    An inscription (typically visible) that can be READ.
+    '''
+    def __init__(self):
+        description = "Words scratched into the wall. You think you may be able to READ them."
+        super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
+                         idle_message="There appears to be some words inscribed in the wall.",
+                         discovery_message=" some words etched into the wall!")
+        self.words = 'Unfortunately, the inscription is too worn to be decipherable.'
+        self.keywords.append('read')
+
+    def read(self):
+        print("Jean leans ") #todo
+        time.sleep(0.5)
