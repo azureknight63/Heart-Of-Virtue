@@ -3,8 +3,8 @@ import functions
 
 class Object:
     def __init__(self, name, description, hidden = False, hide_factor = 0,
-                 idle_message = ' is here.',
-                 discovery_message = 'something interesting.', target = None):
+                 idle_message=' is here.',
+                 discovery_message='something interesting.', target=None):
         self.name = name
         self.description = description
         self.idle_message = idle_message
@@ -18,7 +18,7 @@ class Hidden_Wall_Switch(Object):
     '''
     A hidden wall switch that does something when pressed.
     '''
-    def __init__(self):
+    def __init__(self, params):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(name="Wall Depression", description=description, hidden=True, hide_factor=0,
                          idle_message="There's a small depression in the wall.",
@@ -37,16 +37,13 @@ class Hidden_Wall_Switch(Object):
 
 class Wall_Inscription(Object):
     '''
-    An inscription (typically visible) that can be READ.
+    An inscription (typically visible) that can be looked at.
     '''
-    def __init__(self):
-        description = "Words scratched into the wall. You think you may be able to READ them."
+    def __init__(self, params):
+        description = "Words scratched into the wall. Unfortunately, the inscription is too worn to be decipherable."
         super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
                          idle_message="There appears to be some words inscribed in the wall.",
                          discovery_message=" some words etched into the wall!")
-        self.words = 'Unfortunately, the inscription is too worn to be decipherable.'
-        self.keywords.append('read')
 
-    def read(self):
-        print("Jean leans ") #todo
-        time.sleep(0.5)
+        if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
+            self.description = "The inscription reads: EZ 41:1, LK 11:9-10 SEARCH NOT SEEK, PRESS NOT KNOCK"

@@ -118,11 +118,16 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     amt = int(p_list[1])
                                     hidden = False
                                     hfactor = 0
-                                    if len(p_list) == 3:  # if the obj is declared hidden, set appropriate values
-                                        hidden = True
-                                        hfactor = int(p_list[2][1:])
+                                    params = []
+                                    if len(p_list) > 1:
+                                        for setting in p_list:
+                                            if setting[0] == 'h':
+                                                hidden = True
+                                                hfactor = setting[1:]
+                                            else:
+                                                params.append(setting)
                                     for i in range(0, amt):
-                                        self.tile_exists(map, x, y).spawn_object(obj_type, hidden=hidden,
+                                        self.tile_exists(map, x, y).spawn_object(obj_type, params=params, hidden=hidden,
                                                                               hfactor=hfactor)
                 else:
                     tile_name = block_contents

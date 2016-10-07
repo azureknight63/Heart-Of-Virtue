@@ -569,7 +569,7 @@ class Player():
         functions.check_for_items(tile)
 
     def view(self, phrase=''):
-        print(phrase)
+        # print(phrase)
         if phrase == '':
             stuff_here = {}
             for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +

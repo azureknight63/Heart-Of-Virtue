@@ -85,8 +85,8 @@ class MapTile:
         event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, params)
         self.events_here.append(event)
 
-    def spawn_object(self, obj_type, hidden=False, hfactor=0):
-        obj = getattr(__import__('objects'), obj_type)()
+    def spawn_object(self, obj_type, params, hidden=False, hfactor=0):
+        obj = getattr(__import__('objects'), obj_type)(params)
         if hidden == True:
             obj.hidden = True
             obj.hide_factor = hfactor
