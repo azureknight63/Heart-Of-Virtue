@@ -24,7 +24,7 @@ class Gold(Item):
 
 class Weapon(Item):
     def __init__(self, name, description, value, damage, isequipped, str_req,
-                 fin_req, str_mod, fin_mod, weight, type, subtype, discovery_message=' a kind of weapon.'):
+                 fin_req, str_mod, fin_mod, weight, type, subtype, discovery_message='a kind of weapon.'):
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -107,7 +107,7 @@ class Helm(Item):
 
 class Gloves(Item):
     def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, type, subtype,
-                 discovery_message=' a pair of gloves.'):
+                 discovery_message='a pair of gloves.'):
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -137,7 +137,7 @@ class Consumable(Item):
             self.name, self.description, self.value, self.weight)
 
 class Special(Item):
-    def __init__(self, name, description, value, weight, type, subtype, discovery_message=' a strange object.'):
+    def __init__(self, name, description, value, weight, type, subtype, discovery_message='a strange object.'):
         self.weight = weight
         self.type = type
         self.subtype = subtype

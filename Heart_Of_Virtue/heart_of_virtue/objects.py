@@ -22,7 +22,7 @@ class Hidden_Wall_Switch(Object):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(name="Wall Depression", description=description, hidden=True, hide_factor=0,
                          idle_message="There's a small depression in the wall.",
-                         discovery_message=" a small depression in the wall!")
+                         discovery_message="a small depression in the wall!")
         self.position = False
         self.keywords.append('press')
 
@@ -43,7 +43,7 @@ class Wall_Inscription(Object):
         description = "Words scratched into the wall. Unfortunately, the inscription is too worn to be decipherable."
         super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
                          idle_message="There appears to be some words inscribed in the wall.",
-                         discovery_message=" some words etched into the wall!")
+                         discovery_message="some words etched into the wall!")
 
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
-            self.description = "The inscription reads: EZ 41:1, LK 11:9-10 SEARCH NOT SEEK, PRESS NOT KNOCK"
+            self.description = "The inscription reads: EZEK 41:1 LUKE 11:9-10 JOEL 2:7"
