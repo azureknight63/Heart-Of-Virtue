@@ -46,4 +46,4 @@ class Wall_Inscription(Object):
                          discovery_message=" some words etched into the wall!")
 
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
-            self.description = "The inscription reads: EZ 41:1, LK 11:9-10 SEARCH NOT SEEK, PRESS NOT KNOCK"
+            self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
