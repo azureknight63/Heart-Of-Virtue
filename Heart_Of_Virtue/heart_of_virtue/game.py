@@ -8,7 +8,6 @@ from universe import Universe
 from termcolor import colored, cprint
 import time, sys
 
-
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
@@ -134,12 +133,12 @@ _\\|//__( | )______)_/
                 arbitrary_action = True
                 if len(count_args) == 1:
                     for action in available_actions:
-                        if action_input == action.hotkey:
+                        if action_input in action.hotkey:
                             arbitrary_action = False
                             player.do_action(action, **action.kwargs)
                 elif len(count_args) > 1:
                     for action in available_actions:
-                        if count_args[0] == action.hotkey:
+                        if count_args[0] in action.hotkey:
                             join_args = ' '.join(count_args[1:])
                             player.do_action(action, join_args)
                             arbitrary_action = False

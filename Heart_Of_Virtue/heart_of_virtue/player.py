@@ -1,6 +1,6 @@
-import random, time
+import random, time, inspect
 from switch import switch
-import items, functions, universe, moves
+import items, functions, universe, moves, actions
 from termcolor import colored, cprint
 
 class Player():
@@ -639,16 +639,19 @@ class Player():
                         self.inventory.remove(duplicate_item)
 
     def commands(self):
-        print(colored("l: Look around\n"
-              "v: View details on a person, creature, or object\n"
-              "i: Inspect your inventory\n"
-              "q: Equip or unequip an item from your inventory\n"
-              "use <item>: Use an item from your inventory\n"
-              "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
-                      "Entering 'take' by itself will show a list of items in the room.\n"
-              "menu: Return to the main menu. Autosaves your current position."
-              "save: Save your current progress to a file."
-              , "blue"))
+        for obj in inspect.getmembers(actions):
+            if inspect.isclass(obj):
+                print(colored(, "blue")) #todo left off here - trying to iterate through classes in actions.py and print out name, hotkeys, and helptext
+
+        #     "l: Look around\n"
+        #     "v: View details on a person, creature, or object\n"
+        #     "i: Inspect your inventory\n"
+        #     "q: Equip or unequip an item from your inventory\n"
+        #     "use <item>: Use an item from your inventory\n"
+        #     "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
+        #     "Entering 'take' by itself will show a list of items in the room.\n"
+        # "menu: Return to the main menu. Autosaves your current position."
+        # "save: Save your current progress to a file."
 
     def show_bars(self, hp=True, fp=True):  # show HP and Fatigue bars
         if hp:
