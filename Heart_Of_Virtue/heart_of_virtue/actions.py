@@ -54,6 +54,10 @@ class View(Action):
     def __init__(self):
         super().__init__(method=Player.view, name="View", hotkey='v')
 
+class View_Alt(Action):  #todo implement alternate ability keys
+    def __init__(self):
+        super().__init__(method=Player.view, name="View", hotkey='view')
+
 class Equip(Action):
     def __init__(self):
         super().__init__(method=Player.equip_item, name="Change Equipment", hotkey='q')

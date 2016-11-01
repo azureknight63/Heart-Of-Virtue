@@ -157,7 +157,5 @@ _\\|//__( | )______)_/
                     cprint("Jean isn't sure exactly what he's trying to do.", 'red')
             time.sleep(0.5)
 
-#todo Make some stuff happen! Start pushing onward with the story!
-
 if __name__ == "__main__":
     play()
