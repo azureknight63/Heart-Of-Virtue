@@ -8,6 +8,7 @@ from universe import Universe
 from termcolor import colored, cprint
 import time, sys
 
+
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():
