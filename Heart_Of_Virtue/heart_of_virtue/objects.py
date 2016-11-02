@@ -14,6 +14,7 @@ class Object:
         self.announce = self.idle_message
         self.keywords = []  # action keywords to hook up an arbitrary command like "press" for a switch
 
+
 class Hidden_Wall_Switch(Object):
     '''
     A hidden wall switch that does something when pressed.
@@ -47,3 +48,27 @@ class Wall_Inscription(Object):
 
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
+
+class Wooden_Chest(Object):
+    '''
+    A wooden chest that may contain items.
+    '''
+    def __init__(self, params):
+        description = "A wooden chest which may or may not have things inside. You can try to OPEN it."
+        super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
+                         idle_message="There's a wooden chest here.",
+                         discovery_message=" a wooden chest!")
+        self.open = False
+        if 'locked' in params: #todo make key objects
+            self.locked = True
+        else:
+            self.locked = False
+        self.keywords.append('press')
+
+    def press(self):
+        print("Jean hears a faint 'click.'")
+        time.sleep(0.5)
+        if self.position == False:
+            self.position = True
+        else:
+            self.position = False
