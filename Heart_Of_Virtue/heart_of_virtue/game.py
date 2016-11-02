@@ -81,6 +81,7 @@ _\\|//__( | )______)_/
             player.universe.build(player)
             player.map = player.universe.starting_map
             player.location_x, player.location_y = (player.universe.starting_position)
+
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
         if newgame:
@@ -104,6 +105,10 @@ _\\|//__( | )______)_/
             check_time = time.time()
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
             player.current_room = room
+            if player.universe.game_tick > 0:
+                player.current_room.last_entered = player.universe.game_tick
+            else:
+                player.current_room.last_entered = 1
             room.evaluate_events()
             room.modify_player(player)
             if mark_health != player.hp:
@@ -133,16 +138,18 @@ _\\|//__( | )______)_/
                 arbitrary_action = True
                 if len(count_args) == 1:
                     for action in available_actions:
-                        if action_input in action.hotkey:
-                            arbitrary_action = False
-                            player.do_action(action, **action.kwargs)
+                        for key in action.hotkey:
+                            if action_input == key:
+                                arbitrary_action = False
+                                player.do_action(action, **action.kwargs)
                 elif len(count_args) > 1:
                     for action in available_actions:
-                        if count_args[0] in action.hotkey:
-                            join_args = ' '.join(count_args[1:])
-                            player.do_action(action, join_args)
-                            arbitrary_action = False
-                            break
+                        for key in action.hotkey:
+                            if count_args[0] == key:
+                                join_args = ' '.join(count_args[1:])
+                                player.do_action(action, join_args)
+                                arbitrary_action = False
+                                break
                     if arbitrary_action:
                         lower_phrase = count_args[1].lower()
                         for i, object in enumerate(room.objects_here):

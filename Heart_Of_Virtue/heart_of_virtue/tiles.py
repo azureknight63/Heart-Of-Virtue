@@ -58,6 +58,7 @@ class MapTile:
         moves.append(actions.Search())
         moves.append(actions.Menu())
         moves.append(actions.Save())
+        moves.append(actions.ViewMap())
         return moves
 
     def evaluate_events(self):

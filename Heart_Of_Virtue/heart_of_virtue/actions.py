@@ -3,11 +3,10 @@ from player import Player
 
 
 class Action():
-    def __init__(self, method, name, hotkey, helptext='', **kwargs):
+    def __init__(self, method, name, hotkey, **kwargs):
         self.method = method
         self.hotkey = []
         self.name = name
-        self.helptext = helptext
         self.kwargs = kwargs
         for key in hotkey:
             self.hotkey.append(key)
@@ -51,7 +50,7 @@ class Look(Action):
 
 class ListCommands(Action):
     def __init__(self):
-        super().__init__(method=Player.commands, name="List Commands", hotkey=('c', 'com', 'commands', 'man','help',
+        super().__init__(method=Player.commands, name="List Commands", hotkey=('c', 'com', 'commands', 'man', 'help',
                                                                                '?'))
 
 class View(Action):
@@ -76,11 +75,15 @@ class Menu(Action):
 
 class Save(Action):
     def __init__(self):
-        super().__init__(method=Player.save, name="Save", hotkey='save')
+        super().__init__(method=Player.save, name="Save", hotkey=('sav', 'save'))
 
 class Take(Action):
     def __init__(self):
         super().__init__(method=Player.take, name="Take Item", hotkey=('t','take'))
+
+class ViewMap(Action):
+    def __init__(self):
+        super().__init__(method=Player.view_map, name="View Map", hotkey=('m', 'map', 'cartography'))
 
 # def commands(self):
 #     print("l: Look around\n"

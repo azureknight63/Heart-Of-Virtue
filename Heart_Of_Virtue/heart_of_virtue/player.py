@@ -623,6 +623,17 @@ class Player():
         if not something_found:
             print("...but he couldn't find anything of interest.")
 
+# #todo fix this: Traceback (most recent call last):
+#   File "C:/Users/alex/Documents/GitHub/Heart-Of-Virtue/Heart_Of_Virtue/heart_of_virtue/game.py", line 168, in <module>
+#     play()
+#   File "C:/Users/alex/Documents/GitHub/Heart-Of-Virtue/Heart_Of_Virtue/heart_of_virtue/game.py", line 144, in play
+#     player.do_action(action, **action.kwargs)
+#   File "C:\Users\alex\Documents\GitHub\Heart-Of-Virtue\Heart_Of_Virtue\heart_of_virtue\player.py", line 554, in do_action
+#     action_method()
+#   File "C:\Users\alex\Documents\GitHub\Heart-Of-Virtue\Heart_Of_Virtue\heart_of_virtue\player.py", line 619, in search
+#     if search_ability > hidden.hide_factor:
+# TypeError: unorderable types: int() > str()
+
     def menu(self):
         functions.autosave(self)
         self.main_menu = True
@@ -639,9 +650,9 @@ class Player():
                         self.inventory.remove(duplicate_item)
 
     def commands(self):
-        for obj in inspect.getmembers(actions):
-            if inspect.isclass(obj):
-                print(colored(, "blue")) #todo left off here - trying to iterate through classes in actions.py and print out name, hotkeys, and helptext
+        possible_actions = self.current_room.available_actions()
+        for action in possible_actions:
+                 print(colored('{}:{}{}'.format(action.name, (' ' * (20 - (len(action.name) + 2))), action.hotkey, "blue")))
 
         #     "l: Look around\n"
         #     "v: View details on a person, creature, or object\n"
@@ -767,4 +778,39 @@ class Player():
                         print('Jean takes {}.'.format(item.name))
                         self.current_room.items_here.pop(i)
                         break
+
+    def view_map(self):
+        '''First draw a map if known tiles by iterating over self.map and checking self.map.last_entered to see if the
+        player has discovered that tile. If so, place a square at those coordinates.'''
+        # determine boundaries
+        max_x = 0
+        max_y = 0
+        for key in self.map:
+            if key != 'name':
+                test_x = int(key[0])
+                test_y = int(key[1])
+                if test_x > max_x:
+                    max_x = test_x
+                if test_y > max_y:
+                    max_y = test_y
+        #iterate over the map and begin drawing
+        map_lines = []
+        for y in range(max_y):
+            line = ''
+            for x in range(max_x):
+                if self.universe.tile_exists(self.map, x, y):
+                    if self.map[(x,y)] == self.current_room:
+                        line += 'X'
+                    else:
+                        if self.map[x,y].last_entered > 0:
+                            line += '█'
+                        else:
+                            line += '░'
+                else:
+                    line += '░'
+            map_lines.append(line)
+        for i in map_lines:
+            print(i)
+
+
 

@@ -154,7 +154,8 @@ def save_select(player):
                             break
                 elif choice == 'x':
                     overwrite_complete = True
-
+        elif choice == 'x':
+            save_complete = True
 
 def save(player, filename):  # player is the player object
     if filename.endswith('.sav'):
