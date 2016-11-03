@@ -623,17 +623,6 @@ class Player():
         if not something_found:
             print("...but he couldn't find anything of interest.")
 
-# #todo fix this: Traceback (most recent call last):
-#   File "C:/Users/alex/Documents/GitHub/Heart-Of-Virtue/Heart_Of_Virtue/heart_of_virtue/game.py", line 168, in <module>
-#     play()
-#   File "C:/Users/alex/Documents/GitHub/Heart-Of-Virtue/Heart_Of_Virtue/heart_of_virtue/game.py", line 144, in play
-#     player.do_action(action, **action.kwargs)
-#   File "C:\Users\alex\Documents\GitHub\Heart-Of-Virtue\Heart_Of_Virtue\heart_of_virtue\player.py", line 554, in do_action
-#     action_method()
-#   File "C:\Users\alex\Documents\GitHub\Heart-Of-Virtue\Heart_Of_Virtue\heart_of_virtue\player.py", line 619, in search
-#     if search_ability > hidden.hide_factor:
-# TypeError: unorderable types: int() > str()
-
     def menu(self):
         functions.autosave(self)
         self.main_menu = True

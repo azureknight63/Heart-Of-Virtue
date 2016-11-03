@@ -59,15 +59,33 @@ class Wooden_Chest(Object):
                          idle_message="There's a wooden chest here.",
                          discovery_message=" a wooden chest!")
         self.open = False
-        if 'locked' in params: #todo make key objects
+        if 'locked:' in params: #todo make key objects
             self.locked = True
         else:
             self.locked = False
-        self.keywords.append('press')
+        for thing in params: #todo finish chest object
+            if '#' in thing:
+                param = thing.replace('#', '')
+                p_list = param.split(':')
+                item_type = p_list[0]
+                amt = int(p_list[1])
+                hidden = False
+                hfactor = 0
+                gold_amt = 0
+                if p_list[0] == 'Gold':
+                    gold_amt = amt
+                    amt = 1
+                for i in range(0, amt):
+                    self.tile_exists(map, x, y).spawn_item(item_type, amt=gold_amt,
+                                                           hidden=hidden, hfactor=hfactor)
 
-    def press(self):
-        print("Jean hears a faint 'click.'")
+        self.keywords.append('open')
+        self.keywords.append('unlock')
+
+    def open(self):
+        print("The chest creaks eerily as the lid lifts back on the hinge, revealing the contents inside.")
         time.sleep(0.5)
+
         if self.position == False:
             self.position = True
         else:
