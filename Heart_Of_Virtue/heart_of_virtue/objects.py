@@ -47,7 +47,6 @@ class Wall_Inscription(Object):
                          discovery_message="some words etched into the wall!")
 
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
-<<<<<<< HEAD
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
 
 class Wooden_Chest(Object):
@@ -59,38 +58,47 @@ class Wooden_Chest(Object):
         super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
                          idle_message="There's a wooden chest here.",
                          discovery_message=" a wooden chest!")
-        self.open = False
+        self.position = False
+        self.event = None
         if 'locked:' in params: #todo make key objects
             self.locked = True
         else:
             self.locked = False
-        for thing in params: #todo finish chest object
+        self.contents = []
+        for thing in params: # put items in the chest based on what's declared in params
             if '#' in thing:
                 param = thing.replace('#', '')
                 p_list = param.split(':')
                 item_type = p_list[0]
                 amt = int(p_list[1])
-                hidden = False
-                hfactor = 0
                 gold_amt = 0
                 if p_list[0] == 'Gold':
                     gold_amt = amt
                     amt = 1
                 for i in range(0, amt):
-                    self.tile_exists(map, x, y).spawn_item(item_type, amt=gold_amt,
-                                                           hidden=hidden, hfactor=hfactor)
+                    if item_type == 'Gold':
+                        item = getattr(__import__('items'), item_type)(gold_amt)
+                    else:
+                        item = getattr(__import__('items'), item_type)()
+                    self.contents.append(item)
+            if '!' in thing:
+                param = thing.replace('!', '')
+                p_list = param.split(':')
+                item_type = p_list[0] #todo finish this up - adding events to chests
+
 
         self.keywords.append('open')
         self.keywords.append('unlock')
 
     def open(self):
-        print("The chest creaks eerily as the lid lifts back on the hinge, revealing the contents inside.")
-        time.sleep(0.5)
-
-        if self.position == False:
-            self.position = True
+        if self.locked == True:
+            print("Jean pulls on the lid of the chest to no avail. It's locked.")
         else:
-            self.position = False
-=======
-            self.description = "The inscription reads: EZEK 41:1 LUKE 11:9-10 JOEL 2:7"
->>>>>>> 50d78591f2030e37c448e9ca4bf94e9874ab7531
+            print("The chest creaks eerily.")
+            time.sleep(0.5)
+            print("The lid lifts back on the hinge, revealing the contents inside.")
+            if self.position == False:
+                self.position = True
+            else:
+                self.position = False
+

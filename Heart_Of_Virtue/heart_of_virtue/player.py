@@ -5,7 +5,7 @@ from termcolor import colored, cprint
 
 class Player():
     def __init__(self):
-        self.inventory = [items.Gold(15), items.Rock(), items.TatteredCloth(), items.ClothHood()]
+        self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood()]
         self.name = "Jean"
         self.name_long = "Jean Claire"
         self.hp = 100
@@ -562,11 +562,14 @@ class Player():
         r = random.randint(0, len(available_moves) - 1)
         self.do_action(available_moves[r])
 
-    def look(self):
-        tile = self.universe.tile_exists(self.map, self.location_x, self.location_y)
-        print(tile.intro_text())
-        functions.check_for_npcs(tile)
-        functions.check_for_items(tile)
+    def look(self, target=None):
+        if target != None:
+            self.view(target)
+        else:
+            tile = self.universe.tile_exists(self.map, self.location_x, self.location_y)
+            print(tile.intro_text())
+            functions.check_for_npcs(tile)
+            functions.check_for_items(tile)
 
     def view(self, phrase=''):
         # print(phrase)

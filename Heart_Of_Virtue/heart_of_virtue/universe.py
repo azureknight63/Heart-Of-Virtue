@@ -119,7 +119,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     hidden = False
                                     hfactor = 0
                                     params = []
-                                    if len(p_list) > 1:
+                                    if len(p_list) > 2:
                                         for setting in p_list:
                                             if setting[0] == 'h':
                                                 hidden = True

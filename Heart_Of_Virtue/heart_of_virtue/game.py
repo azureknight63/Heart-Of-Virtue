@@ -86,9 +86,9 @@ _\\|//__( | )______)_/
 
         if newgame:
             for item in player.inventory:
-                if item.name == "Rock":
-                    player.eq_weapon = item
-                    item.isequipped = True
+                # if item.name == "Rock":
+                #     player.eq_weapon = item
+                #     item.isequipped = True
                 if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
                     item.isequipped = True
         print(room.intro_text())
