@@ -86,6 +86,8 @@ def reset_stats(target):  # resets all stats to base level
     target.intelligence = target.intelligence_base
     target.faith = target.faith_base
     target.resistance = target.resistance_base
+    if hasattr(target, 'weight_tolerance'):
+        target.weight_tolerance = target.weight_tolerance_base
 
 
 def load_select():

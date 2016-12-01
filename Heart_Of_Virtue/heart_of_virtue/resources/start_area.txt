@@ -1,6 +1,6 @@
 									Boundary
-	EmptyCave	EmptyCave,@Wall_Inscription.1.v0	EmptyCave						Boundary
-	EmptyCave,#Gold.23.h0	StartingRoom	EmptyCave,@Hidden_Wall_Switch.1.h0,!Block.east,!Story.0.r	EmptyCave					Boundary
-	EmptyCave	EmptyCave	EmptyCave,#Restorative.1.h0						Boundary
-									Boundary
-									Boundary
+	EmptyCave	EmptyCave,@Wall_Inscription.1.v0	EmptyCave			EmptyCave			Boundary
+	EmptyCave,#Gold.23.h0	StartingRoom	EmptyCave,@Hidden_Wall_Switch.1.h0,!Block.east,!Story.0.r	EmptyCave,!Story.1.r	EmptyCave	EmptyCave			Boundary
+	EmptyCave	EmptyCave,@Wooden_Chest.1.#Gold:12	EmptyCave,#Restorative.1.h0			EmptyCave	EmptyCave,@Wooden_Chest.1.#Gold:12		Boundary
+					EmptyCave	EmptyCave			Boundary
+					EmptyCave				Boundary

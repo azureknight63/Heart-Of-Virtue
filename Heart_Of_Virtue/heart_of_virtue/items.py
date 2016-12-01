@@ -6,8 +6,8 @@ class Item():
         self.name = name
         self.description = description
         self.value = value
-        self.type = type #is it currency, a weapon, key item? This should be a string since it will be printed to the player at times
-        self.subtype = subtype #is it gold, a dagger, a door key? This should be a string since it will be printed to the player at times
+        self.type = type
+        self.subtype = subtype
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message

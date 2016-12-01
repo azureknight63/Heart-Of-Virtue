@@ -30,6 +30,9 @@ class Player():
         self.faith_base = 10
         self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
         self.resistance_base = [0,0,0,0,0,0]
+        self.weight_tolerance = 20
+        self.weight_tolerance_base = 20
+        self.weight_current = 0
         self.eq_weapon = None
         self.combat_exp = 0  # place to pool all exp gained from a single combat before distribution
         self.exp = 0  # exp to be gained from doing stuff rather than killing things
@@ -703,7 +706,7 @@ class Player():
     def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
         functions.reset_stats(self)
         bonuses = ["add_str", "add_fin", "add_maxhp", "add_maxfatigue", "add_speed", "add_endurance", "add_charisma",
-                   "add_intelligence", "add_faith", "add_resistance"]
+                   "add_intelligence", "add_faith", "add_resistance", "add_weight_tolerance"]
         adder_group = []
         for item in self.inventory:
             if hasattr(item, "is_equipped"):
@@ -739,6 +742,26 @@ class Player():
             if hasattr(adder, bonuses[9]):
                 for i, v in enumerate(self.resistance):
                     self.resistance[i] += adder.add_resistance[i]
+            if hasattr(adder, bonuses[10]):
+                self.weight_tolerance += adder.add_weight_tolerance
+        ### Process other things which may affect stats, such as weight ###
+        self.refresh_weight()
+        self.weight_tolerance += ((self.strength + self.endurance) / 2)
+        check_weight = self.weight_tolerance - self.weight_current
+        if check_weight > (self.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
+            self.maxfatigue += (self.maxfatigue / 4)    # max fatigue as a bonus
+        elif check_weight < 0:  # if the player is over capacity, reduce max fatigue by excess lbs * 10
+            check_weight *= -1
+            self.maxfatigue -= (check_weight * 10)
+            if self.maxfatigue < 0:
+                self.maxfatigue = 0
+
+
+    def refresh_weight(self):
+        self.weight_current = 0
+        for item in self.inventory:
+            if hasattr(item, 'weight'):
+                self.weight_current += item.weight
 
     def take(self, phrase=''):
         if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
