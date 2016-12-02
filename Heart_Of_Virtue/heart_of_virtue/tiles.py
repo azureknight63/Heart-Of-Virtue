@@ -6,7 +6,7 @@ from termcolor import colored
 
 class MapTile:
     """The base class for a tile within the world space"""
-    def __init__(self, universe, map, x, y):
+    def __init__(self, universe, map, x, y, description=''):
         """Creates a new tile.
 
         :param x: the x-coordinate of the tile
@@ -23,6 +23,7 @@ class MapTile:
         self.last_entered = 0 # describes the game_tick when the player last entered. Useful for monster/item respawns.
         self.respawn_rate = 9999 # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
+        self.description = description
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
@@ -123,6 +124,14 @@ class EmptyCave(MapTile):
         The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step
         seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.
         ""","cyan")
+
+    def modify_player(self, the_player):
+        #Room has no action on player
+        pass
+
+class BlankTile(MapTile):
+    def intro_text(self):
+        return ''
 
     def modify_player(self, the_player):
         #Room has no action on player

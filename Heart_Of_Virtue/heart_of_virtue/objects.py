@@ -17,6 +17,31 @@ class Object:
         self.tile = tile
         self.player = player
 
+class Tile_Description(Object):
+    '''
+    Adds to the description of the tile. Has no other function. The existence of this object allows tile descriptions
+    to be dynamically changed.
+    '''
+    def __init__(self, params, player, tile):
+        param_list = params[2:]
+        description = '.'.join(param_list)
+        word_list = description.split(' ')
+        lines = []
+        temp_line = word_list[0]
+        for word in word_list[1:]:
+            if len(temp_line) < (104-len(word)):
+                temp_line += (' ' + word)
+            else:
+                lines.append(temp_line)
+                temp_line = word
+        lines.append(temp_line)
+        for i, v in enumerate(lines):
+            lines[i] = '        ' + v + '\n'
+        description = colored(''.join(lines), 'cyan')
+        idle_message = description
+        super().__init__(name="null", description=description, hidden=False, hide_factor=0,
+                         idle_message=idle_message,
+                         discovery_message="", player=player, tile=tile)
 
 class Hidden_Wall_Switch(Object):
     '''
@@ -59,7 +84,7 @@ class Wooden_Chest(Object):
     A wooden chest that may contain items.
     '''
     def __init__(self, params, player, tile):
-        description = "A wooden chest which may or may not have things inside. You can try to OPEN it."
+        description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
         super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
                          idle_message="There's a wooden chest here.",
                          discovery_message=" a wooden chest!", player=player, tile=tile)
@@ -110,6 +135,17 @@ class Wooden_Chest(Object):
         self.keywords.append('unlock')
         self.keywords.append('loot')
 
+    def refresh_description(self):
+        if self.position == False:
+            self.description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
+        else:
+            if len(self.contents) > 0:
+                self.description = "A wooden chest. Inside are the following things: \n\n"
+                for item in self.contents:
+                    self.description += (colored(item.description, 'yellow') + '\n')
+            else:
+                self.description = "A wooden chest. It's empty. Very sorry."
+
     def open(self):
         if self.locked == True:
             print("Jean pulls on the lid of the chest to no avail. It's locked.")
@@ -120,12 +156,7 @@ class Wooden_Chest(Object):
                 print("The lid lifts back on the hinge, revealing the contents inside.")
                 self.revealed = True
                 self.position = True
-                if len(self.contents) > 0:
-                    self.description = "A wooden chest. Inside are the following things: \n\n"
-                    for item in self.contents:
-                        self.description += (colored(item.description, 'yellow') + '\n')
-                else:
-                    self.description = "A wooden chest. It's empty. Very sorry."
+                self.refresh_description()
             else:
                 print("The chest is already open. You should VIEW or LOOT it to see what's inside.")
 
@@ -136,10 +167,29 @@ class Wooden_Chest(Object):
         if self.position == True:  # keep this as a separate branch so self.open() gets evaluated
             if len(self.contents) > 0:
                 print("Jean rifles through the contents of the chest.\n\n Choose which items to take.\n\n")
-                acceptable_responses = ['all', 'ALL', 'a']
+                acceptable_responses = ['all', 'x']
                 for i, item in enumerate(self.contents):
-                    cprint('{}: {} - {}\n'.format(i, item.name, item.description, 'yellow'))
+                    cprint('{}: {} - {}'.format(i, item.name, item.description), 'yellow')
                     acceptable_responses.append(str(i))
-                cprint('all: Take all items.', 'yellow')
-                choice = input('Selection: ')  #todo finish this
-
+                cprint('all: Take all items.\nx: Cancel', 'yellow')
+                choice = 'zzz'
+                while choice not in acceptable_responses:
+                    choice = input('Selection: ')
+                if choice == 'all':
+                    while len(self.contents) > 0:
+                        item_taken = self.contents.pop()
+                        print('Jean takes {}.'.format(item_taken.name))
+                        self.player.inventory.append(item_taken)
+                        self.refresh_description()
+                elif choice == 'x':
+                    pass
+                else:
+                    for i, item in enumerate(self.contents):
+                        if choice == str(i):
+                            item_taken = self.contents.pop(i)
+                            print('Jean takes {}.'.format(item_taken.name))
+                            self.player.inventory.append(item_taken)
+                            self.refresh_description()
+                            break
+            else:
+                print("It's empty. Very sorry.")

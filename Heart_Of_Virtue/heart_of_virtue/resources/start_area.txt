@@ -1,6 +1,6 @@
 									Boundary
-	EmptyCave	EmptyCave,@Wall_Inscription.1.v0	EmptyCave			EmptyCave			Boundary
-	EmptyCave,#Gold.23.h0	StartingRoom	EmptyCave,@Hidden_Wall_Switch.1.h0,!Block.east,!Story.0.r	EmptyCave,!Story.1.r	EmptyCave	EmptyCave			Boundary
-	EmptyCave	EmptyCave,@Wooden_Chest.1.#Gold:12	EmptyCave,#Restorative.1.h0			EmptyCave	EmptyCave,@Wooden_Chest.1.#Gold:12		Boundary
+	EmptyCave	EmptyCave|@Wall_Inscription.1.v0	EmptyCave			EmptyCave			Boundary
+	EmptyCave|#Gold.23.h0	StartingRoom	EmptyCave|@Hidden_Wall_Switch.1.h0|!Block.east|!Story.0.r|@Tile_Description.1.The wall here feels warmer than the rest of the cavern. There are scuff marks on the floor that stop abruptly where the wall and floor meet. Jean can hear the muffled sound of flowing water. 	EmptyCave|!Story.1.r	EmptyCave	EmptyCave			Boundary
+	EmptyCave	EmptyCave|@Wooden_Chest.1.#Gold:12.#Restorative:2	EmptyCave|#Restorative.1.h0			EmptyCave	EmptyCave|@Wooden_Chest.1.#Gold:12		Boundary
 					EmptyCave	EmptyCave			Boundary
 					EmptyCave				Boundary

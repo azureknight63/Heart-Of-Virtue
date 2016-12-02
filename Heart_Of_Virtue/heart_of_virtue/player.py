@@ -580,7 +580,7 @@ class Player():
             stuff_here = {}
             for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
                                               self.current_room.objects_here):
-                if not thing.hidden:
+                if not thing.hidden and thing.name != 'null':
                     stuff_here[str(i)] = thing
             if len(stuff_here) > 0:
                 print("What would you like to view?\n\n")
@@ -597,7 +597,7 @@ class Player():
             lower_phrase = phrase.lower()
             for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
                                               self.current_room.objects_here):
-                if not thing.hidden:
+                if not thing.hidden and thing.name != 'null':
                     search_item = thing.name.lower() + ' ' + thing.announce.lower()
                     if lower_phrase in search_item:
                         print(thing.description)

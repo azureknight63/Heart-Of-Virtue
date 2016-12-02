@@ -133,21 +133,29 @@ class Story(Event):  # Executes the story event with the given ID number, where 
             self.pass_conditions_to_process()
 
     def process(self):
-        if '0' in self.params:
-            if not self.disable['0']:
-                wall_switch = None
-                for object in self.tile.objects_here:
-                    if object.name == 'Wall Depression':
-                        wall_switch = object
-                if wall_switch.position == True:
-                    print("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
-                          " east.")
-                    self.tile.block_exit.remove('east')
-                    self.disable['0'] = True
-                    time.sleep(0.5)
+        for param in self.params:
+            if param == '0':
+                if not self.disable[param]:
+                    wall_switch = None
+                    for object in self.tile.objects_here:
+                        if object.name == 'Wall Depression':
+                            wall_switch = object
+                    if wall_switch.position == True:
+                        cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
+                              " east.", 'yellow')
+                        self.tile.block_exit.remove('east')
+                        self.disable['0'] = True
+                        time.sleep(0.5)
+            if param == '1':
+                if not self.disable[param]:
+                    time.sleep(random.uniform(1,2))
+                    messages = ["A wave dashes itself on the rocks below.", "A warm breeze blows over Jean.",
+                                "The distant sound of birds chirping noisily can be heard.",
+                                "A small rock tumbles into the river below."]
+                    cprint(random.choice(messages),"cyan")
 
         else:
-            temp = '!!!param error: params='
+            temp = '!!!param error: params='  #todo fix param errors that started popping up
             for p in self.params:
                 temp += p
                 temp += ', '

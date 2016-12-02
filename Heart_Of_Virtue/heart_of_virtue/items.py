@@ -189,7 +189,7 @@ class Restorative(Consumable):
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
-                                     "themselves",
+                                     "themselves.",
                          value=100, weight=0.25, type="Consumable", subtype="Potion")
         self.power = 60
         self.count = 1  # this will allow stacking of homogeneous items. At each game loop,

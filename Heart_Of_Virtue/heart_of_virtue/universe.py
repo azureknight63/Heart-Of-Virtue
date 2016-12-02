@@ -45,13 +45,13 @@ class Universe():  # "globals" for the game state can be stored here, as well as
             for x in range(x_max):
                 block_contents = cols[x].replace('\n', '')
                 if block_contents != '':
-                    block_list = block_contents.split(",")
+                    block_list = block_contents.split("|")
                     tile_name = block_list[0]
                     map[(x, y)] = getattr(__import__('tiles'), tile_name)(self, map, x, y)
                     if len(block_list) > 1:
                         for i, param in enumerate(block_list):
                             if i != 0:
-                                if param[0] == '=':  # sets the given parameter for the map based on what's in the file
+                                if param[0] == '~':  # sets the given parameter for the map based on what's in the file
                                     parameter = param.split('=')
                                     if hasattr(self.tile_exists(map, x, y), parameter[0]):
                                         setattr(self.tile_exists(map, x, y), parameter[0], parameter[1])
@@ -120,11 +120,12 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     params = []
                                     if len(p_list) > 2:
                                         for setting in p_list:
-                                            if setting[0] == 'h':
-                                                hidden = True
-                                                hfactor = int(setting[1:])
-                                            else:
-                                                params.append(setting)
+                                            if setting != '':
+                                                if setting[0] == 'h':
+                                                    hidden = True
+                                                    hfactor = int(setting[1:])
+                                                else:
+                                                    params.append(setting)
                                     for i in range(0, amt):
                                         self.tile_exists(map, x, y).spawn_object(obj_type, params=params, hidden=hidden,
                                                                               hfactor=hfactor, player=player,
