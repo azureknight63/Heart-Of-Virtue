@@ -2,18 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="f21b6638-cc93-4ec1-9e1d-5bbb9b24e566" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/outline" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave1.sav" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave1.sav" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave2.sav" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave2.sav" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave3.sav" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave3.sav" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave4.sav" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave4.sav" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave5.sav" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/autosave5.sav" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/map_editor.xlsx" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/map_editor.xlsx" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/game.py" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/game.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/objects.py" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/objects.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/universe.py" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/universe.py" />
     </list>
     <ignored path="Heart-Of-Virtue.iws" />
     <ignored path=".idea/workspace.xml" />
@@ -32,7 +21,7 @@
     <favorites_list name="Heart-Of-Virtue" />
   </component>
   <component name="FileEditorManager">
-    <leaf>
+    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
       <file leaf-file-name="outline" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/outline">
           <provider selected="true" editor-type-id="text-editor">
@@ -46,7 +35,7 @@
       <file leaf-file-name="objects.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/objects.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="484">
+            <state relative-caret-position="281">
               <caret line="88" column="0" selection-start-line="88" selection-start-column="0" selection-end-line="88" selection-end-column="0" />
               <folding>
                 <element signature="e#0#19#0" expanded="true" />
@@ -58,7 +47,7 @@
       <file leaf-file-name="events.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/events.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-1998">
+            <state relative-caret-position="0">
               <caret line="0" column="0" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
               <folding />
             </state>
@@ -68,7 +57,7 @@
       <file leaf-file-name="tiles.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/tiles.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="340">
+            <state relative-caret-position="1258">
               <caret line="75" column="8" selection-start-line="75" selection-start-column="8" selection-end-line="82" selection-end-column="36" />
               <folding />
             </state>
@@ -78,7 +67,7 @@
       <file leaf-file-name="player.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-374">
+            <state relative-caret-position="340">
               <caret line="23" column="32" selection-start-line="23" selection-start-column="32" selection-end-line="23" selection-end-column="32" />
               <folding>
                 <element signature="e#0#28#0" expanded="true" />
@@ -90,7 +79,7 @@
       <file leaf-file-name="game.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/game.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-247">
+            <state relative-caret-position="1513">
               <caret line="93" column="32" selection-start-line="93" selection-start-column="32" selection-end-line="93" selection-end-column="32" />
               <folding />
             </state>
@@ -100,7 +89,7 @@
       <file leaf-file-name="universe.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/universe.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="705">
+            <state relative-caret-position="2227">
               <caret line="131" column="21" selection-start-line="131" selection-start-column="21" selection-end-line="131" selection-end-column="21" />
               <folding />
             </state>
@@ -110,7 +99,7 @@
       <file leaf-file-name="genericng.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/genericng.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="268">
+            <state relative-caret-position="1615">
               <caret line="95" column="28" selection-start-line="95" selection-start-column="28" selection-end-line="95" selection-end-column="28" />
               <folding />
             </state>
@@ -120,7 +109,7 @@
       <file leaf-file-name="npc.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/npc.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-1551">
+            <state relative-caret-position="340">
               <caret line="21" column="41" selection-start-line="21" selection-start-column="41" selection-end-line="21" selection-end-column="41" />
               <folding>
                 <element signature="e#0#13#0" expanded="true" />
@@ -176,6 +165,8 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
+      <pane id="Scope" />
+      <pane id="Scratches" />
       <pane id="ProjectPane">
         <subPane>
           <PATH>
@@ -236,8 +227,6 @@
           </PATH>
         </subPane>
       </pane>
-      <pane id="Scratches" />
-      <pane id="Scope" />
     </panes>
   </component>
   <component name="RunManager" selected="Python.game">
@@ -438,7 +427,14 @@
       <option name="project" value="LOCAL" />
       <updated>1479850051941</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="Changes from work">
+      <created>1479933254462</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1479933254462</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TodoView">
@@ -454,23 +450,23 @@
     <frame x="-1876" y="108" width="1580" height="840" extended-state="0" />
     <editor active="false" />
     <layout>
-      <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.21854734" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
+      <window_info id="Project" active="true" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.21854734" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.12283237" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
-      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
-      <window_info id="Version Control" active="true" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.32844576" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
+      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.32844576" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Python Console" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32962137" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
-      <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.8577713" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Favorites" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="true" content_ui="tabs" />
-      <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
       <window_info id="Cvs" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="4" side_tool="false" content_ui="tabs" />
       <window_info id="Message" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
       <window_info id="Commander" active="false" anchor="right" auto_hide="false" internal_type="SLIDING" type="SLIDING" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
       <window_info id="Inspection" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="5" side_tool="false" content_ui="tabs" />
+      <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.8577713" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Hierarchy" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="2" side_tool="false" content_ui="combo" />
+      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Ant Build" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
     </layout>
   </component>
   <component name="Vcs.Log.UiProperties">
@@ -486,16 +482,95 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Fixing workspace.xml" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixing workspace.xml" />
+    <MESSAGE value="Changes from work" />
+    <option name="LAST_COMMIT_MESSAGE" value="Changes from work" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager />
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/outline">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="85">
+          <caret line="5" column="57" selection-start-line="5" selection-start-column="57" selection-end-line="5" selection-end-column="57" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/objects.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding>
+            <element signature="e#0#19#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/events.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/tiles.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1275">
+          <caret line="75" column="8" selection-start-line="75" selection-start-column="8" selection-end-line="82" selection-end-column="36" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="340">
+          <caret line="23" column="32" selection-start-line="23" selection-start-column="32" selection-end-line="23" selection-end-column="32" />
+          <folding>
+            <element signature="e#0#28#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/game.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1513">
+          <caret line="93" column="32" selection-start-line="93" selection-start-column="32" selection-end-line="93" selection-end-column="32" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/universe.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="2227">
+          <caret line="131" column="21" selection-start-line="131" selection-start-column="21" selection-end-line="131" selection-end-column="21" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/genericng.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1615">
+          <caret line="95" column="28" selection-start-line="95" selection-start-column="28" selection-end-line="95" selection-end-column="28" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/npc.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-1551">
+        <state relative-caret-position="340">
+          <caret line="21" column="41" selection-start-line="21" selection-start-column="41" selection-end-line="21" selection-end-column="41" />
+          <folding>
+            <element signature="e#0#13#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/npc.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="340">
           <caret line="21" column="41" selection-start-line="21" selection-start-column="41" selection-end-line="21" selection-end-column="41" />
           <folding>
             <element signature="e#0#13#0" expanded="true" />
@@ -505,7 +580,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/genericng.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="268">
+        <state relative-caret-position="1615">
           <caret line="95" column="28" selection-start-line="95" selection-start-column="28" selection-end-line="95" selection-end-column="28" />
           <folding />
         </state>
@@ -521,7 +596,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-374">
+        <state relative-caret-position="340">
           <caret line="23" column="32" selection-start-line="23" selection-start-column="32" selection-end-line="23" selection-end-column="32" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
@@ -531,7 +606,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/tiles.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="340">
+        <state relative-caret-position="1258">
           <caret line="75" column="8" selection-start-line="75" selection-start-column="8" selection-end-line="82" selection-end-column="36" />
           <folding />
         </state>
@@ -539,7 +614,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/game.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-247">
+        <state relative-caret-position="1513">
           <caret line="93" column="32" selection-start-line="93" selection-start-column="32" selection-end-line="93" selection-end-column="32" />
           <folding />
         </state>
@@ -547,7 +622,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/universe.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="705">
+        <state relative-caret-position="2227">
           <caret line="131" column="21" selection-start-line="131" selection-start-column="21" selection-end-line="131" selection-end-column="21" />
           <folding />
         </state>
@@ -555,7 +630,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/events.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-1998">
+        <state relative-caret-position="0">
           <caret line="0" column="0" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
           <folding />
         </state>
@@ -563,7 +638,7 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/objects.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="484">
+        <state relative-caret-position="281">
           <caret line="88" column="0" selection-start-line="88" selection-start-column="0" selection-end-line="88" selection-end-column="0" />
           <folding>
             <element signature="e#0#19#0" expanded="true" />
