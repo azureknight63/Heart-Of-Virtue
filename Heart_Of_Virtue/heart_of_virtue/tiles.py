@@ -20,14 +20,16 @@ class MapTile:
         self.items_here = []
         self.events_here = []
         self.objects_here = []
-        self.last_entered = 0 # describes the game_tick when the player last entered. Useful for monster/item respawns.
-        self.respawn_rate = 9999 # tiles which respawn enemies will adjust this number.
+        self.last_entered = 0  # describes the game_tick when the player last entered. Useful for monster/item respawns.
+        self.discovered = False  # when drawing the map for the player, display a ? if this is True and self.last_entered == 0
+        self.respawn_rate = 9999  # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
-        self.description = description
+        self.description = description  # used for the intro_text to make it dynamic
+        self.symbol = '='  # symbol to mark on the map when the tile is fully discovered
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
-        raise NotImplementedError()
+        return colored(self.description, "cyan")
 
     def modify_player(self, the_player):
         """Process actions that change the state of the player."""
@@ -38,12 +40,16 @@ class MapTile:
         moves = []
         if self.universe.tile_exists(self.map, self.x + 1, self.y) and "east" not in self.block_exit:
             moves.append(actions.MoveEast())
+            self.universe.tile_exists(self.map, self.x + 1, self.y).discovered = True  # discover the adjacent tile
         if self.universe.tile_exists(self.map, self.x - 1, self.y) and "west" not in self.block_exit:
             moves.append(actions.MoveWest())
+            self.universe.tile_exists(self.map, self.x - 1, self.y).discovered = True
         if self.universe.tile_exists(self.map, self.x, self.y - 1) and "north" not in self.block_exit:
             moves.append(actions.MoveNorth())
+            self.universe.tile_exists(self.map, self.x, self.y -1).discovered = True
         if self.universe.tile_exists(self.map, self.x, self.y + 1) and "south" not in self.block_exit:
             moves.append(actions.MoveSouth())
+            self.universe.tile_exists(self.map, self.x, self.y + 1).discovered = True
         return moves
 
     def available_actions(self):
@@ -95,23 +101,25 @@ class MapTile:
         self.objects_here.append(obj)
 
 class Boundary(MapTile):
-    def intro_text(self):
-        return colored("""
+    def __init__(self, universe, map, x, y):
+        super().__init__(universe, map, x, y, description="""
         You should not be here.
-        """, "cyan")
+        """)
+        self.symbol = "'"
 
     def modify_player(self, the_player):
         #Room has no action on player
         pass
 
 class StartingRoom(MapTile):
-    def intro_text(self):
-        return colored("""
+    def __init__(self, universe, map, x, y):
+        super().__init__(universe, map, x, y, description="""
         Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large
         rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source
         of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The
         darkness seems to extend endlessly in all directions.
-        """, "cyan")
+        """)
+        self.symbol = '#'
 
     def modify_player(self, the_player):
         #Room has no action on player
@@ -119,19 +127,21 @@ class StartingRoom(MapTile):
 
 
 class EmptyCave(MapTile):
-    def intro_text(self):
-        return colored("""
+    def __init__(self, universe, map, x, y):
+        super().__init__(universe, map, x, y, description="""
         The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step
         seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.
-        ""","cyan")
+        """)
+        self.symbol = '#'
 
     def modify_player(self, the_player):
         #Room has no action on player
         pass
 
 class BlankTile(MapTile):
-    def intro_text(self):
-        return ''
+    def __init__(self, universe, map, x, y):
+        super().__init__(universe, map, x, y, description='')
+        self.symbol = '#'
 
     def modify_player(self, the_player):
         #Room has no action on player

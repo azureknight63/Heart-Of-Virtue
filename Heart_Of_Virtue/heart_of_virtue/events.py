@@ -6,6 +6,7 @@ from termcolor import colored, cprint
 import threading
 import random
 import time
+import objects
 
 class EventThread(threading.Thread):
     def __init__(self, event):
@@ -42,8 +43,9 @@ class Event: #master class for all events
             self.tile.events_here.remove(self)  # if this is a one-time event, kill it after it executes
 
     def call_process(self):  # allows switching between parallel and standard processing
-        if self.parallel:
+        if self.parallel:  #todo figure out why parallel isn't working
             self.thread = EventThread(self)
+            self.thread.run()
         else:
             self.process()
 
@@ -124,7 +126,7 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 class Story(Event):  # Executes the story event with the given ID number, where params=ID#
     def __init__(self, player, tile, repeat, parallel, params, name='Story'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
-        self.disable = {}  # key is the story ID, value is whether it's disabled
+        self.disable = {}  # key is the story ID, value is whether it's disabled (ex 0:False)
         for id in params:
             self.disable[id] = False
 
@@ -140,23 +142,54 @@ class Story(Event):  # Executes the story event with the given ID number, where 
                     for object in self.tile.objects_here:
                         if object.name == 'Wall Depression':
                             wall_switch = object
-                    if wall_switch.position == True:
-                        cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
-                              " east.", 'yellow')
-                        self.tile.block_exit.remove('east')
-                        self.disable['0'] = True
-                        time.sleep(0.5)
-            if param == '1':
+                    # if wall_switch.position == True:
+                    cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
+                          " east.", 'yellow')
+                    self.tile.block_exit.remove('east')
+                    self.disable['0'] = True
+                    self.tile.description = """
+        Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
+        blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
+        heard.
+        """
+                    for object in self.tile.objects_here:
+                        if isinstance(object, objects.Tile_Description):
+                            self.tile.objects_here.remove(object)
+                            break
+                    for object in self.tile.objects_here:
+                        if object == wall_switch:
+                            self.tile.objects_here.remove(object)
+                            break
+                    time.sleep(0.5)
+            elif param == '1':
                 if not self.disable[param]:
-                    time.sleep(random.uniform(1,2))
-                    messages = ["A wave dashes itself on the rocks below.", "A warm breeze blows over Jean.",
-                                "The distant sound of birds chirping noisily can be heard.",
-                                "A small rock tumbles into the river below."]
-                    cprint(random.choice(messages),"cyan")
+                    wall_switch = None
+                    for object in self.tile.objects_here:
+                        if object.name == 'Wall Depression':
+                            wall_switch = object
+                    # if wall_switch.position == True:
+                    cprint("The rock face splits open with a loud rumble as a dark and somewhat foreboding doorway appears.", 'yellow')
+                    self.tile.block_exit.remove('east')
+                    self.disable['0'] = True
+                    self.tile.description = """
+                The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point,
+                large mountains can be seen to the northwest, covered in white clouds at their crowns.
 
-        else:
-            temp = '!!!param error: params='  #todo fix param errors that started popping up
-            for p in self.params:
-                temp += p
-                temp += ', '
-            print(temp)
+                A dark gaping hole in the shape of a doorway is cut out of the eastern rock face.
+                """
+                    for object in self.tile.objects_here:
+                        if isinstance(object, objects.Tile_Description):
+                            self.tile.objects_here.remove(object)
+                            break
+                    for object in self.tile.objects_here:
+                        if object == wall_switch:
+                            self.tile.objects_here.remove(object)
+                            break
+                    time.sleep(0.5)
+
+            else:
+                temp = '!!!param error: params='
+                for p in self.params:
+                    temp += p
+                    temp += ', '
+                print(temp)

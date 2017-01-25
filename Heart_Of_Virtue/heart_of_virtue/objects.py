@@ -24,8 +24,16 @@ class Tile_Description(Object):
     '''
     def __init__(self, params, player, tile):
         param_list = params[2:]
+        last_param = param_list[-1]
+        if last_param[-1] == '~':  # Tilde is used to replace the end period when parsing the object from the map
+            param_list[-1] = last_param[:-1]  # Remove the tilde
+            end_mark = '.'
+        else:
+            end_mark = ''
         description = '.'.join(param_list)
         word_list = description.split(' ')
+        last_word = word_list[-1]
+        word_list[-1] = last_word + end_mark  # adds the last bit of punctuation if it's a period
         lines = []
         temp_line = word_list[0]
         for word in word_list[1:]:
@@ -37,32 +45,63 @@ class Tile_Description(Object):
         lines.append(temp_line)
         for i, v in enumerate(lines):
             lines[i] = '        ' + v + '\n'
+            # if i != len(lines)-1:
+            #     lines[i] = '        ' + v + '\n'
+            # else:
+            #     lines[i] = '        ' + v + '.\n'
         description = colored(''.join(lines), 'cyan')
         idle_message = description
         super().__init__(name="null", description=description, hidden=False, hide_factor=0,
                          idle_message=idle_message,
                          discovery_message="", player=player, tile=tile)
 
-class Hidden_Wall_Switch(Object):
+class Wall_Switch(Object):
     '''
-    A hidden wall switch that does something when pressed.
+    A wall switch that does something when pressed.
     '''
     def __init__(self, params, player, tile):
         description = "A small depression in the wall. You may be able to PRESS on it."
-        super().__init__(name="Wall Depression", description=description, hidden=True, hide_factor=0,
+        super().__init__(name="Wall Depression", description=description,
                          idle_message="There's a small depression in the wall.",
                          discovery_message="a small depression in the wall!", player=player, tile=tile)
         self.position = False
-        self.events = []
+        self.event_on = None
+        self.event_off = None
         self.keywords.append('press')
+
+        for thing in params:  # account for the events associated with this switch. Max of 2 events. The first event, in order of index, is tied to toggling the switch ON. The second is tied to an OFF toggle.
+            if thing[0] == '!':
+                param = thing.replace('!', '')
+                p_list = param.split(':')
+                repeat = False
+                parallel = False
+                event_type = p_list.pop(0)
+                for setting in p_list:
+                    if setting == 'r':
+                        repeat = True
+                        p_list.remove(setting)
+                        continue
+                    elif setting == 'p':
+                        parallel = True
+                        p_list.remove(setting)
+                        continue
+                event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, p_list)
+                if self.event_on == None:
+                    self.event_on = event
+                else:
+                    self.event_off = event
 
     def press(self):
         print("Jean hears a faint 'click.'")
         time.sleep(0.5)
         if self.position == False:
             self.position = True
+            if self.event_on != None:
+                self.event_on.process()
         else:
             self.position = False
+            if self.event_off != None:
+                self.event_off.process()
 
 
 class Wall_Inscription(Object):
@@ -127,8 +166,7 @@ class Wooden_Chest(Object):
                         parallel = True
                         p_list.remove(setting)
                         continue
-                    params.append(setting)
-                event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, params)
+                event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, p_list)
                 self.events.append(event)
 
         self.keywords.append('open')

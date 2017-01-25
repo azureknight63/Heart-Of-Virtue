@@ -801,28 +801,31 @@ class Player():
         max_x = 0
         max_y = 0
         for key in self.map:
-            if key != 'name':
-                test_x = int(key[0])
-                test_y = int(key[1])
-                if test_x > max_x:
-                    max_x = test_x
-                if test_y > max_y:
-                    max_y = test_y
+            if key != 'name' and self.universe.tile_exists(self.map, key[0], key[1]):
+                if self.universe.tile_exists(self.map, key[0], key[1]).discovered:
+                    test_x = int(key[0])
+                    test_y = int(key[1])
+                    if test_x > max_x:
+                        max_x = test_x
+                    if test_y > max_y:
+                        max_y = test_y
         #iterate over the map and begin drawing
         map_lines = []
-        for y in range(max_y):
+        for y in range(max_y + 2):
             line = ''
-            for x in range(max_x):
+            for x in range(max_x + 2):
                 if self.universe.tile_exists(self.map, x, y):
                     if self.map[(x,y)] == self.current_room:
                         line += 'X'
                     else:
                         if self.map[x,y].last_entered > 0:
-                            line += '█'
+                            line += self.map[(x,y)].symbol
+                        elif self.map[x,y].discovered:
+                            line += '?'
                         else:
-                            line += '░'
+                            line += "'"
                 else:
-                    line += '░'
+                    line += "'"
             map_lines.append(line)
         for i in map_lines:
             print(i)

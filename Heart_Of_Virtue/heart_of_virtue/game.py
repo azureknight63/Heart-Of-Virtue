@@ -84,6 +84,7 @@ _\\|//__( | )______)_/
 
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
+        ### prepare to enter the post-menu game loop ###
         if newgame:
             for item in player.inventory:
                 # if item.name == "Rock":
@@ -96,11 +97,12 @@ _\\|//__( | )______)_/
         check_time = time.time()
         auto_save_timer = check_time
         mark_health = player.hp
+        ### enter post-menu game loop ###
         while player.is_alive() and not player.victory and not player.main_menu:
             player.time_elapsed += (time.time() - check_time)
             auto_save_timer += (time.time() - check_time)
-            if auto_save_timer > 300:  # autosave timer
-                functions.autosave(player)
+            if auto_save_timer > 3000:  # autosave timer
+                functions.autosave(player)  # todo figure out why autosaves are buggy
                 auto_save_timer = 0
             check_time = time.time()
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
@@ -122,7 +124,7 @@ _\\|//__( | )______)_/
             if len(combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!","red"))
                 combat.combat(player, combat_list)
-
+            ### check to make sure entering the most recent tile hasn't ended the game ###
             if player.is_alive() and not player.victory:
                 player.stack_inv_items()
                 print("\nChoose an action:\n")
@@ -133,16 +135,18 @@ _\\|//__( | )______)_/
                 print(available_moves)
                 print("\n\nFor a list of additional commands, enter 'c'.\n")
                 action_input = input('Action: ')
+                action_input = action_input.lower()
                 available_actions = room.available_actions()
                 count_args = action_input.split(' ')
-                arbitrary_action = True
-                if len(count_args) == 1:
+                arbitrary_action = True  # this will be set to False if the action is a default one that the player
+                #                          normally has access to
+                if len(count_args) == 1:  # if the player entered only one word (ex 'look'), do this stuff
                     for action in available_actions:
                         for key in action.hotkey:
                             if action_input == key:
                                 arbitrary_action = False
                                 player.do_action(action, **action.kwargs)
-                elif len(count_args) > 1:
+                elif len(count_args) > 1:  # if the player entered more than one word (ex 'view restorative'), do this
                     for action in available_actions:
                         for key in action.hotkey:
                             if count_args[0] == key:
@@ -150,18 +154,33 @@ _\\|//__( | )______)_/
                                 player.do_action(action, join_args)
                                 arbitrary_action = False
                                 break
-                    if arbitrary_action:
-                        lower_phrase = count_args[1].lower()
+                if arbitrary_action:  # if the command the player used could not be found in the list of default
+                    #                   actions, check to see if objects in the room have an associated command.
+                    #                   NOTE: in arbitrary one-word commands, ALL objects that associate the command
+                    #                   will evaluate their respective functions
+                    #                   NOTE: syntax for multiple words is '<command> <target object>';
+                    #                   additional words are ignored
+                    executions = 0
+                    if len(count_args) == 1:
+                        for object in room.objects_here:
+                            if not object.hidden:
+                                for keyword in object.keywords:
+                                    if action_input == keyword:
+                                        object.__getattribute__(keyword)()
+                                        executions += 1
+                    elif len(count_args) > 1:
                         for i, object in enumerate(room.objects_here):
                             search_item = object.name.lower() + ' ' + object.idle_message.lower()
-                            if lower_phrase in search_item and not object.hidden:
+                            if count_args[1] in search_item and not object.hidden:
                                 for keyword in object.keywords:
                                     if count_args[0] == keyword:
                                         object.__getattribute__(keyword)()
+                                        executions += 1
                                 break
 
-                else:
-                    cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+                    if executions == 0:
+                        cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+
             time.sleep(0.5)
 
 if __name__ == "__main__":
