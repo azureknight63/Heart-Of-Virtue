@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="f21b6638-cc93-4ec1-9e1d-5bbb9b24e566" name="Default" comment="" />
+    <list default="true" id="f21b6638-cc93-4ec1-9e1d-5bbb9b24e566" name="Default" comment="">
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py" />
+    </list>
     <ignored path="Heart-Of-Virtue.iws" />
     <ignored path=".idea/workspace.xml" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -75,11 +78,11 @@
       <file leaf-file-name="player.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="608">
-              <caret line="832" column="0" lean-forward="true" selection-start-line="832" selection-start-column="0" selection-end-line="832" selection-end-column="0" />
+            <state relative-caret-position="625">
+              <caret line="831" column="0" lean-forward="false" selection-start-line="831" selection-start-column="0" selection-end-line="831" selection-end-column="0" />
               <folding>
                 <element signature="e#0#28#0" expanded="true" />
-                <marker date="1485377539921" expanded="false" signature="0:13" ph="import ..." />
+                <marker date="1486045463661" expanded="false" signature="0:13" ph="import ..." />
               </folding>
             </state>
           </provider>
@@ -214,7 +217,7 @@
     </panes>
   </component>
   <component name="PropertiesComponent">
-    <property name="settings.editor.selected.configurable" value="reference.settingsdialog.IDE.editor.colors.Console Colors" />
+    <property name="settings.editor.selected.configurable" value="vcs.Git" />
     <property name="FileHistory.git4idea.history.GitHistoryProvider_flatWidth0" value="464" />
     <property name="FileHistory.git4idea.history.GitHistoryProvider_flatOrder0" value="0" />
     <property name="FileHistory.git4idea.history.GitHistoryProvider_flatWidth1" value="464" />
@@ -231,6 +234,7 @@
     <property name="FileHistory.git4idea.history.GitHistoryProvider_treeOrder2" value="2" />
     <property name="FileHistory.git4idea.history.GitHistoryProvider_treeWidth3" value="1047" />
     <property name="FileHistory.git4idea.history.GitHistoryProvider_treeOrder3" value="3" />
+    <property name="last_opened_file_path" value="$USER_HOME$/AppData/Local/GitHub/PortableGit_f02737a78695063deace08e96d5042710d3e32db/cmd/git.exe" />
   </component>
   <component name="RunManager" selected="Python.game">
     <configuration default="false" name="genericng" type="PythonConfigurationType" factoryName="Python" temporary="true">
@@ -484,7 +488,7 @@
     <frame x="-1928" y="-8" width="1936" height="1056" extended-state="6" />
     <editor active="false" />
     <layout>
-      <window_info id="Project" active="true" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.17966281" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
+      <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.17966281" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.122294374" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
       <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.16450216" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
@@ -630,7 +634,7 @@
           <caret line="584" column="35" lean-forward="true" selection-start-line="584" selection-start-column="35" selection-end-line="584" selection-end-column="35" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
-            <marker date="1485377539921" expanded="false" signature="0:13" ph="import ..." />
+            <marker date="1486045463661" expanded="false" signature="0:13" ph="import ..." />
           </folding>
         </state>
       </provider>
@@ -703,7 +707,7 @@
           <caret line="762" column="39" lean-forward="false" selection-start-line="762" selection-start-column="39" selection-end-line="762" selection-end-column="39" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
-            <marker date="1485377539921" expanded="false" signature="0:13" ph="import ..." />
+            <marker date="1486045463661" expanded="false" signature="0:13" ph="import ..." />
           </folding>
         </state>
       </provider>
@@ -768,7 +772,7 @@
           <caret line="274" column="30" lean-forward="false" selection-start-line="274" selection-start-column="30" selection-end-line="274" selection-end-column="30" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
-            <marker date="1485377539921" expanded="false" signature="0:13" ph="import ..." />
+            <marker date="1486045463661" expanded="false" signature="0:13" ph="import ..." />
           </folding>
         </state>
       </provider>
@@ -826,7 +830,7 @@
           <caret line="23" column="30" lean-forward="true" selection-start-line="23" selection-start-column="30" selection-end-line="23" selection-end-column="30" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
-            <marker date="1485377539921" expanded="false" signature="0:13" ph="import ..." />
+            <marker date="1486045463661" expanded="false" signature="0:13" ph="import ..." />
           </folding>
         </state>
       </provider>
@@ -972,11 +976,11 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/player.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="608">
-          <caret line="832" column="0" lean-forward="true" selection-start-line="832" selection-start-column="0" selection-end-line="832" selection-end-column="0" />
+        <state relative-caret-position="625">
+          <caret line="831" column="0" lean-forward="false" selection-start-line="831" selection-start-column="0" selection-end-line="831" selection-end-column="0" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
-            <marker date="1485377539921" expanded="false" signature="0:13" ph="import ..." />
+            <marker date="1486045463661" expanded="false" signature="0:13" ph="import ..." />
           </folding>
         </state>
       </provider>

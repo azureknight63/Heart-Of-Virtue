@@ -830,5 +830,3 @@ class Player():
         for i in map_lines:
             print(i)
 
-
-
