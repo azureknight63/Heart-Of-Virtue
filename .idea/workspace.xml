@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="f21b6638-cc93-4ec1-9e1d-5bbb9b24e566" name="Default" comment="">
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/map_editor.xlsx" afterPath="$PROJECT_DIR$/Heart_Of_Virtue/heart_of_virtue/resources/map_editor.xlsx" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-    </list>
+    <list default="true" id="f21b6638-cc93-4ec1-9e1d-5bbb9b24e566" name="Default" comment="" />
     <ignored path="Heart-Of-Virtue.iws" />
     <ignored path=".idea/workspace.xml" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
