@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="f21b6638-cc93-4ec1-9e1d-5bbb9b24e566" name="Default" comment="">
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/misc.xml" afterPath="$PROJECT_DIR$/.idea/misc.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
     </list>
     <ignored path="Heart-Of-Virtue.iws" />
@@ -414,7 +413,14 @@
       <option name="project" value="LOCAL" />
       <updated>1479933254462</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Merging home workstation">
+      <created>1495905097444</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1495905097444</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TodoView">
@@ -489,7 +495,8 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Fixing workspace.xml" />
     <MESSAGE value="Changes from work" />
-    <option name="LAST_COMMIT_MESSAGE" value="Changes from work" />
+    <MESSAGE value="Merging home workstation" />
+    <option name="LAST_COMMIT_MESSAGE" value="Merging home workstation" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager />
