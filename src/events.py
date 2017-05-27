@@ -136,7 +136,7 @@ class Story(Event):  # Executes the story event with the given ID number, where 
 
     def process(self):
         for param in self.params:
-            if param == '0':
+            if param == 'start_open_wall':
                 if not self.disable[param]:
                     wall_switch = None
                     for object in self.tile.objects_here:
@@ -146,7 +146,7 @@ class Story(Event):  # Executes the story event with the given ID number, where 
                     cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
                           " east.", 'yellow')
                     self.tile.block_exit.remove('east')
-                    self.disable['0'] = True
+                    self.disable[param] = True # disables this event
                     self.tile.description = """
         Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
         blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
@@ -161,7 +161,7 @@ class Story(Event):  # Executes the story event with the given ID number, where 
                             self.tile.objects_here.remove(object)
                             break
                     time.sleep(0.5)
-            elif param == '1':
+            elif param == 'start_open_bridgewall':
                 if not self.disable[param]:
                     wall_switch = None
                     for object in self.tile.objects_here:
@@ -170,7 +170,7 @@ class Story(Event):  # Executes the story event with the given ID number, where 
                     # if wall_switch.position == True:
                     cprint("The rock face splits open with a loud rumble as a dark and somewhat foreboding doorway appears.", 'yellow')
                     self.tile.block_exit.remove('east')
-                    self.disable['0'] = True
+                    self.disable[param] = True
                     self.tile.description = """
                 The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point,
                 large mountains can be seen to the northwest, covered in white clouds at their crowns.
@@ -186,6 +186,14 @@ class Story(Event):  # Executes the story event with the given ID number, where 
                             self.tile.objects_here.remove(object)
                             break
                     time.sleep(0.5)
+
+            elif param == 'start_chest_rumbler_battle':
+                if not self.disable[param]:
+                    cprint("Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
+                    self.disable[param] = True
+                    cprint("A rock-like creature appears and advances toward Jean!")
+                    time.sleep(0.5)
+                    self.tile.spawn_npc("RockRumbler")
 
             else:
                 temp = '!!!param error: params='
