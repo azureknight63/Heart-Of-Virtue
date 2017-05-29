@@ -128,7 +128,9 @@ class Wooden_Chest(Object):
                          idle_message="There's a wooden chest here.",
                          discovery_message=" a wooden chest!", player=player, tile=tile)
         self.position = False
-        self.events = []  # a list of events that occur when the chest is opened. Events with "repeat" will persist.
+        self.events = []  # a list of events that occur when the player interacts with the chest. Events with "repeat" will persist.
+        self.possible_states = ("closed", "opened", "looted")
+        self.state = self.possible_states[0] # start closed
         self.contents = []
         self.revealed = False
         if 'locked:' in params: #todo make key objects
@@ -151,11 +153,12 @@ class Wooden_Chest(Object):
                     else:
                         item = getattr(__import__('items'), item_type)()
                     self.contents.append(item)
-            if thing[0] == '!':
+            if thing[0] == '!': #TODO figure out why events labaled "open" fire when the game loads
                 param = thing.replace('!', '')
                 p_list = param.split(':')
                 repeat = False
                 parallel = False
+                trigger = 'auto'
                 event_type = p_list.pop(0)
                 for setting in p_list:
                     if setting == 'r':
@@ -166,12 +169,18 @@ class Wooden_Chest(Object):
                         parallel = True
                         p_list.remove(setting)
                         continue
+                    elif setting in self.possible_states: # event trigger
+                        trigger = setting
+                        p_list.remove(setting)
+
                 event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, p_list)
-                self.events.append(event)
+                self.events.append((event,trigger))
+
 
         self.keywords.append('open')
         self.keywords.append('unlock')
         self.keywords.append('loot')
+        self.process_events() # process initial events (triggers labeled "auto")
 
     def refresh_description(self):
         if self.position == False:
@@ -190,14 +199,15 @@ class Wooden_Chest(Object):
         else:
             if self.position == False:
                 print("The chest creaks eerily.")
+
                 time.sleep(0.5)
                 print("The lid lifts back on the hinge, revealing the contents inside.")
                 self.revealed = True
                 self.position = True
                 self.refresh_description()
+                self.process_events()
             else:
                 print("The chest is already open. You should VIEW or LOOT it to see what's inside.")
-
 
     def loot(self):
         if self.position == False:
@@ -231,3 +241,14 @@ class Wooden_Chest(Object):
                             break
             else:
                 print("It's empty. Very sorry.")
+
+    def process_events(self): # process all events currently tied to the object
+        for event in self.events:
+            event_object = event[0]
+            event_trigger = event[1]
+            if event_trigger == "auto" or event_trigger == self.state:
+                self.tile.events_here.append(event_object)
+                self.events.remove(event)
+        self.tile.evaluate_events()
+
+
