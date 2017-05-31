@@ -161,9 +161,18 @@ class RustedDagger(Weapon):
         super().__init__(name="Rusted Dagger",
                          description="A small dagger with some rust. Somewhat more dangerous than a rock.",
                          isequipped=False, value=10,
-                         damage=10, str_req=1, fin_req=12, str_mod=0.5, fin_mod=2, weight= 1.5, type="Weapon",
+                         damage=10, str_req=1, fin_req=12, str_mod=0.5, fin_mod=2, weight=1.5, type="Weapon",
                          subtype="Dagger")
         #minimum damage of 37
+
+class RustedIronMace(Weapon):
+    def __init__(self):
+        super().__init__(name="Rusted Iron Mace",
+                         description="A small mace with some rust around the spikes. Heavy and slow, but packs a decent punch.",
+                         isequipped=False, value=10,
+                         damage=15, str_req=10, fin_req=5, str_mod=2, fin_mod=0.5, weight=3.0, type="Weapon",
+                         subtype="Bludgeon")
+        #minimum damage of 40
 
 class TatteredCloth(Armor):
     def __init__(self):
@@ -171,7 +180,7 @@ class TatteredCloth(Armor):
                          description="Shamefully tattered cloth wrappings. "
                                      "Lightweight, but offering little in protection.",
                          isequipped=False, value=0,
-                         protection=1, str_req=1, str_mod=0.1, weight= 0.5, type="Armor", subtype="Light Armor")
+                         protection=1, str_req=1, str_mod=0.1, weight=0.5, type="Armor", subtype="Light Armor")
         #minimum protection of 2
 
 class ClothHood(Helm):
@@ -180,7 +189,7 @@ class ClothHood(Helm):
                          description="Stained cloth hood. "
                                      "Enough to conceal your face, but that's about it.",
                          isequipped=False, value=0,
-                         protection=0, str_req=1, str_mod=0.1, weight= 0.5, type="Helm", subtype="Light Helm")
+                         protection=0, str_req=1, str_mod=0.1, weight=0.5, type="Helm", subtype="Light Helm")
         self.add_fin = 1
         #minimum protection of 1
 

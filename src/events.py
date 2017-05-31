@@ -123,7 +123,7 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 #                 self.tile.block_exit.remove('south')
 
 
-class Story(Event):  # Executes the story event with the given ID number, where params=ID#
+class Story(Event):  # Executes the story event with the given ID, where params=ID
     def __init__(self, player, tile, repeat, parallel, params, name='Story'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
         self.disable = {}  # key is the story ID, value is whether it's disabled (ex 0:False)
@@ -189,7 +189,24 @@ class Story(Event):  # Executes the story event with the given ID number, where 
 
             elif param == 'start_chest_rumbler_battle':
                 if not self.disable[param]:
-                    cprint("Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
+                    time.sleep(2)
+                    cprint("Apparently, there is also a rusty iron mace in the chest. Jean takes it and swings it around gently, testing its balance.")
+                    time.sleep(3)
+                    mace = getattr(__import__('items'), 'RustedIronMace')()
+                    self.player.inventory.append(mace)
+                    mace.isequipped = True
+                    self.player.eq_weapon = mace
+                    self.player.refresh_moves()
+                    cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
+                    self.disable[param] = True
+                    cprint("A rock-like creature appears and advances toward Jean!")
+                    time.sleep(0.5)
+                    self.tile.spawn_npc("RockRumbler")
+                    self.tile.spawn_event("Story", player=self.player, tile=self.tile, params="start_post_rumbler_battle") #TODO figure out a way to interrupt battles with events
+
+            elif param == 'start_post_rumbler_battle':
+                if not self.disable[param]:
+                    cprint("The ground quivers slightly as another.", 'yellow')
                     self.disable[param] = True
                     cprint("A rock-like creature appears and advances toward Jean!")
                     time.sleep(0.5)

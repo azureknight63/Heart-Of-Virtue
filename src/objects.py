@@ -130,7 +130,7 @@ class Wooden_Chest(Object):
         self.position = False
         self.events = []  # a list of events that occur when the player interacts with the chest. Events with "repeat" will persist.
         self.possible_states = ("closed", "opened", "looted")
-        self.state = self.possible_states[0] # start closed
+        self.state = self.possible_states[0]  # start closed
         self.contents = []
         self.revealed = False
         if 'locked:' in params: #todo make key objects
@@ -169,7 +169,7 @@ class Wooden_Chest(Object):
                         parallel = True
                         p_list.remove(setting)
                         continue
-                    elif setting in self.possible_states: # event trigger
+                    elif setting in self.possible_states:  # event trigger
                         trigger = setting
                         p_list.remove(setting)
 
@@ -180,7 +180,7 @@ class Wooden_Chest(Object):
         self.keywords.append('open')
         self.keywords.append('unlock')
         self.keywords.append('loot')
-        self.process_events() # process initial events (triggers labeled "auto")
+        self.process_events()  # process initial events (triggers labeled "auto")
 
     def refresh_description(self):
         if self.position == False:
@@ -204,6 +204,7 @@ class Wooden_Chest(Object):
                 print("The lid lifts back on the hinge, revealing the contents inside.")
                 self.revealed = True
                 self.position = True
+                self.state = "opened"
                 self.refresh_description()
                 self.process_events()
             else:
@@ -229,6 +230,7 @@ class Wooden_Chest(Object):
                         print('Jean takes {}.'.format(item_taken.name))
                         self.player.inventory.append(item_taken)
                         self.refresh_description()
+                    self.state = "looted"
                 elif choice == 'x':
                     pass
                 else:
@@ -238,7 +240,9 @@ class Wooden_Chest(Object):
                             print('Jean takes {}.'.format(item_taken.name))
                             self.player.inventory.append(item_taken)
                             self.refresh_description()
+                            self.state = "looted"
                             break
+                self.process_events()
             else:
                 print("It's empty. Very sorry.")
 
