@@ -135,6 +135,13 @@ class RockRumbler(NPC):
                            "Highly resistant to most weapons. You'd probably be better off avoiding combat with this" \
                            "one."
         super().__init__(name="Rock Rumbler " + genericng.generate(2,4), description=description, maxhp=30,
-                         damage=3, protection=30, awareness=12, aggro=True, exp_award=100)
+                         damage=22, protection=30, awareness=12, aggro=True, exp_award=100)
         self.resistance = [0,0,0,0.5,0,0]  # resists earth by 50%
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Idle(self))
+        self.known_moves.append(moves.Dodge(self))
 

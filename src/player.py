@@ -455,6 +455,9 @@ class Player():
                                     print("Jean puts {} back into his bag.".format(item.name))
                             e_item.isequipped = True
                             print("Jean equipped {}!".format(e_item.name))
+                            if issubclass(e_item.__class__, items.Weapon):
+                                self.eq_weapon = e_item
+                                self.refresh_moves()
                         break
 
             num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
@@ -688,7 +691,7 @@ class Player():
 
     def refresh_moves(self):
         self.known_moves = [moves.Wait(self), moves.Rest(self), moves.Use_Item(self), moves.Dodge(self)]
-        if not self.eq_weapon == None:
+        if self.eq_weapon:  # if the player has a weapon equipped, at the Attack move to his combat skill set
             self.known_moves.append(moves.Attack(self))
 
     def refresh_protection_rating(self):
