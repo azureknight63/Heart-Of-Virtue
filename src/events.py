@@ -32,6 +32,10 @@ class Event: #master class for all events
         self.repeat = repeat
         self.parallel = parallel
         self.thread = None
+        self.has_run = False
+        self.params = params
+
+    def pass_conditions_to_process(self):
         if self.repeat:
             self.call_process()
         else:
