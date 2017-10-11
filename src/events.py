@@ -202,14 +202,14 @@ class Story(Event):  # Executes the story event with the given ID, where params=
                     cprint("A rock-like creature appears and advances toward Jean!")
                     time.sleep(0.5)
                     self.tile.spawn_npc("RockRumbler")
-                    self.tile.spawn_event("Story", player=self.player, tile=self.tile, params="start_post_rumbler_battle") #TODO figure out a way to interrupt battles with events
+                    self.player.combat_events.append(getattr(__import__('events'), "Story")(player=self.player, tile=self.tile, params="start_post_rumbler_battle", repeat=False, parallel=False))
 
             elif param == 'start_post_rumbler_battle':
                 if not self.disable[param]:
-                    cprint("The ground quivers slightly as another.", 'yellow')
+                    cprint("The ground quivers slightly as more rock creatires appear.", 'yellow')
                     self.disable[param] = True
-                    cprint("A rock-like creature appears and advances toward Jean!")
                     time.sleep(0.5)
+                    self.tile.spawn_npc("RockRumbler")
                     self.tile.spawn_npc("RockRumbler")
 
             else:

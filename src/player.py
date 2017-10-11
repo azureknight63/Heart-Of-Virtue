@@ -47,6 +47,7 @@ class Player():
         self.protection = 0
         self.states = []
         self.in_combat = False
+        self.combat_events = []  # list of pending events in combat. If non-empty, combat will be paused while an event happens
         self.savestat = None
         self.saveuniv = None
         self.universe = None

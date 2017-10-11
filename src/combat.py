@@ -25,6 +25,11 @@ def combat(player, enemy_list):
             player.death()
             break
 
+        #  Check for combat events and execute them once, if possible
+        if len(player.combat_events) > 0:
+            for event in player.combat_events:
+                event.check_conditions()
+
         player.refresh_stat_bonuses()
         for enemy in enemy_list:
             enemy.refresh_stat_bonuses()
