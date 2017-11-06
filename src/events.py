@@ -6,7 +6,7 @@ from termcolor import colored, cprint
 import threading
 import random
 import time
-import objects
+import objects, functions
 
 class EventThread(threading.Thread):
     def __init__(self, event):
@@ -122,6 +122,73 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 #             if direction == 'south' and 'south' in self.tile.block_exit:
 #                 self.tile.block_exit.remove('south')
 
+class CombatEvent(Event):  # Occurs when Jean beats the first rumbler after opening the chest
+    def __init__(self, player, tile, params, name, repeat=False, parallel=False):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_combat_conditions(self, beat):
+        """ conditions can pull from data passed into the function as parameters.
+        Most relevant data can be accessed through the player, player.tile, etc.
+        """
+        if True:  # change to any arbitrary code to fit the situation
+            self.pass_conditions_to_process()
+
+    def pass_conditions_to_process(self):
+        if self.repeat:
+            self.call_process()
+        else:
+            self.call_process()
+            self.player.combat_events.remove(self)  # if this is a one-time event, kill it after it executes
+
+    def process(self):
+        pass
+
+
+class Ch01_PostRumbler(CombatEvent):  # Occurs when Jean beats the first rumbler after opening the chest
+    def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_combat_conditions(self, beat):
+        if len(self.player.combat_list) == 0:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
+        time.sleep(0.5)
+        for x in range(0,2):
+            npc = getattr(__import__('npc'), "RockRumbler")()
+            self.player.current_room.npcs_here.append(npc)
+            self.player.combat_list.append(npc)
+        self.player.combat_events.append(
+            getattr(__import__('events'), "Ch01_PostRumbler2")(player=self.player, tile=self.tile, params=False,
+                                                              repeat=False, parallel=False))
+
+class Ch01_PostRumbler2(CombatEvent):  # Occurs when Jean beats the first rumbler after opening the chest
+    def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler2'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_combat_conditions(self, beat):
+        if self.player.get_hp_pcnt() < 0.3:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        cprint("\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive creature "
+               "leaps out, smashing its huge fist down on top of one of the rock creatures.")
+        self.player.combat_list[0].hp = 0  # instagib one of the rock creatures
+        print(colored( self.player.combat_list[0].name, "magenta") + " exploded into fragments of light!")
+        self.player.current_room.npcs_here.remove(self.player.combat_list[0])
+        self.player.combat_list.remove(self.player.combat_list[0])
+        time.sleep(0.5)
+        cprint("The massive creature somewhat resembles a man, except he is covered head-to-toe in armor not much different from the chamber walls.")
+        cprint("Two more rock creatures advance on him, snapping their heavy jaws.")
+        cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, then turns to face the creatures.")
+        time.sleep(4)
+        cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.")
+        cprint("It burns in his throat, but he can feel strength quickly returning to his limbs.")
+        cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
+        self.player.hp = self.player.maxhp
+        self.player.fatigue = self.player.maxfatigue
+        self.player.heat += 0.75
 
 class Story(Event):  # Executes the story event with the given ID, where params=ID
     def __init__(self, player, tile, repeat, parallel, params, name='Story'):
@@ -199,18 +266,10 @@ class Story(Event):  # Executes the story event with the given ID, where params=
                     self.player.refresh_moves()
                     cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
                     self.disable[param] = True
+                    self.tile.spawn_npc("RockRumbler")
                     cprint("A rock-like creature appears and advances toward Jean!")
                     time.sleep(0.5)
-                    self.tile.spawn_npc("RockRumbler")
-                    self.player.combat_events.append(getattr(__import__('events'), "Story")(player=self.player, tile=self.tile, params="start_post_rumbler_battle", repeat=False, parallel=False))
-
-            elif param == 'start_post_rumbler_battle':
-                if not self.disable[param]:
-                    cprint("The ground quivers slightly as more rock creatires appear.", 'yellow')
-                    self.disable[param] = True
-                    time.sleep(0.5)
-                    self.tile.spawn_npc("RockRumbler")
-                    self.tile.spawn_npc("RockRumbler")
+                    self.player.combat_events.append(getattr(__import__('events'), "Ch01_PostRumbler")(player=self.player, tile=self.tile, params=False, repeat=False, parallel=False))
 
             else:
                 temp = '!!!param error: params='

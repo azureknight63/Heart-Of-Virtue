@@ -1,37 +1,40 @@
 from termcolor import colored, cprint
 import time
 
-def combat(player, enemy_list):
+def combat(player):
     """
 
     :param player:
-    :param enemy_list: A list of enemies to engage in this combat loop.
+    :param player.combat_list: A list of enemies to engage in this combat loop.
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
-    beat = 0 # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
-    player.heat = 1.0 # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
+    beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
+    player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
-    for enemy in enemy_list:
+    for enemy in player.combat_list:
         enemy.in_combat = True
-    while True: #combat will loop until there are no aggro enemies or the player is dead
-        if len(enemy_list) == 0:
+    while True:  # combat will loop until there are no aggro enemies or the player is dead
+        #  Check for combat events and execute them once, if possible
+        if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example, an event is to fire upon player or enemy death
+            for event in player.combat_events:
+                event.check_combat_conditions(beat)
+
+        if not player.is_alive():
+            player.death()
+            break
+
+        if len(player.combat_list) == 0:
             print("Victory!")
             player.fatigue = player.maxfatigue
             print("Jean gained {} exp!".format(player.combat_exp))
             player.gain_exp(player.combat_exp)
             player.combat_exp = 0
             break
-        if not player.is_alive():
-            player.death()
-            break
 
-        #  Check for combat events and execute them once, if possible
-        if len(player.combat_events) > 0:
-            for event in player.combat_events:
-                event.check_conditions()
+        #  at this point, the player is alive and at least one enemy remains
 
         player.refresh_stat_bonuses()
-        for enemy in enemy_list:
+        for enemy in player.combat_list:
             enemy.refresh_stat_bonuses()
 
         while player.current_move == None: #the player must choose to do something
@@ -67,17 +70,17 @@ def combat(player, enemy_list):
                         player.current_move.user = player
                         if player.current_move.targeted:
                             target = None
-                            if len(enemy_list) > 1:
+                            if len(player.combat_list) > 1:
                                 while target == None:
                                     print("Select a target: \n")
-                                    for i, enemy in enumerate(enemy_list):
+                                    for i, enemy in enumerate(player.combat_list):
                                         print(colored(str(i), "magenta") + ": " + colored(enemy.name, "magenta"))
                                     choice = int(input("Target: "))
-                                    for i, enemy in enumerate(enemy_list):
+                                    for i, enemy in enumerate(player.combat_list):
                                         if choice == i:
                                             target = enemy
                             else:
-                                target = enemy_list[0]
+                                target = player.combat_list[0]
                             player.current_move.target = target
                         else:
                             player.current_move.target = player
@@ -90,11 +93,11 @@ def combat(player, enemy_list):
         for move in player.known_moves: #advances moves one beat along the path toward cooldown zero.
             move.advance(player)
 
-        for i, enemy in enumerate(enemy_list):
+        for i, enemy in enumerate(player.combat_list):
             if not enemy.is_alive():
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
                 player.current_room.npcs_here.remove(enemy)
-                enemy_list.remove(enemy)
+                player.combat_list.remove(enemy)
             else:
                 if enemy.current_move == None:
                     enemy.target = player

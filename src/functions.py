@@ -48,7 +48,7 @@ def check_for_combat(player): # returns a list of angry enemies who are ready to
         for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
             if finesse_check <= e.awareness and e.aggro == True:  # finesse check fails, break and rescan the list,
                 # adding all aggro enemies
-                print(e.name + e.alert_message)  # player's been spotted
+                print(e.name + " " + e.alert_message)  # player's been spotted
                 enemy_combat_list.append(e)
                 for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
                     if aggro_enemy.aggro == True and aggro_enemy != e:

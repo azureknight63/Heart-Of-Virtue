@@ -120,10 +120,10 @@ _\\|//__( | )______)_/
             functions.check_for_npcs(room)
             functions.check_for_items(room)
             functions.check_for_objects(room)
-            combat_list = functions.check_for_combat(player)
-            if len(combat_list) > 0:  # Check the state of the room to see if there are any enemies
+            player.combat_list = functions.check_for_combat(player)
+            if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!","red"))
-                combat.combat(player, combat_list)
+                combat.combat(player)
             ### check to make sure entering the most recent tile hasn't ended the game ###
             if player.is_alive() and not player.victory:
                 player.stack_inv_items()

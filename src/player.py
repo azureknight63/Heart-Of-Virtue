@@ -48,6 +48,7 @@ class Player():
         self.states = []
         self.in_combat = False
         self.combat_events = []  # list of pending events in combat. If non-empty, combat will be paused while an event happens
+        self.combat_list = []  # populated by enemies currently being encountered. Should be empty outside of combat
         self.savestat = None
         self.saveuniv = None
         self.universe = None
@@ -55,38 +56,47 @@ class Player():
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
         self.combat_idle_msg = [
-            'Jean breathes heavily.',
-            'Jean anxiously shifts his weight back and forth.',
-            'Jean stomps his foot impatiently.',
-            'Jean carefully considers his enemy.',
-            'Jean spits on the ground.',
-            "A bead of sweat runs down Jean's brow.",
-            'Jean becomes conscious of his own heart beating loudly.',
-            'In a flash, Jean remembers the face of his dear, sweet Amelia smiling at him.',
-            'With a smug grin, Jean wonders how he got himself into this mess.',
-            "Sweat drips into Jean's eye, causing him to blink rapidly.",
-            'Jean misses the sound of his daughter laughing happily.',
-            'Jean recalls the sensation of consuming the Eucharist and wonders when - if - that might happen again.',
-            'Jean mutters a quick prayer under his breath.',
-            'Jean briefly recalls his mother folding laundry and humming softly to herself.',
+            'Jean breathes heavily. ',
+            'Jean swallows forcefully. ',
+            'Jean sniffs.',
+            'Jean licks his lips in anticipation. ',
+            'Jean grimaces for a moment.',
+            'Jean anxiously shifts his weight back and forth. ',
+            'Jean stomps his foot impatiently. ',
+            'Jean carefully considers his enemy. ',
+            'Jean spits on the ground. ',
+            "A bead of sweat runs down Jean's brow. ",
+            'Jean becomes conscious of his own heart beating loudly. ',
+            'In a flash, Jean remembers the face of his dear, sweet Amelia smiling at him. ',
+            'With a smug grin, Jean wonders how he got himself into this mess. ',
+            "Sweat drips into Jean's eye, causing him to blink rapidly. ",
+            'Jean misses the sound of his daughter laughing happily. ',
+            'Jean recalls the sensation of consuming the Eucharist and wonders when - if - that might happen again. ',
+            'Jean mutters a quick prayer under his breath. ',
+            'Jean briefly recalls his mother folding laundry and humming softly to herself. ',
             ]
 
         self.combat_hurt_msg = [
-            'Jean tastes blood in his mouth and spits it out.',
-            'Jean winces in pain.',
-            'Jean grimaces.',
-            "There's a loud ringing in Jean's ears.",
-            'Jean staggers for a moment.',
-            "Jean's body shudders from the abuse it's received.",
-            'Jean coughs spasmodically.',
-            "A throbbing headache sears into Jean's consciousness."
-            "Jean's vision becomes cloudy and unfocused for a moment.",
-            'Jean vomits blood and bile onto the ground.',
-            '''Jean whispers quietly, "Amelia... Regina..."''',
-            '''A ragged wheezing escapes Jean's throat.''',
-            '''A searing pain lances Jean's side.'''
-            '''A sense of panic wells up inside of Jean.'''
-            '''For a brief moment, a wave of fear washes over Jean.'''
+            'Jean tastes blood in his mouth and spits it out. ',
+            'Jean winces in pain. ',
+            'Jean grimaces. ',
+            "There's a loud ringing in Jean's ears. ",
+            'Jean staggers for a moment. ',
+            "Jean's body shudders from the abuse it's received. ",
+            'Jean coughs spasmodically. ',
+            'Jean falls painfully to one knee, then quickly regains his footing. ',
+            'Jean fumbles a bit before planting his feet. ',
+            'Jean suddenly becomes aware that he is losing a lot of blood. ',
+            '''Jean's face suddenly becomes pale as he realizes this could be his last battle. ''',
+            "A throbbing headache sears into Jean's consciousness. ",
+            "Jean's vision becomes cloudy and unfocused for a moment. ",
+            'Jean vomits blood and bile onto the ground. ',
+            '''Jean whispers quietly, "Amelia... Regina..." ''',
+            '''Jean shouts loudly, "No, not here! I have to find them!"''',
+            '''A ragged wheezing escapes Jean's throat. ''',
+            '''A searing pain lances Jean's side. ''',
+            '''A sense of panic wells up inside of Jean. ''',
+            '''For a brief moment, a wave of fear washes over Jean. '''
         ]
 
     def cycle_states(self):
@@ -113,6 +123,11 @@ class Player():
             self.exp += amt
         while self.exp >= self.exp_to_level:
             self.level_up()
+
+    def get_hp_pcnt(self):  # returns the player's remaining HP as a decimal
+        curr = float(self.hp)
+        maxhp = float(self.maxhp)
+        return curr/maxhp
 
     def level_up(self):
         cprint(r"""
@@ -236,20 +251,20 @@ class Player():
             time.sleep(0.5)
 
         cprint('Jean wavers, then collapses heavily on the ground.', "red")
-        time.sleep(2)
+        time.sleep(4)
 
         cprint("""Jean's eyes seem to focus on something distant. A rush of memories enters his mind.""", "red")
-        time.sleep(3)
+        time.sleep(5)
 
         cprint("""Jean gasps as the unbearable pain wracks his body. As his sight begins to dim,
-        he lets out a barely audible whisper:""", "red")
-        time.sleep(3)
+he lets out a barely audible whisper:""", "red")
+        time.sleep(5)
 
         cprint('''"...Amelia... ...Regina... ...I'm sorry..."''', "red")
-        time.sleep(3)
+        time.sleep(5)
 
         cprint("Darkness finally envelopes Jean. His struggle is over now. It's time to rest.\n\n", "red")
-        time.sleep(5)
+        time.sleep(8)
 
         cprint('''
                    .o oOOOOOOOo                                            OOOo
@@ -262,7 +277,7 @@ class Player():
                    oOOOOOba.                .adOOOOOOOOOOba               .adOOOOo.
                   oOOOOOOOOOOOOOba.    .adOOOOOOOOOO@^OOOOOOOba.     .adOOOOOOOOOOOO
                  OOOOOOOOOOOOOOOOO.OOOOOOOOOOOOOO"`  '"OOOOOOOOOOOOO.OOOOOOOOOOOOOO
-                 "OOOO"       "YOoOOOOMOIONODOO"`  .   '"OOROAOPOEOOOoOY"     "OOO"
+                 "OOOO"       "YOoOOOOOOOOOOOOO"`  .   '"OOOOOOOOOOOOoOY"     "OOO"
                     Y           'OOOOOOOOOOOOOO: .oOOo. :OOOOOOOOOOO?'         :`
                     :            .oO%OOOOOOOOOOo.OOOOOO.oOOOOOOOOOOOO?         .
                     .            oOOP"%OOOOOOOOoOOOOOOO?oOOOOO?OOOO"OOo
@@ -275,6 +290,7 @@ class Player():
         time.sleep(0.5)
         print('\n\n')
         cprint('Jean has died!', "red")
+        time.sleep(10)
 
     def print_inventory(self):
         num_gold = 0
