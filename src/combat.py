@@ -90,7 +90,7 @@ def combat(player):
                     elif move.current_stage == 3:
                         cprint("Jean's not yet ready to do that again.", "red")
 
-        for move in player.known_moves: #advances moves one beat along the path toward cooldown zero.
+        for move in player.known_moves: #  advances moves one beat along the path toward cooldown zero.
             move.advance(player)
 
         for i, enemy in enumerate(player.combat_list):
