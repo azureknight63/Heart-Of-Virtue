@@ -144,7 +144,7 @@ class CombatEvent(Event):  # Occurs when Jean beats the first rumbler after open
         pass
 
 
-class Ch01_PostRumbler(CombatEvent):  # Occurs when Jean beats the first rumbler after opening the chest
+class Ch01_PostRumbler(CombatEvent):
     def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
 
@@ -163,7 +163,7 @@ class Ch01_PostRumbler(CombatEvent):  # Occurs when Jean beats the first rumbler
             getattr(__import__('events'), "Ch01_PostRumbler2")(player=self.player, tile=self.tile, params=False,
                                                               repeat=False, parallel=False))
 
-class Ch01_PostRumbler2(CombatEvent):  # Occurs when Jean beats the first rumbler after opening the chest
+class Ch01_PostRumbler2(CombatEvent):
     def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
 
@@ -193,7 +193,7 @@ class Ch01_PostRumbler2(CombatEvent):  # Occurs when Jean beats the first rumble
             getattr(__import__('events'), "Ch01_PostRumbler3")(player=self.player, tile=self.tile, params=False,
                                                                repeat=False, parallel=False))
 
-class Ch01_PostRumbler3(CombatEvent):  # Occurs when Jean beats the first rumbler after opening the chest
+class Ch01_PostRumbler3(CombatEvent):
     def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
 
@@ -302,6 +302,8 @@ class Ch01_PostRumbler3(CombatEvent):  # Occurs when Jean beats the first rumble
             #  Don't forget that the enemies need to be able to target friendly NPCs as well!
             #  Then, combat should resume once again with the player, "Rock-Man", and two or three
             #  Rock Rumblers, depending on how difficult you want this fight to be.
+
+            #  Need to add Gorran to the player's party and spawn him
 
 class Story(Event):  # Executes the story event with the given ID, where params=ID
     def __init__(self, player, tile, repeat, parallel, params, name='Story'):

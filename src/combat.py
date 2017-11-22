@@ -1,18 +1,38 @@
 from termcolor import colored, cprint
-import time
+import time, random
 
 def combat(player):
     """
-
     :param player:
     :param player.combat_list: A list of enemies to engage in this combat loop.
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
+    def process_npc(npc):  # when an NPC's turn comes up, perform these actions
+        if npc.current_move == None:
+            if npc.friend == False:
+                npc.target = player.combat_list_allies[
+                    random.randint(0, len(
+                        player.combat_list_allies - 1))]  # select a random target from the player's party
+            else:
+                npc.target = player.combat_list[
+                    random.randint(0, len(
+                        player.combat_list - 1))]  # select a random target from the enemy's party
+            npc.select_move()
+            npc.current_move.target = npc.target
+            npc.current_move.cast(npc)
+
+        for move in npc.known_moves:
+            move.advance(npc)
+
+        npc.cycle_states()
+
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
     for enemy in player.combat_list:
         enemy.in_combat = True
+    for ally in player.combat_list_allies:
+        ally.in_combat = True
     while True:  # combat will loop until there are no aggro enemies or the player is dead
         #  Check for combat events and execute them once, if possible
         if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example, an event is to fire upon player or enemy death
@@ -93,22 +113,21 @@ def combat(player):
         for move in player.known_moves: #  advances moves one beat along the path toward cooldown zero.
             move.advance(player)
 
+        for i, ally in enumerate(player.combat_list_allies):
+            if not ally.is_alive():
+                print(colored(ally.name, "magenta") + " has fallen in battle!")  # not sure yet if I want to change this
+                player.current_room.npcs_here.remove(ally)
+                player.combat_list.remove(ally)
+            else:
+                process_npc(ally)
+
         for i, enemy in enumerate(player.combat_list):
             if not enemy.is_alive():
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
                 player.current_room.npcs_here.remove(enemy)
                 player.combat_list.remove(enemy)
             else:
-                if enemy.current_move == None:
-                    enemy.target = player
-                    enemy.select_move()
-                    enemy.current_move.target = player
-                    enemy.current_move.cast(enemy)
-
-                for move in enemy.known_moves:
-                    move.advance(enemy)
-
-                enemy.cycle_states()
+                process_npc(enemy)
 
         player.combat_idle()
 

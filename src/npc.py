@@ -3,11 +3,11 @@ import genericng, moves, functions
 
 class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
-                 inventory = None, maxhp = 100, protection = 0, speed = 10, finesse = 10,
-                 awareness = 10, maxfatigue = 100, endurance = 10, strength = 10, charisma = 10, intelligence = 10,
-                 faith = 10, hidden = False, hide_factor = 0,
-                 idle_message = ' is shuffling about.', alert_message = 'glares sharply at Jean!',
-                 discovery_message = 'something interesting.', target = None):
+                 inventory=None, maxhp=100, protection=0, speed=10, finesse=10,
+                 awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
+                 faith=10, hidden=False, hide_factor=0,
+                 idle_message=' is shuffling about.', alert_message='glares sharply at Jean!',
+                 discovery_message='something interesting.', target=None, friend=False):
         self.name = name
         self.description = description
         self.inventory = inventory
@@ -24,7 +24,7 @@ class NPC:
         self.speed_base = speed
         self.finesse = finesse
         self.finesse_base = finesse
-        self.resistance = [0,0,0,0,0,0]  # this will need a separate definition when enemies are initialized
+        self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
         self.resistance_base = [0,0,0,0,0,0]
         self.awareness = awareness  # used when a player enters the room to see if npc spots the player
         self.aggro = aggro
@@ -52,6 +52,7 @@ class NPC:
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
+        self.friend = friend  # Is this a friendly NPC? Default is False (enemy). Friends will help Jean in combat.
 
     def is_alive(self):
         return self.hp > 0
@@ -110,6 +111,31 @@ class NPC:
                 for i, v in enumerate(self.resistance):
                     self.resistance[i] += adder.add_resistance[i]
 
+
+### Friends ###
+
+class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the game. His name is initially unknown.
+    def __init__(self):
+        description = """A massive creature that somewhat resembles a man, 
+        except he is covered head-to-toe in rock-like armor. He seems a bit clumsy and his
+        speech is painfully slow and deep. He seems to prefer gestures over actual speech,
+        though this makes his intent a bit difficult to interpret. At any rate, he seems
+        friendly enough to Jean."""
+        super().__init__(name="Rock-Man", description=description, maxhp=10000,
+                         damage=20, awareness=9, speed=5, aggro=True, exp_award=0,
+                         idle_message=" is bumbling about.",
+                         alert_message=" lets out a deep and angry rumble!")
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.NPC_Attack(self))
+        self.known_moves.append(moves.Gorran_Club(self))
+        self.known_moves.append(moves.Gorran_Club(self))
+        self.known_moves.append(moves.Gorran_Club(self))
+        self.known_moves.append(moves.NPC_Idle(self))
+        self.known_moves.append(moves.Parry(self))
+
+
 ### Monsters ###
 
 class Slime(NPC):  # target practice
@@ -126,7 +152,6 @@ class Slime(NPC):  # target practice
         self.known_moves.append(moves.NPC_Attack(self))
         self.known_moves.append(moves.NPC_Idle(self))
         self.known_moves.append(moves.Dodge(self))
-
 
 
 class RockRumbler(NPC):

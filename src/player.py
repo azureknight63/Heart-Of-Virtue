@@ -49,7 +49,7 @@ class Player():
         self.in_combat = False
         self.combat_events = []  # list of pending events in combat. If non-empty, combat will be paused while an event happens
         self.combat_list = []  # populated by enemies currently being encountered. Should be empty outside of combat
-        self.combat_list_allies = []  # friendly NPCs in combat that either help the player or just stand there looking pretty
+        self.combat_list_allies = [self]  # friendly NPCs in combat that either help the player or just stand there looking pretty
         self.savestat = None
         self.saveuniv = None
         self.universe = None
