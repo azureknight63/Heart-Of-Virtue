@@ -238,7 +238,7 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
     def execute(self, player):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
-        hit_chance = (95 - self.target.finesse) + self.user.finesse
+        hit_chance = (98 - self.target.finesse) + self.user.finesse
         if hit_chance <= 0:
             hit_chance = 1
         roll = random.randint(0, 100)
@@ -383,8 +383,8 @@ class NPC_Attack(Move): #basic attack function, NPCs only
             print(colored(self.user.name, "magenta") + colored(" hit {} for ".format(self.target.name), "yellow") +
                   colored(damage, "red") + colored(" damage!", "yellow"))
             self.target.hp -= damage
-            self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to
-            #  maxhp
+            if self.user.target.name == "Jean":
+                self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to maxhp
         else:
             print(colored("{}'s attack just missed!".format(self.user.name), "white"))
             if self.user.target.name == "Jean":

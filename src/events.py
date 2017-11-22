@@ -172,14 +172,14 @@ class Ch01_PostRumbler2(CombatEvent):
             self.pass_conditions_to_process()
 
     def process(self):
-        cprint("\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive creature "
+        cprint("\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
                "leaps out, smashing its huge fist down on top of one of the rock creatures.")
         self.player.combat_list[0].hp = 0  # instagib one of the rock creatures
         print(colored( self.player.combat_list[0].name, "magenta") + " exploded into fragments of light!")
         self.player.current_room.npcs_here.remove(self.player.combat_list[0])
         self.player.combat_list.remove(self.player.combat_list[0])
         time.sleep(0.5)
-        cprint("The massive creature somewhat resembles a man, except he is covered head-to-toe in armor not much different from the chamber walls.")
+        cprint("The massive figure somewhat resembles a man, except he is covered head-to-toe in armor not much different from the chamber walls.")
         cprint("Two more rock creatures advance on him, snapping their heavy jaws.")
         cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, then turns to face the creatures.")
         time.sleep(4)
@@ -298,12 +298,20 @@ class Ch01_PostRumbler3(CombatEvent):
                    "\nnods his head in respect. Both prepare themselves for the "
                    "\ndifficult fight that remains.")
             time.sleep(8)
+
             #  OK, so at this point you need to add the "friendly NPC" feature to the combat.
             #  Don't forget that the enemies need to be able to target friendly NPCs as well!
-            #  Then, combat should resume once again with the player, "Rock-Man", and two or three
-            #  Rock Rumblers, depending on how difficult you want this fight to be.
+            #  For some reason Gorran is attacking himself and Jean xD plz fix
 
-            #  Need to add Gorran to the player's party and spawn him
+            npc = getattr(__import__('npc'), "Gorran")()
+            self.player.current_room.npcs_here.append(npc)
+            self.player.combat_list_allies.append(npc)
+
+            for x in range(0, 3):
+                npc = getattr(__import__('npc'), "RockRumbler")()
+                self.player.current_room.npcs_here.append(npc)
+                self.player.combat_list.append(npc)
+
 
 class Story(Event):  # Executes the story event with the given ID, where params=ID
     def __init__(self, player, tile, repeat, parallel, params, name='Story'):

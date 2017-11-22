@@ -12,11 +12,11 @@ def combat(player):
             if npc.friend == False:
                 npc.target = player.combat_list_allies[
                     random.randint(0, len(
-                        player.combat_list_allies - 1))]  # select a random target from the player's party
+                        player.combat_list_allies) - 1)]  # select a random target from the player's party
             else:
                 npc.target = player.combat_list[
                     random.randint(0, len(
-                        player.combat_list - 1))]  # select a random target from the enemy's party
+                        player.combat_list) - 1)]  # select a random target from the enemy's party
             npc.select_move()
             npc.current_move.target = npc.target
             npc.current_move.cast(npc)
@@ -114,12 +114,13 @@ def combat(player):
             move.advance(player)
 
         for i, ally in enumerate(player.combat_list_allies):
-            if not ally.is_alive():
-                print(colored(ally.name, "magenta") + " has fallen in battle!")  # not sure yet if I want to change this
-                player.current_room.npcs_here.remove(ally)
-                player.combat_list.remove(ally)
-            else:
-                process_npc(ally)
+            if not ally == player:  # make sure you don't select Jean!
+                if not ally.is_alive():
+                    print(colored(ally.name, "magenta") + " has fallen in battle!")  # not sure yet if I want to change this
+                    player.current_room.npcs_here.remove(ally)
+                    player.combat_list.remove(ally)
+                else:
+                    process_npc(ally)
 
         for i, enemy in enumerate(player.combat_list):
             if not enemy.is_alive():
