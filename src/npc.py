@@ -1,5 +1,5 @@
 import random
-import genericng, moves, functions
+import genericng, moves, functions, termcolor
 
 class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
@@ -70,6 +70,8 @@ class NPC:
             if self.known_moves[choice].fatigue_cost <= self.fatigue:
                 self.current_move = self.known_moves[choice]
 
+    def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
+        pass
 
     def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
         functions.reset_stats(self)
@@ -121,10 +123,11 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
         speech is painfully slow and deep. He seems to prefer gestures over actual speech,
         though this makes his intent a bit difficult to interpret. At any rate, he seems
         friendly enough to Jean."""
-        super().__init__(name="Rock-Man", description=description, maxhp=10000,
+        super().__init__(name="Rock-Man", description=description, maxhp=200,
                          damage=20, awareness=9, speed=5, aggro=True, exp_award=0,
                          idle_message=" is bumbling about.",
-                         alert_message=" lets out a deep and angry rumble!")
+                         alert_message=" lets out a deep and angry rumble!",
+                         friend=True)
         self.known_moves.append(moves.NPC_Attack(self))
         self.known_moves.append(moves.NPC_Attack(self))
         self.known_moves.append(moves.NPC_Attack(self))
@@ -134,6 +137,12 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
         self.known_moves.append(moves.Gorran_Club(self))
         self.known_moves.append(moves.NPC_Idle(self))
         self.known_moves.append(moves.Parry(self))
+        self.known_moves.append(moves.Parry(self))
+
+    def before_death(self):  # this essentially makes Gorran invulnerable, though he will likely have to rest
+        print(termcolor.colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
+        self.fatigue /= 2
+        self.hp = self.maxhp
 
 
 ### Monsters ###

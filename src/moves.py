@@ -239,13 +239,13 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
         hit_chance = (98 - self.target.finesse) + self.user.finesse
-        if hit_chance <= 0:
-            hit_chance = 1
+        if hit_chance < 5:
+            hit_chance = 5
         roll = random.randint(0, 100)
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         damage = int(damage)
-        player.combat_exp += 10
-        if hit_chance >= roll: #a hit!
+        player.combat_exp += 10  # todo: fix the tendency for infinite chain misses
+        if hit_chance >= roll:  # a hit!
             if self.check_parry(self.target):
                 print(colored(self.target.name, "magenta") + colored(" parried the attack!", "red"))
                 self.stage_beat[2] += 10

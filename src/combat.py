@@ -9,7 +9,7 @@ def combat(player):
     """
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
         if npc.current_move == None:
-            if npc.friend == False:
+            if not npc.friend:
                 npc.target = player.combat_list_allies[
                     random.randint(0, len(
                         player.combat_list_allies) - 1)]  # select a random target from the player's party
@@ -116,13 +116,17 @@ def combat(player):
         for i, ally in enumerate(player.combat_list_allies):
             if not ally == player:  # make sure you don't select Jean!
                 if not ally.is_alive():
-                    print(colored(ally.name, "magenta") + " has fallen in battle!")  # not sure yet if I want to change this
+                    ally.before_death()  # if there is anything to process before death happens, do it now
+                if not ally.is_alive():  # in case the npc got healed as part of before_death(), check again
+                    print(colored(ally.name, "yellow", attrs="bold") + " has fallen in battle!")  # not sure yet if I want to change this
                     player.current_room.npcs_here.remove(ally)
-                    player.combat_list.remove(ally)
+                    player.combat_list_allies.remove(ally)
                 else:
                     process_npc(ally)
 
         for i, enemy in enumerate(player.combat_list):
+            if not enemy.is_alive():
+                enemy.before_death()  # if there is anything to process before death happens, do it now
             if not enemy.is_alive():
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
                 player.current_room.npcs_here.remove(enemy)
