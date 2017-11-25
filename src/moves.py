@@ -239,9 +239,14 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
         hit_chance = (98 - self.target.finesse) + self.user.finesse
-        if hit_chance < 5:
+        for state in self.target.states:  # Look for states which modify hit_chance
+            if isinstance(state, states.Dodging):
+                hit_chance -= 50 + int(self.target.finesse / 3)
+        if hit_chance < 5:  # Minimum value for hit chance
             hit_chance = 5
         roll = random.randint(0, 100)
+        print("###DEBUG### hit_chance: " + str(hit_chance) + " roll: " + str(roll))
+        print("###TARGET### " + str(self.target) + " | FIN: " + str(self.target.finesse) + " FINB: " + str(self.target.finesse_base))
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         damage = int(damage)
         player.combat_exp += 10  # todo: fix the tendency for infinite chain misses
