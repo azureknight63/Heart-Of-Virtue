@@ -8,6 +8,7 @@ def combat(player):
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
+        npc.cycle_states()
         if npc.current_move == None:
             if not npc.friend:
                 npc.target = player.combat_list_allies[
@@ -20,11 +21,9 @@ def combat(player):
             npc.select_move()
             npc.current_move.target = npc.target
             npc.current_move.cast(npc)
-
         for move in npc.known_moves:
             move.advance(npc)
 
-        npc.cycle_states()
 
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.

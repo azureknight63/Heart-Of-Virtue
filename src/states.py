@@ -42,6 +42,8 @@ class State: #master class for all states
                 self.beats_left -= 1
                 if self.beats_left <= 0:
                     target.states.remove(self)
+                    print("###DEBUG### state removed: " + str(self))
+                    target.refresh_stat_bonuses()
         elif self.world and not target.in_combat:
             self.effect(target)
             if self.steps_max >= 0:
@@ -53,8 +55,8 @@ class State: #master class for all states
 class Dodging(State):
     def __init__(self, target):  # increases the target's dodging ability for a short duration
         super().__init__(name="Dodging", target=target, beats_max=5, hidden=True)
-        #  f = 50 + int(target.finesse / 3)
-        #  self.add_fin = f
+        f = 50 + int(target.finesse / 3)
+        self.add_fin = f
 
 
 class Parrying(State):

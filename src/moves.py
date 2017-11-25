@@ -122,6 +122,9 @@ class Dodge(Move):
     def execute(self, user):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
+        for state in self.user.states:  # remove any other instances of Dodging
+            if isinstance(state, states.Dodging):
+                self.user.states.remove(state)
         self.user.states.append(states.Dodging(user))
         self.user.fatigue -= self.fatigue_cost
 
@@ -239,15 +242,19 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         print(self.stage_announce[1])
         hit_chance = (98 - self.target.finesse) + self.user.finesse
-        for state in self.target.states:  # Look for states which modify hit_chance
-            if isinstance(state, states.Dodging):
-                hit_chance -= 50 + int(self.target.finesse / 3)
+        #  for state in self.target.states:  # Look for states which modify hit_chance
+            #  if isinstance(state, states.Dodging):
+                #  hit_chance -= 50 + int(self.target.finesse / 3)
         if hit_chance < 5:  # Minimum value for hit chance
             hit_chance = 5
         roll = random.randint(0, 100)
+        #todo: narrow misses/glancing blows
+        #todo: better coloring for allies
         print("###DEBUG### hit_chance: " + str(hit_chance) + " roll: " + str(roll))
         print("###TARGET### " + str(self.target) + " | FIN: " + str(self.target.finesse) + " FINB: " + str(self.target.finesse_base))
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
+        if damage <= 0:
+            damage = 0
         damage = int(damage)
         player.combat_exp += 10  # todo: fix the tendency for infinite chain misses
         if hit_chance >= roll:  # a hit!
@@ -377,6 +384,8 @@ class NPC_Attack(Move): #basic attack function, NPCs only
             hit_chance = 1
         roll = random.randint(0, 100)
         damage = (self.power - self.target.protection)
+        if damage <= 0:
+            damage = 0
         damage = int(damage)
         if hit_chance >= roll:  # a hit!
             if self.check_parry(self.target):
@@ -509,6 +518,8 @@ class Gorran_Club(Move):  # Gorran's special club attack! Massive damage, long r
             hit_chance = 1
         roll = random.randint(0, 100)
         damage = (self.power - self.target.protection)
+        if damage <= 0:
+            damage = 0
         damage = int(damage)
         if hit_chance >= roll:  # a hit!
             if self.check_parry(self.target):
