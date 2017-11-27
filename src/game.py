@@ -102,7 +102,7 @@ _\\|//__( | )______)_/
             player.time_elapsed += (time.time() - check_time)
             auto_save_timer += (time.time() - check_time)
             if auto_save_timer > 3000:  # autosave timer
-                functions.autosave(player)  # todo figure out why autosaves are buggy
+                functions.autosave(player)
                 auto_save_timer = 0
             check_time = time.time()
             room = player.universe.tile_exists(player.map, player.location_x, player.location_y)

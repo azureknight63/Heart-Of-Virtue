@@ -153,7 +153,7 @@ class Wooden_Chest(Object):
                     else:
                         item = getattr(__import__('items'), item_type)()
                     self.contents.append(item)
-            if thing[0] == '!': #TODO figure out why events labaled "open" fire when the game loads
+            if thing[0] == '!':
                 param = thing.replace('!', '')
                 p_list = param.split(':')
                 repeat = False

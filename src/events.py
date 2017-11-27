@@ -159,6 +159,7 @@ class Ch01_PostRumbler(CombatEvent):
             npc = getattr(__import__('npc'), "RockRumbler")()
             self.player.current_room.npcs_here.append(npc)
             self.player.combat_list.append(npc)
+            npc.in_combat = True
         self.player.combat_events.append(
             getattr(__import__('events'), "Ch01_PostRumbler2")(player=self.player, tile=self.tile, params=False,
                                                               repeat=False, parallel=False))
@@ -306,11 +307,13 @@ class Ch01_PostRumbler3(CombatEvent):
             npc = getattr(__import__('npc'), "Gorran")()
             self.player.current_room.npcs_here.append(npc)
             self.player.combat_list_allies.append(npc)
+            npc.in_combat = True
 
             for x in range(0, 3):
                 npc = getattr(__import__('npc'), "RockRumbler")()
                 self.player.current_room.npcs_here.append(npc)
                 self.player.combat_list.append(npc)
+                npc.in_combat = True
 
 
 class Story(Event):  # Executes the story event with the given ID, where params=ID

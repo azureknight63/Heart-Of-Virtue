@@ -1,5 +1,5 @@
 from termcolor import colored, cprint
-import time, random
+import time, random, functions
 
 def combat(player):
     """
@@ -81,7 +81,14 @@ def combat(player):
                     move_str = colored(move_str, "red")
                 available_moves += move_str
             print(available_moves)
-            selected_move = int(input("Selection: "))
+            selected_move = input("Selection: ")
+            while not functions.is_input_integer(selected_move):  # only allow integers here
+                cprint("Invalid selection.", "red", attrs=['bold'])
+                selected_move = input("Selection: ")
+            try:
+                selected_move = int(selected_move)
+            except:
+                cprint("Invalid selection.", "red", attrs=['bold'])
             for i, move in enumerate(player.known_moves):
                 if i == selected_move:
                     if player.fatigue >= move.fatigue_cost and move.current_stage == 0:

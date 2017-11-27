@@ -250,13 +250,13 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         roll = random.randint(0, 100)
         #todo: narrow misses/glancing blows
         #todo: better coloring for allies
-        print("###DEBUG### hit_chance: " + str(hit_chance) + " roll: " + str(roll))
-        print("###TARGET### " + str(self.target) + " | FIN: " + str(self.target.finesse) + " FINB: " + str(self.target.finesse_base))
+        #  print("###DEBUG### hit_chance: " + str(hit_chance) + " roll: " + str(roll))
+        #  print("###TARGET### " + str(self.target) + " | FIN: " + str(self.target.finesse) + " FINB: " + str(self.target.finesse_base))
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         if damage <= 0:
             damage = 0
         damage = int(damage)
-        player.combat_exp += 10  # todo: fix the tendency for infinite chain misses
+        player.combat_exp += 10
         if hit_chance >= roll:  # a hit!
             if self.check_parry(self.target):
                 print(colored(self.target.name, "magenta") + colored(" parried the attack!", "red"))
