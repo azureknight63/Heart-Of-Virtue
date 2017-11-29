@@ -94,6 +94,30 @@ class Move:  # master class for all moves
                 break
         return parry
 
+    def prep_colors(self):  # returns a tuple with (usercolor, targetcolor) for prints
+        player = ""
+        usercolor = "white"
+        targetcolor = "white"
+        if self.user.name == "Jean":
+            player = self.user
+        else:
+            if not self.user.friend:
+                usercolor = "magenta"
+            else:
+                usercolor = "cyan"
+        if self.target.name == "Jean":
+            player = self.target
+        else:
+            if not self.target.friend:
+                targetcolor = "magenta"
+            else:
+                targetcolor = "cyan"
+        if self.user == player:
+            usercolor = "green"
+        if self.target == player:
+            targetcolor = "green"
+        return (usercolor, targetcolor)
+
 ### ANY MOVES ###
 
 class Dodge(Move):
@@ -240,6 +264,8 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
 
     def execute(self, player):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
+        glance = False  # switch for determining a glancing blow
+        colors = self.prep_colors()
         print(self.stage_announce[1])
         hit_chance = (98 - self.target.finesse) + self.user.finesse
         #  for state in self.target.states:  # Look for states which modify hit_chance
@@ -248,23 +274,31 @@ class Attack(Move): #basic attack function, always uses equipped weapon, player 
         if hit_chance < 5:  # Minimum value for hit chance
             hit_chance = 5
         roll = random.randint(0, 100)
-        #todo: narrow misses/glancing blows
-        #todo: better coloring for allies
         #  print("###DEBUG### hit_chance: " + str(hit_chance) + " roll: " + str(roll))
         #  print("###TARGET### " + str(self.target) + " | FIN: " + str(self.target.finesse) + " FINB: " + str(self.target.finesse_base))
         damage = ((self.power - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
         if damage <= 0:
             damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
         damage = int(damage)
         player.combat_exp += 10
         if hit_chance >= roll:  # a hit!
             if self.check_parry(self.target):
-                print(colored(self.target.name, "magenta") + colored(" parried the attack!", "red"))
+                print(colored(self.target.name, colors[1]) + colored(" parried the attack from ", "red") +
+                      colored(self.user.name, colors[0]) + colored("!", "red"))
                 self.stage_beat[2] += 10
                 player.change_heat(0.75)
             else:
-                print(colored(self.target.name, "magenta") + colored(" was struck for ", "yellow") +
-                      colored(damage, "red") + colored(" damage!", "yellow"))
+                if glance:
+                    print(colored(self.user.name, colors[0]) + colored(" just barely hit ", "yellow") +
+                          colored(self.target.name, colors[1]) + colored(" for ", "yellow") +
+                          colored(damage, "red") + colored(" damage!", "yellow"))
+                else:
+                    print(colored(self.user.name, colors[0]) + colored(" struck ", "yellow") +
+                          colored(self.target.name, colors[1]) + colored(" for ", "yellow") +
+                          colored(damage, "red") + colored(" damage!", "yellow"))
                 self.target.hp -= damage
                 # print("######{}'s HP is {}".format(self.target.name, self.target.hp)) #debug msg
                 player.change_heat(1.25)
@@ -379,6 +413,8 @@ class NPC_Attack(Move): #basic attack function, NPCs only
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        colors = self.prep_colors()
+        glance = False
         hit_chance = (95 - self.target.finesse) + self.user.finesse
         if hit_chance <= 0:
             hit_chance = 1
@@ -386,28 +422,51 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         damage = (self.power - self.target.protection)
         if damage <= 0:
             damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
         damage = int(damage)
         if hit_chance >= roll:  # a hit!
+            #if self.check_parry(self.target):
+            #    print(colored(self.target.name, "magenta") + colored(" parried the attack!", "yellow"))
+            #    self.stage_beat[2] += 10
+            #    if self.target.name == "Jean":
+            #        self.target.change_heat(1.4)
+            #        self.target.combat_exp += 15
+            #print(colored(self.user.name, "magenta") + colored(" hit {} for ".format(self.target.name), "yellow") +
+            #      colored(damage, "red") + colored(" damage!", "yellow"))
+            #self.target.hp -= damage
+            #if self.user.target.name == "Jean":
+            #    self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to maxhp
+
             if self.check_parry(self.target):
-                print(colored(self.target.name, "magenta") + colored(" parried the attack!", "yellow"))
+                print(colored(self.target.name, colors[1]) + colored(" parried the attack from ", "red") +
+                      colored(self.user.name, colors[0]) + colored("!", "red"))
                 self.stage_beat[2] += 10
                 if self.target.name == "Jean":
-                    self.target.change_heat(1.4)
-                    self.target.combat_exp += 15
-            print(colored(self.user.name, "magenta") + colored(" hit {} for ".format(self.target.name), "yellow") +
-                  colored(damage, "red") + colored(" damage!", "yellow"))
-            self.target.hp -= damage
-            if self.user.target.name == "Jean":
-                self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to maxhp
+                   self.target.change_heat(1.4)
+                   self.target.combat_exp += 15
+            else:
+                if glance:
+                    print(colored(self.user.name, colors[0]) + colored(" just barely hit ", "yellow") +
+                          colored(self.target.name, colors[1]) + colored(" for ", "yellow") +
+                          colored(damage, "red") + colored(" damage!", "yellow"))
+                else:
+                    print(colored(self.user.name, colors[0]) + colored(" struck ", "yellow") +
+                          colored(self.target.name, colors[1]) + colored(" for ", "yellow") +
+                          colored(damage, "red") + colored(" damage!", "yellow"))
+                self.target.hp -= damage
+                if self.target.name == "Jean":
+                   self.target.change_heat(1 - (damage / self.target.maxhp))  # reduce heat by the percentage of dmg done to maxhp
         else:
             print(colored("{}'s attack just missed!".format(self.user.name), "white"))
-            if self.user.target.name == "Jean":
-                for state in self.user.target.states:
+            if self.target.name == "Jean":
+                for state in self.target.states:
                     if state.name == "Dodging":
-                        self.user.target.change_heat(1.25)
+                        self.target.change_heat(1.25)
                         self.target.combat_exp += 10
                         break
-                self.user.target.change_heat(1.1)
+                self.target.change_heat(1.1)
                 self.target.combat_exp += 5
         self.user.fatigue -= self.fatigue_cost
 
@@ -511,7 +570,7 @@ class Gorran_Club(Move):  # Gorran's special club attack! Massive damage, long r
                              ""]
 
     def execute(self, npc):
-        self.refresh_announcements(npc)
+        self.refresh_announcements(npc)  # todo: Fix this move like the other attack moves
         print(self.stage_announce[1])
         hit_chance = (105 - self.target.finesse) + self.user.finesse
         if hit_chance <= 0:
@@ -535,12 +594,12 @@ class Gorran_Club(Move):  # Gorran's special club attack! Massive damage, long r
                 self.target.change_heat(1 - (damage / self.target.maxhp))
         else:
             print(colored("{}'s attack just missed!".format(self.user.name), "white"))
-            if self.user.target.name == "Jean":
-                for state in self.user.target.states:
+            if self.target.name == "Jean":
+                for state in self.target.states:
                     if state.name == "Dodging":
-                        self.user.target.change_heat(1.25)
+                        self.target.change_heat(1.25)
                         self.target.combat_exp += 10
                         break
-                self.user.target.change_heat(1.1)
+                self.target.change_heat(1.1)
                 self.target.combat_exp += 5
         self.user.fatigue -= self.fatigue_cost

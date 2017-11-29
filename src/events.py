@@ -153,7 +153,7 @@ class Ch01_PostRumbler(CombatEvent):
             self.pass_conditions_to_process()
 
     def process(self):
-        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
+        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")  # todo: make this event repeat until the player is sufficiently injured; perhaps keep increasing the number of enemies each time
         time.sleep(0.5)
         for x in range(0,2):
             npc = getattr(__import__('npc'), "RockRumbler")()
