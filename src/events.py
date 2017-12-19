@@ -153,16 +153,38 @@ class Ch01_PostRumbler(CombatEvent):
             self.pass_conditions_to_process()
 
     def process(self):
-        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")  # todo: make this event repeat until the player is sufficiently injured; perhaps keep increasing the number of enemies each time
+        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
-        for x in range(0,2):
+        for x in range(0,1):
             npc = getattr(__import__('npc'), "RockRumbler")()
             self.player.current_room.npcs_here.append(npc)
             self.player.combat_list.append(npc)
             npc.in_combat = True
         self.player.combat_events.append(
+            getattr(__import__('events'), "Ch01_PostRumbler_Rep")(player=self.player, tile=self.tile, params=False,
+                                                              repeat=True, parallel=False))
+        self.player.combat_events.append(
             getattr(__import__('events'), "Ch01_PostRumbler2")(player=self.player, tile=self.tile, params=False,
                                                               repeat=False, parallel=False))
+
+
+class Ch01_PostRumbler_Rep(CombatEvent):
+    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_combat_conditions(self, beat):
+        if len(self.player.combat_list) == 0:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        cprint("\nThe ground quivers slightly as even more rock creatures appear.\n")
+        time.sleep(0.5)
+        for x in range(0,1):
+            npc = getattr(__import__('npc'), "RockRumbler")()
+            self.player.current_room.npcs_here.append(npc)
+            self.player.combat_list.append(npc)
+            npc.in_combat = True
+
 
 class Ch01_PostRumbler2(CombatEvent):
     def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler2'):
@@ -173,6 +195,9 @@ class Ch01_PostRumbler2(CombatEvent):
             self.pass_conditions_to_process()
 
     def process(self):
+        for event in self.player.combat_events:
+            if event.name == 'Ch01_PostRumbler_Rep':
+                self.player.combat_events.remove(event)  # Remove the repeating event
         cprint("\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
                "leaps out, smashing its huge fist down on top of one of the rock creatures.")
         self.player.combat_list[0].hp = 0  # instagib one of the rock creatures
@@ -187,6 +212,11 @@ class Ch01_PostRumbler2(CombatEvent):
         cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.")
         cprint("It burns in his throat, but he can feel strength quickly returning to his limbs.")
         cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
+        if self.player.combat_list.length == 0:
+            npc = getattr(__import__('npc'), "RockRumbler")()
+            self.player.current_room.npcs_here.append(npc)
+            self.player.combat_list.append(npc)
+            npc.in_combat = True
         self.player.hp = self.player.maxhp
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75

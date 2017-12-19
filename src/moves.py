@@ -557,6 +557,7 @@ class Gorran_Club(Move):  # Gorran's special club attack! Massive damage, long r
     def execute(self, npc):
         self.refresh_announcements(npc)  # todo: Fix this move like the other attack moves
         print(self.stage_announce[1])
+        self.prep_colors()
         glance = False
         hit_chance = (105 - self.target.finesse) + self.user.finesse
         if hit_chance <= 0:
