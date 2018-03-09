@@ -124,7 +124,7 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
         though this makes his intent a bit difficult to interpret. At any rate, he seems
         friendly enough to Jean."""
         super().__init__(name="Rock-Man", description=description, maxhp=200,
-                         damage=20, awareness=9, speed=5, aggro=True, exp_award=0,
+                         damage=40, awareness=9, speed=5, aggro=True, exp_award=0,
                          idle_message=" is bumbling about.",
                          alert_message=" lets out a deep and angry rumble!",
                          friend=True)

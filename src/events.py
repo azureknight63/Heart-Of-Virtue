@@ -122,7 +122,7 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 #             if direction == 'south' and 'south' in self.tile.block_exit:
 #                 self.tile.block_exit.remove('south')
 
-class CombatEvent(Event):  # Occurs when Jean beats the first rumbler after opening the chest
+class CombatEvent(Event):
     def __init__(self, player, tile, params, name, repeat=False, parallel=False):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
 
@@ -144,7 +144,7 @@ class CombatEvent(Event):  # Occurs when Jean beats the first rumbler after open
         pass
 
 
-class Ch01_PostRumbler(CombatEvent):
+class Ch01_PostRumbler(CombatEvent): # Occurs when Jean beats the first rumbler after opening the chest
     def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
 
@@ -200,19 +200,24 @@ class Ch01_PostRumbler2(CombatEvent):
                 self.player.combat_events.remove(event)  # Remove the repeating event
         cprint("\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
                "leaps out, smashing its huge fist down on top of one of the rock creatures.")
+        time.sleep(2)
         self.player.combat_list[0].hp = 0  # instagib one of the rock creatures
         print(colored( self.player.combat_list[0].name, "magenta") + " exploded into fragments of light!")
         self.player.current_room.npcs_here.remove(self.player.combat_list[0])
         self.player.combat_list.remove(self.player.combat_list[0])
-        time.sleep(0.5)
+        time.sleep(3)
         cprint("The massive figure somewhat resembles a man, except he is covered head-to-toe in armor not much different from the chamber walls.")
+        time.sleep(3)
         cprint("Two more rock creatures advance on him, snapping their heavy jaws.")
+        time.sleep(3)
         cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, then turns to face the creatures.")
         time.sleep(4)
         cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.")
+        time.sleep(3)
         cprint("It burns in his throat, but he can feel strength quickly returning to his limbs.")
+        time.sleep(3)
         cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
-        if self.player.combat_list.length == 0:
+        if len(self.player.combat_list) == 0:
             npc = getattr(__import__('npc'), "RockRumbler")()
             self.player.current_room.npcs_here.append(npc)
             self.player.combat_list.append(npc)
@@ -291,7 +296,7 @@ class Ch01_PostRumbler3(CombatEvent):
             cprint("Jean gasps and gropes uselessly at the sharp claws"
                    "\nstill digging painfully into his flesh. He swings"
                    "\nhis mace and lands a blow on the twisted, scaly"
-                   "\ncalf of the abominable demon.")
+                   "\nleg of the abominable demon.")
             time.sleep(8)
             cprint("The monster lets out a loud screech, and swooping"
                    "\nquickly, smashes Jean's body against the wall of rock.")
@@ -346,6 +351,100 @@ class Ch01_PostRumbler3(CombatEvent):
                 npc.in_combat = True
 
 
+class StoryEvent(Event):
+    def __init__(self, player, tile, params, name, repeat=False, parallel=False):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_conditions(self):
+        """ conditions can pull from data passed into the class as parameters.
+        Most relevant data can be accessed through the player, player.tile, etc.
+        """
+        if True:  # change to any arbitrary code to fit the situation
+            self.pass_conditions_to_process()
+
+    def pass_conditions_to_process(self):
+        if self.repeat:
+            self.call_process()
+        else:
+            self.call_process()
+            self.tile.events_here.remove(self)  # if this is a one-time event, kill it after it executes
+
+    def process(self):
+        pass
+
+class Ch01_Start_Open_Wall(StoryEvent):
+    '''
+    The first event. Opens the wall in the starting room when the player 'presses' the wall depression
+    '''
+    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Start_Open_Wall'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_conditions(self):
+        for room_object in self.tile.objects_here:
+            if room_object.name == 'Wall Depression':
+                if room_object.position:
+                    self.pass_conditions_to_process()
+
+    def process(self):
+        wall_switch = self.tile.objects_here[0]
+        for room_object in self.tile.objects_here:
+            if room_object.name == 'Wall Depression':
+                wall_switch = room_object
+        cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
+              " east.", 'yellow')
+        self.tile.block_exit.remove('east')
+        self.tile.description = """
+Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
+blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
+heard.
+"""
+        for room_object in self.tile.objects_here:
+            if isinstance(room_object, objects.Tile_Description):
+                self.tile.objects_here.remove(room_object)
+                break
+        for room_object in self.tile.objects_here:
+            if room_object == wall_switch:
+                self.tile.objects_here.remove(room_object)
+                break
+        time.sleep(0.5)
+
+class Ch01_Bridge_Wall(StoryEvent):  #todo for some reason, this one isn't working!
+    '''
+    The first event. Opens the wall in the starting room when the player 'presses' the wall depression
+    '''
+    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Bridge_Wall'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+
+    def check_conditions(self):
+        for room_object in self.tile.objects_here:
+            if room_object.name == 'Wall Depression':
+                if room_object.position:
+                    self.pass_conditions_to_process()
+
+    def process(self):
+        wall_switch = self.tile.objects_here[0]
+        for room_object in self.tile.objects_here:
+            if room_object.name == 'Wall Depression':
+                wall_switch = room_object
+        cprint("The rock face splits open with a loud rumble as a dark and somewhat foreboding doorway appears.",
+               'yellow')
+        self.tile.block_exit.remove('east')
+        self.tile.description = """
+                        The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point,
+                        large mountains can be seen to the northwest, covered in white clouds at their crowns.
+
+                        A dark gaping hole in the shape of a doorway is cut out of the eastern rock face.
+                        """
+        for room_object in self.tile.objects_here:
+            if isinstance(room_object, objects.Tile_Description):
+                self.tile.objects_here.remove(room_object)
+                break
+        for room_object in self.tile.objects_here:
+            if room_object == wall_switch:
+                self.tile.objects_here.remove(room_object)
+                break
+        time.sleep(0.5)
+
 class Story(Event):  # Executes the story event with the given ID, where params=ID
     def __init__(self, player, tile, repeat, parallel, params, name='Story'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
@@ -359,58 +458,8 @@ class Story(Event):  # Executes the story event with the given ID, where params=
 
     def process(self):
         for param in self.params:
-            if param == 'start_open_wall':
-                if not self.disable[param]:
-                    wall_switch = None
-                    for object in self.tile.objects_here:
-                        if object.name == 'Wall Depression':
-                            wall_switch = object
-                    # if wall_switch.position == True:
-                    cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
-                          " east.", 'yellow')
-                    self.tile.block_exit.remove('east')
-                    self.disable[param] = True # disables this event
-                    self.tile.description = """
-        Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
-        blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
-        heard.
-        """
-                    for object in self.tile.objects_here:
-                        if isinstance(object, objects.Tile_Description):
-                            self.tile.objects_here.remove(object)
-                            break
-                    for object in self.tile.objects_here:
-                        if object == wall_switch:
-                            self.tile.objects_here.remove(object)
-                            break
-                    time.sleep(0.5)
-            elif param == 'start_open_bridgewall':
-                if not self.disable[param]:
-                    wall_switch = None
-                    for object in self.tile.objects_here:
-                        if object.name == 'Wall Depression':
-                            wall_switch = object
-                    # if wall_switch.position == True:
-                    cprint("The rock face splits open with a loud rumble as a dark and somewhat foreboding doorway appears.", 'yellow')
-                    self.tile.block_exit.remove('east')
-                    self.disable[param] = True
-                    self.tile.description = """
-                The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point,
-                large mountains can be seen to the northwest, covered in white clouds at their crowns.
 
-                A dark gaping hole in the shape of a doorway is cut out of the eastern rock face.
-                """
-                    for object in self.tile.objects_here:
-                        if isinstance(object, objects.Tile_Description):
-                            self.tile.objects_here.remove(object)
-                            break
-                    for object in self.tile.objects_here:
-                        if object == wall_switch:
-                            self.tile.objects_here.remove(object)
-                            break
-                    time.sleep(0.5)
-
-            elif param == 'start_chest_rumbler_battle':
+            if param == 'start_chest_rumbler_battle':
                 if not self.disable[param]:
                     time.sleep(2)
                     cprint("Apparently, there is also a rusty iron mace in the chest. Jean takes it and swings it around gently, testing its balance.")
@@ -432,4 +481,4 @@ class Story(Event):  # Executes the story event with the given ID, where params=
                 for p in self.params:
                     temp += p
                     temp += ', '
-                print(temp)
+                # print(temp)
