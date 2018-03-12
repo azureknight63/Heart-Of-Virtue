@@ -30,6 +30,22 @@ class MoveWest(Action):
     def __init__(self):
         super().__init__(method=Player.move_west, name='Move west', hotkey=('w', 'west'))
 
+class MoveNorthEast(Action):
+    def __init__(self):
+        super().__init__(method=Player.move_northeast, name='Move northeast', hotkey=('ne', 'northeast'))
+
+class MoveNorthWest(Action):
+    def __init__(self):
+        super().__init__(method=Player.move_northwest, name='Move northwest', hotkey=('nw', 'northwest'))
+
+class MoveSouthEast(Action):
+    def __init__(self):
+        super().__init__(method=Player.move_southeast, name='Move southeast', hotkey=('se', 'southeast'))
+
+class MoveSouthWest(Action):
+    def __init__(self):
+        super().__init__(method=Player.move_southwest, name='Move southwest', hotkey=('sw', 'southwest'))
+
 class ViewInventory(Action):
     """Prints the player's inventory"""
 

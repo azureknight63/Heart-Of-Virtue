@@ -53,6 +53,7 @@ class NPC:
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
         self.friend = friend  # Is this a friendly NPC? Default is False (enemy). Friends will help Jean in combat.
+        self.combat_delay = 0  # initial delay for combat actions. Typically randomized on unit spawn
 
     def is_alive(self):
         return self.hp > 0

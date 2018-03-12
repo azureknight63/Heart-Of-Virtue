@@ -78,7 +78,7 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
         super().__init__(name=name, player=player, tile=tile, params=params, repeat=repeat, parallel=parallel)
         self.directions = []
         if not params:
-            self.directions = ['north', 'south', 'east', 'west']
+            self.directions = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
         else:
             self.directions = params
 
@@ -96,6 +96,14 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
                 self.tile.block_exit.append('north')
             if direction == 'south' and 'south' not in self.tile.block_exit:
                 self.tile.block_exit.append('south')
+            if direction == 'northeast' and 'northeast' not in self.tile.block_exit:
+                self.tile.block_exit.append('northeast')
+            if direction == 'northwest' and 'northwest' not in self.tile.block_exit:
+                self.tile.block_exit.append('northwest')
+            if direction == 'southeast' and 'southeast' not in self.tile.block_exit:
+                self.tile.block_exit.append('southeast')
+            if direction == 'southwest' and 'southwest' not in self.tile.block_exit:
+                self.tile.block_exit.append('southwest')
 
 
 # class Unblock(Event):  # unblocks exit in tile, unblocks all if none are declared
@@ -156,8 +164,7 @@ class Ch01_PostRumbler(CombatEvent): # Occurs when Jean beats the first rumbler 
         cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
         for x in range(0,1):
-            npc = getattr(__import__('npc'), "RockRumbler")()
-            self.player.current_room.npcs_here.append(npc)
+            npc = self.tile.spawn_npc("RockRumbler")
             self.player.combat_list.append(npc)
             npc.in_combat = True
         self.player.combat_events.append(
@@ -180,8 +187,7 @@ class Ch01_PostRumbler_Rep(CombatEvent):
         cprint("\nThe ground quivers slightly as even more rock creatures appear.\n")
         time.sleep(0.5)
         for x in range(0,1):
-            npc = getattr(__import__('npc'), "RockRumbler")()
-            self.player.current_room.npcs_here.append(npc)
+            npc = self.tile.spawn_npc("RockRumbler")
             self.player.combat_list.append(npc)
             npc.in_combat = True
 
@@ -218,8 +224,7 @@ class Ch01_PostRumbler2(CombatEvent):
         time.sleep(3)
         cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
         if len(self.player.combat_list) == 0:
-            npc = getattr(__import__('npc'), "RockRumbler")()
-            self.player.current_room.npcs_here.append(npc)
+            npc = self.tile.spawn_npc("RockRumbler")
             self.player.combat_list.append(npc)
             npc.in_combat = True
         self.player.hp = self.player.maxhp
@@ -315,10 +320,10 @@ class Ch01_PostRumbler3(CombatEvent):
             cprint("Jean suffers " + str(random.randint(10,60)) + " damage!", "red")
             time.sleep(1)
             cprint("Jean suffers " + str(random.randint(30,90)) + " damage!", "red")
-            time.sleep(1)
+            time.sleep(2)
             cprint("Jean suffers " + str(random.randint(85,155)) + " damage!", "red")
             self.player.hp = 0
-            time.sleep(3)
+            time.sleep(5)
             #  deth
         else:
             cprint("Jean grits his teeth, then begins running toward one of the beasts"
@@ -339,14 +344,12 @@ class Ch01_PostRumbler3(CombatEvent):
             #  Don't forget that the enemies need to be able to target friendly NPCs as well!
             #  For some reason Gorran is attacking himself and Jean xD plz fix
 
-            npc = getattr(__import__('npc'), "Gorran")()
-            self.player.current_room.npcs_here.append(npc)
+            npc = self.tile.spawn_npc("Gorran", delay=0)
             self.player.combat_list_allies.append(npc)
             npc.in_combat = True
 
-            for x in range(0, 3):
-                npc = getattr(__import__('npc'), "RockRumbler")()
-                self.player.current_room.npcs_here.append(npc)
+            for x in range(0, 4):
+                npc = self.tile.spawn_npc("RockRumbler", delay=random.randint(0,14))
                 self.player.combat_list.append(npc)
                 npc.in_combat = True
 
@@ -408,9 +411,9 @@ heard.
                 break
         time.sleep(0.5)
 
-class Ch01_Bridge_Wall(StoryEvent):  #todo for some reason, this one isn't working!
+class Ch01_Bridge_Wall(StoryEvent):
     '''
-    The first event. Opens the wall in the starting room when the player 'presses' the wall depression
+    Opens the wall on the bridge in the starting area
     '''
     def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Bridge_Wall'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
@@ -445,40 +448,31 @@ class Ch01_Bridge_Wall(StoryEvent):  #todo for some reason, this one isn't worki
                 break
         time.sleep(0.5)
 
-class Story(Event):  # Executes the story event with the given ID, where params=ID
-    def __init__(self, player, tile, repeat, parallel, params, name='Story'):
+class Ch01_Chest_Rumbler_Battle(StoryEvent):
+    '''
+    Opens the wall on the bridge in the starting area
+    '''
+    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Chest_Rumbler_Battle'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
-        self.disable = {}  # key is the story ID, value is whether it's disabled (ex 0:False)
-        for id in params:
-            self.disable[id] = False
 
     def check_conditions(self):
         if True:
             self.pass_conditions_to_process()
 
     def process(self):
-        for param in self.params:
-
-            if param == 'start_chest_rumbler_battle':
-                if not self.disable[param]:
-                    time.sleep(2)
-                    cprint("Apparently, there is also a rusty iron mace in the chest. Jean takes it and swings it around gently, testing its balance.")
-                    time.sleep(3)
-                    mace = getattr(__import__('items'), 'RustedIronMace')()
-                    self.player.inventory.append(mace)
-                    mace.isequipped = True
-                    self.player.eq_weapon = mace
-                    self.player.refresh_moves()
-                    cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
-                    self.disable[param] = True
-                    self.tile.spawn_npc("RockRumbler")
-                    cprint("A rock-like creature appears and advances toward Jean!")
-                    time.sleep(0.5)
-                    self.player.combat_events.append(getattr(__import__('events'), "Ch01_PostRumbler")(player=self.player, tile=self.tile, params=False, repeat=False, parallel=False))
-
-            else:
-                temp = '!!!param error: params='
-                for p in self.params:
-                    temp += p
-                    temp += ', '
-                # print(temp)
+        time.sleep(2)
+        cprint(
+            "Apparently, there is also a rusty iron mace in the chest. Jean takes it and swings it around gently, testing its balance.")
+        time.sleep(3)
+        mace = getattr(__import__('items'), 'RustedIronMace')()
+        self.player.inventory.append(mace)
+        mace.isequipped = True
+        self.player.eq_weapon = mace
+        self.player.refresh_moves()
+        cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
+        self.tile.spawn_npc("RockRumbler")
+        cprint("A rock-like creature appears and advances toward Jean!")
+        time.sleep(0.5)
+        self.player.combat_events.append(
+            getattr(__import__('events'), "Ch01_PostRumbler")(player=self.player, tile=self.tile, params=False,
+                                                              repeat=False, parallel=False))

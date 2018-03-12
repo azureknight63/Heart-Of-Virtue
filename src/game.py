@@ -132,7 +132,14 @@ _\\|//__( | )______)_/
                 available_moves = colored('| ', "cyan")
                 for action in available_actions:
                     available_moves += (colored(action, "green")) + colored(' | ',"cyan")
-                print(available_moves)
+                while available_moves.count('|') > 4:  # Break the list of moves over multiple lines
+                    cutoff = functions.findnth(available_moves,"|",4)
+                    print(available_moves[:cutoff+1])
+                    available_moves = available_moves[cutoff:]
+                    if ":" not in available_moves:  # if there aren't any moves left, erase the tail
+                        available_moves = ""
+                if len(available_moves) > 0:
+                    print(available_moves)
                 print("\n\nFor a list of additional commands, enter 'c'.\n")
                 action_input = input('Action: ')
                 action_input = action_input.lower()

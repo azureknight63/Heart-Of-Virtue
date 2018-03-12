@@ -571,6 +571,18 @@ he lets out a barely audible whisper:""", "red")
     def move_west(self):
         self.move(dx=-1, dy=0)
 
+    def move_northeast(self):
+        self.move(dx=1, dy=-1)
+
+    def move_northwest(self):
+        self.move(dx=-1, dy=-1)
+
+    def move_southeast(self):
+        self.move(dx=1, dy=1)
+
+    def move_southwest(self):
+        self.move(dx=-1, dy=1)
+
     def do_action(self, action, phrase=''):
         action_method = getattr(self, action.method.__name__)
         if phrase == '':

@@ -182,3 +182,10 @@ def autosave(player):
                 save(load('autosave{}.sav'.format(i)), 'autosave{}.sav'.format(i+1))
                 break
     save(player, 'autosave1.sav')
+
+
+def findnth(haystack, needle, n):
+    parts = haystack.split(needle, n+1)
+    if len(parts) <= n+1:
+        return -1
+    return len(haystack)-len(parts[-1])-len(needle)

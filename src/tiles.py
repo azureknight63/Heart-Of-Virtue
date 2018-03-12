@@ -1,7 +1,7 @@
 """Describes the tiles in the world space."""
-__author__ = 'Phillip Johnson'
+__author__ = 'Alex Egbert'
 
-import items, actions, universe, npc
+import items, actions, universe, npc, random
 from termcolor import colored
 
 class MapTile:
@@ -46,10 +46,22 @@ class MapTile:
             self.universe.tile_exists(self.map, self.x - 1, self.y).discovered = True
         if self.universe.tile_exists(self.map, self.x, self.y - 1) and "north" not in self.block_exit:
             moves.append(actions.MoveNorth())
-            self.universe.tile_exists(self.map, self.x, self.y -1).discovered = True
+            self.universe.tile_exists(self.map, self.x, self.y - 1).discovered = True
         if self.universe.tile_exists(self.map, self.x, self.y + 1) and "south" not in self.block_exit:
             moves.append(actions.MoveSouth())
             self.universe.tile_exists(self.map, self.x, self.y + 1).discovered = True
+        if self.universe.tile_exists(self.map, self.x + 1, self.y - 1) and "northeast" not in self.block_exit:
+            moves.append(actions.MoveNorthEast())
+            self.universe.tile_exists(self.map, self.x + 1, self.y - 1).discovered = True
+        if self.universe.tile_exists(self.map, self.x - 1, self.y - 1) and "northwest" not in self.block_exit:
+            moves.append(actions.MoveNorthWest())
+            self.universe.tile_exists(self.map, self.x - 1, self.y - 1).discovered = True
+        if self.universe.tile_exists(self.map, self.x + 1, self.y + 1) and "southeast" not in self.block_exit:
+            moves.append(actions.MoveSouthEast())
+            self.universe.tile_exists(self.map, self.x + 1, self.y + 1).discovered = True
+        if self.universe.tile_exists(self.map, self.x - 1, self.y + 1) and "southwest" not in self.block_exit:
+            moves.append(actions.MoveSouthWest())
+            self.universe.tile_exists(self.map, self.x - 1, self.y + 1).discovered = True
         return moves
 
     def available_actions(self):
@@ -72,12 +84,17 @@ class MapTile:
         for event in self.events_here:
             event.check_conditions()
 
-    def spawn_npc(self, npc_type, hidden=False, hfactor=0):
+    def spawn_npc(self, npc_type, hidden=False, hfactor=0, delay=-1):
         npc = getattr(__import__('npc'), npc_type)()
         if hidden == True:
             npc.hidden = True
             npc.hide_factor = hfactor
+        if delay == -1:  # this is the default behavior if delay is not specified
+            npc.combat_delay = random.randint(0,7)
+        else:
+            npc.combat_delay = delay
         self.npcs_here.append(npc)
+        return npc
 
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0):
         if item_type == 'Gold':
@@ -88,10 +105,12 @@ class MapTile:
             item.hidden = True
             item.hide_factor = hfactor
         self.items_here.append(item)
+        return item
 
     def spawn_event(self, event_type, player, tile, params, repeat=False, parallel=False):
         event = getattr(__import__('events'), event_type)(player, tile, params, repeat, parallel)
         self.events_here.append(event)
+        return event
 
     def spawn_object(self, obj_type, player, tile, params, hidden=False, hfactor=0):
         obj = getattr(__import__('objects'), obj_type)(params, player, tile)
@@ -99,6 +118,7 @@ class MapTile:
             obj.hidden = True
             obj.hide_factor = hfactor
         self.objects_here.append(obj)
+        return obj
 
 class Boundary(MapTile):
     def __init__(self, universe, map, x, y):

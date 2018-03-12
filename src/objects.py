@@ -69,7 +69,10 @@ class Wall_Switch(Object):
         self.event_off = None
         self.keywords.append('press')
 
-        for thing in params:  # account for the events associated with this switch. Max of 2 events. The first event, in order of index, is tied to toggling the switch ON. The second is tied to an OFF toggle.
+        for thing in params:
+            # account for the events associated with this switch. Max of 2 events.
+            # The first event, in order of index, is tied to toggling the switch ON.
+            # The second is tied to an OFF toggle.
             if thing[0] == '!':
                 param = thing.replace('!', '')
                 p_list = param.split(':')
@@ -86,7 +89,7 @@ class Wall_Switch(Object):
                         p_list.remove(setting)
                         continue
                 event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, p_list)
-                if self.event_on == None:
+                if self.event_on is None:
                     self.event_on = event
                 else:
                     self.event_off = event
@@ -94,13 +97,13 @@ class Wall_Switch(Object):
     def press(self):
         print("Jean hears a faint 'click.'")
         time.sleep(0.5)
-        if self.position == False:
+        if not self.position:
             self.position = True
-            if self.event_on != None:
+            if self.event_on is not None:
                 self.event_on.process()
         else:
             self.position = False
-            if self.event_off != None:
+            if self.event_off is not None:
                 self.event_off.process()
 
 

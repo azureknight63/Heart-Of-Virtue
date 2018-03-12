@@ -9,20 +9,23 @@ def combat(player):
     """
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
         npc.cycle_states()
-        if npc.current_move == None:
-            if not npc.friend:
-                npc.target = player.combat_list_allies[
-                    random.randint(0, len(
-                        player.combat_list_allies) - 1)]  # select a random target from the player's party
-            else:
-                npc.target = player.combat_list[
-                    random.randint(0, len(
-                        player.combat_list) - 1)]  # select a random target from the enemy's party
-            npc.select_move()
-            npc.current_move.target = npc.target
-            npc.current_move.cast(npc)
-        for move in npc.known_moves:
-            move.advance(npc)
+        if npc.combat_delay > 0:  #todo: test this
+            npc.combat_delay -= 1
+        else:
+            if npc.current_move == None:
+                if not npc.friend:
+                    npc.target = player.combat_list_allies[
+                        random.randint(0, len(
+                            player.combat_list_allies) - 1)]  # select a random target from the player's party
+                else:
+                    npc.target = player.combat_list[
+                        random.randint(0, len(
+                            player.combat_list) - 1)]  # select a random target from the enemy's party
+                npc.select_move()
+                npc.current_move.target = npc.target
+                npc.current_move.cast(npc)
+            for move in npc.known_moves:
+                move.advance(npc)
 
 
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion

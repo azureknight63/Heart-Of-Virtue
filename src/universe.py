@@ -1,4 +1,4 @@
-__author__ = 'Phillip Johnson'
+__author__ = 'Alex Egbert'
 
 import functions, npc, items, random
 
