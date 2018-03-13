@@ -96,6 +96,7 @@ class MapTile:
         self.npcs_here.append(npc)
         return npc
 
+
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0):
         if item_type == 'Gold':
             item = getattr(__import__('items'), item_type)(amt)

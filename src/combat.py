@@ -32,7 +32,10 @@ def combat(player):
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
     for enemy in player.combat_list:
-        enemy.in_combat = True
+        player.combat_proximity[enemy] = enemy.default_proximity * random.uniform(0.75, 1.25)
+        if len(player.combat_list_allies) > 0:
+            for ally in player.combat_list_allies:
+                ally.combat_proximity[enemy] = enemy.default_proximity * random.uniform(0.75, 1.25)
     for ally in player.combat_list_allies:
         ally.in_combat = True
     while True:  # combat will loop until there are no aggro enemies or the player is dead

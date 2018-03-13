@@ -41,7 +41,7 @@ class Player():
         self.location_x, self.location_y = (0, 0)
         self.current_room = None
         self.victory = False
-        self.known_moves = [moves.Rest(self), moves.Use_Item(self)]
+        self.known_moves = [moves.Rest(self), moves.Use_Item(self), moves.Advance(self)]
         self.current_move = None
         self.heat = 1.0
         self.protection = 0
@@ -50,6 +50,8 @@ class Player():
         self.combat_events = []  # list of pending events in combat. If non-empty, combat will be paused while an event happens
         self.combat_list = []  # populated by enemies currently being encountered. Should be empty outside of combat
         self.combat_list_allies = [self]  # friendly NPCs in combat that either help the player or just stand there looking pretty
+        self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5, ranged is 20. Distance is in feet (for reference)
+        self.default_proximity = 50
         self.savestat = None
         self.saveuniv = None
         self.universe = None
@@ -721,6 +723,7 @@ he lets out a barely audible whisper:""", "red")
 
     def refresh_moves(self):
         self.known_moves = [moves.Wait(self), moves.Rest(self), moves.Use_Item(self), moves.Dodge(self)]
+        #for enemy in self.com
         if self.eq_weapon:  # if the player has a weapon equipped, at the Attack move to his combat skill set
             self.known_moves.append(moves.Attack(self))
 

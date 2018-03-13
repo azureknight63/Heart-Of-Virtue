@@ -165,8 +165,7 @@ class Ch01_PostRumbler(CombatEvent): # Occurs when Jean beats the first rumbler 
         time.sleep(0.5)
         for x in range(0,1):
             npc = self.tile.spawn_npc("RockRumbler")
-            self.player.combat_list.append(npc)
-            npc.in_combat = True
+            npc.combat_engage(npc, self.player)
         self.player.combat_events.append(
             getattr(__import__('events'), "Ch01_PostRumbler_Rep")(player=self.player, tile=self.tile, params=False,
                                                               repeat=True, parallel=False))
@@ -188,8 +187,7 @@ class Ch01_PostRumbler_Rep(CombatEvent):
         time.sleep(0.5)
         for x in range(0,1):
             npc = self.tile.spawn_npc("RockRumbler")
-            self.player.combat_list.append(npc)
-            npc.in_combat = True
+            npc.combat_engage(npc, self.player)
 
 
 class Ch01_PostRumbler2(CombatEvent):
@@ -225,8 +223,7 @@ class Ch01_PostRumbler2(CombatEvent):
         cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
         if len(self.player.combat_list) == 0:
             npc = self.tile.spawn_npc("RockRumbler")
-            self.player.combat_list.append(npc)
-            npc.in_combat = True
+            npc.combat_engage(npc, self.player)
         self.player.hp = self.player.maxhp
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75
@@ -350,8 +347,7 @@ class Ch01_PostRumbler3(CombatEvent):
 
             for x in range(0, 4):
                 npc = self.tile.spawn_npc("RockRumbler", delay=random.randint(0,14))
-                self.player.combat_list.append(npc)
-                npc.in_combat = True
+                npc.combat_engage(npc, self.player)
 
 
 class StoryEvent(Event):

@@ -49,6 +49,8 @@ class NPC:
         self.states = []
         self.inventory = []
         self.in_combat = False
+        self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5, ranged is 20. Distance is in feet (for reference)
+        self.default_proximity = 50
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
@@ -73,6 +75,17 @@ class NPC:
 
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
         pass
+
+    def combat_engage(self, player):
+        '''
+        Adds NPC to the proper combat lists and initializes
+        '''
+        player.combat_list.append(self)
+        player.combat_proximity[self] = self.default_proximity * random.uniform(0.75, 1.25)
+        if len(player.combat_list_allies) > 0:
+            for ally in player.combat_list_allies:
+                ally.combat_proximity[self] = self.default_proximity * random.uniform(0.75, 1.25)
+        self.in_combat = True
 
     def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
         functions.reset_stats(self)
@@ -125,7 +138,7 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
         though this makes his intent a bit difficult to interpret. At any rate, he seems
         friendly enough to Jean."""
         super().__init__(name="Rock-Man", description=description, maxhp=200,
-                         damage=40, awareness=9, speed=5, aggro=True, exp_award=0,
+                         damage=55, awareness=9, speed=5, aggro=True, exp_award=0,
                          idle_message=" is bumbling about.",
                          alert_message=" lets out a deep and angry rumble!",
                          friend=True)

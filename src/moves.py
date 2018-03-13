@@ -226,7 +226,71 @@ class Parry(Move):
         self.user.states.append(states.Parrying(user))
         self.user.fatigue -= self.fatigue_cost
 
+
+class Advance(Move):
+    def __init__(self, user):
+        description = "Get closer to a target enemy."
+        prep = 0
+        execute = 2
+        recoil = 2
+        cooldown = 2
+        fatigue_cost = 0
+        super().__init__(name="Advance", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[prep,execute,recoil,cooldown], targeted=True,
+                         stage_announce=["{} advances on {}.".format(user.name, self.target.name),
+                                         "",
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=user, user=user)
+        self.evaluate()
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        self.stage_beat = [0,2,2,2]
+
+    def prep(self, user):
+        print(self.stage_announce[1])
+
+    def execute(self, user):
+        threshold = 10 + self.target.speed
+        performance = random.randint(0,60) + user.speed
+        distance = performance - threshold
+        if distance < 0:
+            distance = 0
+        if distance == 0:
+            print("{} was unable to get closer to {}!".format(user.name, self.target.name))
+        else:
+            if user.proximity[self.target] < distance:
+                distance = user.proximity[self.target]
+            print("{} got {}ft closer to {}!".format(user.name, distance, self.target.name))
+            user.proximity[self.target] -= distance
+
 ### PLAYER MOVES ###
+
+
+class Check(Move):  # player checks the battlefield (shows enemies, allies, distances)
+    def __init__(self, player):  #todo: test this and continue working on proximity stuff
+        description = "Check your surroundings."
+        prep = 0
+        execute = 0
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 0
+        super().__init__(name="Check", description=description, xp_gain=0, current_stage=0,
+                         targeted=False,
+                         stage_beat=[prep,execute,recoil,cooldown],
+                         stage_announce=["Jean checks his surroundings.",
+                                         "",
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost,
+                         beats_left=execute, target=player, user=player)
+
+    def prep(self, user):
+        print(self.stage_announce[0])
+        for k,v in user.combat_proximity.items():
+            cprint("{} is {}ft from {}".format(k.name, v, user.name), "green")
+            for ally in user.combat_list_allies:
+                cprint("{} is {}ft from {}".format(k.name, ally.combat_proximity[k], ally.name),"blue")
+
 
 class Wait(Move):  # player chooses how many beats he'd like to wait
     def __init__(self, player):
