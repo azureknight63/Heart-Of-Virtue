@@ -28,8 +28,22 @@ class Player():
         self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rating
         self.faith_base = 10
-        self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
-        self.resistance_base = [0,0,0,0,0,0]
+        self.resistance = {
+            "fire": 0,
+            "ice": 0,
+            "shock": 0,
+            "earth": 0,
+            "light": 0,
+            "dark": 0
+        }
+        self.resistance_base = {
+            "fire": 0,
+            "ice": 0,
+            "shock": 0,
+            "earth": 0,
+            "light": 0,
+            "dark": 0
+        }
         self.weight_tolerance = 20
         self.weight_tolerance_base = 20
         self.weight_current = 0
@@ -41,7 +55,10 @@ class Player():
         self.location_x, self.location_y = (0, 0)
         self.current_room = None
         self.victory = False
-        self.known_moves = [moves.Rest(self), moves.Use_Item(self), moves.Advance(self)]
+        self.known_moves = [  # this should contain ALL known moves, regardless of whether they are unlocked (moves will check their own conditions)
+            moves.Check(self), moves.Wait(self), moves.Rest(self),
+            moves.Use_Item(self), moves.Advance(self), moves.Withdraw(self), moves.Dodge(self), moves.Attack(self)
+        ]
         self.current_move = None
         self.heat = 1.0
         self.protection = 0
@@ -325,13 +342,17 @@ he lets out a barely audible whisper:""", "red")
                         num_special += 1
                     else:
                         pass
-            print("=====\nInventory\n=====\nGold: {}\nSelect a category to view:\n\n(c) Consumables: {}\n"
-                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(s) Special: {}\n"
-                  "(x) Cancel\n"
-                  .format(num_gold,num_consumable,num_weapon,num_armor,num_boots,num_helm,num_gloves, num_special))
+            self.refresh_weight()
+            cprint("=====\nInventory\n=====\n"
+                      "Weight: {} / {}".format(self.weight_current, self.weight_tolerance), "cyan")
+            cprint(
+                      "Gold: {}\n\nSelect a category to view:\n\n(c) Consumables: {}\n"
+                      "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(s) Special: {}\n"
+                      "(x) Cancel\n"
+                      .format(num_gold, num_consumable, num_weapon, num_armor, num_boots, num_helm, num_gloves, num_special), "cyan")
 
             choices = []
-            inventory_selection = input('Selection: ')
+            inventory_selection = input(colored('Selection: ', "cyan"))
             for case in switch(inventory_selection):
                 if case('c', 'Consumables', 'consumables'):
                     for item in self.inventory:
@@ -383,19 +404,71 @@ he lets out a barely audible whisper:""", "red")
                             print(i, ': ', item.name, ' (', item.count, ')\n')
                         else:
                             print(i, ': ', item.name, '\n')
-                inventory_selection = input('View which? ')
+                inventory_selection = input(colored('View which? ', "cyan"))
                 if not functions.is_input_integer(inventory_selection):
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
+                    num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
                     continue
                 for i, item in enumerate(choices):
                     if i == int(inventory_selection):
                         print(item, '\n')
-
+                        if item.interactions:
+                            self.inventory_item_sub_menu(item)
             num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
             if inventory_selection == 'x':
                 break
 
-    def equip_item(self):
+    def inventory_item_sub_menu(self, item):
+        cprint("What would you like to do with this item?\n", "cyan")
+        for i, action in enumerate(item.interactions):
+            print("{}: {}".format(i, action))
+        print("(x): Nothing, nevermind.\n")
+        selection = input(colored("Selection: ", "cyan"))
+        if functions.is_input_integer(selection):
+            selection = int(selection)
+            if hasattr(item, item.interactions[selection]):
+                method = getattr(item, item.interactions[selection])
+                method(self)
+
+    def equip_item(self, phrase=''):
+        target_item = None
+        if phrase is not '':  # equip the indicated item, if possible
+            lower_phrase = phrase.lower()
+            for item in self.inventory:
+                search_item = item.name.lower() + ' ' + item.announce.lower()
+                if lower_phrase in search_item:
+                    target_item = item
+                    break
+            if target_item is None:
+                for i, item in enumerate(self.current_room.items_here):
+                    search_item = item.name.lower() + ' ' + item.announce.lower()
+                    if lower_phrase in search_item:
+                        target_item = self.current_room.items_here.pop(i)
+                        break
+        else:  # open the menu
+            target_item = self.equip_item_menu()
+            
+        if target_item is None:
+            cprint("Jean changed his mind.\n", "cyan")
+        else:
+            if target_item not in self.inventory:  # if the player equips an item from the ground or via an event, add to inventory
+                self.inventory.append(target_item)
+            if target_item.isequipped:
+                print("{} is already equipped.".format(target_item.name))
+                answer = input(colored("Would you like to remove it? (y/n) ","cyan"))
+                if answer == 'y':
+                    target_item.isequipped = False
+                    cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
+            else:
+                for olditem in self.inventory:
+                    if target_item.maintype == olditem.maintype and olditem.isequipped:
+                        olditem.isequipped = False
+                        cprint("Jean put {} back into his bag.".format(olditem.name),"cyan")
+                target_item.isequipped = True
+                cprint("Jean equipped {}!".format(target_item.name), "cyan")
+                if issubclass(target_item.__class__, items.Weapon):
+                    self.eq_weapon = target_item
+
+    def equip_item_menu(self):
         num_weapon = 0
         num_armor = 0
         num_boots = 0
@@ -415,12 +488,12 @@ he lets out a barely audible whisper:""", "red")
                     num_gloves += 1
                 else:
                     pass
-            print("=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
+            cprint("=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
                   "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(x) Cancel\n"
-                  .format(num_weapon, num_armor, num_boots, num_helm, num_gloves))
+                  .format(num_weapon, num_armor, num_boots, num_helm, num_gloves), "cyan")
 
             choices = []
-            inventory_selection = input('Selection: ')
+            inventory_selection = input(colored('Selection: ', "cyan"))
             for case in switch(inventory_selection):
                 if case('w', 'Weapons', 'weapons'):
                     for item in self.inventory:
@@ -448,6 +521,7 @@ he lets out a barely audible whisper:""", "red")
                             choices.append(item)
                     break
                 if case():
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
                     break
             if len(choices) > 0:
                 for i, item in enumerate(choices):
@@ -455,41 +529,24 @@ he lets out a barely audible whisper:""", "red")
                         print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
                     else:
                         print(i, ': ', item.name, '\n')
-                inventory_selection = input('Equip which? ')
+                inventory_selection = input(colored('Equip which? ', "cyan"))
                 if not functions.is_input_integer(inventory_selection):
                     num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
                     continue
                 for i, item in enumerate(choices):
                     if i == int(inventory_selection):
-                        e_item = item
-                        if e_item.isequipped == True:
-                            print("{} is already equipped.".format(e_item.name))
-                            answer = input("Would you like to remove it? (y/n) ")
-                            if answer == 'y':
-                                e_item.isequipped = False
-                                print("Jean puts {} back into his bag.".format(e_item.name))
-                        else:
-                            for item in self.inventory:
-                                if e_item.type == item.type and item.isequipped == True:
-                                    item.isequipped = False
-                                    print("Jean puts {} back into his bag.".format(item.name))
-                            e_item.isequipped = True
-                            print("Jean equipped {}!".format(e_item.name))
-                            if issubclass(e_item.__class__, items.Weapon):
-                                self.eq_weapon = e_item
-                                self.refresh_moves()
-                        break
-
-            num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
-            if inventory_selection == 'x':
-                break
+                        return item
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+                    continue
+            else:
+                return None
 
     def use_item(self, phrase=''):
         if phrase == '':
             num_consumables = 0
             num_special = 0
-            exit = False
-            while exit == False:
+            exit_loop = False
+            while exit_loop is False:
                 for item in self.inventory:  # get the counts of each item in each category
                     if issubclass(item.__class__, items.Consumable):
                         num_consumables += 1
@@ -497,11 +554,11 @@ he lets out a barely audible whisper:""", "red")
                         num_special += 1
                     else:
                         pass
-                print("=====\nUse Item\n=====\nSelect a category to view:\n\n"
-                      "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
-                      .format(num_consumables, num_special))
+                cprint("=====\nUse Item\n=====\nSelect a category to view:\n\n"
+                    "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
+                    .format(num_consumables, num_special), "cyan")
                 choices = []
-                inventory_selection = input('Selection: ')
+                inventory_selection = input(colored('Selection: ', "cyan"))
                 for case in switch(inventory_selection):
                     if case('c', 'Consumables', 'consumables'):
                         for item in self.inventory:
@@ -525,7 +582,7 @@ he lets out a barely audible whisper:""", "red")
                                 print(i, ': ', item.name, ' (', item.count, ')\n')
                             else:
                                 print(i, ': ', item.name, '\n')
-                    inventory_selection = input('Use which? ')
+                    inventory_selection = input(colored('Use which? ', "cyan"))
                     if not functions.is_input_integer(inventory_selection):
                         num_consumables = num_special = 0
                         continue
@@ -533,13 +590,13 @@ he lets out a barely audible whisper:""", "red")
                         if i == int(inventory_selection):
                             print("Jean used {}!".format(item.name))
                             item.use(self)
-                            if self.in_combat == True:
-                                exit = True
+                            if self.in_combat:
+                                exit_loop = True
                             break
 
                 num_consumables = num_special = 0
                 if inventory_selection == 'x':
-                    exit = True
+                    exit_loop = True
 
         else:
             lower_phrase = phrase.lower()
@@ -547,7 +604,7 @@ he lets out a barely audible whisper:""", "red")
                 if issubclass(item.__class__, items.Consumable) or issubclass(item.__class__, items.Special):
                     search_item = item.name.lower() + ' ' + item.announce.lower()
                     if lower_phrase in search_item:
-                        confirm = input("Use {}? (y/n)".format(item.name))
+                        confirm = input(colored("Use {}? (y/n)".format(item.name), "cyan"))
                         if confirm == 'y' or 'Y' or 'yes' or 'Yes' or 'YES':
                             item.use(self)
                             break
@@ -561,28 +618,28 @@ he lets out a barely audible whisper:""", "red")
         #         self.location_x, self.location_y).respawn_rate:
         #     pass
 
-    def move_north(self):
+    def move_north(self, phrase=''):
         self.move(dx=0, dy=-1)
 
-    def move_south(self):
+    def move_south(self, phrase=''):
         self.move(dx=0, dy=1)
 
-    def move_east(self):
+    def move_east(self, phrase=''):
         self.move(dx=1, dy=0)
 
-    def move_west(self):
+    def move_west(self, phrase=''):
         self.move(dx=-1, dy=0)
 
-    def move_northeast(self):
+    def move_northeast(self, phrase=''):
         self.move(dx=1, dy=-1)
 
-    def move_northwest(self):
+    def move_northwest(self, phrase=''):
         self.move(dx=-1, dy=-1)
 
-    def move_southeast(self):
+    def move_southeast(self, phrase=''):
         self.move(dx=1, dy=1)
 
-    def move_southwest(self):
+    def move_southwest(self, phrase=''):
         self.move(dx=-1, dy=1)
 
     def do_action(self, action, phrase=''):
@@ -601,7 +658,7 @@ he lets out a barely audible whisper:""", "red")
         self.do_action(available_moves[r])
 
     def look(self, target=None):
-        if target != None:
+        if target is not None:
             self.view(target)
         else:
             tile = self.universe.tile_exists(self.map, self.location_x, self.location_y)
@@ -638,7 +695,7 @@ he lets out a barely audible whisper:""", "red")
                         print(thing.description)
                         break
 
-    def search(self):
+    def search(self, phrase=''):
         print("Jean searches around the area...")
         search_ability = int(((self.finesse * 2) + (self.intelligence * 3) + self.faith) * random.uniform(0.5, 1.5))
         time.sleep(5)
@@ -664,25 +721,28 @@ he lets out a barely audible whisper:""", "red")
         if not something_found:
             print("...but he couldn't find anything of interest.")
 
-    def menu(self):
+    def menu(self, phrase=''):
         functions.autosave(self)
         self.main_menu = True
 
-    def save(self):
+    def save(self, phrase=''):
         functions.save_select(self)
 
     def stack_inv_items(self):
         for master_item in self.inventory:  # traverse the inventory for stackable items, then stack them
             if hasattr(master_item, "count"):
+                remove_duplicates = []
                 for duplicate_item in self.inventory:
                     if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
-                        master_item.count += 1
-                        self.inventory.remove(duplicate_item)
+                        master_item.count += duplicate_item.count
+                        remove_duplicates.append(duplicate_item)
+                for duplicate in remove_duplicates:
+                    self.inventory.remove(duplicate)
 
-    def commands(self):
+    def commands(self, phrase=''):
         possible_actions = self.current_room.available_actions()
         for action in possible_actions:
-                 print(colored('{}:{}{}'.format(action.name, (' ' * (20 - (len(action.name) + 2))), action.hotkey, "blue")))
+            cprint('{}:{}{}'.format(action.name, (' ' * (20 - (len(action.name) + 2))), action.hotkey), "blue")
 
         #     "l: Look around\n"
         #     "v: View details on a person, creature, or object\n"
@@ -722,10 +782,11 @@ he lets out a barely audible whisper:""", "red")
         print(hp_string + fat_string)
 
     def refresh_moves(self):
-        self.known_moves = [moves.Wait(self), moves.Rest(self), moves.Use_Item(self), moves.Dodge(self)]
-        #for enemy in self.com
-        if self.eq_weapon:  # if the player has a weapon equipped, at the Attack move to his combat skill set
-            self.known_moves.append(moves.Attack(self))
+        available_moves = self.known_moves[:]
+        for move in available_moves:
+            if not move.viable():
+                available_moves.remove(move)
+        return available_moves
 
     def refresh_protection_rating(self):
         self.protection = (self.endurance / 10)  # base level of protection from player stats
@@ -739,6 +800,7 @@ he lets out a barely audible whisper:""", "red")
                         add_prot += item.fin_mod * self.finesse
                     self.protection += add_prot
 
+    '''
     def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
         functions.reset_stats(self)
         bonuses = ["add_str", "add_fin", "add_maxhp", "add_maxfatigue", "add_speed", "add_endurance", "add_charisma",
@@ -780,24 +842,17 @@ he lets out a barely audible whisper:""", "red")
                     self.resistance[i] += adder.add_resistance[i]
             if hasattr(adder, bonuses[10]):
                 self.weight_tolerance += adder.add_weight_tolerance
-        ### Process other things which may affect stats, such as weight ###
-        self.refresh_weight()
-        self.weight_tolerance += ((self.strength + self.endurance) / 2)
-        check_weight = self.weight_tolerance - self.weight_current
-        if check_weight > (self.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
-            self.maxfatigue += (self.maxfatigue / 4)    # max fatigue as a bonus
-        elif check_weight < 0:  # if the player is over capacity, reduce max fatigue by excess lbs * 10
-            check_weight *= -1
-            self.maxfatigue -= (check_weight * 10)
-            if self.maxfatigue < 0:
-                self.maxfatigue = 0
+    '''
 
 
     def refresh_weight(self):
         self.weight_current = 0
         for item in self.inventory:
             if hasattr(item, 'weight'):
-                self.weight_current += item.weight
+                addweight = item.weight
+                if hasattr(item, 'count'):
+                    addweight *= item.count
+                self.weight_current += addweight
 
     def take(self, phrase=''):
         if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
@@ -809,9 +864,22 @@ he lets out a barely audible whisper:""", "red")
                 if not functions.is_input_integer(selection):
                     cprint("Jean isn't sure exactly what he's trying to do.", 'red')
                 else:
-                    self.inventory.append(self.current_room.items_here[int(selection)])
-                    print('Jean takes {}.'.format(self.current_room.items_here[int(selection)].name))
-                    self.current_room.items_here.pop(int(selection))
+                    item = self.current_room.items_here[int(selection)]
+                    if hasattr(item, "weight"):
+                        checkweight = item.weight
+                        weightcap = self.weight_tolerance - self.weight_current
+                        if hasattr(item, "count"):
+                            checkweight *= item.weight
+                        if checkweight <= weightcap:
+                            self.inventory.append(item)
+                            print('Jean takes {}.'.format(item.name))
+                            self.current_room.items_here.remove(item)
+                    else:
+                        self.inventory.append(item)
+                        print('Jean takes {}.'.format(item.name))
+                        self.current_room.items_here.remove(item)
+
+
             else:
                 cprint("There doesn't seem to be anything here for Jean to take.", 'red')
         else:
@@ -830,7 +898,7 @@ he lets out a barely audible whisper:""", "red")
                         self.current_room.items_here.pop(i)
                         break
 
-    def view_map(self):
+    def view_map(self, phrase=''):
         '''First draw a map if known tiles by iterating over self.map and checking self.map.last_entered to see if the
         player has discovered that tile. If so, place a square at those coordinates.'''
         # determine boundaries
@@ -865,4 +933,3 @@ he lets out a barely audible whisper:""", "red")
             map_lines.append(line)
         for i in map_lines:
             print(i)
-

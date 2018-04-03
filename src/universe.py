@@ -2,6 +2,7 @@ __author__ = 'Alex Egbert'
 
 import functions, npc, items, random
 
+
 class Universe():  # "globals" for the game state can be stored here, as well as all of the maps
     def __init__(self):
         self.game_tick = 0
@@ -10,17 +11,17 @@ class Universe():  # "globals" for the game state can be stored here, as well as
         self.starting_map = None
 
     def build(self, player):  # builds all of the maps as they are, then loads them into self.maps
-        if player.saveuniv != None and player.savestat != None:  # there's data here, so the game continues from where
-            # it left off
+        if player.saveuniv is not None and player.savestat is not None:  # there's data here, so the game continues from where it left off
             self.maps = player.saveuniv
 
         else:  # new game
-            map_list = ["start_area"]  # as more maps are built, add them to this list
-            for map in map_list:
-                self.load_tiles(player, map)
-            for map in self.maps:
-                if "start_area" in map['name']:
-                    self.starting_map = map
+            map_list = ["testing", "start_area"]  # as more maps are built, add them to this list
+            for location in map_list:
+                self.load_tiles(player, location)
+            for location in self.maps:
+                #if "start_area" in location['name']:
+                if "testing" in location['name']:  # todo: DEPLOYMENT change "testing" to "start_area"
+                    self.starting_map = location
 
     def tile_exists(self, map, x, y):
             """Returns the tile at the given coordinates or None if there is no tile.

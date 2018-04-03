@@ -1,0 +1,6 @@
+					Boundary
+	EmptyCave	EmptyCave|@Wall_Inscription.1.v0	EmptyCave		Boundary
+	EmptyCave|#Gold.23.h0	StartingRoom|#RustedIronMace.1|#Restorative.22	EmptyCave		Boundary
+	EmptyCave	EmptyCave|@Wooden_Chest.1.#Gold:12.#Restorative:2|$RockRumbler.1	EmptyCave		Boundary
+					Boundary
+					Boundary

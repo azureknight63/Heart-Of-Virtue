@@ -9,10 +9,10 @@ def combat(player):
     """
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
         npc.cycle_states()
-        if npc.combat_delay > 0:  #todo: test this
+        if npc.combat_delay > 0:
             npc.combat_delay -= 1
         else:
-            if npc.current_move == None:
+            if npc.current_move is None:
                 if not npc.friend:
                     npc.target = player.combat_list_allies[
                         random.randint(0, len(
@@ -24,18 +24,21 @@ def combat(player):
                 npc.select_move()
                 npc.current_move.target = npc.target
                 npc.current_move.cast(npc)
-            for move in npc.known_moves:
-                move.advance(npc)
-
+        get_moves = npc.known_moves[:]
+        for move in get_moves:
+            move.advance(npc)
 
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
     for enemy in player.combat_list:
-        player.combat_proximity[enemy] = enemy.default_proximity * random.uniform(0.75, 1.25)
+        distance = enemy.default_proximity * random.uniform(0.75, 1.25)
+        player.combat_proximity[enemy] = enemy.combat_proximity[player] = distance
         if len(player.combat_list_allies) > 0:
             for ally in player.combat_list_allies:
-                ally.combat_proximity[enemy] = enemy.default_proximity * random.uniform(0.75, 1.25)
+                if ally.name is not "Jean":
+                    distance = enemy.default_proximity * random.uniform(0.75, 1.25)
+                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
     for ally in player.combat_list_allies:
         ally.in_combat = True
     while True:  # combat will loop until there are no aggro enemies or the player is dead
@@ -58,11 +61,12 @@ def combat(player):
 
         #  at this point, the player is alive and at least one enemy remains
 
-        player.refresh_stat_bonuses()
+        for friendly in player.combat_list_allies:
+            functions.refresh_stat_bonuses(friendly)
         for enemy in player.combat_list:
-            enemy.refresh_stat_bonuses()
+            functions.refresh_stat_bonuses(enemy)
 
-        while player.current_move == None: #the player must choose to do something
+        while player.current_move is None: # the player must choose to do something
             beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
             heat_display = int(player.heat * 100)
             heat_str = colored("HEAT: ", "red") + colored(str(heat_display), "red") + colored("%", "red")
@@ -70,13 +74,17 @@ def combat(player):
             player.show_bars()
             print("\nWhat will you do?\n")
             available_moves = "\n"
-            for i, move in enumerate(player.known_moves):
+            viable_moves = player.refresh_moves()
+            for i, move in enumerate(viable_moves):
                 if not move.current_stage == 3:
-                    if move.fatigue_cost > player.fatigue:
-                        move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
-                        move_str = colored(move_str, "red")
+                    if move.fatigue_cost > 0:
+                        if move.fatigue_cost > player.fatigue:
+                            move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
+                            move_str = colored(move_str, "red")
+                        else:
+                            move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
                     else:
-                        move_str = (str(i) + ": " + str(move.name) + " ||| F: " + str(move.fatigue_cost) + "\n")
+                        move_str = (str(i) + ": " + str(move.name) + "\n")
                 else:
                     if move.beats_left > 0:
                         move_str = (str(i) + ": " + str(move.name) + " ||| "
@@ -95,24 +103,31 @@ def combat(player):
                 selected_move = int(selected_move)
             except:
                 cprint("Invalid selection.", "red", attrs=['bold'])
-            for i, move in enumerate(player.known_moves):
+            for i, move in enumerate(viable_moves):
                 if i == selected_move:
                     if player.fatigue >= move.fatigue_cost and move.current_stage == 0:
                         player.current_move = move
                         player.current_move.user = player
                         if player.current_move.targeted:
                             target = None
-                            if len(player.combat_list) > 1:
-                                while target == None:
+                            acceptable_targets = []
+                            min, max = player.current_move.mvrange
+                            for enemy, distance in player.combat_proximity.items():
+                                if min < distance < max:
+                                    acceptable_targets.append((enemy, distance))
+                            if len(acceptable_targets) > 1:
+                                acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
+                                while target is None:
                                     print("Select a target: \n")
-                                    for i, enemy in enumerate(player.combat_list):
-                                        print(colored(str(i), "magenta") + ": " + colored(enemy.name, "magenta"))
+                                    for enemy, distance in acceptable_targets:
+                                        print(colored(str(i), "magenta") + ": " +
+                                              colored(enemy.name + " (" + distance + "ft)", "magenta"))
                                     choice = int(input("Target: "))
-                                    for i, enemy in enumerate(player.combat_list):
+                                    for i, enemy in enumerate(acceptable_targets):
                                         if choice == i:
-                                            target = enemy
+                                            target = enemy[0]
                             else:
-                                target = player.combat_list[0]
+                                target = acceptable_targets[0][0]
                             player.current_move.target = target
                         else:
                             player.current_move.target = player
@@ -121,8 +136,13 @@ def combat(player):
                         cprint("Jean will need to rest a bit before he can do that.", "red")
                     elif move.current_stage == 3:
                         cprint("Jean's not yet ready to do that again.", "red")
+            if hasattr(player.current_move, 'instant'):
+                while player.current_move.instant:
+                    player.current_move.advance(player)
+                    if player.current_move is None:
+                        break
 
-        for move in player.known_moves: #  advances moves one beat along the path toward cooldown zero.
+        for move in player.known_moves:  # advances moves one beat along the path toward cooldown zero.
             move.advance(player)
 
         for i, ally in enumerate(player.combat_list_allies):
@@ -152,5 +172,6 @@ def combat(player):
 
         time.sleep(0.5)
         beat += 1
+        # print("### CURRENT BEAT: "+str(beat))
     player.in_combat = False
     player.current_move = None

@@ -1,5 +1,8 @@
 """
 My take on Phillip Johnson's text adventure tutorial
+
+REMINDERS:
+
 """
 __author__ = 'Alex Egbert'
 import universe, functions, intro_scene, moves, combat, npc
@@ -7,6 +10,7 @@ from player import Player
 from universe import Universe
 from termcolor import colored, cprint
 import time, sys
+
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -63,7 +67,7 @@ _\\|//__( | )______)_/
             game = False
             continue
 
-        if newgame == False:
+        if not newgame:
             try:
                 player = functions.load_select()
                 if player == SyntaxError:  # if something's broken, go back to main menu
@@ -80,7 +84,7 @@ _\\|//__( | )______)_/
             # intro_scene.intro()  # Comment this out to disable the intro sequence
             player.universe.build(player)
             player.map = player.universe.starting_map
-            player.location_x, player.location_y = (player.universe.starting_position)
+            player.location_x, player.location_y = player.universe.starting_position
 
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
@@ -116,8 +120,8 @@ _\\|//__( | )______)_/
             if mark_health != player.hp:
                 player.show_bars(True,False)  # show just the health bar if the player's current HP has changed
                 mark_health = player.hp
-            player.refresh_moves()
             functions.check_for_npcs(room)
+            room.stack_duplicate_items()
             functions.check_for_items(room)
             functions.check_for_objects(room)
             player.combat_list = functions.check_for_combat(player)

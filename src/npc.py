@@ -5,7 +5,7 @@ class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
                  inventory=None, maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
-                 faith=10, hidden=False, hide_factor=0,
+                 faith=10, hidden=False, hide_factor=0, combat_range=(0,5),
                  idle_message=' is shuffling about.', alert_message='glares sharply at Jean!',
                  discovery_message='something interesting.', target=None, friend=False):
         self.name = name
@@ -24,8 +24,22 @@ class NPC:
         self.speed_base = speed
         self.finesse = finesse
         self.finesse_base = finesse
-        self.resistance = [0,0,0,0,0,0]  # [fire, ice, shock, earth, light, dark]
-        self.resistance_base = [0,0,0,0,0,0]
+        self.resistance = {
+            "fire": 0,
+            "ice": 0,
+            "shock": 0,
+            "earth": 0,
+            "light": 0,
+            "dark": 0
+        }
+        self.resistance_base = {
+            "fire": 0,
+            "ice": 0,
+            "shock": 0,
+            "earth": 0,
+            "light": 0,
+            "dark": 0
+        }
         self.awareness = awareness  # used when a player enters the room to see if npc spots the player
         self.aggro = aggro
         self.exp_award = exp_award
@@ -56,6 +70,7 @@ class NPC:
         self.discovery_message = discovery_message
         self.friend = friend  # Is this a friendly NPC? Default is False (enemy). Friends will help Jean in combat.
         self.combat_delay = 0  # initial delay for combat actions. Typically randomized on unit spawn
+        self.combat_range = combat_range  # similar to weapon range, but is an attribute to the NPC since NPCs don't equip items
 
     def is_alive(self):
         return self.hp > 0
@@ -64,14 +79,31 @@ class NPC:
         for state in self.states:
             state.process(self)
 
-    def select_move(self):
+    def refresh_moves(self):
+        available_moves = self.known_moves[:]
+        for move in available_moves:
+            if not move.viable():
+                available_moves.remove(move)
+        return available_moves
 
-        #  simple random selection
-        num_choices = len(self.known_moves) - 1
-        while self.current_move == None:
+    def select_move(self):
+        available_moves = self.refresh_moves()
+        #  simple random selection; if you want something more complex, overwrite this for the specific NPC
+        weighted_moves = []
+        for move in available_moves:
+            for weight in range(move.weight):
+                weighted_moves.append(move)
+
+        num_choices = len(weighted_moves) - 1
+        while self.current_move is None:
             choice = random.randint(0, num_choices)
-            if self.known_moves[choice].fatigue_cost <= self.fatigue:
-                self.current_move = self.known_moves[choice]
+            if weighted_moves[choice].fatigue_cost <= self.fatigue:
+                self.current_move = weighted_moves[choice]
+
+    def add_move(self, move, weight=1):
+        '''Adds a move to the NPC's known move list. Weight is the number of times to add.'''
+        self.known_moves.append(move)
+        move.weight = weight
 
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
         pass
@@ -81,51 +113,13 @@ class NPC:
         Adds NPC to the proper combat lists and initializes
         '''
         player.combat_list.append(self)
-        player.combat_proximity[self] = self.default_proximity * random.uniform(0.75, 1.25)
+        player.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
         if len(player.combat_list_allies) > 0:
             for ally in player.combat_list_allies:
-                ally.combat_proximity[self] = self.default_proximity * random.uniform(0.75, 1.25)
+                ally.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
         self.in_combat = True
 
-    def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
-        functions.reset_stats(self)
-        bonuses = ["add_str", "add_fin", "add_maxhp", "add_maxfatigue", "add_speed", "add_endurance", "add_charisma",
-                   "add_intelligence", "add_faith", "add_resistance"]
-        adder_group = []
-        for item in self.inventory:
-            if hasattr(item, "is_equipped"):
-                if item.is_equipped:
-                    for bonus in bonuses:
-                        if hasattr(item, bonus):
-                            adder_group.append(item)
-                            break
-        for state in self.states:
-            for bonus in bonuses:
-                if hasattr(state, bonus):
-                    adder_group.append(state)
-                    break
-        for adder in adder_group:
-            if hasattr(adder, bonuses[0]):
-                self.strength += adder.add_str
-            if hasattr(adder, bonuses[1]):
-                self.finesse += adder.add_fin
-            if hasattr(adder, bonuses[2]):
-                self.maxhp += adder.add_maxhp
-            if hasattr(adder, bonuses[3]):
-                self.maxfatigue += adder.add_maxfatigue
-            if hasattr(adder, bonuses[4]):
-                self.speed += adder.add_speed
-            if hasattr(adder, bonuses[5]):
-                self.endurance += adder.add_endurance
-            if hasattr(adder, bonuses[6]):
-                self.charisma += adder.add_charisma
-            if hasattr(adder, bonuses[7]):
-                self.intelligence += adder.add_intelligence
-            if hasattr(adder, bonuses[8]):
-                self.faith += adder.add_faith
-            if hasattr(adder, bonuses[9]):
-                for i, v in enumerate(self.resistance):
-                    self.resistance[i] += adder.add_resistance[i]
+
 
 
 ### Friends ###
@@ -139,19 +133,15 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
         friendly enough to Jean."""
         super().__init__(name="Rock-Man", description=description, maxhp=200,
                          damage=55, awareness=9, speed=5, aggro=True, exp_award=0,
+                         combat_range=(0,7),
                          idle_message=" is bumbling about.",
                          alert_message=" lets out a deep and angry rumble!",
                          friend=True)
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.Gorran_Club(self))
-        self.known_moves.append(moves.Gorran_Club(self))
-        self.known_moves.append(moves.Gorran_Club(self))
-        self.known_moves.append(moves.NPC_Idle(self))
-        self.known_moves.append(moves.Parry(self))
-        self.known_moves.append(moves.Parry(self))
+        self.add_move(moves.NPC_Attack(self), 4)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.Gorran_Club(self), 3)
+        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.Parry(self), 2)
 
     def before_death(self):  # this essentially makes Gorran invulnerable, though he will likely have to rest
         print(termcolor.colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
@@ -168,13 +158,10 @@ class Slime(NPC):  # target practice
                          damage=20, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
                          alert_message=" burbles angrily at Jean!")
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Idle(self))
-        self.known_moves.append(moves.Dodge(self))
+        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.Dodge(self))
 
 
 class RockRumbler(NPC):
@@ -184,12 +171,10 @@ class RockRumbler(NPC):
                            "one."
         super().__init__(name="Rock Rumbler " + genericng.generate(2,4), description=description, maxhp=30,
                          damage=22, protection=30, awareness=12, aggro=True, exp_award=100)
-        self.resistance = [0,0,0,0.5,0,0]  # resists earth by 50%
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Attack(self))
-        self.known_moves.append(moves.NPC_Idle(self))
-        self.known_moves.append(moves.Dodge(self))
-
+        self.resistance_base["earth"] = 0.5
+        self.resistance_base["fire"] = 0.5
+        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.Withdraw(self), 4)
+        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.Dodge(self))

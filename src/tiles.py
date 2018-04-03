@@ -86,7 +86,7 @@ class MapTile:
 
     def spawn_npc(self, npc_type, hidden=False, hfactor=0, delay=-1):
         npc = getattr(__import__('npc'), npc_type)()
-        if hidden == True:
+        if hidden:
             npc.hidden = True
             npc.hide_factor = hfactor
         if delay == -1:  # this is the default behavior if delay is not specified
@@ -96,13 +96,12 @@ class MapTile:
         self.npcs_here.append(npc)
         return npc
 
-
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0):
         if item_type == 'Gold':
             item = getattr(__import__('items'), item_type)(amt)
         else:
             item = getattr(__import__('items'), item_type)()
-        if hidden == True:
+        if hidden:
             item.hidden = True
             item.hide_factor = hfactor
         self.items_here.append(item)
@@ -115,11 +114,25 @@ class MapTile:
 
     def spawn_object(self, obj_type, player, tile, params, hidden=False, hfactor=0):
         obj = getattr(__import__('objects'), obj_type)(params, player, tile)
-        if hidden == True:
+        if hidden:
             obj.hidden = True
             obj.hide_factor = hfactor
         self.objects_here.append(obj)
         return obj
+
+    def stack_duplicate_items(self):
+        for master_item in self.items_here:  # traverse the inventory for stackable items, then stack them
+            if hasattr(master_item, "count"):
+                remove_duplicates = []
+                for duplicate_item in self.items_here:
+                    if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
+                        master_item.count += duplicate_item.count
+                        remove_duplicates.append(duplicate_item)
+                if master_item.count > 1:
+                    master_item.stack_grammar()
+                for duplicate in remove_duplicates:
+                    self.items_here.remove(duplicate)
+
 
 class Boundary(MapTile):
     def __init__(self, universe, map, x, y):

@@ -165,7 +165,7 @@ class Ch01_PostRumbler(CombatEvent): # Occurs when Jean beats the first rumbler 
         time.sleep(0.5)
         for x in range(0,1):
             npc = self.tile.spawn_npc("RockRumbler")
-            npc.combat_engage(npc, self.player)
+            npc.combat_engage(self.player)
         self.player.combat_events.append(
             getattr(__import__('events'), "Ch01_PostRumbler_Rep")(player=self.player, tile=self.tile, params=False,
                                                               repeat=True, parallel=False))
@@ -187,7 +187,7 @@ class Ch01_PostRumbler_Rep(CombatEvent):
         time.sleep(0.5)
         for x in range(0,1):
             npc = self.tile.spawn_npc("RockRumbler")
-            npc.combat_engage(npc, self.player)
+            npc.combat_engage(self.player)
 
 
 class Ch01_PostRumbler2(CombatEvent):
@@ -223,7 +223,7 @@ class Ch01_PostRumbler2(CombatEvent):
         cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
         if len(self.player.combat_list) == 0:
             npc = self.tile.spawn_npc("RockRumbler")
-            npc.combat_engage(npc, self.player)
+            npc.combat_engage(self.player)
         self.player.hp = self.player.maxhp
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75
@@ -347,7 +347,7 @@ class Ch01_PostRumbler3(CombatEvent):
 
             for x in range(0, 4):
                 npc = self.tile.spawn_npc("RockRumbler", delay=random.randint(0,14))
-                npc.combat_engage(npc, self.player)
+                npc.combat_engage(self.player)
 
 
 class StoryEvent(Event):
@@ -464,7 +464,6 @@ class Ch01_Chest_Rumbler_Battle(StoryEvent):
         self.player.inventory.append(mace)
         mace.isequipped = True
         self.player.eq_weapon = mace
-        self.player.refresh_moves()
         cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
         self.tile.spawn_npc("RockRumbler")
         cprint("A rock-like creature appears and advances toward Jean!")

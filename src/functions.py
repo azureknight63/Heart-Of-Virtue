@@ -8,39 +8,44 @@ from os.path import isfile, join
 
 ### This module contains general functions to use throughout the game
 
-def print_slow(str):
-    wrap = textwrap.fill(str, 80)
+
+def print_slow(text):
+    wrap = textwrap.fill(text, 80)
     for letter in wrap:
         print(letter, end='',flush=True),
         time.sleep(.05)
 
+
 def screen_clear():
     print("\n" * 100)
+
 
 def check_for_npcs(room):  # Check to see what NPCs are in the room.
     # Does not evaluate combat aggro - that's a different function
     if len(room.npcs_here) > 0:  # Evaluate the room's NPCs.
         for npc in room.npcs_here:
-            if npc.hidden == False:
+            if not npc.hidden:
                 print(npc.name + npc.idle_message)
         print("\n")
+
 
 def check_for_items(room):
     if len(room.items_here) > 0:
         for item in room.items_here:
-            if item.hidden == False:
+            if not item.hidden:
                 print(item.announce)
         print("\n")
 
-def check_for_objects(room): # Check to see what objects are in the room.
+
+def check_for_objects(room):  # Check to see what objects are in the room.
     if len(room.objects_here) > 0:
         for obj in room.objects_here:
-            if obj.hidden == False:
+            if not obj.hidden:
                 print(obj.idle_message)
         print("\n")
 
 
-def check_for_combat(player): # returns a list of angry enemies who are ready to fight
+def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
     if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and
         # notice the player.
@@ -50,22 +55,78 @@ def check_for_combat(player): # returns a list of angry enemies who are ready to
                 # adding all aggro enemies
                 print(e.name + " " + e.alert_message)  # player's been spotted
                 enemy_combat_list.append(e)
+                e.in_combat = True
                 for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
                     if aggro_enemy.aggro == True and aggro_enemy != e:
                         print(aggro_enemy.name + aggro_enemy.alert_message)
                         enemy_combat_list.append(aggro_enemy)
+                        aggro_enemy.in_combat = True
                 break  # we don't need to scan any more since the alarm has been raised
     return enemy_combat_list
+
+
+def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
+    reset_stats(target)
+    bonuses = {
+        "add_str":"strength",
+        "add_fin":"finesse",
+        "add_maxhp":"maxhp",
+        "add_maxfatigue":"maxfatigue",
+        "add_speed":"speed",
+        "add_endurance":"endurance",
+        "add_charisma":"charisma",
+        "add_intelligence":"intelligence",
+        "add_faith":"faith",
+        "add_weight_tolerance":"weight_tolerance"
+    }
+    for category, value in target.resistance_base.items():
+        bonuses["add_resistance[" + category + "]"] = "resistance[" + category + "]"
+    adder_group = []
+    if hasattr(target, "inventory"):
+        for item in target.inventory:
+            if hasattr(item, "is_equipped"):
+                if item.is_equipped:
+                    for bonus, attr in bonuses.items():
+                        if hasattr(item, bonus):
+                            adder_group.append(item)
+                            break
+    for state in target.states:
+        for bonus, attr in bonuses.items():
+            if hasattr(state, bonus):
+                adder_group.append(state)
+                break
+    for adder in adder_group:
+        for bonus, attr in bonuses.items():
+            if hasattr(adder, bonus):
+                setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each bonus to each attribute
+
+    ### Process other things which may affect stats, such as weight ###
+    if target.name == "Jean":
+        target.refresh_weight()
+        target.weight_tolerance += ((target.strength + target.endurance) / 2)
+        check_weight = target.weight_tolerance - target.weight_current
+        if check_weight > (
+                target.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
+            target.maxfatigue += (target.maxfatigue / 4)  # max fatigue as a bonus
+        elif check_weight < 0:  # if the player is over capacity, reduce max fatigue by excess lbs * 10
+            check_weight *= -1
+            target.maxfatigue -= (check_weight * 10)
+            if target.maxfatigue < 0:
+                target.maxfatigue = 0
+
 
 def spawn_npc(npc_name, tile):
     tile.npcs_here.append(npc_name)
 
+
 def spawn_item(item_name, tile):
     tile.items_here.append(item_name)
+
 
 def refresh_moves(player):
     player.known_moves = [moves.Rest(), moves.PlayerAttack()]
     # add other moves based on logic and stuff
+
 
 def is_input_integer(input): #useful for checking to see if the player's input can be converted to int
     try:
@@ -85,13 +146,15 @@ def reset_stats(target):  # resets all stats to base level
     target.charisma = target.charisma_base
     target.intelligence = target.intelligence_base
     target.faith = target.faith_base
-    target.resistance = target.resistance_base
+    target.resistance.clear()
+    for element, resist in target.resistance_base.items():
+        target.resistance[element] = resist
     if hasattr(target, 'weight_tolerance'):
         target.weight_tolerance = target.weight_tolerance_base
 
 
 def load_select():
-    if saves_list() != []:
+    if saves_list():
         while True:
             print("Select the file you wish to load.")
             for i, file in enumerate(saves_list()):
@@ -124,7 +187,7 @@ def load(filename):
 
 def save_select(player):
     save_complete = False
-    while save_complete == False:
+    while not save_complete:
         print("Save as a new file or overwrite existing?\nn: New file\no: Overwrite existing\nx: Cancel")
         choice = input("Selection: ")
         if choice == 'n':
@@ -138,7 +201,7 @@ def save_select(player):
                     cprint("Invalid file name. Please enter a valid file name (no spaces or special characters): ")
         elif choice == 'o':
             overwrite_complete = False
-            while overwrite_complete == False:
+            while not overwrite_complete:
                 print("Select a file to overwrite.\n")
                 for i, filename in enumerate(saves_list()):
                     if 'autosave' not in filename:
@@ -158,6 +221,7 @@ def save_select(player):
                     overwrite_complete = True
         elif choice == 'x':
             save_complete = True
+
 
 def save(player, filename):  # player is the player object
     if filename.endswith('.sav'):
@@ -189,3 +253,26 @@ def findnth(haystack, needle, n):
     if len(parts) <= n+1:
         return -1
     return len(haystack)-len(parts[-1])-len(needle)
+
+
+def checkrange(user):
+    '''Checks the min & max range constraints for the user; returns a tuple of (min, max)'''
+    minr=0
+    maxr=0
+    if user.name == "Jean":
+        minr += user.eq_weapon.range[0]
+        minr += user.eq_weapon.range[1]
+    else:
+        minr += user.combat_range[0]
+        minr += user.combat_range[1]
+    return minr, maxr
+
+
+def teleport(player, map, coordinates):  #todo test this
+    tile = player.universe.tile_exists(map, coordinates[0], coordinates[1])
+    if tile:
+        player.map = map
+        player.universe.game_tick += 1
+        player.location_x += coordinates[0]
+        player.location_y += coordinates[1]
+        print(player.universe.tile_exists(player.map, player.location_x, player.location_y).intro_text())

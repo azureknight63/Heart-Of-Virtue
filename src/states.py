@@ -4,6 +4,7 @@ Combat states to be used within combat module. May also spill over to the standa
 """
 from termcolor import colored, cprint
 import random
+import functions
 
 class State: #master class for all states
     '''
@@ -42,8 +43,8 @@ class State: #master class for all states
                 self.beats_left -= 1
                 if self.beats_left <= 0:
                     target.states.remove(self)
-                    #  print("###DEBUG### state removed: " + str(self))
-                    target.refresh_stat_bonuses()
+                    #print("###DEBUG### state removed: " + str(self))
+                    functions.refresh_stat_bonuses(target)
         elif self.world and not target.in_combat:
             self.effect(target)
             if self.steps_max >= 0:
