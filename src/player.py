@@ -149,6 +149,39 @@ class Player():
         maxhp = float(self.maxhp)
         return curr/maxhp
 
+    def vars(self):  # print all story variables
+        print(self.universe.story)
+
+    def alter(self, phrase=''):
+        params = phrase.split(" ")
+        self.universe.story[params[0]] = params[1]
+        if self.universe.story[params[0]]:
+            try:
+                self.universe.story[params[0]] = params[1]
+                print("### SUCCESS: " + params[0] + " changed to " + params[1] + " ###")
+            except:
+                print("### ERR IN SETTING VAR; BAD ARGUMENTS: " + params[0] + " " + params[1] + " ###")
+        else:
+            print("### ERR IN SETTING VAR; NO ENTRY: " + params[0] + " " + params[1] + " ###")
+
+    def teleport(self, phrase=''):
+        params = phrase.split(" ")
+        for area in self.universe.maps:
+            if area['name'] == params[0]:
+                tele_to = area
+                tile = self.universe.tile_exists(tele_to, int(params[1]), int(params[2]))
+                if tile:
+                    self.map = tele_to
+                    self.universe.game_tick += 1
+                    self.location_x = int(params[1])
+                    self.location_y = int(params[2])
+                    print(self.universe.tile_exists(self.map, self.location_x, self.location_y).intro_text())
+                    return
+                else:
+                    print("### INVALID TELEPORT LOCATION: " + phrase + " ###")
+                    return
+        print("### INVALID TELEPORT LOCATION: " + phrase + " ###")
+
     def level_up(self):
         cprint(r"""
                          .'  '.____.' '.           ..

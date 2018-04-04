@@ -22,7 +22,7 @@ class Item():
 
 class Gold(Item):
     def __init__(self, amt=1):
-        self.amt = amt
+        self.amt = functions.randomize_amount(amt)
         self.maintype = "Gold"
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
                          value=self.amt, maintype="Currency", subtype="Gold", discovery_message="a small pouch of gold.")

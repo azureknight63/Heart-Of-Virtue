@@ -1,0 +1,11 @@
+									Boundary
+		VerdetteRoom						VerdetteRoom	Boundary
+		VerdetteRoom			VerdetteRoom			VerdetteRoom	Boundary
+	VerdetteRoom		VerdetteRoom|!Block.southeast	VerdetteRoom		VerdetteRoom	VerdetteRoom		Boundary
+	VerdetteRoom			VerdetteRoom|!Block.northwest					Boundary
+	VerdetteRoom|@Wooden_Chest.1.#Gold:23.#Restorative:1			VerdetteRoom		VerdetteRoom	VerdetteRoom		Boundary
+			VerdetteRoom		VerdetteRoom	VerdetteRoom	VerdetteRoom		Boundary
+			VerdetteRoom					VerdetteRoom	Boundary
+			VerdetteRoom	VerdetteRoom				VerdetteRoom	Boundary
+	VerdetteRoom	VerdetteRoom							Boundary
+									Boundary

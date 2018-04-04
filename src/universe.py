@@ -9,6 +9,9 @@ class Universe():  # "globals" for the game state can be stored here, as well as
         self.maps = []
         self.starting_position = (0, 0)
         self.starting_map = None
+        self.story = {  # global switches and variables. Putting them in a dict will make it easier to change on the fly while debugging
+            "test": 0
+        }
 
     def build(self, player):  # builds all of the maps as they are, then loads them into self.maps
         if player.saveuniv is not None and player.savestat is not None:  # there's data here, so the game continues from where it left off
@@ -60,7 +63,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     param = param.replace('$', '')
                                     p_list = param.split('.')
                                     npc_type = p_list[0]
-                                    amt = int(p_list[1])
+                                    amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
                                     if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
@@ -73,7 +76,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     param = param.replace('#', '')
                                     p_list = param.split('.')
                                     item_type = p_list[0]
-                                    amt = int(p_list[1])
+                                    amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
                                     gold_amt = 0
@@ -115,7 +118,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     param = param.replace('@', '')
                                     p_list = param.split('.')
                                     obj_type = p_list[0]
-                                    amt = int(p_list[1])
+                                    amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
                                     params = []

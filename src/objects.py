@@ -121,7 +121,7 @@ class Wall_Inscription(Object):
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
 
-class Wooden_Chest(Object):
+class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
     '''
     A wooden chest that may contain items.
     '''
@@ -145,7 +145,7 @@ class Wooden_Chest(Object):
                 param = thing.replace('#', '')
                 p_list = param.split(':')
                 item_type = p_list[0]
-                amt = int(p_list[1])
+                amt = functions.randomize_amount(p_list[1])  # only randomizes if amt is in the form "r##-##"
                 gold_amt = 0
                 if p_list[0] == 'Gold':
                     gold_amt = amt

@@ -108,3 +108,21 @@ class Take(Action):
 class ViewMap(Action):
     def __init__(self):
         super().__init__(method=Player.view_map, name="View Map", hotkey=('m', 'map', 'cartography'))
+
+
+### DEBUG / CHEATS ###
+
+
+class Teleport(Action):
+    def __init__(self):
+        super().__init__(method=Player.teleport, name="Teleport", hotkey=('tele', 'teleport'))
+
+
+class Alter(Action):  # change a story switch/variable
+    def __init__(self):
+        super().__init__(method=Player.alter, name="Alter", hotkey=('alt', 'alter'))
+
+
+class Showvar(Action):  # list all story switches/vars
+    def __init__(self):
+        super().__init__(method=Player.vars, name="Showvar", hotkey=('sv', 'showvar'))

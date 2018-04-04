@@ -268,11 +268,13 @@ def checkrange(user):
     return minr, maxr
 
 
-def teleport(player, map, coordinates):  #todo test this
-    tile = player.universe.tile_exists(map, coordinates[0], coordinates[1])
-    if tile:
-        player.map = map
-        player.universe.game_tick += 1
-        player.location_x += coordinates[0]
-        player.location_y += coordinates[1]
-        print(player.universe.tile_exists(player.map, player.location_x, player.location_y).intro_text())
+def randomize_amount(param):
+    param = str(param)
+    if "r" in param:
+        ramt = param[1:]
+        ramt = ramt.split("-")
+        rmin = int(ramt[0])
+        rmax = int(ramt[1])
+        return random.randint(rmin, rmax)
+    else:
+        return int(param)

@@ -78,6 +78,11 @@ class MapTile:
         moves.append(actions.Menu())
         moves.append(actions.Save())
         moves.append(actions.ViewMap())
+        ### DEBUG MOVES BELOW ###
+        moves.append(actions.Teleport())
+        moves.append(actions.Showvar())
+        moves.append(actions.Alter())
+        ### END DEBUG MOVES ###
         return moves
 
     def evaluate_events(self):
@@ -145,6 +150,9 @@ class Boundary(MapTile):
         #Room has no action on player
         pass
 
+
+### STARTING AREA: SECLUDED GROTTO ###
+
 class StartingRoom(MapTile):
     def __init__(self, universe, map, x, y):
         super().__init__(universe, map, x, y, description="""
@@ -172,9 +180,27 @@ class EmptyCave(MapTile):
         #Room has no action on player
         pass
 
+
 class BlankTile(MapTile):
     def __init__(self, universe, map, x, y):
         super().__init__(universe, map, x, y, description='')
+        self.symbol = '#'
+
+    def modify_player(self, the_player):
+        #Room has no action on player
+        pass
+
+
+### VERDETTE CAVERNS ###
+
+
+class VerdetteRoom(MapTile):  # room Jean is dumped in after the encounter with Gorran
+    def __init__(self, universe, map, x, y):
+        super().__init__(universe, map, x, y, description="""
+        This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated 
+        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern.
+        The air is cold and slightly humid. The stone walls are damp to the touch.
+        """)
         self.symbol = '#'
 
     def modify_player(self, the_player):
