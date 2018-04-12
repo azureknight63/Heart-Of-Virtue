@@ -1,5 +1,5 @@
 import string, textwrap, os
-import sys, time, random, pickle, datetime
+import sys, time, random, pickle, datetime, importlib
 import npc, tiles, moves
 from player import Player
 from termcolor import colored, cprint
@@ -51,13 +51,13 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
         # notice the player.
         finesse_check = player.finesse + random.randint((-1 * (player.finesse * 0.2)), (player.finesse * 0.2))
         for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
-            if finesse_check <= e.awareness and e.aggro == True:  # finesse check fails, break and rescan the list,
+            if (finesse_check <= e.awareness) and e.aggro:  # finesse check fails, break and rescan the list,
                 # adding all aggro enemies
                 print(e.name + " " + e.alert_message)  # player's been spotted
                 enemy_combat_list.append(e)
                 e.in_combat = True
                 for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
-                    if aggro_enemy.aggro == True and aggro_enemy != e:
+                    if aggro_enemy.aggro and aggro_enemy != e:
                         print(aggro_enemy.name + aggro_enemy.alert_message)
                         enemy_combat_list.append(aggro_enemy)
                         aggro_enemy.in_combat = True
@@ -278,3 +278,19 @@ def randomize_amount(param):
         return random.randint(rmin, rmax)
     else:
         return int(param)
+
+
+def seek_class(classname, player, tile, params, repeat, parallel):  # searches through the story folder for the matching module and returns an instance
+    class_obj = ""
+    try:
+        #class_obj = getattr(__import__('events'), classname)(player, tile, params, repeat, parallel)
+        class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, params, repeat, parallel)
+    except:
+        try:
+            class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, params, repeat, parallel)
+        except:
+            try:
+                class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, params, repeat, parallel)
+            except:
+                print("#####ERR: Cannot find event " + classname)
+    return class_obj

@@ -244,7 +244,7 @@ class Parry(Move):
         self.user.fatigue -= self.fatigue_cost
 
 
-class Advance(Move):
+class Advance(Move):  # todo:enforce int typecasting for distance
     def __init__(self, user):
         description = "Get closer to a target enemy."
         prep = 0
@@ -287,7 +287,7 @@ class Advance(Move):
         if distance == 0:
             print("{} was unable to get closer to {}!".format(user.name, self.target.name))
         else:
-            if user.combat_proximity[self.target] <= distance:
+            if user.combat_proximity[self.target] <= distance:  #todo: bug - for some reason this is creating a dict key error when rumblers advance on Jean; possible that Jean is not being assinged to their proximity attribute
                 distance = user.combat_proximity[self.target] - 3
             distance = int(distance)
             print("{} got {} ft closer to {}!".format(user.name, distance, self.target.name))
@@ -300,9 +300,9 @@ class Withdraw(Move):
     def __init__(self, user):
         description = "Move away from all enemies."
         prep = 0
-        execute = 4
+        execute = 5
         recoil = 0
-        cooldown = 3
+        cooldown = 4
         fatigue_cost = 0
         target = user
         super().__init__(name="Withdraw", description=description, xp_gain=0, current_stage=0,
@@ -337,7 +337,7 @@ class Withdraw(Move):
         print("{} attempts to fall back...".format(user.name))
         enemy_list = {}
         for enemy, distance in self.user.combat_proximity.items():
-            performance = random.randint(0, 50) + (user.speed - enemy.speed)
+            performance = random.randint(0, 35) + (user.speed - enemy.speed)
             if performance < 1:
                 performance = 0
             enemy_list[enemy] = int(performance)

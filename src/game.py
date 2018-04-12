@@ -12,6 +12,8 @@ from termcolor import colored, cprint
 import time, sys
 
 
+  # todo: gold pickups don't seem to work correctly; doesn't add the right amount
+  # todo: colorize item drops
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 def play():

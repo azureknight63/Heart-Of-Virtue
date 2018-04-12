@@ -1,7 +1,7 @@
 """Describes the tiles in the world space."""
 __author__ = 'Alex Egbert'
 
-import items, actions, universe, npc, random
+import items, actions, universe, npc, random, functions
 from termcolor import colored
 
 class MapTile:
@@ -82,6 +82,7 @@ class MapTile:
         moves.append(actions.Teleport())
         moves.append(actions.Showvar())
         moves.append(actions.Alter())
+        moves.append(actions.Supersaiyan())
         ### END DEBUG MOVES ###
         return moves
 
@@ -99,6 +100,7 @@ class MapTile:
         else:
             npc.combat_delay = delay
         self.npcs_here.append(npc)
+        npc.current_room = self
         return npc
 
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0):
@@ -106,6 +108,16 @@ class MapTile:
             item = getattr(__import__('items'), item_type)(amt)
         else:
             item = getattr(__import__('items'), item_type)()
+            if hasattr(item, 'count'):
+                item.count = amt
+            else:  # item is non-stackable, so spawn duplicates
+                if amt > 1:
+                    for i in range(1, amt):
+                        dupitem = getattr(__import__('items'), item_type)()
+                        if hidden:
+                            dupitem.hidden = True
+                            dupitem.hide_factor = hfactor
+                        self.items_here.append(dupitem)
         if hidden:
             item.hidden = True
             item.hide_factor = hfactor
@@ -113,9 +125,10 @@ class MapTile:
         return item
 
     def spawn_event(self, event_type, player, tile, params, repeat=False, parallel=False):
-        event = getattr(__import__('events'), event_type)(player, tile, params, repeat, parallel)
-        self.events_here.append(event)
-        return event
+        event = functions.seek_class(event_type, player, tile, params, repeat, parallel)
+        if event != "":
+            self.events_here.append(event)
+            return event
 
     def spawn_object(self, obj_type, player, tile, params, hidden=False, hfactor=0):
         obj = getattr(__import__('objects'), obj_type)(params, player, tile)

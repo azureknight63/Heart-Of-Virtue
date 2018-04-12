@@ -14,8 +14,15 @@ class Object:
         self.discovery_message = discovery_message
         self.announce = self.idle_message
         self.keywords = []  # action keywords to hook up an arbitrary command like "press" for a switch
+        self.events = []  # a list of events that occur when the player interacts with the object. Events with "repeat" will persist.
         self.tile = tile
         self.player = player
+
+    def spawn_event(self, event_type, player, tile, params, repeat=False, parallel=False):
+        event = functions.seek_class(event_type, player, tile, params, repeat, parallel)
+        if event != "":
+            self.events.append(event)
+            return event
 
 class Tile_Description(Object):
     '''
@@ -88,7 +95,7 @@ class Wall_Switch(Object):
                         parallel = True
                         p_list.remove(setting)
                         continue
-                event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, p_list)
+                event = functions.seek_class(event_type, player, tile, params, repeat, parallel)
                 if self.event_on is None:
                     self.event_on = event
                 else:
@@ -121,26 +128,26 @@ class Wall_Inscription(Object):
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
 
-class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
+
+class Container(Object):  #todo auto-stack duplicates inside the chest
     '''
-    A wooden chest that may contain items.
+    A generic container that may contain items. Superclass
     '''
-    def __init__(self, params, player, tile):
-        description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
-        super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
-                         idle_message="There's a wooden chest here.",
-                         discovery_message=" a wooden chest!", player=player, tile=tile)
-        self.position = False
-        self.events = []  # a list of events that occur when the player interacts with the chest. Events with "repeat" will persist.
-        self.possible_states = ("closed", "opened", "looted")
+    def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname, params):
+        self.nickname = nickname
+        #description = "A container which may or may not have things inside. You can try to OPEN or LOOT it."
+        super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
+                         idle_message=idle_message,
+                         discovery_message=discovery_message, player=player, tile=tile)
+        self.possible_states = ("closed", "opened")
         self.state = self.possible_states[0]  # start closed
         self.contents = []
         self.revealed = False
-        if 'locked:' in params: #todo make key objects
+        if 'locked:' in params:  #todo make key objects
             self.locked = True
         else:
             self.locked = False
-        for thing in params: # put items in the chest or attach events based on what's declared in params
+        for thing in params:  # put items in the chest or attach events based on what's declared in params
             if thing[0] == '#':
                 param = thing.replace('#', '')
                 p_list = param.split(':')
@@ -172,12 +179,8 @@ class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
                         parallel = True
                         p_list.remove(setting)
                         continue
-                    elif setting in self.possible_states:  # event trigger
-                        trigger = setting
-                        p_list.remove(setting)
-
-                event = getattr(__import__('events'), event_type)(player, tile, repeat, parallel, p_list)
-                self.events.append((event,trigger))
+                event = self.spawn_event(event_type, player, tile, p_list, repeat, parallel)
+                self.events.append(event)
 
 
         self.keywords.append('open')
@@ -186,39 +189,38 @@ class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
         self.process_events()  # process initial events (triggers labeled "auto")
 
     def refresh_description(self):
-        if self.position == False:
-            self.description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
+        if self.state == "closed":
+            self.description = "A " + self.nickname + " which may or may not have things inside. You can try to OPEN or LOOT it."
         else:
             if len(self.contents) > 0:
-                self.description = "A wooden chest. Inside are the following things: \n\n"
+                self.description = "A " + self.nickname + ". Inside are the following things: \n\n"
                 for item in self.contents:
                     self.description += (colored(item.description, 'yellow') + '\n')
             else:
-                self.description = "A wooden chest. It's empty. Very sorry."
+                self.description = "A " + self.nickname + ". It's empty. Very sorry."
 
     def open(self):
-        if self.locked == True:
-            print("Jean pulls on the lid of the chest to no avail. It's locked.")
+        if self.locked:
+            print("Jean pulls on the lid of the " + self.nickname + " to no avail. It's locked.")
         else:
-            if self.position == False:
-                print("The chest creaks eerily.")
+            if self.state == "closed":
+                print("The " + self.nickname + " creaks eerily.")
 
                 time.sleep(0.5)
                 print("The lid lifts back on the hinge, revealing the contents inside.")
                 self.revealed = True
-                self.position = True
                 self.state = "opened"
                 self.refresh_description()
                 self.process_events()
             else:
-                print("The chest is already open. You should VIEW or LOOT it to see what's inside.")
+                print("The " + self.nickname + " is already open. You should VIEW or LOOT it to see what's inside.")
 
     def loot(self):
-        if self.position == False:
+        if self.state == "closed":
             self.open()
-        if self.position == True:  # keep this as a separate branch so self.open() gets evaluated
+        if self.state == "opened":  # keep this as a separate branch so self.open() gets evaluated
             if len(self.contents) > 0:
-                print("Jean rifles through the contents of the chest.\n\n Choose which items to take.\n\n")
+                print("Jean rifles through the contents of the " + self.nickname + ".\n\n Choose which items to take.\n\n")
                 acceptable_responses = ['all', 'x']
                 for i, item in enumerate(self.contents):
                     cprint('{}: {} - {}'.format(i, item.name, item.description), 'yellow')
@@ -233,7 +235,6 @@ class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
                         print('Jean takes {}.'.format(item_taken.name))
                         self.player.inventory.append(item_taken)
                         self.refresh_description()
-                    self.state = "looted"
                 elif choice == 'x':
                     pass
                 else:
@@ -243,7 +244,6 @@ class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
                             print('Jean takes {}.'.format(item_taken.name))
                             self.player.inventory.append(item_taken)
                             self.refresh_description()
-                            self.state = "looted"
                             break
                 self.process_events()
             else:
@@ -251,11 +251,20 @@ class Wooden_Chest(Object):  #todo auto-stack duplicates inside the chest
 
     def process_events(self): # process all events currently tied to the object
         for event in self.events:
-            event_object = event[0]
-            event_trigger = event[1]
-            if event_trigger == "auto" or event_trigger == self.state:
-                self.tile.events_here.append(event_object)
-                self.events.remove(event)
+            event.params.append(self)
+            self.tile.events_here.append(event)
+            self.events.remove(event)
         self.tile.evaluate_events()
+
+
+class Wooden_Chest(Container):
+    '''
+    A wooden chest that may contain items.
+    '''
+    def __init__(self, params, player, tile):
+        description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
+        super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
+                         idle_message="There's a wooden chest here.",
+                         discovery_message=" a wooden chest!", player=player, tile=tile, nickname="chest", params=params)
 
 

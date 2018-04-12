@@ -208,7 +208,7 @@ class RustedIronMace(Weapon):
         super().__init__(name="Rusted Iron Mace",
                          description="A small mace with some rust around the spikes. Heavy and slow, but packs a decent punch.",
                          isequipped=False, value=10,
-                         damage=15, str_req=10, fin_req=5, str_mod=2, fin_mod=0.5, weight=3.0, maintype="Weapon",
+                         damage=25, str_req=10, fin_req=5, str_mod=2, fin_mod=0.5, weight=3.0, maintype="Weapon",
                          subtype="Bludgeon")
         #minimum damage of 40
 
@@ -245,7 +245,7 @@ class Restorative(Consumable):
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
         self.interactions = ["use", "drop"]
-        self.announce = "Jean notices a small glass bottle on the ground with an odd pink fluid inside and a label " \
+        self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                         "reading, 'Restorative.'"
 
     def stack_grammar(self):
@@ -253,17 +253,17 @@ class Restorative(Consumable):
             self.description = "A box filled with vials of a strange pink fluid.\n" \
                                "Drinking one would seem to cause your wounds to immediately mend themselves.\n" \
                                "There appear to be {} vials in the box.\n".format(self.count)
-            self.announce = "There is a box of small glass bottles here."
+            self.announce = "There is a box of small glass vials here."
         else:
             self.description = "A strange pink fluid of questionable chemistry.\n" \
                                      "Drinking it seems to cause your wounds to immediately mend " \
                                      "themselves."
-            self.announce = "Jean notices a small glass bottle on the ground with an odd pink fluid inside and a label " \
+            self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                                 "reading, 'Restorative.'"
 
     def use(self, player):
         if player.hp < player.maxhp:
-            print("Jean quaffs down the restorative. The liquid burns slightly in his throat for a moment, before the \n"
+            print("Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
                   "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
                   "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
             amount = (self.power * random.uniform(0.8, 1.2))
@@ -279,3 +279,44 @@ class Restorative(Consumable):
                 player.inventory.remove(self)
         else:
             print("Jean is already at full health. He places the Restorative back into his bag.")
+
+
+class Draught(Consumable):
+    def __init__(self):
+        super().__init__(name="Draught",
+                         description="A green fluid giving off a warm, pleasant glow.\n"
+                                     "Invigorating for any tired adventurer.",
+                         value=75, weight=0.25, maintype="Consumable", subtype="Potion")
+        self.power = 100
+        self.count = 1
+        self.interactions = ["use", "drop"]
+        self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
+
+    def stack_grammar(self):
+        if self.count > 1:
+            self.description = "A box filled with bottles of a green fluid giving off a warm, pleasant glow.\n" \
+                               "Invigorating for any tired adventurer.\n" \
+                               "There appear to be {} bottles in the box.\n".format(self.count)
+            self.announce = "There is a box of small glass bottles here."
+        else:
+            self.description = "A green fluid giving off a warm, pleasant glow.\n" \
+                                     "Invigorating for any tired adventurer."
+            self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
+
+    def use(self, player):
+        if player.hp < player.maxhp:
+            print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n" 
+                  "to have lifted off of his shoulders for the time being.".format(self.name))
+            amount = (self.power * random.uniform(0.8, 1.2))
+            missing_fatigue = player.maxfatigue - player.fatigue
+            if amount > missing_fatigue:
+                amount = missing_fatigue
+            player.fatigue += amount
+            time.sleep(2)
+            cprint("Jean recovered {} fatigue!".format(amount), "green")
+            self.count -= 1
+            self.stack_grammar()
+            if self.count <= 0:
+                player.inventory.remove(self)
+        else:
+            print("Jean is already fully rested. He places the {} back into his bag.".format(self.name))

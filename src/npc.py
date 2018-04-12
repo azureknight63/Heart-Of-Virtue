@@ -1,5 +1,10 @@
 import random
-import genericng, moves, functions, termcolor
+import genericng, moves, functions
+from termcolor import colored, cprint
+import loot_tables
+
+loot = loot_tables.Loot()  # initialize a loot object to access the loot table
+
 
 class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
@@ -10,6 +15,7 @@ class NPC:
                  discovery_message='something interesting.', target=None, friend=False):
         self.name = name
         self.description = description
+        self.current_room = None
         self.inventory = inventory
         self.idle_message = idle_message
         self.alert_message = alert_message
@@ -25,20 +31,20 @@ class NPC:
         self.finesse = finesse
         self.finesse_base = finesse
         self.resistance = {
-            "fire": 0,
-            "ice": 0,
-            "shock": 0,
-            "earth": 0,
-            "light": 0,
-            "dark": 0
+            "fire": 0.0,
+            "ice": 0.0,
+            "shock": 0.0,
+            "earth": 0.0,
+            "light": 0.0,
+            "dark": 0.0
         }
         self.resistance_base = {
-            "fire": 0,
-            "ice": 0,
-            "shock": 0,
-            "earth": 0,
-            "light": 0,
-            "dark": 0
+            "fire": 0.0,
+            "ice": 0.0,
+            "shock": 0.0,
+            "earth": 0.0,
+            "light": 0.0,
+            "dark": 0.0
         }
         self.awareness = awareness  # used when a player enters the room to see if npc spots the player
         self.aggro = aggro
@@ -71,6 +77,7 @@ class NPC:
         self.friend = friend  # Is this a friendly NPC? Default is False (enemy). Friends will help Jean in combat.
         self.combat_delay = 0  # initial delay for combat actions. Typically randomized on unit spawn
         self.combat_range = combat_range  # similar to weapon range, but is an attribute to the NPC since NPCs don't equip items
+        self.loot = loot.lev0
 
     def is_alive(self):
         return self.hp > 0
@@ -106,7 +113,8 @@ class NPC:
         move.weight = weight
 
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
-        pass
+        if self.loot:
+            self.roll_loot()  # checks to see if an item will drop
 
     def combat_engage(self, player):
         '''
@@ -119,8 +127,20 @@ class NPC:
                 ally.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
         self.in_combat = True
 
-
-
+    def roll_loot(self):  # when the NPC dies, do a roll to see if any loot drops
+        if self.current_room is None:
+            print("### ERR: Current room for {} ({}) is None".format(self.name, self))
+            return
+        # Shuffle the dict keys to create random access
+        keys = list(self.loot.keys())
+        random.shuffle(keys)
+        for item in keys:
+            roll = random.randint(0,100)
+            if self.loot[item]["chance"] >= roll:  # success!
+                dropcount = functions.randomize_amount(self.loot[item]["qty"])
+                drop = self.current_room.spawn_item(item, dropcount)
+                cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount))
+                break  # only one item in the loot table will drop
 
 ### Friends ###
 
@@ -144,7 +164,7 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
         self.add_move(moves.Parry(self), 2)
 
     def before_death(self):  # this essentially makes Gorran invulnerable, though he will likely have to rest
-        print(termcolor.colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
+        print(colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
         self.fatigue /= 2
         self.hp = self.maxhp
 
@@ -175,6 +195,6 @@ class RockRumbler(NPC):
         self.resistance_base["fire"] = 0.5
         self.add_move(moves.NPC_Attack(self), 5)
         self.add_move(moves.Advance(self), 4)
-        self.add_move(moves.Withdraw(self), 4)
+        self.add_move(moves.Withdraw(self))
         self.add_move(moves.NPC_Idle(self))
         self.add_move(moves.Dodge(self))

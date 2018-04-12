@@ -118,11 +118,16 @@ class Teleport(Action):
         super().__init__(method=Player.teleport, name="Teleport", hotkey=('tele', 'teleport'))
 
 
-class Alter(Action):  # change a story switch/variable
+class Alter(Action):  # change a jkjllkj switch/variable
     def __init__(self):
         super().__init__(method=Player.alter, name="Alter", hotkey=('alt', 'alter'))
 
 
-class Showvar(Action):  # list all story switches/vars
+class Showvar(Action):  # list all jkjllkj switches/vars
     def __init__(self):
         super().__init__(method=Player.vars, name="Showvar", hotkey=('sv', 'showvar'))
+
+
+class Supersaiyan(Action):
+    def __init__(self):
+        super().__init__(method=Player.supersaiyan, name="Supersaiyan", hotkey=('ss', 'supersaiyan'))

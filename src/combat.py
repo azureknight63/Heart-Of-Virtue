@@ -1,6 +1,7 @@
 from termcolor import colored, cprint
 import time, random, functions
 
+
 def combat(player):
     """
     :param player:
@@ -28,21 +29,51 @@ def combat(player):
         for move in get_moves:
             move.advance(npc)
 
+    def synchronize_distances():
+        '''
+        Loops over all enemies in the combat list and updates their distances. If the enemy isn't in a proximity list, then it gets added.
+        :return:
+        '''
+        for ally in player.combat_list_allies:
+            remove_these = []
+            for enemy in ally.combat_proximity:  # Remove any dead enemies
+                if not enemy.is_alive:
+                    remove_these.append(enemy)
+            for enemy in remove_these:
+                del ally.combat_proximity[enemy]
+            for enemy in player.combat_list:
+                remove_these = []
+                for ally in enemy.combat_proximity:  # Remove any dead allies from combat proximity; this will only work for allies who can die, excluding Jean
+                    if not ally.is_alive:
+                        remove_these.append(ally)
+                for ally in remove_these:
+                    del enemy.combat_proximity[ally]
+                if enemy in ally.combat_proximity:
+                    enemy.combat_proximity[ally] = ally.combat_proximity[enemy]
+                else:  # The enemy is not in the list, probably because it was added via an event mid-combat; so, let's add it!
+                    distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
+                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
+
+        for enemy in player.combat_list:
+            remove_these = []
+            for ally in enemy.combat_proximity:
+                if not ally.is_alive():
+                    remove_these.append(ally)
+            for ally in remove_these:
+                del enemy.combat_proximity[ally]
+            for ally in player.combat_list_allies:
+                if ally not in enemy.combat_proximity:
+                    distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
+                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
+
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
-    for enemy in player.combat_list:
-        distance = enemy.default_proximity * random.uniform(0.75, 1.25)
-        player.combat_proximity[enemy] = enemy.combat_proximity[player] = distance
-        if len(player.combat_list_allies) > 0:
-            for ally in player.combat_list_allies:
-                if ally.name is not "Jean":
-                    distance = enemy.default_proximity * random.uniform(0.75, 1.25)
-                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
     for ally in player.combat_list_allies:
         ally.in_combat = True
     while True:  # combat will loop until there are no aggro enemies or the player is dead
         #  Check for combat events and execute them once, if possible
+        synchronize_distances()
         if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example, an event is to fire upon player or enemy death
             for event in player.combat_events:
                 event.check_combat_conditions(beat)
@@ -66,11 +97,25 @@ def combat(player):
         for enemy in player.combat_list:
             functions.refresh_stat_bonuses(enemy)
 
+        #  Recovery / Entropy for HEAT
+        if player.heat < 1:  # recovery
+            amt = (1 - player.heat) / 20
+            if amt < 0.001:
+                amt = 0.001
+            player.heat += amt
+        elif player.heat > 1:  # entropy
+            amt = (player.heat - 1) / 20
+            if amt < 0.001:
+                amt = 0.001
+            player.heat -= amt
+
         while player.current_move is None: # the player must choose to do something
             beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
             heat_display = int(player.heat * 100)
             heat_str = colored("HEAT: ", "red") + colored(str(heat_display), "red") + colored("%", "red")
             print("\n" + beat_str + "                  " + heat_str)
+            if beat == 0:
+                player.fatigue = player.maxfatigue
             player.show_bars()
             print("\nWhat will you do?\n")
             available_moves = "\n"
@@ -88,7 +133,7 @@ def combat(player):
                 else:
                     if move.beats_left > 0:
                         move_str = (str(i) + ": " + str(move.name) + " ||| "
-                                                                     "Available after {} beats\n".format(move.beats_left))
+                                                                     "Available in {} beats\n".format(move.beats_left + 1))
                     else:
                         move_str = (str(i) + ": " + str(move.name) + " ||| "
                                                                      "Available next beat\n")
@@ -113,15 +158,18 @@ def combat(player):
                             acceptable_targets = []
                             min, max = player.current_move.mvrange
                             for enemy, distance in player.combat_proximity.items():
-                                if min < distance < max:
-                                    acceptable_targets.append((enemy, distance))
+                                if enemy.is_alive:
+                                    if min < distance < max:
+                                        acceptable_targets.append((enemy, distance))
+                                else:
+                                    del player.combat_proximity[enemy]
                             if len(acceptable_targets) > 1:
                                 acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
                                 while target is None:
                                     print("Select a target: \n")
-                                    for enemy, distance in acceptable_targets:
+                                    for i, enemy in enumerate(acceptable_targets):
                                         print(colored(str(i), "magenta") + ": " +
-                                              colored(enemy.name + " (" + distance + "ft)", "magenta"))
+                                              colored(enemy[0].name + " (" + str(enemy[1]) + "ft)", "magenta"))
                                     choice = int(input("Target: "))
                                     for i, enemy in enumerate(acceptable_targets):
                                         if choice == i:
@@ -163,6 +211,9 @@ def combat(player):
                 print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
                 player.current_room.npcs_here.remove(enemy)
                 player.combat_list.remove(enemy)
+                for ally in player.combat_list_allies:
+                    if enemy in ally.combat_proximity:
+                        del ally.combat_proximity[enemy]
             else:
                 process_npc(enemy)
 

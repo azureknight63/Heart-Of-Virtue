@@ -11,9 +11,9 @@ class Player():
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
-        self.fatigue = 100  # cannot perform moves without enough of this stuff
-        self.maxfatigue = 100
-        self.maxfatigue_base = 100
+        self.fatigue = 150  # cannot perform moves without enough of this stuff
+        self.maxfatigue = 150
+        self.maxfatigue_base = 150
         self.strength = 10  # attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
         self.strength_base = 10
         self.finesse = 10  # attack damage with finesse-based weapons, parry and dodge rating
@@ -29,20 +29,20 @@ class Player():
         self.faith = 10  # sacred arts, influence ability, dodge rating
         self.faith_base = 10
         self.resistance = {
-            "fire": 0,
-            "ice": 0,
-            "shock": 0,
-            "earth": 0,
-            "light": 0,
-            "dark": 0
+            "fire": 0.0,
+            "ice": 0.0,
+            "shock": 0.0,
+            "earth": 0.0,
+            "light": 0.0,
+            "dark": 0.0
         }
         self.resistance_base = {
-            "fire": 0,
-            "ice": 0,
-            "shock": 0,
-            "earth": 0,
-            "light": 0,
-            "dark": 0
+            "fire": 0.0,
+            "ice": 0.0,
+            "shock": 0.0,
+            "earth": 0.0,
+            "light": 0.0,
+            "dark": 0.0
         }
         self.weight_tolerance = 20
         self.weight_tolerance_base = 20
@@ -149,7 +149,17 @@ class Player():
         maxhp = float(self.maxhp)
         return curr/maxhp
 
-    def vars(self):  # print all story variables
+    def supersaiyan(self):  # makes player super strong! Debug only
+        self.strength_base = 100
+        self.strength = 100
+        self.maxhp_base = 10000
+        self.maxhp = 10000
+        self.hp = 10000
+        self.maxfatigue_base = 10000
+        self.maxfatigue = 10000
+        self.fatigue = 10000
+
+    def vars(self):  # print all jkjllkj variables
         print(self.universe.story)
 
     def alter(self, phrase=''):
@@ -296,6 +306,17 @@ class Player():
 
     def is_alive(self):
         return self.hp > 0
+
+    def refresh_enemy_list_and_prox(self):
+        for enemy in self.combat_list:
+            if not enemy.is_alive():
+                self.combat_list.remove(enemy)
+        remove_these = []  # since you can't mutate a dict while iterating over it, delegate this iteration to a list and THEN remove the enemy
+        for enemy in self.combat_proximity:
+            if not enemy.is_alive():
+                remove_these.append(enemy)
+        for enemy in remove_these:
+            del self.combat_proximity[enemy]
 
     def death(self):
         for i in range(random.randint(2,5)):
