@@ -162,14 +162,25 @@ class Consumable(Item):
 
     def drop(self, player):
         if self.count > 1:
-            drop_count = input("How many would you like to drop? ")
-            if functions.is_input_integer(drop_count):
-                cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
-                for i in range(int(drop_count)):
-                    self.count -= 1
-                    itemtype = self.__class__.__name__
-                    player.current_room.spawn_item(item_type=itemtype)
-                player.current_room.stack_duplicate_items()
+            while True:
+                drop_count = input("How many would you like to drop? ")
+                if functions.is_input_integer(drop_count):
+                    if 0 <= int(drop_count) <= self.count:
+                        if int(drop_count) > 0:
+                            cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
+                            for i in range(int(drop_count)):
+                                self.count -= 1
+                                itemtype = self.__class__.__name__
+                                player.current_room.spawn_item(item_type=itemtype)
+                            player.current_room.stack_duplicate_items()
+                        else:
+                            print("Jean changed his mind.")
+                        break
+                    else:
+                        cprint("Invalid amount!", "red")
+                else:
+                    cprint("Invalid amount!", "red")
+
 
 
 class Special(Item):
@@ -233,7 +244,7 @@ class ClothHood(Helm):
         #minimum protection of 1
 
 
-class Restorative(Consumable):
+class Restorative(Consumable):  # todo: enforce int for recovery amount
     def __init__(self):
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
@@ -281,7 +292,7 @@ class Restorative(Consumable):
             print("Jean is already at full health. He places the Restorative back into his bag.")
 
 
-class Draught(Consumable):
+class Draught(Consumable):  # todo: enforce int for recovery amount
     def __init__(self):
         super().__init__(name="Draught",
                          description="A green fluid giving off a warm, pleasant glow.\n"

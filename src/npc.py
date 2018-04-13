@@ -70,7 +70,7 @@ class NPC:
         self.inventory = []
         self.in_combat = False
         self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5, ranged is 20. Distance is in feet (for reference)
-        self.default_proximity = 50
+        self.default_proximity = 20
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
@@ -139,7 +139,7 @@ class NPC:
             if self.loot[item]["chance"] >= roll:  # success!
                 dropcount = functions.randomize_amount(self.loot[item]["qty"])
                 drop = self.current_room.spawn_item(item, dropcount)
-                cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount))
+                cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount), 'cyan', attrs=['bold'])
                 break  # only one item in the loot table will drop
 
 ### Friends ###

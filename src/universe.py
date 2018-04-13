@@ -18,7 +18,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
             self.maps = player.saveuniv
 
         else:  # new game
-            map_list = ["testing", "start_area"]  # as more maps are built, add them to this list
+            map_list = ["testing", "start_area", "verdette_caverns"]  # as more maps are built, add them to this list
             for location in map_list:
                 self.load_tiles(player, location)
             for location in self.maps:
@@ -79,16 +79,11 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
-                                    gold_amt = 0
                                     if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
                                         hidden = True
                                         hfactor = int(p_list[2][1:])
-                                    if p_list[0] == 'Gold':
-                                        gold_amt = amt
-                                        amt = 1
-                                    for i in range(0, amt):
-                                        self.tile_exists(map, x, y).spawn_item(item_type,  amt=gold_amt,
-                                                                               hidden=hidden, hfactor=hfactor)
+                                    self.tile_exists(map, x, y).spawn_item(item_type,  amt=amt, hidden=hidden, hfactor=hfactor)
+
                                 elif param[0] == '!':  # spawns any declared events
                                     param = param.replace('!', '')
                                     event_type = param

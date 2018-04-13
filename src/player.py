@@ -123,6 +123,25 @@ class Player():
         for state in self.states:
             state.process(self)
 
+    def stack_gold(self):
+        gold_objects = []
+        for item in self.inventory:  # get the counts of each item in each category
+            if isinstance(item, items.Gold):
+                gold_objects.append(item)
+        if len(gold_objects) > 0:
+            amt = 0
+            for obj in gold_objects:
+                amt += obj.amt
+            remove_existing_gold_objects = []
+            for item in self.inventory:  # get the counts of each item in each category
+                if isinstance(item, items.Gold):
+                    remove_existing_gold_objects.append(item)
+            for item in remove_existing_gold_objects:
+                self.inventory.remove(item)
+            gold_objects[0].amt = amt
+            self.inventory.append(gold_objects[0])
+
+
     def combat_idle(self):
         if (self.hp * 100) / self.maxhp > 20:  # combat idle (healthy)
             chance = random.randint(0,1000)
@@ -471,10 +490,10 @@ he lets out a barely audible whisper:""", "red")
             if inventory_selection == 'x':
                 break
 
-    def inventory_item_sub_menu(self, item):
+    def inventory_item_sub_menu(self, item):  #todo: player can specify dropping more than count, which causes problems
         cprint("What would you like to do with this item?\n", "cyan")
         for i, action in enumerate(item.interactions):
-            print("{}: {}".format(i, action))
+            print("{}: {}".format(i, action.title()))
         print("(x): Nothing, nevermind.\n")
         selection = input(colored("Selection: ", "cyan"))
         if functions.is_input_integer(selection):
@@ -711,7 +730,7 @@ he lets out a barely audible whisper:""", "red")
         r = random.randint(0, len(available_moves) - 1)
         self.do_action(available_moves[r])
 
-    def look(self, target=None):
+    def look(self, target=None):  # todo: Double-prints items and stuff
         if target is not None:
             self.view(target)
         else:
@@ -790,6 +809,8 @@ he lets out a barely audible whisper:""", "red")
                     if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
                         master_item.count += duplicate_item.count
                         remove_duplicates.append(duplicate_item)
+                if hasattr(master_item, "stack_grammar"):
+                    master_item.stack_grammar()
                 for duplicate in remove_duplicates:
                     self.inventory.remove(duplicate)
 
@@ -797,16 +818,6 @@ he lets out a barely audible whisper:""", "red")
         possible_actions = self.current_room.available_actions()
         for action in possible_actions:
             cprint('{}:{}{}'.format(action.name, (' ' * (20 - (len(action.name) + 2))), action.hotkey), "blue")
-
-        #     "l: Look around\n"
-        #     "v: View details on a person, creature, or object\n"
-        #     "i: Inspect your inventory\n"
-        #     "q: Equip or unequip an item from your inventory\n"
-        #     "use <item>: Use an item from your inventory\n"
-        #     "take <item>: Pick up an item - accepts partial names (ex. 'take rest' to pick up a Restorative.)"
-        #     "Entering 'take' by itself will show a list of items in the room.\n"
-        # "menu: Return to the main menu. Autosaves your current position."
-        # "save: Save your current progress to a file."
 
     def show_bars(self, hp=True, fp=True):  # show HP and Fatigue bars
         if hp:

@@ -1,5 +1,6 @@
 """
 My take on Phillip Johnson's text adventure tutorial
+Not much is left of the original code.
 
 REMINDERS:
 
@@ -11,14 +12,13 @@ from universe import Universe
 from termcolor import colored, cprint
 import time, sys
 
-
-  # todo: gold pickups don't seem to work correctly; doesn't add the right amount
-  # todo: colorize item drops
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
+
+
 def play():
     game = True
-    while game == True:
+    while game:
         cprint(r"""
         _
        (_)
@@ -46,7 +46,7 @@ _\\|//__( | )______)_/
 
             """, "cyan")
         newgame = True
-        if functions.saves_list() != []:
+        if functions.saves_list():
             save_exists = True
         else:
             save_exists = False
@@ -133,6 +133,7 @@ _\\|//__( | )______)_/
             ### check to make sure entering the most recent tile hasn't ended the game ###
             if player.is_alive() and not player.victory:
                 player.stack_inv_items()
+                player.stack_gold()
                 print("\nChoose an action:\n")
                 available_actions = room.adjacent_moves()
                 available_moves = colored('| ', "cyan")

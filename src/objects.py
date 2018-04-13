@@ -129,9 +129,10 @@ class Wall_Inscription(Object):
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
 
 
-class Container(Object):  #todo auto-stack duplicates inside the chest
+class Container(Object):
     '''
     A generic container that may contain items. Superclass
+    NOTE: If you ever make it so items can be added to an existing container post-spawn, run the stack_items method
     '''
     def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname, params):
         self.nickname = nickname
@@ -182,11 +183,11 @@ class Container(Object):  #todo auto-stack duplicates inside the chest
                 event = self.spawn_event(event_type, player, tile, p_list, repeat, parallel)
                 self.events.append(event)
 
-
         self.keywords.append('open')
         self.keywords.append('unlock')
         self.keywords.append('loot')
         self.process_events()  # process initial events (triggers labeled "auto")
+        self.stack_items()
 
     def refresh_description(self):
         if self.state == "closed":
@@ -255,6 +256,19 @@ class Container(Object):  #todo auto-stack duplicates inside the chest
             self.tile.events_here.append(event)
             self.events.remove(event)
         self.tile.evaluate_events()
+
+    def stack_items(self):
+        for master_item in self.contents:  # traverse the inventory for stackable items, then stack them
+            if hasattr(master_item, "count"):
+                remove_duplicates = []
+                for duplicate_item in self.contents:
+                    if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
+                        master_item.count += duplicate_item.count
+                        remove_duplicates.append(duplicate_item)
+                if hasattr(master_item, "stack_grammar"):
+                    master_item.stack_grammar()
+                for duplicate in remove_duplicates:
+                    self.contents.remove(duplicate)
 
 
 class Wooden_Chest(Container):
