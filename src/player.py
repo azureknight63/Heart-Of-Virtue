@@ -169,14 +169,26 @@ class Player():
         return curr/maxhp
 
     def supersaiyan(self):  # makes player super strong! Debug only
-        self.strength_base = 100
-        self.strength = 100
+        self.strength_base = 1000
+        self.strength = 1000
+        self.finesse_base = 1000
+        self.finesse = 1000
+        self.speed_base = 1000
+        self.speed = 1000
         self.maxhp_base = 10000
         self.maxhp = 10000
         self.hp = 10000
         self.maxfatigue_base = 10000
         self.maxfatigue = 10000
         self.fatigue = 10000
+
+    def testevent(self, phrase=''):  # spawns a story event in the current tile
+        params = phrase.split(" ")  # todo: test this
+        if len(params) == 1:
+            repeat = False
+        else:
+            repeat = params[1]
+        self.current_room.spawn_event(params[0], self, self.current_room, [], repeat=repeat)  # will go fubar if the name of the event is wrong or if other parameters are present in phrase
 
     def vars(self):  # print all jkjllkj variables
         print(self.universe.story)
@@ -490,7 +502,7 @@ he lets out a barely audible whisper:""", "red")
             if inventory_selection == 'x':
                 break
 
-    def inventory_item_sub_menu(self, item):  #todo: player can specify dropping more than count, which causes problems
+    def inventory_item_sub_menu(self, item):
         cprint("What would you like to do with this item?\n", "cyan")
         for i, action in enumerate(item.interactions):
             print("{}: {}".format(i, action.title()))
@@ -730,14 +742,13 @@ he lets out a barely audible whisper:""", "red")
         r = random.randint(0, len(available_moves) - 1)
         self.do_action(available_moves[r])
 
-    def look(self, target=None):  # todo: Double-prints items and stuff
+    def look(self, target=None):
         if target is not None:
             self.view(target)
         else:
-            tile = self.universe.tile_exists(self.map, self.location_x, self.location_y)
-            print(tile.intro_text())
-            functions.check_for_npcs(tile)
-            functions.check_for_items(tile)
+            print(self.current_room.intro_text())
+            #functions.check_for_npcs(tile)
+            #functions.check_for_items(tile)
 
     def view(self, phrase=''):
         # print(phrase)
@@ -763,7 +774,13 @@ he lets out a barely audible whisper:""", "red")
             for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
                                               self.current_room.objects_here):
                 if not thing.hidden and thing.name != 'null':
-                    search_item = thing.name.lower() + ' ' + thing.announce.lower()
+                    announce = ""
+                    idle = ""
+                    if hasattr(thing, "announce"):
+                        announce = thing.announce
+                    if hasattr(thing, "idle_message"):
+                        idle = thing.idle_message
+                    search_item = thing.name.lower() + ' ' + announce.lower() + ' ' + idle.lower()
                     if lower_phrase in search_item:
                         print(thing.description)
                         break

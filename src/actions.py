@@ -131,3 +131,8 @@ class Showvar(Action):  # list all jkjllkj switches/vars
 class Supersaiyan(Action):
     def __init__(self):
         super().__init__(method=Player.supersaiyan, name="Supersaiyan", hotkey=('ss', 'supersaiyan'))
+
+
+class TestEvent(Action):
+    def __init__(self):
+        super().__init__(method=Player.testevent, name="TestEvent", hotkey=('te', 'test', 'testevent'))

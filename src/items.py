@@ -244,7 +244,7 @@ class ClothHood(Helm):
         #minimum protection of 1
 
 
-class Restorative(Consumable):  # todo: enforce int for recovery amount
+class Restorative(Consumable):
     def __init__(self):
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
@@ -278,6 +278,7 @@ class Restorative(Consumable):  # todo: enforce int for recovery amount
                   "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
                   "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
             amount = (self.power * random.uniform(0.8, 1.2))
+            amount = int(amount)
             missing_hp = player.maxhp - player.hp
             if amount > missing_hp:
                 amount = missing_hp
@@ -292,7 +293,7 @@ class Restorative(Consumable):  # todo: enforce int for recovery amount
             print("Jean is already at full health. He places the Restorative back into his bag.")
 
 
-class Draught(Consumable):  # todo: enforce int for recovery amount
+class Draught(Consumable):
     def __init__(self):
         super().__init__(name="Draught",
                          description="A green fluid giving off a warm, pleasant glow.\n"
@@ -319,6 +320,7 @@ class Draught(Consumable):  # todo: enforce int for recovery amount
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n" 
                   "to have lifted off of his shoulders for the time being.".format(self.name))
             amount = (self.power * random.uniform(0.8, 1.2))
+            amount = int(amount)
             missing_fatigue = player.maxfatigue - player.fatigue
             if amount > missing_fatigue:
                 amount = missing_fatigue

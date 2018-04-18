@@ -51,17 +51,18 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
         # notice the player.
         finesse_check = player.finesse + random.randint((-1 * (player.finesse * 0.2)), (player.finesse * 0.2))
         for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
-            if (finesse_check <= e.awareness) and e.aggro:  # finesse check fails, break and rescan the list,
-                # adding all aggro enemies
-                print(e.name + " " + e.alert_message)  # player's been spotted
-                enemy_combat_list.append(e)
-                e.in_combat = True
-                for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
-                    if aggro_enemy.aggro and aggro_enemy != e:
-                        print(aggro_enemy.name + aggro_enemy.alert_message)
-                        enemy_combat_list.append(aggro_enemy)
-                        aggro_enemy.in_combat = True
-                break  # we don't need to scan any more since the alarm has been raised
+            if not e.friend:
+                if (finesse_check <= e.awareness) and e.aggro:  # finesse check fails, break and rescan the list,
+                    # adding all aggro enemies
+                    print(e.name + " " + e.alert_message)  # player's been spotted
+                    enemy_combat_list.append(e)
+                    e.in_combat = True
+                    for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
+                        if aggro_enemy.aggro and aggro_enemy != e:
+                            print(aggro_enemy.name + aggro_enemy.alert_message)
+                            enemy_combat_list.append(aggro_enemy)
+                            aggro_enemy.in_combat = True
+                    break  # we don't need to scan any more since the alarm has been raised
     return enemy_combat_list
 
 

@@ -78,6 +78,7 @@ class NPC:
         self.combat_delay = 0  # initial delay for combat actions. Typically randomized on unit spawn
         self.combat_range = combat_range  # similar to weapon range, but is an attribute to the NPC since NPCs don't equip items
         self.loot = loot.lev0
+        self.keywords = []  # action keywords to hook up an arbitrary command like "talk" for a friendly NPC
 
     def is_alive(self):
         return self.hp > 0
@@ -144,7 +145,26 @@ class NPC:
 
 ### Friends ###
 
-class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the game. His name is initially unknown.
+
+class Friend(NPC):
+    def __init__(self, name, description, damage, aggro, exp_award,
+                 inventory=None, maxhp=100, protection=0, speed=10, finesse=10,
+                 awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
+                 faith=10, hidden=False, hide_factor=0, combat_range=(0,5),
+                 idle_message=' is here.', alert_message='gets ready for a fight!',
+                 discovery_message='someone here.', target=None, friend=True):
+        self.keywords = ["talk"]
+        super().__init__(name=name, description=description, damage=damage, aggro=aggro, exp_award=exp_award,inventory=inventory, maxhp=maxhp,
+                         protection=protection, speed=speed, finesse=finesse, awareness=awareness, maxfatigue=maxfatigue, endurance=endurance,
+                         strength=strength, charisma=charisma, intelligence=intelligence, faith=faith, hidden=hidden, hide_factor=hide_factor,
+                         combat_range=combat_range, idle_message=idle_message, alert_message=alert_message, discovery_message=discovery_message,
+                         target=target, friend=friend)
+
+    def talk(self):
+        print(self.name + " has nothing to say.")
+
+
+class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game. His name is initially unknown.
     def __init__(self):
         description = """A massive creature that somewhat resembles a man, 
         except he is covered head-to-toe in rock-like armor. He seems a bit clumsy and his
@@ -155,8 +175,7 @@ class Gorran(NPC):  # The "rock-man" that helps Jean at the beginning of the gam
                          damage=55, awareness=9, speed=5, aggro=True, exp_award=0,
                          combat_range=(0,7),
                          idle_message=" is bumbling about.",
-                         alert_message=" lets out a deep and angry rumble!",
-                         friend=True)
+                         alert_message="lets out a deep and angry rumble!")
         self.add_move(moves.NPC_Attack(self), 4)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Gorran_Club(self), 3)
@@ -177,7 +196,7 @@ class Slime(NPC):  # target practice
         super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=10,
                          damage=20, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
-                         alert_message=" burbles angrily at Jean!")
+                         alert_message="burbles angrily at Jean!")
         self.add_move(moves.NPC_Attack(self), 5)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.NPC_Idle(self))

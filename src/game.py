@@ -175,15 +175,16 @@ _\\|//__( | )______)_/
                     #                   NOTE: syntax for multiple words is '<command> <target object>';
                     #                   additional words are ignored
                     executions = 0
+                    subjects = room.objects_here + room.npcs_here
                     if len(count_args) == 1:
-                        for object in room.objects_here:
+                        for object in subjects:
                             if not object.hidden:
                                 for keyword in object.keywords:
                                     if action_input == keyword:
                                         object.__getattribute__(keyword)()
                                         executions += 1
                     elif len(count_args) > 1:
-                        for i, object in enumerate(room.objects_here):
+                        for i, object in enumerate(subjects):
                             search_item = object.name.lower() + ' ' + object.idle_message.lower()
                             if count_args[1] in search_item and not object.hidden:
                                 for keyword in object.keywords:
