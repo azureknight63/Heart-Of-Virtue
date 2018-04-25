@@ -224,5 +224,7 @@ def combat(player):
         time.sleep(0.5)
         beat += 1
         # print("### CURRENT BEAT: "+str(beat))
+
+    #  AFTER COMBAT LOOP (VICTORY, ESCAPE, OR DEFEAT)
     player.in_combat = False
     player.current_move = None

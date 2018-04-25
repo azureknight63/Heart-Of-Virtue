@@ -9,12 +9,12 @@ import objects, functions
 from ..events import *
 
 
-class Ch01_Start_Open_Wall(StoryEvent):
+class Ch01_Start_Open_Wall(Event):
     '''
     The first event. Opens the wall in the starting room when the player 'presses' the wall depression
     '''
-    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Start_Open_Wall'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+    def __init__(self, player, tile, params, repeat=True, name='Ch01_Start_Open_Wall'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         for room_object in self.tile.objects_here:
@@ -46,12 +46,12 @@ heard.
         time.sleep(0.5)
 
 
-class Ch01_Bridge_Wall(StoryEvent):
+class Ch01_Bridge_Wall(Event):
     '''
     Opens the wall on the bridge in the starting area
     '''
-    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Bridge_Wall'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+    def __init__(self, player, tile, params, repeat=True, name='Ch01_Bridge_Wall'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         for room_object in self.tile.objects_here:
@@ -84,12 +84,12 @@ class Ch01_Bridge_Wall(StoryEvent):
         time.sleep(0.5)
 
 
-class Ch01_Chest_Rumbler_Battle(StoryEvent):
+class Ch01_Chest_Rumbler_Battle(Event):
     '''
     Initiates the battle with rock rumblers when the chest at (7,1) is looted
     '''
-    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_Chest_Rumbler_Battle'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+    def __init__(self, player, tile, params, repeat=True, name='Ch01_Chest_Rumbler_Battle'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         for thing in self.params:
@@ -113,13 +113,13 @@ class Ch01_Chest_Rumbler_Battle(StoryEvent):
         cprint("A rock-like creature appears and advances toward Jean!")
         time.sleep(0.5)
         self.player.combat_events.append(Ch01_PostRumbler(player=self.player, tile=self.tile, params=False,
-                                                              repeat=False, parallel=False))
+                                                              repeat=False))
         self.tile.events_here.remove(self)
 
 
-class Ch01_PostRumbler(CombatEvent): # Occurs when Jean beats the first rumbler after opening the chest
-    def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+class Ch01_PostRumbler(Event): # Occurs when Jean beats the first rumbler after opening the chest
+    def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_combat_conditions(self, beat):
         if len(self.player.combat_list) == 0:
@@ -132,14 +132,14 @@ class Ch01_PostRumbler(CombatEvent): # Occurs when Jean beats the first rumbler 
             npc = self.tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
         self.player.combat_events.append(Ch01_PostRumbler_Rep(player=self.player, tile=self.tile, params=False,
-                                                              repeat=True, parallel=False))
+                                                              repeat=True))
         self.player.combat_events.append(Ch01_PostRumbler2(player=self.player, tile=self.tile, params=False,
-                                                              repeat=False, parallel=False))
+                                                              repeat=False))
 
 
-class Ch01_PostRumbler_Rep(CombatEvent):
-    def __init__(self, player, tile, params, repeat=True, parallel=False, name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+class Ch01_PostRumbler_Rep(Event):
+    def __init__(self, player, tile, params, repeat=True, name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.iteration = 2
 
     def check_combat_conditions(self, beat):
@@ -155,9 +155,9 @@ class Ch01_PostRumbler_Rep(CombatEvent):
             self.iteration += 1
 
 
-class Ch01_PostRumbler2(CombatEvent):
-    def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler2'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+class Ch01_PostRumbler2(Event):
+    def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_combat_conditions(self, beat):
         if self.player.get_hp_pcnt() < 0.3:
@@ -194,11 +194,11 @@ class Ch01_PostRumbler2(CombatEvent):
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75
         self.player.combat_events.append(Ch01_PostRumbler3(player=self.player, tile=self.tile, params=False,
-                                                               repeat=False, parallel=False))
+                                                               repeat=False))
 
-class Ch01_PostRumbler3(CombatEvent):
-    def __init__(self, player, tile, params, repeat=False, parallel=False, name='Ch01_PostRumbler2'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+class Ch01_PostRumbler3(Event):
+    def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_combat_conditions(self, beat):
         if len(self.player.combat_list) == 0:
@@ -314,30 +314,31 @@ class Ch01_PostRumbler3(CombatEvent):
                 npc = self.tile.spawn_npc("RockRumbler", delay=random.randint(0,14))
                 npc.combat_engage(self.player)
 
-            self.tile.events_here.append(After_The_Rumbler_Fight(self.player, self.tile, None))
+            self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
+            self.tile.evaluate_events()
 
 
-class After_The_Rumbler_Fight(StoryEvent):
+class AfterTheRumblerFight(Event):
     '''
     After the fight, Gorran tells Jean that they will talk, but not here. Too dangerous. Gorran then waits for Jean to speak to him again.
     '''
-    def __init__(self, player, tile, params, repeat=False, parallel=False, name='After_The_Rumbler_Fight'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=params)
+    def __init__(self, player, tile, params, repeat=True, name='AfterTheRumblerFight'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
-        self.pass_conditions_to_process()
+        if not self.player.in_combat:
+            self.pass_conditions_to_process()
 
     def process(self):
         time.sleep(5)
         print("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
-        input((colored("Jean: ", "cyan")+colored("I suppose I should thank you for saving my skin. What is your name?", "white")))
+        self.dialogue("Jean", "I suppose I should thank you for saving my skin. What is your name?", "cyan")
         print("The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. He begins to speak in low, rumbling tones.")
-        input((colored("Rock-Man: ", "green") + colored("Mmmmm... Go-rra-nnnnnn...", "white")))
-        input((colored("Jean: ", "cyan") +
-               colored("Go... rran? Well, thank you, Gorran. But what were those things? I've never seen their like in my life!", "white")))
+        self.dialogue("Rock-Man", "Mmmmm... Go-rra-nnnnnn...", "green")
+        self.dialogue("Jean", "Go... rran? Well, thank you, Gorran. But what were those things? I've never seen their like in my life!", "cyan")
         print("Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came.")
-        input((colored("Gorran: ", "green") + colored("Time... short. Not... safe... to linger. Speak... to Gorran again... when ready.", "white")))
+        self.dialogue("Rock-Man", "Time... short. Not... safe... to linger. Speak... to Gorran again... when ready.", "green")
         for npc in self.tile.npcs_here:
             if npc.name == "Rock-Man":
                 npc.name = "Gorran"

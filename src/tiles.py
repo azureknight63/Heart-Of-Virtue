@@ -83,6 +83,7 @@ class MapTile:
         moves.append(actions.Showvar())
         moves.append(actions.Alter())
         moves.append(actions.Supersaiyan())
+        moves.append(actions.TestEvent())
         ### END DEBUG MOVES ###
         return moves
 
@@ -124,8 +125,8 @@ class MapTile:
         self.items_here.append(item)
         return item
 
-    def spawn_event(self, event_type, player, tile, params, repeat=False, parallel=False):
-        event = functions.seek_class(event_type, player, tile, params, repeat, parallel)
+    def spawn_event(self, event_type, player, tile, params, repeat=False):
+        event = functions.seek_class(event_type, player, tile, params, repeat)
         if event != "":
             self.events_here.append(event)
             return event

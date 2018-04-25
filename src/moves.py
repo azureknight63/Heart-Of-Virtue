@@ -377,14 +377,13 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                          beats_left=execute, target=player, user=player, instant=True)
 
     def prep(self, user):
-        #print(self.stage_announce[0])
         for enemy, distance in user.combat_proximity.items():
             cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
             if user.combat_list_allies:
                 for ally in user.combat_list_allies:
                     if ally.name != "Jean":
                         cprint("{} is {} ft from {}".format(enemy.name, int(ally.combat_proximity[enemy]), ally.name),"cyan")
-        time.sleep(3)
+        functions.await_input()
 
 
 class Wait(Move):  # player chooses how many beats he'd like to wait

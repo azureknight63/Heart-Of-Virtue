@@ -183,14 +183,14 @@ class Player():
         self.fatigue = 10000
 
     def testevent(self, phrase=''):  # spawns a story event in the current tile
-        params = phrase.split(" ")  # todo: test this
+        params = phrase.split(" ")
         if len(params) == 1:
             repeat = False
         else:
             repeat = params[1]
         self.current_room.spawn_event(params[0], self, self.current_room, [], repeat=repeat)  # will go fubar if the name of the event is wrong or if other parameters are present in phrase
 
-    def vars(self):  # print all jkjllkj variables
+    def vars(self):  # print all variables
         print(self.universe.story)
 
     def alter(self, phrase=''):
@@ -747,8 +747,6 @@ he lets out a barely audible whisper:""", "red")
             self.view(target)
         else:
             print(self.current_room.intro_text())
-            #functions.check_for_npcs(tile)
-            #functions.check_for_items(tile)
 
     def view(self, phrase=''):
         # print(phrase)

@@ -149,7 +149,10 @@ _\\|//__( | )______)_/
                     print(available_moves)
                 print("\n\nFor a list of additional commands, enter 'c'.\n")
                 action_input = input('Action: ')
-                action_input = action_input.lower()
+                raw_args = action_input.split(' ')
+                lc_exceptions = ("te", "test", "testevent")  # exceptions to lowering case (better precision, worse searching, may break some actions)
+                if raw_args[0] not in lc_exceptions:
+                    action_input = action_input.lower()
                 available_actions = room.available_actions()
                 count_args = action_input.split(' ')
                 arbitrary_action = True  # this will be set to False if the action is a default one that the player

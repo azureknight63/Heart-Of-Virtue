@@ -88,7 +88,6 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     param = param.replace('!', '')
                                     event_type = param
                                     repeat = False
-                                    parallel = False
                                     params = []
                                     if '.' in param:
                                         p_list = param.split('.')
@@ -98,16 +97,11 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                                 repeat = True
                                                 p_list.remove(setting)
                                                 continue
-                                            elif setting == 'p':
-                                                parallel = True
-                                                p_list.remove(setting)
-                                                continue
                                             params.append(setting)
                                     self.tile_exists(map, x, y).spawn_event(event_type,
                                                                             player,
                                                                             self.tile_exists(map, x, y),
                                                                             repeat=repeat,
-                                                                            parallel=parallel,
                                                                             params=params)
                                 elif param[0] == '@':  # spawns any declared objects
                                     param = param.replace('@', '')

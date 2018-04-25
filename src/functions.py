@@ -9,11 +9,16 @@ from os.path import isfile, join
 ### This module contains general functions to use throughout the game
 
 
-def print_slow(text):
+def print_slow(text, speed=1):
+    if not is_input_integer(speed):
+        printspeed = 1
+    else:
+        printspeed = speed
+    rate = 0.1 / printspeed
     wrap = textwrap.fill(text, 80)
     for letter in wrap:
         print(letter, end='',flush=True),
-        time.sleep(.05)
+        time.sleep(rate)
 
 
 def screen_clear():
@@ -281,17 +286,20 @@ def randomize_amount(param):
         return int(param)
 
 
-def seek_class(classname, player, tile, params, repeat, parallel):  # searches through the story folder for the matching module and returns an instance
+def seek_class(classname, player, tile, params, repeat):  # searches through the story folder for the matching module and returns an instance
     class_obj = ""
     try:
-        #class_obj = getattr(__import__('events'), classname)(player, tile, params, repeat, parallel)
-        class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, params, repeat, parallel)
+        class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, params, repeat)
     except:
         try:
-            class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, params, repeat, parallel)
+            class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, params, repeat)
         except:
             try:
-                class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, params, repeat, parallel)
+                class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, params, repeat)
             except:
                 print("#####ERR: Cannot find event " + classname)
     return class_obj
+
+
+def await_input():
+    input(colored("\n(Press Enter)", "yellow"))

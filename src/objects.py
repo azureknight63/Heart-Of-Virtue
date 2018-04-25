@@ -18,8 +18,8 @@ class Object:
         self.tile = tile
         self.player = player
 
-    def spawn_event(self, event_type, player, tile, params, repeat=False, parallel=False):
-        event = functions.seek_class(event_type, player, tile, params, repeat, parallel)
+    def spawn_event(self, event_type, player, tile, params, repeat=False):
+        event = functions.seek_class(event_type, player, tile, params, repeat)
         if event != "":
             self.events.append(event)
             return event
@@ -84,18 +84,13 @@ class Wall_Switch(Object):
                 param = thing.replace('!', '')
                 p_list = param.split(':')
                 repeat = False
-                parallel = False
                 event_type = p_list.pop(0)
                 for setting in p_list:
                     if setting == 'r':
                         repeat = True
                         p_list.remove(setting)
                         continue
-                    elif setting == 'p':
-                        parallel = True
-                        p_list.remove(setting)
-                        continue
-                event = functions.seek_class(event_type, player, tile, params, repeat, parallel)
+                event = functions.seek_class(event_type, player, tile, params, repeat)
                 if self.event_on is None:
                     self.event_on = event
                 else:
@@ -136,7 +131,7 @@ class Container(Object):
     '''
     def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname, params):
         self.nickname = nickname
-        #description = "A container which may or may not have things inside. You can try to OPEN or LOOT it."
+
         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
                          idle_message=idle_message,
                          discovery_message=discovery_message, player=player, tile=tile)
@@ -144,7 +139,7 @@ class Container(Object):
         self.state = self.possible_states[0]  # start closed
         self.contents = []
         self.revealed = False
-        if 'locked:' in params:  #todo make key objects
+        if '%locked' in params:
             self.locked = True
         else:
             self.locked = False
@@ -168,19 +163,14 @@ class Container(Object):
                 param = thing.replace('!', '')
                 p_list = param.split(':')
                 repeat = False
-                parallel = False
-                trigger = 'auto'
+                #trigger = 'auto'
                 event_type = p_list.pop(0)
                 for setting in p_list:
                     if setting == 'r':
                         repeat = True
                         p_list.remove(setting)
                         continue
-                    elif setting == 'p':
-                        parallel = True
-                        p_list.remove(setting)
-                        continue
-                event = self.spawn_event(event_type, player, tile, p_list, repeat, parallel)
+                event = self.spawn_event(event_type, player, tile, p_list, repeat)
                 self.events.append(event)
 
         self.keywords.append('open')
@@ -199,6 +189,20 @@ class Container(Object):
                     self.description += (colored(item.description, 'yellow') + '\n')
             else:
                 self.description = "A " + self.nickname + ". It's empty. Very sorry."
+
+    def unlock(self):
+        if not self.state == "closed":
+            print("Jean can't unlock something that's already open!")
+        else:
+            #  search the player's inventory for a corresponding key
+            for key in self.player.inventory:
+                if hasattr(key, "lock"):
+                    if key.lock == self:
+                        self.locked = False
+                        cprint("Jean uses "+key.name+" to unlock the "+self.name+".", "green")
+            if self.locked:
+                cprint("Jean couldn't find a matching key.", "red")
+
 
     def open(self):
         if self.locked:

@@ -10,8 +10,8 @@ from ..events import *
 
 
 class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for testing? Or just fun.
-    def __init__(self, player, tile, repeat, parallel, name='Gold From Heaven'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, parallel=parallel, params=None)
+    def __init__(self, player, tile, repeat, name='Gold From Heaven'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
 
     def check_conditions(self):
         if True:
@@ -23,8 +23,8 @@ class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for
 
 
 class Block(Event):  # blocks exit in tile, blocks all if none are declared
-    def __init__(self, player, tile, params, repeat, parallel, name='Block'):
-        super().__init__(name=name, player=player, tile=tile, params=params, repeat=repeat, parallel=parallel)
+    def __init__(self, player, tile, params, repeat, name='Block'):
+        super().__init__(name=name, player=player, tile=tile, params=params, repeat=repeat)
         self.directions = []
         if not params:
             self.directions = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']
