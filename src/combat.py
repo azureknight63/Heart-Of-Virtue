@@ -170,10 +170,22 @@ def combat(player):
                                     for i, enemy in enumerate(acceptable_targets):
                                         print(colored(str(i), "magenta") + ": " +
                                               colored(enemy[0].name + " (" + str(enemy[1]) + "ft)", "magenta"))
-                                    choice = int(input("Target: "))
-                                    for i, enemy in enumerate(acceptable_targets):
-                                        if choice == i:
-                                            target = enemy[0]
+                                    choice = input("Target: ")  # todo: clean this up >.<
+                                    while not functions.is_input_integer(choice):
+                                        cprint("Invalid selection!", "red")
+                                        choice = input("Target: ")
+                                    targeting_done = False
+                                    while not targeting_done:
+                                        for i, enemy in enumerate(acceptable_targets):
+                                            if choice == i:
+                                                target = enemy[0]
+                                                targeting_done = True
+                                                break
+                                        if not targeting_done:
+                                            choice = input("Target: ")
+                                            while not functions.is_input_integer(choice):
+                                                cprint("Invalid selection!", "red")
+                                                choice = input("Target: ")
                             else:
                                 target = acceptable_targets[0][0]
                             player.current_move.target = target
@@ -228,3 +240,4 @@ def combat(player):
     #  AFTER COMBAT LOOP (VICTORY, ESCAPE, OR DEFEAT)
     player.in_combat = False
     player.current_move = None
+    player.current_room.evaluate_events()

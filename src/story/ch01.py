@@ -315,14 +315,13 @@ class Ch01_PostRumbler3(Event):
                 npc.combat_engage(self.player)
 
             self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
-            self.tile.evaluate_events()
 
 
 class AfterTheRumblerFight(Event):
     '''
     After the fight, Gorran tells Jean that they will talk, but not here. Too dangerous. Gorran then waits for Jean to speak to him again.
     '''
-    def __init__(self, player, tile, params, repeat=True, name='AfterTheRumblerFight'):
+    def __init__(self, player, tile, params, repeat=False, name='AfterTheRumblerFight'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):

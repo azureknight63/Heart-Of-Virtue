@@ -184,11 +184,11 @@ class Player():
 
     def testevent(self, phrase=''):  # spawns a story event in the current tile
         params = phrase.split(" ")
-        if len(params) == 1:
-            repeat = False
-        else:
+        repeat = False
+        if len(params) > 1:
             repeat = params[1]
-        self.current_room.spawn_event(params[0], self, self.current_room, [], repeat=repeat)  # will go fubar if the name of the event is wrong or if other parameters are present in phrase
+        self.current_room.spawn_event(params[0], self, self.current_room, repeat=repeat, params=[])  # will go fubar if the name of the event is wrong or
+        #  if other parameters are present in phrase
 
     def vars(self):  # print all variables
         print(self.universe.story)

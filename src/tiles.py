@@ -125,7 +125,7 @@ class MapTile:
         self.items_here.append(item)
         return item
 
-    def spawn_event(self, event_type, player, tile, repeat=False, params=None,):
+    def spawn_event(self, event_type, player, tile, repeat=False, params=None):
         event = functions.seek_class(event_type, player, tile, repeat, params)
         if event != "":
             self.events_here.append(event)
