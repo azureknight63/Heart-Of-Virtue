@@ -141,6 +141,12 @@ class Container(Object):
         self.revealed = False
         if '%locked' in params:
             self.locked = True
+            alias = "unknown"
+            for thing in params:
+                if '^' in thing:
+                    alias = thing[1:]
+                    break
+            self.player.universe.locked_chests.append((self, alias))
         else:
             self.locked = False
         for thing in params:  # put items in the chest or attach events based on what's declared in params

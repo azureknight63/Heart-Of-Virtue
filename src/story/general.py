@@ -53,3 +53,38 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
                 self.tile.block_exit.append('southeast')
             if direction == 'southwest' and 'southwest' not in self.tile.block_exit:
                 self.tile.block_exit.append('southwest')
+
+
+class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a param).
+    def __init__(self, player, tile, repeat, params, name='MakeKey'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        if True:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        alias = "unknown"
+        name = "Key"
+        desc = "A small, metal key."
+        for thing in self.params:
+            if '^' in thing:
+                alias = thing[1:]
+                continue
+            if "name=" in thing:
+                name = thing[5:]
+                continue
+            if "desc=" in thing:
+                desc = thing[5:].replace('~', '.')
+                continue
+        lock = None
+        for chest in self.player.universe.locked_chests:
+            if chest[1] == alias:
+                lock = chest[0]
+                break
+        key = self.tile.spawn_item('Key')
+        key.lock = lock
+        key.name = name
+        key.description = desc
+        key.announce = "There's a {} here.".format(key.name.lower())
+

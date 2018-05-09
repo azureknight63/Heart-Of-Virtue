@@ -201,7 +201,7 @@ class Key(Special):
         Keys just sort of sit in inventory. They are "used" when the player uses 'unlock' on their paired lock
         :param lock: # Any object that has an 'unlock' method
         '''
-        # todo key objects must be made at run time since they are linked to existing containers. Maybe create an event tied to locked containers which spawns them?
+
         super().__init__(name="Key",
                          description="A small, dull, metal key.",
                          value=0, weight=0, maintype="Special", subtype="Key")
