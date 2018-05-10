@@ -118,12 +118,12 @@ class Teleport(Action):
         super().__init__(method=Player.teleport, name="Teleport", hotkey=('tele', 'teleport'))
 
 
-class Alter(Action):  # change a jkjllkj switch/variable
+class Alter(Action):  # change a switch/variable
     def __init__(self):
         super().__init__(method=Player.alter, name="Alter", hotkey=('alt', 'alter'))
 
 
-class Showvar(Action):  # list all jkjllkj switches/vars
+class Showvar(Action):  # list all switches/vars
     def __init__(self):
         super().__init__(method=Player.vars, name="Showvar", hotkey=('sv', 'showvar'))
 
@@ -136,3 +136,8 @@ class Supersaiyan(Action):
 class TestEvent(Action):
     def __init__(self):
         super().__init__(method=Player.testevent, name="TestEvent", hotkey=('te', 'test', 'testevent'))
+
+
+class SpawnNPC(Action):
+    def __init__(self):
+        super().__init__(method=Player.spawnnpc, name="SpawnNPC", hotkey=('sn', 'spawn', 'spawnnpc'))

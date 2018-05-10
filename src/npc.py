@@ -166,11 +166,13 @@ class Friend(NPC):
 
 class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game. His name is initially unknown.
     def __init__(self):
-        description = """A massive creature that somewhat resembles a man, 
-        except he is covered head-to-toe in rock-like armor. He seems a bit clumsy and his
-        speech is painfully slow and deep. He seems to prefer gestures over actual speech,
-        though this makes his intent a bit difficult to interpret. At any rate, he seems
-        friendly enough to Jean."""
+        description = """
+A massive creature that somewhat resembles a man, 
+except he is covered head-to-toe in rock-like armor. He seems a bit clumsy and his
+speech is painfully slow and deep. He seems to prefer gestures over actual speech,
+though this makes his intent a bit difficult to interpret. At any rate, he seems
+friendly enough to Jean.
+"""
         super().__init__(name="Rock-Man", description=description, maxhp=200,
                          damage=55, awareness=9, speed=5, aggro=True, exp_award=0,
                          combat_range=(0,7),
@@ -181,11 +183,18 @@ class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the 
         self.add_move(moves.Gorran_Club(self), 3)
         self.add_move(moves.NPC_Idle(self))
         self.add_move(moves.Parry(self), 2)
+        self.keywords = ["talk"]
 
     def before_death(self):  # this essentially makes Gorran invulnerable, though he will likely have to rest
         print(colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
         self.fatigue /= 2
         self.hp = self.maxhp
+
+    def talk(self):
+        if self.current_room.universe.story["gorran_first"] == "0":
+            print(self.name + " belches loudly!")  # todo: continue the story from here; link up to the next story event
+        else:
+            print(self.name + " has nothing to say.")
 
 
 ### Monsters ###

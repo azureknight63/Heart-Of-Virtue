@@ -84,6 +84,7 @@ class MapTile:
         moves.append(actions.Alter())
         moves.append(actions.Supersaiyan())
         moves.append(actions.TestEvent())
+        moves.append(actions.SpawnNPC())
         ### END DEBUG MOVES ###
         return moves
 

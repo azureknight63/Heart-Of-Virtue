@@ -170,22 +170,17 @@ def combat(player):
                                     for i, enemy in enumerate(acceptable_targets):
                                         print(colored(str(i), "magenta") + ": " +
                                               colored(enemy[0].name + " (" + str(enemy[1]) + "ft)", "magenta"))
-                                    choice = input("Target: ")  # todo: clean this up >.<
-                                    while not functions.is_input_integer(choice):
+                                    choice = input("Target: ")
+                                    if not functions.is_input_integer(choice):
                                         cprint("Invalid selection!", "red")
-                                        choice = input("Target: ")
-                                    targeting_done = False
-                                    while not targeting_done:
-                                        for i, enemy in enumerate(acceptable_targets):
-                                            if choice == i:
-                                                target = enemy[0]
-                                                targeting_done = True
-                                                break
-                                        if not targeting_done:
-                                            choice = input("Target: ")
-                                            while not functions.is_input_integer(choice):
-                                                cprint("Invalid selection!", "red")
-                                                choice = input("Target: ")
+                                        continue
+                                    choice = int(choice)
+                                    if choice > len(acceptable_targets):
+                                        cprint("Invalid selection!", "red")
+                                        continue
+                                    for i, enemy in enumerate(acceptable_targets):
+                                        if choice == i:
+                                            target = enemy[0]
                             else:
                                 target = acceptable_targets[0][0]
                             player.current_move.target = target

@@ -190,6 +190,26 @@ class Player():
         self.current_room.spawn_event(params[0], self, self.current_room, repeat=repeat, params=[])  # will go fubar if the name of the event is wrong or
         #  if other parameters are present in phrase
 
+    def spawnnpc(self, phrase=''):  # spawns an npc on the current tile
+        params = phrase.split(" ")
+        npc = params[0].title()
+        hidden=False
+        hfactor=0
+        delay=-1
+        count=1
+        if len(params) > 1:
+            for item in params:
+                if item == 'hidden':
+                    hidden=True
+                elif 'hfactor=' in item:
+                    hfactor=item[7:]
+                elif 'delay=' in item:
+                    delay = item[5:]
+                elif 'count=' in item:
+                    count = item[5:]
+        for i in range(count):
+            self.current_room.spawn_npc(npc, hidden=hidden, hfactor=hfactor, delay=delay)
+
     def vars(self):  # print all variables
         print(self.universe.story)
 

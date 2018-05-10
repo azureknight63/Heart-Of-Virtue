@@ -10,7 +10,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
         self.starting_position = (0, 0)
         self.starting_map = None
         self.story = {  # global switches and variables. Putting them in a dict will make it easier to change on the fly while debugging
-            "test": 0
+            "gorran_first": "0"
         }
         self.locked_chests = []
 
