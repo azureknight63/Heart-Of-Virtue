@@ -1033,3 +1033,9 @@ he lets out a barely audible whisper:""", "red")
             map_lines.append(line)
         for i in map_lines:
             print(i)
+
+    def recall_friends(self):  #todo: test this
+        for friend in self.combat_list_allies:
+            if friend.current_room != self.current_room:
+                friend.current_room = self.current_room
+                print(colored(friend.name, "cyan") + colored(" follows Jean.", "green"))

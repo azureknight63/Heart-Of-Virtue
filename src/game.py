@@ -117,6 +117,7 @@ _\\|//__( | )______)_/
                 player.current_room.last_entered = player.universe.game_tick
             else:
                 player.current_room.last_entered = 1
+            player.recall_friends()  # bring any party members along
             room.evaluate_events()
             room.modify_player(player)
             if mark_health != player.hp:

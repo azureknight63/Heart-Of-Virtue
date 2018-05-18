@@ -192,7 +192,7 @@ friendly enough to Jean.
 
     def talk(self):
         if self.current_room.universe.story["gorran_first"] == "0":
-            print(self.name + " belches loudly!")  # todo: continue the story from here; link up to the next story event
+            print(self.name + " belches loudly!")
         else:
             print(self.name + " has nothing to say.")
 
