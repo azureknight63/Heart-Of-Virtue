@@ -1,5 +1,5 @@
 """
-Chapter 01 events
+General events
 """
 from termcolor import colored, cprint
 import threading
@@ -23,8 +23,8 @@ class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for
 
 
 class Block(Event):  # blocks exit in tile, blocks all if none are declared
-    def __init__(self, player, tile, params, repeat, name='Block'):
-        super().__init__(name=name, player=player, tile=tile, params=params, repeat=repeat)
+    def __init__(self, player, tile, repeat, params, name='Block'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.directions = []
         if not params:
             self.directions = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest']

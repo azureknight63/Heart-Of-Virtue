@@ -341,7 +341,8 @@ class AfterTheRumblerFight(Event):
         for npc in self.tile.npcs_here:
             if npc.name == "Rock-Man":
                 npc.name = "Gorran"
-                self.player.combat_list_allies.remove(npc)
+                if npc in self.player.combat_list_allies:
+                    self.player.combat_list_allies.remove(npc)
 
 
 class AfterGorranIntro(Event):
@@ -349,21 +350,18 @@ class AfterGorranIntro(Event):
     When Jean talks to Gorran again (for the first time?) Gorran leads Jean through an
     opening in the rock to the Verdette Caverns, heading for the Grondite town.
     '''
-    def __init__(self, player, tile, params, repeat=False, name='AfterTheRumblerFight'):
+    def __init__(self, player, tile, params, repeat=False, name='AfterGorranIntro'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         self.pass_conditions_to_process()
 
     def process(self):
-        time.sleep(5)
-        print("Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is much too small for him to"
-              "pass through. Gorran waves an arm toward it and, miraculously, the opening widens with a loud rumble. Gorran walks through and"
+        time.sleep(1)
+        print("Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is much too small for him to\n"
+              "pass through. Gorran waves an arm toward it and, miraculously, the opening widens with a loud rumble. Gorran walks through and\n"
               "Jean, with trepidation, follows.")
-        #self.player.map = "verdette_caverns"
-        #self.player.universe.game_tick += 1
-        #self.player.location_x = 2
-        #self.player.location_y = 1
+        functions.await_input()
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)

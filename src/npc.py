@@ -83,6 +83,11 @@ class NPC:
     def is_alive(self):
         return self.hp > 0
 
+    def die(self):
+        really_die = self.before_death()
+        if really_die:
+            print(colored(self.name, "magenta") + " exploded into fragments of light!")
+
     def cycle_states(self):
         for state in self.states:
             state.process(self)
@@ -116,6 +121,7 @@ class NPC:
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
         if self.loot:
             self.roll_loot()  # checks to see if an item will drop
+        return True
 
     def combat_engage(self, player):
         '''
@@ -139,7 +145,13 @@ class NPC:
             roll = random.randint(0,100)
             if self.loot[item]["chance"] >= roll:  # success!
                 dropcount = functions.randomize_amount(self.loot[item]["qty"])
-                drop = self.current_room.spawn_item(item, dropcount)
+                params = None
+                if "Equipment" in item:
+                    params = item.split("_")
+                    item = loot.random_equipment(self.current_room, params[1], params[2])
+                    drop = item
+                else:
+                    drop = self.current_room.spawn_item(item, dropcount)
                 cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount), 'cyan', attrs=['bold'])
                 break  # only one item in the loot table will drop
 
@@ -160,7 +172,7 @@ class Friend(NPC):
                          combat_range=combat_range, idle_message=idle_message, alert_message=alert_message, discovery_message=discovery_message,
                          target=target, friend=friend)
 
-    def talk(self):
+    def talk(self, player):
         print(self.name + " has nothing to say.")
 
 
@@ -189,10 +201,13 @@ friendly enough to Jean.
         print(colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
         self.fatigue /= 2
         self.hp = self.maxhp
+        return False
 
-    def talk(self):
+    def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
-            print(self.name + " belches loudly!")
+            self.current_room.events_here.append(functions.seek_class("AfterGorranIntro", player, self.current_room, None, False))
+            self.current_room.universe.story["gorran_first"] = "1"
+
         else:
             print(self.name + " has nothing to say.")
 

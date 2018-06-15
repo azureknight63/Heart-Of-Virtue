@@ -2,6 +2,11 @@ import random, time
 import functions
 from termcolor import colored, cprint
 
+#####
+# These are objects that exist on tiles as opposed to items carried by the player
+#####
+
+
 class Object:
     def __init__(self, name, description, tile=None, player=None, hidden=False, hide_factor=0,
                  idle_message=' is here.',
@@ -96,7 +101,7 @@ class Wall_Switch(Object):
                 else:
                     self.event_off = event
 
-    def press(self):
+    def press(self, player):
         print("Jean hears a faint 'click.'")
         time.sleep(0.5)
         if not self.position:
@@ -196,7 +201,7 @@ class Container(Object):
             else:
                 self.description = "A " + self.nickname + ". It's empty. Very sorry."
 
-    def unlock(self):
+    def unlock(self, player):
         if not self.state == "closed":
             print("Jean can't unlock something that's already open!")
         else:
@@ -209,8 +214,7 @@ class Container(Object):
             if self.locked:
                 cprint("Jean couldn't find a matching key.", "red")
 
-
-    def open(self):
+    def open(self, player):
         if self.locked:
             print("Jean pulls on the lid of the " + self.nickname + " to no avail. It's locked.")
         else:
@@ -226,9 +230,9 @@ class Container(Object):
             else:
                 print("The " + self.nickname + " is already open. You should VIEW or LOOT it to see what's inside.")
 
-    def loot(self):
+    def loot(self, player):
         if self.state == "closed":
-            self.open()
+            self.open(player)
         if self.state == "opened":  # keep this as a separate branch so self.open() gets evaluated
             if len(self.contents) > 0:
                 print("Jean rifles through the contents of the " + self.nickname + ".\n\n Choose which items to take.\n\n")
@@ -292,3 +296,12 @@ class Wooden_Chest(Container):
                          discovery_message=" a wooden chest!", player=player, tile=tile, nickname="chest", params=params)
 
 
+class Skeleton(Container):
+    def __init__(self, params, player, tile):
+        description = "The skeletal remains of a poor soul who just couldn't make it. It may carry some LOOT."
+        super().__init__(name="Skeletal Remains", description=description, hidden=False, hide_factor=0,
+                         idle_message="There are some skeletal remains on the ground.",
+                         discovery_message=" skeletal remains!", player=player, tile=tile, nickname="skeleton", params=params)
+        self.state = "opened"
+        self.keywords.remove("open")
+        self.keywords.remove("unlock")

@@ -185,7 +185,7 @@ _\\|//__( | )______)_/
                             if not object.hidden:
                                 for keyword in object.keywords:
                                     if action_input == keyword:
-                                        object.__getattribute__(keyword)()
+                                        object.__getattribute__(keyword)(player)
                                         executions += 1
                     elif len(count_args) > 1:
                         for i, object in enumerate(subjects):
@@ -193,7 +193,7 @@ _\\|//__( | )______)_/
                             if count_args[1] in search_item and not object.hidden:
                                 for keyword in object.keywords:
                                     if count_args[0] == keyword:
-                                        object.__getattribute__(keyword)()
+                                        object.__getattribute__(keyword)(player)
                                         executions += 1
                                 break
 

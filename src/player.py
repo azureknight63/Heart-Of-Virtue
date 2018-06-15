@@ -202,11 +202,11 @@ class Player():
                 if item == 'hidden':
                     hidden=True
                 elif 'hfactor=' in item:
-                    hfactor=item[7:]
+                    hfactor=int(item[8:])
                 elif 'delay=' in item:
-                    delay = item[5:]
+                    delay = int(item[6:])
                 elif 'count=' in item:
-                    count = item[5:]
+                    count = int(item[6:])
         for i in range(count):
             self.current_room.spawn_npc(npc, hidden=hidden, hfactor=hfactor, delay=delay)
 
@@ -415,7 +415,8 @@ he lets out a barely audible whisper:""", "red")
         time.sleep(0.5)
         print('\n\n')
         cprint('Jean has died!', "red")
-        time.sleep(10)
+        time.sleep(5)
+        functions.await_input()
 
     def print_inventory(self):
         num_gold = 0
@@ -425,6 +426,7 @@ he lets out a barely audible whisper:""", "red")
         num_boots = 0
         num_helm = 0
         num_gloves = 0
+        num_accessories = 0
         num_special = 0
         while True:
             for item in self.inventory:  # get the counts of each item in each category
@@ -443,6 +445,8 @@ he lets out a barely audible whisper:""", "red")
                         num_helm += 1
                     if issubclass(item.__class__, items.Gloves):
                         num_gloves += 1
+                    if issubclass(item.__class__, items.Accessory):
+                        num_accessories += 1
                     if issubclass(item.__class__, items.Special):
                         num_special += 1
                     else:
@@ -452,9 +456,9 @@ he lets out a barely audible whisper:""", "red")
                       "Weight: {} / {}".format(self.weight_current, self.weight_tolerance), "cyan")
             cprint(
                       "Gold: {}\n\nSelect a category to view:\n\n(c) Consumables: {}\n"
-                      "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(s) Special: {}\n"
+                      "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: {}\n(s) Special: {}\n"
                       "(x) Cancel\n"
-                      .format(num_gold, num_consumable, num_weapon, num_armor, num_boots, num_helm, num_gloves, num_special), "cyan")
+                      .format(num_gold, num_consumable, num_weapon, num_armor, num_boots, num_helm, num_gloves, num_accessories, num_special), "cyan")
 
             choices = []
             inventory_selection = input(colored('Selection: ', "cyan"))
@@ -489,6 +493,11 @@ he lets out a barely audible whisper:""", "red")
                         if issubclass(item.__class__, items.Gloves):
                             choices.append(item)
                     break
+                if case('y', 'Accessories', 'accessories'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Accessory):
+                            choices.append(item)
+                    break
                 if case('s', 'Special', 'special'):
                     for item in self.inventory:
                         if issubclass(item.__class__, items.Special):
@@ -511,14 +520,16 @@ he lets out a barely audible whisper:""", "red")
                             print(i, ': ', item.name, '\n')
                 inventory_selection = input(colored('View which? ', "cyan"))
                 if not functions.is_input_integer(inventory_selection):
-                    num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
+                    num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = num_special = 0
                     continue
                 for i, item in enumerate(choices):
                     if i == int(inventory_selection):
                         print(item, '\n')
                         if item.interactions:
                             self.inventory_item_sub_menu(item)
-            num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_special = 0
+                        else:
+                            functions.await_input()
+            num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = num_special = 0
             if inventory_selection == 'x':
                 break
 
@@ -563,13 +574,29 @@ he lets out a barely audible whisper:""", "red")
                 if answer == 'y':
                     target_item.isequipped = False
                     cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
+                    target_item.on_unequip(self)
             else:
+                count_subtypes = 0
                 for olditem in self.inventory:
+                    replace_old = False
                     if target_item.maintype == olditem.maintype and olditem.isequipped:
+                        if target_item.maintype == "Accessory":
+                            if target_item.subtype == olditem.subtype:
+                                if target_item.subtype == "Ring" or target_item.subtype == "Bracelet" or target_item.subtype == "Earring":
+                                    count_subtypes += 1
+                                    if count_subtypes > 1:
+                                        replace_old = True
+                                else:
+                                    replace_old = True
+                        else:
+                            replace_old = True
+                    if replace_old:
                         olditem.isequipped = False
-                        cprint("Jean put {} back into his bag.".format(olditem.name),"cyan")
+                        cprint("Jean put {} back into his bag.".format(olditem.name), "cyan")
+                        olditem.on_unequip(self)
                 target_item.isequipped = True
                 cprint("Jean equipped {}!".format(target_item.name), "cyan")
+                target_item.on_equip(self)
                 if issubclass(target_item.__class__, items.Weapon):
                     self.eq_weapon = target_item
 
@@ -579,6 +606,7 @@ he lets out a barely audible whisper:""", "red")
         num_boots = 0
         num_helm = 0
         num_gloves = 0
+        num_accessories = 0
         while True:
             for item in self.inventory:  # get the counts of each item in each category
                 if issubclass(item.__class__, items.Weapon):
@@ -591,11 +619,13 @@ he lets out a barely audible whisper:""", "red")
                     num_helm += 1
                 if issubclass(item.__class__, items.Gloves):
                     num_gloves += 1
+                if issubclass(item.__class__, items.Accessory):
+                    num_accessories += 1
                 else:
                     pass
             cprint("=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
-                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(x) Cancel\n"
-                  .format(num_weapon, num_armor, num_boots, num_helm, num_gloves), "cyan")
+                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: {}\n(x) Cancel\n"
+                  .format(num_weapon, num_armor, num_boots, num_helm, num_gloves, num_accessories), "cyan")
 
             choices = []
             inventory_selection = input(colored('Selection: ', "cyan"))
@@ -625,8 +655,13 @@ he lets out a barely audible whisper:""", "red")
                         if issubclass(item.__class__, items.Gloves):
                             choices.append(item)
                     break
+                if case('y', 'Accessories', 'accessories'):
+                    for item in self.inventory:
+                        if issubclass(item.__class__, items.Accessory):
+                            choices.append(item)
+                    break
                 if case():
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = 0
                     break
             if len(choices) > 0:
                 for i, item in enumerate(choices):
@@ -636,12 +671,12 @@ he lets out a barely audible whisper:""", "red")
                         print(i, ': ', item.name, '\n')
                 inventory_selection = input(colored('Equip which? ', "cyan"))
                 if not functions.is_input_integer(inventory_selection):
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = 0
                     continue
                 for i, item in enumerate(choices):
                     if i == int(inventory_selection):
                         return item
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = 0
+                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = 0
                     continue
             else:
                 return None
@@ -783,6 +818,7 @@ he lets out a barely audible whisper:""", "red")
                 choice = input("Selection: ")
                 if choice in stuff_here:
                     print(stuff_here[choice].description)
+                    functions.await_input()
                 else:
                     print("Invalid selection.")
             else:
@@ -801,6 +837,7 @@ he lets out a barely audible whisper:""", "red")
                     search_item = thing.name.lower() + ' ' + announce.lower() + ' ' + idle.lower()
                     if lower_phrase in search_item:
                         print(thing.description)
+                        functions.await_input()
                         break
 
     def search(self, phrase=''):
@@ -853,6 +890,7 @@ he lets out a barely audible whisper:""", "red")
         possible_actions = self.current_room.available_actions()
         for action in possible_actions:
             cprint('{}:{}{}'.format(action.name, (' ' * (20 - (len(action.name) + 2))), action.hotkey), "blue")
+        functions.await_input()
 
     def show_bars(self, hp=True, fp=True):  # show HP and Fatigue bars
         if hp:
@@ -1033,9 +1071,23 @@ he lets out a barely audible whisper:""", "red")
             map_lines.append(line)
         for i in map_lines:
             print(i)
+        functions.await_input()
 
-    def recall_friends(self):  #todo: test this
+    def recall_friends(self):
+        party_size = len(self.combat_list_allies)-1
         for friend in self.combat_list_allies:
             if friend.current_room != self.current_room:
+                friend.current_room.npcs_here.remove(friend)
                 friend.current_room = self.current_room
-                print(colored(friend.name, "cyan") + colored(" follows Jean.", "green"))
+                friend.current_room.npcs_here.append(friend)
+        if party_size == 1:
+            print(colored(self.combat_list_allies[1].name, "cyan") + colored(" follows Jean.", "green"))
+        elif party_size == 2:
+            print(colored(self.combat_list_allies[1].name, "cyan") + colored(" and ", "green") + colored(self.combat_list_allies[2].name, "cyan")
+                  + colored("follow Jean.", "green"))
+        elif party_size >= 3:
+            output = ""
+            for friend in range(party_size-1):
+                output += colored(self.combat_list_allies[friend+1].name, "cyan") + colored(", ", "green")
+            output += colored(", and ", "green") + colored(self.combat_list_allies[party_size].name, "cyan") + colored(" follow Jean.", "green")
+            print(output)
