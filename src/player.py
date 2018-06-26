@@ -1,6 +1,6 @@
-import random, time, inspect
+import random, time, decimal
 from switch import switch
-import items, functions, universe, moves, actions
+import items, functions, universe, moves, actions, combat
 from termcolor import colored, cprint
 
 class Player():
@@ -44,10 +44,11 @@ class Player():
             "light": 0.0,
             "dark": 0.0
         }
-        self.weight_tolerance = 20
-        self.weight_tolerance_base = 20
-        self.weight_current = 0
-        self.eq_weapon = None
+        self.weight_tolerance = decimal.Decimal(20)
+        self.weight_tolerance_base = decimal.Decimal(20)
+        self.weight_current = decimal.Decimal(0)
+        self.fists = items.Fists()
+        self.eq_weapon = self.fists
         self.combat_exp = 0  # place to pool all exp gained from a single combat before distribution
         self.exp = 0  # exp to be gained from doing stuff rather than killing things
         self.level = 1
@@ -573,6 +574,8 @@ he lets out a barely audible whisper:""", "red")
                 answer = input(colored("Would you like to remove it? (y/n) ","cyan"))
                 if answer == 'y':
                     target_item.isequipped = False
+                    if issubclass(target_item.__class__, items.Weapon):  # if the player is now unarmed, "equip" fists
+                        self.eq_weapon = self.fists
                     cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
                     target_item.on_unequip(self)
             else:
@@ -982,15 +985,106 @@ he lets out a barely audible whisper:""", "red")
                 self.weight_tolerance += adder.add_weight_tolerance
     '''
 
+    def attack(self, phrase=''):
+        target = None
+
+        def strike():
+            print(colored("Jean strikes with his " + self.eq_weapon.name + "!", "green"))
+            power = self.eq_weapon.damage + \
+                    (self.strength * self.eq_weapon.str_mod) + \
+                    (self.finesse * self.eq_weapon.fin_mod)
+            hit_chance = (98 - target.finesse) + self.finesse
+            if hit_chance < 5:  # Minimum value for hit chance
+                hit_chance = 5
+            roll = random.randint(0, 100)
+            damage = (power - target.protection) * random.uniform(0.8, 1.2)
+            if damage <= 0:
+                damage = 0
+            glance = False
+            if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+                damage /= 2
+                glance = True
+            damage = int(damage)
+            self.combat_exp += 10
+            if hit_chance >= roll:  # a hit!
+                if glance:
+                    print(colored(self.name, "cyan") + colored(" just barely hit ", "yellow") +
+                          colored(target.name, "magenta") + colored(" for ", "yellow") +
+                          colored(damage, "red") + colored(" damage!", "yellow"))
+                else:
+                    print(colored(self.name, "cyan") + colored(" struck ", "yellow") +
+                          colored(target.name, "magenta") + colored(" for ", "yellow") +
+                          colored(damage, "red") + colored(" damage!", "yellow"))
+                target.hp -= damage
+            else:
+                print(colored("Jean", "cyan") + "'s attack just missed!")
+
+        if phrase == '':
+            targets_here = {}
+            for i, possible_target in enumerate(self.current_room.npcs_here):
+                if not possible_target.hidden and possible_target.name != 'null':
+                    targets_here[str(i)] = possible_target
+            if len(targets_here) > 0:
+                print("Which target would you like to attack?\n\n")
+                for k, v in targets_here.items():
+                    print(k, ": ", v.name)
+                choice = input("Selection: ")
+                if choice in targets_here:
+                    target = targets_here[choice]
+                    strike()
+                else:
+                    print("Invalid selection.")
+                    return
+            else:
+                print("There's nothing here for Jean to attack.\n")
+                return
+        else:
+            lower_phrase = phrase.lower()
+            success = False
+            for i, potential_target in enumerate(self.current_room.npcs_here):
+                if not potential_target.hidden and potential_target.name != 'null':
+                    announce = ""
+                    idle = ""
+                    if hasattr(potential_target, "announce"):
+                        announce = potential_target.announce
+                    if hasattr(potential_target, "idle_message"):
+                        idle = potential_target.idle_message
+                    search_item = potential_target.name.lower() + ' ' + announce.lower() + ' ' + idle.lower()
+                    if lower_phrase in search_item:
+                        target = potential_target
+                        strike()
+                        success = True
+                        break
+            if not success:
+                print("That's not a valid target for Jean to attack.\n")
+                return
+
+        # The following is not accessible if the strike was never attempted (no valid target, invalid selection, etc.)
+        # Engage the target in combat!
+        if target.is_alive():
+            print(target.name + " " + target.alert_message)
+
+        target.in_combat = True
+        self.combat_list = [target]
+
+        check_other_aggro_enemies = functions.check_for_combat(self)  # run an aggro check; will add additional enemies to the fray if they spot the player
+        if target in check_other_aggro_enemies:
+            check_other_aggro_enemies.remove(target)
+        self.combat_list = self.combat_list + check_other_aggro_enemies
+
+        if target.is_alive() or check_other_aggro_enemies:
+            print(colored("Jean readies himself for battle!", "red"))
+        combat.combat(self)
 
     def refresh_weight(self):
-        self.weight_current = 0
+        self.weight_current = decimal.Decimal(0)
         for item in self.inventory:
             if hasattr(item, 'weight'):
-                addweight = item.weight
+                addweight = decimal.Decimal(item.weight)
                 if hasattr(item, 'count'):
                     addweight *= item.count
                 self.weight_current += addweight
+        self.weight_current = decimal.Decimal(self.weight_current)
 
     def take(self, phrase=''):
         if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.

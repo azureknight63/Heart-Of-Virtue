@@ -110,6 +110,10 @@ class ViewMap(Action):
         super().__init__(method=Player.view_map, name="View Map", hotkey=('m', 'map', 'cartography'))
 
 
+class Attack(Action):
+    def __init__(self):
+        super().__init__(method=Player.attack, name="Attack", hotkey=('a', 'at', 'atk', 'attack'))
+
 ### DEBUG / CHEATS ###
 
 

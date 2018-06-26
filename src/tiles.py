@@ -78,6 +78,7 @@ class MapTile:
         moves.append(actions.Menu())
         moves.append(actions.Save())
         moves.append(actions.ViewMap())
+        moves.append(actions.Attack())
         ### DEBUG MOVES BELOW ###
         moves.append(actions.Teleport())
         moves.append(actions.Showvar())

@@ -102,8 +102,8 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     self.tile_exists(map, x, y).spawn_event(event_type,
                                                                             player,
                                                                             self.tile_exists(map, x, y),
-                                                                            repeat=repeat,
-                                                                            params=params)
+                                                                            repeat,
+                                                                            params)
                                 elif param[0] == '@':  # spawns any declared objects
                                     param = param.replace('@', '')
                                     p_list = param.split('.')

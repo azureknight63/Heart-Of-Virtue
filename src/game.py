@@ -105,6 +105,8 @@ _\\|//__( | )______)_/
         mark_health = player.hp
         ### enter post-menu game loop ###
         while player.is_alive() and not player.victory and not player.main_menu:
+            if not player.eq_weapon:  # if the player is unarmed, "equip" fists
+                player.eq_weapon = player.fists
             player.time_elapsed += (time.time() - check_time)
             auto_save_timer += (time.time() - check_time)
             if auto_save_timer > 3000:  # autosave timer
@@ -178,29 +180,56 @@ _\\|//__( | )______)_/
                     #                   will evaluate their respective functions
                     #                   NOTE: syntax for multiple words is '<command> <target object>';
                     #                   additional words are ignored
-                    executions = 0
-                    subjects = room.objects_here + room.npcs_here
-                    if len(count_args) == 1:
-                        for object in subjects:
-                            if not object.hidden:
-                                for keyword in object.keywords:
-                                    if action_input == keyword:
-                                        object.__getattribute__(keyword)(player)
-                                        executions += 1
-                    elif len(count_args) > 1:
-                        for i, object in enumerate(subjects):
-                            search_item = object.name.lower() + ' ' + object.idle_message.lower()
-                            if count_args[1] in search_item and not object.hidden:
-                                for keyword in object.keywords:
-                                    if count_args[0] == keyword:
-                                        object.__getattribute__(keyword)(player)
-                                        executions += 1
-                                break
+                    success = False
+                    
+                    def enumerate_for_interactions(subjects):
 
-                    if executions == 0:
+                        def confirm(thing, action):
+                            check = input(colored("{} {}? (y/n)".format(count_args[0].title(), thing.name), "cyan"))
+                            if check.lower() == ('y' or 'yes'):
+                                thing.__getattribute__(action)(player)
+                                return True
+                            else:
+                                return False
+
+                        if len(count_args) == 1:
+                            for thing in subjects:
+                                if hasattr(thing, "keywords"):
+                                    if not thing.hidden:
+                                        for keyword in thing.keywords:
+                                            if action_input == keyword and confirm(thing, keyword):
+                                                return True
+                                elif hasattr(thing, "interactions"):
+                                    for interaction in thing.interactions:
+                                        if action_input == interaction and confirm(thing, interaction):
+                                            return True
+                        elif len(count_args) > 1:
+                            for i, thing in enumerate(subjects):
+                                if hasattr(thing, "keywords"):
+                                    search_item = thing.name.lower() + ' ' + thing.idle_message.lower()
+                                    if count_args[1] in search_item and not thing.hidden:
+                                        for keyword in thing.keywords:
+                                            if count_args[0] == keyword and confirm(thing, keyword):
+                                                return True
+                                elif hasattr(thing, "interactions"):
+                                    search_item = thing.name.lower() + ' ' + thing.description.lower() + ' ' + thing.announce.lower()
+                                    if count_args[1] in search_item and not thing.hidden:
+                                        for interaction in thing.interactions:
+                                            if count_args[0] == interaction and confirm(thing, interaction):
+                                                return True
+                        return False
+
+                    subjects = room.objects_here + room.npcs_here
+                    success = enumerate_for_interactions(subjects)
+                    if not success:  # Now check items in the player's inventory
+                        subjects = player.inventory
+                        success = enumerate_for_interactions(subjects)
+
+                    if not success:  # Nothing was found matching the arbitrary input, so Jean is mightily confused
                         cprint("Jean isn't sure exactly what he's trying to do.", 'red')
 
             time.sleep(0.5)
+
 
 if __name__ == "__main__":
     play()

@@ -8,7 +8,6 @@ from os.path import isfile, join
 
 ### This module contains general functions to use throughout the game
 
-
 def print_slow(text, speed=1):
     if not is_input_integer(speed):
         printspeed = 1
@@ -52,9 +51,8 @@ def check_for_objects(room):  # Check to see what objects are in the room.
 
 def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
-    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and
-        # notice the player.
-        finesse_check = player.finesse + random.randint((-1 * (player.finesse * 0.2)), (player.finesse * 0.2))
+    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and notice the player.
+        finesse_check = random.randint(int(player.finesse * 0.8), int(player.finesse * 1.2))
         for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
             if not e.friend:
                 if (finesse_check <= e.awareness) and e.aggro:  # finesse check fails, break and rescan the list,
@@ -119,6 +117,15 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
             target.maxfatigue -= (check_weight * 10)
             if target.maxfatigue < 0:
                 target.maxfatigue = 0
+
+
+def check_parry(target):
+    parry = False
+    for state in target.states:
+        if state.name == "Parrying":
+            parry = True
+            break
+    return parry
 
 
 def spawn_npc(npc_name, tile):
@@ -286,17 +293,23 @@ def randomize_amount(param):
         return int(param)
 
 
-def seek_class(classname, player, tile, params, repeat):  # searches through the story folder for the matching module and returns an instance
+def seek_class(classname, player, tile, repeat, params):  # searches through the story folder for the matching module and returns an instance
     class_obj = ""
     try:
-        class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, params, repeat)
+        class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, repeat, params)
     except:
+    # except BaseException as e:
+        # print("#####ERR: {}".format(e))
         try:
-            class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, params, repeat)
+            class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, repeat, params)
         except:
+        # except BaseException as e:
+            # print("#####ERR: {}".format(e))
             try:
-                class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, params, repeat)
+                class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, repeat, params)
             except:
+            # except BaseException as e:
+                # print("#####ERR: {}".format(e))
                 print("#####ERR: Cannot find event " + classname)
     return class_obj
 

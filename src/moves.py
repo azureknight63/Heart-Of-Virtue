@@ -5,6 +5,7 @@ from termcolor import colored, cprint
 import random, time
 import states, functions
 
+
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0,9999), heat_gain=0, fatigue_cost=0,
@@ -34,7 +35,6 @@ class Move:  # master class for all moves
         '''Check arbitrary conditions to see if the move is available for use; return True or False'''
         viability = True
         return viability
-
 
     def process_stage(self, user):
         if user.current_move == self:
@@ -99,14 +99,6 @@ class Move:  # master class for all moves
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
         pass
-
-    def check_parry(self, target):
-        parry = False
-        for state in target.states:
-            if state.name == "Parrying":
-                parry = True
-                break
-        return parry
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         player = ""
@@ -508,7 +500,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         damage = int(damage)
         player.combat_exp += 10
         if hit_chance >= roll:  # a hit!
-            if self.check_parry(self.target):
+            if functions.check_parry(self.target):
                 self.parry()
             else:
                 self.hit(damage, glance)
@@ -668,7 +660,7 @@ class NPC_Attack(Move): #basic attack function, NPCs only
             glance = True
         damage = int(damage)
         if hit_chance >= roll:  # a hit!
-            if self.check_parry(self.target):
+            if functions.check_parry(self.target):
                 self.parry()
             else:
                 self.hit(damage, glance)
@@ -806,7 +798,7 @@ class Gorran_Club(Move):  # Gorran's special club attack! Massive damage, long r
             glance = True
         damage = int(damage)
         if hit_chance >= roll:  # a hit!
-            if self.check_parry(self.target):
+            if functions.check_parry(self.target):
                 self.parry()
             else:
                 self.hit(damage, glance)

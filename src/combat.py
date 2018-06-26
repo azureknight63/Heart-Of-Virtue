@@ -66,11 +66,36 @@ def combat(player):
                     distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
                     ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
 
+    def check_for_dead_enemy(enemy, skip_enemy_actions=False):
+        if not enemy.is_alive():
+            enemy.die()
+        if not enemy.is_alive():  # check again in case some pre-death sequence saved the NPC
+            player.current_room.npcs_here.remove(enemy)
+            player.combat_list.remove(enemy)
+            for ally in player.combat_list_allies:
+                if enemy in ally.combat_proximity:
+                    del ally.combat_proximity[enemy]
+        elif not skip_enemy_actions:
+            process_npc(enemy)
+
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
+
+    for enemy in player.combat_list:
+        check_for_dead_enemy(enemy, True)
+
+    # Reset all moves for all combatants
     for ally in player.combat_list_allies:
         ally.in_combat = True
+        for move in ally.known_moves:
+            move.current_stage = 0
+            move.beats_left = 0
+    for enemy in player.combat_list:
+        for move in enemy.known_moves:
+            move.current_stage = 0
+            move.beats_left = 0
+
     while True:  # combat will loop until there are no aggro enemies or the player is dead
         #  Check for combat events and execute them once, if possible
         synchronize_distances()
@@ -109,7 +134,7 @@ def combat(player):
                 amt = 0.001
             player.heat -= amt
 
-        while player.current_move is None: # the player must choose to do something
+        while player.current_move is None:  # the player must choose to do something
             beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
             heat_display = int(player.heat * 100)
             heat_str = colored("HEAT: ", "red") + colored(str(heat_display), "red") + colored("%", "red")
@@ -203,26 +228,16 @@ def combat(player):
         for i, ally in enumerate(player.combat_list_allies):
             if not ally == player:  # make sure you don't select Jean!
                 if not ally.is_alive():
-                    ally.before_death()  # if there is anything to process before death happens, do it now
-                if not ally.is_alive():  # in case the npc got healed as part of before_death(), check again
+                    ally.die()
+                if not ally.is_alive():  # check again in case some pre-death sequence saved the NPC
                     print(colored(ally.name, "yellow", attrs="bold") + " has fallen in battle!")  # not sure yet if I want to change this
                     player.current_room.npcs_here.remove(ally)
                     player.combat_list_allies.remove(ally)
                 else:
                     process_npc(ally)
 
-        for i, enemy in enumerate(player.combat_list):
-            if not enemy.is_alive():
-                enemy.before_death()  # if there is anything to process before death happens, do it now
-            if not enemy.is_alive():
-                print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
-                player.current_room.npcs_here.remove(enemy)
-                player.combat_list.remove(enemy)
-                for ally in player.combat_list_allies:
-                    if enemy in ally.combat_proximity:
-                        del ally.combat_proximity[enemy]
-            else:
-                process_npc(enemy)
+        for enemy in player.combat_list:
+            check_for_dead_enemy(enemy)  # will process the enemy's actions if it's alive
 
         player.combat_idle()
 
@@ -233,6 +248,7 @@ def combat(player):
         # print("### CURRENT BEAT: "+str(beat))
 
     #  AFTER COMBAT LOOP (VICTORY, ESCAPE, OR DEFEAT)
+    functions.await_input()
     player.in_combat = False
     player.current_move = None
     player.current_room.evaluate_events()

@@ -13,11 +13,28 @@ class Item():
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
+        #self.level = level  # used for categorizing items in loot tables
         self.announce = "There's a {} here.".format(self.name)
-        self.interactions = [] # things to do with the item from the inventory menu - player must be passed as a parameter
+        self.interactions = []  # things to do with the item from the inventory menu - player must be passed as a parameter
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
+    
+    def on_equip(self, player):
+        '''
+        Actions performed when the item is equipped
+        Clobber with child objects
+        :return: 
+        '''
+        pass
+    
+    def on_unequip(self, player):
+        '''
+        Actions performed when the item is unequipped
+        Clobber with child objects
+        :return: 
+        '''
+        pass
 
 
 class Gold(Item):
@@ -139,6 +156,28 @@ class Gloves(Item):
                 self.name, self.description, self.value, self.protection, self.weight)
 
 
+class Accessory(Item):
+    def __init__(self, name, description, value, protection, isequipped, str_mod, fin_mod, weight, maintype, subtype,
+                 discovery_message='a small trinket.'):
+        self.protection = protection
+        self.str_mod = str_mod
+        self.fin_mod = fin_mod
+        self.weight = weight
+        self.isequipped = isequipped
+        self.maintype = maintype
+        self.subtype = subtype
+        #self.level = level
+        super().__init__(name, description, value, maintype, subtype, discovery_message)
+
+    def __str__(self):
+        if self.isequipped:
+            return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name, self.description, self.value, self.protection, self.weight)
+        else:
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name, self.description, self.value, self.protection, self.weight)
+
+
 class Consumable(Item):
 
     def __init__(self, name, description, value, weight, maintype, subtype, discovery_message='a useful item.'):
@@ -182,7 +221,6 @@ class Consumable(Item):
                     cprint("Invalid amount!", "red")
 
 
-
 class Special(Item):
     def __init__(self, name, description, value, weight, maintype, subtype, discovery_message='a strange object.'):
         self.weight = weight
@@ -209,6 +247,15 @@ class Key(Special):
         self.lock = lock  # Any object that has an 'unlock' method
 
 
+class Fists(Weapon):  # equipped automatically when Jean has no other weapon equipped
+    def __init__(self):
+        super().__init__(name="fists",
+                         description="",
+                         isequipped=True, value=0,
+                         damage=1, str_req=1, fin_req=1, str_mod=1, fin_mod=1, weight=0.0,
+                         maintype="Weapon", subtype="Bludgeon")
+
+
 class Rock(Weapon):
     def __init__(self):
         super().__init__(name="Rock",
@@ -217,6 +264,7 @@ class Rock(Weapon):
                          damage=1, str_req=1, fin_req=1, str_mod=2.00, fin_mod=0.50, weight=2.0,
                          maintype="Weapon", subtype="Bludgeon")
         #minimum damage of 26
+
 
 class RustedDagger(Weapon):
     def __init__(self):
@@ -258,6 +306,96 @@ class ClothHood(Helm):
         #minimum protection of 1
 
 
+class DullMedallion(Accessory):
+    def __init__(self):
+        super().__init__(name="Dull Medallion",
+                         description="A rather unremarkable medallion. \n"
+                                     "It's face is dull, and seems to swallow any light unlucky enough to land upon it. \n"
+                                     "It may have been a family heirloom or a memento of a lost love.",
+                         isequipped=False, value=10,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.5, maintype="Accessory", subtype="Necklace")
+        
+    def on_equip(self, player):
+        cprint("Jean feels a slight chill as the medallion's chain settles on his neck.", "green")
+        player.combat_idle_msg.append("Jean feels the soft caress of a stranger's hand on his cheek.")
+        player.combat_idle_msg.append("A faint whisper of unknown origin passes quickly through Jean's mind.")
+        player.combat_idle_msg.append("For an instant, Jean thought he saw the face of an unknown woman.")
+        player.combat_idle_msg.append("A sharp feeling of grief suddenly grips Jean's chest.")
+        player.combat_idle_msg.append("Jean suddenly imagined his wife coughing up blood.")
+        player.combat_idle_msg.append("A sense of urgency and desperation suddenly fills Jean.")
+        player.combat_idle_msg.append("The words, 'Cherub Root,' flash across Jean's mind.")
+
+    def on_unequip(self, player):
+        cprint("Removing the medallion gives Jean a strange sense of relief, but also inexplicable sadness.", "green")
+        player.combat_idle_msg.remove("Jean feels the soft caress of a stranger's hand on his cheek.")
+        player.combat_idle_msg.remove("A faint whisper of unknown origin passes quickly through Jean's mind.")
+        player.combat_idle_msg.remove("For an instant, Jean thought he saw the face of an unknown woman.")
+        player.combat_idle_msg.remove("A sharp feeling of grief suddenly grips Jean's chest.")
+        player.combat_idle_msg.remove("Jean suddenly imagined his wife coughing up blood.")
+        player.combat_idle_msg.remove("A sense of urgency and desperation suddenly fills Jean.")
+        player.combat_idle_msg.remove("The words, 'Cherub Root,' flash across Jean's mind.")
+
+
+class GoldRing(Accessory):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Gold Ring",
+                         description="A shiny gold ring. \n"
+                                     "Typically a sign of marital vows, though it may also be worn to exhibit wealth.",
+                         isequipped=False, value=200,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring")
+
+
+class SilverRing(Accessory):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Silver Ring",
+                         description="A shiny silver ring. \n"
+                                     "A small bauble favored by people of typically lower class.",
+                         isequipped=False, value=50,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring")
+
+
+class GoldChain(Accessory):
+    level = 2
+    def __init__(self):
+        super().__init__(name="Gold Chain",
+                         description="A shiny gold chain. \n"
+                                     "Worn to impress. An excellent gift for a lady.",
+                         isequipped=False, value=300,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Necklace")
+
+
+class SilverChain(Accessory):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Silver Chain",
+                         description="A shiny silver chain. \n"
+                                     "An excellent gift for a lady who has simple tastes.",
+                         isequipped=False, value=100,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Necklace")
+
+
+class GoldBracelet(Accessory):
+    level = 2
+    def __init__(self):
+        super().__init__(name="Gold Bracelet",
+                         description="A shiny gold bracelet. \n"
+                                     "Everyone knows that you need to accessorize in order to make an impression.",
+                         isequipped=False, value=300,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet")
+
+
+class SilverBracelet(Accessory):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Silver Bracelet",
+                         description="A shiny silver bracelet. \n"
+                                     "More of an eccentricity than anything else.",
+                         isequipped=False, value=100,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet")
+
+
 class Restorative(Consumable):
     def __init__(self):
         super().__init__(name="Restorative",
@@ -269,7 +407,7 @@ class Restorative(Consumable):
         self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
-        self.interactions = ["use", "drop"]
+        self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                         "reading, 'Restorative.'"
 
@@ -285,6 +423,9 @@ class Restorative(Consumable):
                                      "themselves."
             self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                                 "reading, 'Restorative.'"
+
+    def drink(self, player):  # alias for "use"
+        self.use(player)
 
     def use(self, player):
         if player.hp < player.maxhp:
@@ -315,7 +456,7 @@ class Draught(Consumable):
                          value=75, weight=0.25, maintype="Consumable", subtype="Potion")
         self.power = 100
         self.count = 1
-        self.interactions = ["use", "drop"]
+        self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
 
     def stack_grammar(self):
@@ -328,6 +469,9 @@ class Draught(Consumable):
             self.description = "A green fluid giving off a warm, pleasant glow.\n" \
                                      "Invigorating for any tired adventurer."
             self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
+
+    def drink(self, player):  # alias for "use"
+        self.use(player)
 
     def use(self, player):
         if player.hp < player.maxhp:
