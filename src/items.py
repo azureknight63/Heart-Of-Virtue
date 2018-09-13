@@ -47,6 +47,32 @@ class Gold(Item):
 
 
 class Weapon(Item):
+    subtypes = [
+        "Dagger",
+        "Sword",
+        "Battleaxe",
+        "Pick",
+        "Scythe",
+        "Spear",
+        "Halberd",
+        "Bludgeon",
+        "Hammer",
+        "Bow",
+        "Crossbow",
+        "Polearm",
+        "Stars",
+        "Staff",
+        "Ethereal"
+    ]
+    archetypes = {  # groups of similar subtypes; useful for checking requirements
+        "All": subtypes,
+        "Blade": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd"],
+        "Blunt": ["Bludgeon", "Hammer", "Polearm", "Staff"],
+        "Archery": ["Bow", "Crossbow"],
+        "Ranged": ["Bow", "Crossbow", "Stars"],
+        "Melee": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm", "Staff"]
+    }
+
     def __init__(self, name, description, value, damage, isequipped, str_req,
                  fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0,5), discovery_message='a kind of weapon.'):
         self.damage = damage
@@ -267,6 +293,7 @@ class Rock(Weapon):
 
 
 class RustedDagger(Weapon):
+    level = 0
     def __init__(self):
         super().__init__(name="Rusted Dagger",
                          description="A small dagger with some rust. Somewhat more dangerous than a rock.",
@@ -277,6 +304,7 @@ class RustedDagger(Weapon):
 
 
 class RustedIronMace(Weapon):
+    level = 0
     def __init__(self):
         super().__init__(name="Rusted Iron Mace",
                          description="A small mace with some rust around the spikes. Heavy and slow, but packs a decent punch.",
@@ -286,6 +314,7 @@ class RustedIronMace(Weapon):
         #minimum damage of 40
 
 class TatteredCloth(Armor):
+    level = 0
     def __init__(self):
         super().__init__(name="Tattered Cloth",
                          description="Shamefully tattered cloth wrappings. \n"
@@ -296,6 +325,7 @@ class TatteredCloth(Armor):
 
 
 class ClothHood(Helm):
+    level = 0
     def __init__(self):
         super().__init__(name="Cloth Hood",
                          description="Stained cloth hood. "
@@ -337,7 +367,7 @@ class DullMedallion(Accessory):
 
 
 class GoldRing(Accessory):
-    level = 0
+    level = 1
     def __init__(self):
         super().__init__(name="Gold Ring",
                          description="A shiny gold ring. \n"
@@ -387,7 +417,7 @@ class GoldBracelet(Accessory):
 
 
 class SilverBracelet(Accessory):
-    level = 1
+    level = 0
     def __init__(self):
         super().__init__(name="Silver Bracelet",
                          description="A shiny silver bracelet. \n"

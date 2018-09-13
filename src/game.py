@@ -193,30 +193,54 @@ _\\|//__( | )______)_/
                                 return False
 
                         if len(count_args) == 1:
+                            candidates = []
                             for thing in subjects:
                                 if hasattr(thing, "keywords"):
                                     if not thing.hidden:
                                         for keyword in thing.keywords:
-                                            if action_input == keyword and confirm(thing, keyword):
-                                                return True
+                                            if action_input == keyword:
+                                                candidates.append(thing)
+                                            # if action_input == keyword and confirm(thing, keyword):
+                                            #     return True
                                 elif hasattr(thing, "interactions"):
                                     for interaction in thing.interactions:
-                                        if action_input == interaction and confirm(thing, interaction):
-                                            return True
+                                        if action_input == interaction:
+                                            candidates.append(thing)
+                                        #if action_input == interaction and confirm(thing, interaction):
+                                        #    return True
+                            if len(candidates) == 1:  #if there is only one possibility, skip the confirmation step
+                                candidates[0].__getattribute__(action_input)(player)
+                                return True
+                            elif candidates:  #otherwise, if there is more than one possibility, ask the player to confirm
+                                for candidate in candidates:
+                                    if confirm(candidate, action_input):
+                                        return True
                         elif len(count_args) > 1:
+                            candidates = []
                             for i, thing in enumerate(subjects):
                                 if hasattr(thing, "keywords"):
                                     search_item = thing.name.lower() + ' ' + thing.idle_message.lower()
                                     if count_args[1] in search_item and not thing.hidden:
                                         for keyword in thing.keywords:
-                                            if count_args[0] == keyword and confirm(thing, keyword):
-                                                return True
+                                            if count_args[0] == keyword:
+                                                candidates.append(thing)
+                                            #if count_args[0] == keyword and confirm(thing, keyword):
+                                            #    return True
                                 elif hasattr(thing, "interactions"):
                                     search_item = thing.name.lower() + ' ' + thing.description.lower() + ' ' + thing.announce.lower()
                                     if count_args[1] in search_item and not thing.hidden:
                                         for interaction in thing.interactions:
-                                            if count_args[0] == interaction and confirm(thing, interaction):
-                                                return True
+                                            if count_args[0] == interaction:
+                                                candidates.append(thing)
+                                            #if count_args[0] == interaction and confirm(thing, interaction):
+                                            #    return True
+                            if len(candidates) == 1:  #if there is only one possibility, skip the confirmation step
+                                candidates[0].__getattribute__(count_args[0])(player)
+                                return True
+                            elif candidates:  #otherwise, if there is more than one possibility, ask the player to confirm
+                                for candidate in candidates:
+                                    if confirm(candidate, count_args[0]):
+                                        return True
                         return False
 
                     subjects = room.objects_here + room.npcs_here

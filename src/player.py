@@ -194,6 +194,8 @@ class Player():
     def spawnnpc(self, phrase=''):  # spawns an npc on the current tile
         params = phrase.split(" ")
         npc = params[0].title()
+        if npc == "Rockrumbler":
+            npc = "RockRumbler"
         hidden=False
         hfactor=0
         delay=-1
@@ -547,61 +549,75 @@ he lets out a barely audible whisper:""", "red")
                 method(self)
 
     def equip_item(self, phrase=''):
+
+        def confirm(thing):
+            check = input(colored("Equip {}? (y/n)".format(thing.name), "cyan"))
+            if check.lower() == ('y' or 'yes'):
+                return True
+            else:
+                return False
+
         target_item = None
+        candidates = []
         if phrase is not '':  # equip the indicated item, if possible
             lower_phrase = phrase.lower()
             for item in self.inventory:
-                search_item = item.name.lower() + ' ' + item.announce.lower()
-                if lower_phrase in search_item:
-                    target_item = item
-                    break
+                if hasattr(item, "isequipped"):
+                    search_item = item.name.lower() + ' ' + item.announce.lower()
+                    if (lower_phrase in search_item):
+                        candidates.append(item)
             if target_item is None:
                 for i, item in enumerate(self.current_room.items_here):
-                    search_item = item.name.lower() + ' ' + item.announce.lower()
-                    if lower_phrase in search_item:
-                        target_item = self.current_room.items_here.pop(i)
-                        break
+                    if hasattr(item, "isequipped"):
+                        search_item = item.name.lower() + ' ' + item.announce.lower()
+                        if lower_phrase in search_item:
+                            candidates.append(self.current_room.items_here.pop(i))
         else:  # open the menu
             target_item = self.equip_item_menu()
-            
-        if target_item is None:
-            cprint("Jean changed his mind.\n", "cyan")
+
+        if len(candidates) == 1:
+            target_item = candidates[0]
         else:
-            if target_item not in self.inventory:  # if the player equips an item from the ground or via an event, add to inventory
-                self.inventory.append(target_item)
-            if target_item.isequipped:
-                print("{} is already equipped.".format(target_item.name))
-                answer = input(colored("Would you like to remove it? (y/n) ","cyan"))
-                if answer == 'y':
-                    target_item.isequipped = False
-                    if issubclass(target_item.__class__, items.Weapon):  # if the player is now unarmed, "equip" fists
-                        self.eq_weapon = self.fists
-                    cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
-                    target_item.on_unequip(self)
-            else:
-                count_subtypes = 0
-                for olditem in self.inventory:
-                    replace_old = False
-                    if target_item.maintype == olditem.maintype and olditem.isequipped:
-                        if target_item.maintype == "Accessory":
-                            if target_item.subtype == olditem.subtype:
-                                if target_item.subtype == "Ring" or target_item.subtype == "Bracelet" or target_item.subtype == "Earring":
-                                    count_subtypes += 1
-                                    if count_subtypes > 1:
+            for candidate in candidates:
+                if confirm(candidate):
+                    target_item = candidate
+        if target_item is not None:
+            if hasattr(target_item, "isequipped"):
+                if target_item not in self.inventory:  # if the player equips an item from the ground or via an event, add to inventory
+                    self.inventory.append(target_item)
+                if target_item.isequipped:
+                    print("{} is already equipped.".format(target_item.name))
+                    answer = input(colored("Would you like to remove it? (y/n) ","cyan"))
+                    if answer == 'y':
+                        target_item.isequipped = False
+                        if issubclass(target_item.__class__, items.Weapon):  # if the player is now unarmed, "equip" fists
+                            self.eq_weapon = self.fists
+                        cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
+                        target_item.on_unequip(self)
+                else:
+                    count_subtypes = 0
+                    for olditem in self.inventory:
+                        replace_old = False
+                        if target_item.maintype == olditem.maintype and olditem.isequipped:
+                            if target_item.maintype == "Accessory":
+                                if target_item.subtype == olditem.subtype:
+                                    if target_item.subtype == "Ring" or target_item.subtype == "Bracelet" or target_item.subtype == "Earring":
+                                        count_subtypes += 1
+                                        if count_subtypes > 1:
+                                            replace_old = True
+                                    else:
                                         replace_old = True
-                                else:
-                                    replace_old = True
-                        else:
-                            replace_old = True
-                    if replace_old:
-                        olditem.isequipped = False
-                        cprint("Jean put {} back into his bag.".format(olditem.name), "cyan")
-                        olditem.on_unequip(self)
-                target_item.isequipped = True
-                cprint("Jean equipped {}!".format(target_item.name), "cyan")
-                target_item.on_equip(self)
-                if issubclass(target_item.__class__, items.Weapon):
-                    self.eq_weapon = target_item
+                            else:
+                                replace_old = True
+                        if replace_old:
+                            olditem.isequipped = False
+                            cprint("Jean put {} back into his bag.".format(olditem.name), "cyan")
+                            olditem.on_unequip(self)
+                    target_item.isequipped = True
+                    cprint("Jean equipped {}!".format(target_item.name), "cyan")
+                    target_item.on_equip(self)
+                    if issubclass(target_item.__class__, items.Weapon):
+                        self.eq_weapon = target_item
 
     def equip_item_menu(self):
         num_weapon = 0
@@ -940,50 +956,6 @@ he lets out a barely audible whisper:""", "red")
                     if hasattr(item, "fin_mod"):
                         add_prot += item.fin_mod * self.finesse
                     self.protection += add_prot
-
-    '''
-    def refresh_stat_bonuses(self):  # searches all items and states for stat bonuses, then applies them
-        functions.reset_stats(self)
-        bonuses = ["add_str", "add_fin", "add_maxhp", "add_maxfatigue", "add_speed", "add_endurance", "add_charisma",
-                   "add_intelligence", "add_faith", "add_resistance", "add_weight_tolerance"]
-        adder_group = []
-        for item in self.inventory:
-            if hasattr(item, "is_equipped"):
-                if item.is_equipped:
-                    for bonus in bonuses:
-                        if hasattr(item, bonus):
-                            adder_group.append(item)
-                            break
-        for state in self.states:
-            for bonus in bonuses:
-                if hasattr(state, bonus):
-                    adder_group.append(state)
-                    break
-        for adder in adder_group:
-            if hasattr(adder, bonuses[0]):
-                self.strength += adder.add_str
-            if hasattr(adder, bonuses[1]):
-                self.finesse += adder.add_fin
-            if hasattr(adder, bonuses[2]):
-                self.maxhp += adder.add_maxhp
-            if hasattr(adder, bonuses[3]):
-                self.maxfatigue += adder.add_maxfatigue
-            if hasattr(adder, bonuses[4]):
-                self.speed += adder.add_speed
-            if hasattr(adder, bonuses[5]):
-                self.endurance += adder.add_endurance
-            if hasattr(adder, bonuses[6]):
-                self.charisma += adder.add_charisma
-            if hasattr(adder, bonuses[7]):
-                self.intelligence += adder.add_intelligence
-            if hasattr(adder, bonuses[8]):
-                self.faith += adder.add_faith
-            if hasattr(adder, bonuses[9]):
-                for i, v in enumerate(self.resistance):
-                    self.resistance[i] += adder.add_resistance[i]
-            if hasattr(adder, bonuses[10]):
-                self.weight_tolerance += adder.add_weight_tolerance
-    '''
 
     def attack(self, phrase=''):
         target = None

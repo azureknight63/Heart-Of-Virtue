@@ -1,5 +1,5 @@
 import string, textwrap, os
-import sys, time, random, pickle, datetime, importlib
+import sys, time, random, pickle, datetime, importlib, decimal
 import npc, tiles, moves
 from player import Player
 from termcolor import colored, cprint
@@ -107,7 +107,7 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
     ### Process other things which may affect stats, such as weight ###
     if target.name == "Jean":
         target.refresh_weight()
-        target.weight_tolerance += ((target.strength + target.endurance) / 2)
+        target.weight_tolerance += decimal.Decimal((target.strength + target.endurance) / 2)
         check_weight = target.weight_tolerance - target.weight_current
         if check_weight > (
                 target.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
