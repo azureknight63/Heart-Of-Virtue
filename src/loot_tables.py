@@ -22,7 +22,7 @@ class Loot:
                 "qty": 1
             },
             "Equipment_0_1": {
-                "chance": 100,  # todo: reset to 10 for production
+                "chance": 10,
                 "qty": 1
             }
         }

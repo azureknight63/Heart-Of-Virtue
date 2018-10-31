@@ -316,3 +316,48 @@ def seek_class(classname, player, tile, repeat, params):  # searches through the
 
 def await_input():
     input(colored("\n(Press Enter)", "yellow"))
+
+
+def inflict(state, target, chance=1.0, force=False):
+    '''
+    attempt to inflict a state on a target player or NPC.
+    :param state: new instance of the state object to be inflicted
+    :param target: target to receive the state
+    :param chance: base chance of success; further altered by resistances
+    :param force: if true, inflicting will never fail regardless of resistance
+    :return: returns the state object that was inflicted/compounded or False if it failed
+    '''
+
+    def success(victim, status):
+        for existing_state in victim.states:
+            if isinstance(existing_state, status.__class__):
+                if existing_state.compounding:
+                    # if the state already exists on the target and it's a compounding state, execute the compounding
+                    # effect and return the existing state
+                    existing_state.compound(victim)
+                    return existing_state
+                else:
+                    # the state already exists and is non-compounding, so replace it with the new state
+                    victim.states.remove(existing_state)
+                    victim.states.append(status)
+                    status.on_application()
+                    return status
+        # the state does not yet exist on the target
+        target.states.append(status)
+        status.on_application(target)
+        return status
+
+    if not force:
+        chance *= (1 - target.status_resistance[state.statustype])
+        if chance <= 0:
+            return False  # target is immune
+        else:
+            roll = random.uniform(0,1)
+            if chance >= roll:  # success! Status gets inflicted!
+                success(target, state)
+            else:
+                return False  # state failed to apply
+    else:
+        success(target, state)
+
+

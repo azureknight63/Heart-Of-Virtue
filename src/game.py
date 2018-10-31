@@ -6,7 +6,7 @@ REMINDERS:
 
 """
 __author__ = 'Alex Egbert'
-import universe, functions, intro_scene, moves, combat, npc
+import universe, functions, intro_scene, moves, combat, npc, items
 from player import Player
 from universe import Universe
 from termcolor import colored, cprint
@@ -103,6 +103,7 @@ _\\|//__( | )______)_/
         check_time = time.time()
         auto_save_timer = check_time
         mark_health = player.hp
+        items.get_all_subtypes()  # creates the 'All' archetypes for each item group; used for states/item effects/etc.
         ### enter post-menu game loop ###
         while player.is_alive() and not player.victory and not player.main_menu:
             if not player.eq_weapon:  # if the player is unarmed, "equip" fists
@@ -120,6 +121,8 @@ _\\|//__( | )______)_/
             else:
                 player.current_room.last_entered = 1
             player.recall_friends()  # bring any party members along
+            for actor in player.combat_list_allies:
+                actor.cycle_states()
             room.evaluate_events()
             room.modify_player(player)
             if mark_health != player.hp:
@@ -134,6 +137,8 @@ _\\|//__( | )______)_/
                 print(colored("Jean readies himself for battle!","red"))
                 combat.combat(player)
             ### check to make sure entering the most recent tile hasn't ended the game ###
+            if not player.is_alive():
+                player.death()
             if player.is_alive() and not player.victory:
                 player.stack_inv_items()
                 player.stack_gold()

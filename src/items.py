@@ -2,6 +2,44 @@ import random, time
 from termcolor import colored, cprint
 import functions
 
+item_types = {
+    'weapons': {
+        'subtypes': [
+            "Dagger",
+            "Sword",
+            "Battleaxe",
+            "Pick",
+            "Scythe",
+            "Spear",
+            "Halberd",
+            "Bludgeon",
+            "Hammer",
+            "Bow",
+            "Crossbow",
+            "Polearm",
+            "Stars",
+            "Staff",
+            "Ethereal"
+        ],
+        'archetypes': {
+            "Blade": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd"],
+            "Blunt": ["Bludgeon", "Hammer", "Polearm", "Staff"],
+            "Archery": ["Bow", "Crossbow"],
+            "Ranged": ["Bow", "Crossbow", "Stars"],
+            "Melee": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm", "Staff"]
+        }
+    }
+}
+
+
+def get_all_subtypes():
+    collection = []
+    for group in item_types.keys():
+        for subtype in item_types[group]:
+            collection.append(subtype)
+        item_types[group]['archetypes']['All'] = collection
+
+
 class Item():
     """The base class for all items"""
     def __init__(self, name, description, value, maintype, subtype, discovery_message, hidden=False, hide_factor=0):
@@ -47,31 +85,6 @@ class Gold(Item):
 
 
 class Weapon(Item):
-    subtypes = [
-        "Dagger",
-        "Sword",
-        "Battleaxe",
-        "Pick",
-        "Scythe",
-        "Spear",
-        "Halberd",
-        "Bludgeon",
-        "Hammer",
-        "Bow",
-        "Crossbow",
-        "Polearm",
-        "Stars",
-        "Staff",
-        "Ethereal"
-    ]
-    archetypes = {  # groups of similar subtypes; useful for checking requirements
-        "All": subtypes,
-        "Blade": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd"],
-        "Blunt": ["Bludgeon", "Hammer", "Polearm", "Staff"],
-        "Archery": ["Bow", "Crossbow"],
-        "Ranged": ["Bow", "Crossbow", "Stars"],
-        "Melee": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm", "Staff"]
-    }
 
     def __init__(self, name, description, value, damage, isequipped, str_req,
                  fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0,5), discovery_message='a kind of weapon.'):
@@ -521,3 +534,67 @@ class Draught(Consumable):
                 player.inventory.remove(self)
         else:
             print("Jean is already fully rested. He places the {} back into his bag.".format(self.name))
+
+
+class Antidote(Consumable):
+    def __init__(self):
+        super().__init__(name="Antidote",
+                         description="A murky green fluid of questionable chemistry.\n"
+                                     "Drinking it restores a small amount of health and \n"
+                                     "neutralizes harmful toxins in the bloodstream.",
+                         value=175, weight=0.25, maintype="Consumable", subtype="Potion")
+        self.power = 15
+        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+                        # the game searches the inventory for other copies and increases that count by self.count,
+                        # then removes this object
+        self.interactions = ["use", "drink", "drop"]
+        self.announce = "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label " \
+                        "reading, 'Antidote.'"
+
+    def stack_grammar(self):
+        if self.count > 1:
+            self.description = "A box filled with bottles of a murky green fluid.\n" \
+                               "Drinking one restores a small amount of health and \n" \
+                               "neutralizes harmful toxins in the bloodstream. \n" \
+                               "There appear to be {} vials in the box.\n".format(self.count)
+            self.announce = "There is a box of small glass bottles here."
+        else:
+            self.description = "A murky green fluid of questionable chemistry.\n" \
+                                     "Drinking it restores a small amount of health and \n" \
+                                     "neutralizes harmful toxins in the bloodstream."
+            self.announce = "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label " \
+                        "reading, 'Antidote.'"
+
+    def drink(self, player):  # alias for "use"
+        self.use(player)
+
+    def use(self, player):
+        poisons = []
+        for state in player.states:
+            if hasattr(state, "statustype"):
+                if state.statustype == "poison":
+                    poisons.append(state)
+
+        if poisons:
+            print("Jean sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
+                  "his throat. He shudders uncontrollably for a moment as the medicine flows into his \n"
+                  "bloodstream, doing its work on whatever toxic agent made its home there.\n")
+            amount = (self.power * random.uniform(0.8, 1.2))
+            amount = int(amount)
+            missing_hp = player.maxhp - player.hp
+            if missing_hp > 0:
+                if amount > missing_hp:
+                    amount = missing_hp
+                player.hp += amount
+                time.sleep(2)
+                cprint("Jean recovered {} HP!".format(amount), "green")
+            for poison in poisons:
+                poison.on_removal(poison.target)
+                player.states.remove(poison)
+            self.count -= 1
+            self.stack_grammar()
+            if self.count <= 0:
+                player.inventory.remove(self)
+            return
+        else:
+            print("Jean is not beset by poison. He places the Antidote back into his bag.")

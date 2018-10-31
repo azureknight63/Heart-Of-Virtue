@@ -1,6 +1,6 @@
 					Boundary
 	EmptyCave	EmptyCave|@Wall_Inscription.1.v0	EmptyCave|#GoldRing.3|#DullMedallion.2		Boundary
-	EmptyCave|#Gold.23.h0	StartingRoom|#RustedIronMace.1|#Restorative.r15-30|#Gold.30|#Gold.44|#Gold.2	EmptyCave|!MakeKey.^test.name=Rusty Key.desc=A small, rusty key of unknown purpose~		Boundary
+	EmptyCave|#Gold.23.h0	StartingRoom|#RustedIronMace.1|#Restorative.r15-30|#Gold.30|#Gold.44|#Gold.2|#Antidote.10	EmptyCave|!MakeKey.^test.name=Rusty Key.desc=A small, rusty key of unknown purpose~		Boundary
 	EmptyCave	EmptyCave|@Wooden_Chest.1.#Gold:r100-200.#Restorative:r2-5.%locked.^test	EmptyCave|!GoldFromHeaven		Boundary
 					Boundary
 					Boundary

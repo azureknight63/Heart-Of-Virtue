@@ -48,7 +48,7 @@ class Sharp(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = self.item.archetypes["Blade"]
+        allowed_subtypes = items.item_types['weapons']['archetypes']["Blade"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -72,7 +72,7 @@ class Weighted(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = self.item.archetypes["Blunt"]
+        allowed_subtypes = items.item_types['weapons']['archetypes']["Blunt"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -96,7 +96,7 @@ class Balanced(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = self.item.archetypes["Ranged"]
+        allowed_subtypes = items.item_types['weapons']['archetypes']["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -117,7 +117,7 @@ class Hollow(Enchantment):  # reduced weight and damage
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = self.item.archetypes["Ranged"]
+        allowed_subtypes = items.item_types['weapons']['archetypes']["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:

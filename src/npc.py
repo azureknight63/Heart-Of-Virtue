@@ -46,6 +46,52 @@ class NPC:
             "light": 0.0,
             "dark": 0.0
         }
+        self.status_resistance = {
+            "generic": 0.0,
+            "stun": 0.0,  # Unable to move; typically short duration
+            "poison": 0.0,  # Drains Health every combat turn/game tick; persists
+            "sloth": 0.0,  # Drains Fatigue every combat turn
+            "apathy": 0.0,  # Drains HEAT every combat turn
+            "blind": 0.0,  # Miss physical attacks more frequently; persists
+            "incoherence": 0.0,  # Miracles fail more frequently; persists
+            "mute": 0.0,  # Cannot use Miracles; persists
+            "enraged": 0.0,  # Double physical damage given and taken
+            "enchanted": 0.0,  # Double magical damage given and taken
+            "ethereal": 0.0,  # Immune to physical damage but take 3x magical damage; persists
+            "berserk": 0.0,  # Auto attack, 1.5x physical damage
+            "slow": 0.0,  # All move times are doubled
+            "sleep": 0.0,  # Unable to move; removed upon physical damage
+            "confusion": 0.0,  # Uses random moves on random targets; removed upon physical damage
+            "cursed": 0.0,  # Makes luck 1, chance of using a random move with a random target; persists
+            "stop": 0.0,  # Unable to move; not removed with damage
+            "stone": 0.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
+            "frozen": 0.0,  # Unable to move; removed with Fire magic; permanent death if allowed to persist after battle
+            "doom": 0.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
+            "death": 0.0
+        }
+        self.status_resistance_base = {
+            "generic": 0.0,
+            "stun": 0.0,
+            "poison": 0.0,
+            "sloth": 0.0,
+            "apathy": 0.0,
+            "blind": 0.0,
+            "incoherence": 0.0,
+            "mute": 0.0,
+            "enraged": 0.0,
+            "enchanted": 0.0,
+            "ethereal": 0.0,
+            "berserk": 0.0,
+            "slow": 0.0,
+            "sleep": 0.0,
+            "confusion": 0.0,
+            "cursed": 0.0,
+            "stop": 0.0,
+            "stone": 0.0,
+            "frozen": 0.0,
+            "doom": 0.0,
+            "death": 0.0
+        }
         self.awareness = awareness  # used when a player enters the room to see if npc spots the player
         self.aggro = aggro
         self.exp_award = exp_award
@@ -106,6 +152,11 @@ class NPC:
         for move in available_moves:
             for weight in range(move.weight):
                 weighted_moves.append(move)
+
+        #  add additional rest moves if fatigue is low to make it a more likely choice
+        if (self.fatigue / self.maxfatigue) < 0.25:
+            for i in range(0,5):
+                weighted_moves.append(moves.NPC_Rest(self))
 
         num_choices = len(weighted_moves) - 1
         while self.current_move is None:
@@ -241,3 +292,26 @@ class RockRumbler(NPC):
         self.add_move(moves.Withdraw(self))
         self.add_move(moves.NPC_Idle(self))
         self.add_move(moves.Dodge(self))
+
+
+class Lurker(NPC):
+    def __init__(self):
+        description = "A grisly demon of the dark. Its body is vaguely humanoid in shape. Long, thin arms end" \
+                           "in sharp, poisonous claws. It prefers to hide in the dark, making it difficult to surprise."
+        super().__init__(name="Lurker " + genericng.generate(2,4), description=description, maxhp=150,
+                         damage=25, protection=0, awareness=12, endurance=20, aggro=True, exp_award=800)
+        self.loot=loot.lev1
+        self.resistance_base["dark"] = 0.5
+        self.resistance_base["fire"] = -0.5
+        self.resistance_base["light"] = -2
+        self.status_resistance_base["death"] = 1
+        self.status_resistance_base["doom"] = 1
+        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.VenomClaw(self), 5)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.Withdraw(self))
+        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.Dodge(self), 2)
+        #todo: continue building out Verdette Caverns. Don't forget to add antidotes for the battle against the Lurker!
+        #todo: In Verdette, I'd like to add a shrine for a weapon of a chosen type and random enchantment, as well as a healing spring
+        #todo: Once the Lurker is defeated, the player can advance to Gorran's village.

@@ -248,6 +248,9 @@ def combat(player):
         # print("### CURRENT BEAT: "+str(beat))
 
     #  AFTER COMBAT LOOP (VICTORY, ESCAPE, OR DEFEAT)
+    for status in player.states:
+        if not status.persistent:
+            player.states.remove(status)
     functions.await_input()
     player.in_combat = False
     player.current_move = None
