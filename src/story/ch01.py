@@ -9,7 +9,7 @@ import objects, functions
 from ..events import *
 
 
-class Ch01_Start_Open_Wall(Event):
+class Ch01StartOpenWall(Event):
     '''
     The first event. Opens the wall in the starting room when the player 'presses' the wall depression
     '''
@@ -46,7 +46,7 @@ heard.
         time.sleep(0.5)
 
 
-class Ch01_Bridge_Wall(Event):
+class Ch01BridgeWall(Event):
     '''
     Opens the wall on the bridge in the starting area
     '''
@@ -84,7 +84,7 @@ class Ch01_Bridge_Wall(Event):
         time.sleep(0.5)
 
 
-class Ch01_Chest_Rumbler_Battle(Event):
+class Ch01ChestRumblerBattle(Event):
     '''
     Initiates the battle with rock rumblers when the chest at (7,1) is looted
     '''
@@ -117,7 +117,7 @@ class Ch01_Chest_Rumbler_Battle(Event):
         self.tile.events_here.remove(self)
 
 
-class Ch01_PostRumbler(Event): # Occurs when Jean beats the first rumbler after opening the chest
+class Ch01PostRumbler(Event): # Occurs when Jean beats the first rumbler after opening the chest
     def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -137,7 +137,7 @@ class Ch01_PostRumbler(Event): # Occurs when Jean beats the first rumbler after 
                                                               repeat=False))
 
 
-class Ch01_PostRumbler_Rep(Event):
+class Ch01PostRumblerRep(Event):
     def __init__(self, player, tile, params, repeat=True, name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.iteration = 2
@@ -155,7 +155,7 @@ class Ch01_PostRumbler_Rep(Event):
             self.iteration += 1
 
 
-class Ch01_PostRumbler2(Event):
+class Ch01PostRumbler2(Event):
     def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -196,7 +196,8 @@ class Ch01_PostRumbler2(Event):
         self.player.combat_events.append(Ch01_PostRumbler3(player=self.player, tile=self.tile, params=False,
                                                                repeat=False))
 
-class Ch01_PostRumbler3(Event):
+
+class Ch01PostRumbler3(Event):
     def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 

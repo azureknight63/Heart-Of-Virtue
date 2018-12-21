@@ -7,7 +7,7 @@ item_types = {
         'subtypes': [
             "Dagger",
             "Sword",
-            "Battleaxe",
+            "Axe",
             "Pick",
             "Scythe",
             "Spear",
@@ -21,12 +21,21 @@ item_types = {
             "Staff",
             "Ethereal"
         ],
+        'base_damage_types': {  # not to be confused with subtypes or archetypes, base damage is what a standard attack evaluates as for a weapon or skill,
+                                # which can be combined with other base types or elemental types of damage
+            "piercing": ["Dagger", "Pick", "Spear"],
+            "slashing": ["Sword", "Axe", "Scythe", "Halberd", "Stars"],
+            "crushing": ["Bludgeon", "Hammer", "Bow", "Crossbow", "Polearm", "Staff"],
+            "spiritual": ["Ethereal"],
+            "pure": ["Pure"]
+        },
         'archetypes': {
-            "Blade": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd"],
+            "Blade": ["Dagger", "Sword", "Axe", "Pick", "Scythe", "Spear", "Halberd"],
             "Blunt": ["Bludgeon", "Hammer", "Polearm", "Staff"],
             "Archery": ["Bow", "Crossbow"],
             "Ranged": ["Bow", "Crossbow", "Stars"],
-            "Melee": ["Dagger", "Sword", "Battleaxe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm", "Staff"]
+            "Melee": ["Dagger", "Sword", "Axe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm", "Staff"],
+            "Twohand": ["Scythe", "Bow", "Crossbow", "Polearm"]
         }
     }
 }
@@ -40,9 +49,17 @@ def get_all_subtypes():
         item_types[group]['archetypes']['All'] = collection
 
 
+def get_base_damage_type(item):
+    damagetype = "pure"  # default
+    for basetype, weapontypes in item_types['weapons']['base_damage_types'].items():
+        if item.subtype in weapontypes:
+            damagetype = basetype
+    return damagetype
+
+
 class Item():
     """The base class for all items"""
-    def __init__(self, name, description, value, maintype, subtype, discovery_message, hidden=False, hide_factor=0):
+    def __init__(self, name, description, value, maintype, subtype, discovery_message, hidden=False, hide_factor=0, skills=None):
         self.name = name
         self.description = description
         self.value = value
@@ -54,6 +71,7 @@ class Item():
         #self.level = level  # used for categorizing items in loot tables
         self.announce = "There's a {} here.".format(self.name)
         self.interactions = []  # things to do with the item from the inventory menu - player must be passed as a parameter
+        self.skills = skills  # skills that can be learned from using the item (acquiring exp); should be a dictionary with "moves" objects and the exp needed
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
@@ -87,7 +105,7 @@ class Gold(Item):
 class Weapon(Item):
 
     def __init__(self, name, description, value, damage, isequipped, str_req,
-                 fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0,5), discovery_message='a kind of weapon.'):
+                 fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0,5), discovery_message='a kind of weapon.', twohand=False, skills=None):
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -98,8 +116,9 @@ class Weapon(Item):
         self.maintype = maintype
         self.subtype = subtype
         self.wpnrange = wpnrange  # tuple containing the min and max range for the weapon
-        super().__init__(name, description, value, maintype, subtype, discovery_message)
+        super().__init__(name, description, value, maintype, subtype, discovery_message, skills=skills)
         self.announce = "There's a {} here.".format(self.name)
+        self.twohand = twohand
 
     def __str__(self):
         if self.isequipped:
@@ -300,20 +319,8 @@ class Rock(Weapon):
         super().__init__(name="Rock",
                          description="A fist-sized rock, suitable for bludgeoning.",
                          isequipped=False, value=0,
-                         damage=1, str_req=1, fin_req=1, str_mod=2.00, fin_mod=0.50, weight=2.0,
+                         damage=1, str_req=1, fin_req=1, str_mod=3.00, fin_mod=0.50, weight=2.0,
                          maintype="Weapon", subtype="Bludgeon")
-        #minimum damage of 26
-
-
-class RustedDagger(Weapon):
-    level = 0
-    def __init__(self):
-        super().__init__(name="Rusted Dagger",
-                         description="A small dagger with some rust. Somewhat more dangerous than a rock.",
-                         isequipped=False, value=10,
-                         damage=10, str_req=1, fin_req=12, str_mod=0.5, fin_mod=2, weight=1.5, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(1,3))
-        #minimum damage of 37
 
 
 class RustedIronMace(Weapon):
@@ -322,9 +329,178 @@ class RustedIronMace(Weapon):
         super().__init__(name="Rusted Iron Mace",
                          description="A small mace with some rust around the spikes. Heavy and slow, but packs a decent punch.",
                          isequipped=False, value=10,
-                         damage=25, str_req=10, fin_req=5, str_mod=2, fin_mod=0.5, weight=3.0, maintype="Weapon",
+                         damage=15, str_req=10, fin_req=5, str_mod=2.25, fin_mod=0.5, weight=5.0, maintype="Weapon",
                          subtype="Bludgeon")
-        #minimum damage of 40
+
+
+class Mace(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Mace",
+                         description="A small mace. Heavy and slow, but packs a decent punch.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=10, fin_req=5, str_mod=2, fin_mod=0.5, weight=5.0, maintype="Weapon",
+                         subtype="Bludgeon")
+
+
+class RustedDagger(Weapon):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Rusted Dagger",
+                         description="A small dagger with some rust. Somewhat more dangerous than a rock.",
+                         isequipped=False, value=10,
+                         damage=10, str_req=1, fin_req=12, str_mod=0.25, fin_mod=3, weight=1, maintype="Weapon",
+                         subtype="Dagger", wpnrange=(0,3))
+
+
+class Dagger(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Dagger",
+                         description="A rogue's best friend.",
+                         isequipped=False, value=100,
+                         damage=12, str_req=1, fin_req=12, str_mod=0.25, fin_mod=3, weight=1, maintype="Weapon",
+                         subtype="Dagger", wpnrange=(0,3))
+
+
+class Baselard(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Baselard",
+                         description="A small, sharp dagger with an 'H'-shaped hilt.",
+                         isequipped=False, value=100,
+                         damage=18, str_req=1, fin_req=12, str_mod=0.2, fin_mod=2.8, weight=1.2, maintype="Weapon",
+                         subtype="Dagger", wpnrange=(0,3))
+
+
+class Shortsword(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Shortsword",
+                         description="A double-edged shortsword. A reliable companion in any fight.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=5, fin_req=10, str_mod=0.75, fin_mod=1.25, weight=2, maintype="Weapon",
+                         subtype="Sword", wpnrange=(0,4))
+
+
+class Epee(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Epee",
+                         description="A short dueling sword. Frequently used ceremonially, it is nonetheless effective in combat if wielded properly.\n"
+                                     " While the long, thin blade does have a cutting edge, "
+                                     "it is most effective with thrusting attacks or to parry an opponent.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=5, fin_req=20, str_mod=0.5, fin_mod=2, weight=3, maintype="Weapon",
+                         subtype="Sword", wpnrange=(0,5))
+
+
+class Battleaxe(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Battleaxe",
+                         description="A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=5, fin_req=5, str_mod=1, fin_mod=0.5, weight=2, maintype="Weapon",
+                         subtype="Axe", wpnrange=(0,5))
+
+
+class Pickaxe(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Pickaxe",
+                         description="A hardy weapon that can also be used to mine for rare metals, if the user is so-inclined. \n"
+                                     "Difficult to wield at very close range.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=10, fin_req=1, str_mod=2.5, fin_mod=0.1, weight=3, maintype="Weapon",
+                         subtype="Pick", wpnrange=(1,5))
+
+
+class Scythe(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Scythe",
+                         description="An unusual weapon that, despite its intimidating appearance, is particularly difficult to wield. Requires two hands.",
+                         isequipped=False, value=100,
+                         damage=5, str_req=1, fin_req=1, str_mod=2, fin_mod=2, weight=7, maintype="Weapon",
+                         subtype="Scythe", wpnrange=(1,5), twohand=True)
+
+
+class Spear(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Spear",
+                         description="A weapon of simple design and great effectiveness. \n"
+                                     "Has a longer reach than most melee weapons but is not great at close range.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=10, fin_req=1, str_mod=2, fin_mod=0.5, weight=3, maintype="Weapon",
+                         subtype="Spear", wpnrange=(3,8))
+
+
+class Halberd(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Halberd",
+                         description="Essentially an axe mounted on top of a large pole. \n"
+                                     "Has a longer reach than most melee weapons but is not great at close range.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=10, fin_req=1, str_mod=1.75, fin_mod=1, weight=4, maintype="Weapon",
+                         subtype="Spear", wpnrange=(3,8))
+
+
+class Hammer(Weapon):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Hammer",
+                         description="Great for smashing more heavily-armored foes.",
+                         isequipped=False, value=10,
+                         damage=25, str_req=10, fin_req=1, str_mod=2.5, fin_mod=0.1, weight=3, maintype="Weapon",
+                         subtype="Bludgeon")
+
+
+class Shortbow(Weapon):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Shortbow",
+                         description="A reliable missile weapon. Useful as a weak bludgeon at close range.\n"
+                                     "Requires two hands.",
+                         isequipped=False, value=10,
+                         damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.5, maintype="Weapon",
+                         subtype="Bow")
+
+
+class Longbow(Weapon):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Longbow",
+                         description="Specialized bow for shooting long distances. Useful as a weak bludgeon at close range.\n"
+                                     "Requires two hands.",
+                         isequipped=False, value=10,
+                         damage=5, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.2, maintype="Weapon",
+                         subtype="Bow")
+
+
+class Crossbow(Weapon):
+    level = 0
+    def __init__(self):
+        super().__init__(name="Crossbow",
+                         description="Heavier than a standard bow but able to fire more rapidly. It fires bolts instead of arrows.\n"
+                                     "Requires two hands.",
+                         isequipped=False, value=10,
+                         damage=20, str_req=5, fin_req=5, str_mod=1.5, fin_mod=1, weight=4, maintype="Weapon",
+                         subtype="Crossbow")
+
+
+class Pole(Weapon):
+    level = 1
+    def __init__(self):
+        super().__init__(name="Pole",
+                         description="A large pole, great for delivering blows from a distance. \n"
+                                     "Has a longer reach than most melee weapons but is not great at close range.",
+                         isequipped=False, value=100,
+                         damage=25, str_req=5, fin_req=5, str_mod=1.25, fin_mod=1.25, weight=2, maintype="Weapon",
+                         subtype="Polearm", wpnrange=(2,7))
+
 
 class TatteredCloth(Armor):
     level = 0

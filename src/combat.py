@@ -184,7 +184,7 @@ def combat(player):
                             min, max = player.current_move.mvrange
                             for enemy, distance in player.combat_proximity.items():
                                 if enemy.is_alive:
-                                    if min < distance < max:
+                                    if min <= distance <= max:
                                         acceptable_targets.append((enemy, distance))
                                 else:
                                     del player.combat_proximity[enemy]

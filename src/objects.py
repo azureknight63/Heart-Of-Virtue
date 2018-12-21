@@ -29,12 +29,13 @@ class Object:
             self.events.append(event)
             return event
 
-class Tile_Description(Object):
+
+class TileDescription(Object):
     '''
     Adds to the description of the tile. Has no other function. The existence of this object allows tile descriptions
     to be dynamically changed.
     '''
-    def __init__(self, params, player, tile):
+    def __init__(self, player, tile, params):
         param_list = params[2:]
         last_param = param_list[-1]
         if last_param[-1] == '~':  # Tilde is used to replace the end period when parsing the object from the map
@@ -67,11 +68,12 @@ class Tile_Description(Object):
                          idle_message=idle_message,
                          discovery_message="", player=player, tile=tile)
 
-class Wall_Switch(Object):
+
+class WallSwitch(Object):
     '''
     A wall switch that does something when pressed.
     '''
-    def __init__(self, params, player, tile):
+    def __init__(self, player, tile, params=None):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(name="Wall Depression", description=description,
                          idle_message="There's a small depression in the wall.",
@@ -114,11 +116,11 @@ class Wall_Switch(Object):
                 self.event_off.process()
 
 
-class Wall_Inscription(Object):
+class WallInscription(Object):
     '''
     An inscription (typically visible) that can be looked at.
     '''
-    def __init__(self, params, player, tile):
+    def __init__(self, player, tile, params=None):
         description = "Words scratched into the wall. Unfortunately, the inscription is too worn to be decipherable."
         super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
                          idle_message="There appears to be some words inscribed in the wall.",
@@ -134,7 +136,7 @@ class Container(Object):
     A generic container that may contain items. Superclass
     NOTE: If you ever make it so items can be added to an existing container post-spawn, run the stack_items method
     '''
-    def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname, params):
+    def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname, params=None):
         self.nickname = nickname
 
         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
@@ -284,12 +286,13 @@ class Container(Object):
                 for duplicate in remove_duplicates:
                     self.contents.remove(duplicate)
 
+### World objects ###
 
-class Wooden_Chest(Container):
+class WoodenChest(Container):
     '''
     A wooden chest that may contain items.
     '''
-    def __init__(self, params, player, tile):
+    def __init__(self, player, tile, params=None):
         description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
         super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
                          idle_message="There's a wooden chest here.",
@@ -297,7 +300,7 @@ class Wooden_Chest(Container):
 
 
 class Skeleton(Container):
-    def __init__(self, params, player, tile):
+    def __init__(self, player, tile, params=None):
         description = "The skeletal remains of a poor soul who just couldn't make it. It may carry some LOOT."
         super().__init__(name="Skeletal Remains", description=description, hidden=False, hide_factor=0,
                          idle_message="There are some skeletal remains on the ground.",
@@ -305,3 +308,44 @@ class Skeleton(Container):
         self.state = "opened"
         self.keywords.remove("open")
         self.keywords.remove("unlock")
+
+
+class Shrine(Object):
+    '''
+    A shrine that can bestow a variety of items, effects, and sometimes challenges to the player
+    All shrines should be tied to an event to have an effect. Prayer is always effective, but for these, game effects should only happen once.
+    '''
+    def __init__(self, player, tile, params=None):
+        description = "A beautiful shrine depicting a variety of saints praying to God."
+        super().__init__(name="Shrine", description=description,
+                         idle_message="There is an ornate shrine here.",
+                         discovery_message=" a shrine!", player=player, tile=tile)
+        self.event = None
+        self.keywords.append('pray')
+
+        for thing in params:
+            # account for the events associated with this object. Max of 1 event.
+            # Triggers after interacting with the shrine.
+            if thing[0] == '!':
+                param = thing.replace('!', '')
+                p_list = param.split(':')
+                repeat = False
+                event_type = p_list.pop(0)
+                for setting in p_list:
+                    if setting == 'r':
+                        repeat = True
+                        p_list.remove(setting)
+                        continue
+                event = functions.seek_class(event_type, player, tile, params, repeat)
+                self.event = event
+
+    def pray(self, player):
+        print("Jean kneels down and begins to pray for intercession.")
+        time.sleep(random.randint(3, 10))
+        selection = random.randint(0, len(player.prayer_msg)-1)
+        print(player.prayer_msg[selection])
+        if self.event is not None:
+            time.sleep(random.randint(3, 10))
+            self.event.process()
+            self.event = None
+        functions.await_input()

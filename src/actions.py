@@ -142,6 +142,6 @@ class TestEvent(Action):
         super().__init__(method=Player.testevent, name="TestEvent", hotkey=('te', 'test', 'testevent'))
 
 
-class SpawnNPC(Action):
+class SpawnObj(Action):
     def __init__(self):
-        super().__init__(method=Player.spawnnpc, name="SpawnNPC", hotkey=('sn', 'spawn', 'spawnnpc'))
+        super().__init__(method=Player.spawnobject, name="SpawnObj", hotkey=('so', 'spawn', 'spawnobject'))

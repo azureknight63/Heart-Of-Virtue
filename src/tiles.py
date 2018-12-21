@@ -85,7 +85,7 @@ class MapTile:
         moves.append(actions.Alter())
         moves.append(actions.Supersaiyan())
         moves.append(actions.TestEvent())
-        moves.append(actions.SpawnNPC())
+        moves.append(actions.SpawnObj())
         ### END DEBUG MOVES ###
         return moves
 
@@ -134,7 +134,7 @@ class MapTile:
             return event
 
     def spawn_object(self, obj_type, player, tile, params, hidden=False, hfactor=0):
-        obj = getattr(__import__('objects'), obj_type)(params, player, tile)
+        obj = getattr(__import__('objects'), obj_type)(player, tile, params)
         if hidden:
             obj.hidden = True
             obj.hide_factor = hfactor

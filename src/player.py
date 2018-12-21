@@ -1,6 +1,6 @@
 import random, time, decimal
 from switch import switch
-import items, functions, universe, moves, actions, combat
+import items, functions, universe, moves, actions, combat, skilltree
 from termcolor import colored, cprint
 
 class Player():
@@ -28,83 +28,99 @@ class Player():
         self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rating
         self.faith_base = 10
+        # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half." 2.0 means "double damage/change."
+        # Negative values mean the damage is absorbed (heals instead of damages.) Status resistances cannot be negative.
         self.resistance = {
-            "fire": 0.0,
-            "ice": 0.0,
-            "shock": 0.0,
-            "earth": 0.0,
-            "light": 0.0,
-            "dark": 0.0
+            "fire":         1.0,
+            "ice":          1.0,
+            "shock":        1.0,
+            "earth":        1.0,
+            "light":        1.0,
+            "dark":         1.0,
+            "piercing":     1.0,
+            "slashing":     1.0,
+            "crushing":     1.0,
+            "spiritual":    1.0,
+            "pure":         1.0
         }
         self.resistance_base = {
-            "fire": 0.0,
-            "ice": 0.0,
-            "shock": 0.0,
-            "earth": 0.0,
-            "light": 0.0,
-            "dark": 0.0
+            "fire":         1.0,
+            "ice":          1.0,
+            "shock":        1.0,
+            "earth":        1.0,
+            "light":        1.0,
+            "dark":         1.0,
+            "piercing":     1.0,
+            "slashing":     1.0,
+            "crushing":     1.0,
+            "spiritual":    1.0,
+            "pure":         1.0
         }
         self.status_resistance = {
-            "generic": 0.0,  # Default status type for all states
-            "stun": 0.0,  # Unable to move; typically short duration
-            "poison": 0.0,  # Drains Health every combat turn/game tick; persists
-            "sloth": 0.0,  # Drains Fatigue every combat turn
-            "apathy": 0.0,  # Drains HEAT every combat turn
-            "blind": 0.0,  # Miss physical attacks more frequently; persists
-            "incoherence": 0.0,  # Miracles fail more frequently; persists
-            "mute": 0.0,  # Cannot use Miracles; persists
-            "enraged": 0.0,  # Double physical damage given and taken
-            "enchanted": 0.0,  # Double magical damage given and taken
-            "ethereal": 0.0,  # Immune to physical damage but take 3x magical damage; persists
-            "berserk": 0.0,  # Auto attack, 1.5x physical damage
-            "slow": 0.0,  # All move times are doubled
-            "sleep": 0.0,  # Unable to move; removed upon physical damage
-            "confusion": 0.0,  # Uses random moves on random targets; removed upon physical damage
-            "cursed": 0.0,  # Makes luck 1, chance of using a random move with a random target; persists
-            "stop": 0.0,  # Unable to move; not removed with damage
-            "stone": 0.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
-            "frozen": 0.0,  # Unable to move; removed with Fire magic; permanent death if allowed to persist after battle
-            "doom": 0.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
-            "death": 0.0
+            "generic":      1.0,  # Default status type for all states
+            "stun":         1.0,  # Unable to move; typically short duration
+            "poison":       1.0,  # Drains Health every combat turn/game tick; persists
+            "sloth":        1.0,  # Drains Fatigue every combat turn
+            "apathy":       1.0,  # Drains HEAT every combat turn
+            "blind":        1.0,  # Miss physical attacks more frequently; persists
+            "incoherence":  1.0,  # Miracles fail more frequently; persists
+            "mute":         1.0,  # Cannot use Miracles; persists
+            "enraged":      1.0,  # Double physical damage given and taken
+            "enchanted":    1.0,  # Double magical damage given and taken
+            "ethereal":     1.0,  # Immune to physical damage but take 3x magical damage; persists
+            "berserk":      1.0,  # Auto attack, 1.5x physical damage
+            "slow":         1.0,  # All move times are doubled
+            "sleep":        1.0,  # Unable to move; removed upon physical damage
+            "confusion":    1.0,  # Uses random moves on random targets; removed upon physical damage
+            "cursed":       1.0,  # Makes luck 1, chance of using a random move with a random target; persists
+            "stop":         1.0,  # Unable to move; not removed with damage
+            "stone":        1.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
+            "frozen":       1.0,  # Unable to move; removed with Fire magic; permanent death if allowed to persist after battle
+            "doom":         1.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
+            "death":        1.0
         }
         self.status_resistance_base = {
-            "generic": 0.0,
-            "stun": 0.0,
-            "poison": 0.0,
-            "sloth": 0.0,
-            "apathy": 0.0,
-            "blind": 0.0,
-            "incoherence": 0.0,
-            "mute": 0.0,
-            "enraged": 0.0,
-            "enchanted": 0.0,
-            "ethereal": 0.0,
-            "berserk": 0.0,
-            "slow": 0.0,
-            "sleep": 0.0,
-            "confusion": 0.0,
-            "cursed": 0.0,
-            "stop": 0.0,
-            "stone": 0.0,
-            "frozen": 0.0,
-            "doom": 0.0,
-            "death": 0.0
+            "generic":      1.0,
+            "stun":         1.0,
+            "poison":       1.0,
+            "sloth":        1.0,
+            "apathy":       1.0,
+            "blind":        1.0,
+            "incoherence":  1.0,
+            "mute":         1.0,
+            "enraged":      1.0,
+            "enchanted":    1.0,
+            "ethereal":     1.0,
+            "berserk":      1.0,
+            "slow":         1.0,
+            "sleep":        1.0,
+            "confusion":    1.0,
+            "cursed":       1.0,
+            "stop":         1.0,
+            "stone":        1.0,
+            "frozen":       1.0,
+            "doom":         1.0,
+            "death":        1.0
         }
         self.weight_tolerance = decimal.Decimal(20)
         self.weight_tolerance_base = decimal.Decimal(20)
         self.weight_current = decimal.Decimal(0)
         self.fists = items.Fists()
         self.eq_weapon = self.fists
-        self.combat_exp = 0  # place to pool all exp gained from a single combat before distribution
+        self.combat_exp = {"Basic": 0}  # place to pool all exp gained from a single combat before distribution
         self.exp = 0  # exp to be gained from doing stuff rather than killing things
+        self.skill_exp = {}
+        self.skilltree = skilltree.Skilltree(self)
+        for subtype in self.skilltree.subtypes.keys():  # initialize an exp pool for each skill subtype
+            self.skill_exp[subtype] = 0
         self.level = 1
         self.exp_to_level = 100
         self.location_x, self.location_y = (0, 0)
         self.current_room = None
         self.victory = False
-        self.known_moves = [  # this should contain ALL known moves, regardless of whether they are unlocked (moves will check their own conditions)
+        self.known_moves = [  # this should contain ALL known moves, regardless of whether they are viable (moves will check their own conditions)
             moves.Check(self), moves.Wait(self), moves.Rest(self),
-            moves.Use_Item(self), moves.Advance(self), moves.Withdraw(self), moves.Dodge(self), moves.Attack(self)
+            moves.Use_Item(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self)
         ]
         self.current_move = None
         self.heat = 1.0
@@ -166,6 +182,33 @@ class Player():
             '''For a brief moment, a wave of fear washes over Jean. '''
         ]
 
+        self.prayer_msg = [
+            "A warm sense of peace fills Jean's heart.",
+            'Jean frowns impatiently.',
+            'Jean shudders slightly.',
+            "Jean sees his wife's face for a brief moment and lets out a barely audible sigh. \n" +
+                "The memory of her auburn braids swinging as she walked remains like a retinal burn. \n" +
+                "Her other features are painfully mercurial and induce a burning sense of guilt.",
+            'Jean grits his teeth and focuses hard on praying for his wife and daughter.',
+            'Jean anxiously shifts his weight back and forth.',
+            "Jean can still remember the look on the courier's face on that fateful day. He can still see the clothes he was wearing. \n" +
+                "He can still smell the warm spring air. \nHe will never forget that day or the pain and anger that came with it.",
+            'In spite of himself, Jean wonders just what, exactly, this is supposed to accomplish.',
+            'Jean makes the sign of the cross.',
+            """Jean prays quietly, 
+            
+Je vous salue, Marie, pleine de grâce, Le Seigneur est avec vous.
+Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.
+Sainte Marie, Mère de Dieu, priez pour nous, pauvres pécheurs,
+maintenant et à l'heure de notre mort. Amen.""",
+            'Jean becomes conscious of his own heart beating loudly.',
+            'His little girl is laughing and running through a field of grass. Jean remembers how they would play together. \n'
+                'She would tease him, calling him "Gros Glouton." He would call her "Paresseux Passereau."',
+            'Jean feels the silence around him to be very heavy.',
+            "An intense groaning makes its way through Jean's stomache.",
+            "The smell of fresh, sweet lillies dances in Jean's memory. \nThey were Regina's favorite.",
+        ]
+
     def cycle_states(self):
         for state in self.states:
             state.process(self)
@@ -188,7 +231,6 @@ class Player():
             gold_objects[0].amt = amt
             self.inventory.append(gold_objects[0])
 
-
     def combat_idle(self):
         if (self.hp * 100) / self.maxhp > 20:  # combat idle (healthy)
             chance = random.randint(0,1000)
@@ -201,14 +243,47 @@ class Player():
                 message = random.randint(0, len(self.combat_hurt_msg)-1)
                 print(self.combat_hurt_msg[message])
 
-    def gain_exp(self, amt):
+    def gain_exp(self, amt, exp_type="Basic"):
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
+        Also adds exp to the designated skill tree subtype. All abilities under that subtype gain the exp and are learned if possible.
+        EXP is always added to the "Basic" subtype regardless of the subtype declared.
         """
+        self.skill_exp["Basic"] += amt
+        if exp_type != "Basic":
+            self.skill_exp[exp_type] += amt
+
+        # remove = []
+        # for k, v in self.skilltree.subtypes.items():
+        #     if k == exp_type or k == "Basic":
+        #         for skill, values in v.items():
+        #             values[1] += amt
+        #             if values[1] >= values[0]:
+        #                 self.learn_skill(skill)
+        #                 remove.append(skill)
+        # for ability in remove:
+        #     for k,v in self.skilltree.subtypes.items():
+        #         if ability in v:
+        #             v.pop(ability)
+        #             break
+
         if self.level < 100:
             self.exp += amt
         while self.exp >= self.exp_to_level:
             self.level_up()
+
+    def learn_skill(self, skill):
+        success = True
+        for move in self.known_moves:
+            if move.name == skill.name:
+                success = False
+                break
+        if success:
+            cprint("Jean learned {}!".format(skill.name), "magenta")
+            self.known_moves.append(skill)
+        return skill
+        # if not success, Jean already knows the skill so no need to do anything!
+
 
     def get_hp_pcnt(self):  # returns the player's remaining HP as a decimal
         curr = float(self.hp)
@@ -237,15 +312,20 @@ class Player():
         self.current_room.spawn_event(params[0], self, self.current_room, repeat=repeat, params=[])  # will go fubar if the name of the event is wrong or
         #  if other parameters are present in phrase
 
-    def spawnnpc(self, phrase=''):  # spawns an npc on the current tile
+    def spawnobject(self, phrase=''):  # spawns an object (npc, item, room object, event) on the current tile
+        '''
+        :param phrase: Pattern is "spawn obj_type obj params." Note the special instruction 'params=' refers to special params passed to room objects.
+        :return: Nothing returned (action by player)
+        '''
         params = phrase.split(" ")
-        npc = params[0].title()
-        if npc == "Rockrumbler":
-            npc = "RockRumbler"
-        hidden=False
-        hfactor=0
-        delay=-1
-        count=1
+        obj_type = params[0].lower()
+        obj = params[1].lower().title().replace("_", "")
+        hidden = False
+        hfactor = 0
+        delay = -1
+        count = 1
+        repeat = False
+        myparams = None
         if len(params) > 1:
             for item in params:
                 if item == 'hidden':
@@ -256,8 +336,20 @@ class Player():
                     delay = int(item[6:])
                 elif 'count=' in item:
                     count = int(item[6:])
+                elif 'repeat' in item:
+                    repeat = True
+                elif 'params=' in item:
+                    myparams = item[7:].split(",")
+
         for i in range(count):
-            self.current_room.spawn_npc(npc, hidden=hidden, hfactor=hfactor, delay=delay)
+            if obj_type == "npc":
+                self.current_room.spawn_npc(obj, hidden=hidden, hfactor=hfactor, delay=delay)
+            elif obj_type == "item":
+                self.current_room.spawn_item(obj, hidden=hidden, hfactor=hfactor)
+            elif obj_type == "event":
+                self.current_room.spawn_event(obj, self, self.current_room, repeat=repeat, params=myparams)
+            elif obj_type == "object":
+                self.current_room.spawn_object(obj, self, self.current_room, myparams, hidden=hidden, hfactor=0)
 
     def vars(self):  # print all variables
         print(self.universe.story)
@@ -334,12 +426,12 @@ class Player():
             self.intelligence_base += bonus
             cprint("Intelligence went up by {}".format(bonus))
 
-        points = random.randint(5,10)
+        points = random.randint(6,9)
 
         while points > 0:
             selection = ''
             while selection == '':
-                print('You have {} attribute points to distribute. Please select an attribute to increase.\n\n'
+                print('You have {} additional attribute points to distribute. Please select an attribute to increase.\n\n'
                       '(1) Strength     - {}\n'
                       '(2) Finesse      - {}\n'
                       '(3) Speed        - {}\n'

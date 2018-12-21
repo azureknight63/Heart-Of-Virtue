@@ -1,6 +1,6 @@
-import string, textwrap, os
+import string, textwrap, os, inspect
 import sys, time, random, pickle, datetime, importlib, decimal
-import npc, tiles, moves
+import npc, tiles, moves, enchant_tables
 from player import Player
 from termcolor import colored, cprint
 from os import listdir
@@ -84,7 +84,9 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
         "add_weight_tolerance":"weight_tolerance"
     }
     for category, value in target.resistance_base.items():
-        bonuses["add_resistance[" + category + "]"] = "resistance[" + category + "]"
+        bonuses["add_resistance[" + category + "]"] = value
+    for category, value in target.status_resistance_base.items():
+        bonuses["add_status_resistance[" + category + "]"] = value
     adder_group = []
     if hasattr(target, "inventory"):
         for item in target.inventory:
@@ -160,8 +162,11 @@ def reset_stats(target):  # resets all stats to base level
     target.intelligence = target.intelligence_base
     target.faith = target.faith_base
     target.resistance.clear()
+    target.status_resistance.clear()
     for element, resist in target.resistance_base.items():
         target.resistance[element] = resist
+    for element, resist in target.status_resistance_base.items():
+        target.status_resistance[element] = resist
     if hasattr(target, 'weight_tolerance'):
         target.weight_tolerance = target.weight_tolerance_base
 
@@ -361,3 +366,31 @@ def inflict(state, target, chance=1.0, force=False):
         success(target, state)
 
 
+def add_random_enchantments(item, count):
+    ench_pool = count
+    enchantment_level = [0, 0]
+    enchantments = [None, None]
+    while ench_pool > 0:
+        group = random.randint(0, 1)  # 0 = "Prefix", 1 = "Suffix"
+        enchantment_level[group] += 1
+        candidates = []
+        for name, obj in inspect.getmembers(enchant_tables):
+            if inspect.isclass(obj):
+                if hasattr(obj, "tier"):
+                    if obj.tier == enchantment_level[group]:
+                        ench = getattr(enchant_tables, name)(item)
+                        candidates.append(ench)
+        rarity = random.randint(0, 100)
+        if not candidates:  # skip ahead if there are no available enchantments
+            ench_pool -= 1
+            continue
+        for candidate in candidates:
+            if not candidate.requirements() or (rarity < candidate.rarity):
+                candidates.remove(candidate)
+        select = random.randint(0, len(candidates) - 1)
+        enchantments[group] = candidates[select]
+        ench_pool -= 1
+    if enchantments[0]:
+        enchantments[0].modify()
+    if enchantments[1]:
+        enchantments[1].modify()

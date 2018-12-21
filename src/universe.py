@@ -67,6 +67,10 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
+                                    for item in p_list:
+                                        if "h+" in item:
+                                            hidden = True
+                                            hfactor = item[3:]
                                     if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
                                         hidden = True
                                         hfactor = int(p_list[2][1:])
@@ -80,9 +84,10 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
-                                    if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
-                                        hidden = True
-                                        hfactor = int(p_list[2][1:])
+                                    for item in p_list:
+                                        if "h+" in item:
+                                            hidden = True
+                                            hfactor = item[3:]
                                     self.tile_exists(map, x, y).spawn_item(item_type,  amt=amt, hidden=hidden, hfactor=hfactor)
 
                                 elif param[0] == '!':  # spawns any declared events
@@ -115,15 +120,15 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     if len(p_list) > 2:
                                         for setting in p_list:
                                             if setting != '':
-                                                if setting[0] == 'h':
+                                                if "h+" in setting:
                                                     hidden = True
-                                                    hfactor = int(setting[1:])
+                                                    hfactor = setting[3:]
                                                 else:
                                                     params.append(setting)
+                                    p_list.remove(obj_type)
                                     for i in range(0, amt):
-                                        self.tile_exists(map, x, y).spawn_object(obj_type, params=params, hidden=hidden,
-                                                                              hfactor=hfactor, player=player,
-                                                                              tile=self.tile_exists(map, x, y))
+                                        self.tile_exists(map, x, y).spawn_object(obj_type, player, self.tile_exists(map, x, y), params=params, hidden=hidden,
+                                                                              hfactor=hfactor)
                 else:
                     tile_name = block_contents
                     map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self, map, x, y)
