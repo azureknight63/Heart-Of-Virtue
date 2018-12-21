@@ -374,19 +374,22 @@ def add_random_enchantments(item, count):
         group = random.randint(0, 1)  # 0 = "Prefix", 1 = "Suffix"
         enchantment_level[group] += 1
         candidates = []
+        rarity = random.randint(0, 100)
         for name, obj in inspect.getmembers(enchant_tables):
             if inspect.isclass(obj):
                 if hasattr(obj, "tier"):
                     if obj.tier == enchantment_level[group]:
                         ench = getattr(enchant_tables, name)(item)
-                        candidates.append(ench)
-        rarity = random.randint(0, 100)
+                        if ench.requirements() and (rarity >= ench.rarity):
+                            candidates.append(ench)
         if not candidates:  # skip ahead if there are no available enchantments
             ench_pool -= 1
             continue
-        for candidate in candidates:
-            if not candidate.requirements() or (rarity < candidate.rarity):
-                candidates.remove(candidate)
+        # for candidate in candidates:
+        #     print(candidate.name + " req? " + str(candidate.requirements()))
+        #     if not candidate.requirements() or (rarity < candidate.rarity):
+        #         candidates.remove(candidate)
+        print("Candidates: " + str(candidates))
         select = random.randint(0, len(candidates) - 1)
         enchantments[group] = candidates[select]
         ench_pool -= 1

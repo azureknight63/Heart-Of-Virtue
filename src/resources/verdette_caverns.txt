@@ -7,5 +7,5 @@
 			VerdetteRoom|$GiantSpider.1		VerdetteRoom	VerdetteRoom	VerdetteRoom			Boundary
 			VerdetteRoom			VerdetteRoom		VerdetteRoom		Boundary
 			VerdetteRoom|$GiantSpider.2	VerdetteRoom|@Skeleton.1.#Antidote:r2-4.#Restorative:r2-3.#Gold:r0-55				VerdetteRoom|$Lurker.1.h+0		Boundary
-	VerdetteRoom	VerdetteRoom|$GiantSpider.1|$Slime.3								Boundary
+	VerdetteRoom|@Shrine.1.!StMichael	VerdetteRoom|$GiantSpider.1|$Slime.3								Boundary
 										Boundary

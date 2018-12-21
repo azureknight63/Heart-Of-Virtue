@@ -33,6 +33,7 @@ class Enchantment:
 
 class Sharp(Enchantment):
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Sharp", rarity=0, group="Prefix", value=1)
 
@@ -61,12 +62,12 @@ class Weighted(Enchantment):
         super().__init__(item, name="Weighted", rarity=0, group="Prefix", value=1)
 
     def modify(self):
-        mod = random.uniform(1.05, 1.15)
+        mod = random.uniform(0.05, 0.15)
         amount = self.item.damage * mod
         if amount < 1:
             amount = 1
         self.item.damage += amount
-        self.item.value *= mod
+        self.item.value *= 1 + mod
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
@@ -421,7 +422,7 @@ class OfRelief(Enchantment):  # Increase weight tolerance by 2-5 lbs
         super().__init__(item, name="of Relief", rarity=0, group="Suffix", value=1)
 
     def modify(self):
-        mod = random.randint(2, 5)
+        mod = random.randint(3, 7)
         if hasattr(self.item, "add_weight_tolerance"):
             self.item.add_weight_tolerance += decimal.Decimal(mod)
         else:

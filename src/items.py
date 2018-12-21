@@ -325,6 +325,7 @@ class Rock(Weapon):
 
 class RustedIronMace(Weapon):
     level = 0
+
     def __init__(self):
         super().__init__(name="Rusted Iron Mace",
                          description="A small mace with some rust around the spikes. Heavy and slow, but packs a decent punch.",
@@ -335,6 +336,7 @@ class RustedIronMace(Weapon):
 
 class Mace(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Mace",
                          description="A small mace. Heavy and slow, but packs a decent punch.",
@@ -345,6 +347,7 @@ class Mace(Weapon):
 
 class RustedDagger(Weapon):
     level = 0
+
     def __init__(self):
         super().__init__(name="Rusted Dagger",
                          description="A small dagger with some rust. Somewhat more dangerous than a rock.",
@@ -355,6 +358,7 @@ class RustedDagger(Weapon):
 
 class Dagger(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Dagger",
                          description="A rogue's best friend.",
@@ -365,6 +369,7 @@ class Dagger(Weapon):
 
 class Baselard(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Baselard",
                          description="A small, sharp dagger with an 'H'-shaped hilt.",
@@ -375,6 +380,7 @@ class Baselard(Weapon):
 
 class Shortsword(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Shortsword",
                          description="A double-edged shortsword. A reliable companion in any fight.",
@@ -385,6 +391,7 @@ class Shortsword(Weapon):
 
 class Epee(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Epee",
                          description="A short dueling sword. Frequently used ceremonially, it is nonetheless effective in combat if wielded properly.\n"
@@ -397,6 +404,7 @@ class Epee(Weapon):
 
 class Battleaxe(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Battleaxe",
                          description="A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
@@ -407,6 +415,7 @@ class Battleaxe(Weapon):
 
 class Pickaxe(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Pickaxe",
                          description="A hardy weapon that can also be used to mine for rare metals, if the user is so-inclined. \n"
@@ -418,6 +427,7 @@ class Pickaxe(Weapon):
 
 class Scythe(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Scythe",
                          description="An unusual weapon that, despite its intimidating appearance, is particularly difficult to wield. Requires two hands.",
@@ -428,6 +438,7 @@ class Scythe(Weapon):
 
 class Spear(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Spear",
                          description="A weapon of simple design and great effectiveness. \n"
@@ -439,6 +450,7 @@ class Spear(Weapon):
 
 class Halberd(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Halberd",
                          description="Essentially an axe mounted on top of a large pole. \n"
@@ -450,6 +462,7 @@ class Halberd(Weapon):
 
 class Hammer(Weapon):
     level = 0
+
     def __init__(self):
         super().__init__(name="Hammer",
                          description="Great for smashing more heavily-armored foes.",
@@ -460,6 +473,7 @@ class Hammer(Weapon):
 
 class Shortbow(Weapon):
     level = 0
+
     def __init__(self):
         super().__init__(name="Shortbow",
                          description="A reliable missile weapon. Useful as a weak bludgeon at close range.\n"
@@ -471,6 +485,7 @@ class Shortbow(Weapon):
 
 class Longbow(Weapon):
     level = 0
+
     def __init__(self):
         super().__init__(name="Longbow",
                          description="Specialized bow for shooting long distances. Useful as a weak bludgeon at close range.\n"
@@ -482,6 +497,7 @@ class Longbow(Weapon):
 
 class Crossbow(Weapon):
     level = 0
+
     def __init__(self):
         super().__init__(name="Crossbow",
                          description="Heavier than a standard bow but able to fire more rapidly. It fires bolts instead of arrows.\n"
@@ -493,6 +509,7 @@ class Crossbow(Weapon):
 
 class Pole(Weapon):
     level = 1
+
     def __init__(self):
         super().__init__(name="Pole",
                          description="A large pole, great for delivering blows from a distance. \n"
@@ -504,6 +521,7 @@ class Pole(Weapon):
 
 class TatteredCloth(Armor):
     level = 0
+
     def __init__(self):
         super().__init__(name="Tattered Cloth",
                          description="Shamefully tattered cloth wrappings. \n"
@@ -515,6 +533,7 @@ class TatteredCloth(Armor):
 
 class ClothHood(Helm):
     level = 0
+
     def __init__(self):
         super().__init__(name="Cloth Hood",
                          description="Stained cloth hood. "
@@ -557,6 +576,7 @@ class DullMedallion(Accessory):
 
 class GoldRing(Accessory):
     level = 1
+
     def __init__(self):
         super().__init__(name="Gold Ring",
                          description="A shiny gold ring. \n"
@@ -567,6 +587,7 @@ class GoldRing(Accessory):
 
 class SilverRing(Accessory):
     level = 0
+
     def __init__(self):
         super().__init__(name="Silver Ring",
                          description="A shiny silver ring. \n"
@@ -577,6 +598,7 @@ class SilverRing(Accessory):
 
 class GoldChain(Accessory):
     level = 2
+
     def __init__(self):
         super().__init__(name="Gold Chain",
                          description="A shiny gold chain. \n"
@@ -587,6 +609,7 @@ class GoldChain(Accessory):
 
 class SilverChain(Accessory):
     level = 1
+
     def __init__(self):
         super().__init__(name="Silver Chain",
                          description="A shiny silver chain. \n"
@@ -597,6 +620,7 @@ class SilverChain(Accessory):
 
 class GoldBracelet(Accessory):
     level = 2
+
     def __init__(self):
         super().__init__(name="Gold Bracelet",
                          description="A shiny gold bracelet. \n"
@@ -607,6 +631,7 @@ class GoldBracelet(Accessory):
 
 class SilverBracelet(Accessory):
     level = 0
+
     def __init__(self):
         super().__init__(name="Silver Bracelet",
                          description="A shiny silver bracelet. \n"

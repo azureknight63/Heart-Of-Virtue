@@ -319,7 +319,9 @@ maintenant et à l'heure de notre mort. Amen.""",
         '''
         params = phrase.split(" ")
         obj_type = params[0].lower()
-        obj = params[1].lower().title().replace("_", "")
+        obj = params[1].lower().title()
+        if "_" in obj:
+            obj.replace("_", "")
         hidden = False
         hfactor = 0
         delay = -1
@@ -702,7 +704,7 @@ he lets out a barely audible whisper:""", "red")
             for item in self.inventory:
                 if hasattr(item, "isequipped"):
                     search_item = item.name.lower() + ' ' + item.announce.lower()
-                    if (lower_phrase in search_item):
+                    if lower_phrase in search_item:
                         candidates.append(item)
             if target_item is None:
                 for i, item in enumerate(self.current_room.items_here):
@@ -756,6 +758,8 @@ he lets out a barely audible whisper:""", "red")
                     target_item.on_equip(self)
                     if issubclass(target_item.__class__, items.Weapon):
                         self.eq_weapon = target_item
+                    #functions.reset_stats(self)
+                    functions.refresh_stat_bonuses(self)
 
     def equip_item_menu(self):
         num_weapon = 0
