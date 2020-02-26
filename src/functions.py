@@ -389,7 +389,7 @@ def add_random_enchantments(item, count):
         #     print(candidate.name + " req? " + str(candidate.requirements()))
         #     if not candidate.requirements() or (rarity < candidate.rarity):
         #         candidates.remove(candidate)
-        print("Candidates: " + str(candidates))
+        # print("Candidates: " + str(candidates))
         select = random.randint(0, len(candidates) - 1)
         enchantments[group] = candidates[select]
         ench_pool -= 1

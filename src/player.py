@@ -1,4 +1,4 @@
-import random, time, decimal
+import random, time, decimal, traceback
 from switch import switch
 import items, functions, universe, moves, actions, combat, skilltree
 from termcolor import colored, cprint
@@ -60,6 +60,7 @@ class Player():
             "generic":      1.0,  # Default status type for all states
             "stun":         1.0,  # Unable to move; typically short duration
             "poison":       1.0,  # Drains Health every combat turn/game tick; persists
+            "enflamed":     1.0,  # Fire damage over time
             "sloth":        1.0,  # Drains Fatigue every combat turn
             "apathy":       1.0,  # Drains HEAT every combat turn
             "blind":        1.0,  # Miss physical attacks more frequently; persists
@@ -83,6 +84,7 @@ class Player():
             "generic":      1.0,
             "stun":         1.0,
             "poison":       1.0,
+            "enflamed":     1.0,
             "sloth":        1.0,
             "apathy":       1.0,
             "blind":        1.0,
@@ -109,7 +111,7 @@ class Player():
         self.eq_weapon = self.fists
         self.combat_exp = {"Basic": 0}  # place to pool all exp gained from a single combat before distribution
         self.exp = 0  # exp to be gained from doing stuff rather than killing things
-        self.skill_exp = {}
+        self.skill_exp = {"Basic": 0}  # pools exp gained in combat or otherwise to be spend on learning skills
         self.skilltree = skilltree.Skilltree(self)
         for subtype in self.skilltree.subtypes.keys():  # initialize an exp pool for each skill subtype
             self.skill_exp[subtype] = 0
@@ -120,7 +122,7 @@ class Player():
         self.victory = False
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are viable (moves will check their own conditions)
             moves.Check(self), moves.Wait(self), moves.Rest(self),
-            moves.Use_Item(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self)
+            moves.Use_Item(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self)
         ]
         self.current_move = None
         self.heat = 1.0
@@ -249,9 +251,22 @@ maintenant et à l'heure de notre mort. Amen.""",
         Also adds exp to the designated skill tree subtype. All abilities under that subtype gain the exp and are learned if possible.
         EXP is always added to the "Basic" subtype regardless of the subtype declared.
         """
-        self.skill_exp["Basic"] += amt
-        if exp_type != "Basic":
-            self.skill_exp[exp_type] += amt
+
+        # self.skill_exp["Basic"] += amt
+        # if exp_type != "Basic":
+
+        if exp_type not in self.skill_exp:
+            self.skill_exp[exp_type] = 0
+        self.skill_exp[exp_type] += amt
+
+        # Check through the players skill tree and announce if any skills may be learned
+        announce = False
+        for k, v in self.skilltree.subtypes.items():
+            for skill, req in v.items():
+                if self.skill_exp[k] >= req:
+                    announce = True
+        if announce:
+            cprint("Jean may spend some of his earned exp to learn a new {} skill. Type SKILL to open the skill menu for details.".format(exp_type), "magenta")
 
         # remove = []
         # for k, v in self.skilltree.subtypes.items():
@@ -283,7 +298,6 @@ maintenant et à l'heure de notre mort. Amen.""",
             self.known_moves.append(skill)
         return skill
         # if not success, Jean already knows the skill so no need to do anything!
-
 
     def get_hp_pcnt(self):  # returns the player's remaining HP as a decimal
         curr = float(self.hp)
@@ -321,7 +335,7 @@ maintenant et à l'heure de notre mort. Amen.""",
         obj_type = params[0].lower()
         obj = params[1].lower().title()
         if "_" in obj:
-            obj.replace("_", "")
+            obj = obj.replace("_", "")
         hidden = False
         hfactor = 0
         delay = -1
@@ -343,15 +357,18 @@ maintenant et à l'heure de notre mort. Amen.""",
                 elif 'params=' in item:
                     myparams = item[7:].split(",")
 
-        for i in range(count):
-            if obj_type == "npc":
-                self.current_room.spawn_npc(obj, hidden=hidden, hfactor=hfactor, delay=delay)
-            elif obj_type == "item":
-                self.current_room.spawn_item(obj, hidden=hidden, hfactor=hfactor)
-            elif obj_type == "event":
-                self.current_room.spawn_event(obj, self, self.current_room, repeat=repeat, params=myparams)
-            elif obj_type == "object":
-                self.current_room.spawn_object(obj, self, self.current_room, myparams, hidden=hidden, hfactor=0)
+        try:
+            for i in range(count):
+                if obj_type == "npc":
+                    self.current_room.spawn_npc(obj, hidden=hidden, hfactor=hfactor, delay=delay)
+                elif obj_type == "item":
+                    self.current_room.spawn_item(obj, hidden=hidden, hfactor=hfactor)
+                elif obj_type == "event":
+                    self.current_room.spawn_event(obj, self, self.current_room, repeat=repeat, params=myparams)
+                elif obj_type == "object":
+                    self.current_room.spawn_object(obj, self, self.current_room, myparams, hidden=hidden, hfactor=0)
+        except:
+            cprint("Oops, something went wrong. \n\n" + traceback.format_exc())
 
     def vars(self):  # print all variables
         print(self.universe.story)
@@ -561,6 +578,94 @@ he lets out a barely audible whisper:""", "red")
         time.sleep(5)
         functions.await_input()
 
+    def skillmenu(self):
+        '''
+        Opens the skill menu for the player so he may inspect or learn skills
+        :return:
+        '''
+        menu = []  # each entry is a tuple; the first element of the tuple is the subcat name, the second is "0: Subtype (*****0 exp); 0 skills"
+        for item, exp in self.skill_exp.items():
+            skillcount = len(self.skilltree.subtypes[item])  # number of skills in the subcategory
+            menu.append((item,"{0} ({1:>6,} exp); {2} skills".format(item, exp, skillcount)))
+        finished = False
+        while not finished:
+            cprint("*** SKILL MENU ***\n\nSelect a category to view or learn skills.\n\n", "cyan")
+            for i, v in enumerate(menu):
+                cprint("{}: {}".format(i, v[1]), "cyan")
+            cprint("x: Exit menu", "cyan")
+            selection = None
+            while not selection:
+                response = input(colored('Selection: ', "cyan"))
+                if functions.is_input_integer(response):
+                    if (len(menu) > int(response)) and (int(response) >= 0):  # handles index errors
+                        selection = response
+                elif response.lower() == "x":
+                    selection = response.lower()
+                else:
+                    cprint("Invalid response! Please try again.", "red")
+            if selection != "x":
+                # Display all available skills, including those learned already
+                skills_to_display = []  # list of tuples; (skill_object, requirement, display_text, is_learned)
+                subcat = menu[int(selection)][0]
+                for skill, req in self.skilltree.subtypes[subcat].items():
+                    known = False
+                    for known_skill in self.known_moves:
+                        if skill.name == known_skill.name:
+                            known = True
+                            break
+                    if known:
+                        skills_to_display.append((skill, req, "{} (LEARNED)".format(skill.name), True))
+                    else:
+                        skills_to_display.append((skill, req, "{} ({})".format(skill.name, req), False))
+                inner_selection_finished = False
+                while not inner_selection_finished:
+                    for i, v in enumerate(skills_to_display):
+                        cprint("{}: {}".format(i, v[2]), "cyan")
+                    cprint("k: Return to skill menu", "cyan")
+                    cprint("x: Exit menu", "cyan")
+                    inner_selection = None
+                    while not inner_selection:
+                        response = input(colored('Selection: ', "cyan"))
+                        if functions.is_input_integer(response):
+                            if len(skills_to_display) > int(response):
+                                inner_selection = response
+                        elif response.lower() in ['k', 'x']:
+                            inner_selection = response.lower()
+                        else:
+                            cprint("Invalid response! Please try again.", "red")
+                    if inner_selection == "k":  # The player wishes to exit the inner menu and return to the main skill menu
+                        inner_selection_finished = True
+                    if inner_selection == "x":  # The player wishes to exit the menu entirely
+                        inner_selection_finished = True
+                        finished = True
+                    elif functions.is_input_integer(inner_selection):
+                        # The player has chosen a skill to investigate. Show details and provide a small menu of actions to perform
+                        skill_menu_choice = skills_to_display[int(inner_selection)]
+                        skill_object = skill_menu_choice[0]
+                        info = """
+    === SKILL INFORMATION ===
+    {}
+    -------------------------
+    {}
+    -------------------------""".format(skill_object.name, skill_object.description)
+                        cprint(info, "cyan")
+                        cprint("Available {} experience: {}\n".format(subcat, self.skill_exp[subcat]))
+                        if not skill_menu_choice[3]:
+                            if self.skill_exp[subcat] >= skill_menu_choice[1]:
+                                cprint("Cost: {}\n\nTo learn this skill, enter 'LEARN'.\n"
+                                       "Enter anything else to return to the skill menu.".format(skill_menu_choice[1]), "cyan")
+                                response = input(colored('Selection: ', "cyan"))
+                                if response.lower() == "learn":
+                                    self.learn_skill(skill_object)
+                                    self.skill_exp[subcat] -= skill_menu_choice[1]
+                                    functions.await_input()
+                            else:
+                                cprint("Cost: {}".format(skill_menu_choice[1]), "red")
+                                functions.await_input()
+                        else:
+                            cprint("Jean knows this skill.", "cyan")
+                            functions.await_input()
+
     def print_inventory(self):
         num_gold = 0
         num_consumable = 0
@@ -758,6 +863,10 @@ he lets out a barely audible whisper:""", "red")
                     target_item.on_equip(self)
                     if issubclass(target_item.__class__, items.Weapon):
                         self.eq_weapon = target_item
+                    if hasattr(target_item, "subtype"):
+                        if target_item.subtype not in self.combat_exp:
+                            self.combat_exp[target_item.subtype] = 0  # if the player hasn't equipped this before and it has a subtype, open an exp category
+                            self.skill_exp[target_item.subtype] = 0
                     #functions.reset_stats(self)
                     functions.refresh_stat_bonuses(self)
 

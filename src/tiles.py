@@ -69,6 +69,7 @@ class MapTile:
         moves = self.adjacent_moves()
         moves.append(actions.ListCommands())
         moves.append(actions.ViewInventory())
+        moves.append(actions.SkillMenu())
         moves.append(actions.Look())
         moves.append(actions.View())
         moves.append(actions.Equip())

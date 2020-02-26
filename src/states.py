@@ -122,3 +122,40 @@ class Poisoned(State):
         self.steps_left += int((self.steps_max / 4))
         if self.steps_left > self.steps_max:
             self.steps_left = self.steps_max
+
+
+class Enflamed(State):  # target is engulfed in flames, taking damage every few beats; COMBAT ONLY
+    def __init__(self, target):
+        duration = random.randint(21,60)
+        super().__init__(name="Enflamed", target=target, beats_max=duration, steps_max=0, compounding=True, world=True, statustype="enflamed", persistent=False)
+        self.tick = 0  # increases at each effect cycle
+        self.execute_on = 3  # when the tick is a multiple of this number, execute the effect
+
+    def on_application(self, target):
+        cprint("{} has been set aflame!".format(target.name), "magenta")
+
+    def on_removal(self, target):
+        cprint("{} is no longer on fire.".format(target.name), "white")
+
+    def effect(self, target):
+        self.tick += 1
+        if self.tick % self.execute_on == 0:
+            damage = int(target.maxhp * (random.uniform(0.015, 0.035) + (self.tick * 0.003)))
+            cprint("{} shudders in pain from being poisoned, suffering {} damage!".format(target.name, damage), "red")
+            target.hp -= damage
+
+    def compound(self, target):
+        #  Increases the strength and duration of the poison by 25% every time it's inflicted
+        cprint("{}'s poisoning has gotten worse!".format(target.name), "magenta")
+        self.tick *= 1.25
+        self.tick = int(self.tick)
+        self.beats_max *= 1.1
+        self.beats_max = int(self.beats_max)
+        self.steps_max *= 1.1
+        self.steps_max = int(self.steps_max)
+        self.beats_left += int((self.beats_max / 4))
+        if self.beats_left > self.beats_max:
+            self.beats_left = self.beats_max
+        self.steps_left += int((self.steps_max / 4))
+        if self.steps_left > self.steps_max:
+            self.steps_left = self.steps_max

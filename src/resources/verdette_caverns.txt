@@ -5,7 +5,7 @@
 	VerdetteRoom			VerdetteRoom|!Block.northwest						Boundary
 	VerdetteRoom|@WoodenChest.1.#Gold:r20-30.#Antidote:r1-3			VerdetteRoom		VerdetteRoom|$Slime.5	VerdetteRoom			Boundary
 			VerdetteRoom|$GiantSpider.1		VerdetteRoom	VerdetteRoom	VerdetteRoom			Boundary
-			VerdetteRoom			VerdetteRoom		VerdetteRoom		Boundary
+			VerdetteRoom			VerdetteRoom|@WoodenChest.1.#Antidote:r2-4		VerdetteRoom		Boundary
 			VerdetteRoom|$GiantSpider.2	VerdetteRoom|@Skeleton.1.#Antidote:r2-4.#Restorative:r2-3.#Gold:r0-55				VerdetteRoom|$Lurker.1.h+0		Boundary
 	VerdetteRoom|@Shrine.1.!StMichael	VerdetteRoom|$GiantSpider.1|$Slime.3								Boundary
 										Boundary

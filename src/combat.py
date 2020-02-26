@@ -110,9 +110,13 @@ def combat(player):
         if len(player.combat_list) == 0:
             print("Victory!")
             player.fatigue = player.maxfatigue
-            print("Jean gained {} exp!".format(player.combat_exp))
-            player.gain_exp(player.combat_exp)
-            player.combat_exp = 0
+            gained_exp = ''
+            for subtype, value in player.combat_exp.items():
+                gained_exp += "{0:<10}:{1:>6}\n".format(subtype, int(value))
+            print("Jean gained exp in the following: \n\n{}".format(gained_exp))
+            for subtype, value in player.combat_exp.items():
+                player.gain_exp(int(value), exp_type=subtype)
+                player.combat_exp[subtype] = 0
             break
 
         #  at this point, the player is alive and at least one enemy remains
@@ -188,13 +192,40 @@ def combat(player):
                                         acceptable_targets.append((enemy, distance))
                                 else:
                                     del player.combat_proximity[enemy]
-                            if len(acceptable_targets) > 1:
+                            if not player.current_move.verbose_targeting:
+                                if len(acceptable_targets) > 1:
+                                    acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
+                                    while target is None:
+                                        print("Select a target: \n")
+                                        for i, enemy in enumerate(acceptable_targets):
+                                            print(colored(str(i), "magenta") + ": " +
+                                                  colored(enemy[0].name + " (" + str(enemy[1]) + "ft)", "magenta"))
+                                        cprint("x: Cancel", "magenta")
+                                        choice = input("Target: ")
+                                        if choice.lower() == "x":
+                                            player.current_move = None
+                                            break
+                                        if not functions.is_input_integer(choice):
+                                            cprint("Invalid selection!", "red")
+                                            continue
+                                        choice = int(choice)
+                                        if choice > len(acceptable_targets):
+                                            cprint("Invalid selection!", "red")
+                                            continue
+                                        for i, enemy in enumerate(acceptable_targets):
+                                            if choice == i:
+                                                target = enemy[0]
+                                else:
+                                    target = acceptable_targets[0][0]
+                                if player.current_move:
+                                    player.current_move.target = target
+                            else:  # verbose targeting is enabled for this move #todo: test verbose targeting menu
                                 acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
                                 while target is None:
                                     print("Select a target: \n")
                                     for i, enemy in enumerate(acceptable_targets):
                                         print(colored(str(i), "magenta") + ": " +
-                                              colored(enemy[0].name + " (" + str(enemy[1]) + "ft)", "magenta"))
+                                              colored("{} ({}ft; {})".format(enemy[0].name, str(enemy[1]), player.current_move.calculate_hit_chance(enemy[0])),"cyan"))
                                     choice = input("Target: ")
                                     if not functions.is_input_integer(choice):
                                         cprint("Invalid selection!", "red")
@@ -206,9 +237,8 @@ def combat(player):
                                     for i, enemy in enumerate(acceptable_targets):
                                         if choice == i:
                                             target = enemy[0]
-                            else:
-                                target = acceptable_targets[0][0]
-                            player.current_move.target = target
+                                if player.current_move:
+                                    player.current_move.target = target
                         else:
                             player.current_move.target = player
                         player.current_move.cast(player)

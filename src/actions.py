@@ -59,6 +59,10 @@ class ViewInventory(Action):
         super().__init__(method=Player.print_inventory, name='View inventory', hotkey=('i', 'inv', 'inventory'))
 
 
+class SkillMenu(Action):
+    def __init__(self):
+        super().__init__(method=Player.skillmenu, name='View skill menu', hotkey=('k', 'skill', 'skillmenu'))
+
 class Look(Action):
     def __init__(self):
         super().__init__(method=Player.look, name="Look", hotkey=('l', 'look'))

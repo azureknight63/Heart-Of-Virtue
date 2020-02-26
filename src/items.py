@@ -15,6 +15,7 @@ item_types = {
             "Bludgeon",
             "Hammer",
             "Bow",
+            "Arrow",  # distinct from Bow because Bow is considered a blunt attack at close range
             "Crossbow",
             "Polearm",
             "Stars",
@@ -23,7 +24,7 @@ item_types = {
         ],
         'base_damage_types': {  # not to be confused with subtypes or archetypes, base damage is what a standard attack evaluates as for a weapon or skill,
                                 # which can be combined with other base types or elemental types of damage
-            "piercing": ["Dagger", "Pick", "Spear"],
+            "piercing": ["Dagger", "Pick", "Spear", "Arrow"],
             "slashing": ["Sword", "Axe", "Scythe", "Halberd", "Stars"],
             "crushing": ["Bludgeon", "Hammer", "Bow", "Crossbow", "Polearm", "Staff"],
             "spiritual": ["Ethereal"],
@@ -481,6 +482,8 @@ class Shortbow(Weapon):
                          isequipped=False, value=10,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.5, maintype="Weapon",
                          subtype="Bow")
+        self.range_base = 20  # this will affect the accuracy and power of the shot; range is the distance when the effect begins
+        self.range_decay = 0.05  # the rate of decay for accuracy and damage after base range is reached
 
 
 class Longbow(Weapon):
@@ -491,8 +494,10 @@ class Longbow(Weapon):
                          description="Specialized bow for shooting long distances. Useful as a weak bludgeon at close range.\n"
                                      "Requires two hands.",
                          isequipped=False, value=10,
-                         damage=5, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.2, maintype="Weapon",
+                         damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=2, maintype="Weapon",
                          subtype="Bow")
+        self.range_base = 25
+        self.range_decay = 0.04
 
 
 class Crossbow(Weapon):
@@ -505,6 +510,8 @@ class Crossbow(Weapon):
                          isequipped=False, value=10,
                          damage=20, str_req=5, fin_req=5, str_mod=1.5, fin_mod=1, weight=4, maintype="Weapon",
                          subtype="Crossbow")
+        self.range_base = 15
+        self.range_decay = 0.06
 
 
 class Pole(Weapon):
@@ -799,3 +806,64 @@ class Antidote(Consumable):
             return
         else:
             print("Jean is not beset by poison. He places the Antidote back into his bag.")
+
+
+class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasses (like WoodenArrow, IronArrow, etc.)
+    def __init__(self, name, description, value, weight, power, range_base_modifier, range_decay_modifier, sturdiness, helptext, effects):
+        super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable", subtype="Arrow")
+        self.power = power
+        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+                        # the game searches the inventory for other copies and increases that count by self.count,
+                        # then removes this object
+        self.interactions = ["drop"]
+        self.announce = "Jean notices an arrow on the ground."
+        self.range_base_modifier = range_base_modifier  # multiplies the bow's base range by this amount
+        self.range_decay_modifier = range_decay_modifier  # multiplies the bow's base decay by this amount
+        self.sturdiness = sturdiness # frequency that an arrow fired at an enemy will survive to be picked up again
+        self.helptext = helptext  # appears next to the arrow when the player is choosing after using the Shoot Arrow move
+        self.effects = effects
+
+
+    def stack_grammar(self):
+        if self.count > 1:
+            self.description = "A quiver of {}s.\n" \
+                               "There appear to be {} arrows in the quiver.\n".format(self.name.lower(), self.count)
+            self.announce = "There is a quiver of arrows here."
+        else:
+            self.description = "A standard arrow, to be fired with a bow."
+            self.announce = "Jean notices an arrow on the ground."
+
+
+class WoodenArrow(Arrow):
+    def __init__(self):
+        super().__init__(name="Wooden Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
+                         "This one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. "
+                         "\nThey tend to break frequently.",
+                         value=1, weight=0.05, power=5, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.4,
+                         helptext=colored("+range, -decay, ", "green") + colored("-damage, -sturdiness", "red"), effects=None)
+
+
+class IronArrow(Arrow):
+    def __init__(self):
+        super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
+        This one is made of iron. Iron arrows are heavy and can be devastating up close. They suffer, however, when it comes to range and accuracy over long \
+        distances. \nLike all metal arrows, they are considerably sturdier than other types of arrows.",
+                         value=5, weight=0.25, power=10, range_base_modifier=0.7, range_decay_modifier=1.4, sturdiness=0.6,
+                         helptext=colored("+damage, +sturdiness, ", "green") + colored("-range, ++decay", "red"), effects=None)
+
+
+class GlassArrow(Arrow):
+    def __init__(self):
+        super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
+        This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, arrows like this rarely survive the first shot.",
+                         value=10, weight=0.1, power=12, range_base_modifier=1.1, range_decay_modifier=1, sturdiness=0.1,
+                         helptext=colored("+range, +damage, ", "green") + colored("~decay, ", "yellow") + colored("---sturdiness", "red"), effects=None)
+
+
+class FlareArrow(Arrow):
+    def __init__(self):
+        super().__init__(name="Flare Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
+        This one is made of wood and bursts into flames upon impact."
+                                                         "\nObviously, don't expect to get it back after firing.",
+                         value=10, weight=0.05, power=5, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.0,
+                         helptext=colored("+range, +damage, -decay, ", "green") + colored("----sturdiness", "red"), effects=None)

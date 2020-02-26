@@ -62,6 +62,7 @@ class NPC:
             "generic":      1.0,  # Default status type for all states
             "stun":         1.0,  # Unable to move; typically short duration
             "poison":       1.0,  # Drains Health every combat turn/game tick; persists
+            "enflamed":     1.0,
             "sloth":        1.0,  # Drains Fatigue every combat turn
             "apathy":       1.0,  # Drains HEAT every combat turn
             "blind":        1.0,  # Miss physical attacks more frequently; persists
@@ -85,6 +86,7 @@ class NPC:
             "generic":      1.0,
             "stun":         1.0,
             "poison":       1.0,
+            "enflamed":     1.0,
             "sloth":        1.0,
             "apathy":       1.0,
             "blind":        1.0,

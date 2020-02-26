@@ -9,7 +9,7 @@ import states, functions, items
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0,9999), heat_gain=0, fatigue_cost=0,
-                 instant=False):
+                 instant=False, verbose_targeting=False):
         self.name = name
         self.description = description
         self.xp_gain = xp_gain
@@ -22,6 +22,7 @@ class Move:  # master class for all moves
         self.target = target  # can be the same as the user in abilities with no targets
         self.user = user
         self.targeted = targeted  # Is the move targeted at something?
+        self.verbose_targeting = verbose_targeting  # If set to true, the target menu will always appear even with 1 target and will show additional info
         self.interrupted = False  # When a move is interrupted, skip all remaining actions for that move, set the
         # move's cooldown
         self.initialized = False
@@ -758,6 +759,182 @@ class TacticalPositioning(Move):
             print("{} was unable to get closer to {}!".format(user.name, self.target.name))
 
             
+class ShootBow(Move):  # ranged attack with a bow, player only. Requires having arrows in inventory; this is checked when available skills are evaluated in combat.py
+    def __init__(self, player):
+        description = "Fire an arrow at a target enemy. You must have arrows in your inventory to use. " \
+                      "If you have multiple types of arrows, you may choose which type to fire."
+        prep = 10
+        execute = 1
+        recoil = 1  # bows do not have significant recoil
+        cooldown = 3
+        fatigue_cost = 100 - (5 * player.endurance)
+        if fatigue_cost <= 10:
+            fatigue_cost = 10
+        mvrange = (6,50)
+        super().__init__(name="Shoot Bow", description=description, xp_gain=1, current_stage=0,
+                         stage_beat=[prep,execute,recoil,cooldown], targeted=True, mvrange=mvrange,
+                         stage_announce=["Jean reaches into his quiver.",
+                                         colored("Jean lets his arrow fly!", "green"),
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=None, user=player, verbose_targeting=True)
+        self.arrow = items.WoodenArrow()  # modified later, based on player arrow type fired; arrow type chosen at prep stage
+        self.power = 0
+        self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+        self.accuracy = 1.0
+        self.base_range = 20
+        self.decay = 0.05
+        self.evaluate()
+
+    def calculate_hit_chance(self, enemy): # estimate the hit chance for enemy and return as a string (ex "48%")
+        hit_chance = 2
+        min = self.mvrange[0]
+        effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        max = effective_range
+        target_distance = self.user.combat_proximity[enemy]
+        if min <= target_distance <= max:  # check if target is still in range
+            hit_chance = (98 - enemy.finesse) + self.user.finesse
+            if target_distance > self.user.eq_weapon.range_base:
+                accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
+                hit_chance -= accuracy_decay
+            if hit_chance < 2:  # Minimum value for hit chance
+                hit_chance = 2
+        #todo cut hit chance in half if an enemy is within melee range
+        return "{}%".format(hit_chance)
+
+    def viable(self):
+        viability = False
+        has_bow = False
+        enemy_in_range = False
+        has_arrows = False
+        if self.user.eq_weapon.subtype == "Bow":
+            has_bow = True
+            min = self.mvrange[0]
+            effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+            max = effective_range
+            for enemy, distance in self.user.combat_proximity.items():
+                if min <= distance <= max:
+                    enemy_in_range = True
+                    break
+
+        if hasattr(self.user, "inventory"):
+            for item in self.user.inventory:
+                if item.subtype == "Arrow":
+                    has_bow = True
+                    break
+
+        if has_bow and enemy_in_range and has_arrows:
+            viability = True
+        return viability
+
+    def prep(self, player):
+        # first, check if there is more than one type of arrow. If so, build a menu, else skip to modifying effects
+        arrowtypes = []
+        for arrowtype in self.user.inventory:
+            if arrowtype.subtype == "Arrow":
+                if arrowtype.count > 0:  # in case the arrow stack hasn't had a chance to remove itself, check the count
+                    arrowtypes.append(arrowtype)
+        if len(arrowtypes) > 1:  # build our menu
+            cprint("Select an arrow type...", "cyan")
+            for i, v in enumerate(arrowtypes):
+                print(colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")")
+            arrow_selection = None
+            while not arrow_selection:
+                arrow_selection = input(colored('Selection: ', "cyan"))
+                if functions.is_input_integer(arrow_selection):
+                    arrow_selection = int(arrow_selection)
+                    if arrow_selection < len(arrowtypes):
+                        self.arrow = arrowtypes[arrow_selection]
+                        print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
+                        self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
+                        self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+                        self.base_damage_type = items.get_base_damage_type(self.arrow)  # in case the arrow has a different base damage type than Piercing
+                        self.power = self.arrow.power
+                        if self.arrow.effects:
+                            for effect in self.arrow.effects:
+                                if effect.trigger == "prep":
+                                    effect.process()
+                        break
+                cprint("Invalid selection! Please try again.", "red")
+                arrow_selection = None
+        else:
+            self.arrow = arrowtypes[0]
+            print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
+            self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
+            self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+            self.base_damage_type = items.get_base_damage_type(self.arrow)  # in case the arrow has a different base damage type than Piercing
+            self.power = self.arrow.power
+            if self.arrow.effects:
+                for effect in self.arrow.effects:
+                    if effect.trigger == "prep":
+                        effect.process()
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        power = 0
+        prep = int(100 / ((self.user.speed * 0.7) + (self.user.strength * 0.3)))  # starting prep of 10
+        if prep < 1:
+            prep = 1
+        execute = 1
+        recoil = 1
+        cooldown = 3 - int(self.user.speed/20)
+        if cooldown < 0:
+            cooldown = 0
+        fatigue_cost = 100 - (5 * self.user.endurance)
+        if fatigue_cost <= 10:
+            fatigue_cost = 10
+        #effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        #weapon_name = self.user.eq_weapon.name
+        #self.stage_announce[1] = colored("Jean lets his " + weapon_name + " fly!", "green") ### TBD when arrow is selected
+        self.power = power
+        self.stage_beat = [prep, execute, recoil, cooldown]
+        self.fatigue_cost = fatigue_cost
+        #self.mvrange = (6, effective_range)
+        self.base_damage_type = items.get_base_damage_type(self.arrow)
+        #self.base_range = self.user.eq_weapon.range_base
+        #self.decay = self.user.eq_weapon.range_decay
+
+    def execute(self, player):
+        glance = False  # switch for determining a glancing blow
+        self.prep_colors()
+        min = self.mvrange[0]
+        effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        max = effective_range
+        target_distance = player.combat_proximity[self.target]
+        if min <= target_distance <= max:  # check if target is still in range
+            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            if target_distance > self.user.eq_weapon.range_base:
+                accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
+                hit_chance -= accuracy_decay
+            if hit_chance < 2:  # Minimum value for hit chance
+                hit_chance = 2
+            #todo copy your hit chance reduction for enemies within melee range
+            print(self.stage_announce[1])
+            #todo decrement arrow count by 1; make sure you are decrementing the right arrow type!
+        else:
+            print("Jean relaxes his bow as his target is no longer in range.")
+            return
+        roll = random.randint(0, 100)
+        self.power += (self.user.finesse * self.user.eq_weapon.fin_mod)
+        damage = (((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
+        if damage <= 0:
+            damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
+        damage = int(damage)
+        player.combat_exp["Bow"] += 10
+        if hit_chance >= roll:  # a hit!
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                if self.arrow.effects:
+                    for effect in self.arrow.effects:
+                        if effect.trigger == "execute":
+                            effect.process()
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
 
 
 ### NPC MOVES ###
