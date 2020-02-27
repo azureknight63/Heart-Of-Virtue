@@ -792,14 +792,20 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
         max = effective_range
         target_distance = self.user.combat_proximity[enemy]
+        close_range_distraction = 0  # all enemies will be checked; if any are closer than the weapon's min range, accuracy is halved
+        for e in self.user.combat_proximity:
+            if e != self.user:
+                if e < min:
+                    close_range_distraction = 1
+                    break
         if min <= target_distance <= max:  # check if target is still in range
             hit_chance = (98 - enemy.finesse) + self.user.finesse
+            hit_chance -= close_range_distraction * (hit_chance / 2)
             if target_distance > self.user.eq_weapon.range_base:
                 accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
                 hit_chance -= accuracy_decay
             if hit_chance < 2:  # Minimum value for hit chance
                 hit_chance = 2
-        #todo cut hit chance in half if an enemy is within melee range
         return "{}%".format(hit_chance)
 
     def viable(self):
@@ -835,6 +841,13 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                 if arrowtype.count > 0:  # in case the arrow stack hasn't had a chance to remove itself, check the count
                     arrowtypes.append(arrowtype)
         if len(arrowtypes) > 1:  # build our menu
+            show_menu = True
+            for arrow in arrowtypes:
+                if arrow.name == player.preferences["arrow"]:
+                    self.arrow = arrow
+                    show_menu = False
+            #if show_menu:
+                # todo Need to bypass the menu if player has an arrow preference
             cprint("Select an arrow type...", "cyan")
             for i, v in enumerate(arrowtypes):
                 print(colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")")
@@ -900,14 +913,20 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
         max = effective_range
         target_distance = player.combat_proximity[self.target]
+        close_range_distraction = 0  # all enemies will be checked; if any are closer than the weapon's min range, accuracy is halved
+        for e in self.user.combat_proximity:
+            if e != self.user:
+                if e < min:
+                    close_range_distraction = 1
+                    break
         if min <= target_distance <= max:  # check if target is still in range
             hit_chance = (98 - self.target.finesse) + self.user.finesse
+            hit_chance -= close_range_distraction * (hit_chance / 2)
             if target_distance > self.user.eq_weapon.range_base:
                 accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
                 hit_chance -= accuracy_decay
             if hit_chance < 2:  # Minimum value for hit chance
                 hit_chance = 2
-            #todo copy your hit chance reduction for enemies within melee range
             print(self.stage_announce[1])
             #todo decrement arrow count by 1; make sure you are decrementing the right arrow type!
         else:

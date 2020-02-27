@@ -140,6 +140,9 @@ class Player():
         self.map = None
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
+        self.preferences = {
+            "arrow" :   "Wooden Arrow"
+        }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
         self.combat_idle_msg = [
             'Jean breathes heavily. ',
             'Jean swallows forcefully. ',
@@ -773,6 +776,11 @@ he lets out a barely audible whisper:""", "red")
                 for i, item in enumerate(choices):
                     if i == int(inventory_selection):
                         print(item, '\n')
+                        if item.subtype == "arrow":
+                            if self.preferences["arrow"] == item.name:
+                                print('\nThis is your preferred arrow type. You will choose this when shooting your bow as long as you have enough.\n'
+                                      'If you select "prefer" again, you will remove this preference. Having no arrow preference will force you to'
+                                      'choose the arrow you want each time you shoot.\n')
                         if item.interactions:
                             self.inventory_item_sub_menu(item)
                         else:

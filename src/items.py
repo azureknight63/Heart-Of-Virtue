@@ -815,14 +815,13 @@ class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasse
         self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
-        self.interactions = ["drop"]
+        self.interactions = ["drop", "prefer"]
         self.announce = "Jean notices an arrow on the ground."
         self.range_base_modifier = range_base_modifier  # multiplies the bow's base range by this amount
         self.range_decay_modifier = range_decay_modifier  # multiplies the bow's base decay by this amount
         self.sturdiness = sturdiness # frequency that an arrow fired at an enemy will survive to be picked up again
         self.helptext = helptext  # appears next to the arrow when the player is choosing after using the Shoot Arrow move
         self.effects = effects
-
 
     def stack_grammar(self):
         if self.count > 1:
@@ -832,6 +831,9 @@ class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasse
         else:
             self.description = "A standard arrow, to be fired with a bow."
             self.announce = "Jean notices an arrow on the ground."
+
+    def prefer(self):
+        functions.add_preference("arrow", self.name)
 
 
 class WoodenArrow(Arrow):

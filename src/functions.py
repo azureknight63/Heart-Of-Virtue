@@ -2,6 +2,7 @@ import string, textwrap, os, inspect
 import sys, time, random, pickle, datetime, importlib, decimal
 import npc, tiles, moves, enchant_tables
 from player import Player
+from game import Game
 from termcolor import colored, cprint
 from os import listdir
 from os.path import isfile, join
@@ -397,3 +398,13 @@ def add_random_enchantments(item, count):
         enchantments[0].modify()
     if enchantments[1]:
         enchantments[1].modify()
+
+
+def add_preference(preftype, setting):
+    if preftype == "arrow":
+        if Game.player.preferences[preftype] != setting:
+            Game.player.preferences[preftype] = setting
+        else:
+            Game.player.preferences[preftype] = "None"
+    else:
+        Game.player.preferences[preftype] = setting
