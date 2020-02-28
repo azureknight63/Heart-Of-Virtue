@@ -812,7 +812,7 @@ he lets out a barely audible whisper:""", "red")
 
         target_item = None
         candidates = []
-        if phrase is not '':  # equip the indicated item, if possible
+        if phrase != '':  # equip the indicated item, if possible
             lower_phrase = phrase.lower()
             for item in self.inventory:
                 if hasattr(item, "isequipped"):

@@ -324,7 +324,7 @@ class Withdraw(Move):
             if distance < self.mvrange[1]:
                 viability = True
                 break
-        if self.user.name is not "Jean":  # NPCs won't use this if their HP is greater than 20%
+        if self.user.name != "Jean":  # NPCs won't use this if their HP is greater than 20%
             hp_pcnt = self.user.hp / self.user.maxhp
             if hp_pcnt > 0.2:
                 viability = False
@@ -843,44 +843,35 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         if len(arrowtypes) > 1:  # build our menu
             show_menu = True
             for arrow in arrowtypes:
-                if arrow.name == player.preferences["arrow"]:
+                if arrow.name == player.preferences["arrow"]:  #todo: Test arrow preference functionality
                     self.arrow = arrow
                     show_menu = False
-            #if show_menu:
-                # todo Need to bypass the menu if player has an arrow preference
-            cprint("Select an arrow type...", "cyan")
-            for i, v in enumerate(arrowtypes):
-                print(colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")")
-            arrow_selection = None
-            while not arrow_selection:
-                arrow_selection = input(colored('Selection: ', "cyan"))
-                if functions.is_input_integer(arrow_selection):
-                    arrow_selection = int(arrow_selection)
-                    if arrow_selection < len(arrowtypes):
-                        self.arrow = arrowtypes[arrow_selection]
-                        print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
-                        self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
-                        self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
-                        self.base_damage_type = items.get_base_damage_type(self.arrow)  # in case the arrow has a different base damage type than Piercing
-                        self.power = self.arrow.power
-                        if self.arrow.effects:
-                            for effect in self.arrow.effects:
-                                if effect.trigger == "prep":
-                                    effect.process()
-                        break
-                cprint("Invalid selection! Please try again.", "red")
+            if show_menu:
+                cprint("Select an arrow type...", "cyan")
+                for i, v in enumerate(arrowtypes):
+                    print(colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")")
                 arrow_selection = None
+                while not arrow_selection:
+                    arrow_selection = input(colored('Selection: ', "cyan"))
+                    if functions.is_input_integer(arrow_selection):
+                        arrow_selection = int(arrow_selection)
+                        if arrow_selection < len(arrowtypes):
+                            self.arrow = arrowtypes[arrow_selection]
+                            break
+                    cprint("Invalid selection! Please try again.", "red")
+                    arrow_selection = None
         else:
             self.arrow = arrowtypes[0]
-            print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
-            self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
-            self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
-            self.base_damage_type = items.get_base_damage_type(self.arrow)  # in case the arrow has a different base damage type than Piercing
-            self.power = self.arrow.power
-            if self.arrow.effects:
-                for effect in self.arrow.effects:
-                    if effect.trigger == "prep":
-                        effect.process()
+        # The arrow has been selected. Now, take aim!
+        print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
+        self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
+        self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+        self.base_damage_type = items.get_base_damage_type(self.arrow)  # in case the arrow has a different base damage type than Piercing
+        self.power = self.arrow.power
+        if self.arrow.effects:
+            for effect in self.arrow.effects:
+                if effect.trigger == "prep":
+                    effect.process()
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
         power = 0
@@ -907,6 +898,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         #self.decay = self.user.eq_weapon.range_decay
 
     def execute(self, player):
+        flying_arrow = self.arrow
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
         min = self.mvrange[0]
@@ -928,7 +920,10 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
             if hit_chance < 2:  # Minimum value for hit chance
                 hit_chance = 2
             print(self.stage_announce[1])
-            #todo decrement arrow count by 1; make sure you are decrementing the right arrow type!
+            if self.arrow.count > 1:
+                self.arrow.count -= 1
+            else:
+                self.user.inventory.pop(self.arrow)
         else:
             print("Jean relaxes his bow as his target is no longer in range.")
             return
@@ -953,6 +948,14 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                             effect.process()
         else:
             self.miss()
+        arrow_recovery_chance = random.Random(0, 1)
+        if arrow_recovery_chance <= flying_arrow.sturdiness:
+            if random.Randint(0, 1) == 1:
+                hide_arrow = True
+            else:
+                hide_arrow = False
+            self.user.current_room.spawn_item(flying_arrow.__class__, amt=1, hidden=hide_arrow, hfactor=random.Randint(0, 100))
+            #todo test arrow recovery (might have to search the area!)
         self.user.fatigue -= self.fatigue_cost
 
 

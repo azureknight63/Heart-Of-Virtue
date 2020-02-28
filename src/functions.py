@@ -1,8 +1,6 @@
 import string, textwrap, os, inspect
 import sys, time, random, pickle, datetime, importlib, decimal
 import npc, tiles, moves, enchant_tables
-from player import Player
-from game import Game
 from termcolor import colored, cprint
 from os import listdir
 from os.path import isfile, join
@@ -17,7 +15,7 @@ def print_slow(text, speed=1):
     rate = 0.1 / printspeed
     wrap = textwrap.fill(text, 80)
     for letter in wrap:
-        print(letter, end='',flush=True),
+        print(letter, end='', flush=True),
         time.sleep(rate)
 
 
@@ -28,9 +26,9 @@ def screen_clear():
 def check_for_npcs(room):  # Check to see what NPCs are in the room.
     # Does not evaluate combat aggro - that's a different function
     if len(room.npcs_here) > 0:  # Evaluate the room's NPCs.
-        for npc in room.npcs_here:
-            if not npc.hidden:
-                print(npc.name + npc.idle_message)
+        for sel_npc in room.npcs_here:
+            if not sel_npc.hidden:
+                print(sel_npc.name + sel_npc.idle_message)
         print("\n")
 
 
@@ -399,7 +397,6 @@ def add_random_enchantments(item, count):
     if enchantments[1]:
         enchantments[1].modify()
 
-
 def add_preference(preftype, setting):
     if preftype == "arrow":
         if Game.player.preferences[preftype] != setting:
@@ -408,3 +405,4 @@ def add_preference(preftype, setting):
             Game.player.preferences[preftype] = "None"
     else:
         Game.player.preferences[preftype] = setting
+        #todo: figure out a way to connect this function to the player's preferences
