@@ -5,7 +5,7 @@ from termcolor import colored, cprint
 
 class Player():
     def __init__(self):
-        self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood()]
+        self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
         self.name = "Jean"
         self.name_long = "Jean Claire"
         self.hp = 100
@@ -104,9 +104,9 @@ class Player():
             "doom":         1.0,
             "death":        1.0
         }
-        self.weight_tolerance = decimal.Decimal(20)
-        self.weight_tolerance_base = decimal.Decimal(20)
-        self.weight_current = decimal.Decimal(0)
+        self.weight_tolerance = 20.00
+        self.weight_tolerance_base = 20.00
+        self.weight_current = 0.00
         self.fists = items.Fists()
         self.eq_weapon = self.fists
         self.combat_exp = {"Basic": 0}  # place to pool all exp gained from a single combat before distribution
@@ -141,7 +141,7 @@ class Player():
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
         self.preferences = {
-            "arrow" :   "Wooden Arrow"
+            "arrow":   "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
         self.combat_idle_msg = [
             'Jean breathes heavily. ',
@@ -759,16 +759,20 @@ he lets out a barely audible whisper:""", "red")
 
             if len(choices) > 0:
                 for i, item in enumerate(choices):
+                    item_preference_value = ""
+                    for prefitem in self.preferences.values():
+                        if prefitem == item.name:
+                            item_preference_value = colored("(P)", "magenta")
                     if hasattr(item, 'isequipped'):
                         if item.isequipped:
-                            print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                            print(i, ': ', item.name, colored('(Equipped)', 'green'), ' ', item_preference_value, '\n')
                         else:
-                            print(i, ': ', item.name, '\n')
+                            print(i, ': ', item.name, ' ', item_preference_value, '\n')
                     else:
                         if hasattr(item, 'count'):
-                            print(i, ': ', item.name, ' (', item.count, ')\n')
+                            print(i, ': ', item.name, ' (', item.count, ')', ' ', item_preference_value, '\n')
                         else:
-                            print(i, ': ', item.name, '\n')
+                            print(i, ': ', item.name, ' ', item_preference_value, '\n')
                 inventory_selection = input(colored('View which? ', "cyan"))
                 if not functions.is_input_integer(inventory_selection):
                     num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = num_special = 0
@@ -776,11 +780,11 @@ he lets out a barely audible whisper:""", "red")
                 for i, item in enumerate(choices):
                     if i == int(inventory_selection):
                         print(item, '\n')
-                        if item.subtype == "arrow":
+                        if item.subtype == "Arrow":
                             if self.preferences["arrow"] == item.name:
                                 print('\nThis is your preferred arrow type. You will choose this when shooting your bow as long as you have enough.\n'
                                       'If you select "prefer" again, you will remove this preference. Having no arrow preference will force you to'
-                                      'choose the arrow you want each time you shoot.\n')
+                                      ' choose the arrow you want each time you shoot.\n')
                         if item.interactions:
                             self.inventory_item_sub_menu(item)
                         else:
@@ -1124,19 +1128,19 @@ he lets out a barely audible whisper:""", "red")
         time.sleep(5)
         something_found = False
         for hidden in self.current_room.npcs_here:
-            if hidden.hidden == True:
+            if hidden.hidden:
                 if search_ability > hidden.hide_factor:
                     print("Jean uncovered " + hidden.discovery_message)
                     something_found = True
                     hidden.hidden = False
         for hidden in self.current_room.items_here:
-            if hidden.hidden == True:
+            if hidden.hidden:
                 if search_ability > hidden.hide_factor:
                     print("Jean found " + hidden.discovery_message)
                     something_found = True
                     hidden.hidden = False
         for hidden in self.current_room.objects_here:
-            if hidden.hidden == True:
+            if hidden.hidden:
                 if search_ability > hidden.hide_factor:
                     print("Jean found " + hidden.discovery_message)
                     something_found = True
@@ -1308,14 +1312,14 @@ he lets out a barely audible whisper:""", "red")
         combat.combat(self)
 
     def refresh_weight(self):
-        self.weight_current = decimal.Decimal(0)
+        self.weight_current = 0.00
         for item in self.inventory:
             if hasattr(item, 'weight'):
-                addweight = decimal.Decimal(item.weight)
+                addweight = item.weight
                 if hasattr(item, 'count'):
                     addweight *= item.count
                 self.weight_current += addweight
-        self.weight_current = decimal.Decimal(self.weight_current)
+        self.weight_current = round(self.weight_current, 2)
 
     def take(self, phrase=''):
         if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
@@ -1337,10 +1341,12 @@ he lets out a barely audible whisper:""", "red")
                             self.inventory.append(item)
                             print('Jean takes {}.'.format(item.name))
                             self.current_room.items_here.remove(item)
+                            item.owner = self
                     else:
                         self.inventory.append(item)
                         print('Jean takes {}.'.format(item.name))
                         self.current_room.items_here.remove(item)
+                        item.owner = self
 
 
             else:

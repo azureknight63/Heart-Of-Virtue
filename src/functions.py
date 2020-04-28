@@ -1,8 +1,7 @@
 import string, textwrap, os, inspect
-import sys, time, random, pickle, datetime, importlib, decimal
+import sys, time, random, pickle, datetime, importlib, math
 import npc, tiles, moves, enchant_tables
 from player import Player
-from game import Game
 from termcolor import colored, cprint
 from os import listdir
 from os.path import isfile, join
@@ -110,7 +109,7 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
     ### Process other things which may affect stats, such as weight ###
     if target.name == "Jean":
         target.refresh_weight()
-        target.weight_tolerance += decimal.Decimal((target.strength + target.endurance) / 2)
+        target.weight_tolerance += round((target.strength + target.endurance) / 2, 2)
         check_weight = target.weight_tolerance - target.weight_current
         if check_weight > (
                 target.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
@@ -400,11 +399,14 @@ def add_random_enchantments(item, count):
         enchantments[1].modify()
 
 
-def add_preference(preftype, setting):
+def add_preference(player, preftype, setting):
     if preftype == "arrow":
-        if Game.player.preferences[preftype] != setting:
-            Game.player.preferences[preftype] = setting
+        if player.preferences[preftype] != setting:
+            player.preferences[preftype] = setting
+            print("Jean made " + colored(setting, "magenta") + " his preference.")
         else:
-            Game.player.preferences[preftype] = "None"
+            player.preferences[preftype] = "None"
+            print("Jean stopped preferring a specific {}.".format(preftype))
     else:
-        Game.player.preferences[preftype] = setting
+        player.preferences[preftype] = setting
+        print("Jean made " + colored(setting, "purple") + " his preference.")

@@ -6,7 +6,7 @@ REMINDERS:
 
 """
 __author__ = 'Alex Egbert'
-import universe, functions, intro_scene, moves, combat, npc, items
+import functions, intro_scene, moves, combat, npc, items
 from player import Player
 from universe import Universe
 from termcolor import colored, cprint
@@ -106,6 +106,8 @@ _\\|//__( | )______)_/
         items.get_all_subtypes()  # creates the 'All' archetypes for each item group; used for states/item effects/etc.
         ### enter post-menu game loop ###
         while player.is_alive() and not player.victory and not player.main_menu:
+            for item in player.inventory:
+                item.owner = player  # enforce player ownership of all inventory items; used for special interactions
             if not player.eq_weapon:  # if the player is unarmed, "equip" fists
                 player.eq_weapon = player.fists
             player.time_elapsed += (time.time() - check_time)

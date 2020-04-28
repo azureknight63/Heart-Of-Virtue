@@ -183,9 +183,25 @@ class NPC:
         self.known_moves.append(move)
         move.weight = weight
 
+    def drop_inventory(self):
+        if len(self.inventory) > 0:
+            for item in self.inventory:
+                quantity = 1
+                if hasattr(item, "count"):
+                    quantity = item.count
+                loopcount = quantity
+                while loopcount > 0:
+                    if random.random() > 0.6:
+                        quantity -= 1
+                    loopcount -= 1
+                if quantity > 0:
+                    self.current_room.spawn_item(item.__class__.__name__, amt=quantity, hidden=1, hfactor=random.randint(20, 60))
+            self.inventory = []
+
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
         if self.loot:
             self.roll_loot()  # checks to see if an item will drop
+        self.drop_inventory()
         return True
 
     def combat_engage(self, player):

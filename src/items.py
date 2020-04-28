@@ -73,6 +73,7 @@ class Item():
         self.announce = "There's a {} here.".format(self.name)
         self.interactions = []  # things to do with the item from the inventory menu - player must be passed as a parameter
         self.skills = skills  # skills that can be learned from using the item (acquiring exp); should be a dictionary with "moves" objects and the exp needed
+        self.owner = None  # used to tie an item to an owner for special interactions
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
@@ -92,6 +93,8 @@ class Item():
         :return: 
         '''
         pass
+
+
 
 
 class Gold(Item):
@@ -285,11 +288,34 @@ class Special(Item):
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
+        self.count = 1
+        self.interactions = []
         super().__init__(name, description, value, maintype, subtype, discovery_message) # announce="You notice a {} sitting here.".format(self.name))
 
     def __str__(self):
          return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
             self.name, self.description, self.value, self.weight)
+
+    def drop(self, player):
+        if self.count > 1:
+            while True:
+                drop_count = input("How many would you like to drop? ")
+                if functions.is_input_integer(drop_count):
+                    if 0 <= int(drop_count) <= self.count:
+                        if int(drop_count) > 0:
+                            cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
+                            for i in range(int(drop_count)):
+                                self.count -= 1
+                                itemtype = self.__class__.__name__
+                                player.current_room.spawn_item(item_type=itemtype)
+                            player.current_room.stack_duplicate_items()
+                        else:
+                            print("Jean changed his mind.")
+                        break
+                    else:
+                        cprint("Invalid amount!", "red")
+                else:
+                    cprint("Invalid amount!", "red")
 
 
 class Key(Special):
@@ -304,6 +330,19 @@ class Key(Special):
                          value=0, weight=0, maintype="Special", subtype="Key")
 
         self.lock = lock  # Any object that has an 'unlock' method
+
+
+class Crystals(Special):
+    def __init__(self):
+        '''
+        Crystals are commodity drops from certain creatures like Rock Rumblers. They can also be found growing naturally in some caves and mountain areas.
+        They can be sold to merchants. Gollem merchants will pay an increased rate for them since they are a source of food.
+        '''
+        super().__init__(name="Crystals",
+                         description="A beautiful collection of scintillating purple and aquamarine crystals. Interesting baubles to most, but a valuable"
+                                     " food source to Rock Rumblers and their gentler cousins, the Gollem.",
+                         value=10, weight=0.1, maintype="Special", subtype="Commodity")
+        self.interactions = ["drop"]
 
 
 class Fists(Weapon):  # equipped automatically when Jean has no other weapon equipped
@@ -467,7 +506,7 @@ class Hammer(Weapon):
     def __init__(self):
         super().__init__(name="Hammer",
                          description="Great for smashing more heavily-armored foes.",
-                         isequipped=False, value=10,
+                         isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=2.5, fin_mod=0.1, weight=3, maintype="Weapon",
                          subtype="Bludgeon")
 
@@ -479,7 +518,7 @@ class Shortbow(Weapon):
         super().__init__(name="Shortbow",
                          description="A reliable missile weapon. Useful as a weak bludgeon at close range.\n"
                                      "Requires two hands.",
-                         isequipped=False, value=10,
+                         isequipped=False, value=50,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.5, maintype="Weapon",
                          subtype="Bow")
         self.range_base = 20  # this will affect the accuracy and power of the shot; range is the distance when the effect begins
@@ -493,7 +532,7 @@ class Longbow(Weapon):
         super().__init__(name="Longbow",
                          description="Specialized bow for shooting long distances. Useful as a weak bludgeon at close range.\n"
                                      "Requires two hands.",
-                         isequipped=False, value=10,
+                         isequipped=False, value=100,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=2, maintype="Weapon",
                          subtype="Bow")
         self.range_base = 25
@@ -507,7 +546,7 @@ class Crossbow(Weapon):
         super().__init__(name="Crossbow",
                          description="Heavier than a standard bow but able to fire more rapidly. It fires bolts instead of arrows.\n"
                                      "Requires two hands.",
-                         isequipped=False, value=10,
+                         isequipped=False, value=100,
                          damage=20, str_req=5, fin_req=5, str_mod=1.5, fin_mod=1, weight=4, maintype="Weapon",
                          subtype="Crossbow")
         self.range_base = 15
@@ -557,7 +596,7 @@ class DullMedallion(Accessory):
                          description="A rather unremarkable medallion. \n"
                                      "It's face is dull, and seems to swallow any light unlucky enough to land upon it. \n"
                                      "It may have been a family heirloom or a memento of a lost love.",
-                         isequipped=False, value=10,
+                         isequipped=False, value=25,
                          protection=0, str_mod=0, fin_mod=0, weight=0.5, maintype="Accessory", subtype="Necklace")
         
     def on_equip(self, player):
@@ -589,6 +628,19 @@ class GoldRing(Accessory):
                          description="A shiny gold ring. \n"
                                      "Typically a sign of marital vows, though it may also be worn to exhibit wealth.",
                          isequipped=False, value=200,
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring")
+
+
+class JeanWeddingBand(Accessory):
+    level = 99
+    add_faith = 1
+    add_endurance = 1
+    add_charisma = -1
+    def __init__(self):
+        super().__init__(name="Wedding Band",
+                         description="A shiny gold ring with some intricate patterns carved into it. \n"
+                                     "This is an item of special interest to Jean. Some things are too difficult to let go.",
+                         isequipped=True, value=900,
                          protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring")
 
 
@@ -832,8 +884,8 @@ class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasse
             self.description = "A standard arrow, to be fired with a bow."
             self.announce = "Jean notices an arrow on the ground."
 
-    def prefer(self):
-        functions.add_preference("arrow", self.name)
+    def prefer(self, player):
+        functions.add_preference(player, "arrow", self.name)
 
 
 class WoodenArrow(Arrow):
