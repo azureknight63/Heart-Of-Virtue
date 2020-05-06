@@ -3,7 +3,7 @@ All of the loot tables for NPCs can be found here. These are called from the npc
 '''
 
 import random, decimal
-import items
+import items, states
 
 
 class Enchantment:
@@ -13,6 +13,7 @@ class Enchantment:
         self.rarity = rarity  # likelihood of this enchantment being selected
         self.group = group  # prefix or suffix
         self.value = value  # multiplier against the item's base value; 1.5 = 50% increase in gold value
+        self.equip_states = []  # enchantments can cause states to be applied to the player when the item is equipped
 
     def modify(self):
         '''
@@ -27,6 +28,7 @@ class Enchantment:
         :return: True or False
         '''
         return True
+
 
 ### PREFIXES ###
 
@@ -225,7 +227,7 @@ class Reinforced(Enchantment):  # improves protection rating of armor by 3-5
 class Plated(Enchantment):  # improves protection rating of armor by 5-10
     tier = 3
     def __init__(self, item):
-        super().__init__(item, name="Reinforced", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Plated", rarity=0, group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(5, 10)
@@ -246,6 +248,37 @@ class Plated(Enchantment):  # improves protection rating of armor by 5-10
             return True
         else:
             return False
+
+
+class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-permanent. Also adds 50% resistance to poison.
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
+        self.equip_states = [states.Poisoned()]
+
+    def modify(self):
+        if hasattr(self.item, "add_resistance"):
+            if "poison" in self.item.add_resistance:
+                self.item.add_resistance["poison"] += 0.5  # todo pick up from here; trying to add poison resistance
+        else:
+            self.item.add_maxhp = mod
+        self.item.value += (mod * 21)
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = [
+            "Armor",
+            "Helm",
+            "Gloves",
+            "Boots"
+                            ]
+        if self.item.maintype in allowed_maintypes:
+            return True
+        else:
+            return False
+
 
 ### SUFFIXES ###
 

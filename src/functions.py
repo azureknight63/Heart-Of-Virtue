@@ -395,8 +395,10 @@ def add_random_enchantments(item, count):
         ench_pool -= 1
     if enchantments[0]:
         enchantments[0].modify()
+        item.equip_states += enchantments[0].equip_states
     if enchantments[1]:
         enchantments[1].modify()
+        item.equip_states += enchantments[1].equip_states
 
 
 def add_preference(player, preftype, setting):

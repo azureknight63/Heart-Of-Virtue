@@ -186,6 +186,8 @@ def combat(player):
                             target = None
                             acceptable_targets = []
                             min, max = player.current_move.mvrange
+                            if player.current_move.name == "Shoot Bow":  # if the player is shooting his bow, overwrite max to include decaying range
+                                max = player.eq_weapon.range_base + (100 / player.eq_weapon.range_decay)
                             for enemy, distance in player.combat_proximity.items():
                                 if enemy.is_alive:
                                     if min <= distance <= max:

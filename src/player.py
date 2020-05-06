@@ -218,6 +218,20 @@ maintenant et à l'heure de notre mort. Amen.""",
         for state in self.states:
             state.process(self)
 
+    def apply_state(self, state):
+        player_has_state = False
+        for player_state in self.states:
+            if player_state.name == state.name:
+                player_has_state = True
+                if player_state.compounding:
+                    player_state.compound(self)
+                else:
+                    self.states.remove(player_state)  # state is non-compounding; remove the existing state and replace with the new one (refreshes the state)
+                    self.states.append(state)
+                break
+        if not player_has_state:
+            self.states.append(state)
+
     def stack_gold(self):
         gold_objects = []
         for item in self.inventory:  # get the counts of each item in each category
@@ -995,23 +1009,39 @@ he lets out a barely audible whisper:""", "red")
                     if case():
                         break
                 if len(choices) > 0:
-                    for i, item in enumerate(choices):
+                    for i, item in enumerate(choices):  # todo TEST use item move with arrow preferences
+                        item_preference_value = ""
+                        for prefitem in self.preferences.values():
+                            if prefitem == item.name:
+                                item_preference_value = colored("(P)", "magenta")
                         if hasattr(item, 'isequipped'):
                             if item.isequipped:
-                                print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                                print(i, ': ', item.name, colored('(Equipped)', 'green'), ' ', item_preference_value, '\n')
+                            else:
+                                print(i, ': ', item.name, ' ', item_preference_value, '\n')
                         else:
                             if hasattr(item, 'count'):
-                                print(i, ': ', item.name, ' (', item.count, ')\n')
+                                print(i, ': ', item.name, ' (', item.count, ')', ' ', item_preference_value, '\n')
                             else:
-                                print(i, ': ', item.name, '\n')
+                                print(i, ': ', item.name, ' ', item_preference_value, '\n')
                     inventory_selection = input(colored('Use which? ', "cyan"))
                     if not functions.is_input_integer(inventory_selection):
                         num_consumables = num_special = 0
                         continue
                     for i, item in enumerate(choices):
                         if i == int(inventory_selection):
-                            print("Jean used {}!".format(item.name))
-                            item.use(self)
+                            if "use" in item.interactions:
+                                print("Jean used {}!".format(item.name))
+                                item.use(self)
+                            elif "prefer" in item.interactions:
+                                item.prefer(self)
+                            else:
+                                for interaction in item.interactions:  # this will search through the item's available interactions and attempt to execute
+                                    if interaction != "drop":  # this will only occur if I forgot to handle the interaction above (see "use" and "prefer")
+                                        item.exec(interaction + "(self)")
+                                        break
+                                    else:
+                                        continue  # no available interactions; dump back to menu. Theoretically, this should never happen.
                             if self.in_combat:
                                 exit_loop = True
                             break

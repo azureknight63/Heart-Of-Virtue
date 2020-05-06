@@ -793,9 +793,8 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         max = effective_range
         target_distance = self.user.combat_proximity[enemy]
         close_range_distraction = 0  # all enemies will be checked; if any are closer than the weapon's min range, accuracy is halved
-        for e, dist in enumerate(self.user.combat_proximity):
+        for e, dist in self.user.combat_proximity.items():
             if e != self.user:
-                if dist < min:  # todo: error here; python seems to think dist = slime ???
                     close_range_distraction = 1
                     break
         if min <= target_distance <= max:  # check if target is still in range
@@ -815,7 +814,9 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         has_arrows = False
         if self.user.eq_weapon.subtype == "Bow":
             has_bow = True
-            min = self.mvrange[0]
+
+        min = self.mvrange[0]
+        if hasattr(self.user.eq_weapon, "range_base"):
             effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
             max = effective_range
             for enemy, distance in self.user.combat_proximity.items():
@@ -825,9 +826,10 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
 
         if hasattr(self.user, "inventory"):
             for item in self.user.inventory:
-                if item.subtype == "Arrow":
-                    has_bow = True
-                    break
+                if hasattr(item, "subtype"):
+                    if item.subtype == "Arrow":
+                        has_bow = True
+                        break
 
         if has_bow and enemy_in_range and has_arrows:
             viability = True
@@ -904,9 +906,9 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         max = effective_range
         target_distance = player.combat_proximity[self.target]
         close_range_distraction = 0  # all enemies will be checked; if any are closer than the weapon's min range, accuracy is halved
-        for e in self.user.combat_proximity:
+        for e, dist in self.user.combat_proximity.items():
             if e != self.user:
-                if e < min:
+                if dist < min:
                     close_range_distraction = 1
                     break
         if min <= target_distance <= max:  # check if target is still in range
@@ -918,7 +920,12 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
             if hit_chance < 2:  # Minimum value for hit chance
                 hit_chance = 2
             print(self.stage_announce[1])
-            #todo decrement arrow count by 1; make sure you are decrementing the right arrow type!
+            # todo TEST arrow decrementing/destruction
+            if self.arrow.count > 1:
+                self.arrow.count -= 1
+            else:
+                self.user.inventory.remove(self.arrow)
+
         else:
             print("Jean relaxes his bow as his target is no longer in range.")
             return
@@ -954,7 +961,6 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
             # arrow survived the shot; spawn one
             if arrow_location == "tile":
                 self.user.current_room.spawn_item(self.arrow.__class__.__name__, hidden=1, hfactor=random.randint(40, 80))
-
 
 ### NPC MOVES ###
 

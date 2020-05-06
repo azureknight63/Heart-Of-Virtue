@@ -74,11 +74,15 @@ class Item():
         self.interactions = []  # things to do with the item from the inventory menu - player must be passed as a parameter
         self.skills = skills  # skills that can be learned from using the item (acquiring exp); should be a dictionary with "moves" objects and the exp needed
         self.owner = None  # used to tie an item to an owner for special interactions
+        self.equip_states = []  # items can cause states to be applied to the player when the item is equipped; enchantments can add to this as well
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
     
     def on_equip(self, player):
+        if len(self.equip_states) > 0:
+            for state in self.equip_states:
+                player.apply_state(state)
         '''
         Actions performed when the item is equipped
         Clobber with child objects
