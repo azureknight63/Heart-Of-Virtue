@@ -232,6 +232,8 @@ maintenant et à l'heure de notre mort. Amen.""",
         if not player_has_state:
             self.states.append(state)
 
+    # todo: need a status command that shows player HP, stats, current statuses, equipment, gold, and any other pertinent info
+
     def stack_gold(self):
         gold_objects = []
         for item in self.inventory:  # get the counts of each item in each category
@@ -819,6 +821,29 @@ he lets out a barely audible whisper:""", "red")
                 method = getattr(item, item.interactions[selection])
                 method(self)
 
+    def print_status(self):
+        cprint("=====\nStatus\n=====\n"
+               "{}".format(self.name_long), "cyan")
+        cprint("Health: {} / {} ({})".format(self.hp, self.maxhp, self.maxhp_base), "cyan")
+        cprint("Fatigue: {} ({})".format(self.fatigue, self.maxfatigue_base), "cyan")
+        cprint("----------------------------------------------------------", "yellow")
+        state_list = ""
+        if len(self.states) > 0:
+            for state in self.states:
+                state_list += "{} ({}) ".format(state.name, state.steps_left)
+        cprint("States: {}".format(state_list), "cyan")
+        cprint("----------------------------------------------------------", "yellow")
+        cprint("Protection: {}".format(self.protection), "cyan")
+        cprint("Strength: {} ({})".format(self.strength, self.strength_base), "cyan")
+        cprint("Finesse: {} ({})".format(self.finesse, self.finesse_base), "cyan")
+        cprint("Speed: {} ({})".format(self.speed, self.speed_base), "cyan")
+        cprint("Endurance: {} ({})".format(self.endurance, self.endurance_base), "cyan")
+        cprint("Charisma: {} ({})".format(self.charisma, self.charisma_base), "cyan")
+        cprint("Intelligence: {} ({})".format(self.intelligence, self.intelligence_base), "cyan")
+        cprint("Faith: {} ({})".format(self.faith, self.faith_base), "cyan")
+        cprint("----------------------------------------------------------", "yellow")
+        # todo represent resistances. I would like to arrange them in a convenient grid. Maybe apply the grid to the stats above, too.
+
     def equip_item(self, phrase=''):
 
         def confirm(thing):
@@ -1398,7 +1423,7 @@ he lets out a barely audible whisper:""", "red")
                         break
 
     def view_map(self, phrase=''):
-        '''First draw a map if known tiles by iterating over self.map and checking self.map.last_entered to see if the
+        '''First draw a map of known tiles by iterating over self.map and checking self.map.last_entered to see if the
         player has discovered that tile. If so, place a square at those coordinates.'''
         # determine boundaries
         max_x = 0

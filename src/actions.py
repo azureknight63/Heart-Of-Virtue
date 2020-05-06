@@ -59,6 +59,11 @@ class ViewInventory(Action):
         super().__init__(method=Player.print_inventory, name='View inventory', hotkey=('i', 'inv', 'inventory'))
 
 
+class ViewStatus(Action):
+    def __init__(self):
+        super().__init__(method=Player.print_status, name='View status', hotkey=('st', 'stat', 'status', 'char', 'character'))
+
+
 class SkillMenu(Action):
     def __init__(self):
         super().__init__(method=Player.skillmenu, name='View skill menu', hotkey=('k', 'skill', 'skillmenu'))

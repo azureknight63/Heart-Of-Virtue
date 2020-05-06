@@ -223,3 +223,17 @@ class VerdetteRoom(MapTile):  # room Jean is dumped in after the encounter with 
     def modify_player(self, the_player):
         #Room has no action on player
         pass
+
+
+class VerdetteSpring(MapTile):  # room Jean is dumped in after the encounter with Gorran
+    def __init__(self, universe, map, x, y):
+        super().__init__(universe, map, x, y, description="""
+        The unmistakable sound of water trickling over rock can be heard echoing throughout this small chamber. The air is filled
+        with a fresh, life-giving smell that immediately improves Jean's mood. This would be an excellent place to stop for a short
+        rest before continuing on.
+        """)
+        self.symbol = '~'
+
+    def modify_player(self, the_player):
+        #Room has no action on player
+        pass

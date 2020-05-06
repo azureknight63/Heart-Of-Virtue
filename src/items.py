@@ -344,7 +344,7 @@ class Crystals(Special):
         '''
         super().__init__(name="Crystals",
                          description="A beautiful collection of scintillating purple and aquamarine crystals. Interesting baubles to most, but a valuable"
-                                     " food source to Rock Rumblers and their gentler cousins, the Gollem.",
+                                     " food source to Rock Rumblers and their gentler cousins, the Grondites.",
                          value=10, weight=0.1, maintype="Special", subtype="Commodity")
         self.interactions = ["drop"]
 

@@ -89,6 +89,27 @@ class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a p
         key.announce = "There's a {} here.".format(key.name.lower())
 
 
+class Teleport(Event):
+    '''
+    Teleports the player to another location. Format is "t.mapname x-coord y-coord"
+    '''
+    def __init__(self, player, tile, repeat, name='Teleport', params=None):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
+        self.params = params
+
+    def check_conditions(self):
+        if True:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        for thing in self.params:
+            # account for the events associated with this object. Max of 1 event.
+            # Triggers after interacting with the shrine.
+            if thing[0] == 't':
+                param = thing.replace('t.', '')
+                self.player.teleport(param)
+
+
 class Shrine(Event):  # Generic class for Shrine-based events
     def __init__(self, player, tile, repeat, name='Shrine', params=None):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)

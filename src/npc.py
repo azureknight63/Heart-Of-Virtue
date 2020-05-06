@@ -226,8 +226,7 @@ class NPC:
             roll = random.randint(0,100)
             if self.loot[item]["chance"] >= roll:  # success!
                 dropcount = functions.randomize_amount(self.loot[item]["qty"])
-                params = None
-                if "Equipment" in item:
+                if "Equipment" in item:  # ex Equipment_1_0 will yield an item at level 1 with no enchantments; Equipment_0_2 will yield an item at level 0 with 2 enchantment points
                     params = item.split("_")
                     item = loot.random_equipment(self.current_room, params[1], params[2])
                     drop = item
@@ -258,7 +257,7 @@ class Friend(NPC):
         print(self.name + " has nothing to say.")
 
 
-class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game. His name is initially unknown.
+class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game. His name is initially unknown. Species name is Grondite.
     def __init__(self):
         description = """
 A massive creature that somewhat resembles a man, 
@@ -346,9 +345,6 @@ class Lurker(NPC):
         self.add_move(moves.Withdraw(self))
         self.add_move(moves.NPC_Idle(self))
         self.add_move(moves.Dodge(self), 2)
-        #todo: continue building out Verdette Caverns. Don't forget to add antidotes for the battle against the Lurker!
-        #todo: In Verdette, I'd like to add a shrine for a weapon of a chosen type and random enchantment, as well as a healing spring
-        #todo: Once the Lurker is defeated, the player can advance to Gorran's village.
 
 
 class GiantSpider(NPC):

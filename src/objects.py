@@ -1,5 +1,5 @@
 import random, time
-import functions
+import functions, states
 from termcolor import colored, cprint
 
 #####
@@ -322,6 +322,102 @@ class Shrine(Object):
                          discovery_message=" a shrine!", player=player, tile=tile)
         self.event = None
         self.keywords.append('pray')
+
+        for thing in params:
+            # account for the events associated with this object. Max of 1 event.
+            # Triggers after interacting with the shrine.
+            if thing[0] == '!':
+                param = thing.replace('!', '')
+                p_list = param.split(':')
+                repeat = False
+                event_type = p_list.pop(0)
+                for setting in p_list:
+                    if setting == 'r':
+                        repeat = True
+                        p_list.remove(setting)
+                        continue
+                event = functions.seek_class(event_type, player, tile, params, repeat)
+                self.event = event
+
+    def pray(self, player):
+        print("Jean kneels down and begins to pray for intercession.")
+        time.sleep(random.randint(3, 10))
+        selection = random.randint(0, len(player.prayer_msg)-1)
+        print(player.prayer_msg[selection])
+        if self.event is not None:
+            time.sleep(random.randint(3, 10))
+            self.event.process()
+            self.event = None
+        functions.await_input()
+
+
+class HealingSpring(Object):
+    '''
+    A spring that restores Jean's health when he drinks from it. He can also WASH or CLEAN himself in it, which provides a small, temporary boost to charisma
+    and max fatigue.
+    '''
+    def __init__(self, player, tile, params=None):
+        description = "A burbling spring with fresh smelling water. It is clean and very inviting."
+        super().__init__(name="HealingSpring", description=description,
+                         idle_message="There is a small spring bubbling here.",
+                         discovery_message=" a healing spring!", player=player, tile=tile)
+        self.event = None
+        self.keywords.append('drink')
+        self.keywords.append('clean')
+        self.keywords.append('wash')
+
+        for thing in params:
+            # account for the events associated with this object. Max of 1 event.
+            # Triggers after interacting with the object.
+            if thing[0] == '!':
+                param = thing.replace('!', '')
+                p_list = param.split(':')
+                repeat = False
+                event_type = p_list.pop(0)
+                for setting in p_list:
+                    if setting == 'r':
+                        repeat = True
+                        p_list.remove(setting)
+                        continue
+                event = functions.seek_class(event_type, player, tile, params, repeat)
+                self.event = event
+
+    def drink(self, player):
+        print("Jean bends down to the water and, cupping it in his hands, begins to sip eagerly.")
+        time.sleep(2)
+        print("The water is cool and refreshing as it goes down his throat.")
+        time.sleep(1)
+        cprint("HP restored!", "green")
+        player.hp = player.maxhp
+        if self.event is not None:
+            time.sleep(2)
+            self.event.process()
+            self.event = None
+        functions.await_input()
+
+    def clean(self, player):
+        print("Jean summarily begins washing himself in the cool water of the spring.")
+        time.sleep(2)
+        print("Jean closes his eyes for a moment, enjoying the feeling of simple cleanliness.")
+        time.sleep(1)
+        cprint("Jean now has Clean status!", "green")
+        player.apply_state(states.Clean())
+
+    def wash(self, player):
+        self.clean(player)  # this is an alias for clean
+
+
+class Passageway(Object):
+    '''
+    A passageway that takes Jean to a different location. This can either be a location in the same map or a different map entirely.
+    '''
+    def __init__(self, player, tile, params=None):
+        description = "A burbling spring with fresh smelling water. It is clean and very inviting."
+        super().__init__(name="HealingSpring", description=description,
+                         idle_message="There is a small spring bubbling here.",
+                         discovery_message=" a healing spring!", player=player, tile=tile)
+        self.event = None
+        self.keywords.append('enter')
 
         for thing in params:
             # account for the events associated with this object. Max of 1 event.

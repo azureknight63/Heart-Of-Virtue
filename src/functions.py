@@ -70,7 +70,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
 
 
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
-    reset_stats(target)
+    reset_stats(target)  # todo TEST this function for adding resistances and state resistances
     bonuses = {
         "add_str":"strength",
         "add_fin":"finesse",
@@ -81,12 +81,15 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
         "add_charisma":"charisma",
         "add_intelligence":"intelligence",
         "add_faith":"faith",
-        "add_weight_tolerance":"weight_tolerance"
+        "add_weight_tolerance":"weight_tolerance",
+        "add_resistance":{},
+        "add_status_resistance":{}
     }
-    for category, value in target.resistance_base.items():
-        bonuses["add_resistance[" + category + "]"] = value
+
+    for category, value in target.resistance_base.items():  # roll up all of the resistances and status resistances into the bonuses list
+        bonuses["add_resistance"].category = category       # doing this here will allow changes on the target's class to be reflected
     for category, value in target.status_resistance_base.items():
-        bonuses["add_status_resistance[" + category + "]"] = value
+        bonuses["add_status_resistance"].category = category
     adder_group = []
     if hasattr(target, "inventory"):
         for item in target.inventory:
@@ -96,15 +99,22 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
                         if hasattr(item, bonus):
                             adder_group.append(item)
                             break
-    for state in target.states:
+    for state in target.states:  # loop through all of the target's states and, if each state has an "adder" attribute like bonus hp, include that
         for bonus, attr in bonuses.items():
             if hasattr(state, bonus):
                 adder_group.append(state)
-                break
-    for adder in adder_group:
+                break  # the state has at least one bonus; we don't have to look for more to include it
+    for adder in adder_group:  # here, "adder" is the item or state containing the bonus or bonuses
         for bonus, attr in bonuses.items():
-            if hasattr(adder, bonus):
-                setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each bonus to each attribute
+            if hasattr(adder, bonus):  # the item or state has one of the recognized bonuses
+                if bonus == "add_resistance":  # since resistances are dicts, we have to handle them a little differently
+                    if hasattr(target.resistance, attr):
+                        target.resistance[attr] += adder.bonus.attr
+                elif bonus == "add_status_resistance":
+                    if hasattr(target.status_resistance, attr):
+                        target.status_resistance[attr] += adder.bonus.attr
+                else:
+                    setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each bonus to each attribute
 
     ### Process other things which may affect stats, such as weight ###
     if target.name == "Jean":
@@ -303,19 +313,16 @@ def seek_class(classname, player, tile, repeat, params):  # searches through the
     try:
         class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, repeat, params)
     except:
-    # except BaseException as e:
-        # print("#####ERR: {}".format(e))
         try:
             class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, repeat, params)
         except:
-        # except BaseException as e:
-            # print("#####ERR: {}".format(e))
             try:
                 class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, repeat, params)
             except:
-            # except BaseException as e:
-                # print("#####ERR: {}".format(e))
-                print("#####ERR: Cannot find event " + classname)
+                try:
+                    class_obj = getattr(importlib.import_module('src.story.ch02'), classname)(player, tile, repeat, params)
+                except:
+                    print("#####ERR: Cannot find event " + classname)
     return class_obj
 
 

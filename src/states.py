@@ -159,3 +159,23 @@ class Enflamed(State):  # target is engulfed in flames, taking damage every few 
         self.steps_left += int((self.steps_max / 4))
         if self.steps_left > self.steps_max:
             self.steps_left = self.steps_max
+
+
+class Clean(State):
+    def __init__(self, target):
+        duration = 0
+        steps = random.randint(50,200)
+        super().__init__(name="Clean", target=target, beats_max=duration, steps_max=steps, compounding=False, combat=False,
+                         world=True, statustype="clean", persistent=True)
+        self.tick = 0  # increases at each effect cycle
+        self.execute_on = 0  # when the tick is a multiple of this number, execute the effect
+        self.add_charisma = 1
+        self.add_maxfatigue = 10
+
+    def on_application(self, target):
+        cprint("{} is now clean!".format(target.name), "magenta")
+
+    def on_removal(self, target):
+        cprint("{} is no longer quite so clean!".format(target.name), "white")
+
+# todo Add a Dirty state that can be compounded

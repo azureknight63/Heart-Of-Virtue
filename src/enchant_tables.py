@@ -258,11 +258,11 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
 
     def modify(self):
         if hasattr(self.item, "add_resistance"):
-            if "poison" in self.item.add_resistance:
-                self.item.add_resistance["poison"] += 0.5  # todo pick up from here; trying to add poison resistance
+            if hasattr(self.item.add_resistance, "poison"):
+                self.item.add_resistance.poison += 0.8
         else:
-            self.item.add_maxhp = mod
-        self.item.value += (mod * 21)
+            self.item.add_resistance.poison = 0.8
+        self.item.value *= 1.3
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
@@ -272,7 +272,8 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
             "Armor",
             "Helm",
             "Gloves",
-            "Boots"
+            "Boots",
+            "Accessory"
                             ]
         if self.item.maintype in allowed_maintypes:
             return True

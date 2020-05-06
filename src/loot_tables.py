@@ -43,7 +43,7 @@ class Loot:
             "Equipment_0_0": {
                 "chance": 40,
                 "qty": 1
-            },  # todo: add random enchantments for drops
+            },
             "Equipment_1_0": {
                 "chance": 10,
                 "qty": 1
