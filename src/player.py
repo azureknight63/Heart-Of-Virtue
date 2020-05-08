@@ -1,4 +1,4 @@
-import random, time, decimal, traceback
+import random, time, math, traceback
 from switch import switch
 import items, functions, universe, moves, actions, combat, skilltree
 from termcolor import colored, cprint
@@ -833,16 +833,36 @@ he lets out a barely audible whisper:""", "red")
                 state_list += "{} ({}) ".format(state.name, state.steps_left)
         cprint("States: {}".format(state_list), "cyan")
         cprint("----------------------------------------------------------", "yellow")
-        cprint("Protection: {}".format(self.protection), "cyan")
-        cprint("Strength: {} ({})".format(self.strength, self.strength_base), "cyan")
-        cprint("Finesse: {} ({})".format(self.finesse, self.finesse_base), "cyan")
-        cprint("Speed: {} ({})".format(self.speed, self.speed_base), "cyan")
-        cprint("Endurance: {} ({})".format(self.endurance, self.endurance_base), "cyan")
-        cprint("Charisma: {} ({})".format(self.charisma, self.charisma_base), "cyan")
-        cprint("Intelligence: {} ({})".format(self.intelligence, self.intelligence_base), "cyan")
-        cprint("Faith: {} ({})".format(self.faith, self.faith_base), "cyan")
+        output_grid_data = [  # 8 categories, 25 character cell, 100 character width less borders
+            "Protection: {}".format(self.protection),
+            "Strength: {} ({})".format(self.strength, self.strength_base),
+            "Finesse: {} ({})".format(self.finesse, self.finesse_base),
+            "Speed: {} ({})".format(self.speed, self.speed_base),
+            "Endurance: {} ({})".format(self.endurance, self.endurance_base),
+            "Charisma: {} ({})".format(self.charisma, self.charisma_base),
+            "Intelligence: {} ({})".format(self.intelligence, self.intelligence_base),
+            "Faith: {} ({})".format(self.faith, self.faith_base)
+        ]
+
         cprint("----------------------------------------------------------", "yellow")
         # todo represent resistances. I would like to arrange them in a convenient grid. Maybe apply the grid to the stats above, too.
+
+    def generate_output_grid(self, data, rows=0, cols=0):
+        """
+        Generates a grid from the provided list
+        :param data: A list of strings
+        :param rows: Number of rows. Will set automatically if left at zero
+        :param cols: Number of columns. Will set automatically if left at zero
+        :return: A string formatted in a grid shape
+        """
+        rows_var = rows
+        if rows_var == 0:  # I don't know how many rows I want, so let's try to find it automatically
+            rows_calc = 0
+            if cols > 0:  # I do know how many columns I want, so we can calculate the rows based on that
+                rows_calc = math.ceil(len(data) / cols)  # todo pick up here
+
+
+        for current_row in range(rows):
 
     def equip_item(self, phrase=''):
 
