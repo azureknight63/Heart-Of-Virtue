@@ -106,13 +106,14 @@ class Ch01ChestRumblerBattle(Event):
         time.sleep(3)
         mace = getattr(__import__('items'), 'RustedIronMace')()
         self.player.inventory.append(mace)
-        mace.isequipped = True
-        self.player.eq_weapon = mace
+        self.player.equip_item(mace.name)
+        #mace.isequipped = True
+        #self.player.eq_weapon = mace
         cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
         self.tile.spawn_npc("RockRumbler")
         cprint("A rock-like creature appears and advances toward Jean!")
         time.sleep(0.5)
-        self.player.combat_events.append(Ch01_PostRumbler(player=self.player, tile=self.tile, params=False,
+        self.player.combat_events.append(Ch01PostRumbler(player=self.player, tile=self.tile, params=False,
                                                               repeat=False))
         self.tile.events_here.remove(self)
 
@@ -131,9 +132,9 @@ class Ch01PostRumbler(Event): # Occurs when Jean beats the first rumbler after o
         for x in range(0,2):
             npc = self.tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
-        self.player.combat_events.append(Ch01_PostRumbler_Rep(player=self.player, tile=self.tile, params=False,
+        self.player.combat_events.append(Ch01PostRumblerRep(player=self.player, tile=self.tile, params=False,
                                                               repeat=True))
-        self.player.combat_events.append(Ch01_PostRumbler2(player=self.player, tile=self.tile, params=False,
+        self.player.combat_events.append(Ch01PostRumbler2(player=self.player, tile=self.tile, params=False,
                                                               repeat=False))
 
 
@@ -193,7 +194,7 @@ class Ch01PostRumbler2(Event):
         self.player.hp = self.player.maxhp
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75
-        self.player.combat_events.append(Ch01_PostRumbler3(player=self.player, tile=self.tile, params=False,
+        self.player.combat_events.append(Ch01PostRumbler3(player=self.player, tile=self.tile, params=False,
                                                                repeat=False))
 
 

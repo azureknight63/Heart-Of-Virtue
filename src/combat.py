@@ -9,7 +9,7 @@ def combat(player):
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
-        npc.cycle_states()
+        npc.cycle_states()  # todo npcs getting locked up after resting, periodically -- think i fixed this one, needs testing
         if npc.combat_delay > 0:
             npc.combat_delay -= 1
         else:
@@ -26,6 +26,8 @@ def combat(player):
                 npc.current_move.target = npc.target
                 npc.current_move.cast(npc)
         get_moves = npc.known_moves[:]
+        if (npc.current_move is not None) and (npc.current_move not in get_moves):  # this will handle dynamically added moves (as a result from a state or low fatigue)
+            get_moves.append(npc.current_move)
         for move in get_moves:
             move.advance(npc)
 
@@ -120,7 +122,6 @@ def combat(player):
             break
 
         #  at this point, the player is alive and at least one enemy remains
-
         for friendly in player.combat_list_allies:
             functions.refresh_stat_bonuses(friendly)
         for enemy in player.combat_list:
@@ -221,13 +222,13 @@ def combat(player):
                                     target = acceptable_targets[0][0]
                                 if player.current_move:
                                     player.current_move.target = target
-                            else:  # verbose targeting is enabled for this move #todo: test verbose targeting menu
+                            else:  # verbose targeting is enabled for this move
                                 acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
                                 while target is None:
                                     print("Select a target: \n")
                                     for i, enemy in enumerate(acceptable_targets):
                                         print(colored(str(i), "magenta") + ": " +
-                                              colored("{} ({}ft; {})".format(enemy[0].name, str(enemy[1]), player.current_move.calculate_hit_chance(enemy[0])),"cyan"))
+                                              colored("{} ({}ft; {}%)".format(enemy[0].name, str(enemy[1]), player.current_move.calculate_hit_chance(enemy[0])),"cyan"))
                                     choice = input("Target: ")
                                     if not functions.is_input_integer(choice):
                                         cprint("Invalid selection!", "red")

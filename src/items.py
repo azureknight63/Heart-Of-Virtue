@@ -71,10 +71,18 @@ class Item():
         self.discovery_message = discovery_message
         #self.level = level  # used for categorizing items in loot tables
         self.announce = "There's a {} here.".format(self.name)
-        self.interactions = []  # things to do with the item from the inventory menu - player must be passed as a parameter
+        self.interactions = ["drop"]  # things to do with the item from the inventory menu - player must be passed as a parameter
         self.skills = skills  # skills that can be learned from using the item (acquiring exp); should be a dictionary with "moves" objects and the exp needed
         self.owner = None  # used to tie an item to an owner for special interactions
         self.equip_states = []  # items can cause states to be applied to the player when the item is equipped; enchantments can add to this as well
+        self.add_resistance = {}
+        self.add_status_resistance = {}
+        self.gives_exp = False  # checked before opening an exp category for this item
+        if hasattr(self, "isequipped"):
+            if getattr(self, "isequipped"):  # if the item starts equipped, add the unequip interaction, else visa versa
+                self.interactions.append("unequip")
+            else:
+                self.interactions.append("equip")
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
@@ -98,7 +106,60 @@ class Item():
         '''
         pass
 
+    def drop(self, player):
+        if hasattr(self, "count"):
+            if getattr(self, "count") > 1:
+                while True:
+                    drop_count = input("How many would you like to drop? (Carrying {}) ".format(getattr(self, "count")))
+                    if functions.is_input_integer(drop_count):
+                        if 0 <= int(drop_count) <= getattr(self, "count"):
+                            if int(drop_count) > 0:
+                                cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
+                                for i in range(int(drop_count)):
+                                    self.count -= 1
+                                    itemtype = self.__class__.__name__
+                                    player.current_room.spawn_item(item_type=itemtype)
+                                player.current_room.stack_duplicate_items()
+                            else:
+                                print("Jean changed his mind.")
+                            break
+                        else:
+                            cprint("Invalid amount!", "red")
+                    else:
+                        cprint("Invalid amount!", "red")
+            else:
+                cprint("Jean dropped {}.".format(self.name), "cyan")
+                player.current_room.items_here.append(self)
+                player.inventory.remove(self)
+        else:
+            cprint("Jean dropped {}.".format(self.name), "cyan")
+            player.current_room.items_here.append(self)
+            player.inventory.remove(self)
+            if hasattr(self, "isequipped"):
+                if getattr(self, "isequipped"):
+                    self.isequipped = False
+                    self.on_unequip(player)
+                    self.interactions.remove("unequip")
+                    self.interactions.append("equip")
+                    if issubclass(self.__class__, Weapon):  # if the player is now unarmed, "equip" fists
+                        player.eq_weapon = player.fists
+        functions.refresh_stat_bonuses(player)
+        player.refresh_protection_rating()
 
+    def equip(self, player):
+        player.equip_item(phrase="{}".format(self.name))
+
+    def unequip(self, player):
+        if hasattr(self, "isequipped"):
+            self.isequipped = False
+            if issubclass(self.__class__, Weapon):  # if the player is now unarmed, "equip" fists
+                player.eq_weapon = player.fists
+            cprint("Jean put {} back into his bag.".format(self.name), "cyan")
+            self.on_unequip(player)
+            self.interactions.remove("unequip")
+            self.interactions.append("equip")
+            functions.refresh_stat_bonuses(player)
+            player.refresh_protection_rating()
 
 
 class Gold(Item):
@@ -108,6 +169,7 @@ class Gold(Item):
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
                          value=self.amt, maintype="Currency", subtype="Gold", discovery_message="a small pouch of gold.")
         self.announce = "There's a small pouch of gold on the ground."
+        self.interactions = []
 
 
 class Weapon(Item):
@@ -127,6 +189,7 @@ class Weapon(Item):
         super().__init__(name, description, value, maintype, subtype, discovery_message, skills=skills)
         self.announce = "There's a {} here.".format(self.name)
         self.twohand = twohand
+        self.gives_exp = True
 
     def __str__(self):
         if self.isequipped:
@@ -265,27 +328,6 @@ class Consumable(Item):
                 "Weight: {} lbs each, {} lbs total".format(self.name, self.description, self.count, self.value,
                                                            self.value * self.count, self.weight, self.weight * self.count)
 
-    def drop(self, player):
-        if self.count > 1:
-            while True:
-                drop_count = input("How many would you like to drop? ")
-                if functions.is_input_integer(drop_count):
-                    if 0 <= int(drop_count) <= self.count:
-                        if int(drop_count) > 0:
-                            cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
-                            for i in range(int(drop_count)):
-                                self.count -= 1
-                                itemtype = self.__class__.__name__
-                                player.current_room.spawn_item(item_type=itemtype)
-                            player.current_room.stack_duplicate_items()
-                        else:
-                            print("Jean changed his mind.")
-                        break
-                    else:
-                        cprint("Invalid amount!", "red")
-                else:
-                    cprint("Invalid amount!", "red")
-
 
 class Special(Item):
     def __init__(self, name, description, value, weight, maintype, subtype, discovery_message='a strange object.'):
@@ -293,33 +335,12 @@ class Special(Item):
         self.maintype = maintype
         self.subtype = subtype
         self.count = 1
-        self.interactions = []
+        self.interactions = ["drop"]
         super().__init__(name, description, value, maintype, subtype, discovery_message) # announce="You notice a {} sitting here.".format(self.name))
 
     def __str__(self):
          return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
             self.name, self.description, self.value, self.weight)
-
-    def drop(self, player):
-        if self.count > 1:
-            while True:
-                drop_count = input("How many would you like to drop? ")
-                if functions.is_input_integer(drop_count):
-                    if 0 <= int(drop_count) <= self.count:
-                        if int(drop_count) > 0:
-                            cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
-                            for i in range(int(drop_count)):
-                                self.count -= 1
-                                itemtype = self.__class__.__name__
-                                player.current_room.spawn_item(item_type=itemtype)
-                            player.current_room.stack_duplicate_items()
-                        else:
-                            print("Jean changed his mind.")
-                        break
-                    else:
-                        cprint("Invalid amount!", "red")
-                else:
-                    cprint("Invalid amount!", "red")
 
 
 class Key(Special):
@@ -334,6 +355,7 @@ class Key(Special):
                          value=0, weight=0, maintype="Special", subtype="Key")
 
         self.lock = lock  # Any object that has an 'unlock' method
+        self.interactions = ["drop"]
 
 
 class Crystals(Special):
@@ -346,7 +368,6 @@ class Crystals(Special):
                          description="A beautiful collection of scintillating purple and aquamarine crystals. Interesting baubles to most, but a valuable"
                                      " food source to Rock Rumblers and their gentler cousins, the Grondites.",
                          value=10, weight=0.1, maintype="Special", subtype="Commodity")
-        self.interactions = ["drop"]
 
 
 class Fists(Weapon):  # equipped automatically when Jean has no other weapon equipped
@@ -355,7 +376,8 @@ class Fists(Weapon):  # equipped automatically when Jean has no other weapon equ
                          description="",
                          isequipped=True, value=0,
                          damage=1, str_req=1, fin_req=1, str_mod=1, fin_mod=1, weight=0.0,
-                         maintype="Weapon", subtype="Bludgeon")
+                         maintype="Weapon", subtype="Unarmed")
+        self.interactions = []
 
 
 class Rock(Weapon):
@@ -643,9 +665,23 @@ class JeanWeddingBand(Accessory):
     def __init__(self):
         super().__init__(name="Wedding Band",
                          description="A shiny gold ring with some intricate patterns carved into it. \n"
+                                     "The faded inscription on the inner wall of the ring reads, 'AMELIA.' \n"
                                      "This is an item of special interest to Jean. Some things are too difficult to let go.",
                          isequipped=True, value=900,
                          protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring")
+        self.interactions.remove("drop")
+        #self.add_resistance["fire"] = -0.5
+        #self.add_status_resistance["poison"] = -0.75
+
+    def on_equip(self, player):
+        if len(self.equip_states) > 0:
+            for state in self.equip_states:
+                player.apply_state(state)
+        print("As he slides on the band, Jean's face appears placid. His heart, however, is filled with sadness, and a coldness grips his stomach.")
+
+    def on_unequip(self, player):
+        print("Jean's frown twitches slightly as his finger is released from the weight of the band. "
+              "He glances briefly at the faded inscription on the ring's inner wall before stuffing the small baubel into his bag.")
 
 
 class SilverRing(Accessory):
@@ -897,7 +933,7 @@ class WoodenArrow(Arrow):
         super().__init__(name="Wooden Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
                          "This one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. "
                          "\nThey tend to break frequently.",
-                         value=1, weight=0.05, power=5, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.4,
+                         value=1, weight=0.05, power=20, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.4,
                          helptext=colored("+range, -decay, ", "green") + colored("-damage, -sturdiness", "red"), effects=None)
 
 
@@ -906,7 +942,7 @@ class IronArrow(Arrow):
         super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
         This one is made of iron. Iron arrows are heavy and can be devastating up close. They suffer, however, when it comes to range and accuracy over long \
         distances. \nLike all metal arrows, they are considerably sturdier than other types of arrows.",
-                         value=5, weight=0.25, power=10, range_base_modifier=0.7, range_decay_modifier=1.4, sturdiness=0.6,
+                         value=5, weight=0.25, power=30, range_base_modifier=0.7, range_decay_modifier=1.4, sturdiness=0.6,
                          helptext=colored("+damage, +sturdiness, ", "green") + colored("-range, ++decay", "red"), effects=None)
 
 
@@ -914,7 +950,7 @@ class GlassArrow(Arrow):
     def __init__(self):
         super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
         This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, arrows like this rarely survive the first shot.",
-                         value=10, weight=0.1, power=12, range_base_modifier=1.1, range_decay_modifier=1, sturdiness=0.1,
+                         value=10, weight=0.1, power=40, range_base_modifier=1.1, range_decay_modifier=1, sturdiness=0.1,
                          helptext=colored("+range, +damage, ", "green") + colored("~decay, ", "yellow") + colored("---sturdiness", "red"), effects=None)
 
 
@@ -923,5 +959,6 @@ class FlareArrow(Arrow):
         super().__init__(name="Flare Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
         This one is made of wood and bursts into flames upon impact."
                                                          "\nObviously, don't expect to get it back after firing.",
-                         value=10, weight=0.05, power=5, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.0,
+                         value=10, weight=0.05, power=25, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.0,
                          helptext=colored("+range, +damage, -decay, ", "green") + colored("----sturdiness", "red"), effects=None)
+        # todo add fire effect on impact

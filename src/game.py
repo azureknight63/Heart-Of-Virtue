@@ -5,7 +5,7 @@ Not much is left of the original code.
 REMINDERS:
 
 """
-__author__ = 'Alex Egbert'
+__author__ = 'BasharTeg'
 import functions, intro_scene, moves, combat, npc, items
 from player import Player
 from universe import Universe
@@ -38,7 +38,7 @@ def play():
  <   +\ |  |\ />  \                  \ \_/ /    ||  ||  \\    ||    ||==|| ||__
   >   + \  | LJ    |                  \___/
         + \|+  \  < \
-  (O)      +    |    )                        By Alexander Egbert
+  (O)      +    |    )                        By BasharTeg
    |             \  /\
  ( | )   (o)      \/  )
 _\\|//__( | )______)_/
@@ -57,9 +57,13 @@ _\\|//__( | )______)_/
         for i, option in enumerate(menu):
             print('{}'.format(i) + colored(': {}'.format(option), 'red'))
         choice = input('Selection: ')
-        while not functions.is_input_integer(choice):
+        while True:
+            if functions.is_input_integer(choice):
+                if 0 <= int(choice) < len(menu):
+                    break
             cprint("You must enter a valid number to select an option.", "red")
             choice = input('Selection: ')
+
         choice = int(choice)
         if menu[choice] == 'NEW GAME':
             pass  # proceed as new game
@@ -67,7 +71,7 @@ _\\|//__( | )______)_/
             newgame = False
         elif menu[choice] == 'QUIT TO DESKTOP':
             game = False
-            continue
+            continue  # todo fix the sneak system; it's too easy to evade npcs with only a little investment into finesse - maybe make it a skill
 
         if not newgame:
             try:
@@ -98,6 +102,8 @@ _\\|//__( | )______)_/
                 #     item.isequipped = True
                 if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
                     item.isequipped = True
+                    item.interactions.append("unequip")
+                    item.interactions.remove("equip")
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()

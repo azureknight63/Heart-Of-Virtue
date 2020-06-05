@@ -49,8 +49,8 @@ class Move:  # master class for all moves
                 self.cooldown(user)  # the cooldown stage will typically never be rewritten,
                 # so this will usually just pass
 
-    def cast(self, user): # this is what happens when the ability is first chosen by the player
-        self.current_stage = 0 # initialize prep stage
+    def cast(self, user):  # this is what happens when the ability is first chosen by the player
+        self.current_stage = 0  # initialize prep stage
         if self.stage_announce[0] != "":
             print(self.stage_announce[0])  # Print the prep announce message for the move
         self.beats_left = self.stage_beat[0]
@@ -289,12 +289,20 @@ class Advance(Move):
         if distance < 1:
             distance = 0
         if distance == 0:
-            print("{} was unable to get closer to {}!".format(user.name, self.target.name))
+            if user.name == "Jean":
+                color = "red"
+            else:
+                color = "green"
+            cprint("{} was unable to get closer to {}!".format(user.name, self.target.name), color)
         else:
             if user.combat_proximity[self.target] <= distance:
                 distance = user.combat_proximity[self.target] - 3
             distance = int(distance)
-            print("{} got {} ft closer to {}!".format(user.name, distance, self.target.name))
+            if user.name == "Jean":
+                color = "green"
+            else:
+                color = "red"
+            cprint("{} got {} ft closer to {}!".format(user.name, distance, self.target.name), color)
             user.combat_proximity[self.target] -= distance
             user.combat_proximity[self.target] = int(user.combat_proximity[self.target])
             self.target.combat_proximity[user] = user.combat_proximity[self.target]
@@ -347,18 +355,56 @@ class Withdraw(Move):
             enemy_list[enemy] = int(performance)
         for enemy, performance in enemy_list.items():
             if (performance == 0) or (user.combat_proximity[enemy] >= self.mvrange[1]):
-                print("{} was unable to get further away from {}!".format(user.name, enemy.name))
+                if user.name == "Jean":
+                    color = "red"
+                else:
+                    color = "green"
+                cprint("{} was unable to get further away from {}!".format(user.name, enemy.name), color)
             else:
                 distance = performance
                 limit_distance = self.mvrange[1] - user.combat_proximity[enemy]
                 if distance > limit_distance:
                     distance = limit_distance
                 distance = int(distance)
-                print("{} got {} ft further away from {}!".format(user.name, distance, enemy.name))
+                if user.name == "Jean":
+                    color = "green"
+                else:
+                    color = "red"
+                cprint("{} got {} ft further away from {}!".format(user.name, distance, enemy.name), color)
                 user.combat_proximity[enemy] += distance
                 user.combat_proximity[enemy] = int(user.combat_proximity[enemy])
                 enemy.combat_proximity[user] = user.combat_proximity[enemy]
 
+
+class QuietMovement(Move):
+    """
+    This is a passive move; it cannot be selected while in combat.
+    """
+    def __init__(self, user):
+        description = "Improves ability to move undetected."
+        prep = 0
+        execute = 0
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 0
+        super().__init__(name="Quiet Movement", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[prep,execute,recoil,cooldown], targeted=False,
+                         stage_announce=["",
+                                         "",
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=user, user=user)
+        self.evaluate()
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        pass
+
+    def execute(self, user):
+        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
+        pass
+
+    def viable(self):
+        return False
 
 ### PLAYER MOVES ###
 
@@ -805,7 +851,10 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                 hit_chance -= accuracy_decay
             if hit_chance < 2:  # Minimum value for hit chance
                 hit_chance = 2
-        return "{}%".format(hit_chance)
+        for state in self.user.states:
+            if state.name == "Hawkeye":
+                hit_chance *= 1.4
+        return hit_chance
 
     def viable(self):
         viability = False
@@ -828,7 +877,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
             for item in self.user.inventory:
                 if hasattr(item, "subtype"):
                     if item.subtype == "Arrow":
-                        has_bow = True
+                        has_arrows = True
                         break
 
         if has_bow and enemy_in_range and has_arrows:
@@ -912,22 +961,15 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                     close_range_distraction = 1
                     break
         if min <= target_distance <= max:  # check if target is still in range
-            hit_chance = (98 - self.target.finesse) + self.user.finesse
-            hit_chance -= close_range_distraction * (hit_chance / 2)
-            if target_distance > self.user.eq_weapon.range_base:
-                accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
-                hit_chance -= accuracy_decay
-            if hit_chance < 2:  # Minimum value for hit chance
-                hit_chance = 2
+            hit_chance = self.calculate_hit_chance(self.target)
             print(self.stage_announce[1])
-            # todo TEST arrow decrementing/destruction
             if self.arrow.count > 1:
                 self.arrow.count -= 1
             else:
                 self.user.inventory.remove(self.arrow)
 
         else:
-            print("Jean relaxes his bow as his target is no longer in range.")
+            cprint("Jean relaxes his bow as his target is no longer in range.", "green")
             return
         roll = random.randint(0, 100)
         arrow_recovery = self.arrow.sturdiness

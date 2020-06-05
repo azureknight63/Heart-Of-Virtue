@@ -179,3 +179,8 @@ class Clean(State):
         cprint("{} is no longer quite so clean!".format(target.name), "white")
 
 # todo Add a Dirty state that can be compounded
+
+
+class Hawkeye(State):
+    def __init__(self, target):  # increases the target's accuracy with a ranged weapon for a short duration
+        super().__init__(name="Hawkeye", target=target, beats_max=30)

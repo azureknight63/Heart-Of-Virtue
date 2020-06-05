@@ -175,7 +175,7 @@ class NPC:
         num_choices = len(weighted_moves) - 1
         while self.current_move is None:
             choice = random.randint(0, num_choices)
-            if weighted_moves[choice].fatigue_cost <= self.fatigue:
+            if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
 
     def add_move(self, move, weight=1):
@@ -267,7 +267,7 @@ though this makes his intent a bit difficult to interpret. At any rate, he seems
 friendly enough to Jean.
 """
         super().__init__(name="Rock-Man", description=description, maxhp=200,
-                         damage=55, awareness=9, speed=5, aggro=True, exp_award=0,
+                         damage=55, awareness=20, speed=5, aggro=True, exp_award=0,
                          combat_range=(0,7),
                          idle_message=" is bumbling about.",
                          alert_message="lets out a deep and angry rumble!")
@@ -308,13 +308,26 @@ class Slime(NPC):  # target practice
         self.add_move(moves.Dodge(self))
 
 
+class Testexp(NPC):  # target practice
+    def __init__(self):
+        description = "Goop that moves. Gross."
+        super().__init__(name="Slime " + genericng.generate(4,5), description=description, maxhp=200,
+                         damage=2, awareness=12, aggro=True, exp_award=500,
+                         idle_message=" is glopping about.",
+                         alert_message="burbles angrily at Jean!")
+        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.Dodge(self))
+
+
 class RockRumbler(NPC):
     def __init__(self):
         description = "A burly creature covered in a rock-like carapace somewhat resembling a stout crocodile." \
                            "Highly resistant to most weapons. You'd probably be better off avoiding combat with this" \
                            "one."
         super().__init__(name="Rock Rumbler " + genericng.generate(2,4), description=description, maxhp=30,
-                         damage=22, protection=30, awareness=12, aggro=True, exp_award=100)
+                         damage=22, protection=30, awareness=25, aggro=True, exp_award=100)
         self.resistance_base["earth"] = 0.5
         self.resistance_base["fire"] = 0.5
         self.resistance_base["crushing"] = 1.5
@@ -332,7 +345,7 @@ class Lurker(NPC):
         description = "A grisly demon of the dark. Its body is vaguely humanoid in shape. Long, thin arms end" \
                            "in sharp, poisonous claws. It prefers to hide in the dark, making it difficult to surprise."
         super().__init__(name="Lurker " + genericng.generate(2,4), description=description, maxhp=250,
-                         damage=25, protection=0, awareness=12, endurance=20, aggro=True, exp_award=800)
+                         damage=25, protection=0, awareness=60, endurance=20, aggro=True, exp_award=800)
         self.loot=loot.lev1
         self.resistance_base["dark"] = 0.5
         self.resistance_base["fire"] = -0.5
@@ -353,7 +366,7 @@ class GiantSpider(NPC):
                            "It flexes its sharp, poisonous mandibles in eager anticipation, spilling toxic drool that leaves a glowing green "\
                            "trail in its wake. Be careful that you don't fall victim to its bite!"
         super().__init__(name="Giant Spider " + genericng.generate(1), description=description, maxhp=110,
-                         damage=22, protection=0, awareness=12, endurance=10, aggro=True, exp_award=120)
+                         damage=22, protection=0, awareness=30, endurance=10, aggro=True, exp_award=120)
         self.resistance_base["fire"] = -0.5
         self.status_resistance_base["poison"] = 1
         self.add_move(moves.NPC_Attack(self), 3)

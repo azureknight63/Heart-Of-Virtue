@@ -1,4 +1,4 @@
-import string, textwrap, os, inspect
+import string, textwrap, os, inspect, re
 import sys, time, random, pickle, datetime, importlib, math
 import npc, tiles, moves, enchant_tables
 from player import Player
@@ -52,7 +52,11 @@ def check_for_objects(room):  # Check to see what objects are in the room.
 def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
     if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and notice the player.
-        finesse_check = random.randint(int(player.finesse * 0.8), int(player.finesse * 1.2))
+        finesse_check = random.randint(int(player.finesse * 0.6), int(player.finesse * 1.4))
+        for move in player.known_moves:
+            if move.name == "Quiet Movement":
+                finesse_check *= 1.2
+                break
         for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
             if not e.friend:
                 if (finesse_check <= e.awareness) and e.aggro:  # finesse check fails, break and rescan the list,
@@ -70,7 +74,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
 
 
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
-    reset_stats(target)  # todo TEST this function for adding resistances and state resistances
+    reset_stats(target)
     bonuses = {
         "add_str":"strength",
         "add_fin":"finesse",
@@ -86,15 +90,15 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
         "add_status_resistance":{}
     }
 
-    for category, value in target.resistance_base.items():  # roll up all of the resistances and status resistances into the bonuses list
-        bonuses["add_resistance"].category = category       # doing this here will allow changes on the target's class to be reflected
-    for category, value in target.status_resistance_base.items():
-        bonuses["add_status_resistance"].category = category
+    for category in target.resistance_base:  # roll up all of the resistances and status resistances into the bonuses list
+        bonuses["add_resistance"][category] = category       # doing this here will allow changes on the target's class to be reflected
+    for category in target.status_resistance_base:
+        bonuses["add_status_resistance"][category] = category
     adder_group = []
     if hasattr(target, "inventory"):
         for item in target.inventory:
-            if hasattr(item, "is_equipped"):
-                if item.is_equipped:
+            if hasattr(item, "isequipped"):
+                if item.isequipped:
                     for bonus, attr in bonuses.items():
                         if hasattr(item, bonus):
                             adder_group.append(item)
@@ -108,13 +112,20 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
         for bonus, attr in bonuses.items():
             if hasattr(adder, bonus):  # the item or state has one of the recognized bonuses
                 if bonus == "add_resistance":  # since resistances are dicts, we have to handle them a little differently
-                    if hasattr(target.resistance, attr):
-                        target.resistance[attr] += adder.bonus.attr
+                    for v in attr.values():
+                        if hasattr(adder, bonus):
+                            if v in adder.add_resistance:
+                                target.resistance[v] += float(adder.add_resistance[v])
                 elif bonus == "add_status_resistance":
-                    if hasattr(target.status_resistance, attr):
-                        target.status_resistance[attr] += adder.bonus.attr
+                    for v in attr.values():
+                        if hasattr(adder, bonus):
+                            if v in adder.add_status_resistance:
+                                target.status_resistance[v] += float(adder.add_status_resistance[v])
                 else:
                     setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each bonus to each attribute
+    for i, v in target.status_resistance.items():
+        if v < 0:
+            target.status_resistance[i] = 0  # prevent status resistances from being negative
 
     ### Process other things which may affect stats, such as weight ###
     if target.name == "Jean":
@@ -419,3 +430,8 @@ def add_preference(player, preftype, setting):
     else:
         player.preferences[preftype] = setting
         print("Jean made " + colored(setting, "purple") + " his preference.")
+
+
+def escape_ansi(line):
+    ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
+    return ansi_escape.sub('', line)

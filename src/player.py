@@ -28,7 +28,7 @@ class Player():
         self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rating
         self.faith_base = 10
-        # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half." 2.0 means "double damage/change."
+        # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half." 2.0 means "double damage/chance."
         # Negative values mean the damage is absorbed (heals instead of damages.) Status resistances cannot be negative.
         self.resistance = {
             "fire":         1.0,
@@ -109,9 +109,9 @@ class Player():
         self.weight_current = 0.00
         self.fists = items.Fists()
         self.eq_weapon = self.fists
-        self.combat_exp = {"Basic": 0}  # place to pool all exp gained from a single combat before distribution
+        self.combat_exp = {"Basic": 0, "Unarmed": 0}  # place to pool all exp gained from a single combat before distribution
         self.exp = 0  # exp to be gained from doing stuff rather than killing things
-        self.skill_exp = {"Basic": 0}  # pools exp gained in combat or otherwise to be spend on learning skills
+        self.skill_exp = {"Basic": 0, "Unarmed": 0}  # pools exp gained in combat or otherwise to be spend on learning skills
         self.skilltree = skilltree.Skilltree(self)
         for subtype in self.skilltree.subtypes.keys():  # initialize an exp pool for each skill subtype
             self.skill_exp[subtype] = 0
@@ -232,7 +232,6 @@ maintenant et à l'heure de notre mort. Amen.""",
         if not player_has_state:
             self.states.append(state)
 
-    # todo: need a status command that shows player HP, stats, current statuses, equipment, gold, and any other pertinent info
 
     def stack_gold(self):
         gold_objects = []
@@ -280,12 +279,23 @@ maintenant et à l'heure de notre mort. Amen.""",
 
         # Check through the players skill tree and announce if any skills may be learned
         announce = False
-        for k, v in self.skilltree.subtypes.items():
-            for skill, req in v.items():
-                if self.skill_exp[k] >= req:
-                    announce = True
-        if announce:
-            cprint("Jean may spend some of his earned exp to learn a new {} skill. Type SKILL to open the skill menu for details.".format(exp_type), "magenta")
+        for category, d in self.skilltree.subtypes.items():
+            if category == exp_type:
+                for skill, req in d.items():
+                    if self.skill_exp[exp_type] >= req:
+                        skill_is_already_learned = False
+                        for known_skill in self.known_moves:
+                            if skill.name == known_skill.name:
+                                skill_is_already_learned = True
+                                break
+                        if not skill_is_already_learned:
+                            announce = True
+                    else:
+                        continue
+                if announce:
+                    cprint("Jean may spend some of his earned exp to learn a new {} skill. Type SKILL to open the skill menu for details.".format(exp_type), "magenta")
+                break
+
 
         # remove = []
         # for k, v in self.skilltree.subtypes.items():
@@ -601,7 +611,7 @@ he lets out a barely audible whisper:""", "red")
         '''
         Opens the skill menu for the player so he may inspect or learn skills
         :return:
-        '''
+        '''  #todo various issues with this menu; needs colorization as well. Could benefit from gridding. Learning a skill does not update the preceding menu.
         menu = []  # each entry is a tuple; the first element of the tuple is the subcat name, the second is "0: Subtype (*****0 exp); 0 skills"
         for item, exp in self.skill_exp.items():
             skillcount = len(self.skilltree.subtypes[item])  # number of skills in the subcategory
@@ -621,7 +631,7 @@ he lets out a barely audible whisper:""", "red")
                 elif response.lower() == "x":
                     selection = response.lower()
                 else:
-                    cprint("Invalid response! Please try again.", "red")
+                    selection = "x"
             if selection != "x":
                 # Display all available skills, including those learned already
                 skills_to_display = []  # list of tuples; (skill_object, requirement, display_text, is_learned)
@@ -684,6 +694,8 @@ he lets out a barely audible whisper:""", "red")
                         else:
                             cprint("Jean knows this skill.", "cyan")
                             functions.await_input()
+            else:
+                finished = True
 
     def print_inventory(self):
         num_gold = 0
@@ -822,47 +834,154 @@ he lets out a barely audible whisper:""", "red")
                 method(self)
 
     def print_status(self):
+        functions.refresh_stat_bonuses(self)
+        self.fatigue = self.maxfatigue
+        self.refresh_protection_rating()
         cprint("=====\nStatus\n=====\n"
                "{}".format(self.name_long), "cyan")
-        cprint("Health: {} / {} ({})".format(self.hp, self.maxhp, self.maxhp_base), "cyan")
-        cprint("Fatigue: {} ({})".format(self.fatigue, self.maxfatigue_base), "cyan")
-        cprint("----------------------------------------------------------", "yellow")
+        output_grid_data = [
+            "Health: {} / {} ({})".format(self.hp, self.maxhp, self.maxhp_base),
+            "Fatigue: {} ({})".format(self.fatigue, self.maxfatigue_base),
+            "Weight Tolerance: {} / {} ({})".format(self.weight_current, self.weight_tolerance, self.weight_tolerance_base),
+            "Level: {} // Exp to next: {}".format(self.level, self.exp_to_level)
+        ]
+        print(self.generate_output_grid(output_grid_data, border="+++", border_color="red", border_attr=["dark"]))
+
         state_list = ""
         if len(self.states) > 0:
             for state in self.states:
-                state_list += "{} ({}) ".format(state.name, state.steps_left)
+                state_list += colored("{}".format(state.name), "white") + colored(" ({}) ".format(state.steps_left), "red")  # todo test this display
+        else:
+            state_list = "None"
         cprint("States: {}".format(state_list), "cyan")
-        cprint("----------------------------------------------------------", "yellow")
-        output_grid_data = [  # 8 categories, 25 character cell, 100 character width less borders
-            "Protection: {}".format(self.protection),
-            "Strength: {} ({})".format(self.strength, self.strength_base),
-            "Finesse: {} ({})".format(self.finesse, self.finesse_base),
-            "Speed: {} ({})".format(self.speed, self.speed_base),
-            "Endurance: {} ({})".format(self.endurance, self.endurance_base),
-            "Charisma: {} ({})".format(self.charisma, self.charisma_base),
-            "Intelligence: {} ({})".format(self.intelligence, self.intelligence_base),
-            "Faith: {} ({})".format(self.faith, self.faith_base)
+
+        output_grid_data = []
+        if self.protection < 0:
+            output_grid_data.append("Protection: " + colored("{}".format(self.protection), "red"))
+        elif self.protection > 0:
+            output_grid_data.append("Protection: " + colored("{}".format(self.protection), "green"))
+        else:
+            output_grid_data.append("Protection: " + colored("{}".format(self.protection), "white"))
+
+        charstats = [
+            "strength", "finesse", "speed", "endurance", "charisma", "intelligence", "faith"
         ]
+        for attribute in charstats:
+            color = "white"
+            if getattr(self, attribute) < getattr(self, attribute + "_base"):
+                color = "red"
+            elif getattr(self, attribute) > getattr(self, attribute + "_base"):
+                color = "green"
+            output_grid_data.append("{}: ".format(attribute.title()) +
+                                    colored("{} ".format(getattr(self, attribute)), color) +
+                                    colored("({})".format(getattr(self, attribute + "_base")), "white", attrs=["bold", "dark"])
+                                    )
+        print(self.generate_output_grid(output_grid_data, cols=2, data_color="white", data_attr=["bold", "dark"], border="=*="))
 
-        cprint("----------------------------------------------------------", "yellow")
-        # todo represent resistances. I would like to arrange them in a convenient grid. Maybe apply the grid to the stats above, too.
+        cprint("Vulnerabilities:", "cyan")
+        output_grid_data = []
+        for n, v in self.resistance.items():
+            resistance_value = v * 100
+            n += ": "
+            while len(n) < 11:
+                n += " "  # this will pad the space between the resistance title and value
+            if resistance_value == 100:
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="white", attrs=["bold"])))
+            elif 0 <= resistance_value < 100:  # damage reduced
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="blue", attrs=["bold", "dark"])))
+            elif resistance_value > 100:  # damage increased
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="red", attrs=["bold"])))
+            else:  # damage absorbed
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="green", attrs=["bold"])))
+        if len(output_grid_data) == 0:
+            print("None")
+        else:
+            print(self.generate_output_grid(output_grid_data, border="-", border_color="yellow", border_attr=["bold"]))
 
-    def generate_output_grid(self, data, rows=0, cols=0):
+        cprint("Susceptibilities:", "cyan")
+        output_grid_data = []
+        for n, v in self.status_resistance.items():
+            resistance_value = v * 100
+            n += ": "
+            while len(n) < 11:
+                n += " "  # this will pad the space between the resistance title and value
+            if resistance_value == 100:
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="white", attrs=["bold"])))
+            elif 0 <= resistance_value < 100:  # chance reduced
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="blue", attrs=["bold", "dark"])))
+            else:  # chance increased
+                output_grid_data.append(n.title() + "{}".format(colored(str(resistance_value) + "%", color="red", attrs=["bold"])))
+        if len(output_grid_data) == 0:
+            print("None")
+        else:
+            print(self.generate_output_grid(output_grid_data, border="~", border_color="blue", border_attr=["bold"]))
+
+        functions.await_input()
+        # todo extend termcolor to support 256 colors instead of just basic color palette
+        
+
+
+    def generate_output_grid(self, data, rows=0, cols=0, border="*", data_color="green",
+                             data_attr=None, border_color="magenta", border_attr=None):
         """
         Generates a grid from the provided list
+
         :param data: A list of strings
         :param rows: Number of rows. Will set automatically if left at zero
         :param cols: Number of columns. Will set automatically if left at zero
+        :param border: This string pattern will form the border between rows and columns
+        :param data_color: The _color and _attr options mirror termcolor.colored()
         :return: A string formatted in a grid shape
         """
         rows_var = rows
-        if rows_var == 0:  # I don't know how many rows I want, so let's try to find it automatically
-            rows_calc = 0
-            if cols > 0:  # I do know how many columns I want, so we can calculate the rows based on that
-                rows_calc = math.ceil(len(data) / cols)  # todo pick up here
+        cols_var = cols
+        output = ""
+        if rows_var <= 0:  # I don't know how many rows I want, so let's try to find it automatically
+            rows_var = 1
+            if cols_var > 0:  # I do know how many columns I want, so we can calculate the rows based on that
+                rows_var = math.ceil(len(data) / cols_var)
+            else:  # I want to figure out the grid arrangement automatically! This will make the grid as "square" as possible
+                rows_var = cols_var = math.ceil(math.sqrt(len(data)))
+                if (rows_var * cols_var) > (len(data) + cols_var):
+                    rows_var -= 1
+        row_width_compatibility_verified = False  # we will need to make sure the width of the row will fit in the stout display
+        cell_max_length = 1
+        row_length = 1
+        data_raw = data[:]
+        for item in data_raw:  # this will iterate over all of the strings in the data list to find the length of the longest one; necessary for padding cells
+            item = functions.escape_ansi(item)
+            if len(item) > cell_max_length:
+                cell_max_length = len(item)
 
+        while not row_width_compatibility_verified:  # this is to make sure the rows don't get too long to display. It will override any row/column parameters
+            row_length = ((cell_max_length + len(border) + 2) * cols_var) + len(border)
+            if row_length <= 300:
+                row_width_compatibility_verified = True
+            else:
+                cols_var -= 1
+                rows_var += 1
+            if rows_var == 0:  # this will only happen if the data list contains a really long string over the defined limit.
+                rows_var = 1  # In which case, just show all on one line.
+                row_width_compatibility_verified = True
+                cols_var = len(data)
 
-        for current_row in range(rows):
+        data_index = 0
+        for row in range(rows_var):
+            row_output = colored(border * (math.ceil(row_length / len(border))), color=border_color, attrs=border_attr) + "\n"  # insert the row border on top
+            for col in range(cols_var):
+                try:
+                    cell_value = data[data_index]
+                except:  # we've reached the end of our data list
+                    continue
+                while len(functions.escape_ansi(cell_value)) < cell_max_length:  # this will pad our cell to the right
+                    cell_value += " "
+                cell_value = colored(cell_value, color=data_color, attrs=data_attr)
+                row_output += colored(border, color=border_color, attrs=border_attr) + " " + cell_value + " "
+                data_index += 1
+            row_output += colored(border, color=border_color, attrs=border_attr)
+            output += row_output + "\n"
+        output += colored(border * (math.ceil(row_length / len(border))), color=border_color, attrs=border_attr)  # final row border at the bottom
+        return output
 
     def equip_item(self, phrase=''):
 
@@ -910,6 +1029,8 @@ he lets out a barely audible whisper:""", "red")
                             self.eq_weapon = self.fists
                         cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
                         target_item.on_unequip(self)
+                        target_item.interactions.remove("unequip")
+                        target_item.interactions.append("equip")
                 else:
                     count_subtypes = 0
                     for olditem in self.inventory:
@@ -929,17 +1050,21 @@ he lets out a barely audible whisper:""", "red")
                             olditem.isequipped = False
                             cprint("Jean put {} back into his bag.".format(olditem.name), "cyan")
                             olditem.on_unequip(self)
+                            olditem.interactions.remove("unequip")
+                            olditem.interactions.append("equip")
                     target_item.isequipped = True
                     cprint("Jean equipped {}!".format(target_item.name), "cyan")
                     target_item.on_equip(self)
+                    target_item.interactions.remove("equip")
+                    target_item.interactions.append("unequip")
                     if issubclass(target_item.__class__, items.Weapon):
                         self.eq_weapon = target_item
-                    if hasattr(target_item, "subtype"):
+                    if hasattr(target_item, "subtype") and target_item.gives_exp:
                         if target_item.subtype not in self.combat_exp:
                             self.combat_exp[target_item.subtype] = 0  # if the player hasn't equipped this before and it has a subtype, open an exp category
                             self.skill_exp[target_item.subtype] = 0
-                    #functions.reset_stats(self)
                     functions.refresh_stat_bonuses(self)
+                    self.refresh_protection_rating()
 
     def equip_item_menu(self):
         num_weapon = 0
@@ -1054,7 +1179,7 @@ he lets out a barely audible whisper:""", "red")
                     if case():
                         break
                 if len(choices) > 0:
-                    for i, item in enumerate(choices):  # todo TEST use item move with arrow preferences
+                    for i, item in enumerate(choices):
                         item_preference_value = ""
                         for prefitem in self.preferences.values():
                             if prefitem == item.name:
@@ -1277,17 +1402,17 @@ he lets out a barely audible whisper:""", "red")
         print(hp_string + fat_string)
 
     def refresh_moves(self):
-        available_moves = self.known_moves[:]
-        for move in available_moves:
-            if not move.viable():
-                available_moves.remove(move)
+        available_moves = []
+        for move in self.known_moves:
+            if move.viable():
+                available_moves.append(move)
         return available_moves
 
     def refresh_protection_rating(self):
         self.protection = (self.endurance / 10)  # base level of protection from player stats
         for item in self.inventory:
             if hasattr(item, "isequipped"):
-                if item.isequipped == True:  # check the protection level of all equipped items and add to base
+                if item.isequipped and hasattr(item, "protection"):  # check the protection level of all equipped items and add to base
                     add_prot = item.protection
                     if hasattr(item, "str_mod"):
                         add_prot += item.str_mod * self.strength
@@ -1295,7 +1420,7 @@ he lets out a barely audible whisper:""", "red")
                         add_prot += item.fin_mod * self.finesse
                     self.protection += add_prot
 
-    def attack(self, phrase=''):
+    def attack(self, phrase=''):  # todo add ability to strike with a ranged weapon like a bow
         target = None
 
         def strike():
@@ -1315,7 +1440,7 @@ he lets out a barely audible whisper:""", "red")
                 damage /= 2
                 glance = True
             damage = int(damage)
-            self.combat_exp += 10
+            self.combat_exp["Basic"] += 10
             if hit_chance >= roll:  # a hit!
                 if glance:
                     print(colored(self.name, "cyan") + colored(" just barely hit ", "yellow") +

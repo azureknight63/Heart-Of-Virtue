@@ -1,11 +1,11 @@
 										Boundary
 		VerdetteRoom						VerdetteRoom|$RockRumbler.r1-2|$Slime.r2-4|@WoodenChest.1.#Gold:r40-70.#Draught:r3-6		Boundary
-		VerdetteRoom			VerdetteRoom			VerdetteRoom		Boundary
-	VerdetteRoom		VerdetteRoom|!Block.southeast|@Skeleton.1.#Antidote:3	VerdetteRoom|$Slime.3		VerdetteRoom	VerdetteRoom|$Slime.2|@Skeleton.1.#Restorative:r0-1.#Draught:r0-2.#SilverRing:r0-1			Boundary
-	VerdetteRoom			VerdetteRoom|!Block.northwest						Boundary
-	VerdetteRoom|@WoodenChest.1.#Gold:r20-30.#Antidote:r1-3			VerdetteRoom		VerdetteRoom|$Slime.5	VerdetteRoom			Boundary
-			VerdetteRoom|$GiantSpider.1		VerdetteRoom	VerdetteRoom	VerdetteRoom			Boundary
-			VerdetteRoom			VerdetteRoom|@WoodenChest.1.#Antidote:r2-4		VerdetteRoom		Boundary
-			VerdetteRoom|$GiantSpider.2	VerdetteRoom|@Skeleton.1.#Antidote:r2-4.#Restorative:r2-3.#Gold:r0-55				VerdetteRoom|$Lurker.1.h+0		Boundary
-	VerdetteRoom|@Shrine.1.!StMichael	VerdetteRoom|$GiantSpider.1|$Slime.3								Boundary
+		VerdetteRoom2			VerdetteRoom			VerdetteRoom2		Boundary
+	VerdetteRoom2		VerdetteRoom|!Block.southeast|@Skeleton.1.#Antidote:3	VerdetteRoom|$Slime.3		VerdetteRoom	VerdetteRoom|$Slime.2|@Skeleton.1.#Restorative:r0-1.#Draught:r0-2.#SilverRing:r0-1			Boundary
+	VerdetteRoom5			VerdetteRoom|!Block.northwest						Boundary
+	VerdetteRoom4|@WoodenChest.1.#Gold:r20-30.#Antidote:r1-3			VerdetteRoom2		VerdetteRoom3|$Slime.5	VerdetteRoom3			Boundary
+			VerdetteRoom|$GiantSpider.1		VerdetteRoom3	VerdetteRoom4	VerdetteRoom5			Boundary
+			VerdetteRoom2			VerdetteRoom|@WoodenChest.1.#Antidote:r2-4		VerdetteRoom2		Boundary
+			VerdetteRoom|$GiantSpider.2	VerdetteRoom4|@Skeleton.1.#Antidote:r2-4.#Restorative:r2-3.#Gold:r0-55				VerdetteRoom4|$Lurker.1.h+0|!AfterDefeatingLurker		Boundary
+	VerdetteRoom|@Shrine.1.!StMichael	VerdetteRoom5|$GiantSpider.1|$Slime.3			VerdetteSpring					Boundary
 										Boundary
