@@ -34,4 +34,19 @@ class AfterDefeatingLurker(Event):
         print("Gorran turns back around to face Jean.")
         self.dialogue("Gorran", "Gr-rrondia-a-a... this way...", "green")
         functions.await_input()
-        #self.tile.spawn_object("Passageway", self.player, self.tile, params="t.mapname x-coord y-coord") #todo build Grondia first
+        self.tile.spawn_object("Passageway", self.player, self.tile, params="t.grondia 1 3")
+        print("Gorran ducked low, disappearing beneath a curving shelf of gray rock. Looking closely, "
+              "Jean could see a conspicuous divot along the bottom of the shelf, near where his mighty "
+              "friend's massive head had passed just moments ago. Scratches covered the divot, marking "
+              "this route as one frequently traveled by the strange rock-like man. Or perhaps his companions, "
+              "if he had any. Jean had seen no hint of any other such men. Not, at least, until now.")
+        time.sleep(4)
+        print("Immediately on passing under the shelf, Jean's graying whiskers were blasted by a cool "
+              "breeze of unknown origin. It had the dank smell of the cavern to which Jean was just "
+              "starting to grow accustomed, but also, something more. Or, rather, a lot of things more. "
+              "There was a mixture of scents; some familiar, and some entirely alien. "
+              "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
+              "of something large, or perhaps many things. There was also - yes, Jean was sure of "
+              "it - leather and iron.")
+        functions.await_input()
+
