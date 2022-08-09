@@ -33,7 +33,7 @@ class Move:  # master class for all moves
         self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
 
     def viable(self):
-        '''Check arbitrary conditions to see if the move is available for use; return True or False'''
+        """Check arbitrary conditions to see if the move is available for use; return True or False"""
         viability = True
         return viability
 
@@ -174,6 +174,114 @@ class Move:  # master class for all moves
             self.target.combat_exp["Basic"] += 5
         if self.user.name == "Jean":
             self.user.change_heat(0.85)
+
+    def standard_viability_attack(self, subtypes=()):
+        """
+        Standard viability loadout for a typical attack-type ability
+        :return: boolean true or false
+        """
+        viability = False
+        has_weapon = False
+        enemy_near = False
+        allowed_subtypes = subtypes
+        if self.user.eq_weapon:
+            if len(subtypes) > 0:
+                if self.user.eq_weapon.subtype in allowed_subtypes:
+                    has_weapon = True
+            else:
+                has_weapon = True
+            min = self.mvrange[0]
+            max = self.mvrange[1]
+            for enemy, distance in self.user.combat_proximity.items():
+                if min <= distance <= max:
+                    enemy_near = True
+                    break
+
+        if has_weapon and enemy_near:
+            viability = True
+        return viability
+
+    def standard_evaluate_attack(self, base_power, base_damage_type, mod_power="0",
+                                 mod_prep="0", mod_cd="0", mod_recoil="0", mod_fatigue="0",
+                                 mod_range_min="0", mod_range_max="0"):
+        """
+        Standard evaluation sequence for typical attack-type abilities
+        :return tuple (self.power, self.base_damage_type): <- These are defined outside the base class
+        """
+        power = (self.user.eq_weapon.damage + base_power) + \
+                (self.user.strength * self.user.eq_weapon.str_mod) + \
+                (self.user.finesse * self.user.eq_weapon.fin_mod)
+        if "%" in mod_power:
+            mod_power = mod_power.replace("%", "")
+            mod_power = int(mod_power)
+            power = (power * mod_power) / 100
+        else:
+            power += int(mod_power)
+        if power < 0:
+            power = 0  #todo extend this down
+
+        prep = int((40 + (self.user.eq_weapon.weight * 3)) / self.user.speed)  # starting prep of 5
+        prep += mod_prep
+        if prep < 1:
+            prep = 1
+
+        execute = 1
+
+        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.speed / 10)
+        cooldown += mod_cd
+        if cooldown < 0:
+            cooldown = 0
+
+        recoil = int(1 + (self.user.eq_weapon.weight / 2))
+        recoil += mod_recoil
+        if recoil < 1:
+            recoil = 1
+
+        fatigue_cost = (85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+        fatigue_cost += mod_fatigue
+        if fatigue_cost <= 10:
+            fatigue_cost = 10
+
+        mvrange = self.user.eq_weapon.wpnrange[0] + mod_range_min, self.user.eq_weapon.wpnrange[1] + mod_range_max
+
+        weapon_name = self.user.eq_weapon.name
+        self.stage_announce[1] = colored("Jean strikes with his " + weapon_name + "!", "green")
+        self.stage_beat = [prep, execute, recoil, cooldown]
+        self.fatigue_cost = fatigue_cost
+        self.mvrange = mvrange
+        if base_damage_type == "weapon":  # if damage is based on equipped weapon
+            base_damage_type = items.get_base_damage_type(self.user.eq_weapon)
+        return power, base_damage_type
+
+    def standard_execute_attack(self, player, power, base_damage_type):
+        glance = False  # switch for determining a glancing blow
+        self.prep_colors()
+        print(self.stage_announce[1])
+        if self.viable():
+            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            if hit_chance < 5:  # Minimum value for hit chance
+                hit_chance = 5
+        else:
+            hit_chance = -1  # if attacking is no longer viable (enemy is out of range), then auto miss
+        roll = random.randint(0, 100)
+        damage = (((power * self.target.resistance[
+            base_damage_type]) - self.target.protection) * player.heat) * random.uniform(0.8, 1.2)
+        if damage <= 0:
+            damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
+        damage = int(damage)
+        player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+        if hit_chance >= roll:  # a hit!
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
 
 ### ANY MOVES ###
 
@@ -332,7 +440,7 @@ class Withdraw(Move):
             if distance < self.mvrange[1]:
                 viability = True
                 break
-        if self.user.name is not "Jean":  # NPCs won't use this if their HP is greater than 20%
+        if self.user.name != "Jean":  # NPCs won't use this if their HP is greater than 20%
             hp_pcnt = self.user.hp / self.user.maxhp
             if hp_pcnt > 0.2:
                 viability = False
@@ -733,6 +841,46 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+
+
+class PommelStrike(Move):
+    """
+    Quick strike using the pommel of the weapon. This kind of attack serves to fill in gap time for weapons that
+    have a longer execute time on their normal or special attacks. It also has a small chance to stun the target.
+    """
+    def __init__(self, player):
+        description = "Quick strike using the pommel of the weapon."
+        prep = 1
+        execute = 1
+        recoil = 1  # modified later, based on player weapon
+        cooldown = 2
+        weapon = "fist"  # modified later, based on player weapon
+        fatigue_cost = 0
+        mvrange = (0, 5)
+        super().__init__(name="Pommel Strike", description=description, xp_gain=1, current_stage=0,
+                         stage_beat=[prep,execute,recoil,cooldown], targeted=True, mvrange=mvrange,
+                         stage_announce=["Jean quickly turns his weapon...",
+                                         colored("Jean quickly strikes with the pommel of his {}!".format(weapon),
+                                                 "green"),
+                                         "Jean braces himself from the recoil of his attack.", ""],
+                         fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=None, user=player)
+        self.power = 0  # enter the base damage bonus of the attack
+        self.evaluate()
+        self.base_damage_type = "crushing"
+
+    def viable(self):
+        viability = self.standard_viability_attack(("Axe", "Pick", "Scythe", "Spear", "Hammer", "Sword"))
+        return viability
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        evaluation = self.standard_evaluate_attack(self.power, self.base_damage_type,
+                                                    mod_prep=(-1 * (self.user.eq_weapon.weight * 3)))
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+
+    def execute(self, player):
+        self.standard_execute_attack(player, self.power, self.base_damage_type)
 
 
 class TacticalPositioning(Move):

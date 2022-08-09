@@ -11,6 +11,8 @@ class Skilltree:
             "Basic": {  # Basic class skills always gain exp along with the player and don't need to be called out in an ability
                 moves.Dodge(user): 100,
                 moves.TacticalPositioning(user): 1000
+                #moves.AggressiveStance(user): 150  # Shift to an aggressive fighting stance; ++str, spd; -fin, end
+                #moves.DefensiveStance(user): 150  # ++fin, end, -str, fth, cha
             },
             "Dagger": {
                 moves.Slash(user): 15,  # 150
@@ -30,8 +32,13 @@ class Skilltree:
                 #moves.Disarm(user): 500  # attempt to disarm the target, causing it to drop its weapon to the ground
                 #moves.Takedown(user): 500  # instead of a normal parry, this will throw your attacker to the ground, stunning them
                 #moves.Callous(user): 250  # while unarmed, glancing blows cause half their normal damage to the player
-                #moves.Footwork(user): 500  # 15% increased chance for an incoming hit to be a glancing blow
+                #moves.Footwork(user): 500  # while unarmed, 15% increased chance for an incoming hit to be a glancing blow
                 #moves.Attentive(user): 250  # while using an unarmed attack, you have a 20% chance to follow it up with an immediate Jab
                 #moves.Spinkick(user): 350  # hit all enemies within 5 distance, knocking them back and causing light damage
+            },
+            "Scythe": {
+                #moves.PommelStrike(user): 125  # Quick strike using the pommel of the weapon
+                #moves.Reap(user): 250  # sweeping poewr attack that hits multiple enemies at slightly greater than normal range and with a long windup and cooldown
+
             }
         }

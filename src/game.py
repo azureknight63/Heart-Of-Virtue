@@ -71,7 +71,7 @@ _\\|//__( | )______)_/
             newgame = False
         elif menu[choice] == 'QUIT TO DESKTOP':
             game = False
-            continue  # todo fix the sneak system; it's too easy to evade npcs with only a little investment into finesse - maybe make it a skill
+            continue # todo fix the sneak system; it's too easy to evade npcs with only a little investment into finesse - maybe make it a skill
 
         if not newgame:
             try:
