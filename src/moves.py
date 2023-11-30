@@ -1162,7 +1162,7 @@ class NPC_Attack(Move): #basic attack function, NPCs only
         recoil = 0
         cooldown = 0
         fatigue_cost = 0
-        if npc.target == None:
+        if not npc.target:
             npc.target = npc
         mvrange = npc.combat_range
         super().__init__(name="NPC_Attack", description=description, xp_gain=1, current_stage=0,
