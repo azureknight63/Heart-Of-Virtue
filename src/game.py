@@ -154,9 +154,9 @@ _\\|//__( | )______)_/
                 available_actions = room.adjacent_moves()
                 available_moves = colored('| ', "cyan")
                 for action in available_actions:
-                    available_moves += (colored(action, "green")) + colored(' | ',"cyan")
+                    available_moves += (colored(str(action), "green")) + colored(' | ', "cyan")
                 while available_moves.count('|') > 4:  # Break the list of moves over multiple lines
-                    cutoff = functions.findnth(available_moves,"|",4)
+                    cutoff = functions.findnth(available_moves, "|", 4)
                     print(available_moves[:cutoff+1])
                     available_moves = available_moves[cutoff:]
                     if ":" not in available_moves:  # if there aren't any moves left, erase the tail
