@@ -2,6 +2,7 @@ import random, time
 import functions, states
 from termcolor import colored, cprint
 
+
 #####
 # These are objects that exist on tiles as opposed to items carried by the player
 #####
@@ -35,6 +36,7 @@ class TileDescription(Object):
     Adds to the description of the tile. Has no other function. The existence of this object allows tile descriptions
     to be dynamically changed.
     '''
+
     def __init__(self, player, tile, params):
         param_list = params[2:]
         last_param = param_list[-1]
@@ -50,7 +52,7 @@ class TileDescription(Object):
         lines = []
         temp_line = word_list[0]
         for word in word_list[1:]:
-            if len(temp_line) < (104-len(word)):
+            if len(temp_line) < (104 - len(word)):
                 temp_line += (' ' + word)
             else:
                 lines.append(temp_line)
@@ -73,6 +75,7 @@ class WallSwitch(Object):
     '''
     A wall switch that does something when pressed.
     '''
+
     def __init__(self, player, tile, params=None):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(name="Wall Depression", description=description,
@@ -120,6 +123,7 @@ class WallInscription(Object):
     '''
     An inscription (typically visible) that can be looked at.
     '''
+
     def __init__(self, player, tile, params=None):
         description = "Words scratched into the wall. Unfortunately, the inscription is too worn to be decipherable."
         super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
@@ -136,7 +140,9 @@ class Container(Object):
     A generic container that may contain items. Superclass
     NOTE: If you ever make it so items can be added to an existing container post-spawn, run the stack_items method
     '''
-    def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname, params=None):
+
+    def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname,
+                 params=None):
         self.nickname = nickname
 
         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
@@ -212,7 +218,7 @@ class Container(Object):
                 if hasattr(key, "lock"):
                     if key.lock == self:
                         self.locked = False
-                        cprint("Jean uses "+key.name+" to unlock the "+self.name+".", "green")
+                        cprint("Jean uses " + key.name + " to unlock the " + self.name + ".", "green")
             if self.locked:
                 cprint("Jean couldn't find a matching key.", "red")
 
@@ -237,7 +243,8 @@ class Container(Object):
             self.open(player)
         if self.state == "opened":  # keep this as a separate branch so self.open() gets evaluated
             if len(self.contents) > 0:
-                print("Jean rifles through the contents of the " + self.nickname + ".\n\n Choose which items to take.\n\n")
+                print(
+                    "Jean rifles through the contents of the " + self.nickname + ".\n\n Choose which items to take.\n\n")
                 acceptable_responses = ['all', 'x']
                 for i, item in enumerate(self.contents):
                     cprint('{}: {} - {}'.format(i, item.name, item.description), 'yellow')
@@ -266,11 +273,12 @@ class Container(Object):
             else:
                 print("It's empty. Very sorry.")
 
-    def process_events(self): # process all events currently tied to the object
-        for event in self.events:
-            event.params.append(self)
-            self.tile.events_here.append(event)
-            self.events.remove(event)
+    def process_events(self):  # process all events currently tied to the object
+        if len(self.events) > 0:
+            for event in self.events:
+                event.params.append(self)
+                self.tile.events_here.append(event)
+                self.events.remove(event)
         self.tile.evaluate_events()
 
     def stack_items(self):
@@ -286,17 +294,20 @@ class Container(Object):
                 for duplicate in remove_duplicates:
                     self.contents.remove(duplicate)
 
+
 ### World objects ###
 
 class WoodenChest(Container):
     '''
     A wooden chest that may contain items.
     '''
+
     def __init__(self, player, tile, params=None):
         description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
         super().__init__(name="Wooden Chest", description=description, hidden=False, hide_factor=0,
                          idle_message="There's a wooden chest here.",
-                         discovery_message=" a wooden chest!", player=player, tile=tile, nickname="chest", params=params)
+                         discovery_message=" a wooden chest!", player=player, tile=tile, nickname="chest",
+                         params=params)
 
 
 class Skeleton(Container):
@@ -304,7 +315,8 @@ class Skeleton(Container):
         description = "The skeletal remains of a poor soul who just couldn't make it. It may carry some LOOT."
         super().__init__(name="Skeletal Remains", description=description, hidden=False, hide_factor=0,
                          idle_message="There are some skeletal remains on the ground.",
-                         discovery_message=" skeletal remains!", player=player, tile=tile, nickname="skeleton", params=params)
+                         discovery_message=" skeletal remains!", player=player, tile=tile, nickname="skeleton",
+                         params=params)
         self.state = "opened"
         self.keywords.remove("open")
         self.keywords.remove("unlock")
@@ -315,6 +327,7 @@ class Shrine(Object):
     A shrine that can bestow a variety of items, effects, and sometimes challenges to the player
     All shrines should be tied to an event to have an effect. Prayer is always effective, but for these, game effects should only happen once.
     '''
+
     def __init__(self, player, tile, params=None):
         description = "A beautiful shrine depicting a variety of saints praying to God."
         super().__init__(name="Shrine", description=description,
@@ -342,7 +355,7 @@ class Shrine(Object):
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
         time.sleep(random.randint(3, 10))
-        selection = random.randint(0, len(player.prayer_msg)-1)
+        selection = random.randint(0, len(player.prayer_msg) - 1)
         print(player.prayer_msg[selection])
         if self.event is not None:
             time.sleep(random.randint(3, 10))
@@ -356,6 +369,7 @@ class HealingSpring(Object):
     A spring that restores Jean's health when he drinks from it. He can also WASH or CLEAN himself in it, which provides a small, temporary boost to charisma
     and max fatigue.
     '''
+
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
         super().__init__(name="HealingSpring", description=description,
@@ -411,6 +425,7 @@ class Passageway(Object):
     '''
     A passageway that takes Jean to a different location. This can either be a location in the same map or a different map entirely.
     '''
+
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
         super().__init__(name="HealingSpring", description=description,
@@ -438,7 +453,7 @@ class Passageway(Object):
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
         time.sleep(random.randint(3, 10))
-        selection = random.randint(0, len(player.prayer_msg)-1)
+        selection = random.randint(0, len(player.prayer_msg) - 1)
         print(player.prayer_msg[selection])
         if self.event is not None:
             time.sleep(random.randint(3, 10))
