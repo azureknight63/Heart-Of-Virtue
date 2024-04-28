@@ -6,14 +6,29 @@ REMINDERS:
 
 """
 __author__ = 'BasharTeg'
-import functions, intro_scene, moves, combat, npc, items
+
+import time
+
+from termcolor import colored, cprint
+
+import combat
+import functions
+import items
 from player import Player
 from universe import Universe
-from termcolor import colored, cprint
-import time, sys
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
+
+
+def validate_numerical_input(prompt, min_value, max_value):
+    while True:
+        choice = input(prompt)
+        if functions.is_input_integer(choice):
+            choice = int(choice)
+            if min_value <= choice < max_value:
+                return choice
+        print(colored("You must enter a valid number within the given range.", "red"))
 
 
 def play():
@@ -46,52 +61,42 @@ _\\|//__( | )______)_/
 
             """, "cyan")
         newgame = True
-        if functions.saves_list():
-            save_exists = True
-        else:
-            save_exists = False
+        save_exists = bool(functions.saves_list())
+        menu = {'NEW GAME':
+                {
+                    'Enabled': True,
+                    'Index': 1
+                },
+                'LOAD GAME':
+                {
+                    'Enabled': not newgame and save_exists,
+                    'Index': 2
+                },
+                'QUIT TO DESKTOP':
+                {
+                    'Enabled': True,
+                    'Index': 3
+                }
+                }
 
-        menu = ['NEW GAME', 'QUIT TO DESKTOP']
-        if save_exists:
-            menu.insert(0, 'LOAD GAME')
-        for i, option in enumerate(menu):
-            print('{}'.format(i) + colored(': {}'.format(option), 'red'))
-        choice = input('Selection: ')
-        while True:
-            if functions.is_input_integer(choice):
-                if 0 <= int(choice) < len(menu):
-                    break
-            cprint("You must enter a valid number to select an option.", "red")
-            choice = input('Selection: ')
-
-        choice = int(choice)
-        if menu[choice] == 'NEW GAME':
-            pass  # proceed as new game
-        elif menu[choice] == 'LOAD GAME':
-            newgame = False
-        elif menu[choice] == 'QUIT TO DESKTOP':
-            game = False
-            continue # todo fix the sneak system; it's too easy to evade npcs with only a little investment into finesse - maybe make it a skill
-
-        if not newgame:
-            try:
-                player = functions.load_select()
-                if player == SyntaxError:  # if something's broken, go back to main menu
-                    continue
-            except:  # if something's broken, go back to main menu
-                continue
-
-        else:
-            player = Player()
-            universe = Universe()
-            player.universe = universe
-
-        if newgame:
-            # intro_scene.intro()  # Comment this out to disable the intro sequence
-            player.universe.build(player)
-            player.map = player.universe.starting_map
-            player.location_x, player.location_y = player.universe.starting_position
-
+        choice = 0
+        while choice == 0:
+            for i, option in enumerate(menu):
+                if menu[option]['Enabled']:
+                    print(f"{menu[option]['Index']}: {colored(option, 'red')}")
+            choice = validate_numerical_input('Selection: ', 1, len(menu)+1)
+            if choice == menu['NEW GAME']['Index']:
+                pass  # Proceed as new game
+            elif choice == menu['LOAD GAME']['Index']:
+                newgame = False
+            elif choice == menu['QUIT TO DESKTOP']['Index']:
+                break  # Exit the loop and quit
+        player = functions.load_select() if not newgame else Player()
+        universe = Universe()
+        player.universe = universe
+        player.universe.build(player)
+        player.map = player.universe.starting_map
+        player.location_x, player.location_y = player.universe.starting_position
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
         ### prepare to enter the post-menu game loop ###
@@ -134,7 +139,7 @@ _\\|//__( | )______)_/
             room.evaluate_events()
             room.modify_player(player)
             if mark_health != player.hp:
-                player.show_bars(True,False)  # show just the health bar if the player's current HP has changed
+                player.show_bars(True, False)  # show just the health bar if the player's current HP has changed
                 mark_health = player.hp
             functions.check_for_npcs(room)
             room.stack_duplicate_items()
@@ -142,7 +147,7 @@ _\\|//__( | )______)_/
             functions.check_for_objects(room)
             player.combat_list = functions.check_for_combat(player)
             if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
-                print(colored("Jean readies himself for battle!","red"))
+                print(colored("Jean readies himself for battle!", "red"))
                 combat.combat(player)
             ### check to make sure entering the most recent tile hasn't ended the game ###
             if not player.is_alive():
@@ -157,7 +162,7 @@ _\\|//__( | )______)_/
                     available_moves += (colored(str(action), "green")) + colored(' | ', "cyan")
                 while available_moves.count('|') > 4:  # Break the list of moves over multiple lines
                     cutoff = functions.findnth(available_moves, "|", 4)
-                    print(available_moves[:cutoff+1])
+                    print(available_moves[:cutoff + 1])
                     available_moves = available_moves[cutoff:]
                     if ":" not in available_moves:  # if there aren't any moves left, erase the tail
                         available_moves = ""
@@ -166,7 +171,8 @@ _\\|//__( | )______)_/
                 print("\n\nFor a list of additional commands, enter 'c'.\n")
                 action_input = input('Action: ')
                 raw_args = action_input.split(' ')
-                lc_exceptions = ("te", "test", "testevent")  # exceptions to lowering case (better precision, worse searching, may break some actions)
+                lc_exceptions = ("te", "test",
+                                 "testevent")  # exceptions to lowering case (better precision, worse searching, may break some actions)
                 if raw_args[0] not in lc_exceptions:
                     action_input = action_input.lower()
                 available_actions = room.available_actions()
@@ -194,7 +200,7 @@ _\\|//__( | )______)_/
                     #                   NOTE: syntax for multiple words is '<command> <target object>';
                     #                   additional words are ignored
                     success = False
-                    
+
                     def enumerate_for_interactions(subjects):
 
                         def confirm(thing, action):
