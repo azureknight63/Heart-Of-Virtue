@@ -319,22 +319,24 @@ def randomize_amount(param):
         return int(param)
 
 
-def seek_class(classname, player, tile, repeat, params):  # searches through the story folder for the matching module and returns an instance
-    class_obj = ""
-    try:
-        class_obj = getattr(importlib.import_module('src.events'), classname)(player, tile, repeat, params)
-    except:
+def seek_class(classname, player, tile, repeat, params):
+    # searches through the story folder for the matching module and returns an instance
+    module_paths = [
+        'events',
+        'story.general',
+        'story.ch01',
+        'story.ch02'
+    ]
+    for module_path in module_paths:
         try:
-            class_obj = getattr(importlib.import_module('src.story.general'), classname)(player, tile, repeat, params)
-        except:
-            try:
-                class_obj = getattr(importlib.import_module('src.story.ch01'), classname)(player, tile, repeat, params)
-            except:
-                try:
-                    class_obj = getattr(importlib.import_module('src.story.ch02'), classname)(player, tile, repeat, params)
-                except:
-                    print("#####ERR: Cannot find event " + classname)
-    return class_obj
+            module = importlib.import_module(module_path)
+            class_obj = getattr(module, classname)(player, tile, repeat, params)
+            return class_obj
+        except AttributeError:
+            pass
+    print("### ERR: Cannot find event " + classname)
+    return None  # or whatever you prefer to return in case of failure
+
 
 
 def await_input():

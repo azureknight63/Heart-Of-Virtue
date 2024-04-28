@@ -1,12 +1,14 @@
 """
 General events
 """
-from termcolor import colored, cprint
-import threading
-import random
-import time
-import objects, functions, items
-from ..events import *
+# from termcolor import colored, cprint
+# import threading
+# import random
+# import time
+from src.objects import *
+from src.functions import *
+from src.items import *
+from src.events import *
 
 
 class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for testing? Or just fun.
@@ -90,9 +92,9 @@ class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a p
 
 
 class Teleport(Event):
-    '''
+    """
     Teleports the player to another location. Format is "t.mapname x-coord y-coord"
-    '''
+    """
     def __init__(self, player, tile, repeat, name='Teleport', params=None):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
         self.params = params
@@ -140,7 +142,8 @@ class StMichael(Shrine):  # Generic class for Shrine-based events
 
         """)
         functions.await_input()
-        print("Suddenly, Jean has the feeling of intense heat all around him. He hears a voice echoing inside his head.")
+        print("Suddenly, Jean has the feeling of intense heat all around him. "
+              "He hears a voice echoing inside his head.")
         time.sleep(2)
         cprint("""CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""", "red")
         all_choices = [
@@ -171,4 +174,5 @@ class StMichael(Shrine):  # Generic class for Shrine-based events
             selection = int(selection)
         drop = self.tile.spawn_item(available_choices[selection][1], amt=1, hidden=False, hfactor=0)
         functions.add_random_enchantments(drop, 1)
-        cprint("There's a brief flash of light (or was it imagined?) \nSuddenly, at the foot of the shrine, there sits a {}.".format(drop.name), "cyan")
+        cprint("There's a brief flash of light (or was it imagined?) \nSuddenly, at the foot of the shrine, "
+               "there sits a {}.".format(drop.name), "cyan")

@@ -5,8 +5,9 @@ from termcolor import colored, cprint
 import threading
 import random
 import time, inspect
-import objects, functions
-from ..events import *
+from src.objects import *
+from src.functions import *
+from src.events import *
 
 
 class Ch01StartOpenWall(Event):
