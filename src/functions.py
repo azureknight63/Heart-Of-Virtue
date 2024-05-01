@@ -296,15 +296,10 @@ def findnth(haystack, needle, n):
 
 def checkrange(user):
     '''Checks the min & max range constraints for the user; returns a tuple of (min, max)'''
-    minr=0
-    maxr=0
     if user.name == "Jean":
-        minr += user.eq_weapon.range[0]
-        minr += user.eq_weapon.range[1]
-    else:
-        minr += user.combat_range[0]
-        minr += user.combat_range[1]
-    return minr, maxr
+        return (user.eq_weapon.range[0], user.eq_weapon.range[1])
+
+    return (user.combat_range[0], user.combat_range[1])
 
 
 def randomize_amount(param):
