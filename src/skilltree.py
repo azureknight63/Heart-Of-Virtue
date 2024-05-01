@@ -40,5 +40,11 @@ class Skilltree:
                 #moves.PommelStrike(user): 125  # Quick strike using the pommel of the weapon
                 #moves.Reap(user): 250  # sweeping poewr attack that hits multiple enemies at slightly greater than normal range and with a long windup and cooldown
 
+            },
+            "Axe": {
+                # moves.PommelStrike(user): 125  # Quick strike using the pommel of the weapon
+                # moves.Reap(user): 250  # sweeping poewr attack that hits multiple enemies at slightly greater than normal range and with a long windup and cooldown
+                moves.Slash(user): 50,
+                moves.Parry(user): 100
             }
         }
