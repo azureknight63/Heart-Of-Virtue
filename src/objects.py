@@ -200,7 +200,7 @@ class Container(Object):
 
     def refresh_description(self):
         if self.state == "closed":
-            self.description = "A " + self.nickname + " which may or may not have things inside. You can try to OPEN or LOOT it."
+            self.description = "A " + self.nickname + " which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
         else:
             if len(self.contents) > 0:
                 self.description = "A " + self.nickname + ". Inside are the following things: \n\n"
