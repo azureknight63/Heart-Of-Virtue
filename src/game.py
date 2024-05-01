@@ -141,10 +141,10 @@ _\\|//__( | )______)_/
             if mark_health != player.hp:
                 player.show_bars(True, False)  # show just the health bar if the player's current HP has changed
                 mark_health = player.hp
-            functions.check_for_npcs(room)
+            functions.print_npcs_in_room(room)
             room.stack_duplicate_items()
-            functions.check_for_items(room)
-            functions.check_for_objects(room)
+            functions.print_items_in_room(room)
+            functions.print_objects_in_room(room)
             player.combat_list = functions.check_for_combat(player)
             if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!", "red"))
