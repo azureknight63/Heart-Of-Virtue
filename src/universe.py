@@ -87,7 +87,7 @@ class Universe():  # "globals" for the game state can be stored here, as well as
                                     for item in p_list:
                                         if "h+" in item:
                                             hidden = True
-                                            hfactor = item[3:]
+                                            hfactor = int(item[2:])
                                     self.tile_exists(map, x, y).spawn_item(item_type,  amt=amt, hidden=hidden, hfactor=hfactor)
 
                                 elif param[0] == '!':  # spawns any declared events

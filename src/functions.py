@@ -24,7 +24,7 @@ def screen_clear():
     print("\n" * 100)
 
 
-def check_for_npcs(room):  # Check to see what NPCs are in the room.
+def print_npcs_in_room(room):
     # Does not evaluate combat aggro - that's a different function
     if len(room.npcs_here) > 0:  # Evaluate the room's NPCs.
         for npc in room.npcs_here:
@@ -33,7 +33,7 @@ def check_for_npcs(room):  # Check to see what NPCs are in the room.
         print("\n")
 
 
-def check_for_items(room):
+def print_items_in_room(room):
     if len(room.items_here) > 0:
         for item in room.items_here:
             if not item.hidden:
@@ -41,7 +41,7 @@ def check_for_items(room):
         print("\n")
 
 
-def check_for_objects(room):  # Check to see what objects are in the room.
+def print_objects_in_room(room):
     if len(room.objects_here) > 0:
         for obj in room.objects_here:
             if not obj.hidden:
@@ -296,15 +296,10 @@ def findnth(haystack, needle, n):
 
 def checkrange(user):
     '''Checks the min & max range constraints for the user; returns a tuple of (min, max)'''
-    minr=0
-    maxr=0
     if user.name == "Jean":
-        minr += user.eq_weapon.range[0]
-        minr += user.eq_weapon.range[1]
-    else:
-        minr += user.combat_range[0]
-        minr += user.combat_range[1]
-    return minr, maxr
+        return (user.eq_weapon.range[0], user.eq_weapon.range[1])
+
+    return (user.combat_range[0], user.combat_range[1])
 
 
 def randomize_amount(param):
