@@ -449,91 +449,53 @@ maintenant et à l'heure de notre mort. Amen.""",
         self.exp_to_level = self.level * (150 - self.intelligence)
         cprint("{} exp needed for the next level.".format(self.exp_to_level - self.exp), "yellow")
 
-        bonus = random.randint(0, 2)
-        if bonus != 0:
-            self.strength_base += bonus
-            cprint("Strength went up by {}".format(bonus))
-        bonus = random.randint(0, 2)
-        if bonus != 0:
-            self.finesse_base += bonus
-            cprint("Finesse went up by {}".format(bonus))
-        bonus = random.randint(0, 2)
-        if bonus != 0:
-            self.speed_base += bonus
-            cprint("Speed went up by {}".format(bonus))
-        bonus = random.randint(0, 2)
-        if bonus != 0:
-            self.endurance_base += bonus
-            cprint("Endurance went up by {}".format(bonus))
-        bonus = random.randint(0, 2)
-        if bonus != 0:
-            self.charisma_base += bonus
-            cprint("Charisma went up by {}".format(bonus))
-        bonus = random.randint(0, 2)
-        if bonus != 0:
-            self.intelligence_base += bonus
-            cprint("Intelligence went up by {}".format(bonus))
+        attributes = [
+            ("strength_base", colored("Strength", "magenta"), 1),
+            ("finesse_base", colored("Finesse", "magenta"), 2),
+            ("speed_base", colored("Speed", "magenta"), 3),
+            ("endurance_base", colored("Endurance", "magenta"), 4),
+            ("charisma_base", colored("Charisma", "magenta"), 5),
+            ("intelligence_base", colored("Intelligence", "magenta"), 6)
+        ]
+
+        for attr, attr_name, i in attributes:
+            bonus = random.randint(0, 2)
+            if bonus != 0:
+                current_value = getattr(self, attr)
+                setattr(self, attr, current_value + bonus)
+                print(f"{attr_name} went up by {colored(str(bonus), "yellow")}.")
+                time.sleep(2)
 
         points = random.randint(6, 9)
 
         while points > 0:
-            selection = ''
-            while selection == '':
-                print('You have {} additional attribute points to distribute. Please select an attribute to increase.\n\n'
-                      '(1) Strength     - {}\n'
-                      '(2) Finesse      - {}\n'
-                      '(3) Speed        - {}\n'
-                      '(4) Endurance    - {}\n'
-                      '(5) Charisma     - {}\n'
-                      '(6) Intelligence - {}\n\n'.format(points, self.strength_base, self.finesse_base, self.speed_base,
-                                                         self.endurance_base, self.charisma_base, self.intelligence_base))
-                selection = input("Selection: ")
-                if functions.is_input_integer(selection):
-                    if int(selection) < 1 or int(selection) > 6:
-                        cprint("Invalid selection. You must enter a choice between 1 and 6.", "red")
-                        selection = ''
-                else:
-                    cprint("Invalid selection. You must enter a choice between 1 and 6.", "red")
-                    selection = ''
+            print(f'You have {colored(str(points), "yellow")} additional attribute points to distribute. Please select an attribute to increase:\n')
+            for attr, attr_name, i in attributes:
+                print(f'({i}) {attr_name} - {getattr(self, attr)}')
+
+            selection = input("Selection: ")
+            if not selection.isdigit() or (1 > int(selection) > 6):
+                cprint("Invalid selection. You must enter a choice between 1 and 6.", "red")
+                continue
+
             selection = int(selection)
+            set_attr = ""
+            set_attr_name = ""
+            for attr, attr_name, i in attributes:
+                if selection == i:
+                    set_attr, set_attr_name = attr, attr_name
+                    break
 
-            amt = ''
-            while amt == '':
-                amt = input("How many points would you like to allocate? ({} available, 0 to cancel)".format(points))
-                if functions.is_input_integer(amt):
-                    if int(amt) < 0 or int(amt) > points:
-                        cprint("Invalid selection. You must enter an amount between 0 and {}.".format(points), "red")
-                        amt = ''
-                else:
-                    cprint("Invalid selection. You must enter an amount between 0 and {}.".format(points), "red")
-                    amt = ''
+            amt = input(f"How many points would you like to allocate? ({points} available, 0 to cancel) ")
+            if not amt.isdigit() or not (0 <= int(amt) <= points):
+                cprint(f"Invalid selection. You must enter an amount between 0 and {points}.", "red")
+                continue
+
             amt = int(amt)
-
             if amt > 0:
-                if selection == 1:
-                    self.strength_base += amt
-                    points -= amt
-                    cprint("Strength increased by {}!".format(amt), "green")
-                if selection == 2:
-                    self.finesse_base += amt
-                    points -= amt
-                    cprint("Finesse increased by {}!".format(amt), "green")
-                if selection == 3:
-                    self.speed_base += amt
-                    points -= amt
-                    cprint("Speed increased by {}!".format(amt), "green")
-                if selection == 4:
-                    self.endurance_base += amt
-                    points -= amt
-                    cprint("Endurance increased by {}!".format(amt), "green")
-                if selection == 5:
-                    self.charisma_base += amt
-                    points -= amt
-                    cprint("Charisma increased by {}!".format(amt), "green")
-                if selection == 6:
-                    self.intelligence_base += amt
-                    points -= amt
-                    cprint("Intelligence increased by {}!".format(amt), "green")
+                setattr(self, set_attr, getattr(self, set_attr) + amt)
+                points -= amt
+                cprint(f"{set_attr_name} increased by {amt}!", "green")
 
     def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult
