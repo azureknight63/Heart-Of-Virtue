@@ -2,7 +2,7 @@
 Combat states to be used within combat module. May also spill over to the standard game.
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 import random
 import functions
 

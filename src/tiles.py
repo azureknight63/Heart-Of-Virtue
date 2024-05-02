@@ -2,7 +2,7 @@
 __author__ = 'Alex Egbert'
 
 import items, actions, universe, npc, random, functions
-from termcolor import colored
+from neotermcolor import colored
 
 class MapTile:
     """The base class for a tile within the world space"""

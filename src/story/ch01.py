@@ -1,7 +1,7 @@
 """
 Chapter 01 events
 """
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 import threading
 import random
 import time, inspect

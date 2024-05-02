@@ -2,7 +2,7 @@ import string, textwrap, os, inspect, re
 import sys, time, random, pickle, datetime, importlib, math
 import npc, tiles, moves, enchant_tables
 from player import Player
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 from os import listdir
 from os.path import isfile, join
 

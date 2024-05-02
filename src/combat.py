@@ -1,4 +1,4 @@
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 import time, random, functions
 
 

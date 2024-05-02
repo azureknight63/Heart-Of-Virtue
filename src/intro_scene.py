@@ -1,6 +1,6 @@
 import time
 import functions
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 
 def intro():
     functions.print_slow("Darkness. Silence. Jean is surrounded by these. They seem to hang around him like a thick "

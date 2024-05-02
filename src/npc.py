@@ -1,6 +1,6 @@
 import random
 import genericng, moves, functions
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 import loot_tables
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table

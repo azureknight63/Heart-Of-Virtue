@@ -1,7 +1,8 @@
 import random, time, math, traceback
 from switch import switch
 import items, functions, universe, moves, actions, combat, skilltree
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
+
 
 class Player():
     def __init__(self):
@@ -31,78 +32,78 @@ class Player():
         # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half." 2.0 means "double damage/chance."
         # Negative values mean the damage is absorbed (heals instead of damages.) Status resistances cannot be negative.
         self.resistance = {
-            "fire":         1.0,
-            "ice":          1.0,
-            "shock":        1.0,
-            "earth":        1.0,
-            "light":        1.0,
-            "dark":         1.0,
-            "piercing":     1.0,
-            "slashing":     1.0,
-            "crushing":     1.0,
-            "spiritual":    1.0,
-            "pure":         1.0
+            "fire": 1.0,
+            "ice": 1.0,
+            "shock": 1.0,
+            "earth": 1.0,
+            "light": 1.0,
+            "dark": 1.0,
+            "piercing": 1.0,
+            "slashing": 1.0,
+            "crushing": 1.0,
+            "spiritual": 1.0,
+            "pure": 1.0
         }
         self.resistance_base = {
-            "fire":         1.0,
-            "ice":          1.0,
-            "shock":        1.0,
-            "earth":        1.0,
-            "light":        1.0,
-            "dark":         1.0,
-            "piercing":     1.0,
-            "slashing":     1.0,
-            "crushing":     1.0,
-            "spiritual":    1.0,
-            "pure":         1.0
+            "fire": 1.0,
+            "ice": 1.0,
+            "shock": 1.0,
+            "earth": 1.0,
+            "light": 1.0,
+            "dark": 1.0,
+            "piercing": 1.0,
+            "slashing": 1.0,
+            "crushing": 1.0,
+            "spiritual": 1.0,
+            "pure": 1.0
         }
         self.status_resistance = {
-            "generic":      1.0,  # Default status type for all states
-            "stun":         1.0,  # Unable to move; typically short duration
-            "poison":       1.0,  # Drains Health every combat turn/game tick; persists
-            "enflamed":     1.0,  # Fire damage over time
-            "sloth":        1.0,  # Drains Fatigue every combat turn
-            "apathy":       1.0,  # Drains HEAT every combat turn
-            "blind":        1.0,  # Miss physical attacks more frequently; persists
-            "incoherence":  1.0,  # Miracles fail more frequently; persists
-            "mute":         1.0,  # Cannot use Miracles; persists
-            "enraged":      1.0,  # Double physical damage given and taken
-            "enchanted":    1.0,  # Double magical damage given and taken
-            "ethereal":     1.0,  # Immune to physical damage but take 3x magical damage; persists
-            "berserk":      1.0,  # Auto attack, 1.5x physical damage
-            "slow":         1.0,  # All move times are doubled
-            "sleep":        1.0,  # Unable to move; removed upon physical damage
-            "confusion":    1.0,  # Uses random moves on random targets; removed upon physical damage
-            "cursed":       1.0,  # Makes luck 1, chance of using a random move with a random target; persists
-            "stop":         1.0,  # Unable to move; not removed with damage
-            "stone":        1.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
-            "frozen":       1.0,  # Unable to move; removed with Fire magic; permanent death if allowed to persist after battle
-            "doom":         1.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
-            "death":        1.0
+            "generic": 1.0,  # Default status type for all states
+            "stun": 1.0,  # Unable to move; typically short duration
+            "poison": 1.0,  # Drains Health every combat turn/game tick; persists
+            "enflamed": 1.0,  # Fire damage over time
+            "sloth": 1.0,  # Drains Fatigue every combat turn
+            "apathy": 1.0,  # Drains HEAT every combat turn
+            "blind": 1.0,  # Miss physical attacks more frequently; persists
+            "incoherence": 1.0,  # Miracles fail more frequently; persists
+            "mute": 1.0,  # Cannot use Miracles; persists
+            "enraged": 1.0,  # Double physical damage given and taken
+            "enchanted": 1.0,  # Double magical damage given and taken
+            "ethereal": 1.0,  # Immune to physical damage but take 3x magical damage; persists
+            "berserk": 1.0,  # Auto attack, 1.5x physical damage
+            "slow": 1.0,  # All move times are doubled
+            "sleep": 1.0,  # Unable to move; removed upon physical damage
+            "confusion": 1.0,  # Uses random moves on random targets; removed upon physical damage
+            "cursed": 1.0,  # Makes luck 1, chance of using a random move with a random target; persists
+            "stop": 1.0,  # Unable to move; not removed with damage
+            "stone": 1.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
+            "frozen": 1.0,  # Unable to move; removed with Fire magic; permanent death if allowed to persist after battle
+            "doom": 1.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
+            "death": 1.0
         }
         self.status_resistance_base = {
-            "generic":      1.0,
-            "stun":         1.0,
-            "poison":       1.0,
-            "enflamed":     1.0,
-            "sloth":        1.0,
-            "apathy":       1.0,
-            "blind":        1.0,
-            "incoherence":  1.0,
-            "mute":         1.0,
-            "enraged":      1.0,
-            "enchanted":    1.0,
-            "ethereal":     1.0,
-            "berserk":      1.0,
-            "slow":         1.0,
-            "sleep":        1.0,
-            "confusion":    1.0,
-            "cursed":       1.0,
-            "stop":         1.0,
-            "stone":        1.0,
-            "frozen":       1.0,
-            "doom":         1.0,
-            "death":        1.0
+            "generic": 1.0,
+            "stun": 1.0,
+            "poison": 1.0,
+            "enflamed": 1.0,
+            "sloth": 1.0,
+            "apathy": 1.0,
+            "blind": 1.0,
+            "incoherence": 1.0,
+            "mute": 1.0,
+            "enraged": 1.0,
+            "enchanted": 1.0,
+            "ethereal": 1.0,
+            "berserk": 1.0,
+            "slow": 1.0,
+            "sleep": 1.0,
+            "confusion": 1.0,
+            "cursed": 1.0,
+            "stop": 1.0,
+            "stone": 1.0,
+            "frozen": 1.0,
+            "doom": 1.0,
+            "death": 1.0
         }
         self.weight_tolerance = 20.00
         self.weight_tolerance_base = 20.00
@@ -141,7 +142,7 @@ class Player():
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
         self.preferences = {
-            "arrow":   "Wooden Arrow"
+            "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
         self.combat_idle_msg = [
             'Jean breathes heavily. ',
@@ -162,7 +163,7 @@ class Player():
             'Jean recalls the sensation of consuming the Eucharist and wonders when - if - that might happen again. ',
             'Jean mutters a quick prayer under his breath. ',
             'Jean briefly recalls his mother folding laundry and humming softly to herself. ',
-            ]
+        ]
 
         self.combat_hurt_msg = [
             'Jean tastes blood in his mouth and spits it out. ',
@@ -192,12 +193,12 @@ class Player():
             'Jean frowns impatiently.',
             'Jean shudders slightly.',
             "Jean sees his wife's face for a brief moment and lets out a barely audible sigh. \n" +
-                "The memory of her auburn braids swinging as she walked remains like a retinal burn. \n" +
-                "Her other features are painfully mercurial and induce a burning sense of guilt.",
+            "The memory of her auburn braids swinging as she walked remains like a retinal burn. \n" +
+            "Her other features are painfully mercurial and induce a burning sense of guilt.",
             'Jean grits his teeth and focuses hard on praying for his wife and daughter.',
             'Jean anxiously shifts his weight back and forth.',
             "Jean can still remember the look on the courier's face on that fateful day. He can still see the clothes he was wearing. \n" +
-                "He can still smell the warm spring air. \nHe will never forget that day or the pain and anger that came with it.",
+            "He can still smell the warm spring air. \nHe will never forget that day or the pain and anger that came with it.",
             'In spite of himself, Jean wonders just what, exactly, this is supposed to accomplish.',
             'Jean makes the sign of the cross.',
             """Jean prays quietly, 
@@ -208,7 +209,7 @@ Sainte Marie, Mère de Dieu, priez pour nous, pauvres pécheurs,
 maintenant et à l'heure de notre mort. Amen.""",
             'Jean becomes conscious of his own heart beating loudly.',
             'His little girl is laughing and running through a field of grass. Jean remembers how they would play together. \n'
-                'She would tease him, calling him "Gros Glouton." He would call her "Paresseux Passereau."',
+            'She would tease him, calling him "Gros Glouton." He would call her "Paresseux Passereau."',
             'Jean feels the silence around him to be very heavy.',
             "An intense groaning makes its way through Jean's stomache.",
             "The smell of fresh, sweet lillies dances in Jean's memory. \nThey were Regina's favorite.",
@@ -232,7 +233,6 @@ maintenant et à l'heure de notre mort. Amen.""",
         if not player_has_state:
             self.states.append(state)
 
-
     def stack_gold(self):
         gold_objects = []
         for item in self.inventory:  # get the counts of each item in each category
@@ -253,14 +253,14 @@ maintenant et à l'heure de notre mort. Amen.""",
 
     def combat_idle(self):
         if (self.hp * 100) / self.maxhp > 20:  # combat idle (healthy)
-            chance = random.randint(0,1000)
+            chance = random.randint(0, 1000)
             if chance > 995:
-                message = random.randint(0, len(self.combat_idle_msg)-1)
+                message = random.randint(0, len(self.combat_idle_msg) - 1)
                 print(self.combat_idle_msg[message])
         else:
             chance = random.randint(0, 1000)  # combat hurt (injured)
             if chance > 950:
-                message = random.randint(0, len(self.combat_hurt_msg)-1)
+                message = random.randint(0, len(self.combat_hurt_msg) - 1)
                 print(self.combat_hurt_msg[message])
 
     def gain_exp(self, amt, exp_type="Basic"):
@@ -293,9 +293,9 @@ maintenant et à l'heure de notre mort. Amen.""",
                     else:
                         continue
                 if announce:
-                    cprint("Jean may spend some of his earned exp to learn a new {} skill. Type SKILL to open the skill menu for details.".format(exp_type), "magenta")
+                    cprint("Jean may spend some of his earned exp to learn a new {} skill. Type SKILL to open the skill menu for details.".format(exp_type),
+                           "magenta")
                 break
-
 
         # remove = []
         # for k, v in self.skilltree.subtypes.items():
@@ -331,7 +331,7 @@ maintenant et à l'heure de notre mort. Amen.""",
     def get_hp_pcnt(self):  # returns the player's remaining HP as a decimal
         curr = float(self.hp)
         maxhp = float(self.maxhp)
-        return curr/maxhp
+        return curr / maxhp
 
     def supersaiyan(self):  # makes player super strong! Debug only
         self.strength_base = 1000
@@ -374,9 +374,9 @@ maintenant et à l'heure de notre mort. Amen.""",
         if len(params) > 1:
             for item in params:
                 if item == 'hidden':
-                    hidden=True
+                    hidden = True
                 elif 'hfactor=' in item:
-                    hfactor=int(item[8:])
+                    hfactor = int(item[8:])
                 elif 'delay=' in item:
                     delay = int(item[6:])
                 elif 'count=' in item:
@@ -449,11 +449,11 @@ maintenant et à l'heure de notre mort. Amen.""",
         self.exp_to_level = self.level * (150 - self.intelligence)
         cprint("{} exp needed for the next level.".format(self.exp_to_level - self.exp), "yellow")
 
-        bonus = random.randint(0,2)
+        bonus = random.randint(0, 2)
         if bonus != 0:
             self.strength_base += bonus
             cprint("Strength went up by {}".format(bonus))
-        bonus = random.randint(0,2)
+        bonus = random.randint(0, 2)
         if bonus != 0:
             self.finesse_base += bonus
             cprint("Finesse went up by {}".format(bonus))
@@ -461,20 +461,20 @@ maintenant et à l'heure de notre mort. Amen.""",
         if bonus != 0:
             self.speed_base += bonus
             cprint("Speed went up by {}".format(bonus))
-        bonus = random.randint(0,2)
+        bonus = random.randint(0, 2)
         if bonus != 0:
             self.endurance_base += bonus
             cprint("Endurance went up by {}".format(bonus))
-        bonus = random.randint(0,2)
+        bonus = random.randint(0, 2)
         if bonus != 0:
             self.charisma_base += bonus
             cprint("Charisma went up by {}".format(bonus))
-        bonus = random.randint(0,2)
+        bonus = random.randint(0, 2)
         if bonus != 0:
             self.intelligence_base += bonus
             cprint("Intelligence went up by {}".format(bonus))
 
-        points = random.randint(6,9)
+        points = random.randint(6, 9)
 
         while points > 0:
             selection = ''
@@ -486,7 +486,7 @@ maintenant et à l'heure de notre mort. Amen.""",
                       '(4) Endurance    - {}\n'
                       '(5) Charisma     - {}\n'
                       '(6) Intelligence - {}\n\n'.format(points, self.strength_base, self.finesse_base, self.speed_base,
-                                                       self.endurance_base, self.charisma_base, self.intelligence_base))
+                                                         self.endurance_base, self.charisma_base, self.intelligence_base))
                 selection = input("Selection: ")
                 if functions.is_input_integer(selection):
                     if int(selection) < 1 or int(selection) > 6:
@@ -538,7 +538,7 @@ maintenant et à l'heure de notre mort. Amen.""",
     def change_heat(self, mult=1, add=0):  # enforces boundaries with min and max heat levels
         self.heat *= mult
         self.heat += add
-        self.heat = int((self.heat * 100)+ 0.5) / 100.0  # enforce 2 decimals
+        self.heat = int((self.heat * 100) + 0.5) / 100.0  # enforce 2 decimals
         if self.heat > 10:
             self.heat = 10
         if self.heat < 0.5:
@@ -559,8 +559,8 @@ maintenant et à l'heure de notre mort. Amen.""",
             del self.combat_proximity[enemy]
 
     def death(self):
-        for i in range(random.randint(2,5)):
-            message = random.randint(0, len(self.combat_hurt_msg)-1)
+        for i in range(random.randint(2, 5)):
+            message = random.randint(0, len(self.combat_hurt_msg) - 1)
             print(self.combat_hurt_msg[message])
             time.sleep(0.5)
 
@@ -615,7 +615,7 @@ he lets out a barely audible whisper:""", "red")
         menu = []  # each entry is a tuple; the first element of the tuple is the subcat name, the second is "0: Subtype (*****0 exp); 0 skills"
         for item, exp in self.skill_exp.items():
             skillcount = len(self.skilltree.subtypes[item])  # number of skills in the subcategory
-            menu.append((item,"{0} ({1:>6,} exp); {2} skills".format(item, exp, skillcount)))
+            menu.append((item, "{0} ({1:>6,} exp); {2} skills".format(item, exp, skillcount)))
         finished = False
         while not finished:
             cprint("*** SKILL MENU ***\n\nSelect a category to view or learn skills.\n\n", "cyan")
@@ -732,12 +732,12 @@ he lets out a barely audible whisper:""", "red")
                         pass
             self.refresh_weight()
             cprint("=====\nInventory\n=====\n"
-                      "Weight: {} / {}".format(self.weight_current, self.weight_tolerance), "cyan")
+                   "Weight: {} / {}".format(self.weight_current, self.weight_tolerance), "cyan")
             cprint(
-                      "Gold: {}\n\nSelect a category to view:\n\n(c) Consumables: {}\n"
-                      "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: {}\n(s) Special: {}\n"
-                      "(x) Cancel\n"
-                      .format(num_gold, num_consumable, num_weapon, num_armor, num_boots, num_helm, num_gloves, num_accessories, num_special), "cyan")
+                "Gold: {}\n\nSelect a category to view:\n\n(c) Consumables: {}\n"
+                "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: {}\n(s) Special: {}\n"
+                "(x) Cancel\n"
+                .format(num_gold, num_consumable, num_weapon, num_armor, num_boots, num_helm, num_gloves, num_accessories, num_special), "cyan")
 
             choices = []
             inventory_selection = input(colored('Selection: ', "cyan"))
@@ -917,9 +917,6 @@ he lets out a barely audible whisper:""", "red")
             print(self.generate_output_grid(output_grid_data, border="~", border_color="blue", border_attr=["bold"]))
 
         functions.await_input()
-        # todo extend termcolor to support 256 colors instead of just basic color palette
-        
-
 
     def generate_output_grid(self, data, rows=0, cols=0, border="*", data_color="green",
                              data_attr=None, border_color="magenta", border_attr=None):
@@ -930,7 +927,7 @@ he lets out a barely audible whisper:""", "red")
         :param rows: Number of rows. Will set automatically if left at zero
         :param cols: Number of columns. Will set automatically if left at zero
         :param border: This string pattern will form the border between rows and columns
-        :param data_color: The _color and _attr options mirror termcolor.colored()
+        :param data_color: The _color and _attr options mirror neotermcolor.colored()
         :return: A string formatted in a grid shape
         """
         rows_var = rows
@@ -1022,12 +1019,12 @@ he lets out a barely audible whisper:""", "red")
                     self.inventory.append(target_item)
                 if target_item.isequipped:
                     print("{} is already equipped.".format(target_item.name))
-                    answer = input(colored("Would you like to remove it? (y/n) ","cyan"))
+                    answer = input(colored("Would you like to remove it? (y/n) ", "cyan"))
                     if answer == 'y':
                         target_item.isequipped = False
                         if issubclass(target_item.__class__, items.Weapon):  # if the player is now unarmed, "equip" fists
                             self.eq_weapon = self.fists
-                        cprint("Jean put {} back into his bag.".format(target_item.name),"cyan")
+                        cprint("Jean put {} back into his bag.".format(target_item.name), "cyan")
                         target_item.on_unequip(self)
                         target_item.interactions.remove("unequip")
                         target_item.interactions.append("equip")
@@ -1090,8 +1087,8 @@ he lets out a barely audible whisper:""", "red")
                 else:
                     pass
             cprint("=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
-                  "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: {}\n(x) Cancel\n"
-                  .format(num_weapon, num_armor, num_boots, num_helm, num_gloves, num_accessories), "cyan")
+                   "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: {}\n(x) Cancel\n"
+                   .format(num_weapon, num_armor, num_boots, num_helm, num_gloves, num_accessories), "cyan")
 
             choices = []
             inventory_selection = input(colored('Selection: ', "cyan"))
@@ -1161,8 +1158,8 @@ he lets out a barely audible whisper:""", "red")
                     else:
                         pass
                 cprint("=====\nUse Item\n=====\nSelect a category to view:\n\n"
-                    "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
-                    .format(num_consumables, num_special), "cyan")
+                       "(c) Consumables: {}\n(s) Special: {}\n(x) Cancel\n"
+                       .format(num_consumables, num_special), "cyan")
                 choices = []
                 inventory_selection = input(colored('Selection: ', "cyan"))
                 for case in switch(inventory_selection):
@@ -1290,7 +1287,7 @@ he lets out a barely audible whisper:""", "red")
         if phrase == '':
             stuff_here = {}
             for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
-                                              self.current_room.objects_here):
+                                      self.current_room.objects_here):
                 if not thing.hidden and thing.name != 'null':
                     stuff_here[str(i)] = thing
             if len(stuff_here) > 0:
@@ -1308,7 +1305,7 @@ he lets out a barely audible whisper:""", "red")
         else:
             lower_phrase = phrase.lower()
             for i, thing in enumerate(self.current_room.npcs_here + self.current_room.items_here +
-                                              self.current_room.objects_here):
+                                      self.current_room.objects_here):
                 if not thing.hidden and thing.name != 'null':
                     announce = ""
                     idle = ""
@@ -1379,7 +1376,7 @@ he lets out a barely audible whisper:""", "red")
             hp_pcnt = float(self.hp) / float(self.maxhp)
             hp_pcnt = int(hp_pcnt * 10)
             hp_string = colored("HP: ", "red") + "["
-            for bar in range(0,hp_pcnt):
+            for bar in range(0, hp_pcnt):
                 hp_string += colored("█", "red")
             for blank in range(hp_pcnt + 1, 10):
                 hp_string += " "
@@ -1391,7 +1388,7 @@ he lets out a barely audible whisper:""", "red")
             fat_pcnt = float(self.fatigue) / float(self.maxfatigue)
             fat_pcnt = int(fat_pcnt * 10)
             fat_string = colored("FP: ", "green") + "["
-            for bar in range(0,fat_pcnt):
+            for bar in range(0, fat_pcnt):
                 fat_string += colored("█", "green")
             for blank in range(fat_pcnt + 1, 10):
                 fat_string += " "
@@ -1588,12 +1585,12 @@ he lets out a barely audible whisper:""", "red")
             line = ''
             for x in range(max_x + 2):
                 if self.universe.tile_exists(self.map, x, y):
-                    if self.map[(x,y)] == self.current_room:
+                    if self.map[(x, y)] == self.current_room:
                         line += 'X'
                     else:
-                        if self.map[x,y].last_entered > 0:
-                            line += self.map[(x,y)].symbol
-                        elif self.map[x,y].discovered:
+                        if self.map[x, y].last_entered > 0:
+                            line += self.map[(x, y)].symbol
+                        elif self.map[x, y].discovered:
                             line += '?'
                         else:
                             line += "'"
@@ -1605,7 +1602,7 @@ he lets out a barely audible whisper:""", "red")
         functions.await_input()
 
     def recall_friends(self):
-        party_size = len(self.combat_list_allies)-1
+        party_size = len(self.combat_list_allies) - 1
         for friend in self.combat_list_allies:
             if friend.current_room != self.current_room:
                 friend.current_room.npcs_here.remove(friend)
@@ -1618,7 +1615,7 @@ he lets out a barely audible whisper:""", "red")
                   + colored("follow Jean.", "green"))
         elif party_size >= 3:
             output = ""
-            for friend in range(party_size-1):
-                output += colored(self.combat_list_allies[friend+1].name, "cyan") + colored(", ", "green")
+            for friend in range(party_size - 1):
+                output += colored(self.combat_list_allies[friend + 1].name, "cyan") + colored(", ", "green")
             output += colored(", and ", "green") + colored(self.combat_list_allies[party_size].name, "cyan") + colored(" follow Jean.", "green")
             print(output)

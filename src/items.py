@@ -1,5 +1,5 @@
 import random, time
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 import functions
 
 item_types = {

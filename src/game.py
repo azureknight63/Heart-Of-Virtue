@@ -9,7 +9,7 @@ __author__ = 'BasharTeg'
 
 import time
 
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 
 import combat
 import functions

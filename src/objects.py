@@ -1,6 +1,6 @@
 import random, time
 import functions, states
-from termcolor import colored, cprint
+from neotermcolor import colored, cprint
 
 
 #####
