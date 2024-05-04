@@ -72,7 +72,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     for item in p_list:
                                         if "h+" in item:
                                             hidden = True
-                                            hfactor = item[3:]
+                                            hfactor = int(item[2:])
                                     if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
                                         hidden = True
                                         hfactor = int(p_list[2][1:])
@@ -125,7 +125,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                             if setting != '':
                                                 if "h+" in setting:
                                                     hidden = True
-                                                    hfactor = setting[3:]
+                                                    hfactor = int(setting[2:])
                                                 else:
                                                     params.append(setting)
                                     p_list.remove(obj_type)
