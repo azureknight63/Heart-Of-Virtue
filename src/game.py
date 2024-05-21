@@ -5,7 +5,7 @@ Not much is left of the original code.
 REMINDERS:
 
 """
-__author__ = 'BasharTeg'
+__author__ = 'Alex Egbert'
 
 import time
 
@@ -53,7 +53,7 @@ def play():
  <   +\ |  |\ />  \                  \ \_/ /    ||  ||  \\    ||    ||==|| ||__
   >   + \  | LJ    |                  \___/
         + \|+  \  < \
-  (O)      +    |    )                        By BasharTeg
+  (O)      +    |    )                        By Alex Egbert
    |             \  /\
  ( | )   (o)      \/  )
 _\\|//__( | )______)_/
