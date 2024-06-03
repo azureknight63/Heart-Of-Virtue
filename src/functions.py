@@ -1,22 +1,32 @@
-import string, textwrap, os, inspect, re
-import sys, time, random, pickle, datetime, importlib, math
-import npc, tiles, moves, enchant_tables
-from player import Player
+import textwrap
+import os
+import inspect
+import re
+import random
+import pickle
+import datetime
+import importlib
+import time
+
+import moves
+import enchant_tables
+
 from neotermcolor import colored, cprint
 from os import listdir
 from os.path import isfile, join
 
-### This module contains general functions to use throughout the game
+"""
+This module contains general functions to use throughout the game
+"""
 
-def print_slow(text, speed=1):
-    if not is_input_integer(speed):
-        printspeed = 1
-    else:
-        printspeed = speed
+
+def print_slow(text, speed="slow"):
+    speeds = {"slow": 1, "medium": 2, "fast": 4}
+    printspeed = speeds.get(speed, 1) if not isinstance(speed, int) else speed
     rate = 0.1 / printspeed
     wrap = textwrap.fill(text, 80)
     for letter in wrap:
-        print(letter, end='',flush=True),
+        print(letter, end='', flush=True)
         time.sleep(rate)
 
 
@@ -86,6 +96,7 @@ def enumerate_for_interactions(subjects, context):
                     return True
     return False
 
+
 def screen_clear():
     print("\n" * 100)
 
@@ -117,7 +128,8 @@ def print_objects_in_room(room):
 
 def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
-    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro and notice the player.
+    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro
+        # and notice the player.
         finesse_check = random.randint(int(player.finesse * 0.6), int(player.finesse * 1.4))
         for move in player.known_moves:
             if move.name == "Quiet Movement":
@@ -142,22 +154,24 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
     reset_stats(target)
     bonuses = {
-        "add_str":"strength",
-        "add_fin":"finesse",
-        "add_maxhp":"maxhp",
-        "add_maxfatigue":"maxfatigue",
-        "add_speed":"speed",
-        "add_endurance":"endurance",
-        "add_charisma":"charisma",
-        "add_intelligence":"intelligence",
-        "add_faith":"faith",
-        "add_weight_tolerance":"weight_tolerance",
-        "add_resistance":{},
-        "add_status_resistance":{}
+        "add_str": "strength",
+        "add_fin": "finesse",
+        "add_maxhp": "maxhp",
+        "add_maxfatigue": "maxfatigue",
+        "add_speed": "speed",
+        "add_endurance": "endurance",
+        "add_charisma": "charisma",
+        "add_intelligence": "intelligence",
+        "add_faith": "faith",
+        "add_weight_tolerance": "weight_tolerance",
+        "add_resistance": {},
+        "add_status_resistance": {}
     }
 
-    for category in target.resistance_base:  # roll up all of the resistances and status resistances into the bonuses list
-        bonuses["add_resistance"][category] = category       # doing this here will allow changes on the target's class to be reflected
+    for category in target.resistance_base:  # roll up all of the resistances and status resistances into the
+        # bonuses list
+        bonuses["add_resistance"][category] = category       # doing this here will allow changes on the
+        # target's class to be reflected
     for category in target.status_resistance_base:
         bonuses["add_status_resistance"][category] = category
     adder_group = []
@@ -169,7 +183,8 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
                         if hasattr(item, bonus):
                             adder_group.append(item)
                             break
-    for state in target.states:  # loop through all of the target's states and, if each state has an "adder" attribute like bonus hp, include that
+    for state in target.states:  # loop through all of the target's states and, if each state has an "adder"
+        # attribute like bonus hp, include that
         for bonus, attr in bonuses.items():
             if hasattr(state, bonus):
                 adder_group.append(state)
@@ -177,7 +192,8 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
     for adder in adder_group:  # here, "adder" is the item or state containing the bonus or bonuses
         for bonus, attr in bonuses.items():
             if hasattr(adder, bonus):  # the item or state has one of the recognized bonuses
-                if bonus == "add_resistance":  # since resistances are dicts, we have to handle them a little differently
+                if bonus == "add_resistance":  # since resistances are dicts,
+                    # we have to handle them a little differently
                     for v in attr.values():
                         if hasattr(adder, bonus):
                             if v in adder.add_resistance:
@@ -188,12 +204,13 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
                             if v in adder.add_status_resistance:
                                 target.status_resistance[v] += float(adder.add_status_resistance[v])
                 else:
-                    setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each bonus to each attribute
+                    setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each
+                    # bonus to each attribute
     for i, v in target.status_resistance.items():
         if v < 0:
             target.status_resistance[i] = 0  # prevent status resistances from being negative
 
-    ### Process other things which may affect stats, such as weight ###
+    # Process other things which may affect stats, such as weight
     if target.name == "Jean":
         target.refresh_weight()
         target.weight_tolerance += round((target.strength + target.endurance) / 2, 2)
@@ -226,13 +243,18 @@ def spawn_item(item_name, tile):
 
 
 def refresh_moves(player):
-    player.known_moves = [moves.Rest(), moves.PlayerAttack()]
+    player.known_moves = []
+    default_moves = ["Rest", "PlayerAttack"]
+    for move_name in default_moves:
+        move_class = getattr(moves, move_name)
+        move_instance = move_class()
+        player.known_moves.append(move_instance)
     # add other moves based on logic and stuff
 
 
-def is_input_integer(input): #useful for checking to see if the player's input can be converted to int
+def is_input_integer(input_to_check):  # useful for checking to see if the player's input can be converted to int
     try:
-        int(input)
+        int(input_to_check)
         return True
     except ValueError:
         return False
@@ -277,7 +299,7 @@ def load_select():
             if is_input_integer(choice):
                 try:
                     return load(saves_list()[int(choice)])
-                except:
+                except TypeError:
                     cprint("Invalid selection.", "red")
     else:
         cprint("No save files detected.", "red")
@@ -302,7 +324,7 @@ def save_select(player):
                     save(player, filename)
                     save_complete = True
                     break
-                except:
+                except SyntaxError:
                     cprint("Invalid file name. Please enter a valid file name (no spaces or special characters): ")
         elif choice == 'o':
             overwrite_complete = False
@@ -345,7 +367,7 @@ def saves_list():
 
 
 def autosave(player):
-    for i in range(4,0,-1):
+    for i in range(4, 0, -1):
         for file in saves_list():  # cascade the autosaves, trimming off number 5
             if file == 'autosave{}.sav'.format(i):
                 save(load('autosave{}.sav'.format(i)), 'autosave{}.sav'.format(i+1))
@@ -361,11 +383,11 @@ def findnth(haystack, needle, n):
 
 
 def checkrange(user):
-    '''Checks the min & max range constraints for the user; returns a tuple of (min, max)'''
+    """Checks the min & max range constraints for the user; returns a tuple of (min, max)"""
     if user.name == "Jean":
-        return (user.eq_weapon.range[0], user.eq_weapon.range[1])
+        return user.eq_weapon.range[0], user.eq_weapon.range[1]
 
-    return (user.combat_range[0], user.combat_range[1])
+    return user.combat_range[0], user.combat_range[1]
 
 
 def randomize_amount(param):
@@ -399,20 +421,19 @@ def seek_class(classname, player, tile, repeat, params):
     return None  # or whatever you prefer to return in case of failure
 
 
-
 def await_input():
     input(colored("\n(Press Enter)", "yellow"))
 
 
 def inflict(state, target, chance=1.0, force=False):
-    '''
+    """
     attempt to inflict a state on a target player or NPC.
     :param state: new instance of the state object to be inflicted
     :param target: target to receive the state
     :param chance: base chance of success; further altered by resistances
     :param force: if true, inflicting will never fail regardless of resistance
     :return: returns the state object that was inflicted/compounded or False if it failed
-    '''
+    """
 
     def success(victim, status):
         for existing_state in victim.states:
@@ -438,7 +459,7 @@ def inflict(state, target, chance=1.0, force=False):
         if chance <= 0:
             return False  # target is immune
         else:
-            roll = random.uniform(0,1)
+            roll = random.uniform(0, 1)
             if chance >= roll:  # success! Status gets inflicted!
                 success(target, state)
             else:
