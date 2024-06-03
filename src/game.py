@@ -10,6 +10,7 @@ __author__ = 'Alex Egbert'
 import time
 
 from neotermcolor import colored, cprint
+from intro_scene import intro
 
 import combat
 import functions
@@ -19,6 +20,15 @@ from universe import Universe
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
+
+testing_mode = False
+"""
+testing_mode has several effects if set to True. They are:
+- The starting map is changed to testing.txt
+- The intro sequence is skipped
+
+Setting testing_mode to False makes start_area.txt the starting map
+"""
 
 
 def validate_numerical_input(prompt, min_value, max_value):
@@ -95,7 +105,8 @@ _\\|//__( | )______)_/
         universe = Universe()
         player.universe = universe
         player.universe.build(player)
-        player.map = player.universe.starting_map
+        player.map = player.universe.starting_map if not testing_mode else universe.maps['name']['testing']
+        # player.map = player.universe.starting_map
         player.location_x, player.location_y = player.universe.starting_position
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
@@ -109,6 +120,8 @@ _\\|//__( | )______)_/
                     item.isequipped = True
                     item.interactions.append("unequip")
                     item.interactions.remove("equip")
+        if not testing_mode:
+            intro()
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()
