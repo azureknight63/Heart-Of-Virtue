@@ -47,5 +47,5 @@ class Event: #master class for all events
         pass
 
     def dialogue(self, speaker, text, speaker_color="cyan", text_color="white"):
-        functions.print_slow((colored(speaker+": ", speaker_color) + colored(text, text_color)), 3)
+        functions.print_slow((colored(speaker+": ", speaker_color) + colored(text, text_color)), "fast")
         functions.await_input()
