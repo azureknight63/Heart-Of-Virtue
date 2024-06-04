@@ -124,7 +124,7 @@ class NPC:
         self.faith_base = faith
         self.fatigue = self.maxfatigue
         self.target = target
-        self.known_moves = [moves.NPC_Rest(self)]
+        self.known_moves = [moves.NpcRest(self)]
         self.current_move = None
         self.states = []
         self.inventory = []
@@ -170,7 +170,7 @@ class NPC:
         #  add additional rest moves if fatigue is low to make it a more likely choice
         if (self.fatigue / self.maxfatigue) < 0.25:
             for i in range(0,5):
-                weighted_moves.append(moves.NPC_Rest(self))
+                weighted_moves.append(moves.NpcRest(self))
 
         num_choices = len(weighted_moves) - 1
         while self.current_move is None:
@@ -271,10 +271,10 @@ friendly enough to Jean.
                          combat_range=(0,7),
                          idle_message=" is bumbling about.",
                          alert_message="lets out a deep and angry rumble!")
-        self.add_move(moves.NPC_Attack(self), 4)
+        self.add_move(moves.NpcAttack(self), 4)
         self.add_move(moves.Advance(self), 4)
-        self.add_move(moves.Gorran_Club(self), 3)
-        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.GorranClub(self), 3)
+        self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Parry(self), 2)
         self.keywords = ["talk"]
 
@@ -302,9 +302,9 @@ class Slime(NPC):  # target practice
                          damage=20, awareness=12, aggro=True, exp_award=1,
                          idle_message=" is glopping about.",
                          alert_message="burbles angrily at Jean!")
-        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.Advance(self), 4)
-        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self))
 
 
@@ -315,9 +315,9 @@ class Testexp(NPC):  # target practice
                          damage=2, awareness=12, aggro=True, exp_award=500,
                          idle_message=" is glopping about.",
                          alert_message="burbles angrily at Jean!")
-        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.Advance(self), 4)
-        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self))
 
 
@@ -333,10 +333,10 @@ class RockRumbler(NPC):
         self.resistance_base["crushing"] = 1.5
         self.resistance_base["piercing"] = 0.5
         self.resistance_base["slashing"] = 0.5
-        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self))
-        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self))
 
 
@@ -352,11 +352,11 @@ class Lurker(NPC):
         self.resistance_base["light"] = -2
         self.status_resistance_base["death"] = 1
         self.status_resistance_base["doom"] = 1
-        self.add_move(moves.NPC_Attack(self), 5)
+        self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.VenomClaw(self), 5)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self))
-        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self), 2)
 
 
@@ -369,9 +369,9 @@ class GiantSpider(NPC):
                          damage=22, protection=0, awareness=30, endurance=10, aggro=True, exp_award=120)
         self.resistance_base["fire"] = -0.5
         self.status_resistance_base["poison"] = 1
-        self.add_move(moves.NPC_Attack(self), 3)
+        self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SpiderBite(self), 6)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self))
-        self.add_move(moves.NPC_Idle(self))
+        self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self), 2)
