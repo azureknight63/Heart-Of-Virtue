@@ -1,15 +1,17 @@
 from neotermcolor import colored, cprint
-import time, random, functions
+import time
+import random
+import functions
 
 
 def combat(player):
     """
     :param player:
-    :param player.combat_list: A list of enemies to engage in this combat loop.
+    :attr player.combat_list: A list of enemies to engage in this combat loop.
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
-        npc.cycle_states()  # todo npcs getting locked up after resting, periodically -- think i fixed this one, needs testing
+        npc.cycle_states()
         if npc.combat_delay > 0:
             npc.combat_delay -= 1
         else:
@@ -24,64 +26,71 @@ def combat(player):
                             player.combat_list) - 1)]  # select a random target from the enemy's party
                 npc.select_move()
                 npc.current_move.target = npc.target
-                npc.current_move.cast(npc)
+                if (npc.current_move is not None and hasattr(npc.current_move, "cast") and
+                        callable(getattr(npc.current_move, "cast"))):
+                    npc.current_move.cast()
         get_moves = npc.known_moves[:]
-        if (npc.current_move is not None) and (npc.current_move not in get_moves):  # this will handle dynamically added moves (as a result from a state or low fatigue)
+        if (npc.current_move is not None) and (npc.current_move not in get_moves):  # this will handle dynamically
+            # added moves (as a result from a state or low fatigue)
             get_moves.append(npc.current_move)
-        for move in get_moves:
-            move.advance(npc)
+        for each_move in get_moves:
+            each_move.advance(npc)
 
     def synchronize_distances():
-        '''
-        Loops over all enemies in the combat list and updates their distances. If the enemy isn't in a proximity list, then it gets added.
-        :return:
-        '''
-        for ally in player.combat_list_allies:
+        """
+        Loops over all enemies in the combat list and updates their distances. If the enemy isn't in a proximity list,
+        then it gets added.
+        """
+        for each_ally in player.combat_list_allies:
             remove_these = []
-            for enemy in ally.combat_proximity:  # Remove any dead enemies
-                if not enemy.is_alive:
-                    remove_these.append(enemy)
-            for enemy in remove_these:
-                del ally.combat_proximity[enemy]
-            for enemy in player.combat_list:
+            for each_enemy in each_ally.combat_proximity:  # Remove any dead enemies
+                if not each_enemy.is_alive:
+                    remove_these.append(each_enemy)
+            for each_enemy in remove_these:
+                del each_ally.combat_proximity[each_enemy]
+            for each_enemy in player.combat_list:
                 remove_these = []
-                for ally in enemy.combat_proximity:  # Remove any dead allies from combat proximity; this will only work for allies who can die, excluding Jean
-                    if not ally.is_alive:
-                        remove_these.append(ally)
-                for ally in remove_these:
-                    del enemy.combat_proximity[ally]
-                if enemy in ally.combat_proximity:
-                    enemy.combat_proximity[ally] = ally.combat_proximity[enemy]
-                else:  # The enemy is not in the list, probably because it was added via an event mid-combat; so, let's add it!
-                    distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
-                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
+                for each_ally_in_prox in each_enemy.combat_proximity:  # Remove any dead allies from combat proximity;
+                    # this will only work for allies who can die, excluding Jean
+                    if not each_ally.is_alive:
+                        remove_these.append(each_ally_in_prox)
+                for each_ally_that_died in remove_these:
+                    del each_enemy.combat_proximity[each_ally_that_died]
+                if each_enemy in each_ally.combat_proximity:
+                    each_enemy.combat_proximity[each_ally] = each_ally.combat_proximity[each_enemy]
+                else:  # The enemy is not in the list, probably because it was added via an event mid-combat;
+                    # so, let's add it!
+                    each_distance = int(each_enemy.default_proximity * random.uniform(0.75, 1.25))
+                    each_ally.combat_proximity[each_enemy] = each_enemy.combat_proximity[each_ally] = each_distance
 
-        for enemy in player.combat_list:
+        for each_enemy in player.combat_list:
             remove_these = []
-            for ally in enemy.combat_proximity:
-                if not ally.is_alive():
-                    remove_these.append(ally)
-            for ally in remove_these:
-                del enemy.combat_proximity[ally]
-            for ally in player.combat_list_allies:
-                if ally not in enemy.combat_proximity:
-                    distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
-                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = distance
+            for each_ally in each_enemy.combat_proximity:
+                if not each_ally.is_alive():
+                    remove_these.append(each_ally)
+            for each_ally in remove_these:
+                del each_enemy.combat_proximity[each_ally]
+            for each_ally in player.combat_list_allies:
+                if each_ally not in each_enemy.combat_proximity:
+                    each_distance = int(each_enemy.default_proximity * random.uniform(0.75, 1.25))
+                    each_ally.combat_proximity[each_enemy] = each_enemy.combat_proximity[each_ally] = each_distance
 
-    def check_for_dead_enemy(enemy, skip_enemy_actions=False):
-        if not enemy.is_alive():
-            enemy.die()
-        if not enemy.is_alive():  # check again in case some pre-death sequence saved the NPC
-            player.current_room.npcs_here.remove(enemy)
-            player.combat_list.remove(enemy)
-            for ally in player.combat_list_allies:
-                if enemy in ally.combat_proximity:
-                    del ally.combat_proximity[enemy]
+    def check_for_dead_enemy(this_enemy, skip_enemy_actions=False):
+        if not this_enemy.is_alive():
+            this_enemy.die()
+        if not this_enemy.is_alive():  # check again in case some pre-death sequence saved the NPC
+            player.current_room.npcs_here.remove(this_enemy)
+            player.combat_list.remove(this_enemy)
+            for each_ally in player.combat_list_allies:
+                if this_enemy in each_ally.combat_proximity:
+                    del each_ally.combat_proximity[this_enemy]
         elif not skip_enemy_actions:
-            process_npc(enemy)
+            process_npc(this_enemy)
 
-    beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple beats and can be interrupted before completion
-    player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player can combo moves together without being hit, the higher this multiplier grows.
+    beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple
+    # beats and can be interrupted before completion
+    player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player
+    # can combo moves together without being hit, the higher this multiplier grows.
     player.in_combat = True
 
     for enemy in player.combat_list:
@@ -101,7 +110,8 @@ def combat(player):
     while True:  # combat will loop until there are no aggro enemies or the player is dead
         #  Check for combat events and execute them once, if possible
         synchronize_distances()
-        if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example, an event is to fire upon player or enemy death
+        if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example,
+            # an event is to fire upon player or enemy death
             for event in player.combat_events:
                 event.check_combat_conditions(beat)
 
@@ -163,7 +173,8 @@ def combat(player):
                 else:
                     if move.beats_left > 0:
                         move_str = (str(i) + ": " + str(move.name) + " ||| "
-                                                                     "Available in {} beats\n".format(move.beats_left + 1))
+                                                                     "Available in {} beats\n".format(
+                            move.beats_left + 1))
                     else:
                         move_str = (str(i) + ": " + str(move.name) + " ||| "
                                                                      "Available next beat\n")
@@ -176,7 +187,7 @@ def combat(player):
                 selected_move = input("Selection: ")
             try:
                 selected_move = int(selected_move)
-            except:
+            except SyntaxError:
                 cprint("Invalid selection.", "red", attrs=['bold'])
             for i, move in enumerate(viable_moves):
                 if i == selected_move:
@@ -186,22 +197,24 @@ def combat(player):
                         if player.current_move.targeted:
                             target = None
                             acceptable_targets = []
-                            min, max = player.current_move.mvrange
-                            if player.current_move.name == "Shoot Bow":  # if the player is shooting his bow, overwrite max to include decaying range
-                                max = player.eq_weapon.range_base + (100 / player.eq_weapon.range_decay)
+                            range_min, range_max = player.current_move.mvrange
+                            if player.current_move.name == "Shoot Bow":  # if the player is shooting his bow,
+                                # overwrite max to include decaying range
+                                range_max = player.eq_weapon.range_base + (100 / player.eq_weapon.range_decay)
                             for enemy, distance in player.combat_proximity.items():
                                 if enemy.is_alive:
-                                    if min <= distance <= max:
+                                    if range_min <= distance <= range_max:
                                         acceptable_targets.append((enemy, distance))
                                 else:
                                     del player.combat_proximity[enemy]
                             if not player.current_move.verbose_targeting:
                                 if len(acceptable_targets) > 1:
-                                    acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
+                                    acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets
+                                    # by distance
                                     while target is None:
                                         print("Select a target: \n")
-                                        for i, enemy in enumerate(acceptable_targets):
-                                            print(colored(str(i), "magenta") + ": " +
+                                        for index, enemy in enumerate(acceptable_targets):
+                                            print(colored(str(index), "magenta") + ": " +
                                                   colored(enemy[0].name + " (" + str(enemy[1]) + "ft)", "magenta"))
                                         cprint("x: Cancel", "magenta")
                                         choice = input("Target: ")
@@ -215,8 +228,8 @@ def combat(player):
                                         if choice > len(acceptable_targets):
                                             cprint("Invalid selection!", "red")
                                             continue
-                                        for i, enemy in enumerate(acceptable_targets):
-                                            if choice == i:
+                                        for index, enemy in enumerate(acceptable_targets):
+                                            if choice == index:
                                                 target = enemy[0]
                                 else:
                                     target = acceptable_targets[0][0]
@@ -226,9 +239,11 @@ def combat(player):
                                 acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets by distance
                                 while target is None:
                                     print("Select a target: \n")
-                                    for i, enemy in enumerate(acceptable_targets):
-                                        print(colored(str(i), "magenta") + ": " +
-                                              colored("{} ({}ft; {}%)".format(enemy[0].name, str(enemy[1]), player.current_move.calculate_hit_chance(enemy[0])),"cyan"))
+                                    for index, enemy in enumerate(acceptable_targets):
+                                        print(colored(str(index), "magenta") + ": " +
+                                              colored("{} ({}ft; {}%)".format(enemy[0].name, str(enemy[1]),
+                                                                              player.current_move.calculate_hit_chance(
+                                                                                  enemy[0])), "cyan"))
                                     choice = input("Target: ")
                                     if not functions.is_input_integer(choice):
                                         cprint("Invalid selection!", "red")
@@ -237,14 +252,14 @@ def combat(player):
                                     if choice > len(acceptable_targets):
                                         cprint("Invalid selection!", "red")
                                         continue
-                                    for i, enemy in enumerate(acceptable_targets):
-                                        if choice == i:
+                                    for index, enemy in enumerate(acceptable_targets):
+                                        if choice == index:
                                             target = enemy[0]
                                 if player.current_move:
                                     player.current_move.target = target
                         else:
                             player.current_move.target = player
-                        player.current_move.cast(player)
+                        player.current_move.cast()
                     elif player.fatigue < move.fatigue_cost:
                         cprint("Jean will need to rest a bit before he can do that.", "red")
                     elif move.current_stage == 3:
@@ -263,7 +278,8 @@ def combat(player):
                 if not ally.is_alive():
                     ally.die()
                 if not ally.is_alive():  # check again in case some pre-death sequence saved the NPC
-                    print(colored(ally.name, "yellow", attrs="bold") + " has fallen in battle!")  # not sure yet if I want to change this
+                    print(colored(ally.name, "yellow", attrs="bold") + " has fallen in battle!")
+                    # not sure yet if I want to change this
                     player.current_room.npcs_here.remove(ally)
                     player.combat_list_allies.remove(ally)
                 else:
