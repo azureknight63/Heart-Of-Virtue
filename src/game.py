@@ -21,7 +21,7 @@ from universe import Universe
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 
-testing_mode = False
+testing_mode = True
 """
 testing_mode has several effects if set to True. They are:
 - The starting map is changed to testing.txt
@@ -105,12 +105,15 @@ _\\|//__( | )______)_/
         universe = Universe()
         player.universe = universe
         player.universe.build(player)
-        player.map = player.universe.starting_map if not testing_mode else universe.maps['name']['testing']
+        player.map = player.universe.starting_map if not testing_mode else (
+            next((map_item for map_item in player.universe.maps if map_item.get('name') == 'testing'), None))
         # player.map = player.universe.starting_map
         player.location_x, player.location_y = player.universe.starting_position
         room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
 
-        ### prepare to enter the post-menu game loop ###
+        """
+        begin post-menu game loop
+        """
         if newgame:
             for item in player.inventory:
                 # if item.name == "Rock":
@@ -128,7 +131,7 @@ _\\|//__( | )______)_/
         auto_save_timer = check_time
         mark_health = player.hp
         items.get_all_subtypes()  # creates the 'All' archetypes for each item group; used for states/item effects/etc.
-        ### enter post-menu game loop ###
+
         while player.is_alive() and not player.victory and not player.main_menu:
             elapsed_time = time.time() - check_time
             player.time_elapsed += elapsed_time
@@ -164,7 +167,7 @@ _\\|//__( | )______)_/
             if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!", "red"))
                 combat.combat(player)
-            ### check to make sure entering the most recent tile hasn't ended the game ###
+            # check to make sure entering the most recent tile hasn't ended the game
             if not player.is_alive():
                 player.death()
             elif player.is_alive() and not player.victory:
@@ -186,7 +189,8 @@ _\\|//__( | )______)_/
                 action_input = input('Action: ')
                 raw_args = action_input.split(' ')
                 lc_exceptions = ("te", "test",
-                                 "testevent")  # exceptions to lowering case (better precision, worse searching, may break some actions)
+                                 "testevent")  # exceptions to lowering case
+                # (better precision, worse searching, may break some actions)
                 if raw_args[0] not in lc_exceptions:
                     action_input = action_input.lower()
                 available_actions = player.current_room.available_actions()
@@ -220,7 +224,8 @@ _\\|//__( | )______)_/
                     success = False
                     for scope in interaction_scopes:
                         if functions.enumerate_for_interactions(scope, (player, count_args, action_input)):
-                            success = True  # Check each scope separately and, if an interaction is found, don't check the remaining scope(s)
+                            success = True  # Check each scope separately and, if an interaction is found,
+                            # don't check the remaining scope(s)
                             break
                     if not success:  # Nothing was found matching the arbitrary input, so Jean is mightily confused
                         cprint("Jean isn't sure exactly what he's trying to do.", 'red')
