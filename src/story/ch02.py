@@ -1,19 +1,13 @@
 """
 Chapter 02 events
 """
-from neotermcolor import colored, cprint
-import threading
-import random
-import time, inspect
-from src.objects import *
-from src.functions import *
 from src.events import *
 
 
 class AfterDefeatingLurker(Event):
-    '''
+    """
     Jean defeats the Lurker. Gorram opens another passageway
-    '''
+    """
     def __init__(self, player, tile, params, repeat=False, name='AfterGorranIntro'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -28,7 +22,8 @@ class AfterDefeatingLurker(Event):
     def process(self):
         time.sleep(2)
         print("Gorran breathes deeply and seems to collect himself for a moment. Then, with a glance at Jean, "
-              "he strides over to the far wall. Sliding two hands into a small crack in the wall, he braces himself.\n\n"
+              "he strides over to the far wall. Sliding two hands into a small crack in the wall, "
+              "he braces himself.\n\n"
               "With a low rumble, he begins spreading the wall apart, gradually revealing a passage not unlike the "
               "last that he opened in the same manner.")
         time.sleep(2)
@@ -39,8 +34,8 @@ class AfterDefeatingLurker(Event):
         print("Gorran ducked low, disappearing beneath a curving shelf of grey rock. Looking closely, "
               "Jean could see a conspicuous divot along the bottom of the shelf, near where his mighty "
               "friend's massive head had passed just moments ago. Scratches covered the divot, marking "
-              "this route as one frequently traveled by the strange rock-like man. Or perhaps his companions, "
-              "if he had any. Jean had seen no hint of any other such men. Not, at least, until now.")
+              "this route as one frequently traveled by the strange rock-like man or perhaps his companions, "
+              "if he has any.")
         time.sleep(4)
         print("Immediately on passing under the shelf, Jean's greying whiskers were blasted by a cool "
               "breeze of unknown origin. It had the dank smell of the cavern to which Jean was just "
@@ -48,6 +43,5 @@ class AfterDefeatingLurker(Event):
               "There was a mixture of scents; some familiar, and some entirely alien. "
               "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
               "of something large, or perhaps many things. There was also - yes, Jean was sure of "
-              "it - leather and iron.")
+              "it - the smells of leather and iron.")
         functions.await_input()
-

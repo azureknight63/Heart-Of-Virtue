@@ -1,19 +1,14 @@
 """
 Chapter 01 events
 """
-from neotermcolor import colored, cprint
-import threading
-import random
-import time, inspect
-from src.objects import *
-from src.functions import *
 from src.events import *
 
 
 class Ch01StartOpenWall(Event):
-    '''
+    """
     The first event. Opens the wall in the starting room when the player 'presses' the wall depression
-    '''
+    """
+
     def __init__(self, player, tile, params, repeat=True, name='Ch01_Start_Open_Wall'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -29,7 +24,7 @@ class Ch01StartOpenWall(Event):
             if room_object.name == 'Wall Depression':
                 wall_switch = room_object
         cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
-              " east.", 'yellow')
+               " east.", 'yellow')
         self.tile.block_exit.remove('east')
         self.tile.description = """
 Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
@@ -37,7 +32,7 @@ blue sky is visible through the hole in the rock. The faint sound of birds chirp
 heard.
 """
         for room_object in self.tile.objects_here:
-            if isinstance(room_object, objects.Tile_Description):
+            if isinstance(room_object, objects.TileDescription):
                 self.tile.objects_here.remove(room_object)
                 break
         for room_object in self.tile.objects_here:
@@ -48,9 +43,10 @@ heard.
 
 
 class Ch01BridgeWall(Event):
-    '''
+    """
     Opens the wall on the bridge in the starting area
-    '''
+    """
+
     def __init__(self, player, tile, params, repeat=True, name='Ch01_Bridge_Wall'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -69,13 +65,13 @@ class Ch01BridgeWall(Event):
                'yellow')
         self.tile.block_exit.remove('east')
         self.tile.description = """
-                        The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point,
-                        large mountains can be seen to the northwest, covered in white clouds at their crowns.
+                    The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point,
+                    large mountains can be seen to the northwest, covered in white clouds at their crowns.
 
-                        A dark gaping hole in the shape of a doorway is cut out of the eastern rock face.
-                        """
+                    A dark gaping hole in the shape of a doorway is cut out of the eastern rock face.
+                    """
         for room_object in self.tile.objects_here:
-            if isinstance(room_object, objects.Tile_Description):
+            if isinstance(room_object, objects.TileDescription):
                 self.tile.objects_here.remove(room_object)
                 break
         for room_object in self.tile.objects_here:
@@ -86,9 +82,10 @@ class Ch01BridgeWall(Event):
 
 
 class Ch01ChestRumblerBattle(Event):
-    '''
+    """
     Initiates the battle with rock rumblers when the chest at (7,1) is looted
-    '''
+    """
+
     def __init__(self, player, tile, params, repeat=True, name='Ch01_Chest_Rumbler_Battle'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -103,55 +100,55 @@ class Ch01ChestRumblerBattle(Event):
     def process(self):
         time.sleep(2)
         cprint(
-            "Apparently, there is also a rusty iron mace in the chest. Jean takes it and swings it around gently, testing its balance.")
+            "Apparently, there is also a rusty iron mace in the chest. "
+            "Jean takes it and swings it around gently, testing its balance.")
         time.sleep(3)
         mace = getattr(__import__('items'), 'RustedIronMace')()
         self.player.inventory.append(mace)
         self.player.equip_item(mace.name)
-        #mace.isequipped = True
-        #self.player.eq_weapon = mace
         cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
         self.tile.spawn_npc("RockRumbler")
         cprint("A rock-like creature appears and advances toward Jean!")
         time.sleep(0.5)
         self.player.combat_events.append(Ch01PostRumbler(player=self.player, tile=self.tile, params=False,
-                                                              repeat=False))
+                                                         repeat=False))
         self.tile.events_here.remove(self)
 
 
-class Ch01PostRumbler(Event): # Occurs when Jean beats the first rumbler after opening the chest
+class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after opening the chest
     def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
-    def check_combat_conditions(self, beat):
+    def check_combat_conditions(self):
         if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
     def process(self):
         cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
-        for x in range(0,2):
+        for x in range(0, 2):
             npc = self.tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
         self.player.combat_events.append(Ch01PostRumblerRep(player=self.player, tile=self.tile, params=False,
-                                                              repeat=True))
+                                                            repeat=True))
         self.player.combat_events.append(Ch01PostRumbler2(player=self.player, tile=self.tile, params=False,
-                                                              repeat=False))
+                                                          repeat=False))
 
 
 class Ch01PostRumblerRep(Event):
-    def __init__(self, player, tile, params, repeat=True, name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
+    def __init__(self, player, tile, params, repeat=True,
+                 name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.iteration = 2
 
-    def check_combat_conditions(self, beat):
+    def check_combat_conditions(self):
         if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
     def process(self):
         cprint("\nThe ground quivers slightly as even more rock creatures appear.\n")
         time.sleep(0.5)
-        for x in range(0,self.iteration):
+        for x in range(0, self.iteration):
             npc = self.tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
             self.iteration += 1
@@ -161,7 +158,7 @@ class Ch01PostRumbler2(Event):
     def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
-    def check_combat_conditions(self, beat):
+    def check_combat_conditions(self):
         if self.player.get_hp_pcnt() < 0.3:
             self.pass_conditions_to_process()
 
@@ -169,20 +166,23 @@ class Ch01PostRumbler2(Event):
         for event in self.player.combat_events:
             if event.name == 'Ch01_PostRumbler_Rep':
                 self.player.combat_events.remove(event)  # Remove the repeating event
-        cprint("\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
-               "leaps out, smashing its huge fist down on top of one of the rock creatures.")
+        cprint(
+            "\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
+            "leaps out, smashing its huge fist down on top of one of the rock creatures.")
         time.sleep(2)
         self.player.combat_list[0].hp = 0  # instagib one of the rock creatures
-        print(colored( self.player.combat_list[0].name, "magenta") + " exploded into fragments of light!")
+        print(colored(self.player.combat_list[0].name, "magenta") + " exploded into fragments of light!")
         self.player.current_room.npcs_here.remove(self.player.combat_list[0])
         self.player.combat_list.remove(self.player.combat_list[0])
         self.player.refresh_enemy_list_and_prox()
         time.sleep(3)
-        cprint("The massive figure somewhat resembles a man, except he is covered head-to-toe in armor not much different from the chamber walls.")
+        cprint("The massive figure somewhat resembles a man, except he is covered head-to-toe in armor not much "
+               "different from the chamber walls. There is a star-shaped patch of moss on its left shoulder.")
         time.sleep(3)
         cprint("Two more rock creatures advance on him, snapping their heavy jaws.")
         time.sleep(3)
-        cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, then turns to face the creatures.")
+        cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, "
+               "then turns to face the creatures.")
         time.sleep(4)
         cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.")
         time.sleep(3)
@@ -196,14 +196,14 @@ class Ch01PostRumbler2(Event):
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75
         self.player.combat_events.append(Ch01PostRumbler3(player=self.player, tile=self.tile, params=False,
-                                                               repeat=False))
+                                                          repeat=False))
 
 
 class Ch01PostRumbler3(Event):
     def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
-    def check_combat_conditions(self, beat):
+    def check_combat_conditions(self):
         if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
@@ -219,7 +219,7 @@ class Ch01PostRumbler3(Event):
                "\nA: I'm not some filthy coward! (Help rock-man)"
                "\nB: It can't be helped. I must survive! (Make a break for it)"
                "\nC: I need more time to think! (Consider alternatives)\n", 'cyan', attrs=['bold'])
-        choices = ["a","b","c"]
+        choices = ["a", "b", "c"]
         while True:
             choice_input = input('Choice: ')
             choice_input = choice_input.lower()
@@ -271,7 +271,7 @@ class Ch01PostRumbler3(Event):
             cprint("The monster lets out a loud screech, and swooping"
                    "\nquickly, smashes Jean's body against the wall of rock.")
             time.sleep(3)
-            cprint("Jean suffers " + str(random.randint(30,90)) + " damage!", "red")
+            cprint("Jean suffers " + str(random.randint(30, 90)) + " damage!", "red")
             time.sleep(3)
             cprint("Jean screams in pain, his mace arm swinging uselessly by"
                    "\nhis side, broken.")
@@ -280,13 +280,13 @@ class Ch01PostRumbler3(Event):
                    "\nrepeatedly and without hesitation or mercy,"
                    "\nbefore slamming him hard into the ground.")
             time.sleep(1)
-            cprint("Jean suffers " + str(random.randint(30,90)) + " damage!", "red")
+            cprint("Jean suffers " + str(random.randint(30, 90)) + " damage!", "red")
             time.sleep(1)
-            cprint("Jean suffers " + str(random.randint(10,60)) + " damage!", "red")
+            cprint("Jean suffers " + str(random.randint(10, 60)) + " damage!", "red")
             time.sleep(1)
-            cprint("Jean suffers " + str(random.randint(30,90)) + " damage!", "red")
+            cprint("Jean suffers " + str(random.randint(30, 90)) + " damage!", "red")
             time.sleep(2)
-            cprint("Jean suffers " + str(random.randint(85,155)) + " damage!", "red")
+            cprint("Jean suffers " + str(random.randint(85, 155)) + " damage!", "red")
             self.player.hp = 0
             time.sleep(5)
             #  deth
@@ -305,25 +305,23 @@ class Ch01PostRumbler3(Event):
                    "\ndifficult fight that remains.")
             time.sleep(8)
 
-            #  OK, so at this point you need to add the "friendly NPC" feature to the combat.
-            #  Don't forget that the enemies need to be able to target friendly NPCs as well!
-            #  For some reason Gorran is attacking himself and Jean xD plz fix
-
-            npc = self.tile.spawn_npc("Gorran", delay=0)
-            self.player.combat_list_allies.append(npc)
-            npc.in_combat = True
+            gorran = self.tile.spawn_npc("Gorran", delay=0)
+            self.player.combat_list_allies.append(gorran)
+            gorran.in_combat = True
 
             for x in range(0, 5):
-                npc = self.tile.spawn_npc("RockRumbler", delay=random.randint(0,14))
-                npc.combat_engage(self.player)
+                gorran = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 14))
+                gorran.combat_engage(self.player)
 
             self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
 
 
 class AfterTheRumblerFight(Event):
-    '''
-    After the fight, Gorran tells Jean that they will talk, but not here. Too dangerous. Gorran then waits for Jean to speak to him again.
-    '''
+    """
+    After the fight, Gorran tells Jean that they will talk, but not here. Too dangerous. Gorran then waits for Jean to
+    speak to him again.
+    """
+
     def __init__(self, player, tile, params, repeat=False, name='AfterTheRumblerFight'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -336,23 +334,27 @@ class AfterTheRumblerFight(Event):
         print("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
         self.dialogue("Jean", "I suppose I should thank you for saving my skin. What is your name?", "cyan")
-        print("The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. He begins to speak in low, rumbling tones.")
+        print("The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. "
+              "He begins to speak in low, rumbling tones.")
         self.dialogue("Rock-Man", "Mmmmm... Go-rra-nnnnnn...", "green")
-        self.dialogue("Jean", "Go... rran? Well, thank you, Gorran. But what were those things? I've never seen their like in my life!", "cyan")
+        self.dialogue("Jean", "Go... rran? Well, thank you, Gorran. But what were those things? "
+                              "I've never seen their like in my life!", "cyan")
         print("Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came.")
-        self.dialogue("Rock-Man", "Time... short. Not... safe... to linger. Speak... to Gorran again... when ready.", "green")
-        for npc in self.tile.npcs_here:
-            if npc.name == "Rock-Man":
-                npc.name = "Gorran"
-                if npc in self.player.combat_list_allies:
-                    self.player.combat_list_allies.remove(npc)
+        self.dialogue("Rock-Man", "Time... short. Not... safe to... linger. Speak... to Gorran again... "
+                                  "when ready.", "green")
+        for npc_here in self.tile.npcs_here:
+            if npc_here.name == "Rock-Man":
+                npc_here.name = "Gorran"
+                if npc_here in self.player.combat_list_allies:
+                    self.player.combat_list_allies.remove(npc_here)
 
 
 class AfterGorranIntro(Event):
-    '''
-    When Jean talks to Gorran again (for the first time?) Gorran leads Jean through an
-    opening in the rock to the Verdette Caverns, heading for the Grondite town.
-    '''
+    """
+    When Jean talks to Gorran again, Gorran leads Jean through an
+    opening in the rock to the Verdette Caverns, heading for Grondia.
+    """
+
     def __init__(self, player, tile, params, repeat=False, name='AfterGorranIntro'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
@@ -361,8 +363,9 @@ class AfterGorranIntro(Event):
 
     def process(self):
         time.sleep(1)
-        print("Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is much too small for him to\n"
-              "pass through. Gorran waves an arm toward it and, miraculously, the opening widens with a loud rumble. Gorran walks through and\n"
+        print("Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is "
+              "much too small for him to\npass through. Gorran waves an arm toward it and, miraculously, "
+              "the opening widens with a loud rumble. Gorran walks through and\n"
               "Jean, with trepidation, follows.")
         functions.await_input()
         for gorran in self.tile.npcs_here:
