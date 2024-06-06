@@ -16,7 +16,7 @@ import combat
 import functions
 import items
 from player import Player
-from universe import Universe
+from universe import Universe, tile_exists
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -109,7 +109,7 @@ _\\|//__( | )______)_/
             next((map_item for map_item in player.universe.maps if map_item.get('name') == 'testing'), None))
         # player.map = player.universe.starting_map
         player.location_x, player.location_y = player.universe.starting_position
-        room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
+        room = tile_exists(player.map, player.location_x, player.location_y)
 
         """
         begin post-menu game loop
@@ -146,7 +146,7 @@ _\\|//__( | )______)_/
             if not player.eq_weapon:  # if the player is unarmed, "equip" fists
                 player.eq_weapon = player.fists
 
-            player.current_room = player.universe.tile_exists(player.map, player.location_x, player.location_y)
+            player.current_room = tile_exists(player.map, player.location_x, player.location_y)
             if player.universe.game_tick > 0:
                 player.current_room.last_entered = player.universe.game_tick
             else:
