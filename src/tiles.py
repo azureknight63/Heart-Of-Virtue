@@ -1,19 +1,26 @@
 """Describes the tiles in the world space."""
 __author__ = 'Alex Egbert'
 
-import items, actions, universe, npc, random, functions
+import random
+
 from neotermcolor import colored
+
+import actions
+import functions
+from universe import tile_exists as tile_exists
+
 
 class MapTile:
     """The base class for a tile within the world space"""
-    def __init__(self, universe, map, x, y, description=''):
+
+    def __init__(self, universe, current_map, x, y, description=''):
         """Creates a new tile.
 
         :param x: the x-coordinate of the tile
         :param y: the y-coordinate of the tile
         """
         self.universe = universe
-        self.map = map
+        self.map = current_map
         self.x = x
         self.y = y
         self.npcs_here = []
@@ -21,7 +28,8 @@ class MapTile:
         self.events_here = []
         self.objects_here = []
         self.last_entered = 0  # describes the game_tick when the player last entered. Useful for monster/item respawns.
-        self.discovered = False  # when drawing the map for the player, display a ? if this is True and self.last_entered == 0
+        self.discovered = False  # when drawing the map for the player,
+        # display a ? if this is True and self.last_entered == 0
         self.respawn_rate = 9999  # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
         self.description = description  # used for the intro_text to make it dynamic
@@ -38,57 +46,68 @@ class MapTile:
     def adjacent_moves(self):
         """Returns all move actions for adjacent tiles."""
         moves = []
-        if self.universe.tile_exists(self.map, self.x + 1, self.y) and "east" not in self.block_exit:
+        if tile_exists(self.map, self.x + 1, self.y) and "east" not in self.block_exit:
             moves.append(actions.MoveEast())
-            self.universe.tile_exists(self.map, self.x + 1, self.y).discovered = True  # discover the adjacent tile
-        if self.universe.tile_exists(self.map, self.x - 1, self.y) and "west" not in self.block_exit:
+            tile_exists(self.map, self.x + 1, self.y).discovered = True  # discover the adjacent tile
+        if tile_exists(self.map, self.x - 1, self.y) and "west" not in self.block_exit:
             moves.append(actions.MoveWest())
-            self.universe.tile_exists(self.map, self.x - 1, self.y).discovered = True
-        if self.universe.tile_exists(self.map, self.x, self.y - 1) and "north" not in self.block_exit:
+            tile_exists(self.map, self.x - 1, self.y).discovered = True
+        if tile_exists(self.map, self.x, self.y - 1) and "north" not in self.block_exit:
             moves.append(actions.MoveNorth())
-            self.universe.tile_exists(self.map, self.x, self.y - 1).discovered = True
-        if self.universe.tile_exists(self.map, self.x, self.y + 1) and "south" not in self.block_exit:
+            tile_exists(self.map, self.x, self.y - 1).discovered = True
+        if tile_exists(self.map, self.x, self.y + 1) and "south" not in self.block_exit:
             moves.append(actions.MoveSouth())
-            self.universe.tile_exists(self.map, self.x, self.y + 1).discovered = True
-        if self.universe.tile_exists(self.map, self.x + 1, self.y - 1) and "northeast" not in self.block_exit:
+            tile_exists(self.map, self.x, self.y + 1).discovered = True
+        if tile_exists(self.map, self.x + 1, self.y - 1) and "northeast" not in self.block_exit:
             moves.append(actions.MoveNorthEast())
-            self.universe.tile_exists(self.map, self.x + 1, self.y - 1).discovered = True
-        if self.universe.tile_exists(self.map, self.x - 1, self.y - 1) and "northwest" not in self.block_exit:
+            tile_exists(self.map, self.x + 1, self.y - 1).discovered = True
+        if tile_exists(self.map, self.x - 1, self.y - 1) and "northwest" not in self.block_exit:
             moves.append(actions.MoveNorthWest())
-            self.universe.tile_exists(self.map, self.x - 1, self.y - 1).discovered = True
-        if self.universe.tile_exists(self.map, self.x + 1, self.y + 1) and "southeast" not in self.block_exit:
+            tile_exists(self.map, self.x - 1, self.y - 1).discovered = True
+        if tile_exists(self.map, self.x + 1, self.y + 1) and "southeast" not in self.block_exit:
             moves.append(actions.MoveSouthEast())
-            self.universe.tile_exists(self.map, self.x + 1, self.y + 1).discovered = True
-        if self.universe.tile_exists(self.map, self.x - 1, self.y + 1) and "southwest" not in self.block_exit:
+            tile_exists(self.map, self.x + 1, self.y + 1).discovered = True
+        if tile_exists(self.map, self.x - 1, self.y + 1) and "southwest" not in self.block_exit:
             moves.append(actions.MoveSouthWest())
-            self.universe.tile_exists(self.map, self.x - 1, self.y + 1).discovered = True
+            tile_exists(self.map, self.x - 1, self.y + 1).discovered = True
         return moves
 
-    def available_actions(self):
+    def available_actions(self) -> list[actions.Action]:
         """Returns all of the available actions in this room."""
-        moves = self.adjacent_moves()
-        moves.append(actions.ListCommands())
-        moves.append(actions.ViewInventory())
-        moves.append(actions.SkillMenu())
-        moves.append(actions.Look())
-        moves.append(actions.View())
-        moves.append(actions.Equip())
-        moves.append(actions.Take())
-        moves.append(actions.Use())
-        moves.append(actions.Search())
-        moves.append(actions.Menu())
-        moves.append(actions.Save())
-        moves.append(actions.ViewMap())
-        moves.append(actions.Attack())
-        moves.append(actions.ViewStatus())
-        ### DEBUG MOVES BELOW ###
-        moves.append(actions.Teleport())
-        moves.append(actions.Showvar())
-        moves.append(actions.Alter())
-        moves.append(actions.Supersaiyan())
-        moves.append(actions.TestEvent())
-        moves.append(actions.SpawnObj())
-        ### END DEBUG MOVES ###
+        moves = self.adjacent_moves()  # first, add the available directions in the current room
+        default_moves = [  # these are the default moves available to the player
+            actions.ListCommands(),
+            actions.ViewInventory(),
+            actions.SkillMenu(),
+            actions.Look(),
+            actions.View(),
+            actions.Equip(),
+            actions.Take(),
+            actions.Use(),
+            actions.Search(),
+            actions.Menu(),
+            actions.Save(),
+            actions.ViewMap(),
+            actions.Attack(),
+            actions.ViewStatus()
+        ]
+
+        debug_moves = [  # these are the moves available to the player if debugging is enabled
+            actions.Teleport(),
+            actions.Showvar(),
+            actions.Alter(),
+            actions.Supersaiyan(),
+            actions.TestEvent(),
+            actions.SpawnObj()
+        ]
+
+        for move in default_moves:
+            moves.append(move)
+
+        for move in debug_moves:
+            # noinspection PyTypeChecker
+            moves.append(move)
+
         return moves
 
     def evaluate_events(self):
@@ -101,7 +120,7 @@ class MapTile:
             npc.hidden = True
             npc.hide_factor = hfactor
         if delay == -1:  # this is the default behavior if delay is not specified
-            npc.combat_delay = random.randint(0,7)
+            npc.combat_delay = random.randint(0, 7)
         else:
             npc.combat_delay = delay
         self.npcs_here.append(npc)
@@ -130,7 +149,7 @@ class MapTile:
         return item
 
     def spawn_event(self, event_type, player, tile, repeat=False, params=None):
-        event = functions.seek_class(event_type, player, tile, repeat, params)
+        event = functions.seek_class(event_type, "story")(player, tile, params, repeat)
         if event != "":
             self.events_here.append(event)
             return event
@@ -155,246 +174,3 @@ class MapTile:
                     master_item.stack_grammar()
                 for duplicate in remove_duplicates:
                     self.items_here.remove(duplicate)
-
-
-class Boundary(MapTile):
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        You should not be here.
-        """)
-        self.symbol = "'"
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-### STARTING AREA: SECLUDED GROTTO ###
-
-class StartingRoom(MapTile):
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large
-        rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source
-        of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The
-        darkness seems to extend endlessly in all directions.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class EmptyCave(MapTile):
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step
-        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class BlankTile(MapTile):
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description='')
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-### VERDETTE CAVERNS ###
-
-
-class VerdetteRoom(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated 
-        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. 
-        The air is cold and slightly humid. The stone walls are damp to the touch.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class VerdetteRoom2(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points 
-        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but 
-        nonetheless yields further exploration for those willing to squeeze through.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class VerdetteRoom3(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by 
-        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. 
-        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank 
-        stillness of the place.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class VerdetteRoom4(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness 
-        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. 
-        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against 
-        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class VerdetteRoom5(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a 
-        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. 
-        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class VerdetteSpring(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The unmistakable sound of water trickling over rock can be heard echoing throughout this small chamber. The air is filled
-        with a fresh, life-giving smell that immediately improves Jean's mood. This would be an excellent place to stop for a short
-        rest before continuing on.
-        """)
-        self.symbol = '~'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-### GRONDIA ###
-
-
-class GrondiaPassage(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        A great passage opens up here. Scuffs on the rock and dirt floor suggest this is a well-traveled path. The air is tinged with
-        moisture and a variety of smells, some familiar, and some entirely alien. Light has made its way into this part of the 
-        underground, emitted by a distant source. A muted cacophony echoes percussively against the walls, creating a disorienting effect.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class GrondiaGateWest(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        A large, smooth wall stands to the east. To the west, the passage winds back into the cold darkness of the cavern.
-        The distinct sounds of a bustling city can be heard somewhere behind the wall, reverberating dully against the rock.
-        There is no obvious handle or chain with which to open the door faintly outlined against the sheer blockade. This
-        is clearly not entrance designed for humans.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        #Room has no action on player
-        pass
-
-
-class GrondiaAntechamber(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        This room was entirely unlike the cavern preceding it. The walls and ceiling were angular and distinct; 
-        More like a man's house than a naturally occuring hole in the earth. Pink crystals hung from the ceiling like exotic chandeliers, 
-        emitting their bright pink glow in ebbing pulsations. The pattern of the crystals' oscillating emanations seemed random to Jean at first, 
-        but steadily began to form an intricate dance, hypnotic and calming in its susserations.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
-
-class GrondiaArcology(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        The Grondia Arcology is the western district of the city where most Grondites find their homes. The actual living chambers comprise a
-        hive-like structure digging deeply into the greater concourse and branching streets. Most shops and businesses are found in the walls or 
-        under the strikingly clean floor like the residences, with the few restaurants and stalls that cater to foreigners making up most of 
-        the obstacles visible at first glance. There is a steady stream of traffic going one direction or another. The area is brightly lit in a 
-        vibrant shade of red by numerous large crystalline protrusions thrusting downward from the ceiling.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
-
-class GrondiaResidences(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        This area is comprised of densely packed residences and is likely where the lower classes of Grondites make their homes. There is
-        considerably less traffic here, with the echoes of the surrounding areas creating a muted, incoherent din. It is, nonetheless,
-        a relatively good space to stop and rest from the cacophony of the city.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
-
-class GrondiaConclave(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        Description TBD.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
-
-class GrondiaCitadel(MapTile):  # room Jean is dumped in after the encounter with Gorran
-    def __init__(self, universe, map, x, y):
-        super().__init__(universe, map, x, y, description="""
-        In sharp contrast to the rock holes that comprise the various residences and domestic shops throughout the rest of Grondia,
-        the Citadel is an impressive construction rising up from the center of the city.
-        """)
-        self.symbol = '#'
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
