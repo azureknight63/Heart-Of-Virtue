@@ -54,7 +54,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if block_contents != '':
                     block_list = block_contents.split("|")
                     tile_name = block_list[0]
-                    this_map[(x, y)] = getattr(__import__('tiles'), tile_name)(self, this_map, x, y)
+                    this_map[(x, y)] = functions.seek_class(tile_name, 'tilesets')(self, this_map, x, y)
                     if len(block_list) > 1:
                         for i, param in enumerate(block_list):
                             if i != 0:
