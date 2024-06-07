@@ -286,7 +286,9 @@ friendly enough to Jean.
 
     def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
-            self.current_room.events_here.append(functions.seek_class("AfterGorranIntro", player, self.current_room, None, False))
+            self.current_room.events_here.append(
+                functions.seek_class("AfterGorranIntro", "story")(player,
+                                                                   self.current_room, None, False))
             self.current_room.universe.story["gorran_first"] = "1"
 
         else:
