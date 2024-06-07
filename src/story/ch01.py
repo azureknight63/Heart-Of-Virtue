@@ -1,7 +1,13 @@
 """
 Chapter 01 events
 """
+
+from neotermcolor import cprint
+import time
+import random
+
 from src.events import *
+import src.objects as objects
 
 
 class Ch01StartOpenWall(Event):
@@ -333,15 +339,15 @@ class AfterTheRumblerFight(Event):
         time.sleep(5)
         print("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
-        self.dialogue("Jean", "I suppose I should thank you for saving my skin. What is your name?", "cyan")
+        dialogue("Jean", "I suppose I should thank you for saving my skin. What is your name?", "cyan")
         print("The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. "
               "He begins to speak in low, rumbling tones.")
-        self.dialogue("Rock-Man", "Mmmmm... Go-rra-nnnnnn...", "green")
-        self.dialogue("Jean", "Go... rran? Well, thank you, Gorran. But what were those things? "
-                              "I've never seen their like in my life!", "cyan")
+        dialogue("Rock-Man", "Mmmmm... Go-rra-nnnnnn...", "green")
+        dialogue("Jean", "Go... rran? Well, thank you, Gorran. But what were those things? "
+                         "I've never seen their like in my life!", "cyan")
         print("Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came.")
-        self.dialogue("Rock-Man", "Time... short. Not... safe to... linger. Speak... to Gorran again... "
-                                  "when ready.", "green")
+        dialogue("Rock-Man", "Time... short. Not... safe to... linger. Speak... to Gorran again... "
+                             "when ready.", "green")
         for npc_here in self.tile.npcs_here:
             if npc_here.name == "Rock-Man":
                 npc_here.name = "Gorran"

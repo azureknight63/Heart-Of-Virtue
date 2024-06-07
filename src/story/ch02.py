@@ -2,6 +2,7 @@
 Chapter 02 events
 """
 from src.events import *
+import time
 
 
 class AfterDefeatingLurker(Event):
@@ -28,7 +29,7 @@ class AfterDefeatingLurker(Event):
               "last that he opened in the same manner.")
         time.sleep(2)
         print("Gorran turns back around to face Jean.")
-        self.dialogue("Gorran", "Gr-rrondia-a-a... this way...", "green")
+        dialogue("Gorran", "Gr-rrondia-a-a... this way...", "green")
         functions.await_input()
         self.tile.spawn_object("Passageway", self.player, self.tile, params="t.grondia 1 3")
         print("Gorran ducked low, disappearing beneath a curving shelf of grey rock. Looking closely, "
@@ -45,3 +46,4 @@ class AfterDefeatingLurker(Event):
               "of something large, or perhaps many things. There was also - yes, Jean was sure of "
               "it - the smells of leather and iron.")
         functions.await_input()
+        self.player.teleport("grondia 3 1")
