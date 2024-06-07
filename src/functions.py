@@ -7,6 +7,7 @@ import pickle
 import datetime
 import importlib
 import time
+import pkgutil
 
 import moves
 import enchant_tables
@@ -402,23 +403,35 @@ def randomize_amount(param):
         return int(param)
 
 
-def seek_class(classname, player, tile, repeat, params):
-    # searches through the story folder for the matching module and returns an instance
-    module_paths = [
-        'events',
-        'story.general',
-        'story.ch01',
-        'story.ch02'
-    ]
+def seek_class(classname, package='all'):
+    """
+    Searches through the requested package(s) and returns the matching class object
+    :param str classname: the classname of the desired object as a string
+    :param str package: optionally provide the desired package to search, leave default to search all packages
+    :return object or None:
+    """
+    packages = ['story', 'tilesets']
+    module_paths = set()
+
+    if package == 'all':
+        for package_n in packages:
+            modules_in_package = list_module_names(package_n)
+            for module in modules_in_package:
+                module_paths.add(f"{package_n}.{module}")
+    elif package in packages:
+        modules_in_package = list_module_names(package)
+        for module in modules_in_package:
+            module_paths.add(f"{package}.{module}")
+    else:
+        raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
     for module_path in module_paths:
         try:
             module = importlib.import_module(module_path)
-            class_obj = getattr(module, classname)(player, tile, repeat, params)
+            class_obj = getattr(module, classname)
             return class_obj
-        except AttributeError:
+        except (AttributeError, ImportError):
             pass
-    print("### ERR: Cannot find event " + classname)
-    return None  # or whatever you prefer to return in case of failure
+    raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
 
 
 def await_input():
@@ -519,3 +532,13 @@ def add_preference(player, preftype, setting):
 def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
+
+
+def list_module_names(package_name):
+    package = __import__(package_name)
+    module_names = []
+
+    for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
+        module_names.append(modname)
+
+    return module_names
