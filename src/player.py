@@ -12,6 +12,7 @@ import combat
 import skilltree
 
 from neotermcolor import colored, cprint
+from universe import tile_exists as tile_exists
 
 
 def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
@@ -515,13 +516,13 @@ maintenant et à l'heure de notre mort. Amen.""",
         for area in self.universe.maps:
             if area['name'] == params[0]:
                 tele_to = area
-                tile = self.universe.tile_exists(tele_to, int(params[1]), int(params[2]))
+                tile = tile_exists(tele_to, int(params[1]), int(params[2]))
                 if tile:
                     self.map = tele_to
                     self.universe.game_tick += 1
                     self.location_x = int(params[1])
                     self.location_y = int(params[2])
-                    print(self.universe.tile_exists(self.map, self.location_x, self.location_y).intro_text())
+                    print(tile_exists(self.map, self.location_x, self.location_y).intro_text())
                     return
                 else:
                     print("### INVALID TELEPORT LOCATION: " + phrase + " ###")
@@ -1261,7 +1262,7 @@ he lets out a barely audible whisper:""", "red")
         self.universe.game_tick += 1
         self.location_x += dx
         self.location_y += dy
-        print(self.universe.tile_exists(self.map, self.location_x, self.location_y).intro_text())
+        print(tile_exists(self.map, self.location_x, self.location_y).intro_text())
         # if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
         #         self.location_x, self.location_y).respawn_rate:
         #     pass
@@ -1602,8 +1603,8 @@ he lets out a barely audible whisper:""", "red")
         max_x = 0
         max_y = 0
         for key in self.map:
-            if key != 'name' and self.universe.tile_exists(self.map, key[0], key[1]):
-                if self.universe.tile_exists(self.map, key[0], key[1]).discovered:
+            if key != 'name' and tile_exists(self.map, key[0], key[1]):
+                if tile_exists(self.map, key[0], key[1]).discovered:
                     test_x = int(key[0])
                     test_y = int(key[1])
                     if test_x > max_x:
@@ -1615,7 +1616,7 @@ he lets out a barely audible whisper:""", "red")
         for y in range(max_y + 2):
             line = ''
             for x in range(max_x + 2):
-                if self.universe.tile_exists(self.map, x, y):
+                if tile_exists(self.map, x, y):
                     if self.map[(x, y)] == self.current_room:
                         line += 'X'
                     else:
