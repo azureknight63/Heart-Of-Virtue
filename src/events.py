@@ -2,22 +2,25 @@
 Combat states to be used within combat module. May also spill over to the standard game.
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
-from neotermcolor import colored, cprint
-import threading
-import random
-import time
-import objects, functions
+from neotermcolor import colored
+
+import functions
 
 
-class Event: #master class for all events
-    '''
+def dialogue(speaker, text, speaker_color="cyan", text_color="white"):
+    functions.print_slow((colored(speaker+": ", speaker_color) + colored(text, text_color)), "fast")
+    functions.await_input()
+
+
+class Event:  # master class for all events
+    """
     Events are added to tiles much like NPCs and items. These are evaluated each game loop to see if the conditions
     of the event are met. If so, execute the 'process' function, else pass.
     Events can also be added to the combat loop.
     Set repeat to True to automatically repeat for each game loop
     params is a list of additional parameters, None if omitted.
 
-    '''
+    """
     def __init__(self, name, player, tile, repeat, params):
         self.name = name
         self.player = player
@@ -45,7 +48,3 @@ class Event: #master class for all events
         to be overwritten by an event subclass
         """
         pass
-
-    def dialogue(self, speaker, text, speaker_color="cyan", text_color="white"):
-        functions.print_slow((colored(speaker+": ", speaker_color) + colored(text, text_color)), "fast")
-        functions.await_input()
