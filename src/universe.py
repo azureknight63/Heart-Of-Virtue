@@ -1,6 +1,11 @@
 __author__ = 'Alex Egbert'
 
 import functions
+from pathlib import Path
+from typing import Final
+
+RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
+
 
 
 def tile_exists(map_to_check, x, y):
@@ -44,7 +49,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
     def load_tiles(self, player, mapname):
         """Parses a file that describes the world space into the _world object"""
         this_map = {'name': mapname}
-        with open('resources/{}.txt'.format(mapname), 'r') as f:
+        with open(f'{RESOURCES_DIR}/{mapname}.txt', 'r') as f:
             rows = f.readlines()
         x_max = len(rows[0].split('\t'))
         for y in range(len(rows)):
