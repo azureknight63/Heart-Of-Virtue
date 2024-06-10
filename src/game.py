@@ -17,6 +17,7 @@ import functions
 import items
 from player import Player
 from universe import Universe, tile_exists
+import sys
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -100,7 +101,7 @@ _\\|//__( | )______)_/
             elif choice == menu['LOAD GAME']['Index']:
                 newgame = False
             elif choice == menu['QUIT TO DESKTOP']['Index']:
-                break  # Exit the loop and quit
+                sys.exit()
         player = functions.load_select() if not newgame else Player()
         universe = Universe()
         player.universe = universe

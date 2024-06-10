@@ -1,6 +1,11 @@
 __author__ = 'Alex Egbert'
 
 import functions
+from pathlib import Path
+from typing import Final
+
+RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
+
 
 
 def tile_exists(map_to_check, x, y):
@@ -44,7 +49,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
     def load_tiles(self, player, mapname):
         """Parses a file that describes the world space into the _world object"""
         this_map = {'name': mapname}
-        with open('resources/{}.txt'.format(mapname), 'r') as f:
+        with open(f'{RESOURCES_DIR}/{mapname}.txt', 'r') as f:
             rows = f.readlines()
         x_max = len(rows[0].split('\t'))
         for y in range(len(rows)):
@@ -70,9 +75,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     hidden = False
                                     hfactor = 0
                                     for item in p_list:
-                                        if "h+" in item:
-                                            hidden = True
-                                            hfactor = item[3:]
+                                        hidden, hfactor = self.parse_hidden(item)
                                     if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
                                         hidden = True
                                         hfactor = int(p_list[2][1:])
@@ -87,9 +90,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     hidden = False
                                     hfactor = 0
                                     for item in p_list:
-                                        if "h+" in item:
-                                            hidden = True
-                                            hfactor = int(item[2:])
+                                        hidden, hfactor = self.parse_hidden(item)
                                     tile_exists(this_map, x, y).spawn_item(item_type, amt=amt, hidden=hidden,
                                                                            hfactor=hfactor)
 
@@ -123,10 +124,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     if len(p_list) > 2:
                                         for setting in p_list:
                                             if setting != '':
-                                                if "h+" in setting:
-                                                    hidden = True
-                                                    hfactor = setting[3:]
-                                                else:
+                                                hidden, hfactor = self.parse_hidden(item)
+                                                if not hidden:
                                                     params.append(setting)
                                     p_list.remove(obj_type)
                                     for ix in range(0, amt):
@@ -143,3 +142,14 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     self.starting_position = (x, y)
 
         self.maps.append(this_map)
+
+    @staticmethod
+    def parse_hidden(setting: str) -> int:
+        hidden = False
+        hfactor = 0
+
+        if "h+" in setting:
+            hidden = True
+            hfactor = int(setting[2:])
+
+        return (hidden, hfactor)
