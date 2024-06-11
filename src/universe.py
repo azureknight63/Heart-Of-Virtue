@@ -7,7 +7,6 @@ from typing import Final
 RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
 
 
-
 def tile_exists(map_to_check, x, y):
     """Returns the tile at the given coordinates or None if there is no tile.
     :param map_to_check: the dictionary object containing the tile
@@ -124,7 +123,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     if len(p_list) > 2:
                                         for setting in p_list:
                                             if setting != '':
-                                                hidden, hfactor = self.parse_hidden(item)
+                                                hidden, hfactor = self.parse_hidden(setting)
                                                 if not hidden:
                                                     params.append(setting)
                                     p_list.remove(obj_type)
@@ -144,7 +143,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.maps.append(this_map)
 
     @staticmethod
-    def parse_hidden(setting: str) -> int:
+    def parse_hidden(setting: str) -> tuple[bool, int]:
         hidden = False
         hfactor = 0
 
@@ -152,4 +151,4 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             hidden = True
             hfactor = int(setting[2:])
 
-        return (hidden, hfactor)
+        return hidden, hfactor
