@@ -22,7 +22,8 @@ class GrondiaGateWest(MapTile):  # room Jean is dumped in after the encounter wi
         A large, smooth wall stands to the east. To the west, the passage winds back into the cold darkness of the 
         cavern. The distinct sounds of a bustling city can be heard somewhere behind the wall, reverberating dully 
         against the rock. There is no obvious handle or chain with which to open the door faintly outlined against 
-        the sheer blockade. This is clearly not an entrance designed for humans.
+        the sheer blockade. The size of the door and the lack of a handle is evidence that this is not an entrance 
+        designed for humans.
         """)
         self.symbol = '#'
 
@@ -35,10 +36,10 @@ class GrondiaAntechamber(MapTile):  # room Jean is dumped in after the encounter
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         This room was entirely unlike the cavern preceding it. The walls and ceiling were angular and distinct; 
-        More like a man's house than a naturally occuring hole in the earth. Pink crystals hung from the ceiling like 
-        exotic chandeliers, emitting their bright pink glow in ebbing pulsations. The pattern of the crystals' 
-        oscillating emanations seemed random to Jean at first, but steadily began to form an intricate dance, 
-        hypnotic and calming in its susserations.
+        More like a man's house than a naturally occuring hole in the earth. Pink crystals hang from the ceiling like 
+        exotic chandeliers, emitting their bright glow in ebbing pulsations. The pattern of the oscillating glow
+        seemed random to Jean at first, but steadily began to form an intricate dance, hypnotic and calming 
+        in its susserations.
         """)
         self.symbol = '#'
 
@@ -96,6 +97,61 @@ class GrondiaCitadel(MapTile):  # room Jean is dumped in after the encounter wit
         super().__init__(universe, current_map, x, y, description="""
         In sharp contrast to the rock holes that comprise the various residences and domestic shops throughout 
         the rest of Grondia, the Citadel is an impressive construction rising up from the center of the city.
+        """)
+        self.symbol = '#'
+
+    def modify_player(self, the_player):
+        # Room has no action on player
+        pass
+
+
+class GrondiaEcumerium(MapTile):  # room Jean is dumped in after the encounter with Gorran
+    def __init__(self, universe, current_map, x, y):
+        super().__init__(universe, current_map, x, y, description="""
+        Description TBD.
+        """)
+        self.symbol = '#'
+
+    def modify_player(self, the_player):
+        # Room has no action on player
+        pass
+
+
+class GrondiaFabricarium(MapTile):  # room Jean is dumped in after the encounter with Gorran
+    def __init__(self, universe, current_map, x, y):
+        super().__init__(universe, current_map, x, y, description="""
+        Description TBD.
+        """)
+        self.symbol = '#'
+
+    def modify_player(self, the_player):
+        # Room has no action on player
+        pass
+
+
+class GrondiaGateEast(MapTile):  # room Jean is dumped in after the encounter with Gorran
+    def __init__(self, universe, current_map, x, y):
+        super().__init__(universe, current_map, x, y, description="""
+        A large, smooth wall stands to the west. To the east, a path rounds a corner out of sight. 
+        The distinct sounds of a bustling city can be heard somewhere behind the wall, reverberating dully 
+        against the rock. A large imposing door is set in the western wall, swung open to allow visitors
+        passage.
+        """)
+        self.symbol = '#'
+
+    def modify_player(self, the_player):
+        # Room has no action on player
+        pass
+
+
+class GrondiaGateSouth(MapTile):  # room Jean is dumped in after the encounter with Gorran
+    def __init__(self, universe, current_map, x, y):
+        super().__init__(universe, current_map, x, y, description="""
+        A large, smooth wall stands to the north. To the south, a cavern opens up to a large chamber dotted with
+        small pools of water that glow a faint blue in the dim light. The distinct sounds of a bustling city can be 
+        heard somewhere behind the wall, reverberating dully against the rock. There is no obvious handle or chain 
+        with which to open the door faintly outlined against the sheer blockade. The size of the door and the 
+        lack of a handle is evidence that this is not an entrance designed for humans.
         """)
         self.symbol = '#'
 

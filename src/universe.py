@@ -35,7 +35,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             self.maps = player.saveuniv
 
         else:  # new game
-            map_list = ["testing", "start_area", "verdette_caverns"]  # as more maps are built, add them to this list
+            map_list = ["testing", "start_area", "verdette_caverns", "grondia"]
+            # as more maps are built, add them to this list ^^^
             for location in map_list:
                 self.load_tiles(player, location)
             for location in self.maps:
