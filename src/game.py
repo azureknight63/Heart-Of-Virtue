@@ -75,7 +75,7 @@ _\\|//__( | )______)_/
                 },
                 'LOAD GAME':
                 {
-                    'Enabled': not newgame and save_exists,
+                    'Enabled': save_exists,
                     'Index': 2
                 },
                 'QUIT TO DESKTOP':
