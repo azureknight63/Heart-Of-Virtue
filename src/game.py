@@ -18,18 +18,13 @@ import items
 from player import Player
 from universe import Universe, tile_exists
 import sys
+import configparser
+import ast
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 
-testing_mode = True
-"""
-testing_mode has several effects if set to True. They are:
-- The starting map is changed to testing.txt
-- The intro sequence is skipped
-
-Setting testing_mode to False makes start_area.txt the starting map
-"""
+config = configparser.ConfigParser()
 
 
 def validate_numerical_input(prompt, min_value, max_value):
@@ -106,10 +101,26 @@ _\\|//__( | )______)_/
         universe = Universe()
         player.universe = universe
         player.universe.build(player)
-        player.map = player.universe.starting_map if not testing_mode else (
-            next((map_item for map_item in player.universe.maps if map_item.get('name') == 'testing'), None))
-        # player.map = player.universe.starting_map
-        player.location_x, player.location_y = player.universe.starting_position
+        starting_map_name = "default"
+        startposition = (0, 0)
+        try:
+            config.read('../config_dev.ini')
+            testing_mode = config.getboolean('Startup', 'testmode')
+            starting_map_name = config.get('Startup', 'startmap')
+            startposition = ast.literal_eval(config.get('Startup', 'startposition'))
+            starting_map = next((map_item for map_item in player.universe.maps if
+                                 map_item.get('name') == starting_map_name), None)
+        except FileNotFoundError:
+            testing_mode = False
+            starting_map = player.universe.starting_map_default
+            startposition = player.universe.starting_position
+
+        print(f"Test Mode: {testing_mode}")
+        print(f"Start Map: {starting_map_name}")
+        print(f"Start Position: {startposition}")
+
+        player.map = starting_map
+        player.location_x, player.location_y = startposition
         room = tile_exists(player.map, player.location_x, player.location_y)
 
         """
@@ -117,9 +128,6 @@ _\\|//__( | )______)_/
         """
         if newgame:
             for item in player.inventory:
-                # if item.name == "Rock":
-                #     player.eq_weapon = item
-                #     item.isequipped = True
                 if item.name == "Tattered Cloth" or item.name == "Cloth Hood":
                     item.isequipped = True
                     item.interactions.append("unequip")
