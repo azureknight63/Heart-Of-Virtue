@@ -22,7 +22,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.game_tick = 0
         self.maps = []
         self.starting_position = (0, 0)
-        self.starting_map = None
+        self.starting_map_default = None
         self.story = {  # global switches and variables.
             # Putting them in a dict will make it easier to change on the fly while debugging
             "gorran_first": "0"
@@ -41,7 +41,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 self.load_tiles(player, location)
             for location in self.maps:
                 if "start_area" in location['name']:
-                    self.starting_map = location
+                    self.starting_map_default = location
 
     # def transition(old_world, new_world, new_position):
     #     pass
