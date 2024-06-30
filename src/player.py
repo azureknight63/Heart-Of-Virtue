@@ -560,7 +560,7 @@ maintenant et à l'heure de notre mort. Amen.""",
             if bonus != 0:
                 current_value = getattr(self, attr)
                 setattr(self, attr, current_value + bonus)
-                print(f"{attr_name} went up by {colored(str(bonus), "yellow")}.")
+                print(f"{attr_name} went up by {colored(str(bonus), 'yellow')}.")
                 time.sleep(2)
 
         points = random.randint(6, 9)
