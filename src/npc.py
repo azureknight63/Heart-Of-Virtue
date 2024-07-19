@@ -154,10 +154,12 @@ class NPC:
 
     def refresh_moves(self):
         available_moves = self.known_moves[:]
+        moves_to_remove = []
         for move in available_moves:
             if not move.viable():
-                available_moves.remove(move)
-        return available_moves
+                moves_to_remove.append(move)
+        output = [x for x in available_moves if x not in moves_to_remove]
+        return output
 
     def select_move(self):
         available_moves = self.refresh_moves()

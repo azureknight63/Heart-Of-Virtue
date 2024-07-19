@@ -376,7 +376,7 @@ class Advance(Move):
         target = user  # this will be changed during the combat loop when the user selects his target
         super().__init__(name="Advance", description=description, xp_gain=0, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(1, 9999),
-                         stage_announce=["",
+                         stage_announce=[f"{user.name} begins advancing...",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
@@ -386,7 +386,7 @@ class Advance(Move):
     def viable(self):
         viability = False
         for enemy, distance in self.user.combat_proximity.items():
-            if distance > 0:
+            if distance > 1:
                 viability = True
                 break
         return viability
@@ -399,6 +399,9 @@ class Advance(Move):
         print(self.stage_announce[1])
 
     def execute(self, user):
+        if not self.target.is_alive():
+            self.target = None  # this is to prevent advancing on targets that were killed
+            return
         print("{} advances on {}...".format(user.name, self.target.name))
         threshold = self.target.speed
         performance = random.randint(0, 50) + user.speed
