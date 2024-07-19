@@ -115,9 +115,10 @@ _\\|//__( | )______)_/
             starting_map = player.universe.starting_map_default
             startposition = player.universe.starting_position
 
-        print(f"Test Mode: {testing_mode}")
-        print(f"Start Map: {starting_map_name}")
-        print(f"Start Position: {startposition}")
+        if testing_mode:
+            print(f"\n\n###\nTest Mode: {testing_mode}")
+            print(f"Start Map: {starting_map_name}")
+            print(f"Start Position: {startposition}\n###\n\n")
 
         player.map = starting_map
         player.location_x, player.location_y = startposition
