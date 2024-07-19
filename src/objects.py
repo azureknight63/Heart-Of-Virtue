@@ -120,9 +120,9 @@ class WallSwitch(Object):
 
 
 class WallInscription(Object):
-    '''
+    """
     An inscription (typically visible) that can be looked at.
-    '''
+    """
 
     def __init__(self, player, tile, params=None):
         description = "Words scratched into the wall. Unfortunately, the inscription is too worn to be decipherable."
@@ -130,9 +130,14 @@ class WallInscription(Object):
                          idle_message="There appears to be some words inscribed in the wall.",
                          discovery_message="some words etched into the wall!", player=player, tile=tile)
         self.events = []
-
+        self.keywords.append('read')
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
+
+    def read(self, args):
+        cprint(f"{self.player.name} begins reading...", color="cyan")
+        functions.print_slow(self.description, speed="fast")
+        functions.await_input()
 
 
 class Container(Object):
