@@ -32,14 +32,12 @@ class Ch01StartOpenWall(Event):
         cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
                " east.", 'yellow')
         self.tile.block_exit.remove('east')
-        self.tile.description = """
-Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
-blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
-heard.
-"""
         for room_object in self.tile.objects_here:
             if isinstance(room_object, objects.TileDescription):
-                self.tile.objects_here.remove(room_object)
+                room_object.description = """
+Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
+blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
+heard. """
                 break
         for room_object in self.tile.objects_here:
             if room_object == wall_switch:
@@ -130,7 +128,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             self.pass_conditions_to_process()
 
     def process(self):
-        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
+        functions.print_slow("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
         for x in range(0, 2):
             npc = self.tile.spawn_npc("RockRumbler")
