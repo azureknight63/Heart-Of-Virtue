@@ -204,20 +204,20 @@ _\\|//__( | )______)_/
                 if raw_args[0] not in lc_exceptions:
                     action_input = action_input.lower()
                 available_actions = player.current_room.available_actions()
-                count_args = action_input.split(' ')
+                args_list = action_input.split(' ')
                 arbitrary_action = True  # this will be set to False if the action is a default one that the player
                 #                          normally has access to
-                if len(count_args) == 1:  # if the player entered only one word (ex 'look'), do this stuff
+                if len(args_list) == 1:  # if the player entered only one word (ex 'look'), do this stuff
                     for action in available_actions:
                         for key in action.hotkey:
                             if action_input == key:
                                 arbitrary_action = False
                                 player.do_action(action, **action.kwargs)
-                elif len(count_args) > 1:  # if the player entered more than one word (ex 'view restorative'), do this
+                elif len(args_list) > 1:  # if the player entered more than one word (ex 'view restorative'), do this
                     for action in available_actions:
                         for key in action.hotkey:
-                            if count_args[0] == key:
-                                join_args = ' '.join(count_args[1:])
+                            if args_list[0] == key:
+                                join_args = ' '.join(args_list[1:])
                                 player.do_action(action, join_args)
                                 arbitrary_action = False
                                 break
@@ -233,7 +233,7 @@ _\\|//__( | )______)_/
                         ]
                     success = False
                     for scope in interaction_scopes:
-                        if functions.enumerate_for_interactions(scope, (player, count_args, action_input)):
+                        if functions.enumerate_for_interactions(scope, (player, args_list, action_input)):
                             success = True  # Check each scope separately and, if an interaction is found,
                             # don't check the remaining scope(s)
                             break
