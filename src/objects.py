@@ -1,5 +1,7 @@
-import random, time
-import functions, states
+import random
+import time
+import functions
+import states
 from neotermcolor import colored, cprint
 
 
@@ -11,7 +13,7 @@ from neotermcolor import colored, cprint
 class Object:
     def __init__(self, name, description, tile=None, player=None, hidden=False, hide_factor=0,
                  idle_message=' is here.',
-                 discovery_message='something interesting.', target=None):
+                 discovery_message='something interesting.'):
         self.name = name
         self.description = description
         self.idle_message = idle_message
@@ -20,7 +22,8 @@ class Object:
         self.discovery_message = discovery_message
         self.announce = self.idle_message
         self.keywords = []  # action keywords to hook up an arbitrary command like "press" for a switch
-        self.events = []  # a list of events that occur when the player interacts with the object. Events with "repeat" will persist.
+        self.events = []  # a list of events that occur when the player interacts with the object.
+        # Events with "repeat" will persist.
         self.tile = tile
         self.player = player
 
@@ -32,10 +35,10 @@ class Object:
 
 
 class TileDescription(Object):
-    '''
+    """
     Adds to the description of the tile. Has no other function. The existence of this object allows tile descriptions
     to be dynamically changed.
-    '''
+    """
 
     def __init__(self, player, tile, params):
         param_list = params[2:]
@@ -72,9 +75,9 @@ class TileDescription(Object):
 
 
 class WallSwitch(Object):
-    '''
+    """
     A wall switch that does something when pressed.
-    '''
+    """
 
     def __init__(self, player, tile, params=None):
         description = "A small depression in the wall. You may be able to PRESS on it."
@@ -106,7 +109,7 @@ class WallSwitch(Object):
                 else:
                     self.event_off = event
 
-    def press(self, player):
+    def press(self):
         print("Jean hears a faint 'click.'")
         time.sleep(0.5)
         if not self.position:
@@ -134,17 +137,17 @@ class WallInscription(Object):
         if 'v0' in params:  # if there is a version declaration, change the description, else keep it generic
             self.description = "The inscription reads: 'EZ 41:1, LK 11:9-10, JL 2:7'"
 
-    def read(self, args):
+    def read(self):
         cprint(f"{self.player.name} begins reading...", color="cyan")
         functions.print_slow(self.description, speed="fast")
         functions.await_input()
 
 
 class Container(Object):
-    '''
+    """
     A generic container that may contain items. Superclass
     NOTE: If you ever make it so items can be added to an existing container post-spawn, run the stack_items method
-    '''
+    """
 
     def __init__(self, name, description, hidden, hide_factor, idle_message, discovery_message, player, tile, nickname,
                  params=None):
@@ -187,7 +190,6 @@ class Container(Object):
                 param = thing.replace('!', '')
                 p_list = param.split(':')
                 repeat = False
-                #trigger = 'auto'
                 event_type = p_list.pop(0)
                 for setting in p_list:
                     if setting == 'r':
@@ -205,7 +207,8 @@ class Container(Object):
 
     def refresh_description(self):
         if self.state == "closed":
-            self.description = "A " + self.nickname + " which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
+            self.description = "A " + self.nickname + (" which may or may not have things inside. "
+                                                       "You can try to UNLOCK (if locked), OPEN, or LOOT it.")
         else:
             if len(self.contents) > 0:
                 self.description = "A " + self.nickname + ". Inside are the following things: \n\n"
@@ -214,7 +217,7 @@ class Container(Object):
             else:
                 self.description = "A " + self.nickname + ". It's empty. Very sorry."
 
-    def unlock(self, player):
+    def unlock(self):
         if not self.state == "closed":
             print("Jean can't unlock something that's already open!")
         else:
@@ -227,7 +230,7 @@ class Container(Object):
             if self.locked:
                 cprint("Jean couldn't find a matching key.", "red")
 
-    def open(self, player):
+    def open(self):
         if self.locked:
             print("Jean pulls on the lid of the " + self.nickname + " to no avail. It's locked.")
         else:
@@ -243,13 +246,14 @@ class Container(Object):
             else:
                 print("The " + self.nickname + " is already open. You should VIEW or LOOT it to see what's inside.")
 
-    def loot(self, player):
+    def loot(self):
         if self.state == "closed":
-            self.open(player)
+            self.open()
         if self.state == "opened":  # keep this as a separate branch so self.open() gets evaluated
             if len(self.contents) > 0:
                 print(
-                    "Jean rifles through the contents of the " + self.nickname + ".\n\n Choose which items to take.\n\n")
+                    "Jean rifles through the contents of the " + self.nickname +
+                    ".\n\n Choose which items to take.\n\n")
                 acceptable_responses = ['all', 'x']
                 for i, item in enumerate(self.contents):
                     cprint('{}: {} - {}'.format(i, item.name, item.description), 'yellow')
@@ -300,12 +304,15 @@ class Container(Object):
                     self.contents.remove(duplicate)
 
 
-### World objects ###
+"""
+World objects 
+"""
+
 
 class WoodenChest(Container):
-    '''
+    """
     A wooden chest that may contain items.
-    '''
+    """
 
     def __init__(self, player, tile, params=None):
         description = "A wooden chest which may or may not have things inside. You can try to OPEN or LOOT it."
@@ -328,10 +335,11 @@ class Skeleton(Container):
 
 
 class Shrine(Object):
-    '''
+    """
     A shrine that can bestow a variety of items, effects, and sometimes challenges to the player
-    All shrines should be tied to an event to have an effect. Prayer is always effective, but for these, game effects should only happen once.
-    '''
+    All shrines should be tied to an event to have an effect. Prayer is always effective, but for these,
+    game effects should only happen once.
+    """
 
     def __init__(self, player, tile, params=None):
         description = "A beautiful shrine depicting a variety of saints praying to God."
@@ -370,10 +378,10 @@ class Shrine(Object):
 
 
 class HealingSpring(Object):
-    '''
-    A spring that restores Jean's health when he drinks from it. He can also WASH or CLEAN himself in it, which provides a small, temporary boost to charisma
-    and max fatigue.
-    '''
+    """
+    A spring that restores Jean's health when he drinks from it. He can also WASH or CLEAN himself in it,
+    which provides a small, temporary boost to charisma and max fatigue.
+    """
 
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
@@ -414,22 +422,24 @@ class HealingSpring(Object):
             self.event = None
         functions.await_input()
 
-    def clean(self, player):
+    @staticmethod
+    def clean(player):
         print("Jean summarily begins washing himself in the cool water of the spring.")
         time.sleep(2)
         print("Jean closes his eyes for a moment, enjoying the feeling of simple cleanliness.")
         time.sleep(1)
         cprint("Jean now has Clean status!", "green")
-        player.apply_state(states.Clean())
+        player.apply_state(states.Clean(player))
 
     def wash(self, player):
         self.clean(player)  # this is an alias for clean
 
 
 class Passageway(Object):
-    '''
-    A passageway that takes Jean to a different location. This can either be a location in the same map or a different map entirely.
-    '''
+    """
+    A passageway that takes Jean to a different location. This can either be a location in the same map or a
+    different map entirely.
+    """
 
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
