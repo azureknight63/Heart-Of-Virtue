@@ -147,7 +147,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
                     enemy_combat_list.append(e)
                     e.in_combat = True
                     for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
-                        if aggro_enemy.aggro and aggro_enemy != e:
+                        if aggro_enemy.aggro and aggro_enemy != e and not aggro_enemy.friend:
                             print(aggro_enemy.name + aggro_enemy.alert_message)
                             enemy_combat_list.append(aggro_enemy)
                             aggro_enemy.in_combat = True

@@ -375,4 +375,5 @@ class AfterGorranIntro(Event):
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)
+                gorran.friend = True
         self.player.teleport("verdette_caverns 2 1")
