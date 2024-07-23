@@ -232,6 +232,9 @@ class Player:
         self.map = None
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
+        self.pronouns = {
+            "personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"
+        }
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
