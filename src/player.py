@@ -310,6 +310,9 @@ maintenant et à l'heure de notre mort. Amen.""",
         ]
 
     def cycle_states(self):
+        """
+        Loop through all of the states on the player and process the effects of each one
+        """
         for state in self.states:
             state.process(self)
 
