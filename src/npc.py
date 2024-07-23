@@ -149,6 +149,9 @@ class NPC:
             print(colored(self.name, "magenta") + " exploded into fragments of light!")
 
     def cycle_states(self):
+        """
+        Loop through all of the states on the NPC and process the effects of each one
+        """
         for state in self.states:
             state.process(self)
 
@@ -272,7 +275,7 @@ friendly enough to Jean.
                          damage=55, awareness=20, speed=5, aggro=True, exp_award=0,
                          combat_range=(0,7),
                          idle_message=" is bumbling about.",
-                         alert_message="lets out a deep and angry rumble!")
+                         alert_message=" lets out a deep and angry rumble!")
         self.add_move(moves.NpcAttack(self), 4)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.GorranClub(self), 3)
