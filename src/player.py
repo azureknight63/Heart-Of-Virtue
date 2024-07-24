@@ -92,6 +92,9 @@ class Player:
         self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
         self.name = "Jean"
         self.name_long = "Jean Claire"
+        self.pronouns = {
+            "personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"
+        }
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
@@ -232,9 +235,6 @@ class Player:
         self.map = None
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
-        self.pronouns = {
-            "personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"
-        }
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
