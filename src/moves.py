@@ -528,6 +528,114 @@ class QuietMovement(Move):
         return False
 
 
+class PowerStrike(Move):
+    def __init__(self, user):
+        description = ""
+        prep = 0
+        execute = 4
+        recoil = 3
+        cooldown = 0
+        fatigue_cost = 0
+        self.power = 0
+        self.target = user
+        mvrange = (0, 5)
+        if not hasattr(user, "eq_weapon"):
+            self.weapon = items.Rock()
+        else:
+            self.weapon = user.eq_weapon
+        if not hasattr(self.weapon, "name"):
+            self.weapon.name = "a rock"
+        super().__init__(name="Power Strike", description=description, xp_gain=1, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
+                         stage_announce=["This", "will", "update", "dynamically"],
+                         fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=self.target, user=user)
+        self.evaluate()
+
+    def viable(self):
+        viability = False
+        if hasattr(self.weapon, "subtype"):
+            if not self.weapon.subtype == "Bludgeon":
+                return False
+        else:
+            return False
+        range_min = self.mvrange[0]
+        range_max = self.mvrange[1]
+        for enemy, distance in self.user.combat_proximity.items():
+            if range_min < distance < range_max:
+                viability = True
+                break
+        return viability
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        power_base = 25  # this is the default for determining the attack's power
+        if hasattr(self.user, "damage"):
+            power_base = self.user.damage
+        elif hasattr(self.user, "eq_weapon"):
+            self.weapon = self.user.eq_weapon
+            if hasattr(self.user.eq_weapon, "damage"):
+                power_base = self.user.eq_weapon.damage
+        power = (power_base * random.uniform(1.5, 2.5))
+        prep = int(50 / self.user.speed)
+        if prep < 1:
+            prep = 1
+        execute = 4
+        recoil = int(50 / self.user.speed)
+        if recoil < 0:
+            recoil = 0
+        recoil += 3
+        cooldown = 7 - int(self.user.speed / 10)
+        if cooldown < 0:
+            cooldown = 0
+        cooldown += 3
+        fatigue_cost = 100 - (3 * self.user.endurance)
+        if fatigue_cost <= 25:
+            fatigue_cost = 25
+        self.power = power
+        self.stage_beat[0] = prep
+        self.stage_beat[1] = execute
+        self.stage_beat[2] = recoil
+        self.stage_beat[3] = cooldown
+        self.fatigue_cost = fatigue_cost
+        self.refresh_announcements(self.user)
+
+    def refresh_announcements(self, user):
+        self.stage_announce = [colored(f"{user.name} grips {user.pronouns["possessive"]} {self.weapon.name} "
+                                       f"in preparation to strike!", "red"),
+                               colored(f"{user.name} swings {user.pronouns["possessive"]} "
+                                       f"{self.weapon.name} mightily at {self.target.name}!", "red"),
+                               f"{user.name} recoils heavily from the attack.",
+                               ""]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        print(self.stage_announce[1])
+        self.prep_colors()
+        glance = False
+        if self.viable():
+            hit_chance = (85 - self.target.finesse) + self.user.finesse
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        damage = (self.power - self.target.protection)
+        if damage <= 0:
+            damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
+        damage = int(damage)
+        if hit_chance >= roll:  # a hit!
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
+
+
 """
 PLAYER MOVES
 """

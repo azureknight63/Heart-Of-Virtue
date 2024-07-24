@@ -62,5 +62,9 @@ class Skilltree:
                 # greater than normal range and with a long windup and cooldown
                 moves.Slash(user): 50,
                 moves.Parry(user): 100
+            },
+            "Bludgeon": {
+                moves.Parry(user): 100,
+                moves.PowerStrike(user): 1
             }
         }
