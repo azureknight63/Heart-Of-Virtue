@@ -21,6 +21,9 @@ import sys
 import configparser
 import ast
 
+from animations import animate_to_main_screen as animation_main
+from open_terminal import open_window as animation
+
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 
@@ -38,8 +41,10 @@ def validate_numerical_input(prompt, min_value, max_value):
 
 
 def play():
+    time.sleep(1)
     game = True
     while game:
+        animation_main("sword_attack.gif")
         cprint(r"""
         _
        (_)
@@ -102,7 +107,7 @@ _\\|//__( | )______)_/
         player.universe = universe
         player.universe.build(player)
         starting_map_name = "default"
-        startposition = (0, 0)
+        # startposition = (0, 0)
         try:
             config.read('../config_dev.ini')
             testing_mode = config.getboolean('Startup', 'testmode')
@@ -135,6 +140,10 @@ _\\|//__( | )______)_/
                     item.interactions.remove("equip")
         if not testing_mode:
             intro()
+
+        # animations.Screen.wrapper(animations.demo)
+        # animation("test.gif")
+
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()
