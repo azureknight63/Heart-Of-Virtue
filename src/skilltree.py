@@ -27,7 +27,7 @@ class Skilltree:
                 moves.TacticalPositioning(user): 400
             },
             "Unarmed": {
-                # moves.Jab(user): 100  # quick unarmed attack that causes little damage but has a
+                moves.Jab(user): 100  # quick unarmed attack that causes little damage but has a
                 # very low fatigue cost and zero cooldown
                 # moves.Kick(user): 150  # quick leg attack; more damaging than a jab with a higher
                 # fatigue cost and small cooldown
