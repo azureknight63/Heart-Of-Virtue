@@ -7,6 +7,16 @@ import states
 import functions
 import items
 
+# from open_terminal import open_window as animation
+from animations import animate_to_main_screen as animate
+
+default_animations = {
+    "p": "None",  # prep
+    "e": "None",  # execute
+    "r": "None",  # recoil
+    "c": "None"  # cooldown
+}
+
 
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
@@ -636,6 +646,87 @@ class PowerStrike(Move):
         self.user.fatigue -= self.fatigue_cost
 
 
+class Jab(Move):
+    def __init__(self, user):
+        description = ""
+        prep = 0
+        execute = 1
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 0
+        self.power = 0
+        self.target = user
+        mvrange = (0, 5)
+        if not hasattr(user, "eq_weapon"):
+            self.weapon = items.Fists()
+        else:
+            self.weapon = user.eq_weapon
+        if not hasattr(self.weapon, "name"):
+            self.weapon.name = "fists"
+        super().__init__(name="Jab", description=description, xp_gain=1, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
+                         stage_announce=["This", "will", "update", "dynamically"],
+                         fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=self.target, user=user)
+        self.evaluate()
+
+    def viable(self):
+        return self.standard_viability_attack("Unarmed")
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        power = (self.user.eq_weapon.damage +
+                 (self.user.strength * self.user.eq_weapon.str_mod) +
+                 (self.user.finesse * self.user.eq_weapon.fin_mod)) / 2
+        prep = 0
+        execute = 1
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 50 - (3 * self.user.endurance)
+        if fatigue_cost <= 5:
+            fatigue_cost = 5
+        self.power = power
+        self.stage_beat[0] = prep
+        self.stage_beat[1] = execute
+        self.stage_beat[2] = recoil
+        self.stage_beat[3] = cooldown
+        self.fatigue_cost = fatigue_cost
+        self.refresh_announcements(self.user)
+
+    def refresh_announcements(self, user):
+        self.stage_announce = ["",
+                               colored(f"{user.name} swings a swift jab!", "red"),
+                               "",
+                               ""]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        print(self.stage_announce[1])
+        self.prep_colors()
+        glance = False
+        if self.viable():
+            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        damage = (self.power - self.target.protection)
+        if damage <= 0:
+            damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
+        damage = int(damage)
+        if hit_chance >= roll:  # a hit!
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
+
+
 """
 PLAYER MOVES
 """
@@ -724,6 +815,8 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         self.power = 0
         self.evaluate()
         self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+        self.animations = default_animations.copy()
+        self.animations["e"] = "hit.gif"
 
     def viable(self):
         viability = False
@@ -777,6 +870,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
         print(self.stage_announce[1])
+        if hasattr(self, "animations"):
+            if self.animations["e"] != "None":
+                animate(self.animations["e"], self.stage_announce[1])
         if self.viable():
             hit_chance = (98 - self.target.finesse) + self.user.finesse
             if hit_chance < 5:  # Minimum value for hit chance
