@@ -545,3 +545,9 @@ def list_module_names(package_name):
         module_names.append(modname)
 
     return module_names
+
+
+def clean_string(input_string):
+    # Remove non-printable characters
+    cleaned_string = re.sub(r'[\[\d]+m|[^\x20-\x7E]', '', input_string)
+    return cleaned_string
