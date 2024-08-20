@@ -21,9 +21,6 @@ import sys
 import configparser
 import ast
 
-from animations import animate_to_main_screen as animation_main
-from open_terminal import open_window as animation
-
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
 
@@ -44,7 +41,8 @@ def play():
     time.sleep(1)
     game = True
     while game:
-        animation_main("sword_attack.gif")
+        # animation_main("sword_attack.gif")
+        # animations.Screen.wrapper(animations.title_scene)
         cprint(r"""
         _
        (_)
@@ -124,7 +122,11 @@ _\\|//__( | )______)_/
             print(f"\n\n###\nTest Mode: {testing_mode}")
             print(f"Start Map: {starting_map_name}")
             print(f"Start Position: {startposition}\n###\n\n")
+            player.skill_exp['Basic'] = 9999
+            player.skill_exp['Unarmed'] = 9999
 
+        player.testing_mode = testing_mode
+        universe.testing_mode = testing_mode
         player.map = starting_map
         player.location_x, player.location_y = startposition
         room = tile_exists(player.map, player.location_x, player.location_y)
@@ -140,9 +142,6 @@ _\\|//__( | )______)_/
                     item.interactions.remove("equip")
         if not testing_mode:
             intro()
-
-        # animations.Screen.wrapper(animations.demo)
-        # animation("test.gif")
 
         print(room.intro_text())
         player.main_menu = False
