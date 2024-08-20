@@ -1,10 +1,12 @@
 from random import randint
 import sys
-import time
+# import time
 from pathlib import Path
 
-from asciimatics.effects import Cycle, Stars, BannerText, Print, Scroll
-from asciimatics.renderers import FigletText, ColourImageFile, ImageFile
+import functions
+
+from asciimatics.effects import Cycle, Stars, Print
+from asciimatics.renderers import FigletText, ColourImageFile, ImageFile, SpeechBubble
 from asciimatics.scene import Scene
 from asciimatics.screen import Screen
 from asciimatics.exceptions import ResizeScreenError
@@ -82,11 +84,12 @@ def demo2(screen):
     screen.play([Scene(effects, 500)])
 
 
-def play_gif(screen, file):
+def play_gif(screen, file, text=""):
     """
     Plays the selected gif file.
     :param screen: the Screen object; handled by the Screen.wrapper function
     :param file: the name of the file without any path or extension
+    :param text: Text to display with the animation, if any.
     """
     filepath = f"./resources/animations/{file}.gif"
     if Path(filepath).exists():
@@ -96,6 +99,10 @@ def play_gif(screen, file):
                   ColourImageFile(screen, filepath, screen.height - 2,
                                   uni=screen.unicode_aware, dither=screen.unicode_aware),
                   0, 0, speed=1, stop_frame=count_gif_frames(filepath), transparent=False),
+            Print(screen,
+                  SpeechBubble(text),
+                  0
+                  )
         ]
         scenes.append(Scene(effects))
         screen.play(scenes, repeat=False, stop_on_resize=True)
@@ -103,21 +110,73 @@ def play_gif(screen, file):
         print("### Animation not found!")
 
 
-def animate_to_main_screen(animation):
+def display_static_image(screen, file):
+    """
+        Plays the selected static image file.
+        :param screen: the Screen object; handled by the Screen.wrapper function
+        :param file: the name of the file with extension, no path
+        """
+    filepath = f"./resources/images/{file}"
+    if Path(filepath).exists():
+        effects = [
+            Print(screen,
+                  ColourImageFile(screen, filepath, screen.height - 2,
+                                  uni=screen.unicode_aware, dither=screen.unicode_aware),
+                  0, 0),
+        ]
+        scene = Scene(effects, 500)
+        screen.play(scene, repeat=False, stop_on_resize=True)
+    else:
+        print("### Animation not found!")
+
+
+def title_scene(screen):  # just for testing. I don't think I actually want to use this!
+    effects = [
+        Print(screen,
+              ColourImageFile(screen, "./resources/images/title_scene.png", screen.height),
+              0,
+              speed=1, transparent=False,
+              stop_frame=100)
+    ]
+    screen.play([Scene(effects, 0)], repeat=False)
+    effects = [
+        Print(screen,
+              ImageFile("./resources/images/title_scene.png", 30),
+              # ColourImageFile(screen, "./resources/images/title_scene.png", screen.height),
+              0,
+              speed=1, transparent=False,
+              stop_frame=100)
+    ]
+    screen.play([Scene(effects, 0)], repeat=False)
+
+
+def animate_to_main_screen(animation, rawtext=""):
     """
     Plays the selected animation on the primary screen
-    :param screen: The screen object
     :param animation: Name of one of the animation functions defined in the animations.py module OR the
     filename of a gif in resources/animations, as a string
+    :param rawtext: Text to display with the animation, if any. You can pass in colored text (color will be stripped)
     """
+    text = functions.clean_string(rawtext)
     if ".gif" in animation:
         file_to_play = animation.replace(".gif", "")
-        Screen.wrapper(func=play_gif, arguments=[file_to_play])
+        Screen.wrapper(func=play_gif, arguments=[file_to_play, text])
     else:
         if function_exists('animations.py', animation):
-            Screen.wrapper(getattr('animations.py', animation))  # execute the animation
+            if text:
+                Screen.wrapper(func=getattr('animations.py', animation), arguments=[text])
+            else:
+                Screen.wrapper(getattr('animations.py', animation))
         else:
             print("### Animation not found!")
+
+
+def image_to_main_screen(image):
+    """
+        Displays the selected image on the primary screen
+        :param image: Name of image resources/images, as a string, includes extension
+        """
+    Screen.wrapper(func=display_static_image, arguments=[image])
 
 
 if __name__ == "__main__":
