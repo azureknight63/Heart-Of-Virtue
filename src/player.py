@@ -1656,3 +1656,13 @@ he lets out a barely audible whisper:""", "red")
             output += colored(", and ", "green") + colored(
                 self.combat_list_allies[party_size].name, "cyan") + colored(" follow Jean.", "green")
             print(output)
+
+    def get_equipped_items(self):
+        """
+        Returns a list of all items in the player's inventory that are currently equipped.
+        """
+        equipped_items = []
+        for item in self.inventory:
+            if hasattr(item, "isequipped") and item.isequipped:
+                equipped_items.append(item)
+        return equipped_items

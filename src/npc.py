@@ -235,6 +235,15 @@ class NPC:
                 cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount), 'cyan', attrs=['bold'])
                 break  # only one item in the loot table will drop
 
+    def get_equipped_items(self):
+        """
+        Returns a list of all items in the npc's inventory that are currently equipped.
+        """
+        equipped_items = []
+        for item in self.inventory:
+            if hasattr(item, "isequipped") and item.isequipped:
+                equipped_items.append(item)
+        return equipped_items
 
 ### Friends ###
 
