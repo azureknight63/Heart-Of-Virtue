@@ -315,6 +315,8 @@ maintenant et à l'heure de notre mort. Amen.""",
 
     def apply_state(self, state):
         player_has_state = False
+        if hasattr(state, "target"):
+                    state.target = self
         for player_state in self.states:
             if player_state.name == state.name:
                 player_has_state = True

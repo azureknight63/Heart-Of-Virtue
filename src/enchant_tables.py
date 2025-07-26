@@ -250,11 +250,11 @@ class Plated(Enchantment):  # improves protection rating of armor by 5-10
             return False
 
 
-class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-permanent. Also adds 50% resistance to poison.
+class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-permanent. Also adds resistance to poison.
     tier = 2
     def __init__(self, item):
         super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
-        self.equip_states = [states.Poisoned()]
+        self.equip_states = [states.Poisoned(None)]
 
     def modify(self):
         if hasattr(self.item, "add_resistance"):
@@ -468,5 +468,7 @@ class OfRelief(Enchantment):  # Increase weight tolerance by 2-5 lbs
 
     def requirements(self):
         return True
+
+
 
 # todo: add more enchantments!
