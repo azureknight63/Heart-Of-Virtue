@@ -184,3 +184,25 @@ class Clean(State):
 class Hawkeye(State):
     def __init__(self, target):  # increases the target's accuracy with a ranged weapon for a short duration
         super().__init__(name="Hawkeye", target=target, beats_max=30)
+
+
+class PhoenixRevive(State):
+    def __init__(self, target):
+        super().__init__(name="Phoenix Revive", target=target, beats_max=0, steps_max=0, compounding=False,
+                         combat=True, world=False, statustype="revive", persistent=True)
+        self.chance = 0.25  # 25% chance per battle
+
+    def on_removal(self, target):
+        # Remove the revive state after it triggers
+        cprint("The warm, golden light around {} has faded.".format(target.name), "yellow")
+
+    def try_revive(self, target):
+        if target.hp <= 0 and random.random() < self.chance:
+            target.hp = int(target.maxhp * 0.5)
+            cprint("A warm, golden light envelopes {}, who is healed for {} HP!".format(target.name, target.hp), "yellow")
+            if self in target.states:
+                target.states.remove(self)
+            self.on_removal(target)
+            functions.refresh_stat_bonuses(target)
+            return True
+        return False

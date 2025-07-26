@@ -469,6 +469,28 @@ class OfRelief(Enchantment):  # Increase weight tolerance by 2-5 lbs
     def requirements(self):
         return True
 
+class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per combat
+    tier = 3
 
+    def __init__(self, item):
+        super().__init__(item, name="of the Phoenix", rarity=0, group="Suffix", value=2)
+        self.equip_states = [states.PhoenixRevive(None)]
+
+    def modify(self):
+        self.item.value *= self.value
+        self.item.value = int(self.item.value)
+        self.item.name = self.item.name + " " + self.name
+        self.item.announce = "There's a {} here, radiating warmth.".format(self.item.name)
+
+    def requirements(self):
+        # Can be applied to armor or accessories
+        allowed_maintypes = [
+            "Armor",
+            "Helm",
+            "Gloves",
+            "Boots",
+            "Accessory"
+        ]
+        return self.item.maintype in allowed_maintypes
 
 # todo: add more enchantments!
