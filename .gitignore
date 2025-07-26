@@ -18,6 +18,10 @@
 /.idea/misc.xml
 *.iml
 misc.xml
+.idea
+.idea/*
+.idea/misc.xml
+config_dev.ini
 
 /venv
 /venv/*
