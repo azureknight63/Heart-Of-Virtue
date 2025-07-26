@@ -85,17 +85,21 @@ _\\|//__( | )______)_/
                 }
                 }
 
-        choice = 0
-        while choice == 0:
-            for i, option in enumerate(menu):
-                if menu[option]['Enabled']:
-                    print(f"{menu[option]['Index']}: {colored(option, 'red')}")
-            choice = validate_numerical_input('Selection: ', 1, len(menu)+1)
-            if choice == menu['NEW GAME']['Index']:
+        choice = None
+        enabled_options = {menu[option]['Index']: option for option in menu if menu[option]['Enabled']}
+        while choice not in enabled_options:
+            for option, data in menu.items():
+                if data['Enabled']:
+                    print(f"{data['Index']}: {colored(option, 'red')}")
+                else:
+                    print(f"X: {colored(option, 'yellow', attrs=['dark'])}")
+            choice = validate_numerical_input('Selection: ', 1, len(menu) + 1)
+            selected_option = enabled_options.get(choice)
+            if selected_option == 'NEW GAME':
                 pass  # Proceed as new game
-            elif choice == menu['LOAD GAME']['Index']:
+            elif selected_option == 'LOAD GAME':
                 newgame = False
-            elif choice == menu['QUIT TO DESKTOP']['Index']:
+            elif selected_option == 'QUIT TO DESKTOP':
                 sys.exit()
         player = functions.load_select() if not newgame else Player()
         universe = Universe()
