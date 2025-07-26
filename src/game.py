@@ -106,14 +106,13 @@ _\\|//__( | )______)_/
         player.universe = universe
         player.universe.build(player)
         starting_map_name = "default"
-        startposition = (0, 0)
         try:
             config.read('../config_dev.ini')
             testing_mode = config.getboolean('Startup', 'testmode')
             starting_map_name = config.get('Startup', 'startmap')
             startposition = ast.literal_eval(config.get('Startup', 'startposition'))
             starting_map = next((map_item for map_item in player.universe.maps if
-                                 map_item.get('name') == starting_map_name), None)
+                                 map_item.get('name') == starting_map_name), player.universe.starting_map_default)
         except FileNotFoundError:
             testing_mode = False
             starting_map = player.universe.starting_map_default
@@ -146,16 +145,18 @@ _\\|//__( | )______)_/
         items.get_all_subtypes()  # creates the 'All' archetypes for each item group; used for states/item effects/etc.
 
         while player.is_alive() and not player.victory and not player.main_menu:
-            elapsed_time = time.time() - check_time
+            now = time.time()
+            elapsed_time = now - check_time
             player.time_elapsed += elapsed_time
             auto_save_timer += elapsed_time
             if auto_save_timer > 3000:  # autosave timer
                 functions.autosave(player)
                 auto_save_timer = 0
-            check_time = time.time()
+            check_time = now
 
             for item in player.inventory:
-                item.owner = player  # enforce player ownership of all inventory items; used for special interactions
+                if item.owner is not player:
+                    item.owner = player  # enforce player ownership of all inventory items; used for special interactions
             if not player.eq_weapon:  # if the player is unarmed, "equip" fists
                 player.eq_weapon = player.fists
 
@@ -210,20 +211,19 @@ _\\|//__( | )______)_/
                 count_args = action_input.split(' ')
                 arbitrary_action = True  # this will be set to False if the action is a default one that the player
                 #                          normally has access to
-                if len(count_args) == 1:  # if the player entered only one word (ex 'look'), do this stuff
+                if len(count_args) == 1:
                     for action in available_actions:
-                        for key in action.hotkey:
-                            if action_input == key:
-                                arbitrary_action = False
-                                player.do_action(action, **action.kwargs)
-                elif len(count_args) > 1:  # if the player entered more than one word (ex 'view restorative'), do this
+                        if action_input in action.hotkey:
+                            arbitrary_action = False
+                            player.do_action(action, **action.kwargs)
+                            break
+                elif len(count_args) > 1:
                     for action in available_actions:
-                        for key in action.hotkey:
-                            if count_args[0] == key:
-                                join_args = ' '.join(count_args[1:])
-                                player.do_action(action, join_args)
-                                arbitrary_action = False
-                                break
+                        if count_args[0] in action.hotkey:
+                            join_args = ' '.join(count_args[1:])
+                            player.do_action(action, join_args)
+                            arbitrary_action = False
+                            break
                 if arbitrary_action:  # if the command the player used could not be found in the list of default
                     #                   actions, check to see if objects in the room have an associated command.
                     #                   In arbitrary one-word commands, ALL objects that associate the command
