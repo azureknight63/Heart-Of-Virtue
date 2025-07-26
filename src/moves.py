@@ -206,57 +206,65 @@ class Move:  # master class for all moves
             viability = True
         return viability
 
-    def standard_evaluate_attack(self, base_power, base_damage_type, mod_power="0",
-                                 mod_prep="0", mod_cd="0", mod_recoil="0", mod_fatigue="0",
-                                 mod_range_min="0", mod_range_max="0"):
-        """
-        Standard evaluation sequence for typical attack-type abilities
-        :return tuple (self.power, self.base_damage_type): <- These are defined outside the base class
-        """
-        power = (self.user.eq_weapon.damage + base_power) + \
-                (self.user.strength * self.user.eq_weapon.str_mod) + \
-                (self.user.finesse * self.user.eq_weapon.fin_mod)
-        if "%" in mod_power:
-            mod_power = mod_power.replace("%", "")
-            mod_power = int(mod_power)
-            power = (power * mod_power) / 100
-        else:
-            power += int(mod_power)
-        if power < 0:
-            power = 0  # todo extend this down
+    def standard_evaluate_attack(
+            self, base_power, base_damage_type, mod_power=0,
+            mod_prep=0, mod_cd=0, mod_recoil=0, mod_fatigue=0,
+            mod_range_min=0, mod_range_max=0
+        ):
+            """
+            Standard evaluation sequence for typical attack-type abilities
+            :return: tuple (self.power, self.base_damage_type)
+            """
+            # Power calculation
+            power = (
+                self.user.eq_weapon.damage + base_power +
+                self.user.strength * self.user.eq_weapon.str_mod +
+                self.user.finesse * self.user.eq_weapon.fin_mod
+            )
+            if isinstance(mod_power, str) and "%" in mod_power:
+                mod_power_val = int(mod_power.replace("%", ""))
+                power = (power * mod_power_val) / 100
+            else:
+                power += int(mod_power)
+            power = max(0, int(power))
 
-        prep = int((40 + (self.user.eq_weapon.weight * 3)) / self.user.speed)  # starting prep of 5
-        prep += mod_prep
-        if prep < 1:
-            prep = 1
+            # Prep calculation
+            prep = int((40 + (self.user.eq_weapon.weight * 3)) / self.user.speed)
+            prep += int(mod_prep)
+            prep = max(1, prep)
 
-        execute = 1
+            execute = 1
 
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.speed / 10)
-        cooldown += mod_cd
-        if cooldown < 0:
-            cooldown = 0
+            # Cooldown calculation
+            cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.speed / 10)
+            cooldown += int(mod_cd)
+            cooldown = max(0, cooldown)
 
-        recoil = int(1 + (self.user.eq_weapon.weight / 2))
-        recoil += mod_recoil
-        if recoil < 1:
-            recoil = 1
+            # Recoil calculation
+            recoil = int(1 + (self.user.eq_weapon.weight / 2))
+            recoil += int(mod_recoil)
+            recoil = max(1, recoil)
 
-        fatigue_cost = (85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
-        fatigue_cost += mod_fatigue
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+            # Fatigue cost calculation
+            fatigue_cost = (85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+            fatigue_cost += int(mod_fatigue)
+            fatigue_cost = max(10, int(fatigue_cost))
 
-        mvrange = self.user.eq_weapon.wpnrange[0] + mod_range_min, self.user.eq_weapon.wpnrange[1] + mod_range_max
+            # Range calculation
+            mvrange = (
+                self.user.eq_weapon.wpnrange[0] + int(mod_range_min),
+                self.user.eq_weapon.wpnrange[1] + int(mod_range_max)
+            )
 
-        weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored("Jean strikes with his " + weapon_name + "!", "green")
-        self.stage_beat = [prep, execute, recoil, cooldown]
-        self.fatigue_cost = fatigue_cost
-        self.mvrange = mvrange
-        if base_damage_type == "weapon":  # if damage is based on equipped weapon
-            base_damage_type = items.get_base_damage_type(self.user.eq_weapon)
-        return power, base_damage_type
+            weapon_name = self.user.eq_weapon.name
+            self.stage_announce[1] = colored(f"Jean strikes with his {weapon_name}!", "green")
+            self.stage_beat = [prep, execute, recoil, cooldown]
+            self.fatigue_cost = fatigue_cost
+            self.mvrange = mvrange
+
+            if base_damage_type == "weapon":
+                base_damage_type = items.get_base_damage_type(self.user.eq_weapon)
+            return power, base_damage_type
 
     def standard_execute_attack(self, player, power, base_damage_type):
         glance = False  # switch for determining a glancing blow
