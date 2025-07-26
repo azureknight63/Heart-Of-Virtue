@@ -17,7 +17,7 @@ def tile_exists(map_to_check, x, y):
     return map_to_check.get((x, y))
 
 
-class Universe:  # "globals" for the game state can be stored here, as well as all of the maps
+class Universe:  # "globals" for the game state can be stored here, as well as all the maps
     def __init__(self):
         self.game_tick = 0
         self.maps = []
@@ -29,7 +29,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         }
         self.locked_chests = []
 
-    def build(self, player):  # builds all of the maps as they are, then loads them into self.maps
+    def build(self, player):  # builds all the maps as they are, then loads them into self.maps
         if player.saveuniv is not None and player.savestat is not None:
             # there's data here, so the game continues from where it left off
             self.maps = player.saveuniv
@@ -48,22 +48,23 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
 
     def load_tiles(self, player, mapname):
         """Parses a file that describes the world space into the _world object"""
-        this_map = {'name': mapname}
-        with open(f'{RESOURCES_DIR}/{mapname}.txt', 'r') as f:
-            rows = f.readlines()
-        x_max = len(rows[0].split('\t'))
-        for y in range(len(rows)):
-            cols = rows[y].split('\t')
-            for x in range(x_max):
-                block_contents = cols[x].replace('\n', '')
-                if block_contents != '':
+        this_map: dict = {'name': mapname}
+        file_path = RESOURCES_DIR.joinpath(mapname + '.txt')
+        with open(file_path, 'r') as f:
+            rows = [line.rstrip('\n') for line in f]
+        # x_max = len(rows[0].split('\t'))
+        for y, row in enumerate(rows):
+            cols = row.split('\t')
+            for x, block_contents in enumerate(cols):
+                if block_contents:
                     block_list = block_contents.split("|")
                     tile_name = block_list[0]
                     this_map[(x, y)] = functions.seek_class(tile_name, 'tilesets')(self, this_map, x, y)
                     if len(block_list) > 1:
                         for i, param in enumerate(block_list):
                             if i != 0:
-                                if param[0] == '~':  # sets the given parameter for the map based on what's in the file
+                                if param[0] == '~':  # sets the given parameter for the tile object based on
+                                                        # what's in the map editor
                                     parameter = param.split('=')
                                     if hasattr(tile_exists(this_map, x, y), parameter[0]):
                                         setattr(tile_exists(this_map, x, y), parameter[0], parameter[1])
