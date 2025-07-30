@@ -1,7 +1,7 @@
 from src.tiles import *
 
 
-class GrondiaPassage(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaPassage(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         A great passage opens up here. Scuffs on the rock and dirt floor suggest this is a well-traveled path. 
@@ -16,7 +16,7 @@ class GrondiaPassage(MapTile):  # room Jean is dumped in after the encounter wit
         pass
 
 
-class GrondiaGateWest(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaGateWest(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         A large, smooth wall stands to the east. To the west, the passage winds back into the cold darkness of the 
@@ -32,7 +32,7 @@ class GrondiaGateWest(MapTile):  # room Jean is dumped in after the encounter wi
         pass
 
 
-class GrondiaAntechamber(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaAntechamber(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         This room was entirely unlike the cavern preceding it. The walls and ceiling were angular and distinct; 
@@ -48,7 +48,7 @@ class GrondiaAntechamber(MapTile):  # room Jean is dumped in after the encounter
         pass
 
 
-class GrondiaArcology(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaArcology(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         The Grondia Arcology is the western district of the city where most Grondites find their homes. The actual 
@@ -65,7 +65,7 @@ class GrondiaArcology(MapTile):  # room Jean is dumped in after the encounter wi
         pass
 
 
-class GrondiaResidences(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaResidences(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         This area is comprised of densely packed residences and is likely where the lower classes of Grondites make 
@@ -80,10 +80,15 @@ class GrondiaResidences(MapTile):  # room Jean is dumped in after the encounter 
         pass
 
 
-class GrondiaConclave(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaConclave(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
-        Description TBD.
+        The Conclave is the spiritual heart of Grondia, where the Grondites gather to worship and seek guidance from
+        their ancestors. The walls are adorned with intricate carvings and murals depicting the history of the
+        Grondites, their struggles, and their triumphs. The air is thick with the scent of incense and the sound of
+        chanting fills the air. The Grondites here are deeply reverent, their eyes closed in prayer or
+        meditation. The atmosphere is one of peace and reflection, a stark contrast to the bustling
+        activity of the city outside.
         """)
         self.symbol = '#'
 
@@ -92,11 +97,19 @@ class GrondiaConclave(MapTile):  # room Jean is dumped in after the encounter wi
         pass
 
 
-class GrondiaCitadel(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaCitadel(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         In sharp contrast to the rock holes that comprise the various residences and domestic shops throughout 
         the rest of Grondia, the Citadel is an impressive construction rising up from the center of the city.
+        Its walls are smooth and polished, with intricate carvings depicting the history of the Grondites.
+        The Citadel serves as the seat of power for the Grondite leadership, housing their council chambers, 
+        administrative offices, and a grand hall for public gatherings. The atmosphere here is one of authority and 
+        reverence, with Grondites moving about with a sense of purpose and respect for their leaders.
+        The air is filled with the faint scent of incense, and the walls are adorned with banners
+        representing the various clans and factions within Grondia. The Citadel stands as a testament
+        to the strength and unity of the Grondite people, a symbol of their resilience and
+        determination to thrive in the harsh underground environment.
         """)
         self.symbol = '#'
 
@@ -105,10 +118,16 @@ class GrondiaCitadel(MapTile):  # room Jean is dumped in after the encounter wit
         pass
 
 
-class GrondiaEcumerium(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaEcumerium(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
-        Description TBD.
+        The Ecumerium is a dedicated space for the Grondites to interact with the outside world. It is a large, 
+        open area with a high ceiling, filled with stalls and booths where merchants from various regions set up shop.
+        The air is filled with the sounds of haggling and the smells of exotic goods.
+        Grondites and visitors alike browse the wares, which range from rare minerals to intricate
+        jewelry and weapons. The walls are adorned with murals depicting the history of Grondia and
+        its interactions with other cultures. The atmosphere is lively and bustling, with a sense of camaraderie 
+        among the traders and customers.
         """)
         self.symbol = '#'
 
@@ -117,10 +136,15 @@ class GrondiaEcumerium(MapTile):  # room Jean is dumped in after the encounter w
         pass
 
 
-class GrondiaFabricarium(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaFabricarium(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
-        Description TBD.
+        The Fabricarium is the industrial heart of Grondia, where raw materials are processed and transformed into
+        finished goods. The air is thick with the smell of molten metal and the sound of machinery
+        reverberates through the cavernous space. Grondites work tirelessly, their hands skilled and efficient, 
+        crafting everything from weapons to intricate jewelry. The walls are lined with shelves filled with tools and 
+        materials, and the floor is scattered with scraps of metal and stone. The atmosphere is one of industriousness 
+        and purpose, with Grondites moving about with a sense of pride in their work.
         """)
         self.symbol = '#'
 
@@ -129,7 +153,7 @@ class GrondiaFabricarium(MapTile):  # room Jean is dumped in after the encounter
         pass
 
 
-class GrondiaGateEast(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaGateEast(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         A large, smooth wall stands to the west. To the east, a path rounds a corner out of sight. 
@@ -144,7 +168,7 @@ class GrondiaGateEast(MapTile):  # room Jean is dumped in after the encounter wi
         pass
 
 
-class GrondiaGateSouth(MapTile):  # room Jean is dumped in after the encounter with Gorran
+class GrondiaGateSouth(MapTile):
     def __init__(self, universe, current_map, x, y):
         super().__init__(universe, current_map, x, y, description="""
         A large, smooth wall stands to the north. To the south, a cavern opens up to a large chamber dotted with
@@ -152,6 +176,22 @@ class GrondiaGateSouth(MapTile):  # room Jean is dumped in after the encounter w
         heard somewhere behind the wall, reverberating dully against the rock. There is no obvious handle or chain 
         with which to open the door faintly outlined against the sheer blockade. The size of the door and the 
         lack of a handle is evidence that this is not an entrance designed for humans.
+        """)
+        self.symbol = '#'
+
+    def modify_player(self, the_player):
+        # Room has no action on player
+        pass
+
+
+class GrondelithMineralPoolsEntrance(MapTile):  # leads southwest to the Grondelith Mineral Pools
+    def __init__(self, universe, current_map, x, y):
+        super().__init__(universe, current_map, x, y, description="""
+        The chamber opens up into a breathtaking expanse filled with massive, shimmering crystal formations that 
+        jut from the ground and walls. Pools of mineral-rich water reflect the vibrant colors of the crystals, 
+        casting prismatic patterns across the cavern. Grondites gather here to feast on the crystals, their 
+        primary source of sustenance. The air is thick with the sound of gentle chipping and the low hum of 
+        conversation, creating a tranquil, communal atmosphere unique to this subterranean dining hall.
         """)
         self.symbol = '#'
 
