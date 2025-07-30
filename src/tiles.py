@@ -46,34 +46,25 @@ class MapTile:
     def adjacent_moves(self):
         """Returns all move actions for adjacent tiles."""
         moves = []
-        if tile_exists(self.map, self.x + 1, self.y) and "east" not in self.block_exit:
-            moves.append(actions.MoveEast())
-            tile_exists(self.map, self.x + 1, self.y).discovered = True  # discover the adjacent tile
-        if tile_exists(self.map, self.x - 1, self.y) and "west" not in self.block_exit:
-            moves.append(actions.MoveWest())
-            tile_exists(self.map, self.x - 1, self.y).discovered = True
-        if tile_exists(self.map, self.x, self.y - 1) and "north" not in self.block_exit:
-            moves.append(actions.MoveNorth())
-            tile_exists(self.map, self.x, self.y - 1).discovered = True
-        if tile_exists(self.map, self.x, self.y + 1) and "south" not in self.block_exit:
-            moves.append(actions.MoveSouth())
-            tile_exists(self.map, self.x, self.y + 1).discovered = True
-        if tile_exists(self.map, self.x + 1, self.y - 1) and "northeast" not in self.block_exit:
-            moves.append(actions.MoveNorthEast())
-            tile_exists(self.map, self.x + 1, self.y - 1).discovered = True
-        if tile_exists(self.map, self.x - 1, self.y - 1) and "northwest" not in self.block_exit:
-            moves.append(actions.MoveNorthWest())
-            tile_exists(self.map, self.x - 1, self.y - 1).discovered = True
-        if tile_exists(self.map, self.x + 1, self.y + 1) and "southeast" not in self.block_exit:
-            moves.append(actions.MoveSouthEast())
-            tile_exists(self.map, self.x + 1, self.y + 1).discovered = True
-        if tile_exists(self.map, self.x - 1, self.y + 1) and "southwest" not in self.block_exit:
-            moves.append(actions.MoveSouthWest())
-            tile_exists(self.map, self.x - 1, self.y + 1).discovered = True
+        directions = [
+            ((1, 0), "east", actions.MoveEast),
+            ((-1, 0), "west", actions.MoveWest),
+            ((0, -1), "north", actions.MoveNorth),
+            ((0, 1), "south", actions.MoveSouth),
+            ((1, -1), "northeast", actions.MoveNorthEast),
+            ((-1, -1), "northwest", actions.MoveNorthWest),
+            ((1, 1), "southeast", actions.MoveSouthEast),
+            ((-1, 1), "southwest", actions.MoveSouthWest),
+        ]
+        for (dx, dy), direction, action_cls in directions:
+            if tile_exists(self.map, self.x + dx, self.y + dy) and direction not in self.block_exit:
+                moves.append(action_cls())
+                tile = tile_exists(self.map, self.x + dx, self.y + dy)
+                tile.discovered = True
         return moves
 
     def available_actions(self) -> list[actions.Action]:
-        """Returns all of the available actions in this room."""
+        """Returns all the available actions in this room."""
         moves = self.adjacent_moves()  # first, add the available directions in the current room
         default_moves = [  # these are the default moves available to the player
             actions.ListCommands(),
