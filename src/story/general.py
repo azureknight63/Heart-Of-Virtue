@@ -39,22 +39,8 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 
     def process(self):
         for direction in self.directions:
-            if direction == 'east' and 'east' not in self.tile.block_exit:
-                self.tile.block_exit.append('east')
-            if direction == 'west' and 'west' not in self.tile.block_exit:
-                self.tile.block_exit.append('west')
-            if direction == 'north' and 'north' not in self.tile.block_exit:
-                self.tile.block_exit.append('north')
-            if direction == 'south' and 'south' not in self.tile.block_exit:
-                self.tile.block_exit.append('south')
-            if direction == 'northeast' and 'northeast' not in self.tile.block_exit:
-                self.tile.block_exit.append('northeast')
-            if direction == 'northwest' and 'northwest' not in self.tile.block_exit:
-                self.tile.block_exit.append('northwest')
-            if direction == 'southeast' and 'southeast' not in self.tile.block_exit:
-                self.tile.block_exit.append('southeast')
-            if direction == 'southwest' and 'southwest' not in self.tile.block_exit:
-                self.tile.block_exit.append('southwest')
+            if direction not in self.tile.block_exit:
+                self.tile.block_exit.append(direction)
 
 
 class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a param).
