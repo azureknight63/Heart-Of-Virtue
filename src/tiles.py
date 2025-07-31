@@ -165,3 +165,10 @@ class MapTile:
                     master_item.stack_grammar()
                 for duplicate in remove_duplicates:
                     self.items_here.remove(duplicate)
+
+    def remove_event(self, event_name):
+        """Removes an event from the tile."""
+        for event in self.events_here:
+            if getattr(event, "name", None) == event_name:
+                self.events_here.remove(event)
+                break
