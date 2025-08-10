@@ -8,7 +8,17 @@ import functions
 
 
 def dialogue(speaker, text, speaker_color="cyan", text_color="white"):
-    functions.print_slow((colored(speaker+": ", speaker_color) + colored(text, text_color)), "fast")
+    """
+    Displays a dialogue line with colored speaker and text, then waits for user input.
+    This handles line breaks on its own, no need for newlines in the text.
+
+    Args:
+        speaker (str): Name of the speaker.
+        text (str): Dialogue text to display.
+        speaker_color (str, optional): Color for the speaker's name. Defaults to "cyan".
+        text_color (str, optional): Color for the dialogue text. Defaults to "white".
+    """
+    functions.print_slow((colored(speaker + ": ", speaker_color) + colored(text, text_color)), "fast")
     functions.await_input()
 
 
