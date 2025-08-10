@@ -740,14 +740,14 @@ class SilverBracelet(Accessory):
 
 
 class Restorative(Consumable):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves.",
                          value=100, weight=0.25, maintype="Consumable", subtype="Potion")
         self.power = 60
-        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
         self.interactions = ["use", "drink", "drop"]
@@ -792,13 +792,13 @@ class Restorative(Consumable):
 
 
 class Draught(Consumable):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Draught",
                          description="A green fluid giving off a warm, pleasant glow.\n"
                                      "Invigorating for any tired adventurer.",
                          value=75, weight=0.25, maintype="Consumable", subtype="Potion")
         self.power = 100
-        self.count = 1
+        self.count = count
         self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
 
@@ -837,14 +837,14 @@ class Draught(Consumable):
 
 
 class Antidote(Consumable):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Antidote",
                          description="A murky green fluid of questionable chemistry.\n"
                                      "Drinking it restores a small amount of health and \n"
                                      "neutralizes harmful toxins in the bloodstream.",
                          value=175, weight=0.25, maintype="Consumable", subtype="Potion")
         self.power = 15
-        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
         self.interactions = ["use", "drink", "drop"]
@@ -901,10 +901,12 @@ class Antidote(Consumable):
 
 
 class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasses (like WoodenArrow, IronArrow, etc.)
-    def __init__(self, name, description, value, weight, power, range_base_modifier, range_decay_modifier, sturdiness, helptext, effects):
+    def __init__(self, name, description, value, weight, power, range_base_modifier,
+                 range_decay_modifier, sturdiness, helptext, effects,
+                 count=1):
         super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable", subtype="Arrow")
         self.power = power
-        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
                         # the game searches the inventory for other copies and increases that count by self.count,
                         # then removes this object
         self.interactions = ["drop", "prefer"]
