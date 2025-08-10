@@ -109,6 +109,9 @@ _\\|//__( | )______)_/
         try:
             config.read('../config_dev.ini')
             testing_mode = config.getboolean('Startup', 'testmode')
+            skip_dialog = config.getboolean('Startup', 'skipdialog')
+            if skip_dialog:
+                player.skip_dialog = True
             starting_map_name = config.get('Startup', 'startmap')
             startposition = ast.literal_eval(config.get('Startup', 'startposition'))
             starting_map = next((map_item for map_item in player.universe.maps if
