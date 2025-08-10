@@ -4,10 +4,10 @@
 	GrondiaPassage									GrondiaConclave							Boundary
 	GrondiaPassage								GrondiaConclave	GrondiaConclave	GrondiaConclave						Boundary
 		GrondiaPassage						GrondiaArcology	GrondiaResidences	GrondiaConclave	GrondiaResidences	GrondiaEcumerium					Boundary
-			GrondiaPassage	GrondiaPassage	GrondiaGateWest	GrondiaAntechamber	GrondiaArcology	GrondiaArcology	GrondiaArcology	GrondiaCitadel	GrondiaEcumerium	GrondiaEcumerium	GrondiaEcumerium	GrondiaAntechamber	GrondiaGateEast		Boundary
+			GrondiaPassage	GrondiaPassage	GrondiaGateWest	GrondiaAntechamber	GrondiaArcology|!Ch02GuideToCitadel	GrondiaArcology	GrondiaArcology	GrondiaCitadel	GrondiaEcumerium	GrondiaEcumerium	GrondiaEcumerium	GrondiaAntechamber	GrondiaGateEast		Boundary
 								GrondiaArcology	GrondiaResidences	GrondiaFabricarium	GrondiaResidences	GrondiaEcumerium					Boundary
 									GrondiaFabricarium	GrondiaFabricarium	GrondiaFabricarium						Boundary
-										GrondiaFabricarium							Boundary
-										GrondiaAntechamber							Boundary
+								GrondiaPassage		GrondiaFabricarium							Boundary
+							GrondelithMineralPoolsEntrance			GrondiaAntechamber							Boundary
 										GrondiaGateSouth							Boundary
 																	Boundary
