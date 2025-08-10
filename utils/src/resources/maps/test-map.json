@@ -1,0 +1,209 @@
+{
+    "(10, 8)": {
+        "id": "tile_10_8",
+        "description": "A newly created room at (10, 8).",
+        "exits": [
+            "north",
+            "east",
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 7)": {
+        "id": "tile_10_7",
+        "description": "A newly created room at (10, 7).",
+        "exits": [
+            "south",
+            "north",
+            "northeast",
+            "southeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 6)": {
+        "id": "tile_10_6",
+        "description": "A newly created room at (10, 6).",
+        "exits": [
+            "south",
+            "east",
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 6)": {
+        "id": "tile_11_6",
+        "description": "A newly created room at (11, 6).",
+        "exits": [
+            "southwest",
+            "west",
+            "east",
+            "southeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(12, 6)": {
+        "id": "tile_12_6",
+        "description": "A newly created room at (12, 6).",
+        "exits": [
+            "west",
+            "south",
+            "northeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(12, 7)": {
+        "id": "tile_12_7",
+        "description": "A newly created room at (12, 7).",
+        "exits": [
+            "northwest",
+            "north",
+            "south",
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(12, 8)": {
+        "id": "tile_12_8",
+        "description": "A newly created room at (12, 8).",
+        "exits": [
+            "north",
+            "west",
+            "southeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 8)": {
+        "id": "tile_11_8",
+        "description": "A newly created room at (11, 8).",
+        "exits": [
+            "west",
+            "northwest",
+            "northeast",
+            "east"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 9)": {
+        "id": "tile_9_9",
+        "description": "A newly created room at (9, 9).",
+        "exits": [
+            "northeast",
+            "south"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(13, 9)": {
+        "id": "tile_13_9",
+        "description": "A newly created room at (13, 9).",
+        "exits": [
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(13, 5)": {
+        "id": "tile_13_5",
+        "description": "A newly created room at (13, 5).",
+        "exits": [
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 5)": {
+        "id": "tile_9_5",
+        "description": "A newly created room at (9, 5).",
+        "exits": [
+            "southeast",
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 4)": {
+        "id": "tile_8_4",
+        "description": "A newly created room at (8, 4).",
+        "exits": [
+            "southeast"
+        ],
+        "events": [],
+        "items": [
+            "GoldBracelet"
+        ],
+        "npcs": [
+            "RockRumbler"
+        ],
+        "objects": [],
+        "title": "My Neat Room",
+        "block_exit": [],
+        "symbol": ""
+    },
+    "(9, 10)": {
+        "id": "tile_9_10",
+        "description": "A newly created room at (9, 10).",
+        "exits": [
+            "north",
+            "southeast",
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 11)": {
+        "id": "tile_10_11",
+        "description": "A newly created room at (10, 11).",
+        "exits": [
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 11)": {
+        "id": "tile_8_11",
+        "description": "A newly created room at (8, 11).",
+        "exits": [
+            "northeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    }
+}
