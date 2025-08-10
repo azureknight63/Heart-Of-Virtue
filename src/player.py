@@ -25,7 +25,7 @@ def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
     :param cols: Number of columns. Will set automatically if left at zero
     :param border: This string pattern will form the border between rows and columns
     :param data_color: The _color and _attr options mirror neotermcolor.colored()
-    :param data_attr: Attribues to apply to the data such as normal, bold, dark, underline, blink, reverse, concealed
+    :param data_attr: Attributes to apply to the data such as normal, bold, dark, underline, blink, reverse, concealed
     :param border_color: Color for the grid border
     :param border_attr: Attributes to apply to the border
     :return: A string formatted in a grid shape
@@ -46,7 +46,7 @@ def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
     cell_max_length = 1
     row_length = 1
     data_raw = data[:]
-    for item in data_raw:  # this will iterate over all of the strings in the data list to find the length of
+    for item in data_raw:  # this will iterate over all the strings in the data list to find the length of
         # the longest one; necessary for padding cells
         item = functions.escape_ansi(item)
         if len(item) > cell_max_length:
@@ -145,7 +145,7 @@ class Player:
             "generic": 1.0,  # Default status type for all states
             "stun": 1.0,  # Unable to move; typically short duration
             "poison": 1.0,  # Drains Health every combat turn/game tick; persists
-            "enflamed": 1.0,  # Fire damage over time
+            "inflamed": 1.0,  # Fire damage over time
             "sloth": 1.0,  # Drains Fatigue every combat turn
             "apathy": 1.0,  # Drains HEAT every combat turn
             "blind": 1.0,  # Miss physical attacks more frequently; persists
@@ -170,7 +170,7 @@ class Player:
             "generic": 1.0,
             "stun": 1.0,
             "poison": 1.0,
-            "enflamed": 1.0,
+            "inflamed": 1.0,
             "sloth": 1.0,
             "apathy": 1.0,
             "blind": 1.0,
@@ -232,6 +232,7 @@ class Player:
         self.map = None
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
+        self.skip_dialog = False  # if True, skips sequence dialogue and prints (typically handled in ini file)
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
@@ -514,22 +515,36 @@ maintenant et à l'heure de notre mort. Amen.""",
             print("### ERR IN SETTING VAR; NO ENTRY: " + params[0] + " " + params[1] + " ###")
 
     def teleport(self, phrase=''):
-        params = phrase.split(" ")
+        """
+        Teleports the player to a specified area and coordinates.
+
+        Args:
+            phrase (str): A string containing the area name, x, and y coordinates separated by spaces.
+                          Example: "Forest 3 5"
+
+        Behavior:
+            - If the area and coordinates are valid, moves the player there and prints the tile's intro text.
+            - If invalid, prints an error message.
+        """
+        params = phrase.split()
+        area_name = params[0] if len(params) > 0 else None
+        x = int(params[1]) if len(params) > 1 and params[1].isdigit() else None
+        y = int(params[2]) if len(params) > 2 and params[2].isdigit() else None
+
         for area in self.universe.maps:
-            if area['name'] == params[0]:
-                tele_to = area
-                tile = tile_exists(tele_to, int(params[1]), int(params[2]))
+            if area.get('name') == area_name and x is not None and y is not None:
+                tile = tile_exists(area, x, y)
                 if tile:
-                    self.map = tele_to
+                    self.map = area
                     self.universe.game_tick += 1
-                    self.location_x = int(params[1])
-                    self.location_y = int(params[2])
-                    print(tile_exists(self.map, self.location_x, self.location_y).intro_text())
+                    self.location_x = x
+                    self.location_y = y
+                    print(tile.intro_text())
                     return
                 else:
-                    print("### INVALID TELEPORT LOCATION: " + phrase + " ###")
+                    print(f"### INVALID TELEPORT LOCATION: {phrase} ###")
                     return
-        print("### INVALID TELEPORT LOCATION: " + phrase + " ###")
+        print(f"### INVALID TELEPORT LOCATION: {phrase} ###")
 
     def level_up(self):
         cprint(r"""
@@ -766,50 +781,37 @@ he lets out a barely audible whisper:""", "red")
                 finished = True
 
     def print_inventory(self):
-        num_gold = 0
-        num_consumable = 0
-        num_weapon = 0
-        num_armor = 0
-        num_boots = 0
-        num_helm = 0
-        num_gloves = 0
-        num_accessories = 0
-        num_special = 0
-        while True:
-            for item in self.inventory:  # get the counts of each item in each category
-                if isinstance(item, items.Gold):
-                    num_gold = item.amt
+        # First, create a set containing all item types in the inventory using the items' maintype property
+        item_types = set()
+        for item in self.inventory:
+            if hasattr(item, 'maintype'):
+                item_types.add(item.maintype)
+        # Convert the set to a dictionary to count items in each category
+        item_counts = {item_type: 0 for item_type in item_types}
+
+        # Now, count the items in each category
+        for item in self.inventory:
+            if hasattr(item, 'maintype'):
+                if item.subtype == "Gold":
+                    item_counts["Gold"] = item.amt  # Gold always stacks, so we add the amount directly
                 else:
-                    if issubclass(item.__class__, items.Consumable):
-                        num_consumable += 1
-                    if issubclass(item.__class__, items.Weapon):
-                        num_weapon += 1
-                    if issubclass(item.__class__, items.Armor):
-                        num_armor += 1
-                    if issubclass(item.__class__, items.Boots):
-                        num_boots += 1
-                    if issubclass(item.__class__, items.Helm):
-                        num_helm += 1
-                    if issubclass(item.__class__, items.Gloves):
-                        num_gloves += 1
-                    if issubclass(item.__class__, items.Accessory):
-                        num_accessories += 1
-                    if issubclass(item.__class__, items.Special):
-                        num_special += 1
-                    else:
-                        pass
+                    item_counts[item.maintype] += 1
+
+        still_choosing = True
+        while still_choosing:
             self.refresh_weight()
             cprint("=====\nInventory\n=====\n"
                    "Weight: {} / {}".format(self.weight_current, self.weight_tolerance), "cyan")
-            cprint(
-                "Gold: {}\n\nSelect a category to view:\n\n(c) Consumables: {}\n"
-                "(w) Weapons: {}\n(a) Armor: {}\n(b) Boots: {}\n(h) Helms: {}\n(g) Gloves: {}\n(y) Accessories: "
-                "{}\n(s) Special: {}\n(x) Cancel\n"
-                .format(num_gold, num_consumable, num_weapon, num_armor, num_boots, num_helm, num_gloves,
-                        num_accessories, num_special), "cyan")
-
+            cprint(f"Gold: {item_counts['Gold']}\n\nSelect a category to view:\n\n", "cyan")
+            for item_type, count in item_counts.items():
+                if count > 0:
+                    # Set the hotkey to the first letter of the item type
+                    hotkey = item_type[0].lower()
+                    cprint(f"({hotkey}) {item_type}: {count}", "cyan")
+            cprint("(x) Cancel\n", "cyan")
             choices = []
             inventory_selection = input(colored('Selection: ', "cyan"))
+            #TODO: Continue refactoring here
             for case in switch(inventory_selection):
                 if case('c', 'Consumables', 'consumables'):
                     for item in self.inventory:
@@ -1177,7 +1179,7 @@ he lets out a barely audible whisper:""", "red")
             num_consumables = 0
             num_special = 0
             exit_loop = False
-            while exit_loop is False:
+            while not exit_loop:
                 for item in self.inventory:  # get the counts of each item in each category
                     if issubclass(item.__class__, items.Consumable):
                         num_consumables += 1
@@ -1554,49 +1556,135 @@ he lets out a barely audible whisper:""", "red")
         self.weight_current = round(self.weight_current, 2)
 
     def take(self, phrase=''):
-        if phrase == '':  # player entered general take command with no args. Show a list of items that can be taken.
-            if len(self.current_room.items_here) > 0:
-                print("What are you trying to take?")
-                for i, item in enumerate(self.current_room.items_here):
-                    print('{}: {}\n'.format(i, item.name))
-                selection = input('Selection: ')
-                if not functions.is_input_integer(selection):
-                    cprint("Jean isn't sure exactly what he's trying to do.", 'red')
-                else:
-                    item = self.current_room.items_here[int(selection)]
-                    if hasattr(item, "weight"):
-                        checkweight = item.weight
-                        weightcap = self.weight_tolerance - self.weight_current
-                        if hasattr(item, "count"):
-                            checkweight *= item.weight
-                        if checkweight <= weightcap:
-                            self.inventory.append(item)
-                            print('Jean takes {}.'.format(item.name))
-                            self.current_room.items_here.remove(item)
-                            item.owner = self
-                    else:
-                        self.inventory.append(item)
-                        print('Jean takes {}.'.format(item.name))
-                        self.current_room.items_here.remove(item)
-                        item.owner = self
+        """Take an item from the current room and add it to inventory.
 
+        Args:
+            phrase (str): The item to take. If empty, shows a list of items that can be taken.
+                          If 'all', takes all items that won't exceed weight capacity.
+        """
+        # TODO: Test this refactored code.
+        # No items in the room
+        if not self.current_room.items_here:
+            cprint("There doesn't seem to be anything here for Jean to take.", 'red')
+            return
+
+        # Take all items
+        if phrase.lower() == 'all':
+            self._take_all_items()
+            return
+
+        # Take specific item by name
+        if phrase and phrase.lower() != 'all':
+            self._take_specific_item(phrase.lower())
+            return
+
+        # Show menu of items to take
+        print("What are you trying to take?")
+        for i, item in enumerate(self.current_room.items_here):
+            print(f"{i}: {item.name}\n")
+
+        selection = input(colored('Selection: ', "cyan"))
+        if not functions.is_input_integer(selection):
+            cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+            return
+
+        try:
+            item = self.current_room.items_here[int(selection)]
+            self._take_item(item)
+        except IndexError:
+            cprint("That's not a valid selection.", 'red')
+
+    def _take_all_items(self):
+        """Helper method to take all items that don't exceed weight capacity."""
+        items_to_take = []
+        total_weight = 0
+
+        # First determine which items can be taken
+        for item in self.current_room.items_here:
+            if hasattr(item, "weight"):
+                item_weight = item.weight
+                if hasattr(item, "count"):
+                    item_weight *= item.count
+
+                if self.weight_current + total_weight + item_weight <= self.weight_tolerance:
+                    items_to_take.append(item)
+                    total_weight += item_weight
+                else:
+                    cprint(f"Jean can't carry {item.name}. He's reached his weight limit.", 'red')
             else:
-                cprint("There doesn't seem to be anything here for Jean to take.", 'red')
+                items_to_take.append(item)
+
+        # Then take the items
+        for item in items_to_take:
+            self.inventory.append(item)
+            print(f'Jean takes {item.name}.')
+            self.current_room.items_here.remove(item)
+            item.owner = self
+
+        if not items_to_take:
+            cprint("Jean can't carry anything more. He needs to drop something first.", 'red')
+
+    def _take_specific_item(self, phrase):
+        """Helper method to take a specific item by name."""
+        for i, item in enumerate(self.current_room.items_here):
+            search_item = (item.name.lower() + ' ' +
+                          getattr(item, 'announce', '').lower())
+
+            if phrase in search_item:
+                self._take_item(item, i)
+                return
+
+        cprint(f"Jean doesn't see any {phrase} to take.", 'red')
+
+    def _take_item(self, item, index=None):
+        """Helper method to take a single item, checking weight restrictions.
+
+        Args:
+            item: The item to take
+            index: Optional index in items_here list (for using pop)
+        """
+        if hasattr(item, "weight"):
+            item_weight = item.weight
+            if hasattr(item, "count"):
+                item_weight *= item.count
+
+            weightcap = self.weight_tolerance - self.weight_current
+            if item_weight > weightcap:
+                cprint("Jean can't carry that much weight! He needs to drop something first.", 'red')
+                return
+
+        self.inventory.append(item)
+        print(f'Jean takes {item.name}.')
+
+        # Remove item from room (using either remove or pop)
+        if index is not None:
+            self.current_room.items_here.pop(index)
         else:
-            if phrase == 'all':
-                for item in self.current_room.items_here:
-                    self.inventory.append(item)
-                    print('Jean takes {}.'.format(item.name))
-                self.current_room.items_here = []
+            self.current_room.items_here.remove(item)
+
+        item.owner = self
+
+    def add_items_to_inventory(self, items_received: list):
+        """Add a list of items to the player's inventory, checking weight limits."""
+        for item in items_received:
+            item_weight = getattr(item, "weight", 0)
+            item_designation = item.name
+            if hasattr(item, "count"):
+                item_weight *= item.count
+                if item.count > 1:
+                    item_designation += f" (x{item.count})"
+            weightcap = self.weight_tolerance - self.weight_current
+            if item_weight > weightcap:
+                cprint(f"Jean can't carry {item_designation}. He, rather unceremoniously, drops it on the ground.",
+                       'red')
+                self.current_room.items_here.append(item)
+                continue
+            if item not in self.inventory:
+                self.inventory.append(item)
+                print(f'Jean adds {item_designation} to his inventory.')
             else:
-                lower_phrase = phrase.lower()
-                for i, item in enumerate(self.current_room.items_here):
-                    search_item = item.name.lower() + ' ' + item.announce.lower()
-                    if lower_phrase in search_item:
-                        self.inventory.append(item)
-                        print('Jean takes {}.'.format(item.name))
-                        self.current_room.items_here.pop(i)
-                        break
+                print(f'{item_designation} is already in Jean\'s inventory.')
+        self.stack_inv_items()
 
     def view_map(self):
         """First draw a map of known tiles by iterating over self.map and checking self.map.last_entered to see if the
