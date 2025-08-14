@@ -103,7 +103,7 @@ class WallSwitch(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, params, repeat)
+                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
                 if self.event_on is None:
                     self.event_on = event
                 else:
@@ -362,7 +362,7 @@ class Shrine(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, params, repeat)
+                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
                 self.event = event
 
     def pray(self, player):
@@ -406,7 +406,7 @@ class HealingSpring(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, params, repeat)
+                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
                 self.event = event
 
     def drink(self, player):
@@ -462,7 +462,7 @@ class Passageway(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, params, repeat)
+                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
                 self.event = event
 
     def pray(self, player):
