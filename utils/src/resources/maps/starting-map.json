@@ -2,7 +2,7 @@
     "(1, 1)": {
         "id": "tile_1_1",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "south",
             "east",
@@ -17,10 +17,10 @@
     "(2, 1)": {
         "id": "tile_2_1",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "south",
             "west",
+            "south",
             "east",
             "southeast",
             "southwest"
@@ -40,10 +40,11 @@
     "(3, 1)": {
         "id": "tile_3_1",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "south",
             "west",
+            "south",
+            "southeast",
             "southwest"
         ],
         "block_exit": [
@@ -57,10 +58,11 @@
     "(6, 1)": {
         "id": "tile_6_1",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "south",
-            "east"
+            "east",
+            "southwest"
         ],
         "block_exit": [
             "southwest"
@@ -73,7 +75,7 @@
     "(7, 1)": {
         "id": "tile_7_1",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "west",
             "southwest"
@@ -123,12 +125,12 @@
     "(1, 2)": {
         "id": "tile_1_2",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "north",
+            "northeast",
             "south",
             "east",
-            "northeast",
             "southeast"
         ],
         "block_exit": [],
@@ -140,14 +142,14 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "StartingRoom",
-        "description": "Legacy imported tile StartingRoom",
+        "description": "Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large\n        rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source\n        of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The\n        darkness seems to extend endlessly in all directions.",
         "exits": [
-            "north",
-            "south",
-            "west",
-            "east",
-            "northeast",
             "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
             "southeast",
             "southwest"
         ],
@@ -162,10 +164,11 @@
         "title": "BlankTile",
         "description": "The wall here feels warmer than the rest of the cavern. There are scuff marks on the floor that stop abruptly where the wall and floor meet. Jean can hear the muffled sound of flowing water",
         "exits": [
-            "north",
-            "south",
-            "west",
             "northwest",
+            "north",
+            "west",
+            "south",
+            "east",
             "southwest"
         ],
         "block_exit": [
@@ -193,8 +196,10 @@
         "title": "BlankTile",
         "description": "A long rock ledge juts out from the opening to the west, crossing the chasm below and connecting to another rock wall to the east. The sunlight is blinding, with an open sky overhead. Far below, a river rushes beneath the ledge, spraying water in all directions as it crashes against the walls. The twittering of nearby birds can be heard. Banding to the east and west, a line of rock spires can be seen, including the two adjacent walls, all presumably connected by similar rock ledges. There's a warm breeze blowing mildly from the north",
         "exits": [
+            "northwest",
             "west",
-            "east"
+            "east",
+            "southwest"
         ],
         "block_exit": [
             "northwest",
@@ -210,7 +215,10 @@
         "title": "BlankTile",
         "description": "The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point, large mountains can be seen to the northwest, covered in white clouds at their crowns",
         "exits": [
-            "west"
+            "northeast",
+            "west",
+            "east",
+            "southeast"
         ],
         "block_exit": [
             "east",
@@ -237,11 +245,13 @@
     "(6, 2)": {
         "id": "tile_6_2",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "north",
+            "northeast",
+            "west",
             "south",
-            "west"
+            "southeast"
         ],
         "block_exit": [
             "southeast",
@@ -255,11 +265,11 @@
     "(1, 3)": {
         "id": "tile_1_3",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "north",
-            "east",
-            "northeast"
+            "northeast",
+            "east"
         ],
         "block_exit": [],
         "events": [],
@@ -270,13 +280,13 @@
     "(2, 3)": {
         "id": "tile_2_3",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
+            "northwest",
             "north",
-            "west",
-            "east",
             "northeast",
-            "northwest"
+            "west",
+            "east"
         ],
         "block_exit": [],
         "events": [],
@@ -345,11 +355,12 @@
     "(3, 3)": {
         "id": "tile_3_3",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
+            "northwest",
             "north",
-            "west",
-            "northwest"
+            "northeast",
+            "west"
         ],
         "block_exit": [
             "northeast"
@@ -362,32 +373,27 @@
     "(6, 3)": {
         "id": "tile_6_3",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "north",
             "south",
-            "east",
-            "southwest"
+            "east"
         ],
-        "block_exit": [
-            "northwest"
-        ],
+        "block_exit": [],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(7, 3)": {
         "id": "tile_7_3",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "west",
-            "southwest"
+            "west"
         ],
-        "block_exit": [
-            "northwest"
-        ],
+        "block_exit": [],
         "events": [],
         "items": [
             {
@@ -421,46 +427,45 @@
                 "__module__": "src.objects",
                 "props": {}
             }
-        ]
+        ],
+        "symbol": ""
     },
     "(5, 4)": {
         "id": "tile_5_4",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "south",
-            "east",
-            "northeast"
+            "east"
         ],
         "block_exit": [],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(6, 4)": {
         "id": "tile_6_4",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "north",
-            "west",
-            "northeast",
-            "southwest"
+            "west"
         ],
         "block_exit": [],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(5, 5)": {
         "id": "tile_5_5",
         "title": "EmptyCave",
-        "description": "Legacy imported tile EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "north",
-            "northeast"
+            "north"
         ],
         "block_exit": [],
         "events": [],
@@ -526,6 +531,7 @@
                 "props": {}
             }
         ],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     }
 }

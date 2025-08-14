@@ -18,6 +18,7 @@ if src_root not in sys.path:
 def create_button(text, command, parent):
     """
     Helper function to create styled buttons.
+    Returns the created button so callers can further customize or retain a reference.
     """
     button = tk.Button(
         parent,
@@ -34,6 +35,7 @@ def create_button(text, command, parent):
         width=20
     )
     button.pack(fill="x", pady=5)
+    return button
 
 
 def create_separator(parent):
@@ -90,6 +92,16 @@ class MapEditor:
         self.min_tile_size = 20
         self.max_tile_size = 200
 
+        # --- New multi-select state ---
+        self.selected_tiles = set()  # set[(x,y)]
+        self.selection_anchor = None  # anchor for shift-select
+        self.clipboard = None  # {'tiles': { (dx,dy): tile_data_copy }, 'w':w, 'h':h} or {'empty':True}
+        self.drag_select_mode = False
+        self.drag_start_tile = None
+        self.drag_current_tile = None
+
+        # Add placeholders for coord label methods created later
+
         # --- UI Elements ---
         self.create_widgets()
         self.draw_map()
@@ -120,7 +132,13 @@ class MapEditor:
         self.map_title_label = tk.Label(self.root, text="Current Map: (Unsaved Map)",
                                         bg="#1f2d3a", fg="white", font=("Helvetica", 14, "bold"), pady=6)
         self.map_title_label.pack(side="top", fill="x")
-
+        # Coordinate tooltip label (always visible bottom-right)
+        self.coord_label = tk.Label(self.root, text="Tile (0,0)  px(0,0)", bg="#1f2d3a", fg="white", font=("Helvetica", 9))
+        self.coord_label.place(relx=1.0, rely=1.0, x=-6, y=-6, anchor='se')
+        # Update on any mouse movement inside the root
+        self.root.bind('<Motion>', self._update_mouse_coordinates)
+        # Also update periodically in case of external offset changes without movement
+        self.root.after(200, self._poll_mouse_position)
         # Main Frame for UI controls
         controls_frame = tk.Frame(self.root, bg="#34495e", padx=10, pady=10)
         controls_frame.pack(side="left", fill="y")
@@ -129,16 +147,27 @@ class MapEditor:
         self.canvas = tk.Canvas(self.root, bg="#ecf0f1", width=800, height=800, relief="sunken", bd=2)
         self.canvas.pack(side="right", expand=True, fill="both", padx=10, pady=10)
         # Pan canvas and handle clicks
-        self.canvas.bind("<ButtonPress-1>", self.on_pan_start)
-        self.canvas.bind("<B1-Motion>", self.on_pan_move)
-        self.canvas.bind("<ButtonRelease-1>", self.on_pan_end)
+        self.canvas.bind("<ButtonPress-1>", self._on_mouse_down)
+        self.canvas.bind("<B1-Motion>", self._on_mouse_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_mouse_up)
+        # Right mouse button now used for panning
+        self.canvas.bind("<ButtonPress-3>", self.on_pan_start)
+        self.canvas.bind("<B3-Motion>", self.on_pan_move)
+        self.canvas.bind("<ButtonRelease-3>", self.on_pan_end)
         # Double-click on a tile to edit it directly
         self.canvas.bind("<Double-Button-1>", self.handle_canvas_double_click)
         # Press Enter to edit currently selected tile
         self.root.bind("<Return>", self.handle_enter_key)
         # Zoom with Ctrl + scroll
         self.canvas.bind("<Control-MouseWheel>", self.on_zoom)
-
+        # Shortcut key bindings for selection clipboard operations
+        self.root.bind_all('<Control-c>', lambda e: self.copy_selection())
+        self.root.bind_all('<Control-C>', lambda e: self.copy_selection())
+        self.root.bind_all('<Control-x>', lambda e: self.cut_selection())
+        self.root.bind_all('<Control-X>', lambda e: self.cut_selection())
+        self.root.bind_all('<Control-v>', lambda e: self.paste_clipboard())
+        self.root.bind_all('<Control-V>', lambda e: self.paste_clipboard())
+        self.root.bind_all('<Delete>', lambda e: self.remove_selected_tile())
         # --- Control Buttons ---
         create_button("New Map", lambda: (self.ensure_add_mode_off(), self.create_new_map()), controls_frame)
         create_button("Load Map", lambda: (self.ensure_add_mode_off(), self.load_map()), controls_frame)
@@ -146,7 +175,8 @@ class MapEditor:
         create_button("Save Map", lambda: (self.ensure_add_mode_off(), self.save_map()), controls_frame)
         create_separator(controls_frame)
 
-        create_button("Add Tile", self.toggle_add_tile_mode, controls_frame)
+        # Keep reference to Add Tile button to allow visual toggle
+        self.add_tile_button = create_button("Add Tile", self.toggle_add_tile_mode, controls_frame)
         create_button("Remove Tile", lambda: (self.ensure_add_mode_off(), self.remove_selected_tile()), controls_frame)
         create_button("Edit Tile", lambda: (self.ensure_add_mode_off(), self.edit_selected_tile()), controls_frame)
         create_separator(controls_frame)
@@ -167,33 +197,50 @@ class MapEditor:
         self.status_label.pack(side="bottom", fill="x", pady=(10, 0))
         # Adjust wraplength dynamically to match panel width
         controls_frame.bind("<Configure>", lambda e: self.status_label.config(wraplength=e.width))
+        # Ensure coordinate label is on top of canvas stacking order
+        self._raise_coord_label()
+
+    def _raise_coord_label(self):
+        """Raise (lift) the coordinate label above the canvas so it is never obscured."""
+        if getattr(self, 'coord_label', None):
+            try:
+                self.coord_label.lift()  # lift above sibling widgets
+            except Exception:
+                pass
 
     def handle_canvas_click(self, event):
-        """
-        Handles clicks on the canvas to select or add tiles.
-        """
-        # adjust for pan offsets
+        """Updated to support modifier-based multi-select and empty tile selection."""
         x = (event.x - self.offset_x) // self.tile_size
         y = (event.y - self.offset_y) // self.tile_size
-        clicked_pos = (x, y)
-
+        pos = (x,y)
+        ctrl = (event.state & 0x0004) != 0
+        shift = (event.state & 0x0001) != 0
         if self.is_adding_tile:
-            # Add a new tile if in add mode
-            if clicked_pos not in self.map_data:
-                self.add_tile(x, y)
-                self.set_status(f"Added new tile at ({x}, {y}). Click to add another or press 'Add Tile' again to exit mode.")
+            if pos not in self.map_data:
+                self.add_tile(x,y)
+                self.set_status(f"Added new tile at ({x}, {y}).")
             else:
                 self.set_status(f"Tile already exists at ({x}, {y}).")
-            # Do not automatically exit add mode; user must toggle it off explicitly
-        else:
-            # Select an existing tile
-            if clicked_pos in self.map_data:
-                self.select_tile(clicked_pos)
-                self.set_status(f"Selected tile at ({x}, {y})")
+            return
+        # Selection logic
+        if shift and self.selection_anchor:
+            ax,ay = self.selection_anchor
+            minx,maxx = sorted((ax,x))
+            miny,maxy = sorted((ay,y))
+            region = {(ix,iy) for ix in range(minx,maxx+1) for iy in range(miny,maxy+1)}
+            self.selected_tiles.update(region)
+        elif ctrl:
+            if pos in self.selected_tiles:
+                self.selected_tiles.remove(pos)
             else:
-                self.select_tile(None)
-                self.set_status("No tile selected.")
-
+                self.selected_tiles.add(pos)
+                self.selection_anchor = self.selection_anchor or pos
+        else:
+            self.selected_tiles = {pos}
+            self.selection_anchor = pos
+        self.selected_tile = pos if pos in self.map_data else None
+        if pos not in self.map_data:
+            self._show_empty_coord_tooltip(pos)
         self.draw_map()
 
     def create_new_map(self):
@@ -254,32 +301,40 @@ class MapEditor:
         if self.selected_tile:
             sx, sy = self.selected_tile
             self.selected_tile = (sx - shift_x, sy - shift_y)
+        # Update all multi-selected tiles
+        if self.selected_tiles:
+            self.selected_tiles = {(x - shift_x, y - shift_y) for (x, y) in self.selected_tiles}
+            if self.selection_anchor:
+                ax, ay = self.selection_anchor
+                self.selection_anchor = (ax - shift_x, ay - shift_y)
         self.map_data = new_map
 
     def remove_selected_tile(self):
-        """
-        Removes the currently selected tile from the map.
-        """
-        if self.selected_tile:
-            x, y = self.selected_tile
-            del self.map_data[self.selected_tile]
-            self.selected_tile = None
-            # Direction deltas
+        """Removes all selected tiles (supports multi-select)."""
+        if not self.selected_tiles:
+            self.set_status("No tiles selected to remove.")
+            return
+        removed = 0
+        for p in list(self.selected_tiles):
+            if p in self.map_data:
+                del self.map_data[p]
+                removed += 1
+        # Clean exits on remaining tiles
+        if removed:
             deltas = {"north":(0,-1),"south":(0,1),"west":(-1,0),"east":(1,0),
                       "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
-            # Clean exits and block_exit references in all remaining tiles
             for pos_key, tile in self.map_data.items():
                 def neighbor_exists(direction):
-                    dx, dy = deltas[direction]
-                    return (pos_key[0] + dx, pos_key[1] + dy) in self.map_data
+                    dx,dy = deltas[direction]
+                    return (pos_key[0]+dx, pos_key[1]+dy) in self.map_data
                 tile["exits"] = [d for d in tile.get("exits", []) if d in deltas and neighbor_exists(d)]
                 tile["block_exit"] = [d for d in tile.get("block_exit", []) if d in deltas and neighbor_exists(d)]
-            # Normalize after removal
             self._normalize_min_padding()
             self.draw_map()
-            self.set_status(f"Removed tile at ({x}, {y}).")
+            self.set_status(f"Removed {removed} tile(s).")
         else:
-            self.set_status("No tile selected to remove.")
+            self.set_status("No existing tiles in selection to remove.")
+        self.selected_tile = None
 
     def edit_selected_tile(self):
         """
@@ -293,51 +348,260 @@ class MapEditor:
 
     def toggle_add_tile_mode(self):
         """
-        Toggles the add tile mode.
+        Toggles the add tile mode and updates the Add Tile button appearance.
         """
         self.is_adding_tile = not self.is_adding_tile
         if self.is_adding_tile:
             self.set_status("Click on the canvas to add a new tile.")
             self.select_tile(None)
+            if hasattr(self, 'add_tile_button') and self.add_tile_button:
+                self.add_tile_button.config(relief='sunken', bg='#e67e22', activebackground='#d35400')
         else:
             self.set_status("Add tile mode off.")
-
-    def select_tile(self, pos):
-        """
-        Sets the currently selected tile.
-        """
-        self.selected_tile = pos
-        self.draw_map()
+            if hasattr(self, 'add_tile_button') and self.add_tile_button:
+                self.add_tile_button.config(relief='raised', bg='#3498db', activebackground='#2980b9')
 
     def auto_connect_exits(self):
-        """
-        Automatically creates exits between adjacent tiles.
-        """
-        # Clear all existing exits
+        """Automatically creates exits between adjacent tiles (cardinal + diagonal)."""
+        # Clear existing exits
         for tile in self.map_data.values():
             tile["exits"] = []
-        # Direction deltas and reciprocal mapping
         deltas = {"north":(0,-1),"south":(0,1),"west":(-1,0),"east":(1,0),
                   "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
         reciprocal = {"north":"south","south":"north","west":"east","east":"west",
                       "northeast":"southwest","northwest":"southeast",
                       "southeast":"northwest","southwest":"northeast"}
-        # Build new exits lists
         for pos, tile in self.map_data.items():
-            x, y = pos
-            for direction, (dx, dy) in deltas.items():
+            x,y = pos
+            for direction,(dx,dy) in deltas.items():
                 nbr = (x+dx, y+dy)
                 if nbr in self.map_data:
                     if direction not in tile["exits"]:
                         tile["exits"].append(direction)
-                    # reciprocal
                     rev = reciprocal[direction]
                     if rev not in self.map_data[nbr]["exits"]:
                         self.map_data[nbr]["exits"].append(rev)
-
         self.draw_map()
         self.set_status("Exits automatically connected.")
 
+    # -------------------- Selection & Clipboard Helpers --------------------
+    def _event_to_tile(self, event):
+        return ((event.x - self.offset_x) // self.tile_size, (event.y - self.offset_y) // self.tile_size)
+
+    def _on_mouse_down(self, event):
+        # If in add-tile mode, preserve original click behavior (no marquee drag)
+        if self.is_adding_tile:
+            self.drag_select_mode = False
+            self.handle_canvas_click(event)
+            return
+        pos = self._event_to_tile(event)
+        ctrl = (event.state & 0x0004) != 0
+        shift = (event.state & 0x0001) != 0
+        # Prepare for potential drag selection (always allow marquee now; modifiers affect behavior on release)
+        self.drag_select_mode = True
+        self.drag_start_tile = pos
+        self.drag_current_tile = pos
+        self._drag_started = False  # track whether user actually dragged across tiles
+        # Store modifier state for use on mouse up
+        self._drag_ctrl = ctrl
+        self._drag_shift = shift
+        # Record initial pointer for potential future use
+        self._drag_data['x'] = event.x
+        self._drag_data['y'] = event.y
+        self._drag_data['dragged'] = False
+
+    def _on_mouse_drag(self, event):
+        # Update current tile during drag and show marquee if movement crosses tile boundary
+        if not self.drag_select_mode or self.drag_start_tile is None:
+            return
+        current = self._event_to_tile(event)
+        if current != self.drag_current_tile:
+            self.drag_current_tile = current
+            self._drag_started = True
+            self.draw_map()  # redraw tiles
+            # draw selection rectangle overlay
+            x0, y0 = self.drag_start_tile
+            x1, y1 = self.drag_current_tile
+            minx, maxx = sorted((x0, x1))
+            miny, maxy = sorted((y0, y1))
+            for x in range(minx, maxx + 1):
+                for y in range(miny, maxy + 1):
+                    rx1 = x * self.tile_size + self.offset_x
+                    ry1 = y * self.tile_size + self.offset_y
+                    rx2 = rx1 + self.tile_size
+                    ry2 = ry1 + self.tile_size
+                    self.canvas.create_rectangle(rx1, ry1, rx2, ry2, outline='black', dash=(3, 2))
+        self._drag_data['dragged'] = True
+
+    def _on_mouse_up(self, event):
+        # Finish marquee or treat as click if no drag started
+        if self.drag_select_mode and self.drag_start_tile is not None:
+            if self._drag_started and self.drag_current_tile is not None:
+                # Marquee selection
+                x0, y0 = self.drag_start_tile
+                x1, y1 = self.drag_current_tile
+                minx, maxx = sorted((x0, x1))
+                miny, maxy = sorted((y0, y1))
+                new_region = {(x, y) for x in range(minx, maxx + 1) for y in range(miny, maxy + 1)}
+                ctrl = self._drag_ctrl
+                shift = self._drag_shift
+                if ctrl:
+                    toggled = set()
+                    for p in new_region:
+                        if p in self.selected_tiles:
+                            self.selected_tiles.remove(p)
+                        else:
+                            self.selected_tiles.add(p)
+                            toggled.add(p)
+                    if toggled:
+                        self.selection_anchor = next(iter(toggled))
+                elif shift:
+                    self.selected_tiles.update(new_region)
+                    if not self.selection_anchor and new_region:
+                        self.selection_anchor = next(iter(new_region))
+                else:
+                    self.selected_tiles = new_region
+                    self.selection_anchor = next(iter(new_region)) if new_region else None
+                # Determine primary selected tile (first existing one, else any)
+                self.selected_tile = None
+                for p in self.selected_tiles:
+                    if p in self.map_data:
+                        self.selected_tile = p
+                        break
+                if not self.selected_tile and self.selected_tiles:
+                    self.selected_tile = next(iter(self.selected_tiles))
+                self.draw_map()
+            else:
+                # Treat as single click (no tile movement) preserving prior semantics
+                self.handle_canvas_click(event)
+        # Reset drag state
+        self.drag_select_mode = False
+        self.drag_start_tile = None
+        self.drag_current_tile = None
+        # Added helpers for enhanced drag-select logic
+        self._drag_started = False
+        self._drag_ctrl = False
+        self._drag_shift = False
+        self._drag_data['dragged'] = False
+
+    def select_tile(self, pos):
+        """Override to support multi-select single clicks (clears others unless ctrl/shift)."""
+        # When called from legacy code treat as single selection reset
+        if pos is None:
+            self.selected_tile = None
+            self.selected_tiles.clear()
+            self.selection_anchor = None
+        else:
+            self.selected_tile = pos
+            self.selected_tiles = {pos}
+            self.selection_anchor = pos
+            # If selecting empty tile show coords tooltip
+            if pos not in self.map_data:
+                self._show_empty_coord_tooltip(pos)
+        self.draw_map()
+
+    def _show_empty_coord_tooltip(self, pos):
+        class _E:  # simple object to mimic event
+            def __init__(self, root):
+                self.x_root = root.winfo_pointerx()
+                self.y_root = root.winfo_pointery()
+        self.show_tooltip(_E(self.root), f"Empty ({pos[0]}, {pos[1]})")
+
+    def copy_selection(self):
+        if not self.selected_tiles:
+            return
+        # Single empty tile -> mark empty clipboard
+        if len(self.selected_tiles) == 1:
+            only = next(iter(self.selected_tiles))
+            if only not in self.map_data:
+                self.clipboard = {'empty': True}
+                self.set_status('Copied empty tile placeholder.')
+                return
+        # Capture tiles present within selection
+        tiles_present = {p: self.map_data[p] for p in self.selected_tiles if p in self.map_data}
+        if not tiles_present:
+            self.clipboard = {'empty': True}
+            self.set_status('Copied empty area (acts as delete on paste).')
+            return
+        minx = min(p[0] for p in tiles_present)
+        miny = min(p[1] for p in tiles_present)
+        payload = {}
+        for (x,y), tile in tiles_present.items():
+            rel = (x - minx, y - miny)
+            payload[rel] = copy.deepcopy(tile)
+        w = 1 + max(p[0] for p in payload.keys())
+        h = 1 + max(p[1] for p in payload.keys())
+        self.clipboard = {'tiles': payload, 'w': w, 'h': h}
+        self.set_status(f'Copied {len(payload)} tile(s).')
+
+    def cut_selection(self):
+        self.copy_selection()
+        # Only remove if clipboard not empty placeholder
+        if self.clipboard and self.clipboard.get('empty'):
+            return  # nothing to cut; treat like copying empty
+        removed = 0
+        for p in list(self.selected_tiles):
+            if p in self.map_data:
+                del self.map_data[p]
+                removed += 1
+        if removed:
+            self._normalize_min_padding()
+            self.draw_map()
+        self.set_status(f'Cut {removed} tile(s).')
+
+    def paste_clipboard(self):
+        if not self.clipboard or not self.selected_tiles:
+            return
+        # Empty clipboard => delete selected existing tiles
+        if self.clipboard.get('empty'):
+            removed = 0
+            for p in list(self.selected_tiles):
+                if p in self.map_data:
+                    del self.map_data[p]
+                    removed += 1
+            if removed:
+                self._normalize_min_padding()
+                self.draw_map()
+            self.set_status(f'Deleted {removed} tile(s) via empty paste.')
+            return
+        payload = self.clipboard.get('tiles', {})
+        if not payload:
+            return
+        # If clipboard has single tile and selection has multiple -> replicate
+        if len(payload) == 1 and len(self.selected_tiles) > 1:
+            rel_pos, tile_data = next(iter(payload.items()))
+            for target in self.selected_tiles:
+                self._paste_single_tile(tile_data, target)
+            self._normalize_min_padding()
+            self.draw_map()
+            self.set_status(f'Pasted tile to {len(self.selected_tiles)} positions.')
+            return
+        # Otherwise paste relative pattern anchored at first selected tile
+        anchor = next(iter(sorted(self.selected_tiles)))
+        base = min(payload.keys())  # smallest (dx,dy) lexicographically
+        count = 0
+        for (dx,dy), tile_data in payload.items():
+            offsetx = dx - base[0]
+            offsety = dy - base[1]
+            target = (anchor[0] + offsetx, anchor[1] + offsety)
+            self._paste_single_tile(tile_data, target)
+            count += 1
+        self._normalize_min_padding()
+        self.draw_map()
+        self.set_status(f'Pasted {count} tile(s).')
+
+    def _paste_single_tile(self, tile_data, target):
+        x,y = target
+        new_id = f"tile_{x}_{y}"
+        tcopy = copy.deepcopy(tile_data)
+        old_id = tcopy.get('id')
+        old_title = tcopy.get('title')
+        tcopy['id'] = new_id
+        if old_title == old_id or re.fullmatch(r'tile_\d+_\d+', str(old_title)):
+            tcopy['title'] = new_id
+        self.map_data[target] = tcopy
+
+    # -------------------- Modified existing methods --------------------
     def draw_map(self):
         """
         Draws all tiles and their exits on the canvas.
@@ -352,6 +616,28 @@ class MapEditor:
             # bring title on top of all other elements
             title_tag = f"title_{pos[0]}_{pos[1]}"
             self.canvas.tag_raise(title_tag)
+        # Draw selection outlines for multi-select (including empty selected cells)
+        for p in self.selected_tiles:
+            if p not in self.map_data:  # empty cell
+                x,y = p
+                x1 = x * self.tile_size + self.offset_x
+                y1 = y * self.tile_size + self.offset_y
+                x2 = x1 + self.tile_size
+                y2 = y1 + self.tile_size
+                self.canvas.create_rectangle(x1,y1,x2,y2, outline='black', width=2)
+                # small coord text inside
+                self.canvas.create_text((x1+x2)/2, (y1+y2)/2, text=f"{x},{y}", fill='black', font=("Helvetica",8))
+            else:
+                # Highlight already handled by tile color; add border for clarity if multi-select
+                if len(self.selected_tiles) > 1:
+                    x,y = p
+                    x1 = x * self.tile_size + self.offset_x
+                    y1 = y * self.tile_size + self.offset_y
+                    x2 = x1 + self.tile_size
+                    y2 = y1 + self.tile_size
+                    self.canvas.create_rectangle(x1,y1,x2,y2, outline='yellow', width=2)
+        # After drawing, re-raise coord label so it stays visible
+        self._raise_coord_label()
 
     def draw_tile(self, pos):
         """
@@ -520,6 +806,9 @@ class MapEditor:
         - Tokens starting with '!' (excluding '!Block') treated as events; class name after '!'.
         After parsing all tiles, exits are auto-derived: any cardinal/diagonal neighbor present and not blocked becomes an exit.
         Missing classes or instantiation errors fall back to being skipped silently.
+        Additionally, if a tile's title matches a class name inside the src/tilesets package, the description
+        passed to that class's super().__init__ call will be copied into the imported tile (unless a legacy
+        @TileDescription override was provided).
         """
         if filepath is None:
             filepath = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("Text maps", "*.txt"), ("All files", "*.*")])
@@ -532,7 +821,50 @@ class MapEditor:
             new_map = {}
             deltas = {"north":(0,-1),"south":(0,1),"west":(-1,0),"east":(1,0),
                       "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
-            # dynamic class loader
+
+            # --- Build tileset class description lookup once ---
+            def _collect_tileset_descriptions():
+                desc_map = {}
+                tilesets_dir = os.path.join(project_root, 'src', 'tilesets')
+                if not os.path.isdir(tilesets_dir):
+                    return desc_map
+                for fname in os.listdir(tilesets_dir):
+                    if not fname.endswith('.py') or fname.startswith('__'):
+                        continue
+                    fpath = os.path.join(tilesets_dir, fname)
+                    try:
+                        with open(fpath, 'r', encoding='utf-8') as tf:
+                            src = tf.read()
+                        tree = ast.parse(src)
+                        for node in tree.body:
+                            if isinstance(node, ast.ClassDef):
+                                class_name = node.name
+                                # find __init__
+                                for sub in node.body:
+                                    if isinstance(sub, ast.FunctionDef) and sub.name == '__init__':
+                                        # search for super().__init__(..., description="""...""") style call
+                                        for inner in ast.walk(sub):
+                                            if isinstance(inner, ast.Call):
+                                                # match super().__init__ pattern
+                                                func = inner.func
+                                                if isinstance(func, ast.Attribute) and func.attr == '__init__' and isinstance(func.value, ast.Call) and isinstance(func.value.func, ast.Name) and func.value.func.id == 'super':
+                                                    # collect first (or longest) string literal arg
+                                                    string_literals = [a.value for a in inner.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+                                                    # also check keywords for 'description='
+                                                    for kw in inner.keywords or []:
+                                                        if (kw.arg == 'description' and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)):
+                                                            string_literals.append(kw.value.value)
+                                                    if string_literals:
+                                                        # choose the longest (likely the actual description)
+                                                        desc_map[class_name] = max(string_literals, key=len).strip()
+                                                        break
+                                # end for sub
+                    except Exception:
+                        continue  # ignore parse issues for a single file
+                return desc_map
+            tileset_descriptions = _collect_tileset_descriptions()
+
+            # dynamic class loader (unchanged)
             module_cache = {}
             def load_class(class_name):
                 if not class_name or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', class_name):
@@ -581,7 +913,6 @@ class MapEditor:
                             return cls()  # attempt default constructor
                         except Exception:
                             try:
-                                # try no-arg object creation without init
                                 inst = cls.__new__(cls)
                                 try:
                                     cls.__init__(inst)  # type: ignore
@@ -599,7 +930,6 @@ class MapEditor:
                             return
                         if count_spec:
                             if count_spec.startswith('r'):
-                                # rMin-Max pattern
                                 m = re.match(r'r(\d+)-(\d+)', count_spec)
                                 if m:
                                     inst.count = int(m.group(1))  # use min
@@ -629,7 +959,6 @@ class MapEditor:
                                     blocked.append(d)
                             continue
                         if part.startswith('@TileDescription'):
-                            # Format: @TileDescription.<id>.<text~>
                             segs = part.split('.')
                             if len(segs) >= 3:
                                 text = '.'.join(segs[2:])
@@ -638,26 +967,19 @@ class MapEditor:
                                 description = text.replace('~', '').strip()
                             continue
                         if part.startswith('#'):
-                            # item token possibly with :count or :rA-B
                             body = part[1:]
                             name, count_spec = (body.split(':',1)+[None])[:2]
                             add_item(name, count_spec)
                             continue
-                        # expand composite part containing mixed markers using '.'
                         if part.startswith('@'):
-                            # Could contain embedded markers separated by '.'
                             subparts = part.split('.')
-                            head = subparts[0]  # e.g. @WoodenChest
+                            head = subparts[0]
                             cls_name = head[1:]
-                            # classify as object or npc by attempting instantiation in order
-                            # We'll first try objects then npc
                             cls = load_class(cls_name)
                             inst = ensure_instance(cls) if cls else None
                             if inst:
-                                # naive classification: if class name contains 'Chest' or 'Switch' -> objects
                                 target = objects_list if any(k in cls_name.lower() for k in ['chest','switch','wall','inscription']) else npcs
                                 target.append(inst)
-                            # process remaining dotted subparts for embedded items/events (# / !)
                             for sp in subparts[1:]:
                                 if sp.startswith('#'):
                                     ibody = sp[1:]
@@ -669,11 +991,13 @@ class MapEditor:
                         if part.startswith('!') and part != '!Block':
                             add_event(part[1:])
                             continue
-                        # Plain base tile title
                         if tile_title is None:
                             tile_title = part
                     if tile_title is None:
                         tile_title = tile_id
+                    # If no explicit legacy description, pull from tilesets class if available
+                    if (not description) and tile_title in tileset_descriptions:
+                        description = tileset_descriptions[tile_title]
                     new_map[(x,y)] = {
                         'id': tile_id,
                         'title': tile_title,
@@ -734,10 +1058,9 @@ class MapEditor:
         self.draw_map()
 
     def on_pan_end(self, event):
-        """End panning; if click without drag, treat as click."""
-        if not self._drag_data['dragged']:
+        """End panning; if left click without drag, treat as click."""
+        if event.num == 1 and not self._drag_data['dragged']:
             self.handle_canvas_click(event)
-        # reset drag flag
         self._drag_data['dragged'] = False
 
     def on_zoom(self, event):
@@ -769,7 +1092,7 @@ class MapEditor:
             self.select_tile(pos)
             self.edit_selected_tile()
 
-    def handle_enter_key(self):
+    def handle_enter_key(self, event=None):
         """
         Handles Enter key to open the edit dialog for the currently selected tile.
         """
@@ -832,6 +1155,38 @@ class MapEditor:
                 cx, cy = coords[d]
                 self.canvas.create_line(cx-half, cy-half, cx+half, cy+half, fill="red", width=2)
                 self.canvas.create_line(cx+half, cy-half, cx-half, cy+half, fill="red", width=2)
+
+    # --- Added missing mouse coordinate helpers ---
+    def _update_mouse_coordinates(self, event=None):
+        """Update the coordinate label based on current pointer location (canvas-relative)."""
+        if not getattr(self, 'coord_label', None):
+            return
+        if not self.canvas:
+            return
+        try:
+            px = self.root.winfo_pointerx()
+            py = self.root.winfo_pointery()
+            cx = self.canvas.winfo_rootx()
+            cy = self.canvas.winfo_rooty()
+            rel_x = px - cx
+            rel_y = py - cy
+            if rel_x < 0 or rel_y < 0 or rel_x > self.canvas.winfo_width() or rel_y > self.canvas.winfo_height():
+                self.coord_label.config(text=f"Tile (-,-)  px({rel_x},{rel_y})")
+                return
+            tile_x = int((rel_x - self.offset_x) // self.tile_size)
+            tile_y = int((rel_y - self.offset_y) // self.tile_size)
+            self.coord_label.config(text=f"Tile ({tile_x},{tile_y})  px({rel_x},{rel_y})")
+        except Exception:
+            pass
+
+    def _poll_mouse_position(self):
+        self._update_mouse_coordinates()
+        try:
+            self.root.after(200, self._poll_mouse_position)
+        except Exception:
+            pass
+    # --- end helpers ---
+
 
 
 def find_all_classes(tree):
@@ -991,7 +1346,7 @@ class TileEditorWindow:
         self._deltas = {"north":(0,-1),"south":(0,1),"east":(1,0),"west":(-1,0),
                         "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
         self.valid_directions = [d for d,(dx,dy) in self._deltas.items() if (self.pos[0]+dx, self.pos[1]+dy) in self.map_data]
-        # Purge stale exits / block_exit entries referencing missing neighbors
+        # Purge stale exits / block_exit references referencing missing neighbors
         self.tile_data["exits"] = [d for d in self.tile_data.get("exits", []) if d in self.valid_directions]
         self.tile_data["block_exit"] = [d for d in self.tile_data.get("block_exit", []) if d in self.valid_directions]
 
@@ -1489,7 +1844,6 @@ class TileEditorWindow:
     def remove_object(self, inst):
         self.tile_data['objects'].remove(inst)
         self._refresh_tags('objects', self.objects_frame)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
