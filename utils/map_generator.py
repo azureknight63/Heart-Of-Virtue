@@ -7,6 +7,7 @@ import ast
 import inspect
 import sys
 import copy
+import re
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
@@ -70,6 +71,9 @@ class MapEditor:
         self.root.title("HOV Map Editor")
         self.root.geometry("1400x800")
         self.root.configure(bg="#2c3e50")
+        # Track current map filename/path
+        self.current_map_filepath = None
+        self.map_title_label = None
 
         self.map_data = {}  # Stores tile data: {(x, y): { ... }}
         self.tile_size = 50
@@ -95,11 +99,28 @@ class MapEditor:
         last_map = _get_last_map_file()
         if last_map:
             self.load_map(last_map)
+        else:
+            self.update_map_label()
+
+    def update_map_label(self):
+        """Update the label showing the current map's file name."""
+        if not self.map_title_label:
+            return
+        if self.current_map_filepath:
+            name = os.path.basename(self.current_map_filepath)
+        else:
+            name = "(Unsaved Map)"
+        self.map_title_label.config(text=f"Current Map: {name}")
 
     def create_widgets(self):
         """
         Creates all the GUI widgets for the application.
         """
+        # Top label for current map
+        self.map_title_label = tk.Label(self.root, text="Current Map: (Unsaved Map)",
+                                        bg="#1f2d3a", fg="white", font=("Helvetica", 14, "bold"), pady=6)
+        self.map_title_label.pack(side="top", fill="x")
+
         # Main Frame for UI controls
         controls_frame = tk.Frame(self.root, bg="#34495e", padx=10, pady=10)
         controls_frame.pack(side="left", fill="y")
@@ -121,6 +142,7 @@ class MapEditor:
         # --- Control Buttons ---
         create_button("New Map", lambda: (self.ensure_add_mode_off(), self.create_new_map()), controls_frame)
         create_button("Load Map", lambda: (self.ensure_add_mode_off(), self.load_map()), controls_frame)
+        create_button("Load Legacy Map", lambda: (self.ensure_add_mode_off(), self.load_legacy_map()), controls_frame)
         create_button("Save Map", lambda: (self.ensure_add_mode_off(), self.save_map()), controls_frame)
         create_separator(controls_frame)
 
@@ -175,12 +197,12 @@ class MapEditor:
         self.draw_map()
 
     def create_new_map(self):
-        """
-        Clears the current map data to start a new map.
-        """
+        """Clears the current map data to start a new map."""
         self.map_data = {}
         self.selected_tile = None
+        self.current_map_filepath = None
         self.draw_map()
+        self.update_map_label()
         self.set_status("New map created.")
 
     def add_tile(self, x, y):
@@ -391,6 +413,8 @@ class MapEditor:
             if filepath:
                 with open(filepath, "w") as f:
                     json.dump(serializable_map, f, indent=4)
+                self.current_map_filepath = filepath
+                self.update_map_label()
                 self.set_status(f"Map saved to {os.path.basename(filepath)}")
         except Exception as e:
             self.set_status(f"Error saving map: {e}")
@@ -408,44 +432,243 @@ class MapEditor:
             try:
                 with open(filepath, "r") as f:
                     data = json.load(f)
-                    def deserialize_instance(d):
-                        if not isinstance(d, dict) or '__class__' not in d:
-                            return d
-                        cls_name = d.get('__class__')
-                        mod_name = d.get('__module__')
-                        props = d.get('props', {})
+                def deserialize_instance(d):
+                    if not isinstance(d, dict) or '__class__' not in d:
+                        return d
+                    cls_name = d.get('__class__')
+                    mod_name = d.get('__module__')
+                    props = d.get('props', {})
+                    try:
+                        module = __import__(mod_name, fromlist=[cls_name])
+                        cls = getattr(module, cls_name)
+                        # try instantiate with matching args
                         try:
-                            module = __import__(mod_name, fromlist=[cls_name])
-                            cls = getattr(module, cls_name)
-                            # try instantiate with matching args
+                            param_names = [p.name for p in inspect.signature(cls.__init__).parameters.values() if p.name != 'self']
+                            init_kwargs = {k: v for k, v in props.items() if k in param_names}
+                            inst = cls(**init_kwargs)
+                        except Exception:
+                            inst = cls.__new__(cls)
                             try:
-                                param_names = [p.name for p in inspect.signature(cls.__init__).parameters.values() if p.name != 'self']
-                                init_kwargs = {k: v for k, v in props.items() if k in param_names}
-                                inst = cls(**init_kwargs)
+                                cls.__init__(inst)  # type: ignore
                             except Exception:
+                                pass
+                        for k2, v2 in props.items():
+                            setattr(inst, k2, v2)
+                        return inst
+                    except Exception:
+                        return props  # fallback raw
+                self.map_data = {}
+                for k, tile in data.items():
+                    pos = tuple(int(x) for x in k.strip('()').split(','))
+                    tile_copy = dict(tile)
+                    for key in ['events','items','npcs','objects']:
+                        tile_copy[key] = [deserialize_instance(d) for d in tile_copy.get(key, [])]
+                    self.map_data[pos] = tile_copy
+                self.current_map_filepath = filepath
+                self.selected_tile = None
+                self.draw_map()
+                self.update_map_label()
+                self.set_status(f"Map loaded from {os.path.basename(filepath)}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not load map file:\n{e}")
+                self.set_status(f"Error loading map.")
+
+    def load_legacy_map(self, filepath=None):
+        """Load a legacy text-based map (.txt) into the editor.
+        Format assumptions (best-effort based on sample):
+        - File is a tab-delimited grid; each non-empty cell (except 'Boundary') defines a tile.
+        - Cell content tokens are separated by '|'. First plain token is base tile name/title.
+        - Tokens starting with '!Block.' specify blocked directions separated by '.' after '!Block.'.
+        - Tokens starting with '@TileDescription.' then a numeric id then '.' then free text (terminated by optional '~'). Sets tile description.
+        - Tokens starting with '#' define items: #ClassName[:count or :rMin-Max]. Count defaults to 1 or min of range.
+        - Tokens starting with '@' define objects/NPCs/events by class name after '@'. Additional dotted suffixes ignored except embedded item/event markers (# / !).
+        - Tokens starting with '!' (excluding '!Block') treated as events; class name after '!'.
+        After parsing all tiles, exits are auto-derived: any cardinal/diagonal neighbor present and not blocked becomes an exit.
+        Missing classes or instantiation errors fall back to being skipped silently.
+        """
+        if filepath is None:
+            filepath = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("Text maps", "*.txt"), ("All files", "*.*")])
+        if not filepath:
+            return
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            grid = [line.rstrip('\n').split('\t') for line in lines]
+            new_map = {}
+            deltas = {"north":(0,-1),"south":(0,1),"west":(-1,0),"east":(1,0),
+                      "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
+            # dynamic class loader
+            module_cache = {}
+            def load_class(class_name):
+                if not class_name or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', class_name):
+                    return None
+                search_modules = [
+                    'src.items', 'src.npc', 'src.objects'
+                ]
+                # add story modules
+                story_dir = os.path.join(project_root, 'src', 'story')
+                if os.path.isdir(story_dir):
+                    for fn in os.listdir(story_dir):
+                        if fn.endswith('.py') and not fn.startswith('__'):
+                            mod_path = f"src.story.{fn[:-3]}"
+                            if mod_path not in search_modules:
+                                search_modules.append(mod_path)
+                for mod_name in search_modules:
+                    try:
+                        if mod_name not in module_cache:
+                            module_cache[mod_name] = __import__(mod_name, fromlist=['*'])
+                        mod = module_cache[mod_name]
+                        if hasattr(mod, class_name):
+                            return getattr(mod, class_name)
+                    except Exception:
+                        continue
+                return None
+            # parse grid
+            for y, row in enumerate(grid):
+                for x, cell in enumerate(row):
+                    raw = cell.strip()
+                    if not raw or raw == 'Boundary':
+                        continue
+                    parts = [p for p in raw.split('|') if p]
+                    if not parts:
+                        continue
+                    tile_id = f"tile_{x}_{y}"
+                    tile_title = None
+                    description = ""
+                    exits = []
+                    blocked = []
+                    events = []
+                    items = []
+                    npcs = []
+                    objects_list = []
+                    def ensure_instance(cls):
+                        try:
+                            return cls()  # attempt default constructor
+                        except Exception:
+                            try:
+                                # try no-arg object creation without init
                                 inst = cls.__new__(cls)
                                 try:
                                     cls.__init__(inst)  # type: ignore
                                 except Exception:
                                     pass
-                            for k2, v2 in props.items():
-                                setattr(inst, k2, v2)
-                            return inst
-                        except Exception:
-                            return props  # fallback raw
-                    self.map_data = {}
-                    for k, tile in data.items():
-                        pos = tuple(int(x) for x in k.strip('()').split(','))
-                        tile_copy = dict(tile)
-                        for key in ['events','items','npcs','objects']:
-                            tile_copy[key] = [deserialize_instance(d) for d in tile_copy.get(key, [])]
-                        self.map_data[pos] = tile_copy
-                    self.selected_tile = None
-                    self.draw_map()
-                    self.set_status(f"Map loaded from {os.path.basename(filepath)}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Could not load map file:\n{e}")
-                self.set_status(f"Error loading map.")
+                                return inst
+                            except Exception:
+                                return None
+                    def add_item(class_name, count_spec=None):
+                        cls = load_class(class_name)
+                        if not cls:
+                            return
+                        inst = ensure_instance(cls)
+                        if not inst:
+                            return
+                        if count_spec:
+                            if count_spec.startswith('r'):
+                                # rMin-Max pattern
+                                m = re.match(r'r(\d+)-(\d+)', count_spec)
+                                if m:
+                                    inst.count = int(m.group(1))  # use min
+                            else:
+                                if count_spec.isdigit():
+                                    inst.count = int(count_spec)
+                        items.append(inst)
+                    def add_event(cls_name):
+                        cls = load_class(cls_name)
+                        if not cls:
+                            return
+                        inst = ensure_instance(cls)
+                        if inst:
+                            events.append(inst)
+                    def add_entity(cls_name, collection):
+                        cls = load_class(cls_name)
+                        if not cls:
+                            return
+                        inst = ensure_instance(cls)
+                        if inst:
+                            collection.append(inst)
+                    for part in parts:
+                        if part.startswith('!Block'):
+                            dirs = part.split('.')[1:] if '.' in part else []
+                            for d in dirs:
+                                if d:
+                                    blocked.append(d)
+                            continue
+                        if part.startswith('@TileDescription'):
+                            # Format: @TileDescription.<id>.<text~>
+                            segs = part.split('.')
+                            if len(segs) >= 3:
+                                text = '.'.join(segs[2:])
+                                if text.endswith('~'):
+                                    text = text[:-1]
+                                description = text.replace('~', '').strip()
+                            continue
+                        if part.startswith('#'):
+                            # item token possibly with :count or :rA-B
+                            body = part[1:]
+                            name, count_spec = (body.split(':',1)+[None])[:2]
+                            add_item(name, count_spec)
+                            continue
+                        # expand composite part containing mixed markers using '.'
+                        if part.startswith('@'):
+                            # Could contain embedded markers separated by '.'
+                            subparts = part.split('.')
+                            head = subparts[0]  # e.g. @WoodenChest
+                            cls_name = head[1:]
+                            # classify as object or npc by attempting instantiation in order
+                            # We'll first try objects then npc
+                            cls = load_class(cls_name)
+                            inst = ensure_instance(cls) if cls else None
+                            if inst:
+                                # naive classification: if class name contains 'Chest' or 'Switch' -> objects
+                                target = objects_list if any(k in cls_name.lower() for k in ['chest','switch','wall','inscription']) else npcs
+                                target.append(inst)
+                            # process remaining dotted subparts for embedded items/events (# / !)
+                            for sp in subparts[1:]:
+                                if sp.startswith('#'):
+                                    ibody = sp[1:]
+                                    iname, icount = (ibody.split(':',1)+[None])[:2]
+                                    add_item(iname, icount)
+                                elif sp.startswith('!') and sp != '!Block':
+                                    add_event(sp[1:])
+                            continue
+                        if part.startswith('!') and part != '!Block':
+                            add_event(part[1:])
+                            continue
+                        # Plain base tile title
+                        if tile_title is None:
+                            tile_title = part
+                    if tile_title is None:
+                        tile_title = tile_id
+                    new_map[(x,y)] = {
+                        'id': tile_id,
+                        'title': tile_title,
+                        'description': description if description else f"Legacy imported tile {tile_title}",
+                        'exits': exits,
+                        'block_exit': blocked,
+                        'events': events,
+                        'items': items,
+                        'npcs': npcs,
+                        'objects': objects_list
+                    }
+            # derive exits
+            for pos, tile in new_map.items():
+                x, y = pos
+                exits = []
+                blocked = set(tile.get('block_exit', []))
+                for d,(dx,dy) in deltas.items():
+                    nbr = (x+dx, y+dy)
+                    if nbr in new_map and d not in blocked:
+                        exits.append(d)
+                tile['exits'] = exits
+            self.map_data = new_map
+            self.current_map_filepath = filepath
+            self.selected_tile = None
+            self.draw_map()
+            self.update_map_label()
+            self.set_status(f"Legacy map loaded: {os.path.basename(filepath)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load legacy map:\n{e}")
+            self.set_status("Error loading legacy map.")
 
     def set_status(self, message):
         """
