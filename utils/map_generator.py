@@ -4,6 +4,14 @@ import json
 import os
 import glob
 import ast
+import inspect
+import sys
+import copy
+# Ensure the src directory is in sys.path for imports
+project_root = os.path.dirname(os.path.dirname(__file__))
+src_root = os.path.join(project_root, 'src')
+if src_root not in sys.path:
+    sys.path.insert(0, src_root)
 
 
 def create_button(text, command, parent):
@@ -201,16 +209,16 @@ class MapEditor:
             x, y = self.selected_tile
             del self.map_data[self.selected_tile]
             self.selected_tile = None
-
-            # Also remove any exits that lead to this tile
-            # Also remove any exit directions pointing to this removed tile
+            # Direction deltas
             deltas = {"north":(0,-1),"south":(0,1),"west":(-1,0),"east":(1,0),
                       "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
+            # Clean exits and block_exit references in all remaining tiles
             for pos_key, tile in self.map_data.items():
-                # keep directions whose neighbor isn't the removed tile
-                tile["exits"] = [d for d in tile.get("exits", [])
-                                   if (pos_key[0] + deltas[d][0], pos_key[1] + deltas[d][1]) != (x, y)]
-
+                def neighbor_exists(direction):
+                    dx, dy = deltas[direction]
+                    return (pos_key[0] + dx, pos_key[1] + dy) in self.map_data
+                tile["exits"] = [d for d in tile.get("exits", []) if d in deltas and neighbor_exists(d)]
+                tile["block_exit"] = [d for d in tile.get("block_exit", []) if d in deltas and neighbor_exists(d)]
             self.draw_map()
             self.set_status(f"Removed tile at ({x}, {y}).")
         else:
@@ -221,7 +229,8 @@ class MapEditor:
         Opens a new window to edit the properties of the selected tile.
         """
         if self.selected_tile:
-            TileEditorWindow(self.root, self.map_data[self.selected_tile], self.draw_map)
+            # pass full map and position so editor can filter directions
+            TileEditorWindow(self.root, self.map_data, self.selected_tile, self.draw_map)
         else:
             self.set_status("No tile selected to edit.")
 
@@ -334,7 +343,6 @@ class MapEditor:
         """
         x_center = pos[0] * self.tile_size + self.tile_size / 2 + self.offset_x
         y_center = pos[1] * self.tile_size + self.tile_size / 2 + self.offset_y
-        # direction deltas and reciprocal mapping
         deltas = {"north":(0,-1),"south":(0,1),"west":(-1,0),"east":(1,0),
                   "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
         reciprocal = {"north":"south","south":"north","west":"east","east":"west",
@@ -346,7 +354,6 @@ class MapEditor:
             if target_pos in self.map_data:
                 x_target = target_pos[0] * self.tile_size + self.tile_size / 2 + self.offset_x
                 y_target = target_pos[1] * self.tile_size + self.tile_size / 2 + self.offset_y
-                # detect bidirectional
                 bidir = reciprocal.get(direction) in self.map_data[target_pos].get("exits", [])
                 arrow_style = tk.BOTH if bidir else tk.LAST
                 self.canvas.create_line(x_center, y_center, x_target, y_target,
@@ -357,8 +364,21 @@ class MapEditor:
         Saves the current map data to a JSON file.
         """
         try:
-            # A dictionary with string keys is needed for JSON serialization
-            serializable_map = {str(k): v for k, v in self.map_data.items()}
+            # build serializable structure
+            def serialize_instance(inst):
+                data = {k: v for k, v in vars(inst).items() if not k.startswith('_') and isinstance(v, (int,float,str,bool,list,dict,tuple))}
+                return {
+                    '__class__': inst.__class__.__name__,
+                    '__module__': inst.__class__.__module__,
+                    'props': data
+                }
+            serializable_map = {}
+            for k, v in self.map_data.items():
+                tile = dict(v)
+                for key in ['events','items','npcs','objects']:
+                    inst_list = tile.get(key, [])
+                    tile[key] = [serialize_instance(i) for i in inst_list]
+                serializable_map[str(k)] = tile
 
             # Default save directory
             default_dir = os.path.join(os.getcwd(), 'src', 'resources', 'maps')
@@ -388,8 +408,38 @@ class MapEditor:
             try:
                 with open(filepath, "r") as f:
                     data = json.load(f)
-                    # Convert string keys back to tuples
-                    self.map_data = {tuple(int(x) for x in k.strip('()').split(',')): v for k, v in data.items()}
+                    def deserialize_instance(d):
+                        if not isinstance(d, dict) or '__class__' not in d:
+                            return d
+                        cls_name = d.get('__class__')
+                        mod_name = d.get('__module__')
+                        props = d.get('props', {})
+                        try:
+                            module = __import__(mod_name, fromlist=[cls_name])
+                            cls = getattr(module, cls_name)
+                            # try instantiate with matching args
+                            try:
+                                param_names = [p.name for p in inspect.signature(cls.__init__).parameters.values() if p.name != 'self']
+                                init_kwargs = {k: v for k, v in props.items() if k in param_names}
+                                inst = cls(**init_kwargs)
+                            except Exception:
+                                inst = cls.__new__(cls)
+                                try:
+                                    cls.__init__(inst)  # type: ignore
+                                except Exception:
+                                    pass
+                            for k2, v2 in props.items():
+                                setattr(inst, k2, v2)
+                            return inst
+                        except Exception:
+                            return props  # fallback raw
+                    self.map_data = {}
+                    for k, tile in data.items():
+                        pos = tuple(int(x) for x in k.strip('()').split(','))
+                        tile_copy = dict(tile)
+                        for key in ['events','items','npcs','objects']:
+                            tile_copy[key] = [deserialize_instance(d) for d in tile_copy.get(key, [])]
+                        self.map_data[pos] = tile_copy
                     self.selected_tile = None
                     self.draw_map()
                     self.set_status(f"Map loaded from {os.path.basename(filepath)}")
@@ -549,20 +599,146 @@ def find_class_hierarchy(tree):
     return roots, children
 
 
+# Helper frame to display tags with edit and remove capabilities
+class TagListFrame(tk.Frame):
+    def __init__(self, parent, on_edit, on_remove, on_duplicate=None, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.on_edit = on_edit
+        self.on_remove = on_remove
+        self.on_duplicate = on_duplicate
+        self._tags = []  # list of (identifier, frame)
+        self._tooltip = None  # tooltip window
+
+    def _get_editable_properties(self, obj):
+        props = []
+        try:
+            cls = obj.__class__
+            sig = inspect.signature(cls.__init__)
+            params = [p for p in sig.parameters.values() if p.name != 'self']
+            excluded = {'player', 'tile'}
+            editable = [p for p in params if p.name not in excluded]
+            for p in editable:
+                try:
+                    val = getattr(obj, p.name)
+                except Exception:
+                    continue
+                # represent value safely
+                try:
+                    rep = repr(val)
+                except Exception:
+                    rep = str(val)
+                # truncate long representations
+                if len(rep) > 80:
+                    rep = rep[:77] + '...'
+                props.append((p.name, rep))
+        except Exception:
+            pass
+        return props
+
+    def _show_tooltip(self, event, obj):
+        # destroy existing
+        self._hide_tooltip()
+        # build text
+        header = obj.__class__.__name__ if hasattr(obj, '__class__') else 'Object'
+        lines = [header]
+        props = self._get_editable_properties(obj)
+        if props:
+            for name, rep in props:
+                lines.append(f"{name} = {rep}")
+        else:
+            lines.append('(No editable properties)')
+        text = '\n'.join(lines)
+        # create window
+        tw = tk.Toplevel(self.winfo_toplevel())
+        tw.wm_overrideredirect(True)
+        lbl = tk.Label(tw, text=text, justify='left', bg='#ffffe0', fg='black', bd=1, relief='solid', font=("Helvetica", 9))
+        lbl.pack(ipadx=4, ipady=2)
+        x = event.x_root + 20
+        y = event.y_root + 20
+        tw.wm_geometry(f"+{x}+{y}")
+        self._tooltip = tw
+
+    def _hide_tooltip(self):
+        if self._tooltip is not None:
+            try:
+                self._tooltip.destroy()
+            except Exception:
+                pass
+            self._tooltip = None
+
+    def _bind_tooltip(self, widget, obj):
+        widget.bind('<Enter>', lambda e, o=obj: self._show_tooltip(e, o))
+        widget.bind('<Leave>', lambda e: self._hide_tooltip())
+
+    def add_tag(self, identifier, text):
+        frm = tk.Frame(self, bd=1, relief="solid", padx=4, pady=2)
+        lbl = tk.Label(frm, text=text)
+        lbl.pack(side="left")
+        # Delete button packed first so it stays at far right
+        del_btn = tk.Button(frm, text="×", command=lambda: self.remove(identifier), bd=0, padx=2, pady=0)
+        del_btn.pack(side="right")
+        # Duplicate button now appears to the right of label but left of delete (since packed after delete with side=right earlier logic reversed)
+        if self.on_duplicate:
+            dup_btn = tk.Button(frm, text="⧉", command=lambda: self.on_duplicate(identifier), bd=0, padx=2, pady=0)
+            dup_btn.pack(side="right")
+        frm.pack(side="left", padx=2, pady=2)
+        frm.bind("<Double-Button-1>", lambda e: self.on_edit(identifier))
+        lbl.bind("<Double-Button-1>", lambda e: self.on_edit(identifier))
+        # Hover tooltips for properties
+        self._bind_tooltip(frm, identifier)
+        self._bind_tooltip(lbl, identifier)
+        self._tags.append((identifier, frm))
+
+    def remove(self, identifier):
+        # Update underlying data via callback
+        self.on_remove(identifier)
+        # Remove only this tag's frame; do NOT clear all (prevents wiping others inadvertently)
+        for i, (ident, frm) in enumerate(list(self._tags)):
+            if ident is identifier:
+                try:
+                    frm.destroy()
+                except Exception:
+                    pass
+                self._tags.pop(i)
+                break
+        # Ensure tooltip hidden if any
+        self._hide_tooltip()
+        # Caller may choose to refresh fully; if so duplicates won't cause UI inconsistency
+
+    def clear(self):
+        for _, frm in self._tags:
+            frm.destroy()
+        self._tags.clear()
+
+    def get_all(self):
+        return [ident for ident, _ in self._tags]
+
+
 class TileEditorWindow:
     """
     A separate window for editing a single tile's properties.
     """
 
-    def __init__(self, parent, tile_data, on_save_callback):
+    def __init__(self, parent, map_data, position, on_save_callback):
         """
         Initializes the tile editor window.
+        Now receives full map_data and current tile position to filter valid directions.
         """
-        self.tile_data = tile_data
+        self.map_data = map_data
+        self.pos = position
+        self.tile_data = map_data[position]
         self.on_save_callback = on_save_callback
 
+        # Pre-compute adjacency directions
+        self._deltas = {"north":(0,-1),"south":(0,1),"east":(1,0),"west":(-1,0),
+                        "northeast":(1,-1),"northwest":(-1,-1),"southeast":(1,1),"southwest":(-1,1)}
+        self.valid_directions = [d for d,(dx,dy) in self._deltas.items() if (self.pos[0]+dx, self.pos[1]+dy) in self.map_data]
+        # Purge stale exits / block_exit entries referencing missing neighbors
+        self.tile_data["exits"] = [d for d in self.tile_data.get("exits", []) if d in self.valid_directions]
+        self.tile_data["block_exit"] = [d for d in self.tile_data.get("block_exit", []) if d in self.valid_directions]
+
         self.window = tk.Toplevel(parent)
-        self.window.title(f"Editing Tile: {tile_data['id']}")
+        self.window.title(f"Editing Tile: {self.tile_data['id']}")
         self.window.geometry("400x650")
         self.window.configure(bg="#34495e")
         self.window.grab_set()  # Make window modal
@@ -578,7 +754,6 @@ class TileEditorWindow:
         self.directions_listbox = None
         self.symbol_entry = None
         self.exits_listbox = None
-
         # --- UI Elements ---
         self.create_widgets()
 
@@ -592,8 +767,8 @@ class TileEditorWindow:
         dialog_canvas = tk.Canvas(container, bg="#34495e", highlightthickness=0)
         vsb = tk.Scrollbar(container, orient="vertical", command=dialog_canvas.yview)
         dialog_canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side="right", fill="y")
-        dialog_canvas.pack(side="left", fill="both", expand=True)
+        vsb.pack(side='right', fill='y')
+        dialog_canvas.pack(side='left', fill='both', expand=True)
         main_frame = tk.Frame(dialog_canvas, bg="#34495e", padx=10, pady=10)
         dialog_canvas.create_window((0,0), window=main_frame, anchor="nw")
         main_frame.bind("<Configure>", lambda e: dialog_canvas.configure(scrollregion=dialog_canvas.bbox("all")))
@@ -617,48 +792,42 @@ class TileEditorWindow:
         self.exits_listbox = tk.Listbox(frame_exits, selectmode="multiple", height=6)
         exits_sb = tk.Scrollbar(frame_exits, orient="vertical", command=self.exits_listbox.yview)
         self.exits_listbox.configure(yscrollcommand=exits_sb.set)
-        directions = ["north","south","east","west","northeast","northwest","southeast","southwest"]
-        for d in directions:
+        for d in self.valid_directions:
             self.exits_listbox.insert("end", d)
             if d in self.tile_data.get("exits", []):
                 self.exits_listbox.select_set("end")
         self.exits_listbox.pack(side="left", fill="x", expand=True, pady=(0, 10))
         exits_sb.pack(side="right", fill="y")
-        tk.Label(main_frame, text="Select directions for exits.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w")
+        tk.Label(main_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w")
 
-        # Other Properties (as single-line entries)
-        tk.Label(main_frame, text="Events (comma-separated):", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.events_entry = tk.Entry(main_frame, width=40, font=("Helvetica", 10))
-        self.events_entry.insert(0, ", ".join(self.tile_data.get("events", [])))
-        self.events_entry.pack(fill="x")
+        # Events
+        tk.Label(main_frame, text="Events:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
+        self.events_frame = TagListFrame(main_frame, self.edit_event, self.remove_event)
+        self.events_frame.pack(fill="x", pady=(0, 10))
+        tk.Button(main_frame, text="Add Event", command=self.open_event_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
 
-        choose_btn = tk.Button(main_frame, text="Choose Event", command=self.open_event_chooser,
-                               font=("Helvetica", 10, "bold"), bg="#3498db", fg="white")
-        choose_btn.pack(fill="x", pady=(0, 10))
+        # Items
+        tk.Label(main_frame, text="Items:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
+        self.items_frame = TagListFrame(main_frame, self.edit_item, self.remove_item, self.duplicate_item)
+        self.items_frame.pack(fill="x", pady=(0, 10))
+        tk.Button(main_frame, text="Add Item", command=self.open_item_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
 
-        tk.Label(main_frame, text="Items (comma-separated):", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.items_entry = tk.Entry(main_frame, width=40, font=("Helvetica", 10))
-        self.items_entry.insert(0, ", ".join(self.tile_data.get("items", [])))
-        self.items_entry.pack(fill="x", pady=(0, 10))
-        choose_item_btn = tk.Button(main_frame, text="Choose Item", command=self.open_item_chooser,
-                                   font=("Helvetica", 10, "bold"), bg="#3498db", fg="white")
-        choose_item_btn.pack(fill="x", pady=(0, 10))
+        # NPCs
+        tk.Label(main_frame, text="NPCs:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
+        self.npcs_frame = TagListFrame(main_frame, self.edit_npc, self.remove_npc, self.duplicate_npc)
+        self.npcs_frame.pack(fill="x", pady=(0, 10))
+        tk.Button(main_frame, text="Add NPC", command=self.open_npc_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
 
-        tk.Label(main_frame, text="NPCs (comma-separated):", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.npcs_entry = tk.Entry(main_frame, width=40, font=("Helvetica", 10))
-        self.npcs_entry.insert(0, ", ".join(self.tile_data.get("npcs", [])))
-        self.npcs_entry.pack(fill="x", pady=(0, 10))
-        choose_npc_btn = tk.Button(main_frame, text="Choose NPC", command=self.open_npc_chooser,
-                                 font=("Helvetica", 10, "bold"), bg="#3498db", fg="white")
-        choose_npc_btn.pack(fill="x", pady=(0, 10))
         # Objects
-        tk.Label(main_frame, text="Objects (comma-separated):", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.objects_entry = tk.Entry(main_frame, width=40, font=("Helvetica", 10))
-        self.objects_entry.insert(0, ", ".join(self.tile_data.get("objects", [])))
-        self.objects_entry.pack(fill="x", pady=(0, 10))
-        choose_obj_btn = tk.Button(main_frame, text="Choose Object", command=self.open_object_chooser,
-                                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white")
-        choose_obj_btn.pack(fill="x", pady=(0, 10))
+        tk.Label(main_frame, text="Objects:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
+        self.objects_frame = TagListFrame(main_frame, self.edit_object, self.remove_object, self.duplicate_object)
+        self.objects_frame.pack(fill="x", pady=(0, 10))
+        tk.Button(main_frame, text="Add Object", command=self.open_object_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
+
         # Directions blocked
         tk.Label(main_frame, text="Directions Blocked:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
         frame_dir = tk.Frame(main_frame)
@@ -668,11 +837,11 @@ class TileEditorWindow:
         self.directions_listbox.configure(yscrollcommand=dir_sb.set)
         self.directions_listbox.pack(side="left", fill="x", expand=True)
         dir_sb.pack(side="right", fill="y")
-        directions = ["north","south","east","west","northeast","northwest","southeast","southwest"]
-        for d in directions:
+        for d in self.valid_directions:
             self.directions_listbox.insert("end", d)
             if d in self.tile_data.get("block_exit", []):
                 self.directions_listbox.select_set("end")
+        tk.Label(main_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w")
         # Symbol
         tk.Label(main_frame, text="Symbol:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
         self.symbol_entry = tk.Entry(main_frame, width=10, font=("Helvetica", 12))
@@ -684,88 +853,84 @@ class TileEditorWindow:
                                 font=("Helvetica", 12, "bold"), bg="#2ecc71", fg="white")
         save_button.pack(fill="x", pady=(20, 0))
 
+        self.refresh_all_tags()
+
     def open_event_chooser(self):
-        """
-        Opens a dialog listing classes from story modules to choose as events.
-        """
-        # Determine story directory relative to this script file
         project_root = os.path.dirname(os.path.dirname(__file__))
+        event_paths = []
         story_dir = os.path.join(project_root, 'src', 'story')
+        if os.path.isdir(story_dir):
+            for fname in os.listdir(story_dir):
+                if fname.endswith('.py') and not fname.startswith('__'):
+                    event_paths.append(os.path.join(story_dir, fname))
+        self._show_hierarchy_chooser(event_paths, "Choose Event", self._add_event)
 
-        classes_by_module = {}
-        for fname in os.listdir(story_dir):
-            if fname.endswith('.py') and not fname.startswith('__'):
-                mod = fname[:-3]
-                path = os.path.join(story_dir, fname)
-                try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        tree = ast.parse(f.read())
-                    cls_names = find_all_classes(tree)
-                    # include module even if it has no classes
-                    classes_by_module[mod] = cls_names
-                except Exception:
-                    continue
-        dlg = tk.Toplevel(self.window)
-        dlg.title("Choose Event")
-        dlg.geometry('300x400')
-        dlg.transient(self.window)
-        dlg.grab_set()
-        # Filter entry
-        filter_frame = tk.Frame(dlg)
-        filter_frame.pack(fill='x', padx=5, pady=5)
-        tk.Label(filter_frame, text='Filter:', anchor='w').pack(side='left')
-        filter_var = tk.StringVar()
-        filter_entry = tk.Entry(filter_frame, textvariable=filter_var)
-        filter_entry.pack(side='left', fill='x', expand=True)
+    def open_item_chooser(self):
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(project_root, 'src', 'items.py')
+        self._show_hierarchy_chooser([path], "Choose Item", self._add_item)
 
-        frame = tk.Frame(dlg)
-        frame.pack(fill='both', expand=True)
-        lb = tk.Listbox(frame)
-        sb = tk.Scrollbar(frame, orient='vertical', command=lb.yview)
-        lb.configure(yscrollcommand=sb.set)
-        sb.pack(side='right', fill='y')
-        lb.pack(side='left', fill='both', expand=True)
+    def open_npc_chooser(self):
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(project_root, 'src', 'npc.py')
+        self._show_hierarchy_chooser([path], "Choose NPC", self._add_npc)
 
-        # Function to update listbox based on filter
-        def update_listbox(*args):
-            search = filter_var.get().lower()
-            lb.delete(0, tk.END)
-            for mod in sorted(classes_by_module):
-                mod_match = search in mod.lower()
-                matched = [c for c in classes_by_module[mod] if search in c.lower()]
-                if mod_match or matched:
-                    lb.insert('end', f"[{mod}]")
-                    for cname in (classes_by_module[mod] if mod_match else matched):
-                        lb.insert('end', f"  {cname}")
+    def open_object_chooser(self):
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(project_root, 'src', 'objects.py')
+        self._show_hierarchy_chooser([path], "Choose Object", self._add_object)
 
-        # Bind filter updates and populate initial list
-        filter_var.trace_add('write', update_listbox)
-        update_listbox()
-
-        def on_double(event):
-            sel = lb.get(lb.curselection())
-            if sel.startswith('  '):
-                classname = sel.strip()
-                current = [e.strip() for e in self.events_entry.get().split(',') if e.strip()]
-                if classname not in current:
-                    current.append(classname)
-                    self.events_entry.delete(0, tk.END)
-                    self.events_entry.insert(0, ', '.join(current))
-                dlg.destroy()
-        lb.bind('<Double-Button-1>', on_double)
-
-    def _show_hierarchy_chooser(self, module_path, dialog_title, entry_widget):
-        # parse module and build class hierarchy
-        try:
-            with open(module_path, 'r', encoding='utf-8') as f:
-                tree = ast.parse(f.read())
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not load module {module_path}:\n{e}")
-            return
-        roots, children = find_class_hierarchy(tree)
+    def _show_hierarchy_chooser(self, module_paths, dialog_title, add_callback):
+        """Display hierarchical class chooser for one or more module paths.
+        module_paths: list[str] absolute file system paths.
+        """
+        # Parse modules and build unified class hierarchy across them
+        class_info = {}  # name -> { 'bases': [...], 'children': set(), 'module': import_path }
+        # Determine project root (assumes all paths share same root two levels up from utils)
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        src_root = os.path.join(project_root, 'src')
+        for module_path in module_paths:
+            if not os.path.isfile(module_path):
+                continue
+            try:
+                with open(module_path, 'r', encoding='utf-8') as f:
+                    tree = ast.parse(f.read())
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not load module {module_path}:\n{e}")
+                return
+            # compute import path (e.g., src.events, src.tilesets.general)
+            rel = os.path.relpath(module_path, project_root)
+            # change path separators to dots and strip .py
+            import_mod = rel.replace(os.sep, '.')
+            if import_mod.lower().endswith('.py'):
+                import_mod = import_mod[:-3]
+            # ensure it starts with 'src.' (it should) else prepend
+            if not import_mod.startswith('src.'):
+                import_mod = 'src.' + import_mod
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    bases = []
+                    for b in node.bases:
+                        if isinstance(b, ast.Name):
+                            bases.append(b.id)
+                        elif isinstance(b, ast.Attribute):  # handle something.SomeBase
+                            # take rightmost name
+                            bases.append(b.attr)
+                    info = class_info.setdefault(node.name, {'bases': [], 'children': set(), 'module': import_mod})
+                    info['bases'] = bases
+                    # keep first module encountered (avoid overwriting if duplicate name)
+                    # if duplicate definitions across modules, we could namespace, but assume unique
+        # build children relations
+        for name, info in class_info.items():
+            for base in info['bases']:
+                if base in class_info:
+                    class_info[base]['children'].add(name)
+        # roots: classes whose bases are not in class_info
+        roots = sorted([n for n, info in class_info.items() if not any(b in class_info for b in info['bases'])])
+        # Build dialog
         dlg = tk.Toplevel(self.window)
         dlg.title(dialog_title)
-        dlg.geometry('300x400')
+        dlg.geometry('320x450')
         dlg.transient(self.window)
         dlg.grab_set()
         # Filter entry
@@ -782,82 +947,290 @@ class TileEditorWindow:
         lb.configure(yscrollcommand=sb.set)
         sb.pack(side='right', fill='y')
         lb.pack(side='left', fill='both', expand=True)
-        # populate based on filter
+        lb._items = []  # parallel list of {'name': class_name, 'module': import_mod}
+        # helper to decide if subtree matches filter
         def update_list(*args):
-            search = filter_var.get().lower()
+            search = filter_var.get().lower().strip()
             lb.delete(0, tk.END)
-            def match(name):
-                if search in name.lower(): return True
-                return any(match(c) for c in children.get(name, []))
+            lb._items.clear()
+            visited = set()
             def recurse(names, indent=0):
                 for n in sorted(names):
-                    if match(n):
-                        lb.insert('end', '  '*indent + n)
-                        recurse(children.get(n, []), indent+1)
+                    if n in visited:
+                        continue
+                    visited.add(n)
+                    info = class_info[n]
+                    # determine if this node or any descendant matches filter
+                    def subtree_matches(cname):
+                        if not search:
+                            return True
+                        if search in cname.lower():
+                            return True
+                        for child in class_info[cname]['children']:
+                            if subtree_matches(child):
+                                return True
+                        return False
+                    if subtree_matches(n):
+                        lb.insert('end', '  ' * indent + n)
+                        lb._items.append({'name': n, 'module': info['module']})
+                        # recurse children
+                        if class_info[n]['children']:
+                            recurse(class_info[n]['children'], indent + 1)
             recurse(roots)
         filter_var.trace_add('write', update_list)
         update_list()
-        # double-click adds to entry
+        # double-click to instantiate and edit
         def on_double(e):
-            sel = lb.get(lb.curselection()).strip()
-            current = [i.strip() for i in entry_widget.get().split(',') if i.strip()]
-            if sel not in current:
-                current.append(sel)
-                entry_widget.delete(0, tk.END)
-                entry_widget.insert(0, ', '.join(current))
+            if not lb.curselection():
+                return
+            idx = lb.curselection()[0]
+            meta = lb._items[idx]
+            cls_name = meta['name']
+            import_module = meta['module']
+            try:
+                module = __import__(import_module, fromlist=[cls_name])
+                cls = getattr(module, cls_name)
+                self._open_property_dialog(cls, existing=None, callback=lambda inst: add_callback(inst))
+            except Exception as ex:
+                messagebox.showerror("Error", f"Could not create instance: {ex}")
             dlg.destroy()
         lb.bind('<Double-Button-1>', on_double)
 
-    def open_item_chooser(self):
-        """Chooser for item classes with hierarchy."""
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(project_root, 'src', 'items.py')
-        self._show_hierarchy_chooser(path, "Choose Item", self.items_entry)
+    def _add_event(self, inst):
+        self.tile_data.setdefault('events', []).append(inst)
+        self._refresh_tags('events', self.events_frame)
+    def _add_item(self, inst):
+        items = self.tile_data.setdefault('items', [])
+        # stacking logic
+        if hasattr(inst, 'count'):
+            for existing in items:
+                if isinstance(existing, inst.__class__):
+                    existing.count = getattr(existing, 'count', 1) + getattr(inst, 'count', 1)
+                    break
+            else:
+                items.append(inst)
+        else:
+            items.append(inst)
+        self._refresh_tags('items', self.items_frame)
+    def _add_npc(self, inst):
+        self.tile_data.setdefault('npcs', []).append(inst)
+        self._refresh_tags('npcs', self.npcs_frame)
+    def _add_object(self, inst):
+        self.tile_data.setdefault('objects', []).append(inst)
+        self._refresh_tags('objects', self.objects_frame)
 
-    def open_npc_chooser(self):
-        """Chooser for NPC classes with hierarchy."""
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(project_root, 'src', 'npc.py')
-        self._show_hierarchy_chooser(path, "Choose NPC", self.npcs_entry)
+    def duplicate_item(self, inst):
+        try:
+            new_inst = copy.deepcopy(inst)
+        except Exception:
+            # fallback shallow
+            new_inst = inst.__class__.__new__(inst.__class__)
+            new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
+        self._add_item(new_inst)
 
-    def open_object_chooser(self):
-        """Chooser for object classes with hierarchy."""
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(project_root, 'src', 'objects.py')
-        self._show_hierarchy_chooser(path, "Choose Object", self.objects_entry)
+    def duplicate_npc(self, inst):
+        try:
+            new_inst = copy.deepcopy(inst)
+        except Exception:
+            new_inst = inst.__class__.__new__(inst.__class__)
+            new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
+        self.tile_data.setdefault('npcs', []).append(new_inst)
+        self._refresh_tags('npcs', self.npcs_frame)
+
+    def duplicate_object(self, inst):
+        try:
+            new_inst = copy.deepcopy(inst)
+        except Exception:
+            new_inst = inst.__class__.__new__(inst.__class__)
+            new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
+        self.tile_data.setdefault('objects', []).append(new_inst)
+        self._refresh_tags('objects', self.objects_frame)
 
     def save_and_close(self):
-        """
-        Saves the edited properties back to the tile data and closes the window.
-        """
+        """Saves the edited properties back to the tile data and closes the window."""
         try:
-            # Update title
             self.tile_data["title"] = self.title_entry.get().strip()
-
-            # Update description
             self.tile_data["description"] = self.description_text.get("1.0", tk.END).strip()
-
-            # Update exits list
             sel = self.exits_listbox.curselection()
             self.tile_data["exits"] = [self.exits_listbox.get(i) for i in sel]
-
-            # Update other lists
-            self.tile_data["events"] = [item.strip() for item in self.events_entry.get().split(",") if item.strip()]
-            self.tile_data["items"] = [item.strip() for item in self.items_entry.get().split(",") if item.strip()]
-            self.tile_data["npcs"] = [item.strip() for item in self.npcs_entry.get().split(",") if item.strip()]
-            # Update objects
-            self.tile_data["objects"] = [item.strip() for item in self.objects_entry.get().split(",") if item.strip()]
-            # Update blocked directions
-            selected = self.directions_listbox.curselection()
-            self.tile_data["block_exit"] = [self.directions_listbox.get(i) for i in selected]
-            # Update symbol
+            if self.directions_listbox:
+                selected = self.directions_listbox.curselection()
+                self.tile_data["block_exit"] = [self.directions_listbox.get(i) for i in selected]
+            # Enforce validity again (safety if map changed during edit)
+            self.tile_data["exits"] = [d for d in self.tile_data.get("exits", []) if d in self.valid_directions]
+            self.tile_data["block_exit"] = [d for d in self.tile_data.get("block_exit", []) if d in self.valid_directions]
             self.tile_data["symbol"] = self.symbol_entry.get().strip()
-
-            # Callback to redraw the main map with the new data
             self.on_save_callback()
             self.window.destroy()
         except Exception as e:
             messagebox.showerror("Error", f"Invalid input format. Please check your entries.\nDetails: {e}")
+
+    # New methods for refresh, add, edit, remove
+    def _refresh_tags(self, key, frame):
+        frame.clear()
+        for inst in self.tile_data.get(key, []):
+            name = inst.__class__.__name__ if hasattr(inst, '__class__') else str(inst)
+            frame.add_tag(inst, name)
+
+    def refresh_all_tags(self):
+        self._refresh_tags('events', self.events_frame)
+        self._refresh_tags('items', self.items_frame)
+        self._refresh_tags('npcs', self.npcs_frame)
+        self._refresh_tags('objects', self.objects_frame)
+
+    def _open_property_dialog(self, cls, existing=None, callback=None):
+        dlg = tk.Toplevel(self.window)
+        dlg.title(f"Properties for {cls.__name__}")
+        dlg.geometry('900x450')  # triple width
+        dlg.transient(self.window)
+        dlg.grab_set()
+        entries = {}  # name -> {'type': 'text'|'bool', 'get': callable}
+        sig = inspect.signature(cls.__init__)
+        params = [p for p in sig.parameters.values() if p.name != 'self']
+        excluded_names = {'player', 'tile'}
+        editable_params = [p for p in params if p.name not in excluded_names]
+        excluded_params = [p for p in params if p.name in excluded_names]
+        frm = tk.Frame(dlg, bg="#34495e", padx=14, pady=14)
+        frm.pack(fill='both', expand=True)
+        if editable_params:
+            col_count = 2 if len(editable_params) > 6 else 1
+            for idx, p in enumerate(editable_params):
+                row = idx if col_count == 1 else idx // col_count
+                col = 0 if col_count == 1 else idx % col_count
+                container = tk.Frame(frm, bg="#34495e")
+                container.grid(row=row*2, column=col, sticky='ew', padx=6, pady=(0,6))
+                tk.Label(container, text=f"{p.name}:", bg="#34495e", fg="white", anchor='w').pack(anchor='w')
+                # derive default/existing value
+                if existing is not None:
+                    val = getattr(existing, p.name, p.default if p.default is not inspect._empty else getattr(cls, p.name, ''))
+                else:
+                    if p.name == 'repeat':
+                        # Force initial repeat to False as per requirement
+                        val = False
+                    elif p.default is not inspect._empty:
+                        val = p.default
+                    else:
+                        val = getattr(cls, p.name, '')
+                # boolean toggle if value is bool or default is bool
+                if isinstance(val, bool):
+                    bool_var = tk.BooleanVar(value=bool(val))
+                    toggle_frame = tk.Frame(container, bg="#34495e")
+                    toggle_frame.pack(fill='x')
+                    def make_toggle_button(label, state):
+                        btn = tk.Button(toggle_frame, text=label, relief='sunken' if bool_var.get()==state else 'raised',
+                                        width=6,
+                                        command=lambda s=state, b=label: set_state(s))
+                        return btn
+                    def refresh_buttons():
+                        for b, state in buttons:
+                            if bool_var.get()==state:
+                                b.config(relief='sunken', bg='#2ecc71' if state else '#e74c3c', fg='white')
+                            else:
+                                b.config(relief='raised', bg='#7f8c8d', fg='black')
+                    def set_state(s):
+                        bool_var.set(s)
+                        refresh_buttons()
+                    buttons = []
+                    btn_false = make_toggle_button('False', False)
+                    btn_false.pack(side='left', padx=(0,4))
+                    buttons.append((btn_false, False))
+                    btn_true = make_toggle_button('True', True)
+                    btn_true.pack(side='left')
+                    buttons.append((btn_true, True))
+                    refresh_buttons()
+                    entries[p.name] = {'type': 'bool', 'get': lambda v=bool_var: v.get()}
+                else:
+                    ent = tk.Entry(container)
+                    if not isinstance(val, str):
+                        try:
+                            val = repr(val)
+                        except Exception:
+                            val = str(val)
+                    ent.insert(0, val)
+                    ent.pack(fill='x')
+                    entries[p.name] = {'type': 'text', 'get': lambda e=ent: e.get().strip()}
+            for i in range(col_count):
+                frm.grid_columnconfigure(i, weight=1)
+        else:
+            tk.Label(frm, text="No editable properties.", bg="#34495e", fg="#ecf0f1", font=("Helvetica", 12, "italic")).pack(pady=20)
+        def on_add_save():
+            kwargs = {}
+            for name, meta in entries.items():
+                if meta['type'] == 'bool':
+                    kwargs[name] = meta['get']()
+                else:
+                    raw = meta['get']()
+                    if raw == '':
+                        continue
+                    try:
+                        kwargs[name] = eval(raw)
+                    except Exception:
+                        kwargs[name] = raw
+            if existing:
+                for k, v in kwargs.items():
+                    setattr(existing, k, v)
+                inst = existing
+            else:
+                for p in excluded_params:
+                    kwargs[p.name] = None
+                # Ensure repeat explicitly False if parameter exists but user didn't change
+                if 'repeat' in [p.name for p in editable_params] and 'repeat' not in kwargs:
+                    kwargs['repeat'] = False
+                inst = cls(**kwargs)
+            if callback:
+                callback(inst)
+            dlg.destroy()
+        def on_delete():
+            if existing and messagebox.askyesno("Delete", f"Delete {existing.__class__.__name__}?"):
+                if callback:
+                    callback(None)
+                dlg.destroy()
+        btn_frame = tk.Frame(dlg, bg="#34495e")
+        btn_frame.pack(fill='x', pady=10)
+        tk.Button(btn_frame, text="Cancel", command=dlg.destroy).pack(side='right', padx=5)
+        if existing:
+            tk.Button(btn_frame, text="Delete", command=on_delete, bg="#e74c3c", fg="white").pack(side='left', padx=5)
+        tk.Button(btn_frame, text=("Save" if existing else "Add"), command=on_add_save,
+                  bg="#2ecc71", fg="white").pack(side='right')
+
+    def edit_event(self, inst):
+        def cb(res):
+            if res is None:
+                self.tile_data['events'].remove(inst)
+            self._refresh_tags('events', self.events_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+
+    def remove_event(self, inst):
+        self.tile_data['events'].remove(inst)
+        self._refresh_tags('events', self.events_frame)
+
+    def edit_item(self, inst):
+        def cb(res):
+            if res is None:
+                self.tile_data['items'].remove(inst)
+            self._refresh_tags('items', self.items_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+    def remove_item(self, inst):
+        self.tile_data['items'].remove(inst)
+        self._refresh_tags('items', self.items_frame)
+    def edit_npc(self, inst):
+        def cb(res):
+            if res is None:
+                self.tile_data['npcs'].remove(inst)
+            self._refresh_tags('npcs', self.npcs_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+    def remove_npc(self, inst):
+        self.tile_data['npcs'].remove(inst)
+        self._refresh_tags('npcs', self.npcs_frame)
+    def edit_object(self, inst):
+        def cb(res):
+            if res is None:
+                self.tile_data['objects'].remove(inst)
+            self._refresh_tags('objects', self.objects_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+    def remove_object(self, inst):
+        self.tile_data['objects'].remove(inst)
+        self._refresh_tags('objects', self.objects_frame)
 
 
 if __name__ == "__main__":
