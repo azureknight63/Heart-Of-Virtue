@@ -41,7 +41,7 @@ class MapTile:
 
     def modify_player(self, the_player):
         """Process actions that change the state of the player."""
-        raise NotImplementedError()
+        pass
 
     def adjacent_moves(self):
         """Returns all move actions for adjacent tiles."""
