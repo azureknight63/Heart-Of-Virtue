@@ -8,6 +8,9 @@ import inspect
 import sys
 import copy
 import re
+from typing import Any, Dict, List, Tuple, Optional, cast  # type hinting (removed unused Iterable)
+
+
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
@@ -210,8 +213,8 @@ class MapEditor:
 
     def handle_canvas_click(self, event):
         """Updated to support modifier-based multi-select and empty tile selection."""
-        x = (event.x - self.offset_x) // self.tile_size
-        y = (event.y - self.offset_y) // self.tile_size
+        x = int((event.x - self.offset_x) // self.tile_size)
+        y = int((event.y - self.offset_y) // self.tile_size)
         pos = (x,y)
         ctrl = (event.state & 0x0004) != 0
         shift = (event.state & 0x0001) != 0
@@ -386,7 +389,7 @@ class MapEditor:
 
     # -------------------- Selection & Clipboard Helpers --------------------
     def _event_to_tile(self, event):
-        return ((event.x - self.offset_x) // self.tile_size, (event.y - self.offset_y) // self.tile_size)
+        return (int((event.x - self.offset_x) // self.tile_size), int((event.y - self.offset_y) // self.tile_size))
 
     def _on_mouse_down(self, event):
         # If in add-tile mode, preserve original click behavior (no marquee drag)
@@ -667,7 +670,7 @@ class MapEditor:
         max_chars = max(int(self.tile_size / 6), 1)
         disp = title if len(title) <= max_chars else title[:max_chars-1] + "…"
         title_tag = f"title_{x}_{y}"
-        text_id = self.canvas.create_text(
+        self.canvas.create_text(
             x1 + self.tile_size / 2,
             y1 + 2,
             text=disp,
@@ -708,19 +711,20 @@ class MapEditor:
         """
         try:
             # build serializable structure
-            def serialize_instance(inst):
+            def serialize_instance(inst: Any) -> Dict[str, Any]:
                 data = {k: v for k, v in vars(inst).items() if not k.startswith('_') and isinstance(v, (int,float,str,bool,list,dict,tuple))}
                 return {
                     '__class__': inst.__class__.__name__,
                     '__module__': inst.__class__.__module__,
                     'props': data
                 }
-            serializable_map = {}
+            serializable_map: Dict[str, Any] = {}
             for k, v in self.map_data.items():
-                tile = dict(v)
+                tile: Dict[str, Any] = dict(v)
                 for key in ['events','items','npcs','objects']:
                     inst_list = tile.get(key, [])
-                    tile[key] = [serialize_instance(i) for i in inst_list]
+                    # explicitly ensure list; ignore type checker complaints about heterogeneous contents
+                    tile[key] = [serialize_instance(i) for i in inst_list]  # type: ignore[assignment]
                 serializable_map[str(k)] = tile
 
             # Default save directory
@@ -781,9 +785,9 @@ class MapEditor:
                 self.map_data = {}
                 for k, tile in data.items():
                     pos = tuple(int(x) for x in k.strip('()').split(','))
-                    tile_copy = dict(tile)
+                    tile_copy: Dict[str, Any] = dict(tile)
                     for key in ['events','items','npcs','objects']:
-                        tile_copy[key] = [deserialize_instance(d) for d in tile_copy.get(key, [])]
+                        tile_copy[key] = [deserialize_instance(d) for d in tile_copy.get(key, [])]  # type: ignore[assignment]
                     self.map_data[pos] = tile_copy
                 self.current_map_filepath = filepath
                 self.selected_tile = None
@@ -792,7 +796,7 @@ class MapEditor:
                 self.set_status(f"Map loaded from {os.path.basename(filepath)}")
             except Exception as e:
                 messagebox.showerror("Error", f"Could not load map file:\n{e}")
-                self.set_status(f"Error loading map.")
+                self.set_status("Error loading map.")
 
     def load_legacy_map(self, filepath=None):
         """Load a legacy text-based map (.txt) into the editor.
@@ -852,7 +856,7 @@ class MapEditor:
                                                     string_literals = [a.value for a in inner.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
                                                     # also check keywords for 'description='
                                                     for kw in inner.keywords or []:
-                                                        if (kw.arg == 'description' and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)):
+                                                        if (kw.arg == 'description' and isinstance(kw.value, ast.Constant) and kw.value.value is not None):
                                                             string_literals.append(kw.value.value)
                                                     if string_literals:
                                                         # choose the longest (likely the actual description)
@@ -1083,8 +1087,8 @@ class MapEditor:
         Handles double-clicks on the canvas to open the edit dialog for the clicked tile.
         """
         # adjust for pan offsets
-        x = (event.x - self.offset_x) // self.tile_size
-        y = (event.y - self.offset_y) // self.tile_size
+        x = int((event.x - self.offset_x) // self.tile_size)
+        y = int((event.y - self.offset_y) // self.tile_size)
         pos = (x, y)
         if pos in self.map_data:
             # ensure add mode is off and select tile before editing
@@ -1189,58 +1193,34 @@ class MapEditor:
 
 
 
-def find_all_classes(tree):
-    """Recursively find all class names in an AST tree."""
-    class_names = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            class_names.append(node.name)
-    return class_names
-
-
-def find_class_hierarchy(tree):
-    """Return roots and children mapping for class inheritance within one module."""
-    class_nodes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
-    names = {n.name: n for n in class_nodes}
-    children = {name: [] for name in names}
-    for n in class_nodes:
-        for base in n.bases:
-            if isinstance(base, ast.Name) and base.id in names:
-                children[base.id].append(n.name)
-    roots = [n.name for n in class_nodes
-             if not any(isinstance(b, ast.Name) and b.id in names for b in n.bases)]
-    return roots, children
-
-
-# Helper frame to display tags with edit and remove capabilities
+# Added back previously removed TagListFrame (required by TileEditorWindow)
 class TagListFrame(tk.Frame):
     def __init__(self, parent, on_edit, on_remove, on_duplicate=None, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.on_edit = on_edit
         self.on_remove = on_remove
         self.on_duplicate = on_duplicate
-        self._tags = []  # list of (identifier, frame)
-        self._tooltip = None  # tooltip window
+        self._tags: List[Tuple[Any, tk.Frame]] = []
+        self._tooltip: Optional[tk.Toplevel] = None
 
-    def _get_editable_properties(self, obj):
-        props = []
+    def _get_editable_properties(self, obj) -> List[Tuple[str, str]]:
+        props: List[Tuple[str, str]] = []
         try:
             cls = obj.__class__
             sig = inspect.signature(cls.__init__)
             params = [p for p in sig.parameters.values() if p.name != 'self']
             excluded = {'player', 'tile'}
-            editable = [p for p in params if p.name not in excluded]
-            for p in editable:
+            for p in params:
+                if p.name in excluded:
+                    continue
                 try:
                     val = getattr(obj, p.name)
                 except Exception:
                     continue
-                # represent value safely
                 try:
                     rep = repr(val)
                 except Exception:
                     rep = str(val)
-                # truncate long representations
                 if len(rep) > 80:
                     rep = rep[:77] + '...'
                 props.append((p.name, rep))
@@ -1249,19 +1229,15 @@ class TagListFrame(tk.Frame):
         return props
 
     def _show_tooltip(self, event, obj):
-        # destroy existing
         self._hide_tooltip()
-        # build text
         header = obj.__class__.__name__ if hasattr(obj, '__class__') else 'Object'
         lines = [header]
         props = self._get_editable_properties(obj)
         if props:
-            for name, rep in props:
-                lines.append(f"{name} = {rep}")
+            lines.extend(f"{n} = {v}" for n,v in props)
         else:
             lines.append('(No editable properties)')
         text = '\n'.join(lines)
-        # create window
         tw = tk.Toplevel(self.winfo_toplevel())
         tw.wm_overrideredirect(True)
         lbl = tk.Label(tw, text=text, justify='left', bg='#ffffe0', fg='black', bd=1, relief='solid', font=("Helvetica", 9))
@@ -1283,29 +1259,24 @@ class TagListFrame(tk.Frame):
         widget.bind('<Enter>', lambda e, o=obj: self._show_tooltip(e, o))
         widget.bind('<Leave>', lambda e: self._hide_tooltip())
 
-    def add_tag(self, identifier, text):
-        frm = tk.Frame(self, bd=1, relief="solid", padx=4, pady=2)
+    def add_tag(self, identifier, text: str):
+        frm = tk.Frame(self, bd=1, relief='solid', padx=4, pady=2)
         lbl = tk.Label(frm, text=text)
-        lbl.pack(side="left")
-        # Delete button packed first so it stays at far right
-        del_btn = tk.Button(frm, text="×", command=lambda: self.remove(identifier), bd=0, padx=2, pady=0)
-        del_btn.pack(side="right")
-        # Duplicate button now appears to the right of label but left of delete (since packed after delete with side=right earlier logic reversed)
+        lbl.pack(side='left')
+        del_btn = tk.Button(frm, text='×', command=lambda: self.remove(identifier), bd=0, padx=2, pady=0)
+        del_btn.pack(side='right')
         if self.on_duplicate:
-            dup_btn = tk.Button(frm, text="⧉", command=lambda: self.on_duplicate(identifier), bd=0, padx=2, pady=0)
-            dup_btn.pack(side="right")
-        frm.pack(side="left", padx=2, pady=2)
-        frm.bind("<Double-Button-1>", lambda e: self.on_edit(identifier))
-        lbl.bind("<Double-Button-1>", lambda e: self.on_edit(identifier))
-        # Hover tooltips for properties
+            dup_btn = tk.Button(frm, text='⧉', command=lambda: self.on_duplicate(identifier), bd=0, padx=2, pady=0)
+            dup_btn.pack(side='right')
+        frm.pack(side='left', padx=2, pady=2)
+        frm.bind('<Double-Button-1>', lambda e: self.on_edit(identifier))
+        lbl.bind('<Double-Button-1>', lambda e: self.on_edit(identifier))
         self._bind_tooltip(frm, identifier)
         self._bind_tooltip(lbl, identifier)
         self._tags.append((identifier, frm))
 
     def remove(self, identifier):
-        # Update underlying data via callback
         self.on_remove(identifier)
-        # Remove only this tag's frame; do NOT clear all (prevents wiping others inadvertently)
         for i, (ident, frm) in enumerate(list(self._tags)):
             if ident is identifier:
                 try:
@@ -1314,18 +1285,18 @@ class TagListFrame(tk.Frame):
                     pass
                 self._tags.pop(i)
                 break
-        # Ensure tooltip hidden if any
         self._hide_tooltip()
-        # Caller may choose to refresh fully; if so duplicates won't cause UI inconsistency
 
     def clear(self):
         for _, frm in self._tags:
-            frm.destroy()
+            try:
+                frm.destroy()
+            except Exception:
+                pass
         self._tags.clear()
 
-    def get_all(self):
+    def get_all(self) -> List[Any]:
         return [ident for ident, _ in self._tags]
-
 
 class TileEditorWindow:
     """
@@ -1359,14 +1330,8 @@ class TileEditorWindow:
         # Pre-declare widget attributes
         self.title_entry = None
         self.description_text = None
-        self.exits_text = None
-        self.events_entry = None
-        self.items_entry = None
-        self.npcs_entry = None
-        self.objects_entry = None
-        self.directions_listbox = None
-        self.symbol_entry = None
         self.exits_listbox = None
+        self.symbol_entry = None
         # --- UI Elements ---
         self.create_widgets()
 
@@ -1501,7 +1466,6 @@ class TileEditorWindow:
         class_info = {}  # name -> { 'bases': [...], 'children': set(), 'module': import_path }
         # Determine project root (assumes all paths share same root two levels up from utils)
         project_root = os.path.dirname(os.path.dirname(__file__))
-        src_root = os.path.join(project_root, 'src')
         for module_path in module_paths:
             if not os.path.isfile(module_path):
                 continue
@@ -1519,7 +1483,7 @@ class TileEditorWindow:
                 import_mod = import_mod[:-3]
             # ensure it starts with 'src.' (it should) else prepend
             if not import_mod.startswith('src.'):
-                import_mod = 'src.' + import_mod
+                import_mod = 'src.' + str(import_mod)
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
                     bases = []
@@ -1560,12 +1524,13 @@ class TileEditorWindow:
         lb.configure(yscrollcommand=sb.set)
         sb.pack(side='right', fill='y')
         lb.pack(side='left', fill='both', expand=True)
-        lb._items = []  # parallel list of {'name': class_name, 'module': import_mod}
+        # Maintain metadata externally to avoid adding typed attribute to tk.Listbox (silences warning)
+        items_meta: List[Dict[str, str]] = []
         # helper to decide if subtree matches filter
         def update_list(*args):
             search = filter_var.get().lower().strip()
             lb.delete(0, tk.END)
-            lb._items.clear()
+            items_meta.clear()
             visited = set()
             def recurse(names, indent=0):
                 for n in sorted(names):
@@ -1585,8 +1550,7 @@ class TileEditorWindow:
                         return False
                     if subtree_matches(n):
                         lb.insert('end', '  ' * indent + n)
-                        lb._items.append({'name': n, 'module': info['module']})
-                        # recurse children
+                        items_meta.append({'name': n, 'module': info['module']})
                         if class_info[n]['children']:
                             recurse(class_info[n]['children'], indent + 1)
             recurse(roots)
@@ -1597,9 +1561,9 @@ class TileEditorWindow:
             if not lb.curselection():
                 return
             idx = lb.curselection()[0]
-            meta = lb._items[idx]
-            cls_name = meta['name']
-            import_module = meta['module']
+            meta = cast(Dict[str,str], items_meta[idx])
+            cls_name = meta.get('name', '')
+            import_module = meta.get('module', '')
             try:
                 module = __import__(import_module, fromlist=[cls_name])
                 cls = getattr(module, cls_name)
@@ -1767,7 +1731,7 @@ class TileEditorWindow:
         else:
             tk.Label(frm, text="No editable properties.", bg="#34495e", fg="#ecf0f1", font=("Helvetica", 12, "italic")).pack(pady=20)
         def on_add_save():
-            kwargs = {}
+            kwargs: Dict[str, Any] = {}
             for name, meta in entries.items():
                 if meta['type'] == 'bool':
                     kwargs[name] = meta['get']()
@@ -1776,7 +1740,8 @@ class TileEditorWindow:
                     if raw == '':
                         continue
                     try:
-                        kwargs[name] = eval(raw)
+                        import ast as _ast
+                        kwargs[name] = _ast.literal_eval(raw)
                     except Exception:
                         kwargs[name] = raw
             if existing:
@@ -1845,7 +1810,9 @@ class TileEditorWindow:
         self.tile_data['objects'].remove(inst)
         self._refresh_tags('objects', self.objects_frame)
 
+# Do NOT remove this section; needed for testing the MapEditor directly
 if __name__ == "__main__":
     root = tk.Tk()
     app = MapEditor(root)
     root.mainloop()
+
