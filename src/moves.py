@@ -610,9 +610,9 @@ class PowerStrike(Move):
         self.refresh_announcements(self.user)
 
     def refresh_announcements(self, user):
-        self.stage_announce = [colored(f"{user.name} grips {user.pronouns["possessive"]} {self.weapon.name} "
+        self.stage_announce = [colored(f"{user.name} grips {user.pronouns['possessive']} {self.weapon.name} "
                                        f"in preparation to strike!", "red"),
-                               colored(f"{user.name} swings {user.pronouns["possessive"]} "
+                               colored(f"{user.name} swings {user.pronouns['possessive']} "
                                        f"{self.weapon.name} mightily at {self.target.name}!", "red"),
                                f"{user.name} recoils heavily from the attack.",
                                ""]
