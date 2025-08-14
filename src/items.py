@@ -326,11 +326,12 @@ class Accessory(Item):
 
 class Consumable(Item):
 
-    def __init__(self, name, description, value, weight, maintype, subtype, discovery_message='a useful item.'):
+    def __init__(self, name, description, value, weight, maintype, subtype,
+                 discovery_message='a useful item.', count=1):
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
-        self.count = 1
+        self.count = count
         self.interactions = ["use", "drop"]
         super().__init__(name, description, value, maintype, subtype,
                          discovery_message)  # announce="You notice a {} sitting here.".format(self.name))
@@ -777,14 +778,14 @@ class SilverBracelet(Accessory):
 
 
 class Restorative(Consumable):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves.",
-                         value=100, weight=0.25, maintype="Consumable", subtype="Potion")
+                         value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count)
         self.power = 60
-        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
         # the game searches the inventory for other copies and increases that count by self.count,
         # then removes this object
         self.interactions = ["use", "drink", "drop"]
@@ -830,13 +831,13 @@ class Restorative(Consumable):
 
 
 class Draught(Consumable):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Draught",
                          description="A green fluid giving off a warm, pleasant glow.\n"
                                      "Invigorating for any tired adventurer.",
-                         value=75, weight=0.25, maintype="Consumable", subtype="Potion")
+                         value=75, weight=0.25, maintype="Consumable", subtype="Potion", count=count)
         self.power = 100
-        self.count = 1
+        self.count = count
         self.interactions = ["use", "drink", "drop"]
         self.announce = ("Jean notices a small glass bottle of glowing green fluid on the ground. "
                          "Its label reads, simply, 'Draught.'")
@@ -877,14 +878,14 @@ class Draught(Consumable):
 
 
 class Antidote(Consumable):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Antidote",
                          description="A murky green fluid of questionable chemistry.\n"
                                      "Drinking it restores a small amount of health and \n"
                                      "neutralizes harmful toxins in the bloodstream.",
-                         value=175, weight=0.25, maintype="Consumable", subtype="Potion")
+                         value=175, weight=0.25, maintype="Consumable", subtype="Potion", count=count)
         self.power = 15
-        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
         # the game searches the inventory for other copies and increases that count by self.count,
         # then removes this object
         self.interactions = ["use", "drink", "drop"]
@@ -942,11 +943,11 @@ class Antidote(Consumable):
 
 class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasses (like WoodenArrow, IronArrow, etc.)
     def __init__(self, name, description, value, weight, power, range_base_modifier, range_decay_modifier, sturdiness,
-                 helptext, effects):
+                 helptext, effects, count=1):
         super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable",
-                         subtype="Arrow")
+                         subtype="Arrow", count=count)
         self.power = power
-        self.count = 1  # this will allow stacking of homogeneous items. At each game loop,
+        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
         # the game searches the inventory for other copies and increases that count by self.count,
         # then removes this object
         self.interactions = ["drop", "prefer"]
@@ -972,7 +973,7 @@ class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasse
 
 
 class WoodenArrow(Arrow):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Wooden Arrow",
                          description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
                                      "This one is made of wood. Wooden arrows are lightweight, "
@@ -981,11 +982,11 @@ class WoodenArrow(Arrow):
                          value=1, weight=0.05, power=20, range_base_modifier=1.2, range_decay_modifier=0.8,
                          sturdiness=0.4,
                          helptext=colored("+range, -decay, ", "green") + colored("-damage, -sturdiness", "red"),
-                         effects=None)
+                         effects=None, count=count)
 
 
 class IronArrow(Arrow):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, "
                                                         "a shaft of sorts, and fletching. \
         This one is made of iron. Iron arrows are heavy and can be devastating up close. "
@@ -995,11 +996,11 @@ class IronArrow(Arrow):
                          value=5, weight=0.25, power=30, range_base_modifier=0.7, range_decay_modifier=1.4,
                          sturdiness=0.6,
                          helptext=colored("+damage, +sturdiness, ", "green") + colored("-range, ++decay", "red"),
-                         effects=None)
+                         effects=None, count=count)
 
 
 class GlassArrow(Arrow):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, "
                                                          "a shaft of sorts, and fletching. \
         This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, "
@@ -1007,11 +1008,11 @@ class GlassArrow(Arrow):
                          value=10, weight=0.1, power=40, range_base_modifier=1.1, range_decay_modifier=1,
                          sturdiness=0.1,
                          helptext=colored("+range, +damage, ", "green") + colored("~decay, ", "yellow") + colored(
-                             "---sturdiness", "red"), effects=None)
+                             "---sturdiness", "red"), effects=None, count=count)
 
 
 class FlareArrow(Arrow):
-    def __init__(self):
+    def __init__(self, count=1):
         super().__init__(name="Flare Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, "
                                                          "and fletching. \
         This one is made of wood and bursts into flames upon impact."
@@ -1019,5 +1020,5 @@ class FlareArrow(Arrow):
                          value=10, weight=0.05, power=25, range_base_modifier=1.2, range_decay_modifier=0.8,
                          sturdiness=0.0,
                          helptext=colored("+range, +damage, -decay, ", "green") + colored("----sturdiness", "red"),
-                         effects=None)
+                         effects=None, count=count)
         # todo add fire effect on impact
