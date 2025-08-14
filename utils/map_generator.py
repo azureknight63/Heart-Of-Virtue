@@ -221,7 +221,40 @@ class MapEditor:
             "npcs": [],
             "objects": []
         }
+        # Normalize map so there are at most 2 empty rows/cols above/left
+        self._normalize_min_padding()
         self.draw_map()
+
+    def _normalize_min_padding(self):
+        """Ensure there are at most 2 empty rows above the topmost tile and
+        at most 2 empty columns to the left of the leftmost tile.
+        Shifts all tiles (and updates their ids) if necessary.
+        """
+        if not self.map_data:
+            return
+        min_x = min(pos[0] for pos in self.map_data.keys())
+        min_y = min(pos[1] for pos in self.map_data.keys())
+        shift_x = max(0, min_x - 2)
+        shift_y = max(0, min_y - 2)
+        if shift_x == 0 and shift_y == 0:
+            return  # nothing to do
+        new_map = {}
+        for (x, y), tile in self.map_data.items():
+            old_id = tile.get('id')
+            old_title = tile.get('title')
+            nx, ny = x - shift_x, y - shift_y
+            tile = dict(tile)  # shallow copy
+            new_id = f"tile_{nx}_{ny}"
+            tile['id'] = new_id
+            # If the title was auto-generated (matched the old id), update it to new id
+            if old_title == old_id:
+                tile['title'] = new_id
+            new_map[(nx, ny)] = tile
+        # Update selected tile reference if present
+        if self.selected_tile:
+            sx, sy = self.selected_tile
+            self.selected_tile = (sx - shift_x, sy - shift_y)
+        self.map_data = new_map
 
     def remove_selected_tile(self):
         """
@@ -241,6 +274,8 @@ class MapEditor:
                     return (pos_key[0] + dx, pos_key[1] + dy) in self.map_data
                 tile["exits"] = [d for d in tile.get("exits", []) if d in deltas and neighbor_exists(d)]
                 tile["block_exit"] = [d for d in tile.get("block_exit", []) if d in deltas and neighbor_exists(d)]
+            # Normalize after removal
+            self._normalize_min_padding()
             self.draw_map()
             self.set_status(f"Removed tile at ({x}, {y}).")
         else:
