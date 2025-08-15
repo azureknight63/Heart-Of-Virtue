@@ -610,12 +610,12 @@ class PowerStrike(Move):
         self.refresh_announcements(self.user)
 
     def refresh_announcements(self, user):
-        self.stage_announce = [colored(f"{user.name} grips {user.pronouns["possessive"]} {self.weapon.name} "
-                                       f"in preparation to strike!", "red"),
-                               colored(f"{user.name} swings {user.pronouns["possessive"]} "
-                                       f"{self.weapon.name} mightily at {self.target.name}!", "red"),
-                               f"{user.name} recoils heavily from the attack.",
-                               ""]
+        self.stage_announce = [
+            colored(f"{user.name} grips {user.pronouns['possessive']} {self.weapon.name} in preparation to strike!", "red"),
+            colored(f"{user.name} swings {user.pronouns['possessive']} {self.weapon.name} mightily at {self.target.name}!", "red"),
+            f"{user.name} recoils heavily from the attack.",
+            ""
+        ]
 
     def execute(self, npc):
         self.refresh_announcements(npc)
@@ -1024,6 +1024,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
         fatigue_cost = (85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+        # Removed undefined mod_fatigue modifier; add future modifiers here if needed
         if fatigue_cost <= 10:
             fatigue_cost = 10
 

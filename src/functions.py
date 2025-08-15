@@ -11,6 +11,7 @@ import pkgutil
 
 import moves
 import enchant_tables
+import secure_pickle  # added for hardened unpickling
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -311,9 +312,9 @@ def load_select():
 
 
 def load(filename):
-    with open(filename, 'rb') as f:
-        data = pickle.load(f)
-    return data
+    # Hardened load via secure_pickle (Phase 1). Falls back to standard pickle only if secure loader fails for
+    # non-security related reasons (not currently implemented). Unknown classes will raise in strict mode.
+    return secure_pickle.load(filename)
 
 
 def save_select(player):
@@ -503,11 +504,6 @@ def add_random_enchantments(item, count):
         if not candidates:  # skip ahead if there are no available enchantments
             ench_pool -= 1
             continue
-        # for candidate in candidates:
-        #     print(candidate.name + " req? " + str(candidate.requirements()))
-        #     if not candidate.requirements() or (rarity < candidate.rarity):
-        #         candidates.remove(candidate)
-        # print("Candidates: " + str(candidates))
         select = random.randint(0, len(candidates) - 1)
         enchantments[group] = candidates[select]
         ench_pool -= 1
@@ -533,7 +529,7 @@ def add_preference(player, preftype, setting):
 
 
 def escape_ansi(line):
-    ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
+    ansi_escape = re.compile(r'(?:\x1B[@-_][\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
 
 
@@ -549,5 +545,5 @@ def list_module_names(package_name):
 
 def clean_string(input_string):
     # Remove non-printable characters
-    cleaned_string = re.sub(r'[\[\d]+m|[^\x20-\x7E]', '', input_string)
+    cleaned_string = re.sub(r'[\[\d]+m[^\x20-\x7E]', '', input_string)
     return cleaned_string

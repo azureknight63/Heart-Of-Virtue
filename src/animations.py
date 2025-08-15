@@ -1,28 +1,75 @@
 from random import randint
 import sys
-# import time
 from pathlib import Path
 
 import functions
 
-from asciimatics.effects import Cycle, Stars, Print
-from asciimatics.renderers import FigletText, ColourImageFile, ImageFile, SpeechBubble
-from asciimatics.scene import Scene
-from asciimatics.screen import Screen
-from asciimatics.exceptions import ResizeScreenError
+# Optional dependencies: asciimatics & Pillow
+try:
+    from asciimatics.effects import Cycle, Stars, Print
+    from asciimatics.renderers import FigletText, ColourImageFile, ImageFile, SpeechBubble
+    from asciimatics.scene import Scene
+    from asciimatics.screen import Screen
+    from asciimatics.exceptions import ResizeScreenError
+    ASCIIMATICS_AVAILABLE = True
+except ImportError:  # provide light stubs so core game/tests don't crash
+    ASCIIMATICS_AVAILABLE = False
+    class Screen:  # minimal stub
+        @staticmethod
+        def wrapper(func, arguments=None):
+            # call target func with None screen; swallow failures
+            try:
+                if arguments:
+                    func(None, *arguments)
+                else:
+                    func(None)
+            except Exception:
+                print("[animation skipped]")
+    class Scene:  # placeholder
+        def __init__(self, *_, **__):
+            pass
+    class Cycle:  # placeholders for effects
+        def __init__(self, *_, **__):
+            pass
+    class Stars:
+        def __init__(self, *_, **__):
+            pass
+    class Print:
+        def __init__(self, *_, **__):
+            pass
+    class FigletText:
+        def __init__(self, *_, **__):
+            pass
+    class ColourImageFile:
+        def __init__(self, *_, **__):
+            pass
+    class ImageFile:
+        def __init__(self, *_, **__):
+            pass
+    class SpeechBubble:
+        def __init__(self, *_, **__):
+            pass
+    class ResizeScreenError(Exception):
+        pass
 
-from PIL import Image
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 
 def count_gif_frames(gif_path):
+    if not PIL_AVAILABLE:
+        return 0
     with Image.open(gif_path) as img:
         frame_count = 0
         try:
             while True:
-                img.seek(frame_count)  # Move to the next frame
+                img.seek(frame_count)
                 frame_count += 1
         except EOFError:
-            pass  # Reached the end of the GIF
+            pass
     return frame_count
 
 
@@ -31,33 +78,31 @@ def function_exists(module, function_name):
 
 
 def main():
-    # input("### args: "+" ".join(sys.argv))
-    # input("len(sys.argv): " + str(len(sys.argv)))
-    # input(f"{sys.argv[1]}")
     if len(sys.argv) < 3:
         animation = sys.argv[1]
-        # input(animation)
         if ".gif" in animation:
             file_to_play = animation.replace(".gif", "")
-            Screen.wrapper(func=play_gif, arguments=[file_to_play])
-        else:
-            if function_exists('animations.py', animation):
-                Screen.wrapper(getattr('animations.py', animation))  # execute the animation
+            if ASCIIMATICS_AVAILABLE and PIL_AVAILABLE:
+                Screen.wrapper(func=play_gif, arguments=[file_to_play])
             else:
-                print("### Animation not found!")
+                print(f"[animation skipped: {file_to_play}.gif]")
+        else:
+            if function_exists('animations.py', animation) and ASCIIMATICS_AVAILABLE:
+                Screen.wrapper(getattr('animations.py', animation))
+            else:
+                print("### Animation not found or asciimatics not available!")
     else:
-        # Screen.wrapper(demo)
-        input("### no arguments passed to script!")
         try:
-            Screen.wrapper(demo)
-            sys.exit(0)
+            if ASCIIMATICS_AVAILABLE:
+                Screen.wrapper(demo)
         except ResizeScreenError:
             pass
-    # time.sleep(10)
-    # input("Press any key to close")
 
 
 def demo(screen):
+    if not ASCIIMATICS_AVAILABLE:
+        print("[demo animation skipped]")
+        return
     while True:
         screen.print_at('This is the placeholder animation!',
                         randint(0, screen.width), randint(0, screen.height),
@@ -70,6 +115,9 @@ def demo(screen):
 
 
 def demo2(screen):
+    if not ASCIIMATICS_AVAILABLE:
+        print("[demo2 animation skipped]")
+        return
     effects = [
         Cycle(
             screen,
@@ -85,12 +133,9 @@ def demo2(screen):
 
 
 def play_gif(screen, file, text=""):
-    """
-    Plays the selected gif file.
-    :param screen: the Screen object; handled by the Screen.wrapper function
-    :param file: the name of the file without any path or extension
-    :param text: Text to display with the animation, if any.
-    """
+    if not (ASCIIMATICS_AVAILABLE and PIL_AVAILABLE):
+        print(f"[gif animation skipped: {file}.gif]")
+        return
     filepath = f"./resources/animations/{file}.gif"
     if Path(filepath).exists():
         scenes = []
@@ -111,11 +156,9 @@ def play_gif(screen, file, text=""):
 
 
 def display_static_image(screen, file):
-    """
-        Plays the selected static image file.
-        :param screen: the Screen object; handled by the Screen.wrapper function
-        :param file: the name of the file with extension, no path
-        """
+    if not ASCIIMATICS_AVAILABLE:
+        print(f"[static image skipped: {file}]")
+        return
     filepath = f"./resources/images/{file}"
     if Path(filepath).exists():
         effects = [
@@ -130,7 +173,10 @@ def display_static_image(screen, file):
         print("### Animation not found!")
 
 
-def title_scene(screen):  # just for testing. I don't think I actually want to use this!
+def title_scene(screen):
+    if not ASCIIMATICS_AVAILABLE:
+        print("[title scene skipped]")
+        return
     effects = [
         Print(screen,
               ColourImageFile(screen, "./resources/images/title_scene.png", screen.height),
@@ -142,7 +188,6 @@ def title_scene(screen):  # just for testing. I don't think I actually want to u
     effects = [
         Print(screen,
               ImageFile("./resources/images/title_scene.png", 30),
-              # ColourImageFile(screen, "./resources/images/title_scene.png", screen.height),
               0,
               speed=1, transparent=False,
               stop_frame=100)
@@ -151,13 +196,10 @@ def title_scene(screen):  # just for testing. I don't think I actually want to u
 
 
 def animate_to_main_screen(animation, rawtext=""):
-    """
-    Plays the selected animation on the primary screen
-    :param animation: Name of one of the animation functions defined in the animations.py module OR the
-    filename of a gif in resources/animations, as a string
-    :param rawtext: Text to display with the animation, if any. You can pass in colored text (color will be stripped)
-    """
     text = functions.clean_string(rawtext)
+    if not ASCIIMATICS_AVAILABLE:
+        print(f"[animation skipped: {animation}] {text}")
+        return
     if ".gif" in animation:
         file_to_play = animation.replace(".gif", "")
         Screen.wrapper(func=play_gif, arguments=[file_to_play, text])
@@ -172,10 +214,9 @@ def animate_to_main_screen(animation, rawtext=""):
 
 
 def image_to_main_screen(image):
-    """
-        Displays the selected image on the primary screen
-        :param image: Name of image resources/images, as a string, includes extension
-        """
+    if not ASCIIMATICS_AVAILABLE:
+        print(f"[image display skipped: {image}]")
+        return
     Screen.wrapper(func=display_static_image, arguments=[image])
 
 

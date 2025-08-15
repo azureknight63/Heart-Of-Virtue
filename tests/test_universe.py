@@ -1,16 +1,23 @@
-import pytest
+import unittest
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+import universe  # noqa: E402
 
-# TODO: Need to restructure project and imports, otherwise we'll eventually
-# run into problems with the way $PYTHONPATH is set and imports are performed.
-from universe import Universe
+
+class TestUniverse(unittest.TestCase):
+    def test_parse_hidden(self):
+        cases = [
+            ("", False, 0),
+            ("garbage", False, 0),
+            ("h+0", True, 0),
+            ("h+123", True, 123),
+        ]
+        for setting, expected_hidden, expected_hfactor in cases:
+            with self.subTest(setting=setting):
+                hidden, hfactor = universe.Universe.parse_hidden(setting)
+                self.assertEqual(hidden, expected_hidden)
+                self.assertEqual(hfactor, expected_hfactor)
 
 
-@pytest.mark.parametrize(
-    "setting, expected_hidden, expected_hfactor",
-    [("", False, 0), ("garbage", False, 0), ("h+0", True, 0), ("h+123", True, 123)],
-)
-def test_parse_hidden(setting: str, expected_hidden: bool, expected_hfactor: int):
-    hidden, hfactor = Universe.parse_hidden(setting)
-
-    assert hidden == expected_hidden
-    assert hfactor == expected_hfactor
+if __name__ == "__main__":
+    unittest.main()
