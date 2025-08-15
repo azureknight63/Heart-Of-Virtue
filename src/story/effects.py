@@ -1,9 +1,10 @@
 """
 Effects are small, one-time-only events typically fired during combat or in response to some player action
 """
-from neotermcolor import cprint
+from neotermcolor import colored, cprint
 import random
 import time
+from src import functions
 from src import states
 from ..events import *
 
