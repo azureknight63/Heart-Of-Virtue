@@ -28,7 +28,8 @@ class Object:
         self.player = player
 
     def spawn_event(self, event_type, player, tile, params, repeat=False):
-        event = functions.seek_class(event_type, "story")(player, tile, params, repeat)
+        event_cls = functions.seek_class(event_type, "story")
+        event = functions.instantiate_event(event_cls, player, tile, params=params, repeat=repeat)
         if event != "":
             self.events.append(event)
             return event
@@ -103,7 +104,9 @@ class WallSwitch(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
+                # use adapter for backward compatible signature handling
+                event_cls = functions.seek_class(event_type, "story")
+                event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
                 if self.event_on is None:
                     self.event_on = event
                 else:
@@ -362,8 +365,8 @@ class Shrine(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
-                self.event = event
+                event_cls = functions.seek_class(event_type, "story")
+                self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
 
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
@@ -406,8 +409,8 @@ class HealingSpring(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
-                self.event = event
+                event_cls = functions.seek_class(event_type, "story")
+                self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
 
     def drink(self, player):
         print("Jean bends down to the water and, cupping it in his hands, begins to sip eagerly.")
@@ -462,8 +465,8 @@ class Passageway(Object):
                         repeat = True
                         p_list.remove(setting)
                         continue
-                event = functions.seek_class(event_type, "story")(player, tile, repeat, p_list if p_list else None)
-                self.event = event
+                event_cls = functions.seek_class(event_type, "story")
+                self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
 
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")

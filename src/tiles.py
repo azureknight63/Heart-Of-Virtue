@@ -149,10 +149,12 @@ class MapTile:
         return item
 
     def spawn_event(self, event_type, player, tile, repeat=False, params=None):
-        event = functions.seek_class(event_type, "story")(player, tile, repeat, params)
-        if event != "":
+        event_cls = functions.seek_class(event_type, "story")
+        event = functions.instantiate_event(event_cls, player, tile, params=params, repeat=repeat)
+        if event:
             self.events_here.append(event)
             return event
+        return None
 
     def spawn_object(self, obj_type, player, tile, params, hidden=False, hfactor=0):
         obj = getattr(__import__('objects'), obj_type)(player, tile, params)

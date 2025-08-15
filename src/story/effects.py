@@ -39,8 +39,8 @@ class FlareArrowImpact(MoveEffect):
 
 
 class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for testing? Or just fun.
-    def __init__(self, player, tile, repeat, name='Gold From Heaven'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
+    def __init__(self, player, tile, params=None, repeat=False, name='Gold From Heaven'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         if True:
@@ -52,7 +52,7 @@ class GoldFromHeaven(Event):  # Gives the player a certain amount of gold... for
 
 
 class Block(Event):  # blocks exit in tile, blocks all if none are declared
-    def __init__(self, player, tile, repeat, params, name='Block'):
+    def __init__(self, player, tile, params=None, repeat=False, name='Block'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.directions = []
         if not params:
@@ -85,7 +85,7 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
 
 
 class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a param).
-    def __init__(self, player, tile, repeat, params, name='MakeKey'):
+    def __init__(self, player, tile, params=None, repeat=False, name='MakeKey'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -122,9 +122,8 @@ class Teleport(Event):
     """
     Teleports the player to another location. Format is "t.mapname x-coord y-coord"
     """
-    def __init__(self, player, tile, repeat, name='Teleport', params=None):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
-        self.params = params
+    def __init__(self, player, tile, params=None, repeat=False, name='Teleport'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         if True:
@@ -140,8 +139,8 @@ class Teleport(Event):
 
 
 class Shrine(Event):  # Generic class for Shrine-based events
-    def __init__(self, player, tile, repeat, name='Shrine', params=None):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
+    def __init__(self, player, tile, params=None, repeat=False, name='Shrine'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
         if True:
@@ -152,8 +151,8 @@ class Shrine(Event):  # Generic class for Shrine-based events
 
 
 class StMichael(Shrine):
-    def __init__(self, player, tile, repeat, name='Shrine of St Michael the Archangel'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
+    def __init__(self, player, tile, params=None, repeat=False, name='Shrine of St Michael the Archangel'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def process(self):
         print("This, particularly, is a shrine to Saint Michael the Archangel.")

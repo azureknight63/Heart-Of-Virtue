@@ -725,3 +725,49 @@ def clean_string(input_string):
     # Remove non-printable characters
     cleaned_string = re.sub(r'[\[\d]+m|[^\x20-\x7E]', '', input_string)
     return cleaned_string
+
+
+def instantiate_event(event_cls, player, tile, params=None, repeat=False, name=None):
+    """Instantiate an Event subclass with backward-compatible argument ordering.
+    Supports legacy signature: (player, tile, params, repeat=False, name='X')
+    and transitional signature: (player, tile, repeat, params)
+    and new unified signature: (player, tile, params=None, repeat=False, name='X').
+    Falls back to best-effort positional mapping using parameter names.
+    """
+    try:
+        sig = inspect.signature(event_cls.__init__)
+        # Exclude self
+        params_list = [p for p in sig.parameters.values() if p.name != 'self']
+        kwargs = {}
+        # Map by parameter names if present
+        names = [p.name for p in params_list]
+        if {'player','tile'}.issubset(names):
+            kwargs['player'] = player
+            kwargs['tile'] = tile
+            if 'params' in names:
+                kwargs['params'] = params
+            if 'repeat' in names:
+                kwargs['repeat'] = repeat
+            if 'name' in names and name is not None:
+                kwargs['name'] = name
+            return event_cls(**kwargs)
+        # Fallback positional (legacy variants)
+        # Try (player, tile, params, repeat)
+        try:
+            return event_cls(player, tile, params, repeat)
+        except Exception:
+            pass
+        # Try (player, tile, repeat, params)
+        try:
+            return event_cls(player, tile, repeat, params)
+        except Exception:
+            pass
+        # Final attempt with minimal args
+        return event_cls(player, tile)
+    except Exception:
+        # As a last resort attempt bare construction
+        try:
+            return event_cls(player, tile)
+        except Exception:
+            return event_cls
+
