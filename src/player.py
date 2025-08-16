@@ -788,120 +788,83 @@ he lets out a barely audible whisper:""", "red")
                 finished = True
 
     def print_inventory(self):
-        # First, create a set containing all item types in the inventory using the items' maintype property
         item_types = set()
+        item_categories = {
+            "Consumable": {"hotkey": "c", "class": items.Consumable},
+            "Weapon": {"hotkey": "w", "class": items.Weapon},
+            "Armor": {"hotkey": "a", "class": items.Armor},
+            "Boots": {"hotkey": "b", "class": items.Boots},
+            "Helm": {"hotkey": "h", "class": items.Helm},
+            "Gloves": {"hotkey": "g", "class": items.Gloves},
+            "Accessory": {"hotkey": "y", "class": items.Accessory},
+            "Special": {"hotkey": "s", "class": items.Special}
+        }
+        gold_amt = 0
         for item in self.inventory:
             if hasattr(item, 'maintype'):
                 item_types.add(item.maintype)
-        # Convert the set to a dictionary to count items in each category
+                if getattr(item, 'subtype', None) == "Gold":
+                    gold_amt += getattr(item, 'amt', 0)
         item_counts = {item_type: 0 for item_type in item_types}
+        item_counts["Gold"] = gold_amt
 
-        # Now, count the items in each category
         for item in self.inventory:
-            if hasattr(item, 'maintype'):
-                if item.subtype == "Gold":
-                    item_counts["Gold"] = item.amt  # Gold always stacks, so we add the amount directly
-                else:
-                    item_counts[item.maintype] += 1
+            if hasattr(item, 'maintype') and getattr(item, 'subtype', None) != "Gold":
+                item_counts[item.maintype] += 1
 
-        still_choosing = True
-        while still_choosing:
+        while True:
             self.refresh_weight()
-            cprint("=====\nInventory\n=====\n"
-                   "Weight: {} / {}".format(self.weight_current, self.weight_tolerance), "cyan")
+            cprint(f"=====\nInventory\n=====\nWeight: {self.weight_current} / {self.weight_tolerance}", "cyan")
             cprint(f"Gold: {item_counts['Gold']}\n\nSelect a category to view:\n\n", "cyan")
             for item_type, count in item_counts.items():
-                if count > 0:
-                    # Set the hotkey to the first letter of the item type
-                    hotkey = item_type[0].lower()
+                if count > 0 and item_type in item_categories:
+                    hotkey = item_categories[item_type]["hotkey"]
                     cprint(f"({hotkey}) {item_type}: {count}", "cyan")
             cprint("(x) Cancel\n", "cyan")
-            choices = []
             inventory_selection = input(colored('Selection: ', "cyan"))
-            #TODO: Continue refactoring here
-            for case in switch(inventory_selection):
-                if case('c', 'Consumables', 'consumables'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Consumable):
-                            choices.append(item)
-                    break
-                if case('w', 'Weapons', 'weapons'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Weapon):
-                            choices.append(item)
-                    break
-                if case('a', 'Armor', 'armor'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Armor):
-                            choices.append(item)
-                    break
-                if case('b', 'Boots', 'boots'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Boots):
-                            choices.append(item)
-                    break
-                if case('h', 'Helms', 'helms'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Helm):
-                            choices.append(item)
-                    break
-                if case('g', 'Gloves', 'gloves'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Gloves):
-                            choices.append(item)
-                    break
-                if case('y', 'Accessories', 'accessories'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Accessory):
-                            choices.append(item)
-                    break
-                if case('s', 'Special', 'special'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Special):
-                            choices.append(item)
-                    break
-                if case():
-                    break
-
-            if len(choices) > 0:
-                for i, item in enumerate(choices):
-                    item_preference_value = ""
-                    for prefitem in self.preferences.values():
-                        if prefitem == item.name:
-                            item_preference_value = colored("(P)", "magenta")
-                    if hasattr(item, 'isequipped'):
-                        if item.isequipped:
-                            print(i, ': ', item.name, colored('(Equipped)', 'green'), ' ', item_preference_value, '\n')
-                        else:
-                            print(i, ': ', item.name, ' ', item_preference_value, '\n')
-                    else:
-                        if hasattr(item, 'count'):
-                            print(i, ': ', item.name, ' (', item.count, ')', ' ', item_preference_value, '\n')
-                        else:
-                            print(i, ': ', item.name, ' ', item_preference_value, '\n')
-                inventory_selection = input(colored('View which? ', "cyan"))
-                if not functions.is_input_integer(inventory_selection):
-                    num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = \
-                        num_accessories = num_special = 0
-                    continue
-                for i, item in enumerate(choices):
-                    if i == int(inventory_selection):
-                        print(item, '\n')
-                        if item.subtype == "Arrow":
-                            if self.preferences["arrow"] == item.name:
-                                print('\nThis is your preferred arrow type. You will choose this when shooting '
-                                      'your bow as long as you have enough.\n'
-                                      'If you select "prefer" again, you will remove this preference.'
-                                      ' Having no arrow preference will force you to'
-                                      ' choose the arrow you want each time you shoot.\n')
-                        if item.interactions:
-                            self.inventory_item_sub_menu(item)
-                        else:
-                            functions.await_input()
-            num_gold = num_consumable = num_weapon = num_armor = num_boots = num_helm = num_gloves = \
-                num_accessories = num_special = 0
             if inventory_selection == 'x':
                 break
+
+            selected_category = None
+            for key, value in item_categories.items():
+                if inventory_selection == value["hotkey"]:
+                    selected_category = key
+                    break
+
+            choices = []
+            if selected_category:
+                category_class = item_categories[selected_category]["class"]
+                for item in self.inventory:
+                    if isinstance(item, category_class):
+                        choices.append(item)
+
+            if choices:
+                for i, item in enumerate(choices):
+                    item_preference_value = colored("(P)", "magenta") if item.name in self.preferences.values() else ""
+                    display = f"{i}: {item.name} {item_preference_value}"
+                    if getattr(item, 'isequipped', False):
+                        print(f"{display} {colored('(Equipped)', 'green')}\n")
+                    elif hasattr(item, 'count'):
+                        print(f"{display} ({item.count})\n")
+                    else:
+                        print(f"{display}\n")
+                view_selection = input(colored('View which? ', "cyan"))
+                if not functions.is_input_integer(view_selection):
+                    continue
+                selected_index = int(view_selection)
+                if 0 <= selected_index < len(choices):
+                    item = choices[selected_index]
+                    print(item, '\n')
+                    if getattr(item, "subtype", None) == "Arrow" and self.preferences.get("arrow") == item.name:
+                        print('\nThis is your preferred arrow type. You will choose this when shooting '
+                              'your bow as long as you have enough.\n'
+                              'If you select "prefer" again, you will remove this preference.'
+                              ' Having no arrow preference will force you to'
+                              ' choose the arrow you want each time you shoot.\n')
+                    if getattr(item, "interactions", None):
+                        self.inventory_item_sub_menu(item)
+                    else:
+                        functions.await_input()
 
     def inventory_item_sub_menu(self, item):
         cprint("What would you like to do with this item?\n", "cyan")
