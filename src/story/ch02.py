@@ -9,7 +9,7 @@ class AfterDefeatingLurker(Event):
     """
     Jean defeats the Lurker. Gorram opens another passageway
     """
-    def __init__(self, player, tile, params, repeat=False, name='AfterGorranIntro'):
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterGorranIntro'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):

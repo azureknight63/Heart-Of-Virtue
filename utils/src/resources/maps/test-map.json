@@ -1,0 +1,84 @@
+{
+    "(9, 6)": {
+        "id": "tile_9_6",
+        "title": "tile_9_6",
+        "description": "A newly created room at (9, 6).",
+        "exits": [
+            "west",
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": []
+    },
+    "(9, 8)": {
+        "id": "tile_9_8",
+        "title": "tile_9_8",
+        "description": "A newly created room at (9, 8).",
+        "exits": [
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": []
+    },
+    "(8, 7)": {
+        "id": "tile_8_7",
+        "title": "tile_8_7",
+        "description": "A newly created room at (8, 7).",
+        "exits": [
+            "northeast",
+            "southeast",
+            "north"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": []
+    },
+    "(8, 6)": {
+        "id": "tile_8_6",
+        "title": "tile_8_6",
+        "description": "A newly created room at (8, 6).",
+        "exits": [
+            "east",
+            "south"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": []
+    },
+    "(11, 7)": {
+        "id": "tile_11_7",
+        "title": "tile_11_7",
+        "description": "A newly created room at (11, 7).",
+        "exits": [
+            "north"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": []
+    },
+    "(11, 6)": {
+        "id": "tile_11_6",
+        "title": "tile_11_6",
+        "description": "A newly created room at (11, 6).",
+        "exits": [
+            "south"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": []
+    }
+}
