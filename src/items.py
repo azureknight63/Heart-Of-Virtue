@@ -1,4 +1,5 @@
-import random, time
+import random
+import time
 from neotermcolor import colored, cprint
 import functions
 
@@ -22,8 +23,9 @@ item_types = {
             "Staff",
             "Ethereal"
         ],
-        'base_damage_types': {  # not to be confused with subtypes or archetypes, base damage is what a standard attack evaluates as for a weapon or skill,
-                                # which can be combined with other base types or elemental types of damage
+        'base_damage_types': {  # not to be confused with subtypes or archetypes, base damage is what a
+            # standard attack evaluates as for a weapon or skill,
+            # which can be combined with other base types or elemental types of damage
             "piercing": ["Dagger", "Pick", "Spear", "Arrow"],
             "slashing": ["Sword", "Axe", "Scythe", "Halberd", "Stars"],
             "crushing": ["Bludgeon", "Hammer", "Bow", "Crossbow", "Polearm", "Staff"],
@@ -35,7 +37,8 @@ item_types = {
             "Blunt": ["Bludgeon", "Hammer", "Polearm", "Staff"],
             "Archery": ["Bow", "Crossbow"],
             "Ranged": ["Bow", "Crossbow", "Stars"],
-            "Melee": ["Dagger", "Sword", "Axe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm", "Staff"],
+            "Melee": ["Dagger", "Sword", "Axe", "Pick", "Scythe", "Spear", "Halberd", "Bludgeon", "Hammer", "Polearm",
+                      "Staff"],
             "Twohand": ["Scythe", "Bow", "Crossbow", "Polearm"]
         }
     }
@@ -58,9 +61,11 @@ def get_base_damage_type(item):
     return damagetype
 
 
-class Item():
+class Item:
     """The base class for all items"""
-    def __init__(self, name, description, value, maintype, subtype, discovery_message, hidden=False, hide_factor=0, skills=None):
+
+    def __init__(self, name, description, value, maintype, subtype, discovery_message, hidden=False, hide_factor=0,
+                 skills=None):
         self.name = name
         self.description = description
         self.value = value
@@ -69,12 +74,14 @@ class Item():
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
-        #self.level = level  # used for categorizing items in loot tables
+        # self.level = level  # used for categorizing items in loot tables
         self.announce = "There's a {} here.".format(self.name)
-        self.interactions = ["drop"]  # things to do with the item from the inventory menu - player must be passed as a parameter
-        self.skills = skills  # skills that can be learned from using the item (acquiring exp); should be a dictionary with "moves" objects and the exp needed
+        self.interactions = ["drop"]  # things to do with the item from the inventory menu
+        self.skills = skills  # skills that can be learned from using the item (acquiring exp);
+        # should be a dictionary with "moves" objects and the exp needed
         self.owner = None  # used to tie an item to an owner for special interactions
-        self.equip_states = []  # items can cause states to be applied to the player when the item is equipped; enchantments can add to this as well
+        self.equip_states = []  # items can cause states to be applied to the player when the item is equipped;
+        # enchantments can add to this as well
         self.add_resistance = {}
         self.add_status_resistance = {}
         self.gives_exp = False  # checked before opening an exp category for this item
@@ -86,7 +93,7 @@ class Item():
 
     def __str__(self):
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
-    
+
     def on_equip(self, player):
         if len(self.equip_states) > 0:
             for state in self.equip_states:
@@ -97,13 +104,13 @@ class Item():
         :return: 
         '''
         pass
-    
+
     def on_unequip(self, player):
-        '''
+        """
         Actions performed when the item is unequipped
         Clobber with child objects
-        :return: 
-        '''
+        :return:
+        """
         pass
 
     def drop(self, player):
@@ -137,7 +144,7 @@ class Item():
             player.inventory.remove(self)
             if hasattr(self, "isequipped"):
                 if getattr(self, "isequipped"):
-                    self.isequipped = False
+                    self.isequipped = False  # noqa; attribute existence is checked above!
                     self.on_unequip(player)
                     self.interactions.remove("unequip")
                     self.interactions.append("equip")
@@ -151,7 +158,7 @@ class Item():
 
     def unequip(self, player):
         if hasattr(self, "isequipped"):
-            self.isequipped = False
+            self.isequipped = False  # noqa
             if issubclass(self.__class__, Weapon):  # if the player is now unarmed, "equip" fists
                 player.eq_weapon = player.fists
             cprint("Jean put {} back into his bag.".format(self.name), "cyan")
@@ -167,7 +174,8 @@ class Gold(Item):
         self.amt = functions.randomize_amount(amt)
         self.maintype = "Gold"
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
-                         value=self.amt, maintype="Currency", subtype="Gold", discovery_message="a small pouch of gold.")
+                         value=self.amt, maintype="Currency", subtype="Gold",
+                         discovery_message="a small pouch of gold.")
         self.announce = "There's a small pouch of gold on the ground."
         self.interactions = []
 
@@ -175,7 +183,8 @@ class Gold(Item):
 class Weapon(Item):
 
     def __init__(self, name, description, value, damage, isequipped, str_req,
-                 fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0,5), discovery_message='a kind of weapon.', twohand=False, skills=None):
+                 fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0, 5),
+                 discovery_message='a kind of weapon.', twohand=False, skills=None):
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -194,11 +203,15 @@ class Weapon(Item):
     def __str__(self):
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nDamage: {}\nWeight: {}\nRange: {}".format(self.name,
-                                                                            self.description, self.value, self.damage,
-                                                                            self.weight, self.wpnrange)
+                                                                                                   self.description,
+                                                                                                   self.value,
+                                                                                                   self.damage,
+                                                                                                   self.weight,
+                                                                                                   self.wpnrange)
         else:
             return "{}\n=====\n{}\nValue: {}\nDamage: {}\nWeight: {}\nRange: {}".format(self.name, self.description,
-                                                                 self.value, self.damage, self.weight, self.wpnrange)
+                                                                                        self.value, self.damage,
+                                                                                        self.weight, self.wpnrange)
 
 
 class Armor(Item):
@@ -211,7 +224,8 @@ class Armor(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        super().__init__(name, description, value, maintype, subtype, discovery_message) #announce="{} can be seen on the ground.".format(self.name))
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message)  # announce="{} can be seen on the ground.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -232,7 +246,8 @@ class Boots(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        super().__init__(name, description, value, maintype, subtype, discovery_message) #announce="A set of {} is laying here.".format(self.name))
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message)  # announce="A set of {} is laying here.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -253,7 +268,8 @@ class Helm(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        super().__init__(name, description, value, maintype, subtype, discovery_message) # announce="A {} can be seen on the ground.".format(self.name))
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message)  # announce="A {} can be seen on the ground.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -274,7 +290,8 @@ class Gloves(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        super().__init__(name, description, value, maintype, subtype, discovery_message) # announce="There is a pair of {} here.".format(self.name))
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message)  # announce="There is a pair of {} here.".format(self.name))
 
     def __str__(self):
         if self.isequipped:
@@ -295,7 +312,7 @@ class Accessory(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        #self.level = level
+        # self.level = level
         super().__init__(name, description, value, maintype, subtype, discovery_message)
 
     def __str__(self):
@@ -309,24 +326,27 @@ class Accessory(Item):
 
 class Consumable(Item):
 
-    def __init__(self, name, description, value, weight, maintype, subtype, discovery_message='a useful item.'):
+    def __init__(self, name, description, value, weight, maintype, subtype,
+                 discovery_message='a useful item.', count=1):
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
-        self.count = 1
+        self.count = count
         self.interactions = ["use", "drop"]
-        super().__init__(name, description, value, maintype, subtype, discovery_message)  # announce="You notice a {} sitting here.".format(self.name))
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message)  # announce="You notice a {} sitting here.".format(self.name))
 
     def stack_grammar(self):
-        '''Checks the stack count for the item and changes the verbiage accordingly'''
+        """Checks the stack count for the item and changes the verbiage accordingly"""
         pass
 
     def __str__(self):
-         return "{}\n=====\n{}\n" \
-                "Count: {}\n" \
-                "Value: {} gold each, {} gold total\n" \
-                "Weight: {} lbs each, {} lbs total".format(self.name, self.description, self.count, self.value,
-                                                           self.value * self.count, self.weight, self.weight * self.count)
+        return "{}\n=====\n{}\n" \
+               "Count: {}\n" \
+               "Value: {} gold each, {} gold total\n" \
+               "Weight: {} lbs each, {} lbs total".format(self.name, self.description, self.count, self.value,
+                                                          self.value * self.count, self.weight,
+                                                          self.weight * self.count)
 
 
 class Special(Item):
@@ -336,19 +356,20 @@ class Special(Item):
         self.subtype = subtype
         self.count = 1
         self.interactions = ["drop"]
-        super().__init__(name, description, value, maintype, subtype, discovery_message) # announce="You notice a {} sitting here.".format(self.name))
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message)  # announce="You notice a {} sitting here.".format(self.name))
 
     def __str__(self):
-         return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
+        return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
             self.name, self.description, self.value, self.weight)
 
 
 class Key(Special):
     def __init__(self, lock=None):
-        '''
+        """
         Keys just sort of sit in inventory. They are "used" when the player uses 'unlock' on their paired lock
         :param lock: # Any object that has an 'unlock' method
-        '''
+        """
 
         super().__init__(name="Key",
                          description="A small, dull, metal key.",
@@ -360,12 +381,15 @@ class Key(Special):
 
 class Crystals(Special):
     def __init__(self):
-        '''
-        Crystals are commodity drops from certain creatures like Rock Rumblers. They can also be found growing naturally in some caves and mountain areas.
-        They can be sold to merchants. Gollem merchants will pay an increased rate for them since they are a source of food.
-        '''
+        """
+        Crystals are commodity drops from certain creatures like Rock Rumblers.
+        They can also be found growing naturally in some caves and mountain areas.
+        They can be sold to merchants. Gollem merchants will pay an increased rate for them since
+        they are a source of food.
+        """
         super().__init__(name="Crystals",
-                         description="A beautiful collection of scintillating purple and aquamarine crystals. Interesting baubles to most, but a valuable"
+                         description="A beautiful collection of scintillating purple and aquamarine crystals. "
+                                     "Interesting baubles to most, but a valuable"
                                      " food source to Rock Rumblers and their gentler cousins, the Grondites.",
                          value=10, weight=0.1, maintype="Special", subtype="Commodity")
 
@@ -394,7 +418,8 @@ class RustedIronMace(Weapon):
 
     def __init__(self):
         super().__init__(name="Rusted Iron Mace",
-                         description="A small mace with some rust around the spikes. Heavy and slow, but packs a decent punch.",
+                         description="A small mace with some rust around the spikes. Heavy and slow, "
+                                     "but packs a decent punch.",
                          isequipped=False, value=10,
                          damage=15, str_req=10, fin_req=5, str_mod=2.25, fin_mod=0.5, weight=5.0, maintype="Weapon",
                          subtype="Bludgeon")
@@ -419,7 +444,7 @@ class RustedDagger(Weapon):
                          description="A small dagger with some rust. Somewhat more dangerous than a rock.",
                          isequipped=False, value=10,
                          damage=10, str_req=1, fin_req=12, str_mod=0.25, fin_mod=3, weight=1, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(0,3))
+                         subtype="Dagger", wpnrange=(0, 3))
 
 
 class Dagger(Weapon):
@@ -430,7 +455,7 @@ class Dagger(Weapon):
                          description="A rogue's best friend.",
                          isequipped=False, value=100,
                          damage=12, str_req=1, fin_req=12, str_mod=0.25, fin_mod=3, weight=1, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(0,3))
+                         subtype="Dagger", wpnrange=(0, 3))
 
 
 class Baselard(Weapon):
@@ -441,7 +466,7 @@ class Baselard(Weapon):
                          description="A small, sharp dagger with an 'H'-shaped hilt.",
                          isequipped=False, value=100,
                          damage=18, str_req=1, fin_req=12, str_mod=0.2, fin_mod=2.8, weight=1.2, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(0,3))
+                         subtype="Dagger", wpnrange=(0, 3))
 
 
 class Shortsword(Weapon):
@@ -452,7 +477,7 @@ class Shortsword(Weapon):
                          description="A double-edged shortsword. A reliable companion in any fight.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=10, str_mod=0.75, fin_mod=1.25, weight=2, maintype="Weapon",
-                         subtype="Sword", wpnrange=(0,4))
+                         subtype="Sword", wpnrange=(0, 4))
 
 
 class Epee(Weapon):
@@ -460,12 +485,13 @@ class Epee(Weapon):
 
     def __init__(self):
         super().__init__(name="Epee",
-                         description="A short dueling sword. Frequently used ceremonially, it is nonetheless effective in combat if wielded properly.\n"
+                         description="A short dueling sword. Frequently used ceremonially, "
+                                     "it is nonetheless effective in combat if wielded properly.\n"
                                      " While the long, thin blade does have a cutting edge, "
                                      "it is most effective with thrusting attacks or to parry an opponent.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=20, str_mod=0.5, fin_mod=2, weight=3, maintype="Weapon",
-                         subtype="Sword", wpnrange=(0,5))
+                         subtype="Sword", wpnrange=(0, 5))
 
 
 class Battleaxe(Weapon):
@@ -473,10 +499,11 @@ class Battleaxe(Weapon):
 
     def __init__(self):
         super().__init__(name="Battleaxe",
-                         description="A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
+                         description="A crescent blade affixed to a reinforced wooden haft. "
+                                     "It is light and easy to swing.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=5, str_mod=1, fin_mod=0.5, weight=2, maintype="Weapon",
-                         subtype="Axe", wpnrange=(0,5))
+                         subtype="Axe", wpnrange=(0, 5))
 
 
 class Pickaxe(Weapon):
@@ -484,11 +511,12 @@ class Pickaxe(Weapon):
 
     def __init__(self):
         super().__init__(name="Pickaxe",
-                         description="A hardy weapon that can also be used to mine for rare metals, if the user is so-inclined. \n"
+                         description="A hardy weapon that can also be used to mine for rare metals, "
+                                     "if the user is so-inclined. \n"
                                      "Difficult to wield at very close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=2.5, fin_mod=0.1, weight=3, maintype="Weapon",
-                         subtype="Pick", wpnrange=(1,5))
+                         subtype="Pick", wpnrange=(1, 5))
 
 
 class Scythe(Weapon):
@@ -496,10 +524,11 @@ class Scythe(Weapon):
 
     def __init__(self):
         super().__init__(name="Scythe",
-                         description="An unusual weapon that, despite its intimidating appearance, is particularly difficult to wield. Requires two hands.",
+                         description="An unusual weapon that, despite its intimidating appearance, "
+                                     "is particularly difficult to wield. Requires two hands.",
                          isequipped=False, value=100,
                          damage=5, str_req=1, fin_req=1, str_mod=2, fin_mod=2, weight=7, maintype="Weapon",
-                         subtype="Scythe", wpnrange=(1,5), twohand=True)
+                         subtype="Scythe", wpnrange=(1, 5), twohand=True)
 
 
 class Spear(Weapon):
@@ -511,7 +540,7 @@ class Spear(Weapon):
                                      "Has a longer reach than most melee weapons but is not great at close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=2, fin_mod=0.5, weight=3, maintype="Weapon",
-                         subtype="Spear", wpnrange=(3,8))
+                         subtype="Spear", wpnrange=(3, 8))
 
 
 class Halberd(Weapon):
@@ -523,7 +552,7 @@ class Halberd(Weapon):
                                      "Has a longer reach than most melee weapons but is not great at close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=1.75, fin_mod=1, weight=4, maintype="Weapon",
-                         subtype="Spear", wpnrange=(3,8))
+                         subtype="Spear", wpnrange=(3, 8))
 
 
 class Hammer(Weapon):
@@ -547,7 +576,8 @@ class Shortbow(Weapon):
                          isequipped=False, value=50,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.5, maintype="Weapon",
                          subtype="Bow")
-        self.range_base = 20  # this will affect the accuracy and power of the shot; range is the distance when the effect begins
+        self.range_base = 20  # this will affect the accuracy and power of the shot;
+        # range is the distance when the effect begins
         self.range_decay = 0.05  # the rate of decay for accuracy and damage after base range is reached
 
 
@@ -556,7 +586,8 @@ class Longbow(Weapon):
 
     def __init__(self):
         super().__init__(name="Longbow",
-                         description="Specialized bow for shooting long distances. Useful as a weak bludgeon at close range.\n"
+                         description="Specialized bow for shooting long distances. Useful as a weak bludgeon at "
+                                     "close range.\n"
                                      "Requires two hands.",
                          isequipped=False, value=100,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=2, maintype="Weapon",
@@ -570,7 +601,8 @@ class Crossbow(Weapon):
 
     def __init__(self):
         super().__init__(name="Crossbow",
-                         description="Heavier than a standard bow but able to fire more rapidly. It fires bolts instead of arrows.\n"
+                         description="Heavier than a standard bow but able to fire more rapidly. "
+                                     "It fires bolts instead of arrows.\n"
                                      "Requires two hands.",
                          isequipped=False, value=100,
                          damage=20, str_req=5, fin_req=5, str_mod=1.5, fin_mod=1, weight=4, maintype="Weapon",
@@ -588,7 +620,7 @@ class Pole(Weapon):
                                      "Has a longer reach than most melee weapons but is not great at close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=5, str_mod=1.25, fin_mod=1.25, weight=2, maintype="Weapon",
-                         subtype="Polearm", wpnrange=(2,7))
+                         subtype="Polearm", wpnrange=(2, 7))
 
 
 class TatteredCloth(Armor):
@@ -600,7 +632,7 @@ class TatteredCloth(Armor):
                                      "Lightweight, but offering little in protection.",
                          isequipped=False, value=0,
                          protection=1, str_req=1, str_mod=0.1, weight=0.5, maintype="Armor", subtype="Light Armor")
-        #minimum protection of 2
+        # minimum protection of 2
 
 
 class ClothHood(Helm):
@@ -613,18 +645,19 @@ class ClothHood(Helm):
                          isequipped=False, value=0,
                          protection=0, str_req=1, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm")
         self.add_fin = 1
-        #minimum protection of 1
+        # minimum protection of 1
 
 
 class DullMedallion(Accessory):
     def __init__(self):
         super().__init__(name="Dull Medallion",
                          description="A rather unremarkable medallion. \n"
-                                     "It's face is dull, and seems to swallow any light unlucky enough to land upon it. \n"
+                                     "It's face is dull, and seems to swallow any light unlucky enough to "
+                                     "land upon it. \n"
                                      "It may have been a family heirloom or a memento of a lost love.",
                          isequipped=False, value=25,
                          protection=0, str_mod=0, fin_mod=0, weight=0.5, maintype="Accessory", subtype="Necklace")
-        
+
     def on_equip(self, player):
         cprint("Jean feels a slight chill as the medallion's chain settles on his neck.", "green")
         player.combat_idle_msg.append("Jean feels the soft caress of a stranger's hand on his cheek.")
@@ -662,26 +695,31 @@ class JeanWeddingBand(Accessory):
     add_faith = 1
     add_endurance = 1
     add_charisma = -1
+
     def __init__(self):
         super().__init__(name="Wedding Band",
                          description="A shiny gold ring with some intricate patterns carved into it. \n"
                                      "The faded inscription on the inner wall of the ring reads, 'AMELIA.' \n"
-                                     "This is an item of special interest to Jean. Some things are too difficult to let go.",
+                                     "This is an item of special interest to Jean. "
+                                     "Some things are too difficult to let go.",
                          isequipped=True, value=900,
                          protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring")
         self.interactions.remove("drop")
-        #self.add_resistance["fire"] = -0.5
-        #self.add_status_resistance["poison"] = -0.75
+        # self.add_resistance["fire"] = -0.5
+        # self.add_status_resistance["poison"] = -0.75
 
     def on_equip(self, player):
         if len(self.equip_states) > 0:
             for state in self.equip_states:
                 player.apply_state(state)
-        print("As he slides on the band, Jean's face appears placid. His heart, however, is filled with sadness, and a coldness grips his stomach.")
+        print(
+            "As he slides on the band, Jean's face appears placid. "
+            "His heart, however, is filled with sadness, and a coldness grips his stomach.")
 
     def on_unequip(self, player):
         print("Jean's frown twitches slightly as his finger is released from the weight of the band. "
-              "He glances briefly at the faded inscription on the ring's inner wall before stuffing the small baubel into his bag.")
+              "He glances briefly at the faded inscription on the ring's inner wall "
+              "before stuffing the small baubel into his bag.")
 
 
 class SilverRing(Accessory):
@@ -745,11 +783,11 @@ class Restorative(Consumable):
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves.",
-                         value=100, weight=0.25, maintype="Consumable", subtype="Potion")
+                         value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count)
         self.power = 60
         self.count = count  # this will allow stacking of homogeneous items. At each game loop,
-                        # the game searches the inventory for other copies and increases that count by self.count,
-                        # then removes this object
+        # the game searches the inventory for other copies and increases that count by self.count,
+        # then removes this object
         self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                         "reading, 'Restorative.'"
@@ -762,19 +800,20 @@ class Restorative(Consumable):
             self.announce = "There is a box of small glass vials here."
         else:
             self.description = "A strange pink fluid of questionable chemistry.\n" \
-                                     "Drinking it seems to cause your wounds to immediately mend " \
-                                     "themselves."
+                               "Drinking it seems to cause your wounds to immediately mend " \
+                               "themselves."
             self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
-                                "reading, 'Restorative.'"
+                            "reading, 'Restorative.'"
 
     def drink(self, player):  # alias for "use"
         self.use(player)
 
     def use(self, player):
         if player.hp < player.maxhp:
-            print("Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
-                  "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
-                  "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
+            print(
+                "Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
+                "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
+                "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
             amount = (self.power * random.uniform(0.8, 1.2))
             amount = int(amount)
             missing_hp = player.maxhp - player.hp
@@ -796,11 +835,12 @@ class Draught(Consumable):
         super().__init__(name="Draught",
                          description="A green fluid giving off a warm, pleasant glow.\n"
                                      "Invigorating for any tired adventurer.",
-                         value=75, weight=0.25, maintype="Consumable", subtype="Potion")
+                         value=75, weight=0.25, maintype="Consumable", subtype="Potion", count=count)
         self.power = 100
         self.count = count
         self.interactions = ["use", "drink", "drop"]
-        self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
+        self.announce = ("Jean notices a small glass bottle of glowing green fluid on the ground. "
+                         "Its label reads, simply, 'Draught.'")
 
     def stack_grammar(self):
         if self.count > 1:
@@ -810,15 +850,16 @@ class Draught(Consumable):
             self.announce = "There is a box of small glass bottles here."
         else:
             self.description = "A green fluid giving off a warm, pleasant glow.\n" \
-                                     "Invigorating for any tired adventurer."
-            self.announce = "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'"
+                               "Invigorating for any tired adventurer."
+            self.announce = ("Jean notices a small glass bottle of glowing green fluid on the ground. "
+                             "Its label reads, simply, 'Draught.'")
 
     def drink(self, player):  # alias for "use"
         self.use(player)
 
     def use(self, player):
         if player.hp < player.maxhp:
-            print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n" 
+            print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                   "to have lifted off of his shoulders for the time being.".format(self.name))
             amount = (self.power * random.uniform(0.8, 1.2))
             amount = int(amount)
@@ -842,11 +883,11 @@ class Antidote(Consumable):
                          description="A murky green fluid of questionable chemistry.\n"
                                      "Drinking it restores a small amount of health and \n"
                                      "neutralizes harmful toxins in the bloodstream.",
-                         value=175, weight=0.25, maintype="Consumable", subtype="Potion")
+                         value=175, weight=0.25, maintype="Consumable", subtype="Potion", count=count)
         self.power = 15
         self.count = count  # this will allow stacking of homogeneous items. At each game loop,
-                        # the game searches the inventory for other copies and increases that count by self.count,
-                        # then removes this object
+        # the game searches the inventory for other copies and increases that count by self.count,
+        # then removes this object
         self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label " \
                         "reading, 'Antidote.'"
@@ -860,10 +901,10 @@ class Antidote(Consumable):
             self.announce = "There is a box of small glass bottles here."
         else:
             self.description = "A murky green fluid of questionable chemistry.\n" \
-                                     "Drinking it restores a small amount of health and \n" \
-                                     "neutralizes harmful toxins in the bloodstream."
-            self.announce = "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label " \
-                        "reading, 'Antidote.'"
+                               "Drinking it restores a small amount of health and \n" \
+                               "neutralizes harmful toxins in the bloodstream."
+            self.announce = ("Jean notices a small glass bottle on the ground with a murky green "
+                             "fluid inside and a label reading, 'Antidote.'")
 
     def drink(self, player):  # alias for "use"
         self.use(player)
@@ -901,20 +942,21 @@ class Antidote(Consumable):
 
 
 class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasses (like WoodenArrow, IronArrow, etc.)
-    def __init__(self, name, description, value, weight, power, range_base_modifier,
-                 range_decay_modifier, sturdiness, helptext, effects,
-                 count=1):
-        super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable", subtype="Arrow")
+    def __init__(self, name, description, value, weight, power, range_base_modifier, range_decay_modifier, sturdiness,
+                 helptext, effects, count=1):
+        super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable",
+                         subtype="Arrow", count=count)
         self.power = power
         self.count = count  # this will allow stacking of homogeneous items. At each game loop,
-                        # the game searches the inventory for other copies and increases that count by self.count,
-                        # then removes this object
+        # the game searches the inventory for other copies and increases that count by self.count,
+        # then removes this object
         self.interactions = ["drop", "prefer"]
         self.announce = "Jean notices an arrow on the ground."
         self.range_base_modifier = range_base_modifier  # multiplies the bow's base range by this amount
         self.range_decay_modifier = range_decay_modifier  # multiplies the bow's base decay by this amount
-        self.sturdiness = sturdiness # frequency that an arrow fired at an enemy will survive to be picked up again
-        self.helptext = helptext  # appears next to the arrow when the player is choosing after using the Shoot Arrow move
+        self.sturdiness = sturdiness  # frequency that an arrow fired at an enemy will survive to be picked up again
+        self.helptext = helptext  # appears next to the arrow when the player is
+        # choosing after using the Shoot Arrow move
         self.effects = effects
 
     def stack_grammar(self):
@@ -931,36 +973,52 @@ class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasse
 
 
 class WoodenArrow(Arrow):
-    def __init__(self):
-        super().__init__(name="Wooden Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
-                         "This one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. "
-                         "\nThey tend to break frequently.",
-                         value=1, weight=0.05, power=20, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.4,
-                         helptext=colored("+range, -decay, ", "green") + colored("-damage, -sturdiness", "red"), effects=None)
+    def __init__(self, count=1):
+        super().__init__(name="Wooden Arrow",
+                         description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
+                                     "This one is made of wood. Wooden arrows are lightweight, "
+                                     "so they generally improve accuracy at the cost of impact force. "
+                                     "\nThey tend to break frequently.",
+                         value=1, weight=0.05, power=20, range_base_modifier=1.2, range_decay_modifier=0.8,
+                         sturdiness=0.4,
+                         helptext=colored("+range, -decay, ", "green") + colored("-damage, -sturdiness", "red"),
+                         effects=None, count=count)
 
 
 class IronArrow(Arrow):
-    def __init__(self):
-        super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
-        This one is made of iron. Iron arrows are heavy and can be devastating up close. They suffer, however, when it comes to range and accuracy over long \
+    def __init__(self, count=1):
+        super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, "
+                                                        "a shaft of sorts, and fletching. \
+        This one is made of iron. Iron arrows are heavy and can be devastating up close. "
+                                                        "They suffer, however, when it comes to range and "
+                                                        "accuracy over long \
         distances. \nLike all metal arrows, they are considerably sturdier than other types of arrows.",
-                         value=5, weight=0.25, power=30, range_base_modifier=0.7, range_decay_modifier=1.4, sturdiness=0.6,
-                         helptext=colored("+damage, +sturdiness, ", "green") + colored("-range, ++decay", "red"), effects=None)
+                         value=5, weight=0.25, power=30, range_base_modifier=0.7, range_decay_modifier=1.4,
+                         sturdiness=0.6,
+                         helptext=colored("+damage, +sturdiness, ", "green") + colored("-range, ++decay", "red"),
+                         effects=None, count=count)
 
 
 class GlassArrow(Arrow):
-    def __init__(self):
-        super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
-        This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, arrows like this rarely survive the first shot.",
-                         value=10, weight=0.1, power=40, range_base_modifier=1.1, range_decay_modifier=1, sturdiness=0.1,
-                         helptext=colored("+range, +damage, ", "green") + colored("~decay, ", "yellow") + colored("---sturdiness", "red"), effects=None)
+    def __init__(self, count=1):
+        super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, "
+                                                         "a shaft of sorts, and fletching. \
+        This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, "
+                                                         "arrows like this rarely survive the first shot.",
+                         value=10, weight=0.1, power=40, range_base_modifier=1.1, range_decay_modifier=1,
+                         sturdiness=0.1,
+                         helptext=colored("+range, +damage, ", "green") + colored("~decay, ", "yellow") + colored(
+                             "---sturdiness", "red"), effects=None, count=count)
 
 
 class FlareArrow(Arrow):
-    def __init__(self):
-        super().__init__(name="Flare Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \
+    def __init__(self, count=1):
+        super().__init__(name="Flare Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, "
+                                                         "and fletching. \
         This one is made of wood and bursts into flames upon impact."
                                                          "\nObviously, don't expect to get it back after firing.",
-                         value=10, weight=0.05, power=25, range_base_modifier=1.2, range_decay_modifier=0.8, sturdiness=0.0,
-                         helptext=colored("+range, +damage, -decay, ", "green") + colored("----sturdiness", "red"), effects=None)
+                         value=10, weight=0.05, power=25, range_base_modifier=1.2, range_decay_modifier=0.8,
+                         sturdiness=0.0,
+                         helptext=colored("+range, +damage, -decay, ", "green") + colored("----sturdiness", "red"),
+                         effects=None, count=count)
         # todo add fire effect on impact

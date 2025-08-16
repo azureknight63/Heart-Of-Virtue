@@ -8,6 +8,9 @@ import datetime
 import importlib
 import time
 import pkgutil
+import types
+
+from typing import Any
 
 import moves
 import enchant_tables
@@ -31,12 +34,23 @@ def print_slow(text, speed="slow"):
         time.sleep(rate)
 
 
+def execute_arbitrary_method(method, player):
+    """
+    Checks the number of parameters required by a method and executes accordingly
+    """
+    number_of_params = len(inspect.signature(method).parameters)
+    if number_of_params == 0:
+        method()
+    else:
+        method(player)
+
+
 def confirm(thing, action, context):
     player = context[0]
-    count_args = context[1]
-    check = input(colored("{} {}? (y/n)".format(count_args[0].title(), thing.name), "cyan"))
+    args_list = context[1]
+    check = input(colored("{} {}? (y/n)".format(args_list[0].title(), thing.name), "cyan"))
     if check.lower() == ('y' or 'yes'):
-        thing.__getattribute__(action)(player)
+        execute_arbitrary_method(thing.__getattribute__(action), player)
         return True
     else:
         return False
@@ -44,9 +58,9 @@ def confirm(thing, action, context):
 
 def enumerate_for_interactions(subjects, context):
     player = context[0]
-    count_args = context[1]
+    args_list = context[1]
     action_input = context[2]
-    if len(count_args) == 1:
+    if len(args_list) == 1:
         candidates = []
         for thing in subjects:
             if hasattr(thing, "keywords"):
@@ -54,46 +68,38 @@ def enumerate_for_interactions(subjects, context):
                     for keyword in thing.keywords:
                         if action_input == keyword:
                             candidates.append(thing)
-                        # if action_input == keyword and confirm(thing, keyword):
-                        #     return True
             elif hasattr(thing, "interactions"):
                 for interaction in thing.interactions:
                     if action_input == interaction:
                         candidates.append(thing)
-                    # if action_input == interaction and confirm(thing, interaction):
-                    #    return True
         if len(candidates) == 1:  # if there is only one possibility, skip the confirmation step
-            candidates[0].__getattribute__(action_input)(player)
+            execute_arbitrary_method(candidates[0].__getattribute__(args_list[0]), player)
             return True
         elif candidates:  # otherwise, if there is more than one possibility, ask the player to confirm
             for candidate in candidates:
                 if confirm(candidate, action_input, context):
                     return True
-    elif len(count_args) > 1:
+    elif len(args_list) > 1:
         candidates = []
         for i, thing in enumerate(subjects):
             if hasattr(thing, "keywords"):
                 search_item = thing.name.lower() + ' ' + thing.idle_message.lower()
-                if count_args[1] in search_item and not thing.hidden:
+                if args_list[1] in search_item and not thing.hidden:
                     for keyword in thing.keywords:
-                        if count_args[0] == keyword:
+                        if args_list[0] == keyword:
                             candidates.append(thing)
-                        # if count_args[0] == keyword and confirm(thing, keyword):
-                        #    return True
             elif hasattr(thing, "interactions"):
                 search_item = thing.name.lower() + ' ' + thing.description.lower() + ' ' + thing.announce.lower()
-                if count_args[1] in search_item and not thing.hidden:
+                if args_list[1] in search_item and not thing.hidden:
                     for interaction in thing.interactions:
-                        if count_args[0] == interaction:
+                        if args_list[0] == interaction:
                             candidates.append(thing)
-                        # if count_args[0] == interaction and confirm(thing, interaction):
-                        #    return True
         if len(candidates) == 1:  # if there is only one possibility, skip the confirmation step
-            candidates[0].__getattribute__(count_args[0])(player)
+            execute_arbitrary_method(candidates[0].__getattribute__(args_list[0]), player)
             return True
         elif candidates:  # otherwise, if there is more than one possibility, ask the player to confirm
             for candidate in candidates:
-                if confirm(candidate, count_args[0], context):
+                if confirm(candidate, args_list[0], context):
                     return True
     return False
 
@@ -144,7 +150,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
                     enemy_combat_list.append(e)
                     e.in_combat = True
                     for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
-                        if aggro_enemy.aggro and aggro_enemy != e:
+                        if aggro_enemy.aggro and aggro_enemy != e and not aggro_enemy.friend:
                             print(aggro_enemy.name + aggro_enemy.alert_message)
                             enemy_combat_list.append(aggro_enemy)
                             aggro_enemy.in_combat = True
@@ -288,10 +294,14 @@ def load_select():
             for i, file in enumerate(saves_list()):
                 timestamp = str(datetime.datetime.fromtimestamp(os.path.getmtime(file)))
                 timestamp = timestamp[:-7]
-                check_playtime = load(file)
-                playtime = str(datetime.timedelta(seconds=check_playtime.time_elapsed))
-                playtime = playtime[:-7]
-                print('{}: {} (last modified {}) (play time: {})'.format(i, file, timestamp, playtime))
+                try:
+                    check_playtime = load(file)
+                    playtime = str(datetime.timedelta(seconds=getattr(check_playtime, 'time_elapsed', 0)))
+                    playtime = playtime[:-7]
+                    descriptor = f"play time: {playtime}" if playtime else "play time: 0"
+                except Exception as e:
+                    descriptor = colored('UNREADABLE (legacy/incompatible)', 'red')
+                print(f'{i}: {file} (last modified {timestamp}) ({descriptor})')
             print('x: Cancel')
             choice = input("Selection: ")
             if choice == 'x':
@@ -299,18 +309,163 @@ def load_select():
                 return SyntaxError
             if is_input_integer(choice):
                 try:
-                    return load(saves_list()[int(choice)])
+                    candidate = saves_list()[int(choice)]
+                    return load(candidate)
                 except TypeError:
                     cprint("Invalid selection.", "red")
+                except Exception as e:
+                    cprint(f"Unable to load selected file: {e}", 'red')
     else:
         cprint("No save files detected.", "red")
         return SyntaxError
 
 
+class _MissingLegacyPlaceholder:
+    """Generic benign placeholder for legacy objects whose classes can't be imported anymore."""
+    def __init__(self, module_name:str, class_name:str):
+        self._legacy_module = module_name
+        self._legacy_class = class_name
+    def __repr__(self):
+        return f"<LegacyMissing {self._legacy_module}.{self._legacy_class}>"
+    # Provide no-op methods sometimes expected
+    def process(self, *a, **k):
+        return None
+    def check_conditions(self, *a, **k):
+        return None
+
+class SafeUnpickler(pickle.Unpickler):
+    """Unpickler resilient to missing legacy modules/classes.
+    Strategy:
+      1. Try normal resolution.
+      2. If fails, attempt module path rewrites (e.g., add 'src.' prefix).
+      3. If still fails, create a benign placeholder class.
+    """
+    MODULE_REWRITES = [
+        (lambda m: m.startswith('story.'), lambda m: 'src.' + m),
+        (lambda m: m.startswith('tilesets.'), lambda m: 'src.' + m),
+    ]
+    def find_class(self, module, name):
+        try:
+            return super().find_class(module, name)
+        except (ModuleNotFoundError, AttributeError):
+            pass
+        # Attempt rewrites
+        for predicate, rewrite in self.MODULE_REWRITES:
+            try:
+                if predicate(module):
+                    new_mod = rewrite(module)
+                    try:
+                        mod = importlib.import_module(new_mod)
+                        if hasattr(mod, name):
+                            return getattr(mod, name)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # As a last resort, synthesize a dummy module + class placeholder
+        placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        # Create a dynamic class so isinstance checks won't explode (but still benign)
+        placeholder_cls = type(placeholder_class_name, (object,), {
+            '__doc__': f'Placeholder for missing legacy class {module}.{name}',
+            '__init__': lambda self, *a, **k: None,
+            '__repr__': lambda self: f"<LegacyMissing {module}.{name}>",
+            # Commonly accessed attributes in game logic
+            'name': name,
+            'hidden': True,
+            'announce': '',
+            'idle_message': '',
+            'description': '',
+            'keywords': [],
+            'interactions': [],
+            # Benign no-op methods
+            'process': lambda self, *a, **k: None,
+            'check_conditions': lambda self, *a, **k: None,
+        })
+        return placeholder_cls
+
+# ----------------- Legacy / Integrity Helpers -----------------
+
+_PLAYER_REQUIRED_DEFAULTS = {
+    'inventory': list,
+    'known_moves': list,
+    'states': list,
+    'combat_list': list,
+    'combat_list_allies': list,
+    'combat_events': list,
+    'preferences': lambda: {"arrow": "Wooden Arrow"},
+    'resistance': dict,
+    'status_resistance': dict,
+}
+
+def _patch_player_integrity(obj: Any):
+    """Patch legacy Player instances to ensure required attributes exist.
+    This is deliberately conservative: only add missing attrs / lists.
+    """
+    try:
+        from player import Player  # local import to avoid circulars at module load
+    except Exception:
+        return obj
+    if not isinstance(obj, Player):
+        return obj
+    for attr, factory in _PLAYER_REQUIRED_DEFAULTS.items():
+        if not hasattr(obj, attr) or getattr(obj, attr) is None:
+            try:
+                setattr(obj, attr, factory() if callable(factory) else factory())
+            except Exception:
+                # fallback simple types
+                if factory in (list, dict):
+                    setattr(obj, attr, factory())
+    # Ensure Jean has fists weapon for older saves
+    if not getattr(obj, 'fists', None):
+        try:
+            import items as _items
+            obj.fists = _items.Fists()
+        except Exception:
+            pass
+    if not getattr(obj, 'eq_weapon', None):
+        obj.eq_weapon = getattr(obj, 'fists', None)
+    # Sanity on resistance/status_resistance contents
+    base_res_keys = {"fire","ice","shock","earth","light","dark","piercing","slashing","crushing","spiritual","pure"}
+    if hasattr(obj, 'resistance'):
+        for k in base_res_keys:
+            obj.resistance.setdefault(k, 1.0)
+    base_status_keys = {"generic","stun","poison","enflamed","sloth","apathy","blind","incoherence","mute","enraged","enchanted","ethereal","berserk","slow","sleep","confusion","cursed","stop","stone","frozen","doom","death"}
+    if hasattr(obj, 'status_resistance'):
+        for k in base_status_keys:
+            obj.status_resistance.setdefault(k, 1.0)
+    return obj
+
+
+def _safe_pickle_load(fp):
+    try:
+        data = SafeUnpickler(fp).load()
+        # Attempt recursive patch for Player objects nested in simple containers
+        def _walk(o):
+            if isinstance(o, (list, tuple, set)):
+                return type(o)(_walk(i) for i in o)
+            if isinstance(o, dict):
+                return {k: _walk(v) for k, v in o.items()}
+            return _patch_player_integrity(o)
+        return _walk(data)
+    except Exception:
+        return None
+
+
 def load(filename):
-    with open(filename, 'rb') as f:
-        data = pickle.load(f)
-    return data
+    """Load a saved game file. Returns deserialized object or raises if completely unreadable.
+    Legacy compatibility: missing modules/classes replaced with benign placeholders.
+    """
+    try:
+        with open(filename, 'rb') as f:
+            data = _safe_pickle_load(f)
+            if data is None:
+                raise RuntimeError(f"Failed to load save: {filename}")
+            return data
+    except FileNotFoundError:
+        raise
+    except Exception as e:
+        # Re-raise with context so caller can decide to skip
+        raise RuntimeError(f"Corrupt or incompatible save '{filename}': {e}") from e
 
 
 def save_select(player):
@@ -368,11 +523,25 @@ def saves_list():
 
 
 def autosave(player):
+    # Rotate existing autosaves (skip corrupt ones silently)
     for i in range(4, 0, -1):
-        for file in saves_list():  # cascade the autosaves, trimming off number 5
-            if file == 'autosave{}.sav'.format(i):
-                save(load('autosave{}.sav'.format(i)), 'autosave{}.sav'.format(i+1))
-                break
+        old_name = f'autosave{i}.sav'
+        new_name = f'autosave{i+1}.sav'
+        try:
+            if old_name in saves_list():
+                try:
+                    loaded = load(old_name)
+                except Exception:
+                    continue  # skip corrupt legacy file
+                if loaded:
+                    try:
+                        save(loaded, new_name)
+                    except Exception:
+                        continue
+        except Exception:
+            # Skip problematic legacy/corrupt file
+            continue
+    # Finally write newest autosave1
     save(player, 'autosave1.sav')
 
 
@@ -411,26 +580,34 @@ def seek_class(classname, package='all'):
     :return object or None:
     """
     packages = ['story', 'tilesets']
-    module_paths = set()
+    module_paths: set[str] = set()
+
+    def add_modules_for(base_pkg):
+        try:
+            root_pkg = __import__(base_pkg)
+            # Walk the package tree recursively to include nested modules (effects, ch01, etc.)
+            for modinfo in pkgutil.walk_packages(root_pkg.__path__, prefix=root_pkg.__name__ + '.'):  # type: ignore
+                module_paths.add(modinfo.name)
+        except Exception:
+            pass
 
     if package == 'all':
         for package_n in packages:
-            modules_in_package = list_module_names(package_n)
-            for module in modules_in_package:
-                module_paths.add(f"{package_n}.{module}")
+            add_modules_for(package_n)
+            add_modules_for(f"src.{package_n}")
     elif package in packages:
-        modules_in_package = list_module_names(package)
-        for module in modules_in_package:
-            module_paths.add(f"{package}.{module}")
+        add_modules_for(package)
+        add_modules_for(f"src.{package}")
     else:
         raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
-    for module_path in module_paths:
+
+    for module_path in sorted(module_paths):
         try:
             module = importlib.import_module(module_path)
-            class_obj = getattr(module, classname)
-            return class_obj
+            if hasattr(module, classname):
+                return getattr(module, classname)
         except (AttributeError, ImportError):
-            pass
+            continue
     raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
 
 
@@ -542,3 +719,55 @@ def list_module_names(package_name):
         module_names.append(modname)
 
     return module_names
+
+
+def clean_string(input_string):
+    # Remove non-printable characters
+    cleaned_string = re.sub(r'[\[\d]+m|[^\x20-\x7E]', '', input_string)
+    return cleaned_string
+
+
+def instantiate_event(event_cls, player, tile, params=None, repeat=False, name=None):
+    """Instantiate an Event subclass with backward-compatible argument ordering.
+    Supports legacy signature: (player, tile, params, repeat=False, name='X')
+    and transitional signature: (player, tile, repeat, params)
+    and new unified signature: (player, tile, params=None, repeat=False, name='X').
+    Falls back to best-effort positional mapping using parameter names.
+    """
+    try:
+        sig = inspect.signature(event_cls.__init__)
+        # Exclude self
+        params_list = [p for p in sig.parameters.values() if p.name != 'self']
+        kwargs = {}
+        # Map by parameter names if present
+        names = [p.name for p in params_list]
+        if {'player','tile'}.issubset(names):
+            kwargs['player'] = player
+            kwargs['tile'] = tile
+            if 'params' in names:
+                kwargs['params'] = params
+            if 'repeat' in names:
+                kwargs['repeat'] = repeat
+            if 'name' in names and name is not None:
+                kwargs['name'] = name
+            return event_cls(**kwargs)
+        # Fallback positional (legacy variants)
+        # Try (player, tile, params, repeat)
+        try:
+            return event_cls(player, tile, params, repeat)
+        except Exception:
+            pass
+        # Try (player, tile, repeat, params)
+        try:
+            return event_cls(player, tile, repeat, params)
+        except Exception:
+            pass
+        # Final attempt with minimal args
+        return event_cls(player, tile)
+    except Exception:
+        # As a last resort attempt bare construction
+        try:
+            return event_cls(player, tile)
+        except Exception:
+            return event_cls
+

@@ -25,3 +25,4 @@ config_dev.ini
 
 /venv
 /venv/*
+/src/test.sav

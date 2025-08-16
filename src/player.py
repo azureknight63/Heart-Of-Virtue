@@ -92,6 +92,9 @@ class Player:
         self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
         self.name = "Jean"
         self.name_long = "Jean Claire"
+        self.pronouns = {
+            "personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"
+        }
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
@@ -311,6 +314,9 @@ maintenant et à l'heure de notre mort. Amen.""",
         ]
 
     def cycle_states(self):
+        """
+        Loop through all of the states on the player and process the effects of each one
+        """
         for state in self.states:
             state.process(self)
 
@@ -1089,6 +1095,8 @@ he lets out a barely audible whisper:""", "red")
                             self.combat_exp[target_item.subtype] = 0  # if the player hasn't equipped this
                             # before and it has a subtype, open an exp category
                             self.skill_exp[target_item.subtype] = 0
+                            if self.testing_mode:  # noqa
+                                self.skill_exp[target_item.subtype] = 9999
                     functions.refresh_stat_bonuses(self)
                     self.refresh_protection_rating()
 

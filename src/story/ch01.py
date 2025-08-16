@@ -15,7 +15,7 @@ class Ch01StartOpenWall(Event):
     The first event. Opens the wall in the starting room when the player 'presses' the wall depression
     """
 
-    def __init__(self, player, tile, params, repeat=True, name='Ch01_Start_Open_Wall'):
+    def __init__(self, player, tile, params=None, repeat=True, name='Ch01_Start_Open_Wall'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -32,14 +32,12 @@ class Ch01StartOpenWall(Event):
         cprint("A loud rumbling fills the chamber as the wall slowly opens up, revealing an exit to the"
                " east.", 'yellow')
         self.tile.block_exit.remove('east')
-        self.tile.description = """
-Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
-blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
-heard.
-"""
         for room_object in self.tile.objects_here:
             if isinstance(room_object, objects.TileDescription):
-                self.tile.objects_here.remove(room_object)
+                room_object.description = """
+Now that an exit in the east wall has been revealed, the room has been filled with warmth and light. A bright
+blue sky is visible through the hole in the rock. The faint sound of birds chirping and water flowing can be
+heard. """
                 break
         for room_object in self.tile.objects_here:
             if room_object == wall_switch:
@@ -53,7 +51,7 @@ class Ch01BridgeWall(Event):
     Opens the wall on the bridge in the starting area
     """
 
-    def __init__(self, player, tile, params, repeat=True, name='Ch01_Bridge_Wall'):
+    def __init__(self, player, tile, params=None, repeat=True, name='Ch01_Bridge_Wall'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -92,7 +90,7 @@ class Ch01ChestRumblerBattle(Event):
     Initiates the battle with rock rumblers when the chest at (7,1) is looted
     """
 
-    def __init__(self, player, tile, params, repeat=True, name='Ch01_Chest_Rumbler_Battle'):
+    def __init__(self, player, tile, params=None, repeat=True, name='Ch01_Chest_Rumbler_Battle'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -122,7 +120,7 @@ class Ch01ChestRumblerBattle(Event):
 
 
 class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after opening the chest
-    def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler'):
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_combat_conditions(self):
@@ -130,7 +128,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             self.pass_conditions_to_process()
 
     def process(self):
-        cprint("\nThe ground quivers slightly as more rock creatures appear.\n")
+        functions.print_slow("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
         for x in range(0, 2):
             npc = self.tile.spawn_npc("RockRumbler")
@@ -142,7 +140,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
 
 
 class Ch01PostRumblerRep(Event):
-    def __init__(self, player, tile, params, repeat=True,
+    def __init__(self, player, tile, params=None, repeat=True,
                  name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.iteration = 2
@@ -161,7 +159,7 @@ class Ch01PostRumblerRep(Event):
 
 
 class Ch01PostRumbler2(Event):
-    def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_combat_conditions(self):
@@ -206,7 +204,7 @@ class Ch01PostRumbler2(Event):
 
 
 class Ch01PostRumbler3(Event):
-    def __init__(self, player, tile, params, repeat=False, name='Ch01_PostRumbler2'):
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler2'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_combat_conditions(self):
@@ -328,7 +326,7 @@ class AfterTheRumblerFight(Event):
     speak to him again.
     """
 
-    def __init__(self, player, tile, params, repeat=False, name='AfterTheRumblerFight'):
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterTheRumblerFight'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -361,7 +359,7 @@ class AfterGorranIntro(Event):
     opening in the rock to the Verdette Caverns, heading for Grondia.
     """
 
-    def __init__(self, player, tile, params, repeat=False, name='AfterGorranIntro'):
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterGorranIntro'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -377,4 +375,5 @@ class AfterGorranIntro(Event):
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)
+                gorran.friend = True
         self.player.teleport("verdette_caverns 2 1")

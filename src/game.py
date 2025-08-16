@@ -121,10 +121,15 @@ _\\|//__( | )______)_/
             starting_map = player.universe.starting_map_default
             startposition = player.universe.starting_position
 
-        print(f"Test Mode: {testing_mode}")
-        print(f"Start Map: {starting_map_name}")
-        print(f"Start Position: {startposition}")
+        if testing_mode:
+            print(f"\n\n###\nTest Mode: {testing_mode}")
+            print(f"Start Map: {starting_map_name}")
+            print(f"Start Position: {startposition}\n###\n\n")
+            player.skill_exp['Basic'] = 9999
+            player.skill_exp['Unarmed'] = 9999
 
+        player.testing_mode = testing_mode
+        universe.testing_mode = testing_mode
         player.map = starting_map
         player.location_x, player.location_y = startposition
         room = tile_exists(player.map, player.location_x, player.location_y)
@@ -214,19 +219,17 @@ _\\|//__( | )______)_/
                 count_args = action_input.split(' ')
                 arbitrary_action = True  # this will be set to False if the action is a default one that the player
                 #                          normally has access to
-                if len(count_args) == 1:
+                if len(count_args) == 1:  # if the player entered only one word (ex 'look'), do this stuff
                     for action in available_actions:
                         if action_input in action.hotkey:
                             arbitrary_action = False
                             player.do_action(action, **action.kwargs)
-                            break
                 elif len(count_args) > 1:
                     for action in available_actions:
                         if count_args[0] in action.hotkey:
                             join_args = ' '.join(count_args[1:])
                             player.do_action(action, join_args)
                             arbitrary_action = False
-                            break
                 if arbitrary_action:  # if the command the player used could not be found in the list of default
                     #                   actions, check to see if objects in the room have an associated command.
                     #                   In arbitrary one-word commands, ALL objects that associate the command

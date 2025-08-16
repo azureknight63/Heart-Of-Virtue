@@ -113,7 +113,7 @@ def combat(player):
         if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example,
             # an event is to fire upon player or enemy death
             for event in player.combat_events:
-                event.check_combat_conditions(beat)
+                event.check_combat_conditions()
 
         if not player.is_alive():
             player.death()
