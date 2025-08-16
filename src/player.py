@@ -757,7 +757,8 @@ he lets out a barely audible whisper:""", "red")
                     elif functions.is_input_integer(inner_selection):
                         # The player has chosen a skill to investigate. Show details and provide a small menu of
                         # actions to perform
-                        skill_menu_choice = skills_to_display[int(inner_selection)]
+                        idx = int(inner_selection)  # type: ignore[assignment]
+                        skill_menu_choice = skills_to_display[idx]
                         skill_object = skill_menu_choice[0]
                         info = """
     === SKILL INFORMATION ===
