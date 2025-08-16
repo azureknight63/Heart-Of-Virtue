@@ -5,3 +5,7 @@ Follow former crusader Jean Claire into a strange and dangerous world as he trie
 This is a text RPG - all graphics are represented using text characters! The human mind is far better at producing images than any pixel editor.
 
 If you like this project and are interested in contributing, please drop me a message.
+
+## Requirements
+- Python 3.13 (see .python-version)
+- See requirements.txt for dependencies
