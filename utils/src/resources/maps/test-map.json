@@ -1,84 +1,39 @@
 {
-    "(9, 6)": {
-        "id": "tile_9_6",
-        "title": "tile_9_6",
-        "description": "A newly created room at (9, 6).",
+    "(1, 1)": {
+        "id": "tile_1_1",
+        "title": "EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "exits": [
+            "south",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "EmptyCave",
+        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "west",
+            "south",
+            "east",
+            "southeast",
             "southwest"
         ],
+        "block_exit": [],
         "events": [],
         "items": [],
-        "npcs": [],
-        "objects": [],
-        "block_exit": []
-    },
-    "(9, 8)": {
-        "id": "tile_9_8",
-        "title": "tile_9_8",
-        "description": "A newly created room at (9, 8).",
-        "exits": [
-            "northwest"
-        ],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [],
-        "block_exit": []
-    },
-    "(8, 7)": {
-        "id": "tile_8_7",
-        "title": "tile_8_7",
-        "description": "A newly created room at (8, 7).",
-        "exits": [
-            "northeast",
-            "southeast",
-            "north"
-        ],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [],
-        "block_exit": []
-    },
-    "(8, 6)": {
-        "id": "tile_8_6",
-        "title": "tile_8_6",
-        "description": "A newly created room at (8, 6).",
-        "exits": [
-            "east",
-            "south"
-        ],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [],
-        "block_exit": []
-    },
-    "(11, 7)": {
-        "id": "tile_11_7",
-        "title": "tile_11_7",
-        "description": "A newly created room at (11, 7).",
-        "exits": [
-            "north"
-        ],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [],
-        "block_exit": []
-    },
-    "(11, 6)": {
-        "id": "tile_11_6",
-        "title": "tile_11_6",
-        "description": "A newly created room at (11, 6).",
-        "exits": [
-            "south"
-        ],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [],
-        "block_exit": []
-    }
-}
+        "npcs": [
+            {
+                "__class__": "MiloCurioDealer",
+                "__module__": "src.npc",
+                "props": {
+                    "name": "Milo the Traveling Curio Dealer",
+                    "description": "A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
+                    "inventory": [
+                        
