@@ -711,8 +711,27 @@ class MapEditor:
         """
         try:
             # build serializable structure
-            def serialize_instance(inst: Any) -> Dict[str, Any]:
-                data = {k: v for k, v in vars(inst).items() if not k.startswith('_') and isinstance(v, (int,float,str,bool,list,dict,tuple))}
+            def serialize_instance(inst: Any, seen=None) -> Dict[str, Any] | str:
+                if seen is None:
+                    seen = set()
+                obj_id = id(inst)
+                if obj_id in seen:
+                    return f"<circular_ref:{type(inst).__name__}>"
+                seen.add(obj_id)
+                def recursive_serialize(val):
+                    if isinstance(val, (int, float, str, bool)) or val is None:
+                        return val
+                    elif isinstance(val, list):
+                        return [recursive_serialize(v) for v in val]
+                    elif isinstance(val, tuple):
+                        return tuple(recursive_serialize(v) for v in val)
+                    elif isinstance(val, dict):
+                        return {k: recursive_serialize(v) for k, v in val.items()}
+                    elif hasattr(val, '__dict__'):
+                        return serialize_instance(val, seen)
+                    else:
+                        return str(val)
+                data = {kx: recursive_serialize(vx) for kx, vx in vars(inst).items() if not kx.startswith('_')}
                 return {
                     '__class__': inst.__class__.__name__,
                     '__module__': inst.__class__.__module__,
@@ -723,8 +742,7 @@ class MapEditor:
                 tile: Dict[str, Any] = dict(v)
                 for key in ['events','items','npcs','objects']:
                     inst_list = tile.get(key, [])
-                    # explicitly ensure list; ignore type checker complaints about heterogeneous contents
-                    tile[key] = [serialize_instance(i) for i in inst_list]  # type: ignore[assignment]
+                    tile[key] = [serialize_instance(i) for i in inst_list]
                 serializable_map[str(k)] = tile
 
             # Default save directory
@@ -758,30 +776,43 @@ class MapEditor:
                 with open(filepath, "r") as f:
                     data = json.load(f)
                 def deserialize_instance(d):
-                    if not isinstance(d, dict) or '__class__' not in d:
-                        return d
-                    cls_name = d.get('__class__')
-                    mod_name = d.get('__module__')
-                    props = d.get('props', {})
-                    try:
-                        module = __import__(mod_name, fromlist=[cls_name])
-                        cls = getattr(module, cls_name)
-                        # try instantiate with matching args
-                        try:
-                            param_names = [p.name for p in inspect.signature(cls.__init__).parameters.values() if p.name != 'self']
-                            init_kwargs = {k: v for k, v in props.items() if k in param_names}
-                            inst = cls(**init_kwargs)
-                        except Exception:
-                            inst = cls.__new__(cls)
+                    # Recursively reconstruct any dict with __class__ and __module__ as an object
+                    if isinstance(d, dict):
+                        if '__class__' in d and '__module__' in d:
+                            cls_name = d.get('__class__')
+                            mod_name = d.get('__module__')
+                            # Normalize module name for items, moves, etc.
+                            if mod_name != 'builtins' and not mod_name.startswith('src.'):
+                                mod_name = f'src.{mod_name}'
+                            props = d.get('props', {})
                             try:
-                                cls.__init__(inst)  # type: ignore
+                                module = __import__(mod_name, fromlist=[cls_name])
+                                cls = getattr(module, cls_name)
+                                try:
+                                    param_names = [p.name for p in inspect.signature(cls.__init__).parameters.values() if p.name != 'self']
+                                    init_kwargs = {k: deserialize_instance(v) for k, v in props.items() if k in param_names}
+                                    inst = cls(**init_kwargs)
+                                except Exception:
+                                    inst = cls.__new__(cls)
+                                    try:
+                                        cls.__init__(inst)  # type: ignore
+                                    except Exception:
+                                        pass
+                                # Recursively set all attributes, not just constructor args
+                                for k2, v2 in props.items():
+                                    setattr(inst, k2, deserialize_instance(v2))
+                                return inst
                             except Exception:
-                                pass
-                        for k2, v2 in props.items():
-                            setattr(inst, k2, v2)
-                        return inst
-                    except Exception:
-                        return props  # fallback raw
+                                return d
+                        else:
+                            # Recursively process all dict values
+                            return {k: deserialize_instance(v) for k, v in d.items()}
+                    elif isinstance(d, list):
+                        return [deserialize_instance(x) for x in d]
+                    elif isinstance(d, tuple):
+                        return tuple(deserialize_instance(x) for x in d)
+                    else:
+                        return d
                 self.map_data = {}
                 for k, tile in data.items():
                     pos = tuple(int(x) for x in k.strip('()').split(','))
