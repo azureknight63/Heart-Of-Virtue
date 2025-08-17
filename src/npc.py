@@ -4,6 +4,8 @@ import moves
 import functions
 from neotermcolor import colored, cprint
 import loot_tables
+import items
+from interface import ShopInterface as Shop
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -260,6 +262,97 @@ class NPC:
             if hasattr(item, "isequipped") and item.isequipped:
                 equipped_items.append(item)
         return equipped_items
+
+""" Merchants """
+
+class Merchant(NPC):
+    def __init__(self, name, description, damage, aggro, exp_award,
+                 inventory=None, maxhp=100, protection=0, speed=10, finesse=10,
+                 awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
+                 faith=10, hidden=False, hide_factor=0, combat_range=(0, 5),
+                 idle_message=' is here.', alert_message='glares sharply at Jean!',
+                 discovery_message='someone interesting.', target=None):
+        super().__init__(name=name, description=description, damage=damage, aggro=aggro, exp_award=exp_award,
+                         inventory=inventory, maxhp=maxhp, protection=protection, speed=speed, finesse=finesse,
+                         awareness=awareness, maxfatigue=maxfatigue, endurance=endurance, strength=strength,
+                         charisma=charisma, intelligence=intelligence, faith=faith, hidden=hidden,
+                         hide_factor=hide_factor, combat_range=combat_range,
+                         idle_message=idle_message,
+                         alert_message=alert_message,
+                         discovery_message=discovery_message,
+                         target=target)
+        self.shop = None
+        self.keywords = ["buy", "sell", "trade", "talk"]
+
+    def initialize_shop(self):
+        """
+        This method can be used to initialize the merchant's shop with items.
+        It can be called when the merchant is created or when the game starts.
+        Override this method to customize the shop's inventory and other properties.
+        """
+        if self.inventory is None:
+            self.inventory = []
+        self.shop = Shop(merchant=self, player=None, shop_name=f"{self.name}'s Shop")
+
+    def talk(self, player):
+        print(self.name + " has nothing to say.")
+
+    def trade(self, player):
+        """
+        This method is called when the player wants to trade with the merchant.
+        It should handle the trading logic, such as buying and selling items.
+        """
+        print(f"{self.name} is ready to trade with you.")
+        if self.shop:
+            self.shop.player = player
+            self.shop.run()
+
+    def buy(self, player):
+        self.trade(player)
+
+    def sell(self, player):
+        self.trade(player)
+
+
+class MiloCurioDealer(Merchant):
+    def __init__(self):
+        super().__init__(
+            name="Milo the Traveling Curio Dealer",
+            description="A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. "
+                        "Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
+            damage=2,
+            aggro=0,
+            exp_award=0,
+            inventory=[],
+            maxhp=50,
+            protection=2,
+            speed=12,
+            finesse=14,
+            charisma=18,
+            intelligence=16
+        )
+        # Enchanted Weapon
+        enchanted_sword = items.Shortsword()
+        functions.add_random_enchantments(enchanted_sword, 3)
+        # Gold
+        gold_pouch = items.Gold(amt=100)
+        # Milo's inventory
+        self.inventory = [items.Restorative(count=10), items.Rock(), items.Spear(), enchanted_sword, gold_pouch]
+        self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
+        self.shop.exit_message = ("Milo nods as you leave his shop, "
+                                  "already looking for new curiosities to add to his collection.")
+    def talk(self, player):  # noqa
+        print("Milo grins: 'Looking for something rare, friend? I've got just the thing!'")
+    def trade(self, player):
+        print("Milo opens his patchwork coat, revealing a dazzling array of curiosities.")
+        # Ensure self.shop is a Shop instance, not a dict
+        if not isinstance(self.shop, Shop):
+            self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
+            self.shop.exit_message = ("Milo nods as you leave his shop, "
+                                      "already looking for new curiosities to add to his collection.")
+        self.shop.set_player(player)
+        self.shop.run()
+
 
 """ Friends """
 
