@@ -520,25 +520,24 @@ maintenant et à l'heure de notre mort. Amen.""",
         else:
             print("### ERR IN SETTING VAR; NO ENTRY: " + params[0] + " " + params[1] + " ###")
 
-    def teleport(self, phrase=''):
+    def teleport(self, target_map: str, target_coordinates: tuple):
         """
         Teleports the player to a specified area and coordinates.
 
         Args:
-            phrase (str): A string containing the area name, x, and y coordinates separated by spaces.
-                          Example: "Forest 3 5"
+            target_map (str): The name of the area to teleport to.
+            target_coordinates (tuple): The (x, y) coordinates to teleport to.
 
         Behavior:
             - If the area and coordinates are valid, moves the player there and prints the tile's intro text.
             - If invalid, prints an error message.
         """
-        params = phrase.split()
-        area_name = params[0] if len(params) > 0 else None
-        x = int(params[1]) if len(params) > 1 and params[1].isdigit() else None
-        y = int(params[2]) if len(params) > 2 and params[2].isdigit() else None
-
+        x = target_coordinates[0]
+        y = target_coordinates[1]
         for area in self.universe.maps:
-            if area.get('name') == area_name and x is not None and y is not None:
+            if (area.get('name') == target_map
+                    and x is not None
+                    and y is not None):
                 tile = tile_exists(area, x, y)
                 if tile:
                     self.map = area
@@ -548,9 +547,9 @@ maintenant et à l'heure de notre mort. Amen.""",
                     print(tile.intro_text())
                     return
                 else:
-                    print(f"### INVALID TELEPORT LOCATION: {phrase} ###")
+                    print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
                     return
-        print(f"### INVALID TELEPORT LOCATION: {phrase} ###")
+        print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
 
     def level_up(self):
         cprint(r"""
