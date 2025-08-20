@@ -333,11 +333,11 @@ class MiloCurioDealer(Merchant):
         )
         # Enchanted Weapon
         enchanted_sword = items.Shortsword()
-        functions.add_random_enchantments(enchanted_sword, 3)
+        functions.add_random_enchantments(enchanted_sword, 5)
         # Gold
         gold_pouch = items.Gold(amt=100)
         # Milo's inventory
-        self.inventory = [items.Restorative(count=10), items.Rock(), items.Spear(), enchanted_sword, gold_pouch]
+        self.inventory = [items.Restorative(count=100), items.Rock(), items.Spear(), enchanted_sword, gold_pouch]
         self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
         self.shop.exit_message = ("Milo nods as you leave his shop, "
                                   "already looking for new curiosities to add to his collection.")
