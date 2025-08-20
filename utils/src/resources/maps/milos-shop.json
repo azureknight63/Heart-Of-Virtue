@@ -1,0 +1,66 @@
+{
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "tile_2_2",
+        "description": "A newly created room at (9, 8).",
+        "exits": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "tile_2_1",
+        "description": "A newly created room at (2, 1).",
+        "exits": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 3)": {
+        "id": "tile_2_3",
+        "title": "Entrance",
+        "description": "This is the entrance to Milo's wonderful shop.",
+        "exits": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": [],
+        "symbol": ""
+    },
+    "(3, 2)": {
+        "id": "tile_3_2",
+        "title": "tile_3_2",
+        "description": "A newly created room at (3, 2).",
+        "exits": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 2)": {
+        "id": "tile_1_2",
+        "title": "tile_1_2",
+        "description": "A newly created room at (1, 2).",
+        "exits": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 4)": {
+        "id": "tile_2_4",
+        "title": "Exit",
+        "description": "Exit tile",
+        "exits": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": [],
+        "symbol": "X"
+    }
+}
