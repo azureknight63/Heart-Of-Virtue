@@ -31,7 +31,7 @@
                     "inventory": [
                         {
                             "__class__": "Restorative",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -61,7 +61,7 @@
                         },
                         {
                             "__class__": "Rock",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "damage": 1,
                                 "str_req": 1,
@@ -99,7 +99,7 @@
                         },
                         {
                             "__class__": "Spear",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "damage": 25,
                                 "str_req": 10,
@@ -137,7 +137,7 @@
                         },
                         {
                             "__class__": "Shortsword",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "damage": 25,
                                 "str_req": 5,
@@ -176,7 +176,7 @@
                         },
                         {
                             "__class__": "Gold",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "amt": 100,
                                 "maintype": "Gold",
@@ -307,7 +307,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcRest",
-                            "__module__": "moves",
+                            "__module__": "src.moves",
                             "props": {
                                 "name": "Rest",
                                 "description": "Rest for a moment to restore fatigue.",
@@ -391,7 +391,7 @@
                     },
                     "shop": {
                         "__class__": "ShopInterface",
-                        "__module__": "interface",
+                        "__module__": "src.interface",
                         "props": {
                             "title": "The Wandering Curiosities Shop",
                             "choices": [
@@ -429,12 +429,7 @@
         "id": "tile_3_3",
         "title": "Starting Spot",
         "description": "Welcome to the test zone! Have fun!",
-        "exits": [
-            "northwest",
-            "north",
-            "west",
-            "east"
-        ],
+        "exits": [],
         "events": [],
         "items": [
             {
@@ -546,6 +541,120 @@
                     "hide_factor": 0,
                     "discovery_message": "a kind of weapon.",
                     "announce": "There's a Spear here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": false
+                }
+            },
+            {
+                "__class__": "Scythe",
+                "__module__": "src.items",
+                "props": {
+                    "damage": 5,
+                    "str_req": 1,
+                    "fin_req": 1,
+                    "str_mod": 2,
+                    "fin_mod": 2,
+                    "weight": 7,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Scythe",
+                    "wpnrange": [
+                        1,
+                        5
+                    ],
+                    "name": "Scythe",
+                    "description": "An unusual weapon that, despite its intimidating appearance, is particularly difficult to wield. Requires two hands.",
+                    "value": 100,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Scythe here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": true
+                }
+            },
+            {
+                "__class__": "Pickaxe",
+                "__module__": "src.items",
+                "props": {
+                    "damage": 25,
+                    "str_req": 10,
+                    "fin_req": 1,
+                    "str_mod": 2.5,
+                    "fin_mod": 0.1,
+                    "weight": 3,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Pick",
+                    "wpnrange": [
+                        1,
+                        5
+                    ],
+                    "name": "Pickaxe",
+                    "description": "A hardy weapon that can also be used to mine for rare metals, if the user is so-inclined. \nDifficult to wield at very close range.",
+                    "value": 100,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Pickaxe here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": false
+                }
+            },
+            {
+                "__class__": "Battleaxe",
+                "__module__": "src.items",
+                "props": {
+                    "damage": 25,
+                    "str_req": 5,
+                    "fin_req": 5,
+                    "str_mod": 1,
+                    "fin_mod": 0.5,
+                    "weight": 2,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Axe",
+                    "wpnrange": [
+                        0,
+                        5
+                    ],
+                    "name": "Battleaxe",
+                    "description": "A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
+                    "value": 100,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Battleaxe here.",
                     "interactions": [
                         "drop",
                         "equip"
