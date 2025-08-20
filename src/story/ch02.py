@@ -47,7 +47,7 @@ class AfterDefeatingLurker(Event):
               "of something large, or perhaps many things. There was also - yes, Jean was sure of "
               "it - the smells of leather and iron.")
         functions.await_input()
-        self.player.teleport("grondia 3 1")
+        self.player.teleport("grondia", (3,1))
 
 
 class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to the Citadel
