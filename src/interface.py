@@ -254,3 +254,110 @@ class ShopInterface(BaseInterface):
         if submenu and isinstance(submenu, BaseInterface):
             submenu.run()
         # Override in subclasses for specific behavior
+
+
+class InventoryCategorySubmenu(BaseInterface):
+    def __init__(self, items, player, category_name):
+        self.items = items
+        self.player = player
+        choices = []
+        for i, item in enumerate(items):
+            item_preference_value = "(P)" if item.name in player.preferences.values() else ""
+            label = f"{item.name} {item_preference_value}"
+            if getattr(item, 'isequipped', False):
+                label += " (Equipped)"
+            if hasattr(item, 'count') and getattr(item, 'count', 1) > 1:
+                label += f" ({item.count})"
+            choices.append({'label': label, 'item': item})
+        super().__init__(title=f"{player.name}'s {category_name}", choices=choices, exit_label="Back", exit_message="Returning to category selection...")
+
+    def handle_exit(self):
+        print(f"Returning to category selection...")
+
+    def handle_choice(self, idx: int):
+        item = self.choices[idx]['item']
+        print(item, '\n')
+        if getattr(item, "subtype", None) == "Arrow" and self.player.preferences.get("arrow") == item.name:
+            print('\nThis is your preferred arrow type. You will choose this when shooting your bow as long as you have enough.\nIf you select "prefer" again, you will remove this preference. Having no arrow preference will force you to choose the arrow you want each time you shoot.\n')
+        if getattr(item, "interactions", None):
+            InventoryInterface.inventory_item_sub_menu_static(item, self.player)
+        else:
+            __import__('functions').await_input()
+
+
+class InventoryInterface(BaseInterface):
+    def __init__(self, player):
+        self.player = player
+        self.item_categories = {
+            "Consumable": {"hotkey": "c", "class": __import__('items').Consumable},
+            "Weapon": {"hotkey": "w", "class": __import__('items').Weapon},
+            "Armor": {"hotkey": "a", "class": __import__('items').Armor},
+            "Boots": {"hotkey": "b", "class": __import__('items').Boots},
+            "Helm": {"hotkey": "h", "class": __import__('items').Helm},
+            "Gloves": {"hotkey": "g", "class": __import__('items').Gloves},
+            "Accessory": {"hotkey": "y", "class": __import__('items').Accessory},
+            "Special": {"hotkey": "s", "class": __import__('items').Special}
+        }
+        super().__init__(title=f"{player.name}'s Inventory", exit_label="Exit Inventory")
+
+    def run(self):
+        while True:
+            self.player.refresh_weight()
+            print(f"=====")
+            print(f"Inventory")
+            print(f"=====")
+            print(f"Weight: {self.player.weight_current} / {self.player.weight_tolerance}")
+            gold_amt = sum(getattr(item, 'amt', 0) for item in self.player.inventory if getattr(item, 'subtype', None) == "Gold")
+            print(f"Gold: {gold_amt}\n\nSelect a category to view:\n")
+            # Build item_types and item_counts robustly
+            item_types = set()
+            item_counts = {}
+            for item in self.player.inventory:
+                if hasattr(item, 'maintype') and item.maintype in self.item_categories:
+                    item_types.add(item.maintype)
+                    if item.maintype not in item_counts:
+                        item_counts[item.maintype] = 0
+                    if hasattr(item, 'count'):
+                        item_counts[item.maintype] += item.count
+                    else:
+                        item_counts[item.maintype] += 1
+            item_counts["Gold"] = gold_amt
+            # Display categories
+            for item_type in item_types:
+                count = item_counts.get(item_type, 0)
+                if count > 0 and item_type in self.item_categories:
+                    hotkey = self.item_categories[item_type]["hotkey"]
+                    print(f"({hotkey}) {item_type}: {count}")
+            print("(x) Cancel\n")
+            inventory_selection = input("Selection: ")
+            if inventory_selection == 'x':
+                break
+            selected_category = None
+            for key, value in self.item_categories.items():
+                if inventory_selection == value["hotkey"]:
+                    selected_category = key
+                    break
+            choices = []
+            if selected_category:
+                category_class = self.item_categories[selected_category]["class"]
+                for item in self.player.inventory:
+                    if getattr(item, 'maintype', None) == category_class.__name__:
+                        choices.append(item)
+            if choices:
+                submenu = InventoryCategorySubmenu(choices, self.player, selected_category)
+                submenu.run()
+
+    @staticmethod
+    def inventory_item_sub_menu_static(item, player):
+        print("What would you like to do with this item?\n")
+        for i, action in enumerate(item.interactions):
+            print(f"{i}: {action.title()}")
+        print("(x): Nothing, nevermind.\n")
+        selection = input("Selection: ")
+        if selection == 'x':
+            return
+        if __import__('functions').is_input_integer(selection):
+            selection = int(selection)
+            if hasattr(item, item.interactions[selection]):
+                method = getattr(item, item.interactions[selection])
+                method(player)
