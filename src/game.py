@@ -107,7 +107,7 @@ _\\|//__( | )______)_/
         player.universe.build(player)
         starting_map_name = "default"
         try:
-            config.read('../config_dev.ini')
+            config.read('config_dev.ini')
             testing_mode = config.getboolean('Startup', 'testmode')
             skip_dialog = config.getboolean('Startup', 'skipdialog')
             if skip_dialog:
