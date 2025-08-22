@@ -36,7 +36,7 @@
                     "inventory": [
                         {
                             "__class__": "Restorative",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -66,7 +66,7 @@
                         },
                         {
                             "__class__": "Rock",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "damage": 1,
                                 "str_req": 1,
@@ -104,7 +104,7 @@
                         },
                         {
                             "__class__": "Spear",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "damage": 25,
                                 "str_req": 10,
@@ -142,7 +142,7 @@
                         },
                         {
                             "__class__": "Shortsword",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "damage": 25,
                                 "str_req": 5,
@@ -180,7 +180,7 @@
                         },
                         {
                             "__class__": "Gold",
-                            "__module__": "items",
+                            "__module__": "src.items",
                             "props": {
                                 "amt": 100,
                                 "maintype": "Gold",
@@ -311,7 +311,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcRest",
-                            "__module__": "moves",
+                            "__module__": "src.moves",
                             "props": {
                                 "name": "Rest",
                                 "description": "Rest for a moment to restore fatigue.",
@@ -395,7 +395,7 @@
                     },
                     "shop": {
                         "__class__": "ShopInterface",
-                        "__module__": "interface",
+                        "__module__": "src.interface",
                         "props": {
                             "merchant": "<circular_ref:MiloCurioDealer>",
                             "player": null,
@@ -405,7 +405,7 @@
                             "sell_modifier": 0.5,
                             "buy_menu": {
                                 "__class__": "BaseInterface",
-                                "__module__": "interface",
+                                "__module__": "src.interface",
                                 "props": {
                                     "title": "Buy Menu",
                                     "choices": [],
@@ -425,7 +425,7 @@
                             },
                             "sell_menu": {
                                 "__class__": "BaseInterface",
-                                "__module__": "interface",
+                                "__module__": "src.interface",
                                 "props": {
                                     "title": "Sell Menu",
                                     "choices": [],
@@ -508,7 +508,8 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "block_exit": []
     },
     "(2, 4)": {
         "id": "tile_2_4",
@@ -517,30 +518,41 @@
         "exits": [
             "north"
         ],
-        "events": [
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
             {
-                "__class__": "Teleport",
-                "__module__": "src.story.effects",
+                "__class__": "Passageway",
+                "__module__": "src.objects",
                 "props": {
-                    "name": "Teleport",
-                    "player": null,
+                    "name": "Passageway",
+                    "description": "A passageway leading elsewhere is here.",
+                    "idle_message": "There is a passageway here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a passageway!",
+                    "announce": "There is a passageway here.",
+                    "keywords": [
+                        "enter",
+                        "go",
+                        "leave",
+                        "exit"
+                    ],
+                    "events": [],
                     "tile": null,
-                    "repeat": false,
-                    "thread": null,
-                    "has_run": false,
-                    "params": null,
-                    "referenceobj": null,
-                    "target_map_name": "testing-new",
-                    "target_coordinates": [
-                        2,
-                        2
-                    ]
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "testing-new",
+                    "teleport_tile": [
+                        3,
+                        3
+                    ],
+                    "persist": true
                 }
             }
         ],
-        "items": [],
-        "npcs": [],
-        "objects": [],
         "block_exit": [],
         "symbol": "X"
     }

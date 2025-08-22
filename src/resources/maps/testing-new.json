@@ -17,411 +17,47 @@
         "id": "tile_3_2",
         "title": "Milo's Space",
         "description": "It's pretty cool in this space.",
-        "exits": [],
+        "exits": [
+            "west",
+            "south",
+            "southeast",
+            "southwest"
+        ],
         "events": [],
         "items": [],
-        "npcs": [
+        "npcs": [],
+        "objects": [
             {
-                "__class__": "MiloCurioDealer",
-                "__module__": "src.npc",
+                "__class__": "Passageway",
+                "__module__": "src.objects",
                 "props": {
-                    "name": "Milo the Traveling Curio Dealer",
-                    "description": "A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
-                    "current_room": null,
-                    "inventory": [
-                        {
-                            "__class__": "Restorative",
-                            "__module__": "src.items",
-                            "props": {
-                                "weight": 0.25,
-                                "maintype": "Consumable",
-                                "subtype": "Potion",
-                                "count": 10,
-                                "interactions": [
-                                    "use",
-                                    "drink",
-                                    "drop"
-                                ],
-                                "name": "Restorative",
-                                "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
-                                "value": 100,
-                                "type": "Consumable",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "discovery_message": "a useful item.",
-                                "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": false,
-                                "power": 60
-                            }
-                        },
-                        {
-                            "__class__": "Rock",
-                            "__module__": "src.items",
-                            "props": {
-                                "damage": 1,
-                                "str_req": 1,
-                                "fin_req": 1,
-                                "str_mod": 3.0,
-                                "fin_mod": 0.5,
-                                "weight": 2.0,
-                                "isequipped": false,
-                                "maintype": "Weapon",
-                                "subtype": "Bludgeon",
-                                "wpnrange": [
-                                    0,
-                                    5
-                                ],
-                                "name": "Rock",
-                                "description": "A fist-sized rock, suitable for bludgeoning.",
-                                "value": 0,
-                                "type": "Weapon",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "discovery_message": "a kind of weapon.",
-                                "announce": "There's a Rock here.",
-                                "interactions": [
-                                    "drop",
-                                    "equip"
-                                ],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": true,
-                                "twohand": false
-                            }
-                        },
-                        {
-                            "__class__": "Spear",
-                            "__module__": "src.items",
-                            "props": {
-                                "damage": 25,
-                                "str_req": 10,
-                                "fin_req": 1,
-                                "str_mod": 2,
-                                "fin_mod": 0.5,
-                                "weight": 3,
-                                "isequipped": false,
-                                "maintype": "Weapon",
-                                "subtype": "Spear",
-                                "wpnrange": [
-                                    3,
-                                    8
-                                ],
-                                "name": "Spear",
-                                "description": "A weapon of simple design and great effectiveness. \nHas a longer reach than most melee weapons but is not great at close range.",
-                                "value": 100,
-                                "type": "Weapon",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "discovery_message": "a kind of weapon.",
-                                "announce": "There's a Spear here.",
-                                "interactions": [
-                                    "drop",
-                                    "equip"
-                                ],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": true,
-                                "twohand": false
-                            }
-                        },
-                        {
-                            "__class__": "Shortsword",
-                            "__module__": "src.items",
-                            "props": {
-                                "damage": 25,
-                                "str_req": 5,
-                                "fin_req": 10,
-                                "str_mod": 0.75,
-                                "fin_mod": 1.25,
-                                "weight": 2,
-                                "isequipped": false,
-                                "maintype": "Weapon",
-                                "subtype": "Sword",
-                                "wpnrange": [
-                                    0,
-                                    4
-                                ],
-                                "name": "Encrusted Shortsword of Relief",
-                                "description": "A double-edged shortsword. A reliable companion in any fight.",
-                                "value": 156,
-                                "type": "Weapon",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "discovery_message": "a kind of weapon.",
-                                "announce": "There's a Encrusted Shortsword of Relief here.",
-                                "interactions": [
-                                    "drop",
-                                    "equip"
-                                ],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": true,
-                                "twohand": false,
-                                "add_weight_tolerance": "4"
-                            }
-                        },
-                        {
-                            "__class__": "Gold",
-                            "__module__": "src.items",
-                            "props": {
-                                "amt": 100,
-                                "maintype": "Gold",
-                                "name": "Gold",
-                                "description": "A small pouch containing 100 gold pieces.",
-                                "value": 100,
-                                "type": "Currency",
-                                "subtype": "Gold",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "discovery_message": "a small pouch of gold.",
-                                "announce": "There's a small pouch of gold on the ground.",
-                                "interactions": [],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": false
-                            }
-                        }
-                    ],
-                    "idle_message": " is here.",
-                    "alert_message": "glares sharply at Jean!",
-                    "maxhp": 50,
-                    "maxhp_base": 50,
-                    "hp": 50,
-                    "damage": 2,
-                    "damage_base": 2,
-                    "protection": 2,
-                    "protection_base": 2,
-                    "speed": 12,
-                    "speed_base": 12,
-                    "finesse": 14,
-                    "finesse_base": 14,
-                    "resistance": {
-                        "fire": 1.0,
-                        "ice": 1.0,
-                        "shock": 1.0,
-                        "earth": 1.0,
-                        "light": 1.0,
-                        "dark": 1.0,
-                        "piercing": 1.0,
-                        "slashing": 1.0,
-                        "crushing": 1.0,
-                        "spiritual": 1.0,
-                        "pure": 1.0
-                    },
-                    "resistance_base": {
-                        "fire": 1.0,
-                        "ice": 1.0,
-                        "shock": 1.0,
-                        "earth": 1.0,
-                        "light": 1.0,
-                        "dark": 1.0,
-                        "piercing": 1.0,
-                        "slashing": 1.0,
-                        "crushing": 1.0,
-                        "spiritual": 1.0,
-                        "pure": 1.0
-                    },
-                    "status_resistance": {
-                        "generic": 1.0,
-                        "stun": 1.0,
-                        "poison": 1.0,
-                        "enflamed": 1.0,
-                        "sloth": 1.0,
-                        "apathy": 1.0,
-                        "blind": 1.0,
-                        "incoherence": 1.0,
-                        "mute": 1.0,
-                        "enraged": 1.0,
-                        "enchanted": 1.0,
-                        "ethereal": 1.0,
-                        "berserk": 1.0,
-                        "slow": 1.0,
-                        "sleep": 1.0,
-                        "confusion": 1.0,
-                        "cursed": 1.0,
-                        "stop": 1.0,
-                        "stone": 1.0,
-                        "frozen": 1.0,
-                        "doom": 1.0,
-                        "death": 1.0
-                    },
-                    "status_resistance_base": {
-                        "generic": 1.0,
-                        "stun": 1.0,
-                        "poison": 1.0,
-                        "enflamed": 1.0,
-                        "sloth": 1.0,
-                        "apathy": 1.0,
-                        "blind": 1.0,
-                        "incoherence": 1.0,
-                        "mute": 1.0,
-                        "enraged": 1.0,
-                        "enchanted": 1.0,
-                        "ethereal": 1.0,
-                        "berserk": 1.0,
-                        "slow": 1.0,
-                        "sleep": 1.0,
-                        "confusion": 1.0,
-                        "cursed": 1.0,
-                        "stop": 1.0,
-                        "stone": 1.0,
-                        "frozen": 1.0,
-                        "doom": 1.0,
-                        "death": 1.0
-                    },
-                    "awareness": 10,
-                    "aggro": 0,
-                    "exp_award": 0,
-                    "exp_award_base": 0,
-                    "maxfatigue": 100,
-                    "maxfatigue_base": 100,
-                    "endurance": 10,
-                    "endurance_base": 10,
-                    "strength": 10,
-                    "strength_base": 10,
-                    "charisma": 18,
-                    "charisma_base": 18,
-                    "intelligence": 16,
-                    "intelligence_base": 16,
-                    "faith": 10,
-                    "faith_base": 10,
-                    "fatigue": 100,
-                    "target": null,
-                    "known_moves": [
-                        {
-                            "__class__": "NpcRest",
-                            "__module__": "src.moves",
-                            "props": {
-                                "name": "Rest",
-                                "description": "Rest for a moment to restore fatigue.",
-                                "xp_gain": 0,
-                                "heat_gain": 0,
-                                "current_stage": 0,
-                                "stage_beat": [
-                                    0,
-                                    1,
-                                    2,
-                                    0
-                                ],
-                                "beats_left": 1,
-                                "stage_announce": [
-                                    "Milo the Traveling Curio Dealer rests for a moment.",
-                                    "Milo the Traveling Curio Dealer is resting.",
-                                    "",
-                                    ""
-                                ],
-                                "fatigue_cost": 0,
-                                "target": "<circular_ref:MiloCurioDealer>",
-                                "user": "<circular_ref:MiloCurioDealer>",
-                                "targeted": false,
-                                "verbose_targeting": false,
-                                "interrupted": false,
-                                "initialized": false,
-                                "usercolor": "white",
-                                "targetcolor": "white",
-                                "mvrange": [
-                                    0,
-                                    9999
-                                ],
-                                "instant": false,
-                                "weight": 1
-                            }
-                        }
-                    ],
-                    "current_move": null,
-                    "states": [],
-                    "in_combat": false,
-                    "combat_proximity": {},
-                    "default_proximity": 20,
+                    "name": "Passageway",
+                    "description": "A passageway leading elsewhere is here.",
+                    "idle_message": "There is a passageway here.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": "someone interesting.",
-                    "friend": false,
-                    "combat_delay": 0,
-                    "combat_range": [
-                        0,
-                        5
-                    ],
-                    "loot": {
-                        "Gold": {
-                            "chance": 50,
-                            "qty": "r25-50"
-                        },
-                        "Restorative": {
-                            "chance": 25,
-                            "qty": 1
-                        },
-                        "Draught": {
-                            "chance": 25,
-                            "qty": 1
-                        },
-                        "Equipment_0_1": {
-                            "chance": 10,
-                            "qty": 1
-                        }
-                    },
+                    "discovery_message": "a passageway!",
+                    "announce": "There is a passageway here.",
                     "keywords": [
-                        "buy",
-                        "sell",
-                        "trade",
-                        "talk"
+                        "enter",
+                        "go",
+                        "leave",
+                        "exit"
                     ],
-                    "pronouns": {
-                        "personal": "it",
-                        "possessive": "its",
-                        "reflexive": "itself",
-                        "intensive": "itself"
-                    },
-                    "shop": {
-                        "__class__": "ShopInterface",
-                        "__module__": "src.interface",
-                        "props": {
-                            "title": "The Wandering Curiosities Shop",
-                            "choices": [
-                                {
-                                    "label": "Buy",
-                                    "action": {
-                                        "__class__": "method",
-                                        "__module__": "builtins",
-                                        "props": {}
-                                    }
-                                },
-                                {
-                                    "label": "Sell",
-                                    "action": {
-                                        "__class__": "method",
-                                        "__module__": "builtins",
-                                        "props": {}
-                                    }
-                                }
-                            ],
-                            "exit_label": "Leave Shop",
-                            "exit_message": "Milo nods as you leave his shop, already looking for new curiosities to add to his collection.",
-                            "merchant": "<circular_ref:MiloCurioDealer>",
-                            "player": null
-                        }
-                    }
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "milos-shop",
+                    "teleport_tile": [
+                        2,
+                        2
+                    ],
+                    "persist": true
                 }
             }
         ],
-        "objects": [],
         "block_exit": [],
         "symbol": "M"
     },
@@ -429,7 +65,12 @@
         "id": "tile_3_3",
         "title": "Starting Spot",
         "description": "Welcome to the test zone! Have fun!",
-        "exits": [],
+        "exits": [
+            "northwest",
+            "north",
+            "west",
+            "east"
+        ],
         "events": [],
         "items": [
             {
