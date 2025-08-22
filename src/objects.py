@@ -3,6 +3,9 @@ import time
 import functions
 import states
 from neotermcolor import colored, cprint
+from src.player import Player
+from src.tiles import MapTile
+from src.events import Event
 
 
 #####
@@ -444,37 +447,47 @@ class Passageway(Object):
     different map entirely.
     """
 
-    def __init__(self, player, tile, params=None):
-        description = "A burbling spring with fresh smelling water. It is clean and very inviting."
-        super().__init__(name="HealingSpring", description=description,
-                         idle_message="There is a small spring bubbling here.",
-                         discovery_message=" a healing spring!", player=player, tile=tile)
-        self.event = None
-        self.keywords.append('enter')
-
-        for thing in params:
-            # account for the events associated with this object. Max of 1 event.
-            # Triggers after interacting with the shrine.
-            if thing[0] == '!':
-                param = thing.replace('!', '')
-                p_list = param.split(':')
-                repeat = False
-                event_type = p_list.pop(0)
-                for setting in p_list:
-                    if setting == 'r':
-                        repeat = True
-                        p_list.remove(setting)
-                        continue
-                event_cls = functions.seek_class(event_type, "story")
-                self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
-
-    def pray(self, player):
-        print("Jean kneels down and begins to pray for intercession.")
-        time.sleep(random.randint(3, 10))
-        selection = random.randint(0, len(player.prayer_msg) - 1)
-        print(player.prayer_msg[selection])
-        if self.event is not None:
-            time.sleep(random.randint(3, 10))
-            self.event.process()
-            self.event = None
+    def __init__(self, player: Player, tile: MapTile, events_before: list['Event']=None, events_after: list['Event']=None,
+                 teleport_map: str=None, teleport_tile: tuple=None, persist: bool=True,
+                 hidden: bool=False, hide_factor: int=0,
+                 name: str="Passageway",
+                 description: str="A passageway leading elsewhere is here.",
+                 idle_message: str="There is a passageway here.",
+                 discovery_message: str =" a passageway!"):
+        super().__init__(name=name, description=description,
+                         idle_message=idle_message,
+                         hidden=hidden, hide_factor=hide_factor,
+                         discovery_message=discovery_message, player=player, tile=tile)
+        self.keywords.extend(['enter', 'go', 'leave', 'exit'])
+        self.events_before = events_before if events_before is not None else []
+        self.events_after = events_after if events_after is not None else []
+        self.teleport_map = teleport_map if teleport_map is not None else ""
+        self.teleport_tile = teleport_tile if teleport_tile is not None else ""
+        self.persist = persist  # if True, the passageway will remain after use, else
+        # it will be removed from the tile after use
+    def enter(self, player):
+        if self.events_before:
+            for event in self.events_before:
+                event.process()
+        if self.teleport_map and self.teleport_tile:
+            print(f"Jean steps through the {self.name.lower()}...")
+            time.sleep(0.5)
+            player.teleport(self.teleport_map, self.teleport_tile)
+            if self.events_after:
+                for event in self.events_after:
+                    event.process()
+            if not self.persist:
+                self.tile.objects.remove(self)
+        else:
+            print("The passageway is not properly configured. Please contact the developer.")
         functions.await_input()
+
+    def go(self, player):
+            self.enter(player)
+
+    def leave(self, player):
+        self.enter(player)
+
+    def exit(self, player):
+        self.enter(player)
+
