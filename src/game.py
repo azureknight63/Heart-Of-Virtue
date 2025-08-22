@@ -102,8 +102,7 @@ _\\|//__( | )______)_/
             elif selected_option == 'QUIT TO DESKTOP':
                 sys.exit()
         player = functions.load_select() if not newgame else Player()
-        universe = Universe()
-        player.universe = universe
+        player.universe = Universe(player)
         player.universe.build(player)
         starting_map_name = "default"
         try:
@@ -129,7 +128,7 @@ _\\|//__( | )______)_/
             player.skill_exp['Unarmed'] = 9999
 
         player.testing_mode = testing_mode
-        universe.testing_mode = testing_mode
+        player.universe.testing_mode = testing_mode
         player.map = starting_map
         player.location_x, player.location_y = startposition
         room = tile_exists(player.map, player.location_x, player.location_y)
