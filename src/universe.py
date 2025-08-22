@@ -19,7 +19,8 @@ def tile_exists(map_to_check, x, y):
 
 
 class Universe:  # "globals" for the game state can be stored here, as well as all the maps
-    def __init__(self):
+    def __init__(self, player):
+        self.player = player
         self.game_tick = 0
         self.maps = []
         self.starting_position = (0, 0)
@@ -109,6 +110,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 sig = inspect.signature(cls.__init__)
                 pnames = [p.name for p in sig.parameters.values() if p.name != 'self']
                 init_kwargs = {k: v for k, v in props.items() if k in pnames}
+                # If 'player' is a parameter, pass self.player
+                if 'player' in pnames and 'player' not in init_kwargs:
+                    init_kwargs['player'] = self.player
                 inst = cls(**init_kwargs)
             except Exception:
                 inst = cls.__new__(cls)
@@ -163,6 +167,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                         # attach minimal expected attributes if missing
                         if hasattr(inst, 'tile'):
                             inst.tile = tile_instance
+                        if hasattr(inst, 'player'):
+                            inst.player = player
                         tile_instance.events_here.append(inst)
                     except Exception:
                         pass
@@ -170,16 +176,22 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             for it_payload in tile_data.get('items', []):
                 inst = self._deserialize_saved_instance(it_payload)
                 if inst:
+                    if hasattr(inst, 'player'):
+                        inst.player = player
                     tile_instance.items_here.append(inst)
             # npcs
             for npc_payload in tile_data.get('npcs', []):
                 inst = self._deserialize_saved_instance(npc_payload)
                 if inst:
+                    if hasattr(inst, 'player'):
+                        inst.player = player
                     tile_instance.npcs_here.append(inst)
             # objects
             for obj_payload in tile_data.get('objects', []):
                 inst = self._deserialize_saved_instance(obj_payload)
                 if inst:
+                    if hasattr(inst, 'player'):
+                        inst.player = player
                     tile_instance.objects_here.append(inst)
             this_map[(x, y)] = tile_instance
             if title == 'StartingRoom':
