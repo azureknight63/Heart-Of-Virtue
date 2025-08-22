@@ -450,6 +450,7 @@ class Passageway(Object):
     def __init__(self, player: Player, tile: MapTile, events_before: list['Event']=None, events_after: list['Event']=None,
                  teleport_map: str=None, teleport_tile: tuple=None, persist: bool=True,
                  hidden: bool=False, hide_factor: int=0,
+                 is_shop_exit: bool=False,
                  name: str="Passageway",
                  description: str="A passageway leading elsewhere is here.",
                  idle_message: str="There is a passageway here.",
@@ -466,6 +467,18 @@ class Passageway(Object):
         self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
     def enter(self, player):
+        # If this is a shop exit, force player to drop all merchandise items before events
+        if getattr(self, 'is_shop_exit', False):
+            dropped_items = []
+            # Copy inventory to avoid modifying while iterating
+            for item in player.inventory[:]:
+                if getattr(item, 'merchandise', False):
+                    player.inventory.remove(item)
+                    player.tile.items_here.append(item)
+                    dropped_items.append(item.name if hasattr(item, 'name') else str(item))
+            if dropped_items:
+                print(f"Jean placed the following merchandise neatly on the ground: {', '.join(dropped_items)}.")
+                time.sleep(1)
         if self.events_before:
             for event in self.events_before:
                 event.process()
@@ -490,4 +503,3 @@ class Passageway(Object):
 
     def exit(self, player):
         self.enter(player)
-
