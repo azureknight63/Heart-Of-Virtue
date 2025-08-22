@@ -97,7 +97,7 @@ class Ch01ChestRumblerBattle(Event):
         for thing in self.params:
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
-                    if len(thing.contents) == 0:  # if the chest is empty, continue
+                    if len(thing.inventory) == 0:  # if the chest is empty, continue
                         self.pass_conditions_to_process()
                         break
 
