@@ -216,5 +216,225 @@ class TestPlayerPrintInventory(unittest.TestCase):
         player.print_inventory()
         PatchedPrint(mock_print).assert_any_call_stripped("0: Sword  (2)")
 
+class DummyContainer:
+    def __init__(self, nickname="chest", inventory=None):
+        self.nickname = nickname
+        self.inventory = inventory if inventory is not None else []
+        self.events = []
+        self.description = ""
+
+    def refresh_description(self):
+        if self.inventory:
+            self.description = f"A {self.nickname} with items inside."
+        else:
+            self.description = f"An empty {self.nickname}."
+
+    def process_events(self):
+        # Simulate event processing
+        pass
+
+class DummyContainerItem:
+    def __init__(self, name, description="A test item"):
+        self.name = name
+        self.description = description
+
+class TestContainerLootInterface(unittest.TestCase):
+    def setUp(self):
+        self.player = DummyPlayer()
+        self.player.inventory = []  # Start with empty inventory
+
+        # Create test items
+        self.item1 = DummyContainerItem("Sword", "A sharp blade")
+        self.item2 = DummyContainerItem("Shield", "A sturdy defense")
+        self.item3 = DummyContainerItem("Potion", "A healing draught")
+
+        # Create container with items
+        self.container = DummyContainer("chest", [self.item1, self.item2, self.item3])
+
+    def test_init_with_items(self):
+        """Test that ContainerLootInterface initializes correctly with items"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+
+        # Should have 3 item choices + 1 "take all" choice
+        self.assertEqual(len(loot_interface.choices), 4)
+        self.assertEqual(loot_interface.title, "Looting chest")
+        self.assertEqual(loot_interface.exit_label, "Cancel")
+
+        # Check item choices
+        self.assertEqual(loot_interface.choices[0]['label'], "Sword - A sharp blade")
+        self.assertEqual(loot_interface.choices[1]['label'], "Shield - A sturdy defense")
+        self.assertEqual(loot_interface.choices[2]['label'], "Potion - A healing draught")
+        self.assertEqual(loot_interface.choices[3]['label'], "Take all items")
+
+    def test_init_empty_container(self):
+        """Test that ContainerLootInterface handles empty containers"""
+        empty_container = DummyContainer("empty_chest", [])
+        loot_interface = interface.ContainerLootInterface(empty_container, self.player)
+
+        # Should have no choices for empty container
+        self.assertEqual(len(loot_interface.choices), 0)
+
+    @patch('builtins.print')
+    def test_display_title(self, mock_print):
+        """Test that display_title shows correct information"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+        loot_interface.display_title()
+
+        calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
+        self.assertIn("\n=== Looting chest ===\n", calls)
+        self.assertIn("Jean rifles through the contents of the chest.", calls)
+        self.assertIn("Choose which items to take:\n", calls)  # Fixed: added \n
+
+    @patch('builtins.print')
+    def test_handle_choice_individual_item(self, mock_print):
+        """Test taking individual items"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+
+        # Take the first item (index 0)
+        loot_interface.handle_choice(0)
+
+        # Check that item was transferred
+        self.assertEqual(len(self.player.inventory), 1)
+        self.assertEqual(self.player.inventory[0], self.item1)
+        self.assertEqual(len(self.container.inventory), 2)
+
+        # Check print output
+        PatchedPrint(mock_print).assert_any_call_stripped("Jean takes Sword.")
+
+    @patch('builtins.print')
+    def test_handle_choice_take_all(self, mock_print):
+        """Test taking all items at once"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+
+        # Take all items (should be the last choice)
+        loot_interface.handle_choice(3)  # "Take all items" choice
+
+        # Check that all items were transferred
+        self.assertEqual(len(self.player.inventory), 3)
+        self.assertEqual(len(self.container.inventory), 0)
+
+        # Check print output
+        calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
+        self.assertIn("Jean takes Sword.", calls)
+        self.assertIn("Jean takes Shield.", calls)
+        self.assertIn("Jean takes Potion.", calls)
+        self.assertIn("Jean has taken everything from the chest.", calls)
+
+    def test_rebuild_choices_after_taking_item(self):
+        """Test that choices are rebuilt correctly after taking an item"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+
+        # Initially should have 4 choices (3 items + take all)
+        self.assertEqual(len(loot_interface.choices), 4)
+
+        # Take first item
+        loot_interface.handle_choice(0)
+
+        # Should now have 3 choices (2 items + take all)
+        self.assertEqual(len(loot_interface.choices), 3)
+        self.assertEqual(loot_interface.choices[0]['label'], "Shield - A sturdy defense")
+        self.assertEqual(loot_interface.choices[1]['label'], "Potion - A healing draught")
+        self.assertEqual(loot_interface.choices[2]['label'], "Take all items")
+
+    def test_rebuild_choices_empty_after_take_all(self):
+        """Test that choices are cleared after taking all items"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+
+        # Take all items
+        loot_interface.handle_choice(3)
+
+        # Should have no choices left
+        self.assertEqual(len(loot_interface.choices), 0)
+
+    @patch('builtins.input', side_effect=["0", "x"])
+    @patch('builtins.print')
+    def test_run_take_one_item_then_exit(self, mock_print, mock_input):
+        """Test full run workflow: take one item then exit"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+        loot_interface.run()
+
+        # Check that one item was taken
+        self.assertEqual(len(self.player.inventory), 1)
+        self.assertEqual(self.player.inventory[0], self.item1)
+
+        # Check exit message
+        PatchedPrint(mock_print).assert_any_call_stripped("Jean closes the container without taking anything.")
+
+    @patch('builtins.input', side_effect=["3"])  # Take all items
+    @patch('builtins.print')
+    def test_run_take_all_items(self, mock_print, mock_input):
+        """Test full run workflow: take all items (auto-exits when empty)"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+        loot_interface.run()
+
+        # Check that all items were taken
+        self.assertEqual(len(self.player.inventory), 3)
+        self.assertEqual(len(self.container.inventory), 0)
+
+        # Check final message
+        PatchedPrint(mock_print).assert_any_call_stripped("The chest is now empty.")
+
+    @patch('builtins.print')
+    def test_run_empty_container(self, mock_print):
+        """Test running interface with empty container"""
+        empty_container = DummyContainer("empty_box", [])
+        loot_interface = interface.ContainerLootInterface(empty_container, self.player)
+        loot_interface.run()
+
+        # Should show empty message and not enter main loop
+        PatchedPrint(mock_print).assert_any_call_stripped("It's empty. Very sorry.")
+
+    @patch('builtins.input', side_effect=["invalid", "5", "0", "x"])
+    @patch('builtins.print')
+    def test_run_invalid_input_handling(self, mock_print, mock_input):
+        """Test that invalid inputs are handled properly"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+        loot_interface.run()
+
+        # Should show invalid selection message
+        calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
+        invalid_messages = [call for call in calls if "Invalid selection" in call]
+        self.assertGreaterEqual(len(invalid_messages), 2)  # Should appear twice
+
+    def test_take_all_empty_container_handling(self):
+        """Test _take_all_items when container is already empty"""
+        empty_container = DummyContainer("empty_chest", [])
+        loot_interface = interface.ContainerLootInterface(empty_container, self.player)
+
+        with patch('builtins.print') as mock_print:
+            loot_interface._take_all_items()
+            PatchedPrint(mock_print).assert_any_call_stripped("The container is already empty.")
+
+    def test_handle_choice_invalid_index(self):
+        """Test handling choice with invalid item index"""
+        loot_interface = interface.ContainerLootInterface(self.container, self.player)
+
+        # Manually set an invalid index in choices
+        loot_interface.choices[0]['index'] = 999
+
+        # Should not crash when trying to access invalid index
+        with patch('builtins.print'):
+            loot_interface.handle_choice(0)
+
+        # Item should not be transferred due to invalid index
+        self.assertEqual(len(self.player.inventory), 0)
+        self.assertEqual(len(self.container.inventory), 3)
+
+    @patch('builtins.input', side_effect=["0", "1", "0"])  # Take items until empty
+    @patch('builtins.print')
+    def test_run_until_empty(self, mock_print, mock_input):
+        """Test running until container is completely empty"""
+        # Start with only 2 items for simpler test
+        small_container = DummyContainer("small_chest", [self.item1, self.item2])
+        loot_interface = interface.ContainerLootInterface(small_container, self.player)
+        loot_interface.run()
+
+        # Should take both items and exit automatically when empty
+        self.assertEqual(len(self.player.inventory), 2)
+        self.assertEqual(len(small_container.inventory), 0)
+
+        # Should show empty message
+        PatchedPrint(mock_print).assert_any_call_stripped("The small_chest is now empty.")
+
 if __name__ == "__main__":
     unittest.main()
