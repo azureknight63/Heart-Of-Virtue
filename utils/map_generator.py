@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import json
 import os
 import glob
@@ -1354,7 +1354,7 @@ class TileEditorWindow:
 
         self.window = tk.Toplevel(parent)
         self.window.title(f"Editing Tile: {self.tile_data['id']}")
-        self.window.geometry("400x650")
+        self.window.geometry("450x550")
         self.window.configure(bg="#34495e")
         self.window.grab_set()  # Make window modal
 
@@ -1368,80 +1368,61 @@ class TileEditorWindow:
 
     def create_widgets(self):
         """
-        Creates all the GUI widgets for the tile editor.
+        Creates all the GUI widgets for the tile editor, now with a tabbed interface.
         """
-        # add scrollable area for full dialog
-        container = tk.Frame(self.window)
-        container.pack(fill="both", expand=True)
-        dialog_canvas = tk.Canvas(container, bg="#34495e", highlightthickness=0)
-        vsb = tk.Scrollbar(container, orient="vertical", command=dialog_canvas.yview)
-        dialog_canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side='right', fill='y')
-        dialog_canvas.pack(side='left', fill='both', expand=True)
-        main_frame = tk.Frame(dialog_canvas, bg="#34495e", padx=10, pady=10)
-        dialog_canvas.create_window((0,0), window=main_frame, anchor="nw")
-        main_frame.bind("<Configure>", lambda e: dialog_canvas.configure(scrollregion=dialog_canvas.bbox("all")))
+        # Main container
+        main_frame = tk.Frame(self.window, bg="#34495e", padx=10, pady=10)
+        main_frame.pack(fill="both", expand=True)
+
+        # Notebook for tabs
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill="both", expand=True, pady=(10, 0))
+
+        # --- Properties Tab ---
+        props_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+        notebook.add(props_frame, text="Properties")
 
         # Title
-        tk.Label(main_frame, text="Title:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
-        self.title_entry = tk.Entry(main_frame, width=40, font=("Helvetica", 10))
+        tk.Label(props_frame, text="Title:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
+        self.title_entry = tk.Entry(props_frame, width=40, font=("Helvetica", 10))
         self.title_entry.insert(0, self.tile_data.get("title", ""))
         self.title_entry.pack(fill="x", pady=(0, 10))
 
         # Description
-        tk.Label(main_frame, text="Description:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
-        self.description_text = tk.Text(main_frame, height=4, width=40, font=("Helvetica", 10))
+        tk.Label(props_frame, text="Description:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
+        self.description_text = tk.Text(props_frame, height=4, width=40, font=("Helvetica", 10))
         self.description_text.insert(tk.END, self.tile_data.get("description", ""))
-        self.description_text.pack(fill="x", pady=(0, 10))
+        self.description_text.pack(fill="both", expand=True, pady=(0, 10))
+
+        # Symbol
+        tk.Label(props_frame, text="Symbol:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
+        self.symbol_entry = tk.Entry(props_frame, width=10, font=("Helvetica", 12))
+        self.symbol_entry.insert(0, self.tile_data.get("symbol", ""))
+        self.symbol_entry.pack(anchor="w", pady=(0, 10))
+
+        # --- Exits Tab ---
+        exits_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+        notebook.add(exits_frame, text="Exits")
 
         # Exits
-        tk.Label(main_frame, text="Exits:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
-        frame_exits = tk.Frame(main_frame)
-        frame_exits.pack(fill="x")
-        self.exits_listbox = tk.Listbox(frame_exits, selectmode="multiple", height=6)
+        tk.Label(exits_frame, text="Exits:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
+        frame_exits = tk.Frame(exits_frame)
+        frame_exits.pack(fill="x", pady=(0,10))
+        self.exits_listbox = tk.Listbox(frame_exits, selectmode="multiple", height=8)
         exits_sb = tk.Scrollbar(frame_exits, orient="vertical", command=self.exits_listbox.yview)
         self.exits_listbox.configure(yscrollcommand=exits_sb.set)
         for d in self.valid_directions:
             self.exits_listbox.insert("end", d)
             if d in self.tile_data.get("exits", []):
                 self.exits_listbox.select_set("end")
-        self.exits_listbox.pack(side="left", fill="x", expand=True, pady=(0, 10))
+        self.exits_listbox.pack(side="left", fill="x", expand=True)
         exits_sb.pack(side="right", fill="y")
-        tk.Label(main_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w")
-
-        # Events
-        tk.Label(main_frame, text="Events:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.events_frame = TagListFrame(main_frame, self.edit_event, self.remove_event)
-        self.events_frame.pack(fill="x", pady=(0, 10))
-        tk.Button(main_frame, text="Add Event", command=self.open_event_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-
-        # Items
-        tk.Label(main_frame, text="Items:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.items_frame = TagListFrame(main_frame, self.edit_item, self.remove_item, self.duplicate_item)
-        self.items_frame.pack(fill="x", pady=(0, 10))
-        tk.Button(main_frame, text="Add Item", command=self.open_item_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-
-        # NPCs
-        tk.Label(main_frame, text="NPCs:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.npcs_frame = TagListFrame(main_frame, self.edit_npc, self.remove_npc, self.duplicate_npc)
-        self.npcs_frame.pack(fill="x", pady=(0, 10))
-        tk.Button(main_frame, text="Add NPC", command=self.open_npc_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-
-        # Objects
-        tk.Label(main_frame, text="Objects:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.objects_frame = TagListFrame(main_frame, self.edit_object, self.remove_object, self.duplicate_object)
-        self.objects_frame.pack(fill="x", pady=(0, 10))
-        tk.Button(main_frame, text="Add Object", command=self.open_object_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
 
         # Directions blocked
-        tk.Label(main_frame, text="Directions Blocked:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        frame_dir = tk.Frame(main_frame)
+        tk.Label(exits_frame, text="Directions Blocked:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
+        frame_dir = tk.Frame(exits_frame)
         frame_dir.pack(fill="x")
-        self.directions_listbox = tk.Listbox(frame_dir, selectmode="multiple", height=6)
+        self.directions_listbox = tk.Listbox(frame_dir, selectmode="multiple", height=8)
         dir_sb = tk.Scrollbar(frame_dir, orient="vertical", command=self.directions_listbox.yview)
         self.directions_listbox.configure(yscrollcommand=dir_sb.set)
         self.directions_listbox.pack(side="left", fill="x", expand=True)
@@ -1450,17 +1431,49 @@ class TileEditorWindow:
             self.directions_listbox.insert("end", d)
             if d in self.tile_data.get("block_exit", []):
                 self.directions_listbox.select_set("end")
-        tk.Label(main_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w")
-        # Symbol
-        tk.Label(main_frame, text="Symbol:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
-        self.symbol_entry = tk.Entry(main_frame, width=10, font=("Helvetica", 12))
-        self.symbol_entry.insert(0, self.tile_data.get("symbol", ""))
-        self.symbol_entry.pack(anchor="w", pady=(0, 10))
+        tk.Label(exits_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w", pady=(5,0))
 
-        # Save Button
+
+        # --- Items Tab ---
+        items_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+        notebook.add(items_tab_frame, text="Items")
+        tk.Button(items_tab_frame, text="Add Item", command=self.open_item_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
+        self.items_frame = TagListFrame(items_tab_frame, self.edit_item, self.remove_item, self.duplicate_item)
+        self.items_frame.pack(fill="both", expand=True)
+
+
+        # --- NPCs Tab ---
+        npcs_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+        notebook.add(npcs_tab_frame, text="NPCs")
+        tk.Button(npcs_tab_frame, text="Add NPC", command=self.open_npc_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
+        self.npcs_frame = TagListFrame(npcs_tab_frame, self.edit_npc, self.remove_npc, self.duplicate_npc)
+        self.npcs_frame.pack(fill="both", expand=True)
+
+
+        # --- Objects Tab ---
+        objects_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+        notebook.add(objects_tab_frame, text="Objects")
+        tk.Button(objects_tab_frame, text="Add Object", command=self.open_object_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
+        self.objects_frame = TagListFrame(objects_tab_frame, self.edit_object, self.remove_object, self.duplicate_object)
+        self.objects_frame.pack(fill="both", expand=True)
+
+
+        # --- Events Tab ---
+        events_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+        notebook.add(events_tab_frame, text="Events")
+        tk.Button(events_tab_frame, text="Add Event", command=self.open_event_chooser,
+                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
+        self.events_frame = TagListFrame(events_tab_frame, self.edit_event, self.remove_event)
+        self.events_frame.pack(fill="both", expand=True)
+
+
+        # Save Button (outside notebook)
         save_button = tk.Button(main_frame, text="Save Changes", command=self.save_and_close,
                                 font=("Helvetica", 12, "bold"), bg="#2ecc71", fg="white")
-        save_button.pack(fill="x", pady=(20, 0))
+        save_button.pack(fill="x", pady=(10, 0))
 
         self.refresh_all_tags()
 
@@ -1689,7 +1702,7 @@ class TileEditorWindow:
     def _open_property_dialog(self, cls, existing=None, callback=None):
         dlg = tk.Toplevel(self.window)
         dlg.title(f"Properties for {cls.__name__}")
-        dlg.geometry('900x450')  # triple width
+        dlg.geometry('900x550')  # triple width
         dlg.transient(self.window)
         dlg.grab_set()
         entries = {}  # name -> {'type': 'text'|'bool', 'get': callable}
@@ -1698,6 +1711,34 @@ class TileEditorWindow:
         excluded_names = {'player', 'tile'}
         editable_params = [p for p in params if p.name not in excluded_names]
         excluded_params = [p for p in params if p.name in excluded_names]
+
+        # Auto-save function that will be called on every change
+        def auto_save():
+            if not existing:
+                return  # Only auto-save for existing objects, not when creating new ones
+
+            kwargs = {}
+            for name, meta in entries.items():
+                if meta['type'] == 'bool':
+                    kwargs[name] = meta['get']()
+                else:
+                    raw = meta['get']()
+                    if raw == '':
+                        continue
+                    try:
+                        import ast as _ast
+                        kwargs[name] = _ast.literal_eval(raw)
+                    except Exception:
+                        kwargs[name] = raw
+
+            # Apply changes to existing object
+            for k, v in kwargs.items():
+                setattr(existing, k, v)
+
+            # Trigger callback to refresh UI if provided
+            if callback:
+                callback(existing)
+
         frm = tk.Frame(dlg, bg="#34495e", padx=14, pady=14)
         frm.pack(fill='both', expand=True)
         if editable_params:
@@ -1738,6 +1779,7 @@ class TileEditorWindow:
                     def set_state(s):
                         bool_var.set(s)
                         refresh_buttons()
+                        auto_save()  # Auto-save on boolean change
                     buttons = []
                     btn_false = make_toggle_button('False', False)
                     btn_false.pack(side='left', padx=(0,4))
@@ -1756,39 +1798,47 @@ class TileEditorWindow:
                             val = str(val)
                     ent.insert(0, val)
                     ent.pack(fill='x')
+                    # Add auto-save on text field changes
+                    def on_entry_change(event=None):
+                        auto_save()
+                    ent.bind('<KeyRelease>', on_entry_change)  # Auto-save on key release
+                    ent.bind('<FocusOut>', on_entry_change)    # Auto-save when focus leaves field
                     entries[p.name] = {'type': 'text', 'get': lambda e=ent: e.get().strip()}
             for i in range(col_count):
                 frm.grid_columnconfigure(i, weight=1)
         else:
             tk.Label(frm, text="No editable properties.", bg="#34495e", fg="#ecf0f1", font=("Helvetica", 12, "italic")).pack(pady=20)
+
         def on_add_save():
-            kwargs: Dict[str, Any] = {}
-            for name, meta in entries.items():
-                if meta['type'] == 'bool':
-                    kwargs[name] = meta['get']()
-                else:
-                    raw = meta['get']()
-                    if raw == '':
-                        continue
-                    try:
-                        import ast as _ast
-                        kwargs[name] = _ast.literal_eval(raw)
-                    except Exception:
-                        kwargs[name] = raw
             if existing:
-                for k, v in kwargs.items():
-                    setattr(existing, k, v)
-                inst = existing
+                # For existing objects, just close dialog since auto-save handles changes
+                dlg.destroy()
             else:
+                # For new objects, create the object and add it
+                kwargs = {}
+                for name, meta in entries.items():
+                    if meta['type'] == 'bool':
+                        kwargs[name] = meta['get']()
+                    else:
+                        raw = meta['get']()
+                        if raw == '':
+                            continue
+                        try:
+                            import ast as _ast
+                            kwargs[name] = _ast.literal_eval(raw)
+                        except Exception:
+                            kwargs[name] = raw
+
                 for p in excluded_params:
                     kwargs[p.name] = None
                 # Ensure repeat explicitly False if parameter exists but user didn't change
                 if 'repeat' in [p.name for p in editable_params] and 'repeat' not in kwargs:
                     kwargs['repeat'] = False
                 inst = cls(**kwargs)
-            if callback:
-                callback(inst)
-            dlg.destroy()
+                if callback:
+                    callback(inst)
+                dlg.destroy()
+
         def on_delete():
             if existing and messagebox.askyesno("Delete", f"Delete {existing.__class__.__name__}?"):
                 if callback:
@@ -1799,7 +1849,9 @@ class TileEditorWindow:
         tk.Button(btn_frame, text="Cancel", command=dlg.destroy).pack(side='right', padx=5)
         if existing:
             tk.Button(btn_frame, text="Delete", command=on_delete, bg="#e74c3c", fg="white").pack(side='left', padx=5)
-        tk.Button(btn_frame, text=("Save" if existing else "Add"), command=on_add_save,
+        # Update button text - "Close" for existing objects, "Add" for new objects
+        button_text = "Close" if existing else "Add"
+        tk.Button(btn_frame, text=button_text, command=on_add_save,
                   bg="#2ecc71", fg="white").pack(side='right')
 
     def edit_event(self, inst):
@@ -1810,7 +1862,8 @@ class TileEditorWindow:
         self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
 
     def remove_event(self, inst):
-        self.tile_data['events'].remove(inst)
+        if inst in self.tile_data.get('events', []):
+            self.tile_data['events'].remove(inst)
         self._refresh_tags('events', self.events_frame)
 
     def edit_item(self, inst):
@@ -1819,26 +1872,34 @@ class TileEditorWindow:
                 self.tile_data['items'].remove(inst)
             self._refresh_tags('items', self.items_frame)
         self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+
     def remove_item(self, inst):
-        self.tile_data['items'].remove(inst)
+        if inst in self.tile_data.get('items', []):
+            self.tile_data['items'].remove(inst)
         self._refresh_tags('items', self.items_frame)
+
     def edit_npc(self, inst):
         def cb(res):
             if res is None:
                 self.tile_data['npcs'].remove(inst)
             self._refresh_tags('npcs', self.npcs_frame)
         self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+
     def remove_npc(self, inst):
-        self.tile_data['npcs'].remove(inst)
+        if inst in self.tile_data.get('npcs', []):
+            self.tile_data['npcs'].remove(inst)
         self._refresh_tags('npcs', self.npcs_frame)
+
     def edit_object(self, inst):
         def cb(res):
             if res is None:
                 self.tile_data['objects'].remove(inst)
             self._refresh_tags('objects', self.objects_frame)
         self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
+
     def remove_object(self, inst):
-        self.tile_data['objects'].remove(inst)
+        if inst in self.tile_data.get('objects', []):
+            self.tile_data['objects'].remove(inst)
         self._refresh_tags('objects', self.objects_frame)
 
 # Do NOT remove this section; needed for testing the MapEditor directly
@@ -1846,4 +1907,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = MapEditor(root)
     root.mainloop()
-
