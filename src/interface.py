@@ -361,3 +361,124 @@ class InventoryInterface(BaseInterface):
             if hasattr(item, item.interactions[selection]):
                 method = getattr(item, item.interactions[selection])
                 method(player)
+
+
+class ContainerLootInterface(BaseInterface):
+    """
+    Interface for looting containers. Handles item selection and transfer.
+    """
+    def __init__(self, container, player):
+        self.container = container
+        self.player = player
+
+        # Build choices from container inventory
+        choices = []
+        for i, item in enumerate(container.inventory):
+            choices.append({
+                'label': f"{item.name} - {item.description}",
+                'item': item,
+                'index': i
+            })
+
+        # Add "Take All" option if there are items
+        if choices:
+            choices.append({
+                'label': "Take all items",
+                'action': 'take_all'
+            })
+
+        super().__init__(
+            title=f"Looting {container.nickname}",
+            choices=choices,
+            exit_label="Cancel",
+            exit_message="Jean closes the container without taking anything."
+        )
+
+    def display_title(self):
+        print(f"{BOLD}{CYAN}\n=== {self.title} ===\n{RESET}")
+        print(f"Jean rifles through the contents of the {self.container.nickname}.")
+        print("Choose which items to take:\n")
+
+    def handle_choice(self, idx: int):
+        choice = self.choices[idx]
+
+        # Handle "Take All" option
+        if choice.get('action') == 'take_all':
+            self._take_all_items()
+            return
+
+        # Handle individual item selection
+        item = choice['item']
+        item_index = choice['index']
+
+        # Transfer the item
+        if item_index < len(self.container.inventory):
+            taken_item = self.container.inventory.pop(item_index)
+            self.player.inventory.append(taken_item)
+            print(f"{GREEN}Jean takes {taken_item.name}.{RESET}")
+
+            # Update container description and rebuild choices
+            self.container.refresh_description()
+            self._rebuild_choices()
+
+            # Process events after taking an item
+            self.container.process_events()
+
+    def _take_all_items(self):
+        """Transfer all items from container to player"""
+        if not self.container.inventory:
+            print(f"{YELLOW}The container is already empty.{RESET}")
+            return
+
+        taken_items = self.container.inventory.copy()
+        self.container.inventory.clear()
+        self.player.inventory.extend(taken_items)
+
+        for item in taken_items:
+            print(f"{GREEN}Jean takes {item.name}.{RESET}")
+
+        self.container.refresh_description()
+        self.container.process_events()
+
+        # Clear choices since container is now empty
+        self.choices.clear()
+        print(f"{YELLOW}Jean has taken everything from the {self.container.nickname}.{RESET}")
+
+    def _rebuild_choices(self):
+        """Rebuild the choices list after items are taken"""
+        self.choices.clear()
+
+        for i, item in enumerate(self.container.inventory):
+            self.choices.append({
+                'label': f"{item.name} - {item.description}",
+                'item': item,
+                'index': i
+            })
+
+        # Add "Take All" option if there are still items
+        if self.choices:
+            self.choices.append({
+                'label': "Take all items",
+                'action': 'take_all'
+            })
+
+    def run(self):
+        """Override run to handle empty container case"""
+        if not self.container.inventory:
+            print(f"{YELLOW}It's empty. Very sorry.{RESET}")
+            return
+
+        self.display_title()
+        while self.choices:  # Continue until no items left or user exits
+            self.display_choices()
+            selection = input(f"{BOLD}Selection:{RESET} ")
+            if selection == "x":
+                self.handle_exit()
+                break
+            elif selection.isdigit() and int(selection) < len(self.choices):
+                self.handle_choice(int(selection))
+            else:
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
+
+        if not self.choices:
+            print(f"{YELLOW}The {self.container.nickname} is now empty.{RESET}")
