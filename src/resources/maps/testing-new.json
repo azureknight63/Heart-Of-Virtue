@@ -18,8 +18,8 @@
         "title": "Milo's Space",
         "description": "It's pretty cool in this space.",
         "exits": [
-            "west",
             "south",
+            "west",
             "southeast",
             "southwest"
         ],
@@ -54,7 +54,8 @@
                         2,
                         2
                     ],
-                    "persist": true
+                    "persist": true,
+                    "is_shop_exit": false
                 }
             }
         ],

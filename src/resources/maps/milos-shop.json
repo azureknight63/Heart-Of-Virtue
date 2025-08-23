@@ -1,18 +1,46 @@
 {
     "(2, 2)": {
         "id": "tile_2_2",
-        "title": "tile_2_2",
-        "description": "A newly created room at (9, 8).",
-        "exits": [
-            "north",
-            "south",
-            "west",
-            "east"
-        ],
+        "title": "General Goods",
+        "description": "This room contains a bunch of general stuff for sale.",
+        "exits": [],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "src.objects",
+                "props": {
+                    "nickname": "bin",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "state": "closed",
+                    "revealed": false,
+                    "locked": false,
+                    "inventory": [],
+                    "name": "Bargain Bin",
+                    "description": "A bargain bin. There may be something inside.",
+                    "idle_message": "A bargain bin is sitting here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a bin",
+                    "announce": "A bargain bin is sitting here.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
+        "block_exit": [],
+        "symbol": ""
     },
     "(2, 1)": {
         "id": "tile_2_1",
