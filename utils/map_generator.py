@@ -1846,13 +1846,13 @@ class TileEditorWindow:
                 dlg.destroy()
         btn_frame = tk.Frame(dlg, bg="#34495e")
         btn_frame.pack(fill='x', pady=10)
-        tk.Button(btn_frame, text="Cancel", command=dlg.destroy).pack(side='right', padx=5)
         if existing:
-            tk.Button(btn_frame, text="Delete", command=on_delete, bg="#e74c3c", fg="white").pack(side='left', padx=5)
+            tk.Button(btn_frame, text="Delete", command=on_delete, bg="#e74c3c", fg="white",
+                      font=("Helvetica", 12, "bold"), pady=5).pack(side='left', padx=5)
         # Update button text - "Close" for existing objects, "Add" for new objects
         button_text = "Close" if existing else "Add"
         tk.Button(btn_frame, text=button_text, command=on_add_save,
-                  bg="#2ecc71", fg="white").pack(side='right')
+                  bg="#2ecc71", fg="white", font=("Helvetica", 12, "bold"), pady=5).pack(side='right')
 
     def edit_event(self, inst):
         def cb(res):
