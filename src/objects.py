@@ -7,6 +7,7 @@ from src.player import Player
 from src.tiles import MapTile
 from src.events import Event
 from src.items import Item
+from src.npc import Merchant
 
 
 #####
@@ -163,12 +164,14 @@ class Container(Object):
     def __init__(self, name: str="Container", description: str="A container. There may be something inside.",
                  hidden: bool=False, hide_factor: int=0, idle_message: str="A container is sitting here.",
                  discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
-                 nickname: str="container", locked: bool=False, items: list['Item']=None, events: list['Event']=None):
+                 nickname: str="container", locked: bool=False, items: list['Item']=None, events: list['Event']=None,
+                 merchant: Merchant|None=None):
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
         self.state = self._POSSIBLE_STATES[0]  # start closed
         self.revealed = False
         self.locked = locked
+        self._merchant = merchant  # Allows the container to be associated with a merchant for shop functionality
 
         # Initialize inventory with items if provided, using list comprehension for efficiency
         self.inventory = list(items) if items else []
@@ -186,6 +189,14 @@ class Container(Object):
 
         self.process_events()  # process initial events (triggers labeled "auto")
         self.stack_items()
+
+    @property
+    def merchant(self) -> Merchant | None:
+        return self._merchant
+
+    @merchant.setter
+    def merchant(self, value: Merchant | None):
+        self._merchant = value
 
     def refresh_description(self):
         """Optimized description refresh using f-strings and join for better performance"""
@@ -210,7 +221,7 @@ class Container(Object):
 
         if matching_key:
             self.locked = False
-            cprint(f"Jean uses {matching_key.name} to unlock the {self.nickname}.", "green")
+            cprint(f"Jean uses {matching_key.name} to unlock the {self.name}.", "green")
         else:
             cprint("Jean couldn't find a matching key.", "red")
 
@@ -232,51 +243,22 @@ class Container(Object):
             print(f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside.")
 
     def loot(self):
-        """Optimized loot method with better memory management and f-strings"""
+        """
+        Allows the player to loot the container. If the container is closed, it opens it first.
+        If the container is opened, launches the ContainerLootInterface for item selection and transfer.
+        """
         if self.state == "closed":
             self.open()
 
         if self.state != "opened":
             return
 
-        if not self.inventory:
-            print("It's empty. Very sorry.")
-            return
+        # Import the interface class
+        from src.interface import ContainerLootInterface
 
-        print(f"Jean rifles through the contents of the {self.nickname}.\n\n Choose which items to take.\n\n")
-
-        # Pre-build acceptable responses for efficiency
-        acceptable_responses = ['all', 'x'] + [str(i) for i in range(len(self.inventory))]
-
-        # Display items using f-strings
-        for i, item in enumerate(self.inventory):
-            cprint(f'{i}: {item.name} - {item.description}', 'yellow')
-        cprint('all: Take all items.\nx: Cancel', 'yellow')
-
-        choice = None
-        while choice not in acceptable_responses:
-            choice = input('Selection: ')
-
-        if choice == 'all':
-            # More efficient: transfer all items at once and clear inventory
-            taken_items = self.inventory.copy()
-            self.inventory.clear()
-            self.player.inventory.extend(taken_items)
-            for item in taken_items:
-                print(f'Jean takes {item.name}.')
-            self.refresh_description()
-        elif choice != 'x':
-            # Convert choice to int and take specific item
-            choice_idx = int(choice)
-            if 0 <= choice_idx < len(self.inventory):
-                item_taken = self.inventory.pop(choice_idx)
-                print(f'Jean takes {item_taken.name}.')
-                self.player.inventory.append(item_taken)
-                self.refresh_description()
-
-        # Only process events if items were actually taken
-        if choice != 'x':
-            self.process_events()
+        # Create and run the loot interface
+        loot_interface = ContainerLootInterface(self, self.player)
+        loot_interface.run()
 
     def process_events(self):
         """Optimized process_events method with early return and cleaner iteration"""
