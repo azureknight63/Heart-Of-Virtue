@@ -8,8 +8,8 @@ import inspect
 import sys
 import copy
 import re
+import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast  # type hinting (removed unused Iterable)
-
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -17,6 +17,7 @@ src_root = os.path.join(project_root, 'src')
 if src_root not in sys.path:
     sys.path.insert(0, src_root)
 
+from src.npc import Merchant
 
 def create_button(text, command, parent):
     """
@@ -786,7 +787,7 @@ class MapEditor:
                                 mod_name = f'src.{mod_name}'
                             props = d.get('props', {})
                             try:
-                                module = __import__(mod_name, fromlist=[cls_name])
+                                module = importlib.import_module(mod_name)
                                 cls = getattr(module, cls_name)
                                 try:
                                     param_names = [p.name for p in inspect.signature(cls.__init__).parameters.values() if p.name != 'self']
@@ -878,7 +879,7 @@ class MapEditor:
                                 for sub in node.body:
                                     if isinstance(sub, ast.FunctionDef) and sub.name == '__init__':
                                         # search for super().__init__(..., description="""...""") style call
-                                        for inner in ast.walk(sub):
+                                        for inner in ast.walk(cast(ast.AST, sub)):
                                             if isinstance(inner, ast.Call):
                                                 # match super().__init__ pattern
                                                 func = inner.func
@@ -918,7 +919,7 @@ class MapEditor:
                 for mod_name in search_modules:
                     try:
                         if mod_name not in module_cache:
-                            module_cache[mod_name] = __import__(mod_name, fromlist=['*'])
+                            module_cache[mod_name] = importlib.import_module(mod_name)
                         mod = module_cache[mod_name]
                         if hasattr(mod, class_name):
                             return getattr(mod, class_name)
@@ -1519,15 +1520,15 @@ class TileEditorWindow:
             except Exception as e:
                 messagebox.showerror("Error", f"Could not load module {module_path}:\n{e}")
                 return
-            # compute import path (e.g., src.events, src.tilesets.general)
+            # compute import path (e.g., objects, npc, story.eventname)
             rel = os.path.relpath(module_path, project_root)
             # change path separators to dots and strip .py
             import_mod = rel.replace(os.sep, '.')
             if import_mod.lower().endswith('.py'):
                 import_mod = import_mod[:-3]
-            # ensure it starts with 'src.' (it should) else prepend
-            if not import_mod.startswith('src.'):
-                import_mod = 'src.' + str(import_mod)
+            # Remove 'src.' prefix since src is already in sys.path
+            if import_mod.startswith('src.'):
+                import_mod = import_mod[4:]  # Remove 'src.' prefix
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
                     bases = []
@@ -1609,7 +1610,7 @@ class TileEditorWindow:
             cls_name = meta.get('name', '')
             import_module = meta.get('module', '')
             try:
-                module = __import__(import_module, fromlist=[cls_name])
+                module = importlib.import_module(import_module)
                 cls = getattr(module, cls_name)
                 self._open_property_dialog(cls, existing=None, callback=lambda inst: add_callback(inst))
             except Exception as ex:
@@ -1622,14 +1623,17 @@ class TileEditorWindow:
         self._refresh_tags('events', self.events_frame)
     def _add_item(self, inst):
         items = self.tile_data.setdefault('items', [])
-        # stacking logic
+        # stacking logic: if item has a count attribute, stack with existing same-class item
         if hasattr(inst, 'count'):
             for existing in items:
                 if isinstance(existing, inst.__class__):
-                    existing.count = getattr(existing, 'count', 1) + getattr(inst, 'count', 1)
-                    break
-            else:
-                items.append(inst)
+                    try:
+                        existing.count = getattr(existing, 'count', 1) + getattr(inst, 'count', 1)
+                    except Exception:
+                        pass
+                    self._refresh_tags('items', self.items_frame)
+                    return
+            items.append(inst)
         else:
             items.append(inst)
         self._refresh_tags('items', self.items_frame)
@@ -1655,8 +1659,7 @@ class TileEditorWindow:
         except Exception:
             new_inst = inst.__class__.__new__(inst.__class__)
             new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
-        self.tile_data.setdefault('npcs', []).append(new_inst)
-        self._refresh_tags('npcs', self.npcs_frame)
+        self._add_npc(new_inst)
 
     def duplicate_object(self, inst):
         try:
@@ -1664,8 +1667,64 @@ class TileEditorWindow:
         except Exception:
             new_inst = inst.__class__.__new__(inst.__class__)
             new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
-        self.tile_data.setdefault('objects', []).append(new_inst)
-        self._refresh_tags('objects', self.objects_frame)
+        self._add_object(new_inst)
+
+    # --- Missing edit/remove methods for items, npcs, objects, events ---
+    def edit_item(self, inst):
+        def callback(updated_inst):
+            if updated_inst is None:  # Delete
+                self.remove_item(inst)
+            else:
+                self._refresh_tags('items', self.items_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
+
+    def remove_item(self, inst):
+        items = self.tile_data.get('items', [])
+        if inst in items:
+            items.remove(inst)
+            self._refresh_tags('items', self.items_frame)
+
+    def edit_npc(self, inst):
+        def callback(updated_inst):
+            if updated_inst is None:  # Delete
+                self.remove_npc(inst)
+            else:
+                self._refresh_tags('npcs', self.npcs_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
+
+    def remove_npc(self, inst):
+        npcs = self.tile_data.get('npcs', [])
+        if inst in npcs:
+            npcs.remove(inst)
+            self._refresh_tags('npcs', self.npcs_frame)
+
+    def edit_object(self, inst):
+        def callback(updated_inst):
+            if updated_inst is None:  # Delete
+                self.remove_object(inst)
+            else:
+                self._refresh_tags('objects', self.objects_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
+
+    def remove_object(self, inst):
+        objects_list = self.tile_data.get('objects', [])
+        if inst in objects_list:
+            objects_list.remove(inst)
+            self._refresh_tags('objects', self.objects_frame)
+
+    def edit_event(self, inst):
+        def callback(updated_inst):
+            if updated_inst is None:  # Delete
+                self.remove_event(inst)
+            else:
+                self._refresh_tags('events', self.events_frame)
+        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
+
+    def remove_event(self, inst):
+        events = self.tile_data.get('events', [])
+        if inst in events:
+            events.remove(inst)
+            self._refresh_tags('events', self.events_frame)
 
     def save_and_close(self):
         """Saves the edited properties back to the tile data and closes the window."""
@@ -1712,6 +1771,32 @@ class TileEditorWindow:
         editable_params = [p for p in params if p.name not in excluded_names]
         excluded_params = [p for p in params if p.name in excluded_names]
 
+        # --- Find available merchants for 'merchant' property dropdown ---
+        # Collect NPCs from ALL tiles on the map (user requested full-map scope rather than adjacency only).
+        all_npcs = []
+        try:
+            for tile_pos, tdata in self.map_data.items():
+                try:
+                    all_npcs.extend(tdata.get('npcs', []))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Include any instance of Merchant or its subclasses
+        merchants = [npc for npc in all_npcs if isinstance(npc, Merchant)]
+
+        # Build a name->instance map while disambiguating duplicate names
+        merchant_map = {}
+        for m in merchants:
+            base_name = getattr(m, 'name', f"Merchant_{id(m)}") or f"Merchant_{id(m)}"
+            name = base_name
+            suffix = 2
+            while name in merchant_map and merchant_map[name] is not m:
+                name = f"{base_name} ({suffix})"
+                suffix += 1
+            merchant_map[name] = m
+
         # Auto-save function that will be called on every change
         def auto_save():
             if not existing:
@@ -1727,7 +1812,12 @@ class TileEditorWindow:
                         continue
                     try:
                         import ast as _ast
-                        kwargs[name] = _ast.literal_eval(raw)
+                        # Special handling for merchant combobox
+                        if meta.get('is_merchant'):
+                            # The value is the merchant's name, map it back to the instance
+                            kwargs[name] = merchant_map.get(raw)
+                        else:
+                            kwargs[name] = _ast.literal_eval(raw)
                     except Exception:
                         kwargs[name] = raw
 
@@ -1761,7 +1851,30 @@ class TileEditorWindow:
                     else:
                         val = getattr(cls, p.name, '')
                 # boolean toggle if value is bool or default is bool
-                if isinstance(val, bool):
+                if p.name == 'merchant':
+                    if not merchants:
+                        tk.Label(container, text="Add a Merchant NPC to this map first.",
+                                 font=("Helvetica", 9, "italic"), bg="#34495e", fg="#f39c12").pack(fill='x')
+                    else:
+                        combo_var = tk.StringVar()
+                        # If existing value is a merchant object, get its name
+                        if val and isinstance(val, Merchant):
+                            # Find the name corresponding to the instance
+                            for name, inst in merchant_map.items():
+                                if inst is val:
+                                    combo_var.set(name)
+                                    break
+                        elif isinstance(val, str): # Fallback for name-based storage
+                             combo_var.set(val)
+
+                        combo = ttk.Combobox(container, textvariable=combo_var, values=list(merchant_map.keys()), state='readonly')
+                        combo.pack(fill='x')
+                        def on_combo_change(event=None):
+                            auto_save()
+                        combo.bind('<<ComboboxSelected>>', on_combo_change)
+                        entries[p.name] = {'type': 'text', 'get': lambda v=combo_var: v.get(), 'is_merchant': True}
+
+                elif isinstance(val, bool):
                     bool_var = tk.BooleanVar(value=bool(val))
                     toggle_frame = tk.Frame(container, bg="#34495e")
                     toggle_frame.pack(fill='x')
@@ -1825,7 +1938,10 @@ class TileEditorWindow:
                             continue
                         try:
                             import ast as _ast
-                            kwargs[name] = _ast.literal_eval(raw)
+                            if meta.get('is_merchant'):
+                                kwargs[name] = merchant_map.get(raw)
+                            else:
+                                kwargs[name] = _ast.literal_eval(raw)
                         except Exception:
                             kwargs[name] = raw
 
@@ -1853,54 +1969,6 @@ class TileEditorWindow:
         button_text = "Close" if existing else "Add"
         tk.Button(btn_frame, text=button_text, command=on_add_save,
                   bg="#2ecc71", fg="white", font=("Helvetica", 12, "bold"), pady=5).pack(side='right')
-
-    def edit_event(self, inst):
-        def cb(res):
-            if res is None:
-                self.tile_data['events'].remove(inst)
-            self._refresh_tags('events', self.events_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
-
-    def remove_event(self, inst):
-        if inst in self.tile_data.get('events', []):
-            self.tile_data['events'].remove(inst)
-        self._refresh_tags('events', self.events_frame)
-
-    def edit_item(self, inst):
-        def cb(res):
-            if res is None:
-                self.tile_data['items'].remove(inst)
-            self._refresh_tags('items', self.items_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
-
-    def remove_item(self, inst):
-        if inst in self.tile_data.get('items', []):
-            self.tile_data['items'].remove(inst)
-        self._refresh_tags('items', self.items_frame)
-
-    def edit_npc(self, inst):
-        def cb(res):
-            if res is None:
-                self.tile_data['npcs'].remove(inst)
-            self._refresh_tags('npcs', self.npcs_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
-
-    def remove_npc(self, inst):
-        if inst in self.tile_data.get('npcs', []):
-            self.tile_data['npcs'].remove(inst)
-        self._refresh_tags('npcs', self.npcs_frame)
-
-    def edit_object(self, inst):
-        def cb(res):
-            if res is None:
-                self.tile_data['objects'].remove(inst)
-            self._refresh_tags('objects', self.objects_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=cb)
-
-    def remove_object(self, inst):
-        if inst in self.tile_data.get('objects', []):
-            self.tile_data['objects'].remove(inst)
-        self._refresh_tags('objects', self.objects_frame)
 
 # Do NOT remove this section; needed for testing the MapEditor directly
 if __name__ == "__main__":
