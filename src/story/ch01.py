@@ -2,13 +2,13 @@
 Chapter 01 events
 """
 
-from neotermcolor import cprint
+from neotermcolor import cprint, colored
 import time
 import random
 
-from src.events import *
+from src.events import Event, dialogue
 import src.objects as objects
-
+from src.functions import print_slow, await_input
 
 class Ch01StartOpenWall(Event):
     """
@@ -128,7 +128,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             self.pass_conditions_to_process()
 
     def process(self):
-        functions.print_slow("\nThe ground quivers slightly as more rock creatures appear.\n")
+        print_slow("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
         for x in range(0, 2):
             npc = self.tile.spawn_npc("RockRumbler")
@@ -371,7 +371,7 @@ class AfterGorranIntro(Event):
               "much too small for him to\npass through. Gorran waves an arm toward it and, miraculously, "
               "the opening widens with a loud rumble. Gorran walks through and\n"
               "Jean, with trepidation, follows.")
-        functions.await_input()
+        await_input()
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)

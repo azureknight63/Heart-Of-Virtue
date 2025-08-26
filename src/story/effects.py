@@ -6,7 +6,7 @@ import random
 import time
 from src import functions
 from src import states
-from ..events import *
+from src.events import Event
 
 
 class Effect(Event):

@@ -1,7 +1,8 @@
 """
 Chapter 02 events
 """
-from src.events import *
+from src.events import Event, dialogue
+from src.functions import print_slow, await_input
 import time
 from src import items
 
@@ -31,7 +32,7 @@ class AfterDefeatingLurker(Event):
         time.sleep(2)
         print("Gorran turns back around to face Jean.")
         dialogue("Gorran", "Gr-rrondia-a-a... this way...", "green")
-        functions.await_input()
+        await_input()
         self.tile.spawn_object("Passageway", self.player, self.tile, params="t.grondia 1 3")
         print("Gorran ducked low, disappearing beneath a curving shelf of grey rock. Looking closely, "
               "Jean could see a conspicuous divot along the bottom of the shelf, near where his mighty "
@@ -46,7 +47,7 @@ class AfterDefeatingLurker(Event):
               "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
               "of something large, or perhaps many things. There was also - yes, Jean was sure of "
               "it - the smells of leather and iron.")
-        functions.await_input()
+        await_input()
         self.player.teleport("grondia", (3,1))
 
 
@@ -75,7 +76,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "streets below. Gorran stops in front of a large, stone archway. \n"
                   "The archway is covered in the same glowing symbols as the walls of the cavern. \n"
                   "Gorran gestures for Jean to follow him through the archway.")
-            functions.await_input()
+            await_input()
             print("As Jean steps through the archway, he is struck by the sheer size of the cavern beyond. \n"
                   "The ceiling is so high that it is lost in darkness, \nand the walls are so far away that "
                   "they seem to be a part of the very rock itself. "
@@ -89,7 +90,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "Jean feels a sense of both wonder and trepidation as he gazes up at the fortress, \n"
                   "realizing that this place has stood for countless generations, \n"
                   "guarding secrets as old as the earth itself.")
-            functions.await_input()
+            await_input()
             print("Gorran turns to Jean, his expression serious. He gestures towards the Citadel, \n"
                   "indicating that this is where they must go next. \n"
                   "Jean nods, understanding that this is a place of great importance to the Grondites, \n"
@@ -104,7 +105,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "He speaks in a deep, rumbling voice, gesturing towards the interior of the Citadel. \n"
                   "Gorran nods his great head and sets off into the depths of the Citadel, \n"
                   "motioning for Jean to follow. ")
-            functions.await_input()
+            await_input()
             print("As they walk through the Citadel, Jean is struck by the sheer scale of the place. \n"
                   "The halls are vast and echo with the sound of their footsteps. "
                   "The walls are adorned with intricate carvings and murals, \ndepicting scenes from Grondia's history "
@@ -119,7 +120,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "burly, unyielding hand in greeting. Taking it, Jean has the sensation of grasping a \n"
                   "piece of the mountain itself. The elder's grip is firm, but not painful, \n"
                   "and Jean feels a sense of connection to this ancient being.")
-            functions.await_input()
+            await_input()
             print("Even more astonishingly, the elder speaks in a deep, rumbling voice, which Jean is able to understand.")
             time.sleep(1)
             dialogue("Elder", "You are a friend of Gorran. You are welcome here.", "green")
@@ -140,7 +141,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "years of erosion have worn away the rough edges of his form, much like stones in a riverbed. \n"
                   "His eyes are deep-set and wise, and they seem to hold a depth of knowledge that speaks of \n"
                   "centuries of experience. He opens his mouth to speak.")
-            functions.await_input()
+            await_input()
             dialogue("Elder", "Welcome, little one. I am Elder Votha Krr. Among the inhabitants "
                   "of this great city, I am among its council of leaders. "
                   "Some may even foolishly look to me for guidance from time to time.", "green")
@@ -208,7 +209,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
             items.Restorative(2)
         ]
         self.player.add_items_to_inventory(loot)
-        functions.await_input()
+        await_input()
 
         if not self.player.skip_dialog:
             print("With that, Votha Krr slowly got to his feet, his massive form towering over Jean. \n")
