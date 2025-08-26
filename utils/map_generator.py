@@ -9,7 +9,7 @@ import sys
 import copy
 import re
 import importlib
-from typing import Any, Dict, List, Tuple, Optional, cast  # type hinting (removed unused Iterable)
+from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union  # type hinting (removed unused Iterable)
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -18,6 +18,263 @@ if src_root not in sys.path:
     sys.path.insert(0, src_root)
 
 from src.npc import Merchant
+
+
+def parse_type_hint(annotation):
+    """
+    Parse a type annotation to determine if it's a class type or list of class types.
+    Returns tuple: (base_class, is_list, is_optional)
+    """
+    if annotation is None or annotation is inspect._empty:
+        return None, False, False
+
+    # Handle string annotations (forward references)
+    if isinstance(annotation, str):
+        try:
+            # Try to resolve the string annotation
+            # For forward references like 'Item', we need to look up in the appropriate module
+            if annotation.startswith("'") and annotation.endswith("'"):
+                annotation = annotation[1:-1]
+
+            # Try to import from src modules
+            for module_name in ['items', 'objects', 'npc', 'events']:
+                try:
+                    module = importlib.import_module(f'src.{module_name}')
+                    if hasattr(module, annotation):
+                        return getattr(module, annotation), False, False
+                except ImportError:
+                    continue
+        except Exception:
+            pass
+        return None, False, False
+
+    # Handle typing constructs
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    # Handle Optional[T] or Union[T, None]
+    if origin is Union:
+        non_none_args = [arg for arg in args if arg is not type(None)]
+        if len(non_none_args) == 1:
+            # This is Optional[T]
+            base_class, is_list, _ = parse_type_hint(non_none_args[0])
+            return base_class, is_list, True
+
+    # Handle List[T]
+    elif origin is list or origin is List:
+        if args:
+            base_class, _, is_optional = parse_type_hint(args[0])
+            return base_class, True, is_optional
+
+    # Handle direct class references
+    elif inspect.isclass(annotation):
+        return annotation, False, False
+
+    return None, False, False
+
+
+def get_class_hierarchy(base_class, module_names=None):
+    """
+    Get all subclasses of a given base class from specified modules.
+    Returns a dictionary mapping class names to class objects.
+    """
+    if not base_class:
+        return {}
+
+    if module_names is None:
+        module_names = ['items', 'objects', 'npc', 'events']
+
+    hierarchy = {base_class.__name__: base_class}
+
+    # Add the base class itself
+
+    # Search through specified modules
+    for module_name in module_names:
+        try:
+            module = importlib.import_module(f'src.{module_name}')
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if (inspect.isclass(attr) and
+                    issubclass(attr, base_class) and
+                    attr is not base_class):
+                    hierarchy[attr.__name__] = attr
+        except ImportError:
+            continue
+
+    return hierarchy
+
+
+def create_hierarchical_selector(parent, base_class, is_list=False, current_values=None, on_change_callback=None):
+    """
+    Create a hierarchical selector widget for choosing classes.
+    Returns a widget that manages selection of class instances.
+    """
+    container = tk.Frame(parent, bg="#34495e")
+
+    # Get available classes
+    class_hierarchy = get_class_hierarchy(base_class)
+
+    if not class_hierarchy:
+        tk.Label(container, text=f"No {base_class.__name__} classes found",
+                font=("Helvetica", 9, "italic"), bg="#34495e", fg="#f39c12").pack(fill='x')
+        return container, lambda: []
+
+    selected_items = []
+
+    if is_list:
+        # Multi-selection for list types
+        list_frame = tk.Frame(container, bg="#34495e")
+        list_frame.pack(fill='x', pady=(0, 5))
+
+        # Listbox to show selected items
+        listbox_frame = tk.Frame(list_frame, bg="#34495e")
+        listbox_frame.pack(fill='x')
+
+        selected_listbox = tk.Listbox(listbox_frame, height=3, bg="#2c3e50", fg="white",
+                                     selectbackground="#3498db")
+        selected_listbox.pack(fill='x', side='left')
+
+        # Scrollbar for listbox
+        scrollbar = tk.Scrollbar(listbox_frame, orient='vertical', command=selected_listbox.yview)
+        scrollbar.pack(side='right', fill='y')
+        selected_listbox.config(yscrollcommand=scrollbar.set)
+
+        # Dropdown to add new items
+        add_frame = tk.Frame(container, bg="#34495e")
+        add_frame.pack(fill='x', pady=(5, 0))
+
+        tk.Label(add_frame, text=f"Add {base_class.__name__}:", bg="#34495e", fg="white").pack(anchor='w')
+
+        class_var = tk.StringVar()
+        class_combo = ttk.Combobox(add_frame, textvariable=class_var,
+                                  values=list(class_hierarchy.keys()), state='readonly')
+        class_combo.pack(fill='x', pady=(2, 5))
+
+        def add_selected():
+            class_name = class_var.get()
+            if class_name and class_name in class_hierarchy:
+                # Create default instance
+                cls = class_hierarchy[class_name]
+                try:
+                    # Try to create with minimal parameters
+                    sig = inspect.signature(cls.__init__)
+                    kwargs = {}
+                    for param in sig.parameters.values():
+                        if param.name in ['self', 'player', 'tile']:
+                            continue
+                        if param.default is not inspect._empty:
+                            continue
+                        # Add default values for required parameters
+                        if param.annotation == str or param.name in ['name', 'description']:
+                            kwargs[param.name] = f"Default {class_name}"
+                        elif param.annotation == int:
+                            kwargs[param.name] = 0
+                        elif param.annotation == float:
+                            kwargs[param.name] = 0.0
+                        elif param.annotation == bool:
+                            kwargs[param.name] = False
+
+                    instance = cls(**kwargs)
+                    selected_items.append(instance)
+                    selected_listbox.insert(tk.END, f"{class_name}: {getattr(instance, 'name', str(instance))}")
+                    class_var.set("")
+
+                    if on_change_callback:
+                        on_change_callback()
+
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to create {class_name}: {str(e)}")
+
+        tk.Button(add_frame, text="Add", command=add_selected, bg="#27ae60", fg="white").pack(fill='x')
+
+        def remove_selected():
+            selection = selected_listbox.curselection()
+            if selection:
+                index = selection[0]
+                selected_listbox.delete(index)
+                if index < len(selected_items):
+                    selected_items.pop(index)
+                if on_change_callback:
+                    on_change_callback()
+
+        tk.Button(add_frame, text="Remove Selected", command=remove_selected,
+                 bg="#e74c3c", fg="white").pack(fill='x', pady=(2, 0))
+
+        # Initialize with current values
+        if current_values:
+            for item in current_values:
+                if item:
+                    selected_items.append(item)
+                    class_name = item.__class__.__name__
+                    selected_listbox.insert(tk.END, f"{class_name}: {getattr(item, 'name', str(item))}")
+
+        def get_values():
+            return selected_items.copy()
+
+    else:
+        # Single selection for non-list types
+        tk.Label(container, text=f"Select {base_class.__name__}:", bg="#34495e", fg="white").pack(anchor='w')
+
+        class_var = tk.StringVar()
+        class_combo = ttk.Combobox(container, textvariable=class_var,
+                                  values=["None"] + list(class_hierarchy.keys()), state='readonly')
+        class_combo.pack(fill='x')
+
+        current_instance = None
+
+        def on_selection_change(event=None):
+            nonlocal current_instance
+            class_name = class_var.get()
+            if class_name == "None" or not class_name:
+                current_instance = None
+            elif class_name in class_hierarchy:
+                cls = class_hierarchy[class_name]
+                try:
+                    # Try to create with minimal parameters
+                    sig = inspect.signature(cls.__init__)
+                    kwargs = {}
+                    for param in sig.parameters.values():
+                        if param.name in ['self', 'player', 'tile']:
+                            continue
+                        if param.default is not inspect._empty:
+                            continue
+                        # Add default values for required parameters
+                        if param.annotation == str or param.name in ['name', 'description']:
+                            kwargs[param.name] = f"Default {class_name}"
+                        elif param.annotation == int:
+                            kwargs[param.name] = 0
+                        elif param.annotation == float:
+                            kwargs[param.name] = 0.0
+                        elif param.annotation == bool:
+                            kwargs[param.name] = False
+
+                    current_instance = cls(**kwargs)
+
+                    if on_change_callback:
+                        on_change_callback()
+
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to create {class_name}: {str(e)}")
+                    current_instance = None
+
+        class_combo.bind('<<ComboboxSelected>>', on_selection_change)
+
+        # Initialize with current value
+        if current_values:
+            if hasattr(current_values, '__class__'):
+                class_var.set(current_values.__class__.__name__)
+                current_instance = current_values
+            else:
+                class_var.set("None")
+        else:
+            class_var.set("None")
+
+        def get_values():
+            return current_instance
+
+    container.pack(fill='x')
+    return container, get_values
+
 
 def create_button(text, command, parent):
     """
@@ -1330,6 +1587,40 @@ class TagListFrame(tk.Frame):
     def get_all(self) -> List[Any]:
         return [ident for ident, _ in self._tags]
 
+
+def _get_module_paths_for_class(class_name: str) -> List[str]:
+    """
+    Returns a list of absolute file paths for all modules in src/ that define the given class or its subclasses.
+    """
+    project_root = os.path.dirname(os.path.dirname(__file__))
+    src_dir = os.path.join(project_root, 'src')
+    result_paths = set()
+    # Walk through src/ and subdirectories
+    for dirpath, dirnames, filenames in os.walk(src_dir):
+        for filename in filenames:
+            if filename.endswith('.py') and not filename.startswith('__'):
+                file_path = os.path.join(dirpath, filename)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        src = f.read()
+                    tree = ast.parse(src)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ClassDef):
+                            # Check if class matches or subclasses the target
+                            if node.name == class_name:
+                                result_paths.add(file_path)
+                            else:
+                                # Check bases for subclassing
+                                for base in node.bases:
+                                    if isinstance(base, ast.Name) and base.id == class_name:
+                                        result_paths.add(file_path)
+                                    elif isinstance(base, ast.Attribute) and base.attr == class_name:
+                                        result_paths.add(file_path)
+                except Exception:
+                    continue  # Ignore parse errors
+    return list(result_paths)
+
+
 class TileEditorWindow:
     """
     A separate window for editing a single tile's properties.
@@ -1364,6 +1655,11 @@ class TileEditorWindow:
         self.description_text = None
         self.exits_listbox = None
         self.symbol_entry = None
+        # Frames for different element types
+        self.items_frame = None
+        self.npcs_frame = None
+        self.objects_frame = None
+        self.events_frame = None
         # --- UI Elements ---
         self.create_widgets()
 
@@ -1434,42 +1730,22 @@ class TileEditorWindow:
                 self.directions_listbox.select_set("end")
         tk.Label(exits_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w", pady=(5,0))
 
+        # --- Items/NPCs/Objects/Events Tabs ---
+        tab_configs = [
+            ("Items", "Add Item", lambda: self.open_chooser("Item"), "items_frame"),
+            ("NPCs", "Add NPC", lambda: self.open_chooser("NPC"), "npcs_frame"),
+            ("Objects", "Add Object", lambda: self.open_chooser("Object"), "objects_frame"),
+            ("Events", "Add Event", self.open_event_chooser, "events_frame"),
+        ]
 
-        # --- Items Tab ---
-        items_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
-        notebook.add(items_tab_frame, text="Items")
-        tk.Button(items_tab_frame, text="Add Item", command=self.open_item_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-        self.items_frame = TagListFrame(items_tab_frame, self.edit_item, self.remove_item, self.duplicate_item)
-        self.items_frame.pack(fill="both", expand=True)
-
-
-        # --- NPCs Tab ---
-        npcs_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
-        notebook.add(npcs_tab_frame, text="NPCs")
-        tk.Button(npcs_tab_frame, text="Add NPC", command=self.open_npc_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-        self.npcs_frame = TagListFrame(npcs_tab_frame, self.edit_npc, self.remove_npc, self.duplicate_npc)
-        self.npcs_frame.pack(fill="both", expand=True)
-
-
-        # --- Objects Tab ---
-        objects_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
-        notebook.add(objects_tab_frame, text="Objects")
-        tk.Button(objects_tab_frame, text="Add Object", command=self.open_object_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-        self.objects_frame = TagListFrame(objects_tab_frame, self.edit_object, self.remove_object, self.duplicate_object)
-        self.objects_frame.pack(fill="both", expand=True)
-
-
-        # --- Events Tab ---
-        events_tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
-        notebook.add(events_tab_frame, text="Events")
-        tk.Button(events_tab_frame, text="Add Event", command=self.open_event_chooser,
-                  font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
-        self.events_frame = TagListFrame(events_tab_frame, self.edit_event, self.remove_event)
-        self.events_frame.pack(fill="both", expand=True)
-
+        for tab_name, btn_text, btn_cmd, frame_attr in tab_configs:
+            tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
+            notebook.add(tab_frame, text=tab_name)
+            tk.Button(tab_frame, text=btn_text, command=btn_cmd,
+                      font=("Helvetica", 10, "bold"), bg="#3498db", fg="white").pack(fill="x", pady=(0, 10))
+            frame = TagListFrame(tab_frame, self.edit_element, self.remove_element, self.duplicate_element)
+            frame.pack(fill="both", expand=True)
+            setattr(self, frame_attr, frame)
 
         # Save Button (outside notebook)
         save_button = tk.Button(main_frame, text="Save Changes", command=self.save_and_close,
@@ -1486,24 +1762,29 @@ class TileEditorWindow:
             for fname in os.listdir(story_dir):
                 if fname.endswith('.py') and not fname.startswith('__'):
                     event_paths.append(os.path.join(story_dir, fname))
-        self._show_hierarchy_chooser(event_paths, "Choose Event", self._add_event)
+        self._show_hierarchy_chooser(event_paths, "Choose Event", self._add_element)
 
-    def open_item_chooser(self):
+    def open_chooser(self, base_class_name: str):
         project_root = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(project_root, 'src', 'items.py')
-        self._show_hierarchy_chooser([path], "Choose Item", self._add_item)
+        path = []
+        # Search for the base class file in the project
+        for proj_root, dirs, files in os.walk(project_root):
+            for file in files:
+                if file.endswith('.py'):
+                    file_path = os.path.join(proj_root, file)
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        src = f.read()
+                        class_pattern = rf'class\s+{base_class_name}\b'
+                        if re.search(class_pattern, src):
+                            path.append(file_path)
+                # Add found file paths to path list
+        if not path:
+            messagebox.showerror("Error", f"Could not find base class {base_class_name} in project.")
+            return
+        # TODO: Implement _show_hierarchy_chooser in property dialog
+        self._show_hierarchy_chooser(path, f"Choose {base_class_name}", self._add_element, base_class_name)
 
-    def open_npc_chooser(self):
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(project_root, 'src', 'npc.py')
-        self._show_hierarchy_chooser([path], "Choose NPC", self._add_npc)
-
-    def open_object_chooser(self):
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(project_root, 'src', 'objects.py')
-        self._show_hierarchy_chooser([path], "Choose Object", self._add_object)
-
-    def _show_hierarchy_chooser(self, module_paths, dialog_title, add_callback):
+    def _show_hierarchy_chooser(self, module_paths, dialog_title, add_callback, filter_by_class: str=None):
         """Display hierarchical class chooser for one or more module paths.
         module_paths: list[str] absolute file system paths.
         """
@@ -1536,19 +1817,39 @@ class TileEditorWindow:
                         if isinstance(b, ast.Name):
                             bases.append(b.id)
                         elif isinstance(b, ast.Attribute):  # handle something.SomeBase
-                            # take rightmost name
                             bases.append(b.attr)
                     info = class_info.setdefault(node.name, {'bases': [], 'children': set(), 'module': import_mod})
                     info['bases'] = bases
-                    # keep first module encountered (avoid overwriting if duplicate name)
-                    # if duplicate definitions across modules, we could namespace, but assume unique
         # build children relations
         for name, info in class_info.items():
             for base in info['bases']:
+                if base in info['children']:
+                    info['children'].remove(base)  # prevent self-referential cycles
                 if base in class_info:
                     class_info[base]['children'].add(name)
-        # roots: classes whose bases are not in class_info
-        roots = sorted([n for n, info in class_info.items() if not any(b in class_info for b in info['bases'])])
+        # --- Filtering by class name ---
+        allowed_classes = set(class_info.keys())
+        if filter_by_class:
+            # Find all classes that are the same as or subclass of filter_by_class
+            def is_subclass_or_same(cname):
+                if cname == filter_by_class:
+                    return True
+                visited = set()
+                def check_sub(c):
+                    if c in visited:
+                        return False
+                    visited.add(c)
+                    bases = class_info.get(c, {}).get('bases', [])
+                    for b in bases:
+                        if b == filter_by_class:
+                            return True
+                        if b in class_info and check_sub(b):
+                            return True
+                    return False
+                return check_sub(cname)
+            allowed_classes = {c for c in class_info if is_subclass_or_same(c)}
+        # roots: classes whose bases are not in class_info and are allowed
+        roots = sorted([n for n, info in class_info.items() if not any(b in class_info for b in info['bases']) and n in allowed_classes])
         # Build dialog
         dlg = tk.Toplevel(self.window)
         dlg.title(dialog_title)
@@ -1579,12 +1880,14 @@ class TileEditorWindow:
             visited = set()
             def recurse(names, indent=0):
                 for n in sorted(names):
-                    if n in visited:
+                    if n in visited or n not in allowed_classes:
                         continue
                     visited.add(n)
                     info = class_info[n]
                     # determine if this node or any descendant matches filter
                     def subtree_matches(cname):
+                        if cname not in allowed_classes:
+                            return False
                         if not search:
                             return True
                         if search in cname.lower():
@@ -1618,113 +1921,75 @@ class TileEditorWindow:
             dlg.destroy()
         lb.bind('<Double-Button-1>', on_double)
 
-    def _add_event(self, inst):
-        self.tile_data.setdefault('events', []).append(inst)
-        self._refresh_tags('events', self.events_frame)
-    def _add_item(self, inst):
-        items = self.tile_data.setdefault('items', [])
-        # stacking logic: if item has a count attribute, stack with existing same-class item
-        if hasattr(inst, 'count'):
-            for existing in items:
-                if isinstance(existing, inst.__class__):
-                    try:
-                        existing.count = getattr(existing, 'count', 1) + getattr(inst, 'count', 1)
-                    except Exception:
-                        pass
-                    self._refresh_tags('items', self.items_frame)
-                    return
-            items.append(inst)
-        else:
-            items.append(inst)
-        self._refresh_tags('items', self.items_frame)
-    def _add_npc(self, inst):
-        self.tile_data.setdefault('npcs', []).append(inst)
-        self._refresh_tags('npcs', self.npcs_frame)
-    def _add_object(self, inst):
-        self.tile_data.setdefault('objects', []).append(inst)
-        self._refresh_tags('objects', self.objects_frame)
+    def _add_element(self, inst):
+        property_mapping = {
+            'Item': 'items',
+            'NPC': 'npcs',
+            'Object': 'objects',
+            'Event': 'events'
+        }
+        class_name = inst.__class__.__name__
+        if class_name in property_mapping:
+            prop = property_mapping[class_name]
+            lst = self.tile_data.setdefault(prop, [])
 
-    def duplicate_item(self, inst):
+            # stacking logic: if item has a count attribute, stack with existing same-class item
+            if hasattr(inst, 'count'):
+                for existing in lst:
+                    if isinstance(existing, inst.__class__):
+                        try:
+                            existing.count = getattr(existing, 'count', 1) + getattr(inst, 'count', 1)
+                        except Exception:
+                            pass
+                        self._refresh_tags('items', self.items_frame)
+                        return
+                lst.append(inst)
+            else:
+                lst.append(inst)
+            frame = getattr(self, f"{prop}_frame", None)
+            if frame:
+                self._refresh_tags(prop, frame)
+
+    def duplicate_element(self, inst):
         try:
             new_inst = copy.deepcopy(inst)
         except Exception:
             # fallback shallow
             new_inst = inst.__class__.__new__(inst.__class__)
             new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
-        self._add_item(new_inst)
+        self._add_element(new_inst)
 
-    def duplicate_npc(self, inst):
-        try:
-            new_inst = copy.deepcopy(inst)
-        except Exception:
-            new_inst = inst.__class__.__new__(inst.__class__)
-            new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
-        self._add_npc(new_inst)
-
-    def duplicate_object(self, inst):
-        try:
-            new_inst = copy.deepcopy(inst)
-        except Exception:
-            new_inst = inst.__class__.__new__(inst.__class__)
-            new_inst.__dict__.update({k: v for k, v in inst.__dict__.items()})
-        self._add_object(new_inst)
-
-    # --- Missing edit/remove methods for items, npcs, objects, events ---
-    def edit_item(self, inst):
+    def edit_element(self, inst):
         def callback(updated_inst):
             if updated_inst is None:  # Delete
-                self.remove_item(inst)
+                self.remove_element(inst)
             else:
-                self._refresh_tags('items', self.items_frame)
+                property_mapping = {
+                    'Item': ('items', self.items_frame),
+                    'NPC': ('npcs', self.npcs_frame),
+                    'Object': ('objects', self.objects_frame),
+                    'Event': ('events', self.events_frame)
+                }
+                class_name = inst.__class__.__name__
+                if class_name in property_mapping:
+                    prop, frame = property_mapping[class_name]
+                    self._refresh_tags(prop, frame)
         self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
 
-    def remove_item(self, inst):
-        items = self.tile_data.get('items', [])
-        if inst in items:
-            items.remove(inst)
-            self._refresh_tags('items', self.items_frame)
-
-    def edit_npc(self, inst):
-        def callback(updated_inst):
-            if updated_inst is None:  # Delete
-                self.remove_npc(inst)
-            else:
-                self._refresh_tags('npcs', self.npcs_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
-
-    def remove_npc(self, inst):
-        npcs = self.tile_data.get('npcs', [])
-        if inst in npcs:
-            npcs.remove(inst)
-            self._refresh_tags('npcs', self.npcs_frame)
-
-    def edit_object(self, inst):
-        def callback(updated_inst):
-            if updated_inst is None:  # Delete
-                self.remove_object(inst)
-            else:
-                self._refresh_tags('objects', self.objects_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
-
-    def remove_object(self, inst):
-        objects_list = self.tile_data.get('objects', [])
-        if inst in objects_list:
-            objects_list.remove(inst)
-            self._refresh_tags('objects', self.objects_frame)
-
-    def edit_event(self, inst):
-        def callback(updated_inst):
-            if updated_inst is None:  # Delete
-                self.remove_event(inst)
-            else:
-                self._refresh_tags('events', self.events_frame)
-        self._open_property_dialog(inst.__class__, existing=inst, callback=callback)
-
-    def remove_event(self, inst):
-        events = self.tile_data.get('events', [])
-        if inst in events:
-            events.remove(inst)
-            self._refresh_tags('events', self.events_frame)
+    def remove_element(self, inst):
+        property_mapping = {
+            'Item': ('items', self.items_frame),
+            'NPC': ('npcs', self.npcs_frame),
+            'Object': ('objects', self.objects_frame),
+            'Event': ('events', self.events_frame)
+        }
+        class_name = inst.__class__.__name__
+        if class_name in property_mapping:
+            prop, frame = property_mapping[class_name]
+            lst = self.tile_data.get(prop, [])
+            if inst in lst:
+                lst.remove(inst)
+                self._refresh_tags(prop, frame)
 
     def save_and_close(self):
         """Saves the edited properties back to the tile data and closes the window."""
@@ -1764,7 +2029,7 @@ class TileEditorWindow:
         dlg.geometry('900x550')  # triple width
         dlg.transient(self.window)
         dlg.grab_set()
-        entries = {}  # name -> {'type': 'text'|'bool', 'get': callable}
+        entries = {}  # name -> {'type': 'text'|'bool'|'hierarchical', 'get': callable}
         sig = inspect.signature(cls.__init__)
         params = [p for p in sig.parameters.values() if p.name != 'self']
         excluded_names = {'player', 'tile'}
@@ -1806,6 +2071,8 @@ class TileEditorWindow:
             for name, meta in entries.items():
                 if meta['type'] == 'bool':
                     kwargs[name] = meta['get']()
+                elif meta['type'] == 'hierarchical':
+                    kwargs[name] = meta['get']()
                 else:
                     raw = meta['get']()
                     if raw == '':
@@ -1839,6 +2106,7 @@ class TileEditorWindow:
                 container = tk.Frame(frm, bg="#34495e")
                 container.grid(row=row*2, column=col, sticky='ew', padx=6, pady=(0,6))
                 tk.Label(container, text=f"{p.name}:", bg="#34495e", fg="white", anchor='w').pack(anchor='w')
+
                 # derive default/existing value
                 if existing is not None:
                     val = getattr(existing, p.name, p.default if p.default is not inspect._empty else getattr(cls, p.name, ''))
@@ -1850,8 +2118,51 @@ class TileEditorWindow:
                         val = p.default
                     else:
                         val = getattr(cls, p.name, '')
-                # boolean toggle if value is bool or default is bool
-                if p.name == 'merchant':
+
+                # Check for type hints that should use hierarchical selectors
+                base_class, is_list, is_optional = parse_type_hint(p.annotation)
+
+                # Use text entry for str, int, or no type hint
+                if p.annotation is inspect._empty or p.annotation is str or p.annotation is int:
+                    ent = tk.Entry(container)
+                    ent.insert(0, str(val) if val is not None else '')
+                    ent.pack(fill='x', pady=(2, 5))
+                    ent.bind('<FocusOut>', lambda e: auto_save())
+                    entries[p.name] = {'type': 'text', 'get': lambda v=ent: v.get()}
+
+
+                elif base_class and inspect.isclass(base_class) and not isinstance(val, bool):
+                    # Use chooser for class-based type hints
+                    current_text = str(val) if val is not None else ''
+                    display_frame = tk.Frame(container)
+                    display_frame.pack(fill='x', pady=(2, 5))
+                    display_entry = tk.Entry(display_frame, state='readonly')
+                    display_entry.insert(0, current_text)
+                    display_entry.pack(side='left', fill='x', expand=True)
+                    current_value = [val] if val is not None else []
+                    auto_save = auto_save  # capture in closure
+                    field_type = 'list' if is_list else 'single'
+                    invoked_class = base_class
+
+                    choose_btn = tk.Button(
+                        display_frame,
+                        text="Choose",
+                        command=lambda
+                            current_value=current_value,
+                            display_entry=display_entry,
+                            auto_save=auto_save,
+                            field_type=field_type,
+                            invoked_class=invoked_class:
+                                self._open_filtered_chooser(current_value,
+                                                            display_entry,
+                                                            auto_save,
+                                                            field_type,
+                                                            base_class=invoked_class))
+                    choose_btn.pack(side='right', padx=(5, 0))
+                    entries[p.name] = {'type': 'hierarchical',
+                                       'get': lambda: current_value[0] if current_value else None}
+
+                elif p.name == 'merchant':
                     if not merchants:
                         tk.Label(container, text="Add a Merchant NPC to this map first.",
                                  font=("Helvetica", 9, "italic"), bg="#34495e", fg="#f39c12").pack(fill='x')
@@ -1868,7 +2179,7 @@ class TileEditorWindow:
                              combo_var.set(val)
 
                         combo = ttk.Combobox(container, textvariable=combo_var, values=list(merchant_map.keys()), state='readonly')
-                        combo.pack(fill='x')
+                        combo.pack(fill='x', pady=(2, 5))
                         def on_combo_change(event=None):
                             auto_save()
                         combo.bind('<<ComboboxSelected>>', on_combo_change)
@@ -1906,17 +2217,14 @@ class TileEditorWindow:
                     ent = tk.Entry(container)
                     if not isinstance(val, str):
                         try:
-                            val = repr(val)
+                            ent.insert(0, str(val) if val is not None else '')
                         except Exception:
-                            val = str(val)
-                    ent.insert(0, val)
-                    ent.pack(fill='x')
-                    # Add auto-save on text field changes
-                    def on_entry_change(event=None):
-                        auto_save()
-                    ent.bind('<KeyRelease>', on_entry_change)  # Auto-save on key release
-                    ent.bind('<FocusOut>', on_entry_change)    # Auto-save when focus leaves field
-                    entries[p.name] = {'type': 'text', 'get': lambda e=ent: e.get().strip()}
+                            pass
+                    else:
+                        ent.insert(0, val)
+                    ent.pack(fill='x', pady=(2, 5))
+                    ent.bind('<FocusOut>', lambda e: auto_save())
+                    entries[p.name] = {'type': 'text', 'get': lambda v=ent: v.get()}
             for i in range(col_count):
                 frm.grid_columnconfigure(i, weight=1)
         else:
@@ -1931,6 +2239,8 @@ class TileEditorWindow:
                 kwargs = {}
                 for name, meta in entries.items():
                     if meta['type'] == 'bool':
+                        kwargs[name] = meta['get']()
+                    elif meta['type'] == 'hierarchical':
                         kwargs[name] = meta['get']()
                     else:
                         raw = meta['get']()
@@ -1969,6 +2279,33 @@ class TileEditorWindow:
         button_text = "Close" if existing else "Add"
         tk.Button(btn_frame, text=button_text, command=on_add_save,
                   bg="#2ecc71", fg="white", font=("Helvetica", 12, "bold"), pady=5).pack(side='right')
+
+    def _open_filtered_chooser(self, current_value, display_entry, auto_save, field_type="single", base_class=None):
+        def add_callback(instance):
+            if field_type == "single":
+                current_value[:] = [instance]
+                display_entry.config(state='normal')
+                display_entry.delete(0, tk.END)
+                display_entry.insert(0, str(instance))
+                display_entry.config(state='readonly')
+            else:
+                current_value.append(instance)
+                display_entry.config(state='normal')
+                display_entry.insert(tk.END, str(instance))
+                display_entry.config(state='readonly')
+            auto_save()
+
+        # Use the existing _open_chooser method with the base class name
+        if base_class is not None:
+            self._show_hierarchy_chooser(
+                _get_module_paths_for_class(base_class.__name__),
+                f"Choose {base_class.__name__}",
+                add_callback,
+                base_class.__name__
+            )
+        else:
+            messagebox.showerror("Error", "Could not determine base class for chooser.")
+
 
 # Do NOT remove this section; needed for testing the MapEditor directly
 if __name__ == "__main__":
