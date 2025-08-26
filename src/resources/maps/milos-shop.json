@@ -35,7 +35,8 @@
                     ],
                     "events": [],
                     "tile": null,
-                    "player": null
+                    "player": null,
+                    "items": null
                 }
             }
         ],
@@ -519,10 +520,27 @@
             "northwest",
             "southwest"
         ],
-        "events": [],
+        "events": [
+            {
+                "__class__": "StMichael",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "Shrine of St Michael the Archangel",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "block_exit": [],
+        "symbol": ""
     },
     "(1, 2)": {
         "id": "tile_1_2",
