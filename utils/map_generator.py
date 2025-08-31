@@ -1687,7 +1687,6 @@ def filter_classes(class_info, filter_by_class):
                     if b in class_info and check_sub(b):
                         return True
                 return False
-            return check_sub(cname)
         allowed_classes = {c for c in class_info if is_subclass_or_same(c)}
     return allowed_classes
 
@@ -2181,6 +2180,38 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
     frm.pack(fill='both', expand=True)
     if editable_params:
         col_count = 2 if len(editable_params) > 6 else 1
+        # Track map name StringVars so coordinate fields can refresh when map changes
+        map_name_vars: List[tk.StringVar] = []
+        coord_refreshers: List[callable] = []
+        def _add_map_var(var: tk.StringVar):
+            map_name_vars.append(var)
+        def _get_selected_map_name() -> Optional[str]:
+            # priority order: teleport_map then target_map_name (first non-empty)
+            # Iterate in defined param order for deterministic selection
+            for param_name in ('teleport_map', 'target_map_name'):
+                for var in map_name_vars:
+                    if getattr(var, '_hov_param', None) == param_name:
+                        val = var.get().strip()
+                        if val:
+                            return val
+            # Fallback: any non-empty var
+            for var in map_name_vars:
+                val = var.get().strip()
+                if val:
+                    return val
+            return None
+        def _attach_traces():
+            for var in map_name_vars:
+                # ensure multiple traces not duplicated
+                def _make_cb():
+                    def _cb(*_):
+                        for r in coord_refreshers:
+                            try:
+                                r()
+                            except Exception:
+                                pass
+                    return _cb
+                var.trace_add('write', _make_cb())
         for idx, p in enumerate(editable_params):
             row = idx if col_count == 1 else idx // col_count
             col = 0 if col_count == 1 else idx % col_count
@@ -2199,6 +2230,152 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     val = p.default
                 else:
                     val = getattr(cls, p.name, '')
+
+            # NEW: specialized combobox for map name selection
+            if p.name in ('teleport_map', 'target_map_name'):
+                try:
+                    from pathlib import Path
+                    base_dir = Path(__file__).resolve().parent
+                    root_dir = base_dir.parent  # project root (utils' parent)
+                    candidate_dirs = [
+                        root_dir / 'src' / 'resources' / 'maps',
+                        base_dir / 'src' / 'resources' / 'maps'
+                    ]
+                    map_names = set()
+                    for d in candidate_dirs:
+                        if d.exists():
+                            for jf in d.glob('*.json'):
+                                map_names.add(jf.stem)
+                    map_list = sorted(map_names)
+                except Exception:
+                    map_list = []
+                if not map_list:
+                    tk.Label(container, text="No map files (*.json) found.", font=("Helvetica", 9, "italic"),
+                             bg="#34495e", fg="#f39c12").pack(fill='x')
+                combo_var = tk.StringVar()
+                setattr(combo_var, '_hov_param', p.name)  # tag var with param name
+                if isinstance(val, str) and val in map_list:
+                    combo_var.set(val)
+                elif map_list:
+                    pass
+                combo = ttk.Combobox(container, textvariable=combo_var, values=map_list, state='readonly')
+                combo.pack(fill='x', pady=(2,5))
+                def _on_map_change(event=None):
+                    # trigger coordinate refreshers then autosave
+                    for r in coord_refreshers:
+                        try:
+                            r()
+                        except Exception:
+                            pass
+                    auto_save()
+                combo.bind('<<ComboboxSelected>>', _on_map_change)
+                _add_map_var(combo_var)
+                entries[p.name] = {'type': 'text', 'get': lambda v=combo_var: v.get(), 'is_map_name': True}
+                # ensure traces attached after potential list filled
+                _attach_traces()
+                continue  # handled specialized field, move to next parameter
+
+            # NEW: specialized combobox for selecting a tile's coordinates on selected map (or current map fallback)
+            if p.name in ('teleport_tile', 'target_coordinates'):
+                coord_combo_var = tk.StringVar()
+                tuple_var = tk.StringVar()
+                # UI combobox placeholder; values set in refresh
+                coord_combo = ttk.Combobox(container, textvariable=coord_combo_var, values=[], state='readonly')
+                coord_combo.pack(fill='x', pady=(2,5))
+                display_to_coord: Dict[str, Tuple[int,int]] = {}
+                # capture existing value to attempt reselect after refresh
+                existing_coord = None
+                if isinstance(val, (tuple, list)) and len(val) == 2:
+                    try:
+                        existing_coord = (int(val[0]), int(val[1]))
+                    except Exception:
+                        existing_coord = None
+                search_param_order = ('teleport_map', 'target_map_name')
+                def refresh_tiles():
+                    nonlocal display_to_coord
+                    display_to_coord = {}
+                    # Determine map name
+                    map_name = _get_selected_map_name()
+                    tiles_source = None
+                    if map_name:
+                        # Attempt to load external map json
+                        try:
+                            from pathlib import Path
+                            base_dir = Path(__file__).resolve().parent
+                            root_dir = base_dir.parent
+                            candidate_dirs = [
+                                root_dir / 'src' / 'resources' / 'maps',
+                                base_dir / 'src' / 'resources' / 'maps'
+                            ]
+                            for d in candidate_dirs:
+                                jf = d / f"{map_name}.json"
+                                if jf.exists():
+                                    with open(jf, 'r', encoding='utf-8') as f:
+                                        data = json.load(f)
+                                    tiles_source = data
+                                    break
+                        except Exception:
+                            tiles_source = None
+                    if tiles_source is None:
+                        # fallback to current editor map
+                        try:
+                            tiles_source = {str(k): v for k,v in getattr(app, 'map_data', {}).items()}  # type: ignore[name-defined]
+                        except Exception:
+                            tiles_source = {}
+                    # Build list
+                    for k, tdata in tiles_source.items():
+                        try:
+                            if isinstance(k, str) and k.startswith('(') and k.endswith(')'):
+                                parts = k.strip('()').split(',')
+                                tx, ty = int(parts[0]), int(parts[1])
+                            elif isinstance(k, (list, tuple)) and len(k) == 2:
+                                tx, ty = int(k[0]), int(k[1])
+                            else:
+                                continue
+                            title = tdata.get('title') if isinstance(tdata, dict) else None
+                            if not title:
+                                # attempt id fallback
+                                if isinstance(tdata, dict):
+                                    title = tdata.get('id', f"tile_{tx}_{ty}")
+                                else:
+                                    title = f"tile_{tx}_{ty}"
+                            display = f"{title} ({tx},{ty})"
+                            display_to_coord[display] = (tx, ty)
+                        except Exception:
+                            continue
+                    # Update combobox values
+                    values = sorted(display_to_coord.keys(), key=lambda s: (display_to_coord[s][0], display_to_coord[s][1]))
+                    coord_combo.config(values=values)
+                    # Preserve selection if still valid
+                    if tuple_var.get():
+                        try:
+                            current_tuple = ast.literal_eval(tuple_var.get())
+                        except Exception:
+                            current_tuple = None
+                    else:
+                        current_tuple = existing_coord
+                    if current_tuple and isinstance(current_tuple, (list, tuple)) and len(current_tuple) == 2:
+                        for disp, coord in display_to_coord.items():
+                            if coord == (int(current_tuple[0]), int(current_tuple[1])):
+                                coord_combo_var.set(disp)
+                                tuple_var.set(str(coord))
+                                break
+                    elif values:
+                        # leave blank until user chooses (do not auto-select)
+                        pass
+                def on_coord_select(event=None):
+                    disp = coord_combo_var.get()
+                    coord = display_to_coord.get(disp)
+                    if coord is not None:
+                        tuple_var.set(str(coord))
+                        auto_save()
+                coord_combo.bind('<<ComboboxSelected>>', on_coord_select)
+                refresh_tiles()
+                coord_refreshers.append(refresh_tiles)
+                # Ensure traces attached if map vars already exist
+                _attach_traces()
+                entries[p.name] = {'type': 'text', 'get': lambda v=tuple_var: v.get(), 'is_tile_coord': True}
+                continue
 
             # Check for type hints that should use hierarchical selectors
             base_class, is_list, is_optional = parse_type_hint(p.annotation)
