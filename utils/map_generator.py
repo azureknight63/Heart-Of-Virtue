@@ -11,6 +11,12 @@ import re
 import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union  # type hinting (removed unused Iterable)
 
+# Work in progress
+# TODO: Fix teleport tuple selection for map coordinates
+# TODO: With teleport, add a chooser to select a map
+# TODO: Fix initial list frame refresh bug; list frames start blank until an object is added
+# TODO: Add merchandise property as an option to toggle on Items
+
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
@@ -2053,7 +2059,6 @@ def show_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, dialog_titl
         try:
             module = importlib.import_module(import_module)
             cls = getattr(module, cls_name)
-            #TODO: Fix below
             open_property_dialog(dialog_object, cls, existing=None,
                                  callback=lambda inst: add_callback(inst, lst, tag_frame))
         except Exception as ex:
@@ -2180,7 +2185,11 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
             elif base_class and inspect.isclass(base_class) and not isinstance(val, bool):
                 # Use tag-based chooser for class-based type hints
                 tag_frame = create_element_frame(dlg, container, f"{p.name}_frame")
-                current_value = [val] if val is not None else []
+                if is_list:
+                    current_value = getattr(existing, p.name, []) if existing is not None else []
+                else:
+                    val = getattr(existing, p.name, None) if existing is not None else None
+                    current_value = [val] if val is not None else []
                 auto_save = auto_save  # capture in closure
                 field_type = 'list' if is_list else 'single'
 
