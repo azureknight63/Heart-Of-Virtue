@@ -19,7 +19,7 @@ def tile_exists(map_to_check, x, y):
 
 
 class Universe:  # "globals" for the game state can be stored here, as well as all the maps
-    def __init__(self, player):
+    def __init__(self, player=None):
         self.player = player
         self.game_tick = 0
         self.maps = []
