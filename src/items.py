@@ -1,9 +1,14 @@
+from __future__ import annotations
 import random
 import time
 from neotermcolor import colored, cprint
 import functions
+from typing import Any, Dict, List, Optional, Tuple, Sequence, Mapping, Iterable, Union, Callable, TYPE_CHECKING
 
-item_types = {
+if TYPE_CHECKING:  # pragma: no cover - for type checking only
+    from player import Player  # forward reference for player parameter types
+
+item_types: Dict[str, Dict[str, Any]] = {
     'weapons': {
         'subtypes': [
             "Dagger",
@@ -45,27 +50,45 @@ item_types = {
 }
 
 
-def get_all_subtypes():
-    collection = []
+def get_all_subtypes() -> None:
+    collection: List[str] = []
     for group in item_types.keys():
-        for subtype in item_types[group]:
-            collection.append(subtype)
-        item_types[group]['archetypes']['All'] = collection
+        for subtype in item_types[group]:  # type: ignore[index]
+            collection.append(subtype)  # pragma: no cover - logic preserved as-is
+        item_types[group]['archetypes']['All'] = collection  # type: ignore[index]
 
 
-def get_base_damage_type(item):
-    damagetype = "pure"  # default
-    for basetype, weapontypes in item_types['weapons']['base_damage_types'].items():
-        if item.subtype in weapontypes:
+def get_base_damage_type(item: Any) -> str:
+    damagetype: str = "pure"  # default
+    for basetype, weapontypes in item_types['weapons']['base_damage_types'].items():  # type: ignore[index]
+        if getattr(item, 'subtype', None) in weapontypes:
             damagetype = basetype
     return damagetype
 
 
 class Item:
     """The base class for all items"""
+    name: str
+    description: str
+    value: Union[int, float]
+    type: str
+    subtype: str
+    hidden: bool
+    hide_factor: Union[int, float]
+    _merchandise: bool
+    discovery_message: str
+    announce: str
+    interactions: List[str]
+    skills: Optional[Dict[Any, int]]
+    owner: Optional[Any]
+    equip_states: List[Any]
+    add_resistance: Dict[str, float]
+    add_status_resistance: Dict[str, float]
+    gives_exp: bool
 
-    def __init__(self, name, description, value, maintype, subtype, discovery_message, hidden=False, hide_factor=0,
-                 skills=None, merchandise=False):
+    def __init__(self, name: str, description: str, value: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str, hidden: bool = False, hide_factor: Union[int, float] = 0,
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False) -> None:
         self.name = name
         self.description = description
         self.value = value
@@ -75,54 +98,41 @@ class Item:
         self.hide_factor = hide_factor
         self._merchandise = merchandise
         self.discovery_message = discovery_message
-        # self.level = level  # used for categorizing items in loot tables
         self.announce = "There's a {} here.".format(self.name)
         self.interactions = ["drop"]  # things to do with the item from the inventory menu
-        self.skills = skills  # skills that can be learned from using the item (acquiring exp);
-        # should be a dictionary with "moves" objects and the exp needed
+        self.skills = skills  # skills that can be learned from using the item (acquiring exp)
         self.owner = None  # used to tie an item to an owner for special interactions
-        self.equip_states = []  # items can cause states to be applied to the player when the item is equipped;
-        # enchantments can add to this as well
+        self.equip_states = []  # items can cause states to be applied to the player when the item is equipped
         self.add_resistance = {}
         self.add_status_resistance = {}
         self.gives_exp = False  # checked before opening an exp category for this item
         if hasattr(self, "isequipped"):
-            if getattr(self, "isequipped"):  # if the item starts equipped, add the unequip interaction, else visa versa
+            if getattr(self, "isequipped"):
                 self.interactions.append("unequip")
             else:
                 self.interactions.append("equip")
 
     @property
-    def merchandise(self):
+    def merchandise(self) -> bool:
         return self._merchandise
 
     @merchandise.setter
-    def merchandise(self, value):
+    def merchandise(self, value: bool) -> None:
         self._merchandise = value
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
 
-    def on_equip(self, player):
+    def on_equip(self, player: 'Player') -> None:
         if len(self.equip_states) > 0:
             for state in self.equip_states:
                 player.apply_state(state)
-        '''
-        Actions performed when the item is equipped
-        Clobber with child objects
-        :return: 
-        '''
         pass
 
-    def on_unequip(self, player):
-        """
-        Actions performed when the item is unequipped
-        Clobber with child objects
-        :return:
-        """
+    def on_unequip(self, player: 'Player') -> None:
         pass
 
-    def drop(self, player):
+    def drop(self, player: 'Player') -> None:
         if hasattr(self, "count"):
             if getattr(self, "count") > 1:
                 while True:
@@ -131,8 +141,8 @@ class Item:
                         if 0 <= int(drop_count) <= getattr(self, "count"):
                             if int(drop_count) > 0:
                                 cprint("Jean dropped {} x {}.".format(self.name, drop_count), "cyan")
-                                for i in range(int(drop_count)):
-                                    self.count -= 1
+                                for _ in range(int(drop_count)):
+                                    self.count -= 1  # type: ignore[attr-defined]
                                     itemtype = self.__class__.__name__
                                     player.current_room.spawn_item(item_type=itemtype)
                                 player.current_room.stack_duplicate_items()
@@ -153,21 +163,21 @@ class Item:
             player.inventory.remove(self)
             if hasattr(self, "isequipped"):
                 if getattr(self, "isequipped"):
-                    self.isequipped = False  # noqa; attribute existence is checked above!
+                    self.isequipped = False  # type: ignore[assignment]
                     self.on_unequip(player)
                     self.interactions.remove("unequip")
                     self.interactions.append("equip")
-                    if issubclass(self.__class__, Weapon):  # if the player is now unarmed, "equip" fists
+                    if issubclass(self.__class__, Weapon):
                         player.eq_weapon = player.fists
         functions.refresh_stat_bonuses(player)
         player.refresh_protection_rating()
 
-    def equip(self, player):
+    def equip(self, player: 'Player') -> None:
         player.equip_item(phrase="{}".format(self.name))
 
-    def unequip(self, player):
+    def unequip(self, player: 'Player') -> None:
         if hasattr(self, "isequipped"):
-            self.isequipped = False  # noqa
+            self.isequipped = False  # type: ignore[assignment]
             if issubclass(self.__class__, Weapon):  # if the player is now unarmed, "equip" fists
                 player.eq_weapon = player.fists
             cprint("Jean put {} back into his bag.".format(self.name), "cyan")
@@ -179,7 +189,9 @@ class Item:
 
 
 class Gold(Item):
-    def __init__(self, amt=1):
+    amt: int
+
+    def __init__(self, amt: int = 1) -> None:
         self.amt = functions.randomize_amount(amt)
         self.maintype = "Gold"
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
@@ -190,10 +202,21 @@ class Gold(Item):
 
 
 class Weapon(Item):
+    damage: Union[int, float]
+    str_req: int
+    fin_req: int
+    str_mod: Union[int, float]
+    fin_mod: Union[int, float]
+    weight: Union[int, float]
+    isequipped: bool
+    maintype: str
+    subtype: str
+    wpnrange: Tuple[int, int]
+    twohand: bool
 
-    def __init__(self, name, description, value, damage, isequipped, str_req,
-                 fin_req, str_mod, fin_mod, weight, maintype, subtype, wpnrange=(0, 5),
-                 discovery_message='a kind of weapon.', twohand=False, skills=None, merchandise=False):
+    def __init__(self, name: str, description: str, value: Union[int, float], damage: Union[int, float], isequipped: bool, str_req: int,
+                 fin_req: int, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str, wpnrange: Tuple[int, int] = (0, 5),
+                 discovery_message: str = 'a kind of weapon.', twohand: bool = False, skills: Optional[Dict[Any, int]] = None, merchandise: bool = False) -> None:
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -209,7 +232,7 @@ class Weapon(Item):
         self.twohand = twohand
         self.gives_exp = True
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nDamage: {}\nWeight: {}\nRange: {}".format(self.name,
                                                                                                    self.description,
@@ -224,8 +247,16 @@ class Weapon(Item):
 
 
 class Armor(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, maintype, subtype,
-                 discovery_message='a piece of armor.', merchandise=False):
+    protection: Union[int, float]
+    str_req: int
+    str_mod: Union[int, float]
+    weight: Union[int, float]
+    isequipped: bool
+    maintype: str
+    subtype: str
+
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str = 'a piece of armor.', merchandise: bool = False) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -234,9 +265,9 @@ class Armor(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)  # announce="{} can be seen on the ground.".format(self.name))
+                         discovery_message, merchandise=merchandise)
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
@@ -246,8 +277,16 @@ class Armor(Item):
 
 
 class Boots(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, maintype, subtype,
-                 discovery_message='a pair of footgear.', merchandise=False):
+    protection: Union[int, float]
+    str_req: int
+    str_mod: Union[int, float]
+    weight: Union[int, float]
+    isequipped: bool
+    maintype: str
+    subtype: str
+
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str = 'a pair of footgear.', merchandise: bool = False) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -256,9 +295,9 @@ class Boots(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)  # announce="A set of {} is laying here.".format(self.name))
+                         discovery_message, merchandise=merchandise)
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
@@ -268,8 +307,16 @@ class Boots(Item):
 
 
 class Helm(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, maintype, subtype,
-                 discovery_message='a kind of head covering.', merchandise=False):
+    protection: Union[int, float]
+    str_req: int
+    str_mod: Union[int, float]
+    weight: Union[int, float]
+    isequipped: bool
+    maintype: str
+    subtype: str
+
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str = 'a kind of head covering.', merchandise: bool = False) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -278,9 +325,9 @@ class Helm(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)  # announce="A {} can be seen on the ground.".format(self.name))
+                         discovery_message, merchandise=merchandise)
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
@@ -290,8 +337,16 @@ class Helm(Item):
 
 
 class Gloves(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_req, str_mod, weight, maintype, subtype,
-                 discovery_message='a pair of gloves.', merchandise=False):
+    protection: Union[int, float]
+    str_req: int
+    str_mod: Union[int, float]
+    weight: Union[int, float]
+    isequipped: bool
+    maintype: str
+    subtype: str
+
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str = 'a pair of gloves.', merchandise: bool = False) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -300,9 +355,9 @@ class Gloves(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)  # announce="There is a pair of {} here.".format(self.name))
+                         discovery_message, merchandise=merchandise)
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
@@ -312,8 +367,16 @@ class Gloves(Item):
 
 
 class Accessory(Item):
-    def __init__(self, name, description, value, protection, isequipped, str_mod, fin_mod, weight, maintype, subtype,
-                 discovery_message='a small trinket.', merchandise=False):
+    protection: Union[int, float]
+    str_mod: Union[int, float]
+    fin_mod: Union[int, float]
+    weight: Union[int, float]
+    isequipped: bool
+    maintype: str
+    subtype: str
+
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str = 'a small trinket.', merchandise: bool = False) -> None:
         self.protection = protection
         self.str_mod = str_mod
         self.fin_mod = fin_mod
@@ -321,10 +384,9 @@ class Accessory(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        # self.level = level
         super().__init__(name, description, value, maintype, subtype, discovery_message, merchandise=merchandise)
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
@@ -334,22 +396,26 @@ class Accessory(Item):
 
 
 class Consumable(Item):
+    weight: Union[int, float]
+    maintype: str
+    subtype: str
+    count: int
 
-    def __init__(self, name, description, value, weight, maintype, subtype,
-                 discovery_message='a useful item.', count=1, merchandise=False):
+    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
+                 discovery_message: str = 'a useful item.', count: int = 1, merchandise: bool = False) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
         self.count = count
         self.interactions = ["use", "drop"]
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)  # announce="You notice a {} sitting here.".format(self.name))
+                         discovery_message, merchandise=merchandise)
 
-    def stack_grammar(self):
+    def stack_grammar(self) -> None:
         """Checks the stack count for the item and changes the verbiage accordingly"""
         pass
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         return "{}\n=====\n{}\n" \
                "Count: {}\n" \
                "Value: {} gold each, {} gold total\n" \
@@ -359,25 +425,32 @@ class Consumable(Item):
 
 
 class Special(Item):
-    def __init__(self, name, description, value, weight, maintype, subtype, discovery_message='a strange object.', merchandise=False):
+    weight: Union[int, float]
+    maintype: str
+    subtype: str
+    count: int
+
+    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float], maintype: str, subtype: str, discovery_message: str = 'a strange object.', merchandise: bool = False) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
         self.count = 1
         self.interactions = ["drop"]
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)  # announce="You notice a {} sitting here.".format(self.name))
+                         discovery_message, merchandise=merchandise)
 
-    def __str__(self):
+    def __str__(self) -> str:  # pragma: no cover - display logic
         return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
             self.name, self.description, self.value, self.weight)
 
 
 class Key(Special):
-    def __init__(self, lock=None, merchandise=False):
+    lock: Optional[Any]
+
+    def __init__(self, lock: Optional[Any] = None, merchandise: bool = False) -> None:
         """
         Keys just sort of sit in inventory. They are "used" when the player uses 'unlock' on their paired lock
-        :param lock: # Any object that has an 'unlock' method
+        :param lock: Any object that has an 'unlock' method
         """
 
         super().__init__(name="Key",
@@ -389,7 +462,7 @@ class Key(Special):
 
 
 class Crystals(Special):
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         """
         Crystals are commodity drops from certain creatures like Rock Rumblers.
         They can also be found growing naturally in some caves and mountain areas.
@@ -404,7 +477,7 @@ class Crystals(Special):
 
 
 class Fists(Weapon):  # equipped automatically when Jean has no other weapon equipped
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="fists",
                          description="",
                          isequipped=True, value=0,
@@ -414,7 +487,7 @@ class Fists(Weapon):  # equipped automatically when Jean has no other weapon equ
 
 
 class Rock(Weapon):
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Rock",
                          description="A fist-sized rock, suitable for bludgeoning.",
                          isequipped=False, value=0,
@@ -423,8 +496,8 @@ class Rock(Weapon):
 
 
 class RustedIronMace(Weapon):
-    level = 0
-    def __init__(self, merchandise=False):
+    level: int = 0
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Rusted Iron Mace",
                          description="A small mace with some rust around the spikes. Heavy and slow, "
                                      "but packs a decent punch.",
@@ -434,8 +507,8 @@ class RustedIronMace(Weapon):
 
 
 class Mace(Weapon):
-    level = 1
-    def __init__(self, merchandise=False):
+    level: int = 1
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Mace",
                          description="A small mace. Heavy and slow, but packs a decent punch.",
                          isequipped=False, value=100,
@@ -444,8 +517,8 @@ class Mace(Weapon):
 
 
 class RustedDagger(Weapon):
-    level = 0
-    def __init__(self, merchandise=False):
+    level: int = 0
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Rusted Dagger",
                          description="A small dagger with some rust. Somewhat more dangerous than a rock.",
                          isequipped=False, value=10,
@@ -454,8 +527,8 @@ class RustedDagger(Weapon):
 
 
 class Dagger(Weapon):
-    level = 1
-    def __init__(self, merchandise=False):
+    level: int = 1
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Dagger",
                          description="A rogue's best friend.",
                          isequipped=False, value=100,
@@ -464,8 +537,8 @@ class Dagger(Weapon):
 
 
 class Baselard(Weapon):
-    level = 1
-    def __init__(self, merchandise=False):
+    level: int = 1
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Baselard",
                          description="A small, sharp dagger with an 'H'-shaped hilt.",
                          isequipped=False, value=100,
@@ -474,9 +547,9 @@ class Baselard(Weapon):
 
 
 class Shortsword(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Shortsword",
                          description="A double-edged shortsword. A reliable companion in any fight.",
                          isequipped=False, value=100,
@@ -485,9 +558,9 @@ class Shortsword(Weapon):
 
 
 class Epee(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Epee",
                          description="A short dueling sword. Frequently used ceremonially, "
                                      "it is nonetheless effective in combat if wielded properly.\n"
@@ -499,9 +572,9 @@ class Epee(Weapon):
 
 
 class Battleaxe(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Battleaxe",
                          description="A crescent blade affixed to a reinforced wooden haft. "
                                      "It is light and easy to swing.",
@@ -511,9 +584,9 @@ class Battleaxe(Weapon):
 
 
 class Pickaxe(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Pickaxe",
                          description="A hardy weapon that can also be used to mine for rare metals, "
                                      "if the user is so-inclined. \n"
@@ -524,9 +597,9 @@ class Pickaxe(Weapon):
 
 
 class Scythe(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Scythe",
                          description="An unusual weapon that, despite its intimidating appearance, "
                                      "is particularly difficult to wield. Requires two hands.",
@@ -536,9 +609,9 @@ class Scythe(Weapon):
 
 
 class Spear(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Spear",
                          description="A weapon of simple design and great effectiveness. \n"
                                      "Has a longer reach than most melee weapons but is not great at close range.",
@@ -548,9 +621,9 @@ class Spear(Weapon):
 
 
 class Halberd(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Halberd",
                          description="Essentially an axe mounted on top of a large pole. \n"
                                      "Has a longer reach than most melee weapons but is not great at close range.",
@@ -560,9 +633,9 @@ class Halberd(Weapon):
 
 
 class Hammer(Weapon):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Hammer",
                          description="Great for smashing more heavily-armored foes.",
                          isequipped=False, value=100,
@@ -571,24 +644,23 @@ class Hammer(Weapon):
 
 
 class Shortbow(Weapon):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Shortbow",
                          description="A reliable missile weapon. Useful as a weak bludgeon at close range.\n"
                                      "Requires two hands.",
                          isequipped=False, value=50,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.5, maintype="Weapon",
                          subtype="Bow", merchandise=merchandise)
-        self.range_base = 20  # this will affect the accuracy and power of the shot;
-        # range is the distance when the effect begins
-        self.range_decay = 0.05  # the rate of decay for accuracy and damage after base range is reached
+        self.range_base: Union[int, float] = 20
+        self.range_decay: Union[int, float] = 0.05
 
 
 class Longbow(Weapon):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Longbow",
                          description="Specialized bow for shooting long distances. Useful as a weak bludgeon at "
                                      "close range.\n"
@@ -596,14 +668,14 @@ class Longbow(Weapon):
                          isequipped=False, value=100,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=2, maintype="Weapon",
                          subtype="Bow", merchandise=merchandise)
-        self.range_base = 25
-        self.range_decay = 0.04
+        self.range_base: Union[int, float] = 25
+        self.range_decay: Union[int, float] = 0.04
 
 
 class Crossbow(Weapon):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Crossbow",
                          description="Heavier than a standard bow but able to fire more rapidly. "
                                      "It fires bolts instead of arrows.\n"
@@ -611,14 +683,14 @@ class Crossbow(Weapon):
                          isequipped=False, value=100,
                          damage=20, str_req=5, fin_req=5, str_mod=1.5, fin_mod=1, weight=4, maintype="Weapon",
                          subtype="Crossbow", merchandise=merchandise)
-        self.range_base = 15
-        self.range_decay = 0.06
+        self.range_base: Union[int, float] = 15
+        self.range_decay: Union[int, float] = 0.06
 
 
 class Pole(Weapon):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Pole",
                          description="A large pole, great for delivering blows from a distance. \n"
                                      "Has a longer reach than most melee weapons but is not great at close range.",
@@ -628,32 +700,30 @@ class Pole(Weapon):
 
 
 class TatteredCloth(Armor):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Tattered Cloth",
                          description="Shamefully tattered cloth wrappings. \n"
                                      "Lightweight, but offering little in protection.",
                          isequipped=False, value=0,
                          protection=1, str_req=1, str_mod=0.1, weight=0.5, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
-        # minimum protection of 2
 
 
 class ClothHood(Helm):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Cloth Hood",
                          description="Stained cloth hood. "
                                      "Enough to conceal your face, but that's about it.",
                          isequipped=False, value=0,
                          protection=0, str_req=1, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
-        self.add_fin = 1
-        # minimum protection of 1
+        self.add_fin: int = 1
 
 
 class DullMedallion(Accessory):
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Dull Medallion",
                          description="A rather unremarkable medallion. \n"
                                      "It's face is dull, and seems to swallow any light unlucky enough to "
@@ -662,7 +732,7 @@ class DullMedallion(Accessory):
                          isequipped=False, value=25,
                          protection=0, str_mod=0, fin_mod=0, weight=0.5, maintype="Accessory", subtype="Necklace", merchandise=merchandise)
 
-    def on_equip(self, player):
+    def on_equip(self, player: 'Player') -> None:
         cprint("Jean feels a slight chill as the medallion's chain settles on his neck.", "green")
         player.combat_idle_msg.append("Jean feels the soft caress of a stranger's hand on his cheek.")
         player.combat_idle_msg.append("A faint whisper of unknown origin passes quickly through Jean's mind.")
@@ -672,7 +742,7 @@ class DullMedallion(Accessory):
         player.combat_idle_msg.append("A sense of urgency and desperation suddenly fills Jean.")
         player.combat_idle_msg.append("The words, 'Cherub Root,' flash across Jean's mind.")
 
-    def on_unequip(self, player):
+    def on_unequip(self, player: 'Player') -> None:
         cprint("Removing the medallion gives Jean a strange sense of relief, but also inexplicable sadness.", "green")
         player.combat_idle_msg.remove("Jean feels the soft caress of a stranger's hand on his cheek.")
         player.combat_idle_msg.remove("A faint whisper of unknown origin passes quickly through Jean's mind.")
@@ -684,9 +754,9 @@ class DullMedallion(Accessory):
 
 
 class GoldRing(Accessory):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Gold Ring",
                          description="A shiny gold ring. \n"
                                      "Typically a sign of marital vows, though it may also be worn to exhibit wealth.",
@@ -695,12 +765,12 @@ class GoldRing(Accessory):
 
 
 class JeanWeddingBand(Accessory):
-    level = 99
-    add_faith = 1
-    add_endurance = 1
-    add_charisma = -1
+    level: int = 99
+    add_faith: int = 1
+    add_endurance: int = 1
+    add_charisma: int = -1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Wedding Band",
                          description="A shiny gold ring with some intricate patterns carved into it. \n"
                                      "The faded inscription on the inner wall of the ring reads, 'AMELIA.' \n"
@@ -709,10 +779,8 @@ class JeanWeddingBand(Accessory):
                          isequipped=True, value=900,
                          protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring", merchandise=merchandise)
         self.interactions.remove("drop")
-        # self.add_resistance["fire"] = -0.5
-        # self.add_status_resistance["poison"] = -0.75
 
-    def on_equip(self, player):
+    def on_equip(self, player: 'Player') -> None:
         if len(self.equip_states) > 0:
             for state in self.equip_states:
                 player.apply_state(state)
@@ -720,16 +788,16 @@ class JeanWeddingBand(Accessory):
             "As he slides on the band, Jean's face appears placid. "
             "His heart, however, is filled with sadness, and a coldness grips his stomach.")
 
-    def on_unequip(self, player):
+    def on_unequip(self, player: 'Player') -> None:
         print("Jean's frown twitches slightly as his finger is released from the weight of the band. "
               "He glances briefly at the faded inscription on the ring's inner wall "
               "before stuffing the small baubel into his bag.")
 
 
 class SilverRing(Accessory):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Silver Ring",
                          description="A shiny silver ring. \n"
                                      "A small bauble favored by people of typically lower class.",
@@ -738,9 +806,9 @@ class SilverRing(Accessory):
 
 
 class GoldChain(Accessory):
-    level = 2
+    level: int = 2
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Gold Chain",
                          description="A shiny gold chain. \n"
                                      "Worn to impress. An excellent gift for a lady.",
@@ -749,9 +817,9 @@ class GoldChain(Accessory):
 
 
 class SilverChain(Accessory):
-    level = 1
+    level: int = 1
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Silver Chain",
                          description="A shiny silver chain. \n"
                                      "An excellent gift for a lady who has simple tastes.",
@@ -760,9 +828,9 @@ class SilverChain(Accessory):
 
 
 class GoldBracelet(Accessory):
-    level = 2
+    level: int = 2
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Gold Bracelet",
                          description="A shiny gold bracelet. \n"
                                      "Everyone knows that you need to accessorize in order to make an impression.",
@@ -771,9 +839,9 @@ class GoldBracelet(Accessory):
 
 
 class SilverBracelet(Accessory):
-    level = 0
+    level: int = 0
 
-    def __init__(self, merchandise=False):
+    def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Silver Bracelet",
                          description="A shiny silver bracelet. \n"
                                      "More of an eccentricity than anything else.",
@@ -782,21 +850,21 @@ class SilverBracelet(Accessory):
 
 
 class Restorative(Consumable):
-    def __init__(self, count=1, merchandise=False):
+    power: int
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Restorative",
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves.",
                          value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count, merchandise=merchandise)
         self.power = 60
-        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
-        # the game searches the inventory for other copies and increases that count by self.count,
-        # then removes this object
+        self.count = count
         self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                         "reading, 'Restorative.'"
 
-    def stack_grammar(self):
+    def stack_grammar(self) -> None:
         if self.count > 1:
             self.description = "A box filled with vials of a strange pink fluid.\n" \
                                "Drinking one would seem to cause your wounds to immediately mend themselves.\n" \
@@ -809,18 +877,17 @@ class Restorative(Consumable):
             self.announce = "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label " \
                             "reading, 'Restorative.'"
 
-    def drink(self, player):  # alias for "use"
+    def drink(self, player: 'Player') -> None:
         self.use(player)
 
-    def use(self, player):
+    def use(self, player: 'Player') -> None:
         if player.hp < player.maxhp:
             print(
                 "Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
                 "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
                 "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
-            amount = (self.power * random.uniform(0.8, 1.2))
-            amount = int(amount)
-            missing_hp = player.maxhp - player.hp
+            amount: int = int((self.power * random.uniform(0.8, 1.2)))
+            missing_hp: int = player.maxhp - player.hp
             if amount > missing_hp:
                 amount = missing_hp
             player.hp += amount
@@ -835,7 +902,9 @@ class Restorative(Consumable):
 
 
 class Draught(Consumable):
-    def __init__(self, count=1, merchandise=False):
+    power: int
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Draught",
                          description="A green fluid giving off a warm, pleasant glow.\n"
                                      "Invigorating for any tired adventurer.",
@@ -846,7 +915,7 @@ class Draught(Consumable):
         self.announce = ("Jean notices a small glass bottle of glowing green fluid on the ground. "
                          "Its label reads, simply, 'Draught.'")
 
-    def stack_grammar(self):
+    def stack_grammar(self) -> None:
         if self.count > 1:
             self.description = "A box filled with bottles of a green fluid giving off a warm, pleasant glow.\n" \
                                "Invigorating for any tired adventurer.\n" \
@@ -858,16 +927,15 @@ class Draught(Consumable):
             self.announce = ("Jean notices a small glass bottle of glowing green fluid on the ground. "
                              "Its label reads, simply, 'Draught.'")
 
-    def drink(self, player):  # alias for "use"
+    def drink(self, player: 'Player') -> None:
         self.use(player)
 
-    def use(self, player):
+    def use(self, player: 'Player') -> None:
         if player.hp < player.maxhp:
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                   "to have lifted off of his shoulders for the time being.".format(self.name))
-            amount = (self.power * random.uniform(0.8, 1.2))
-            amount = int(amount)
-            missing_fatigue = player.maxfatigue - player.fatigue
+            amount: int = int((self.power * random.uniform(0.8, 1.2)))
+            missing_fatigue: int = player.maxfatigue - player.fatigue
             if amount > missing_fatigue:
                 amount = missing_fatigue
             player.fatigue += amount
@@ -882,21 +950,21 @@ class Draught(Consumable):
 
 
 class Antidote(Consumable):
-    def __init__(self, count=1, merchandise=False):
+    power: int
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Antidote",
                          description="A murky green fluid of questionable chemistry.\n"
                                      "Drinking it restores a small amount of health and \n"
                                      "neutralizes harmful toxins in the bloodstream.",
                          value=175, weight=0.25, maintype="Consumable", subtype="Potion", count=count, merchandise=merchandise)
         self.power = 15
-        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
-        # the game searches the inventory for other copies and increases that count by self.count,
-        # then removes this object
+        self.count = count
         self.interactions = ["use", "drink", "drop"]
         self.announce = "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label " \
                         "reading, 'Antidote.'"
 
-    def stack_grammar(self):
+    def stack_grammar(self) -> None:
         if self.count > 1:
             self.description = "A box filled with bottles of a murky green fluid.\n" \
                                "Drinking one restores a small amount of health and \n" \
@@ -910,23 +978,22 @@ class Antidote(Consumable):
             self.announce = ("Jean notices a small glass bottle on the ground with a murky green "
                              "fluid inside and a label reading, 'Antidote.'")
 
-    def drink(self, player):  # alias for "use"
+    def drink(self, player: 'Player') -> None:
         self.use(player)
 
-    def use(self, player):
-        poisons = []
+    def use(self, player: 'Player') -> None:
+        poisons: List[Any] = []
         for state in player.states:
             if hasattr(state, "statustype"):
-                if state.statustype == "poison":
+                if getattr(state, 'statustype') == "poison":
                     poisons.append(state)
 
         if poisons:
             print("Jean sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
                   "his throat. He shudders uncontrollably for a moment as the medicine flows into his \n"
                   "bloodstream, doing its work on whatever toxic agent made its home there.\n")
-            amount = (self.power * random.uniform(0.8, 1.2))
-            amount = int(amount)
-            missing_hp = player.maxhp - player.hp
+            amount: int = int((self.power * random.uniform(0.8, 1.2)))
+            missing_hp: int = player.maxhp - player.hp
             if missing_hp > 0:
                 if amount > missing_hp:
                     amount = missing_hp
@@ -945,25 +1012,29 @@ class Antidote(Consumable):
             print("Jean is not beset by poison. He places the Antidote back into his bag.")
 
 
-class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasses (like WoodenArrow, IronArrow, etc.)
-    def __init__(self, name, description, value, weight, power, range_base_modifier, range_decay_modifier, sturdiness,
-                 helptext, effects, count=1, merchandise=False):
+class Arrow(Consumable):  # master class for arrows.
+    power: Union[int, float]
+    range_base_modifier: Union[int, float]
+    range_decay_modifier: Union[int, float]
+    sturdiness: Union[int, float]
+    helptext: str
+    effects: Optional[List[Any]]
+
+    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float], power: Union[int, float], range_base_modifier: Union[int, float], range_decay_modifier: Union[int, float], sturdiness: Union[int, float],
+                 helptext: str, effects: Optional[List[Any]], count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable",
                          subtype="Arrow", count=count, merchandise=merchandise)
         self.power = power
-        self.count = count  # this will allow stacking of homogeneous items. At each game loop,
-        # the game searches the inventory for other copies and increases that count by self.count,
-        # then removes this object
+        self.count = count
         self.interactions = ["drop", "prefer"]
         self.announce = "Jean notices an arrow on the ground."
-        self.range_base_modifier = range_base_modifier  # multiplies the bow's base range by this amount
-        self.range_decay_modifier = range_decay_modifier  # multiplies the bow's base decay by this amount
-        self.sturdiness = sturdiness  # frequency that an arrow fired at an enemy will survive to be picked up again
-        self.helptext = helptext  # appears next to the arrow when the player is
-        # choosing after using the Shoot Arrow move
+        self.range_base_modifier = range_base_modifier
+        self.range_decay_modifier = range_decay_modifier
+        self.sturdiness = sturdiness
+        self.helptext = helptext
         self.effects = effects
 
-    def stack_grammar(self):
+    def stack_grammar(self) -> None:
         if self.count > 1:
             self.description = "A quiver of {}s.\n" \
                                "There appear to be {} arrows in the quiver.\n".format(self.name.lower(), self.count)
@@ -972,12 +1043,12 @@ class Arrow(Consumable):  # master class for arrows. Actual arrows are subclasse
             self.description = "A standard arrow, to be fired with a bow."
             self.announce = "Jean notices an arrow on the ground."
 
-    def prefer(self, player):
+    def prefer(self, player: 'Player') -> None:
         functions.add_preference(player, "arrow", self.name)
 
 
 class WoodenArrow(Arrow):
-    def __init__(self, count=1, merchandise=False):
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Wooden Arrow",
                          description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
                                      "This one is made of wood. Wooden arrows are lightweight, "
@@ -990,7 +1061,7 @@ class WoodenArrow(Arrow):
 
 
 class IronArrow(Arrow):
-    def __init__(self, count=1, merchandise=False):
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, "
                                                         "a shaft of sorts, and fletching. \
         This one is made of iron. Iron arrows are heavy and can be devastating up close. "
@@ -1004,7 +1075,7 @@ class IronArrow(Arrow):
 
 
 class GlassArrow(Arrow):
-    def __init__(self, count=1, merchandise=False):
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, "
                                                          "a shaft of sorts, and fletching. \
         This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, "
@@ -1016,7 +1087,7 @@ class GlassArrow(Arrow):
 
 
 class FlareArrow(Arrow):
-    def __init__(self, count=1, merchandise=False):
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         super().__init__(name="Flare Arrow", description="A useful device composed of a sharp tip, a shaft of sorts, "
                                                          "and fletching. \
         This one is made of wood and bursts into flames upon impact."
