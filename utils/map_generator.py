@@ -1856,7 +1856,7 @@ class TileEditorWindow:
 
 def create_element_frame(dialog_object: tk.Toplevel, parent: tk.Frame, attr_string: str):
     """
-    Creates a TagListFrame, packs it into the parent, sets it as an attribute on the dialog object, and returns it.
+    Creates a TagListFrame, packs it into the parent, sets it as an attribute on the dialog_object, and returns it.
 
     Args:
         dialog_object: The TileEditorWindow or tk.Toplevel instance to attach the frame to.
@@ -2096,37 +2096,24 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
     dlg.geometry('900x550')  # triple width
     dlg.transient(parent_dialog_object)
     dlg.grab_set()
-    entries = {}  # name -> {'type': 'text'|'bool'|'hierarchical', 'get': callable}
-    sig = inspect.signature(cls.__init__)
-    params = [p for p in sig.parameters.values() if p.name != 'self']
-    excluded_names = {'player', 'tile'}
-    editable_params = [p for p in params if p.name not in excluded_names]
-    excluded_params = [p for p in params if p.name in excluded_names]
 
-    def _get_all_merchants(map_data):
+    entries = {}  # name -> {'type': 'text'|'bool'|'hierarchical', 'get': callable}
+    editable_params, excluded_params = get_editable_params(cls)
+
+    # Moved and optimized merchant collection
+    def get_all_merchants(map_data):
         """
         Collects all merchant NPC instances from every tile in the map.
-
         Returns:
             dict: A mapping of merchant names (disambiguated if duplicates) to their instances.
         """
         all_npcs = []
-        try:
-            for tile_pos, tdata in map_data.items():
-                try:
-                    all_npcs.extend(tdata.get('npcs', []))
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # Include any instance of Merchant or its subclasses
+        for tdata in map_data.values():
+            all_npcs.extend(tdata.get('npcs', []))
         merchants = [npc for npc in all_npcs if isinstance(npc, Merchant)]
-
-        # Build a name->instance map while disambiguating duplicate names
         merchant_map = {}
         for m in merchants:
-            base_name = getattr(m, 'name', f"Merchant_{id(m)}") or f"Merchant_{id(m)}"
+            base_name = getattr(m, 'name', str(m))
             merchant_name = base_name
             suffix = 2
             while merchant_name in merchant_map and merchant_map[merchant_name] is not m:
@@ -2143,7 +2130,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
         except Exception:
             app_map_data = {}
         try:
-            all_merchants = _get_all_merchants(app_map_data) if app_map_data else {}
+            all_merchants = get_all_merchants(app_map_data) if app_map_data else {}
         except Exception:
             all_merchants = {}
 
@@ -2209,10 +2196,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
             # Use text entry for str, int, or no type hint
             if p.annotation is inspect._empty or p.annotation is str or p.annotation is int:
-                ent = tk.Entry(container)
-                ent.insert(0, str(val) if val is not None else '')
-                ent.pack(fill='x', pady=(2, 5))
-                ent.bind('<FocusOut>', lambda e: auto_save())
+                ent = create_text_entry(container, val, auto_save)
                 entries[p.name] = {'type': 'text', 'get': lambda v=ent: v.get()}
 
             elif base_class and inspect.isclass(base_class) and not isinstance(val, bool):
@@ -2274,44 +2258,10 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     entries[p.name] = {'type': 'text', 'get': lambda v=combo_var: v.get(), 'is_merchant': True}
 
             elif isinstance(val, bool):
-                bool_var = tk.BooleanVar(value=bool(val))
-                toggle_frame = tk.Frame(container, bg="#34495e")
-                toggle_frame.pack(fill='x')
-                def make_toggle_button(label, state):
-                    btn = tk.Button(toggle_frame, text=label, relief='sunken' if bool_var.get()==state else 'raised',
-                                    width=6,
-                                    command=lambda s=state, b=label: set_state(s))
-                    return btn
-                def refresh_buttons():
-                    for b, state in buttons:
-                        if bool_var.get()==state:
-                            b.config(relief='sunken', bg='#2ecc71' if state else '#e74c3c', fg='white')
-                        else:
-                            b.config(relief='raised', bg='#7f8c8d', fg='black')
-                def set_state(s):
-                    bool_var.set(s)
-                    refresh_buttons()
-                    auto_save()  # Auto-save on boolean change
-                buttons = []
-                btn_false = make_toggle_button('False', False)
-                btn_false.pack(side='left', padx=(0,4))
-                buttons.append((btn_false, False))
-                btn_true = make_toggle_button('True', True)
-                btn_true.pack(side='left')
-                buttons.append((btn_true, True))
-                refresh_buttons()
+                bool_var = create_bool_entry(container, val, auto_save)
                 entries[p.name] = {'type': 'bool', 'get': lambda v=bool_var: v.get()}
             else:
-                ent = tk.Entry(container)
-                if not isinstance(val, str):
-                    try:
-                        ent.insert(0, str(val) if val is not None else '')
-                    except Exception:
-                        pass
-                else:
-                    ent.insert(0, val)
-                ent.pack(fill='x', pady=(2, 5))
-                ent.bind('<FocusOut>', lambda e: auto_save())
+                ent = create_text_entry(container, val, auto_save)
                 entries[p.name] = {'type': 'text', 'get': lambda v=ent: v.get()}
         for i in range(col_count):
             frm.grid_columnconfigure(i, weight=1)
@@ -2370,6 +2320,50 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
     tk.Button(btn_frame, text=button_text, command=on_add_save,
               bg="#2ecc71", fg="white", font=("Helvetica", 12, "bold"), pady=5).pack(side='right')
 
+
+def get_editable_params(cls):
+    sig = inspect.signature(cls.__init__)
+    params = [p for p in sig.parameters.values() if p.name != 'self']
+    excluded_names = {'player', 'tile'}
+    editable_params = [p for p in params if p.name not in excluded_names]
+    excluded_params = [p for p in params if p.name in excluded_names]
+    return editable_params, excluded_params
+
+def create_text_entry(container, val, auto_save):
+    ent = tk.Entry(container)
+    ent.insert(0, str(val) if val is not None else '')
+    ent.pack(fill='x', pady=(2, 5))
+    ent.bind('<FocusOut>', lambda e: auto_save())
+    return ent
+
+def create_bool_entry(container, val, auto_save):
+    bool_var = tk.BooleanVar(value=bool(val))
+    toggle_frame = tk.Frame(container, bg="#34495e")
+    toggle_frame.pack(fill='x')
+    def make_toggle_button(label, state):
+        btn = tk.Button(toggle_frame, text=label, relief='sunken' if bool_var.get()==state else 'raised',
+                        width=6,
+                        command=lambda s=state: set_state(s))
+        return btn
+    def refresh_buttons():
+        for b, state in buttons:
+            if bool_var.get()==state:
+                b.config(relief='sunken', bg='#2ecc71' if state else '#e74c3c', fg='white')
+            else:
+                b.config(relief='raised', bg='#7f8c8d', fg='black')
+    def set_state(s):
+        bool_var.set(s)
+        refresh_buttons()
+        auto_save()
+    buttons = []
+    btn_false = make_toggle_button('False', False)
+    btn_false.pack(side='left', padx=(0,4))
+    buttons.append((btn_false, False))
+    btn_true = make_toggle_button('True', True)
+    btn_true.pack(side='left')
+    buttons.append((btn_true, True))
+    refresh_buttons()
+    return bool_var
 
 # Do NOT remove this section; needed for testing the MapEditor directly
 if __name__ == "__main__":
