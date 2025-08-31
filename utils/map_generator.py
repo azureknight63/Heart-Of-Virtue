@@ -20,6 +20,9 @@ from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args,
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
+# Ensure both project root (so 'src' package can be imported) and src_root (direct module access) are available
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 if src_root not in sys.path:
     sys.path.insert(0, src_root)
 
@@ -1625,6 +1628,69 @@ def _get_module_paths_for_class(class_name: str) -> List[str]:
                     continue  # Ignore parse errors
     return list(result_paths)
 
+def get_import_path(module_path, project_root):
+    rel = os.path.relpath(module_path, project_root)
+    import_mod = rel.replace(os.sep, '.')
+    if import_mod.lower().endswith('.py'):
+        import_mod = import_mod[:-3]
+    if import_mod.startswith('src.'):
+        import_mod = import_mod[4:]
+    return import_mod
+
+def parse_module_classes(module_path, project_root):
+    class_info = {}
+    if not os.path.isfile(module_path):
+        return class_info
+    try:
+        with open(module_path, 'r', encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not load module {module_path}:\n{e}")
+        return None
+    import_mod = get_import_path(module_path, project_root)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            bases = []
+            for b in node.bases:
+                if isinstance(b, ast.Name):
+                    bases.append(b.id)
+                elif isinstance(b, ast.Attribute):
+                    bases.append(b.attr)
+            info = class_info.setdefault(node.name, {'bases': [], 'children': set(), 'module': import_mod})
+            info['bases'] = bases
+    return class_info
+
+def build_class_hierarchy(class_info):
+    for name, info in class_info.items():
+        for base in info['bases']:
+            if base in info['children']:
+                info['children'].remove(base)
+            if base in class_info:
+                class_info[base]['children'].add(name)
+    return class_info
+
+def filter_classes(class_info, filter_by_class):
+    allowed_classes = set(class_info.keys())
+    if filter_by_class:
+        def is_subclass_or_same(cname):
+            if cname == filter_by_class:
+                return True
+            visited = set()
+            def check_sub(c):
+                if c in visited:
+                    return False
+                visited.add(c)
+                bases = class_info.get(c, {}).get('bases', [])
+                for b in bases:
+                    if b == filter_by_class:
+                        return True
+                    if b in class_info and check_sub(b):
+                        return True
+                return False
+            return check_sub(cname)
+        allowed_classes = {c for c in class_info if is_subclass_or_same(c)}
+    return allowed_classes
+
 class TileEditorWindow:
     """
     A separate window for editing a single tile's properties.
@@ -1940,58 +2006,15 @@ def show_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, dialog_titl
         if not os.path.isfile(module_path):
             continue
         try:
-            with open(module_path, 'r', encoding='utf-8') as f:
-                tree = ast.parse(f.read())
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not load module {module_path}:\n{e}")
-            return
-        # compute import path (e.g., objects, npc, story.eventname)
-        rel = os.path.relpath(module_path, project_root)
-        # change path separators to dots and strip .py
-        import_mod = rel.replace(os.sep, '.')
-        if import_mod.lower().endswith('.py'):
-            import_mod = import_mod[:-3]
-        # Remove 'src.' prefix since src is already in sys.path
-        if import_mod.startswith('src.'):
-            import_mod = import_mod[4:]  # Remove 'src.' prefix
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                bases = []
-                for b in node.bases:
-                    if isinstance(b, ast.Name):
-                        bases.append(b.id)
-                    elif isinstance(b, ast.Attribute):  # handle something.SomeBase
-                        bases.append(b.attr)
-                info = class_info.setdefault(node.name, {'bases': [], 'children': set(), 'module': import_mod})
-                info['bases'] = bases
+            class_info_module = parse_module_classes(module_path, project_root)
+            if class_info_module:  # ensure not None/empty
+                class_info.update(class_info_module)
+        except Exception:
+            continue
     # build children relations
-    for name, info in class_info.items():
-        for base in info['bases']:
-            if base in info['children']:
-                info['children'].remove(base)  # prevent self-referential cycles
-            if base in class_info:
-                class_info[base]['children'].add(name)
+    class_info = build_class_hierarchy(class_info)
     # --- Filtering by class name ---
-    allowed_classes = set(class_info.keys())
-    if filter_by_class:
-        # Find all classes that are the same as or subclass of filter_by_class
-        def is_subclass_or_same(cname):
-            if cname == filter_by_class:
-                return True
-            visited = set()
-            def check_sub(c):
-                if c in visited:
-                    return False
-                visited.add(c)
-                bases = class_info.get(c, {}).get('bases', [])
-                for b in bases:
-                    if b == filter_by_class:
-                        return True
-                    if b in class_info and check_sub(b):
-                        return True
-                return False
-            return check_sub(cname)
-        allowed_classes = {c for c in class_info if is_subclass_or_same(c)}
+    allowed_classes = filter_classes(class_info, filter_by_class)
     # roots: classes whose bases are not in class_info and are allowed
     roots = sorted([n for n, info in class_info.items() if not any(b in class_info for b in info['bases']) and n in allowed_classes])
     # Build dialog
@@ -2112,7 +2135,17 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
             merchant_map[merchant_name] = m
         return merchant_map
 
-    all_merchants = None if "merchant" not in [p.name for p in editable_params] else _get_all_merchants(app.map_data)
+    all_merchants = None
+    if "merchant" in [p.name for p in editable_params]:
+        try:
+            # Attempt to use global app instance if present
+            app_map_data = app.map_data  # type: ignore[name-defined]
+        except Exception:
+            app_map_data = {}
+        try:
+            all_merchants = _get_all_merchants(app_map_data) if app_map_data else {}
+        except Exception:
+            all_merchants = {}
 
     # Auto-save function that will be called on every change
     def auto_save():
