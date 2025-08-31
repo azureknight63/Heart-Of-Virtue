@@ -1842,12 +1842,21 @@ class TileEditorWindow:
 
 
     def refresh_all_tags(self):
-        for key, frame in [("events", getattr(self, "events_frame", None)),
-                           ("items", getattr(self, "items_frame", None)),
-                           ("npcs", getattr(self, "npcs_frame", None)),
-                           ("objects", getattr(self, "objects_frame", None))]:
+        # Frames are attached to self.window (the Toplevel) via create_element_frame,
+        # so we must retrieve them from self.window rather than self. Previously this
+        # method looked up attributes on self, resulting in None frames and no initial
+        # tag population (frames appeared empty / not shown).
+        wnd = getattr(self, 'window', None)
+        if not wnd:
+            return
+        for key, frame in [
+            ("events", getattr(wnd, "events_frame", None)),
+            ("items", getattr(wnd, "items_frame", None)),
+            ("npcs", getattr(wnd, "npcs_frame", None)),
+            ("objects", getattr(wnd, "objects_frame", None)),
+        ]:
             if frame is not None:
-                refresh_tags(self.tile_data[key], frame)
+                refresh_tags(self.tile_data.get(key, []), frame)
 
 """
 ===== Static Methods to manage TagListFrames, which can be children of TileEditorWindow OR a container tk.Frame =====
