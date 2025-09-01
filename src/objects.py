@@ -438,7 +438,10 @@ class Passageway(Object):
         self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
     def enter(self, player):
-        # If this is a shop exit, force player to drop all merchandise items before events
+        # Drop any merchandise items immediately upon attempting to enter/teleport
+        if hasattr(player, 'drop_merchandise_items'):
+            player.drop_merchandise_items()
+        # If this is a shop exit, force player to drop all merchandise items before events (legacy logic)
         if getattr(self, 'is_shop_exit', False):
             dropped_items = []
             # Copy inventory to avoid modifying while iterating

@@ -13,8 +13,6 @@ from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args,
 
 # Work in progress
 # TODO: Fix bug where editing a tile causes exits to be lost if not re-added
-# TODO: Setting merchandise property not saving when map saved?
-# TODO: Choosers no longer show subclasses except Events
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))

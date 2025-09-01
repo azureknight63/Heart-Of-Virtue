@@ -520,6 +520,29 @@ maintenant et à l'heure de notre mort. Amen.""",
         else:
             print("### ERR IN SETTING VAR; NO ENTRY: " + params[0] + " " + params[1] + " ###")
 
+    def drop_merchandise_items(self):
+        """Drop all merchandise items in current location with individual messages."""
+        try:
+            current_tile = tile_exists(self.map, self.location_x, self.location_y)
+        except Exception:
+            current_tile = None
+        if not current_tile:
+            return
+        dropped = False
+        for item in self.inventory[:]:
+            if getattr(item, 'merchandise', False):
+                try:
+                    self.inventory.remove(item)
+                    current_tile.items_here.append(item)
+                except ValueError:
+                    continue
+                print(f"Jean places {getattr(item, 'name', str(item))} against the wall.")
+                time.sleep(0.15)
+                dropped = True
+        if dropped:
+            # brief pause after dropping sequence for readability
+            time.sleep(0.25)
+
     def teleport(self, target_map: str, target_coordinates: tuple):
         """
         Teleports the player to a specified area and coordinates.
@@ -532,6 +555,8 @@ maintenant et à l'heure de notre mort. Amen.""",
             - If the area and coordinates are valid, moves the player there and prints the tile's intro text.
             - If invalid, prints an error message.
         """
+        # Before teleporting, drop any merchandise items at the origin
+        self.drop_merchandise_items()
         x = target_coordinates[0]
         y = target_coordinates[1]
         for area in self.universe.maps:
