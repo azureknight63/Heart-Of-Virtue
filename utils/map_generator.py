@@ -12,10 +12,9 @@ import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union  # type hinting (removed unused Iterable)
 
 # Work in progress
-# TODO: Fix teleport tuple selection for map coordinates
-# TODO: With teleport, add a chooser to select a map
-# TODO: Fix initial list frame refresh bug; list frames start blank until an object is added
-# TODO: Add merchandise property as an option to toggle on Items
+# TODO: Fix bug where editing a tile causes exits to be lost if not re-added
+# TODO: Setting merchandise property not saving when map saved?
+# TODO: Choosers no longer show subclasses except Events
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -1600,8 +1599,8 @@ def _get_module_paths_for_class(class_name: str) -> List[str]:
     """
     Returns a list of absolute file paths for all modules in src/ that define the given class or its subclasses.
     """
-    project_root = os.path.dirname(os.path.dirname(__file__))
-    src_dir = os.path.join(project_root, 'src')
+    this_project_root = os.path.dirname(os.path.dirname(__file__))
+    src_dir = os.path.join(this_project_root, 'src')
     result_paths = set()
     # Walk through src/ and subdirectories
     for dirpath, dirnames, filenames in os.walk(src_dir):
@@ -1628,8 +1627,8 @@ def _get_module_paths_for_class(class_name: str) -> List[str]:
                     continue  # Ignore parse errors
     return list(result_paths)
 
-def get_import_path(module_path, project_root):
-    rel = os.path.relpath(module_path, project_root)
+def get_import_path(module_path, this_project_root):
+    rel = os.path.relpath(module_path, this_project_root)
     import_mod = rel.replace(os.sep, '.')
     if import_mod.lower().endswith('.py'):
         import_mod = import_mod[:-3]
@@ -1637,7 +1636,7 @@ def get_import_path(module_path, project_root):
         import_mod = import_mod[4:]
     return import_mod
 
-def parse_module_classes(module_path, project_root):
+def parse_module_classes(module_path, this_project_root):
     class_info = {}
     if not os.path.isfile(module_path):
         return class_info
@@ -1647,7 +1646,7 @@ def parse_module_classes(module_path, project_root):
     except Exception as e:
         messagebox.showerror("Error", f"Could not load module {module_path}:\n{e}")
         return None
-    import_mod = get_import_path(module_path, project_root)
+    import_mod = get_import_path(module_path, this_project_root)
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
             bases = []
@@ -1670,6 +1669,7 @@ def build_class_hierarchy(class_info):
     return class_info
 
 def filter_classes(class_info, filter_by_class):
+    # Filter classes to include the target class and all its subclasses
     allowed_classes = set(class_info.keys())
     if filter_by_class:
         def is_subclass_or_same(cname):
@@ -1687,6 +1687,7 @@ def filter_classes(class_info, filter_by_class):
                     if b in class_info and check_sub(b):
                         return True
                 return False
+            return check_sub(cname)
         allowed_classes = {c for c in class_info if is_subclass_or_same(c)}
     return allowed_classes
 
@@ -1983,20 +1984,17 @@ def open_chooser(dialog_object: tk.Toplevel, lst: List, tag_frame: TagListFrame,
             return
         show_hierarchy_chooser(dialog_object, paths, "Choose Event", add_element, lst, tag_frame)
     else:
-        # Search for the base class file in the project
-        for dirpath, _, filenames in os.walk(project_root):
-            for file in filenames:
-                if file.endswith('.py'):
-                    file_path = os.path.join(dirpath, file)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            src = f.read()
-                        if re.search(rf'class\s+{base_class_name}\b', src):
-                            paths.append(file_path)
-                    except Exception:
-                        continue
+        # FIX: Previously only modules containing the base class definition were scanned, not those
+        # defining subclasses. Use helper that gathers any module that defines the base OR a subclass.
+        if not base_class_name:
+            messagebox.showerror("Error", "Base class name not provided.")
+            return
+        try:
+            paths = _get_module_paths_for_class(base_class_name)
+        except Exception:
+            paths = []
         if not paths:
-            messagebox.showerror("Error", f"Could not find base class {base_class_name} in project.")
+            messagebox.showerror("Error", f"Could not find base class {base_class_name} or its subclasses in src/.")
             return
         show_hierarchy_chooser(dialog_object, paths, f"Choose {base_class_name}",
                                add_element, lst, tag_frame, base_class_name)
