@@ -529,6 +529,14 @@ maintenant et à l'heure de notre mort. Amen.""",
         if not current_tile:
             return
         dropped = False
+        phrases = [
+            "Jean sets {item} down; unpaid goods don't leave the shop.",
+            "Jean places {item} carefully against the wall.",
+            "Jean pauses and returns {item} to the shop floor.",
+            "With a quiet sigh Jean lays {item} aside—he hasn't bought it yet.",
+            "Jean leaves {item} behind for the shopkeeper.",
+            "Jean props {item} where the merchant will easily find it."
+        ]
         for item in self.inventory[:]:
             if getattr(item, 'merchandise', False):
                 try:
@@ -536,7 +544,8 @@ maintenant et à l'heure de notre mort. Amen.""",
                     current_tile.items_here.append(item)
                 except ValueError:
                     continue
-                print(f"Jean places {getattr(item, 'name', str(item))} against the wall.")
+                msg = random.choice(phrases).format(item=getattr(item, 'name', str(item)))
+                print(msg)
                 time.sleep(0.15)
                 dropped = True
         if dropped:
