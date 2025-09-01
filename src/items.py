@@ -3,10 +3,10 @@ import random
 import time
 from neotermcolor import colored, cprint
 import functions
-from typing import Any, Dict, List, Optional, Tuple, Sequence, Mapping, Iterable, Union, Callable, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
-    from player import Player  # forward reference for player parameter types
+    from player import Player  # noqa
 
 item_types: Dict[str, Dict[str, Any]] = {
     'weapons': {
@@ -96,7 +96,7 @@ class Item:
         self.subtype = subtype
         self.hidden = hidden
         self.hide_factor = hide_factor
-        self._merchandise = merchandise
+        self.merchandise = merchandise
         self.discovery_message = discovery_message
         self.announce = "There's a {} here.".format(self.name)
         self.interactions = ["drop"]  # things to do with the item from the inventory menu
@@ -111,14 +111,6 @@ class Item:
                 self.interactions.append("unequip")
             else:
                 self.interactions.append("equip")
-
-    @property
-    def merchandise(self) -> bool:
-        return self._merchandise
-
-    @merchandise.setter
-    def merchandise(self, value: bool) -> None:
-        self._merchandise = value
 
     def __str__(self) -> str:
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
