@@ -2184,6 +2184,13 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
         # Apply changes to existing object
         for k, v in kwargs.items():
             setattr(existing, k, v)
+        # Special handling: if an object defines an 'inventory' attribute and we edited an 'items' param,
+        # keep them in sync so game logic (which reads inventory) reflects editor changes.
+        if 'items' in kwargs and hasattr(existing, 'inventory'):
+            try:
+                existing.inventory = list(kwargs['items']) if kwargs['items'] else []
+            except Exception:
+                pass
 
         # Trigger callback to refresh UI if provided
         if callback:
@@ -2419,19 +2426,20 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     container,
                     text="Choose",
                     command=lambda this_dlg=dlg, this_base_class_name=base_class_name,
-                                   this_is_event=is_event, this_tag_frame=tag_frame:
-                    open_chooser(
-                        this_dlg,
-                        current_value if field_type == 'list' else (current_value[0] if current_value else []),
-                        this_tag_frame,
-                        base_class_name=this_base_class_name,
-                        is_event=this_is_event
-                    )
+                                       this_is_event=is_event, this_tag_frame=tag_frame,
+                                       this_field_type=field_type, this_current_value=current_value:
+                        open_chooser(
+                            this_dlg,
+                            this_current_value if this_field_type == 'list' else (this_current_value[0] if this_current_value else []),
+                            this_tag_frame,
+                            base_class_name=this_base_class_name,
+                            is_event=this_is_event
+                        )
                 )
                 choose_btn.pack(fill='x', padx=(5, 0), pady=(2, 2))
                 entries[p.name] = {'type': 'hierarchical',
-                                   'get': lambda: current_value if field_type == 'list'
-                                   else (current_value[0] if current_value else None)}
+                                   'get': lambda cv=current_value, ft=field_type: cv if ft == 'list'
+                                   else (cv[0] if cv else None)}
             elif p.name == 'merchant':
                 if not all_merchants:
                     tk.Label(container, text="Add a Merchant NPC to this map first.",
