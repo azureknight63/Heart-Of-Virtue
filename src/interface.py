@@ -117,6 +117,7 @@ class ShopInterface(BaseInterface):
                     self._transfer_gold(self.player.inventory, -price)
                     self.player.inventory.append(item)
                     self.merchant.inventory.remove(item)
+                    item.merchandise = False
                     self._transfer_gold(self.merchant.inventory, price)
                     print(f"{GREEN}You bought {item.name} for {price} gold.{RESET}")
                 else:
@@ -162,6 +163,7 @@ class ShopInterface(BaseInterface):
                     self._transfer_gold(self.merchant.inventory, -price)
                     self.merchant.inventory.append(item)
                     self.player.inventory.remove(item)
+                    item.merchandise = True
                     self._transfer_gold(self.player.inventory, price)
                     print(f"{GREEN}You sold {item.name} for {price} gold.{RESET}")
                 else:
