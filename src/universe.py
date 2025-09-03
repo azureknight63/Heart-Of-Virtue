@@ -123,6 +123,15 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Apply remaining props as attributes
             for k, v in props.items():
                 try:
+                    # Avoid overwriting a populated container inventory with an empty list from serialized props
+                    if (
+                        k == 'inventory'
+                        and hasattr(inst, 'inventory')
+                        and getattr(inst, 'inventory')  # current inventory is non-empty
+                        and isinstance(v, list)
+                        and len(v) == 0  # incoming serialized inventory is empty
+                    ):
+                        continue  # skip destructive overwrite
                     setattr(inst, k, v)
                 except Exception:
                     pass
