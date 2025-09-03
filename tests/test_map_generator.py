@@ -211,13 +211,21 @@ class TestTileEditorWindow(unittest.TestCase):
     def test_save_and_close(self):
         if not self.has_display:
             self.skipTest("No display available")
+        # Capture original exits and blocked exits for regression verification
+        original_exits = list(self.tile_editor.tile_data.get("exits", []))
+        original_blocked = list(self.tile_editor.tile_data.get("block_exit", []))
+        self.assertIn("south", original_exits)  # precondition
         self.tile_editor.title_entry.delete(0, tk.END)
         self.tile_editor.title_entry.insert(0, "Modified Title")
         self.tile_editor.description_text.delete("1.0", tk.END)
         self.tile_editor.description_text.insert("1.0", "Modified description")
+        # Do NOT touch exits listbox to simulate the bug scenario
         self.tile_editor.save_and_close()
         self.assertEqual(self.tile_editor.tile_data["title"], "Modified Title")
         self.assertEqual(self.tile_editor.tile_data["description"], "Modified description")
+        # Regression checks: exits and blocked exits unchanged
+        self.assertEqual(self.tile_editor.tile_data.get("exits", []), original_exits)
+        self.assertEqual(self.tile_editor.tile_data.get("block_exit", []), original_blocked)
         self.assertTrue(self.callback_called)
 
     def test_refresh_tags(self):
