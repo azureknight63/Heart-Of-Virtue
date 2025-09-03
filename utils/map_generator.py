@@ -1772,8 +1772,9 @@ class TileEditorWindow:
         tk.Label(exits_frame, text="Exits:", bg="#34495e", fg="white").pack(anchor="w", pady=(0, 5))
         frame_exits = tk.Frame(exits_frame)
         frame_exits.pack(fill="x", pady=(0,10))
-        self.exits_listbox = tk.Listbox(frame_exits, selectmode="multiple", height=8)
+        self.exits_listbox = tk.Listbox(frame_exits, selectmode="multiple", height=8, exportselection=False)
         exits_sb = tk.Scrollbar(frame_exits, orient="vertical", command=self.exits_listbox.yview)
+        exits_sb.pack(side="right", fill="y")
         self.exits_listbox.configure(yscrollcommand=exits_sb.set)
         for d in self.valid_directions:
             self.exits_listbox.insert("end", d)
@@ -1781,7 +1782,6 @@ class TileEditorWindow:
                 # select existing exits
                 self.exits_listbox.select_set("end")
         self.exits_listbox.pack(side="left", fill="x", expand=True)
-        exits_sb.pack(side="right", fill="y")
         # Mark exits as modified only if user changes selection
         self.exits_listbox.bind('<<ListboxSelect>>', lambda e: setattr(self, '_exits_modified', True))
 
@@ -1789,11 +1789,11 @@ class TileEditorWindow:
         tk.Label(exits_frame, text="Directions Blocked:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
         frame_dir = tk.Frame(exits_frame)
         frame_dir.pack(fill="x")
-        self.directions_listbox = tk.Listbox(frame_dir, selectmode="multiple", height=8)
+        self.directions_listbox = tk.Listbox(frame_dir, selectmode="multiple", height=8, exportselection=False)
         dir_sb = tk.Scrollbar(frame_dir, orient="vertical", command=self.directions_listbox.yview)
+        dir_sb.pack(side="right", fill="y")
         self.directions_listbox.configure(yscrollcommand=dir_sb.set)
         self.directions_listbox.pack(side="left", fill="x", expand=True)
-        dir_sb.pack(side="right", fill="y")
         for d in self.valid_directions:
             self.directions_listbox.insert("end", d)
             if d in self.tile_data.get("block_exit", []):

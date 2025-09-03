@@ -243,6 +243,39 @@ class TestTileEditorWindow(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertIsInstance(items[0], MockItem)
 
+    def test_exit_and_blocked_selection_independence(self):
+        if not self.has_display:
+            self.skipTest("No display available")
+        # Add a second adjacent tile east to provide another direction
+        self.map_data[(1,0)] = {
+            "id": "tile_1_0","title": "East","description": "East room","exits": ["west"],
+            "events": [],"items": [],"npcs": [],"objects": []
+        }
+        # Rebuild editor to refresh valid directions
+        try:
+            self.tile_editor.window.destroy()
+        except Exception:
+            pass
+        self.tile_editor = TileEditorWindow(self.root, self.map_data, (0,0), lambda: None)
+        # Select one exit (south) and one blocked (east) and ensure independence
+        # Find indices
+        def index_of(lb, value):
+            for i in range(lb.size()):
+                if lb.get(i) == value:
+                    return i
+            return None
+        south_i = index_of(self.tile_editor.exits_listbox, 'south')
+        east_i = index_of(self.tile_editor.directions_listbox, 'east')
+        self.assertIsNotNone(south_i)
+        self.assertIsNotNone(east_i)
+        # Select south in exits
+        self.tile_editor.exits_listbox.selection_set(south_i)
+        # Select east in blocked
+        self.tile_editor.directions_listbox.selection_set(east_i)
+        # Ensure both selections persist
+        self.assertIn('south', [self.tile_editor.exits_listbox.get(i) for i in self.tile_editor.exits_listbox.curselection()])
+        self.assertIn('east', [self.tile_editor.directions_listbox.get(i) for i in self.tile_editor.directions_listbox.curselection()])
+
 
 class TestTagListFrame(unittest.TestCase):
 
