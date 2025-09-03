@@ -11,9 +11,6 @@ import re
 import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union  # type hinting (removed unused Iterable)
 
-# Work in progress
-# TODO: Fix bug where editing a tile causes exits to be lost if not re-added
-
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
@@ -1712,6 +1709,12 @@ class TileEditorWindow:
         self.tile_data["exits"] = [d for d in self.tile_data.get("exits", []) if d in self.valid_directions]
         self.tile_data["block_exit"] = [d for d in self.tile_data.get("block_exit", []) if d in self.valid_directions]
 
+        # Track initial state so we only overwrite exits if the user interacts with the listboxes.
+        self._initial_exits = list(self.tile_data.get("exits", []))
+        self._initial_blocked = list(self.tile_data.get("block_exit", []))
+        self._exits_modified = False
+        self._blocked_modified = False
+
         self.window = tk.Toplevel(parent)
         self.window.title(f"Editing Tile: {self.tile_data['id']}")
         self.window.geometry("450x550")
@@ -1775,9 +1778,12 @@ class TileEditorWindow:
         for d in self.valid_directions:
             self.exits_listbox.insert("end", d)
             if d in self.tile_data.get("exits", []):
+                # select existing exits
                 self.exits_listbox.select_set("end")
         self.exits_listbox.pack(side="left", fill="x", expand=True)
         exits_sb.pack(side="right", fill="y")
+        # Mark exits as modified only if user changes selection
+        self.exits_listbox.bind('<<ListboxSelect>>', lambda e: setattr(self, '_exits_modified', True))
 
         # Directions blocked
         tk.Label(exits_frame, text="Directions Blocked:", bg="#34495e", fg="white").pack(anchor="w", pady=(10, 5))
@@ -1792,6 +1798,7 @@ class TileEditorWindow:
             self.directions_listbox.insert("end", d)
             if d in self.tile_data.get("block_exit", []):
                 self.directions_listbox.select_set("end")
+        self.directions_listbox.bind('<<ListboxSelect>>', lambda e: setattr(self, '_blocked_modified', True))
         tk.Label(exits_frame, text="Only directions with adjacent tiles are shown.", font=("Helvetica", 8, "italic"), bg="#34495e", fg="#bdc3c7").pack(anchor="w", pady=(5,0))
 
         # --- Items/NPCs/Objects/Events Tabs ---
@@ -1824,14 +1831,24 @@ class TileEditorWindow:
         try:
             self.tile_data["title"] = self.title_entry.get().strip()
             self.tile_data["description"] = self.description_text.get("1.0", tk.END).strip()
-            sel = self.exits_listbox.curselection()
-            self.tile_data["exits"] = [self.exits_listbox.get(i) for i in sel]
+            # Only overwrite exits if user actually modified listbox selection or there are selected entries.
+            sel = self.exits_listbox.curselection() if self.exits_listbox else ()
+            if sel or self._exits_modified:
+                new_exits = [self.exits_listbox.get(i) for i in sel]
+            else:
+                new_exits = list(self._initial_exits)
+            # Same logic for blocked exits
             if self.directions_listbox:
-                selected = self.directions_listbox.curselection()
-                self.tile_data["block_exit"] = [self.directions_listbox.get(i) for i in selected]
+                selected_blocked = self.directions_listbox.curselection()
+                if selected_blocked or self._blocked_modified:
+                    new_blocked = [self.directions_listbox.get(i) for i in selected_blocked]
+                else:
+                    new_blocked = list(self._initial_blocked)
+            else:
+                new_blocked = list(self._initial_blocked)
             # Enforce validity again (safety if map changed during edit)
-            self.tile_data["exits"] = [d for d in self.tile_data.get("exits", []) if d in self.valid_directions]
-            self.tile_data["block_exit"] = [d for d in self.tile_data.get("block_exit", []) if d in self.valid_directions]
+            self.tile_data["exits"] = [d for d in new_exits if d in self.valid_directions]
+            self.tile_data["block_exit"] = [d for d in new_blocked if d in self.valid_directions]
             self.tile_data["symbol"] = self.symbol_entry.get().strip()
             self.on_save_callback()
             self.window.destroy()
