@@ -1,4 +1,5 @@
 import random
+import time
 import genericng
 import moves
 import functions
@@ -284,6 +285,48 @@ class Merchant(NPC):
         self.shop = None
         self.keywords = ["buy", "sell", "trade", "talk"]
 
+    def _collect_player_merchandise(self, player):
+        """Pull any merchandise items the player is carrying into the merchant's stock with flavor text.
+
+        Rationale: If Jean brings unpaid shop goods to the merchant, presume intent to purchase and
+        surface them in the Buy menu. Similar pacing & flavor to player.drop_merchandise_items().
+        """
+        if not player or not hasattr(player, 'inventory'):
+            return
+        phrases = [
+            "{merchant} arches a brow: 'Ahh, eyeing the {item}, are we? I'll just set that out proper.'",
+            "{merchant} deftly relieves Jean of the {item} and adds it to the display.",
+            "With a practiced motion {merchant} places the {item} among the wares.",
+            "'{item}? Fine taste,' {merchant} says, arranging it for sale.",
+            "{merchant} chuckles softly and logs the {item} into a battered ledger.",
+            "'{player}, I'll catalog that {item} for you first,' {merchant} murmurs." ,
+            "The {item} is whisked from Jean's hands and rotated under the light before joining the stock." ,
+            "{merchant} nods knowingly— the {item} now sits center shelf." ,
+            "'Curious about the {item}? Let's price it properly,' says {merchant}."
+        ]
+        took_any = False
+        for it in player.inventory[:]:
+            if getattr(it, 'merchandise', False):
+                # Remove from player
+                try:
+                    player.inventory.remove(it)
+                except ValueError:
+                    continue
+                # Add to merchant stock
+                if self.inventory is None:
+                    self.inventory = []
+                self.inventory.append(it)
+                msg = random.choice(phrases).format(
+                    merchant=self.name.split(' ')[0],
+                    item=getattr(it, 'name', 'item'),
+                    player=getattr(player, 'name', 'Jean')
+                )
+                print(msg)
+                time.sleep(0.15)
+                took_any = True
+        if took_any:
+            time.sleep(0.25)
+
     def initialize_shop(self):
         """
         This method can be used to initialize the merchant's shop with items.
@@ -303,6 +346,8 @@ class Merchant(NPC):
         It should handle the trading logic, such as buying and selling items.
         """
         print(f"{self.name} is ready to trade with you.")
+        # First, absorb any merchandise Jean carried over so it appears in the Buy list.
+        self._collect_player_merchandise(player)
         if self.shop:
             self.shop.player = player
             self.shop.run()
@@ -332,12 +377,16 @@ class MiloCurioDealer(Merchant):
             intelligence=16
         )
         # Enchanted Weapon
-        enchanted_sword = items.Shortsword()
+        enchanted_sword = items.Shortsword(merchandise=True)
         functions.add_random_enchantments(enchanted_sword, 5)
         # Gold
         gold_pouch = items.Gold(amt=100)
         # Milo's inventory
-        self.inventory = [items.Restorative(count=100), items.Rock(), items.Spear(), enchanted_sword, gold_pouch]
+        self.inventory = [items.Restorative(count=100, merchandise=True),
+                          items.Rock(merchandise=True),
+                          items.Spear(merchandise=True),
+                          enchanted_sword,
+                          gold_pouch]
         self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
         self.shop.exit_message = ("Milo nods as you leave his shop, "
                                   "already looking for new curiosities to add to his collection.")
@@ -350,6 +399,8 @@ class MiloCurioDealer(Merchant):
             self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
             self.shop.exit_message = ("Milo nods as you leave his shop, "
                                       "already looking for new curiosities to add to his collection.")
+        # Collect merchandise items first (in case Jean picked something up on Milo's floor)
+        self._collect_player_merchandise(player)
         self.shop.set_player(player)
         self.shop.run()
 
