@@ -262,6 +262,7 @@ class InventoryCategorySubmenu(BaseInterface):
     def __init__(self, items, player, category_name):
         self.items = items
         self.player = player
+        self.category_name = category_name  # store for rebuilds
         choices = []
         for i, item in enumerate(items):
             item_preference_value = "(P)" if item.name in player.preferences.values() else ""
@@ -273,6 +274,26 @@ class InventoryCategorySubmenu(BaseInterface):
             choices.append({'label': label, 'item': item})
         super().__init__(title=f"{player.name}'s {category_name}", choices=choices, exit_label="Back", exit_message="Returning to category selection...")
 
+    def _rebuild_choices(self):
+        # Remove any stack items that have reached zero count
+        remove_zero = [itm for itm in self.player.inventory if hasattr(itm, 'count') and getattr(itm, 'count', 0) <= 0]
+        for itm in remove_zero:
+            try:
+                self.player.inventory.remove(itm)
+            except ValueError:
+                pass
+        # Rebuild based on current inventory contents for this category
+        self.choices = []
+        for item in self.player.inventory:
+            if getattr(item, 'maintype', None) == self.category_name:
+                item_preference_value = "(P)" if item.name in self.player.preferences.values() else ""
+                label = f"{item.name} {item_preference_value}"
+                if getattr(item, 'isequipped', False):
+                    label += " (Equipped)"
+                if hasattr(item, 'count') and getattr(item, 'count', 1) > 1:
+                    label += f" ({item.count})"
+                self.choices.append({'label': label, 'item': item})
+
     def handle_exit(self):
         print(f"Returning to category selection...")
 
@@ -283,6 +304,8 @@ class InventoryCategorySubmenu(BaseInterface):
             print('\nThis is your preferred arrow type. You will choose this when shooting your bow as long as you have enough.\nIf you select "prefer" again, you will remove this preference. Having no arrow preference will force you to choose the arrow you want each time you shoot.\n')
         if getattr(item, "interactions", None):
             InventoryInterface.inventory_item_sub_menu_static(item, self.player)
+            # After interaction, rebuild so dropped/changed items update immediately
+            self._rebuild_choices()
         else:
             __import__('functions').await_input()
 
