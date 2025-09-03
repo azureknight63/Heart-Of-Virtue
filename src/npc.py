@@ -5,7 +5,8 @@ import moves
 import functions
 from neotermcolor import colored, cprint
 import loot_tables
-import items
+from items import Item, Shortsword, Gold, Restorative, Rock, Spear
+from objects import Container
 from interface import ShopInterface as Shop
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
@@ -13,7 +14,7 @@ loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
 class NPC:
     def __init__(self, name, description, damage, aggro, exp_award,
-                 inventory=None, maxhp=100, protection=0, speed=10, finesse=10,
+                 inventory: list[Item]=None, maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
                  faith=10, hidden=False, hide_factor=0, combat_range=(0, 5),
                  idle_message=' is shuffling about.', alert_message='glares sharply at Jean!',
@@ -21,7 +22,7 @@ class NPC:
         self.name = name
         self.description = description
         self.current_room = None
-        self.inventory = inventory
+        self.inventory: list[Item] = inventory
         self.idle_message = idle_message
         self.alert_message = alert_message
         self.maxhp = maxhp
@@ -162,7 +163,7 @@ class NPC:
 
     def cycle_states(self):
         """
-        Loop through all of the states on the NPC and process the effects of each one
+        Loop through all the states on the NPC and process the effects of each one
         """
         for state in self.states:
             state.process(self)
@@ -267,8 +268,11 @@ class NPC:
 """ Merchants """
 
 class Merchant(NPC):
-    def __init__(self, name, description, damage, aggro, exp_award,
-                 inventory=None, maxhp=100, protection=0, speed=10, finesse=10,
+    def __init__(self, name: str, description: str, damage: int, aggro: bool, exp_award: int,
+                 stock_count: int, inventory:list[Item]=None,
+                 specialties: list[Item]=None, enchantment_rate: float=1.0,
+                 always_stock: list[Item]=None,
+                 maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
                  faith=10, hidden=False, hide_factor=0, combat_range=(0, 5),
                  idle_message=' is here.', alert_message='glares sharply at Jean!',
@@ -284,6 +288,13 @@ class Merchant(NPC):
                          target=target)
         self.shop = None
         self.keywords = ["buy", "sell", "trade", "talk"]
+        self.specialties = specialties  # List of item classes the merchant specializes in
+        if self.specialties is None:
+            self.specialties = []
+        self.enchantment_rate = enchantment_rate  # 0 to 10.0 with 0 being none and 10 being 10x the normal rate
+        self.stock_count = stock_count  # Number of items to keep in stock after each refresh
+        self.always_stock = always_stock  # List of item classes the merchant always keeps in stock
+
 
     def _collect_player_merchandise(self, player):
         """Pull any merchandise items the player is carrying into the merchant's stock with flavor text.
@@ -358,6 +369,138 @@ class Merchant(NPC):
     def sell(self, player):
         self.trade(player)
 
+    def count_stock(self):
+        """
+        This method returns the number of items currently in stock. This includes items in the merchant's
+        inventory as well as items in any containers associated with the merchant.
+        :return int: The total number of items in stock.
+        """
+        total = len(self.inventory)
+        for room in self.current_room.universe.map:
+            for obj in getattr(room, "objects", []):
+                if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                    total += len(obj.inventory)
+        return total
+
+    def update_goods(self):
+        """Refresh or update the merchant's inventory.
+        High-level orchestration that (1) resets current stock, (2) spawns always-stock items,
+        (3) applies enchantments when appropriate, (4) places items into eligible containers, and
+        (5) (future) fills remaining stock up to stock_count.
+        """
+        containers = self._reset_stock_state()
+        # Spawn & place always-stock items
+        if self.always_stock:
+            for item_spec in self.always_stock:
+                item = self._create_always_stock_item(item_spec)
+                if not item:
+                    continue
+                self._maybe_enchant(item)
+                placed = self._place_item(item, containers)
+                if not placed:
+                    self.inventory.append(item)
+        # Fill remainder (stub for future logic)
+        self._fill_remaining_stock(containers)
+
+    # ----------------- Helper Methods (Modularized) -----------------
+    def _reset_stock_state(self) -> list[Container]:
+        """Clear merchant inventory and any associated container inventories.
+        Returns list of containers tied to this merchant.
+        """
+        self.inventory = []
+        containers: list[Container] = []
+        if not self.current_room or not getattr(self.current_room, 'universe', None):
+            return containers
+        for room in self.current_room.universe.map:
+            for obj in getattr(room, "objects", []):
+                if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                    obj.inventory = []
+                    containers.append(obj)
+        return containers
+
+    def _create_always_stock_item(self, item_spec) -> Item | None:
+        """Instantiate an item from an always_stock entry.
+        Supports either an Item subclass or an Item instance (used as a template).
+        Preserves count when provided on a template instance.
+        """
+        # Determine desired count (if template instance supplies it and >1)
+        desired_count = 0
+        template_instance = None
+        if isinstance(item_spec, Item):
+            template_instance = item_spec
+            if hasattr(item_spec, 'count') and getattr(item_spec, 'count', 0) > 1:
+                desired_count = item_spec.count
+            item_class_name = item_spec.__class__.__name__
+        else:
+            # Assume it's a class / type; fall back gracefully
+            if hasattr(item_spec, '__name__'):
+                item_class_name = item_spec.__name__
+            else:
+                return None
+            if hasattr(item_spec, 'count') and getattr(item_spec, 'count', 0) > 1:
+                desired_count = item_spec.count
+        if not self.current_room:
+            return None
+        spawned = self.current_room.spawn_item(item_class_name, merchandise=True)
+        if spawned and desired_count > 0 and hasattr(spawned, 'count'):
+            spawned.count = desired_count
+        return spawned
+
+    def _maybe_enchant(self, item: Item):
+        """Apply random enchantments to equippable items based on enchantment_rate.
+        Mirrors original probability curve while isolating logic.
+        """
+        if not hasattr(item, 'isequipped') or self.enchantment_rate <= 0:
+            return
+        base_roll = random.random()
+        # Original scaling logic retained; safeguard division by zero already handled above.
+        no_enchant_threshold = 0.6 / self.enchantment_rate
+        enchantment_points = 0
+        if base_roll > no_enchant_threshold:
+            # Compute cumulative bands (scaled as previously) in ascending order.
+            band = base_roll - no_enchant_threshold
+            scale = 1 / self.enchantment_rate
+            if band <= 0.2 * scale:
+                enchantment_points = 1
+            elif band <= 0.3 * scale:
+                enchantment_points = 3
+            elif band <= 0.35 * scale:
+                enchantment_points = 5
+            elif band <= 0.38 * scale:
+                enchantment_points = 7
+            else:
+                enchantment_points = 10
+        enchantment_points = int(enchantment_points)
+        if enchantment_points > 0:
+            functions.add_random_enchantments(item, enchantment_points)
+
+    def _place_item(self, item: Item, containers: list[Container]) -> bool:
+        """Attempt to place an item into one of the merchant's containers.
+        Chooses randomly among containers whose allowed_item_types accept the item.
+        Returns True if placed into a container, else False.
+        """
+        acceptable = []
+        for container in containers:
+            allowed_types = getattr(container, 'allowed_item_types', None)
+            if not allowed_types:
+                continue
+            for allowed_type in allowed_types:
+                if isinstance(item, allowed_type):  # isinstance covers subclass relationship
+                    acceptable.append(container)
+                    break
+        if acceptable:
+            chosen = random.choice(acceptable)
+            chosen.inventory.append(item)
+            return True
+        return False
+
+    def _fill_remaining_stock(self, containers: list[Container]):
+        """Placeholder for logic to extend stock up to stock_count.
+        Currently preserves existing behavior (no additional items)."""
+        # Future: weight selection by specialties, rarity, etc.
+        while self.count_stock() < self.stock_count:
+            # Intentionally left as pass-equivalent to mirror original stub behavior
+            break
 
 class MiloCurioDealer(Merchant):
     def __init__(self):
@@ -366,7 +509,7 @@ class MiloCurioDealer(Merchant):
             description="A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. "
                         "Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
             damage=2,
-            aggro=0,
+            aggro=False,
             exp_award=0,
             inventory=[],
             maxhp=50,
@@ -374,17 +517,18 @@ class MiloCurioDealer(Merchant):
             speed=12,
             finesse=14,
             charisma=18,
-            intelligence=16
+            intelligence=16,
+            stock_count=50
         )
         # Enchanted Weapon
-        enchanted_sword = items.Shortsword(merchandise=True)
+        enchanted_sword = Shortsword(merchandise=True)
         functions.add_random_enchantments(enchanted_sword, 5)
         # Gold
-        gold_pouch = items.Gold(amt=100)
+        gold_pouch = Gold(amt=100)
         # Milo's inventory
-        self.inventory = [items.Restorative(count=100, merchandise=True),
-                          items.Rock(merchandise=True),
-                          items.Spear(merchandise=True),
+        self.inventory = [Restorative(count=100, merchandise=True),
+                          Rock(merchandise=True),
+                          Spear(merchandise=True),
                           enchanted_sword,
                           gold_pouch]
         self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
@@ -394,11 +538,6 @@ class MiloCurioDealer(Merchant):
         print("Milo grins: 'Looking for something rare, friend? I've got just the thing!'")
     def trade(self, player):
         print("Milo opens his patchwork coat, revealing a dazzling array of curiosities.")
-        # Ensure self.shop is a Shop instance, not a dict
-        if not isinstance(self.shop, Shop):
-            self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
-            self.shop.exit_message = ("Milo nods as you leave his shop, "
-                                      "already looking for new curiosities to add to his collection.")
         # Collect merchandise items first (in case Jean picked something up on Milo's floor)
         self._collect_player_merchandise(player)
         self.shop.set_player(player)
