@@ -1,3 +1,4 @@
+from __future__ import annotations
 import random
 import time
 import functions
@@ -7,7 +8,9 @@ from src.player import Player
 from src.tiles import MapTile
 from src.events import Event # noqa; This is used in type hints
 from src.items import Item # noqa; This is used in type hints
-from src.npc import Merchant
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:  # Avoid circular import at runtime
+    from src.npc import Merchant  # noqa; This is used in type hints
 
 
 #####
@@ -167,13 +170,14 @@ class Container(Object):
                  hidden: bool=False, hide_factor: int=0, idle_message: str="A container is sitting here.",
                  discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
                  nickname: str="container", locked: bool=False, items: list['Item']=None, events: list['Event']=None,
-                 merchant: Merchant|None=None):
+                 merchant: 'Merchant|None'=None, allowed_subtypes: tuple=(Item,)):
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
         self.state = self._POSSIBLE_STATES[0]  # start closed
         self.revealed = False
         self.locked = locked
         self._merchant = merchant  # Allows the container to be associated with a merchant for shop functionality
+        self.allowed_item_types = allowed_subtypes  # Tuple of allowed item types; can be extended in subclasses
 
         # Initialize inventory with items if provided, using list comprehension for efficiency
         self.inventory = list(items) if items else []
@@ -193,11 +197,11 @@ class Container(Object):
         self.stack_items()
 
     @property
-    def merchant(self) -> Merchant | None:
+    def merchant(self) -> 'Merchant | None':
         return self._merchant
 
     @merchant.setter
-    def merchant(self, value: Merchant | None):
+    def merchant(self, value: 'Merchant | None'):
         self._merchant = value
 
     def refresh_description(self):
@@ -312,7 +316,7 @@ class Container(Object):
 
 
 """
-World objects 
+World objects
 """
 
 class Shrine(Object):
@@ -422,7 +426,8 @@ class Passageway(Object):
     different map entirely.
     """
 
-    def __init__(self, player: Player, tile: MapTile, events_before: list['Event']=None, events_after: list['Event']=None,
+    def __init__(self, player: Player, tile: MapTile,
+                 events_before: list['Event']=None, events_after: list['Event']=None,
                  teleport_map: str=None, teleport_tile: tuple=None, persist: bool=True,
                  hidden: bool=False, hide_factor: int=0,
                  is_shop_exit: bool=False,
@@ -469,3 +474,4 @@ class Passageway(Object):
 
     def exit(self, player):
         self.enter(player)
+
