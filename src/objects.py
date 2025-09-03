@@ -5,8 +5,8 @@ import states
 from neotermcolor import colored, cprint
 from src.player import Player
 from src.tiles import MapTile
-from src.events import Event
-from src.items import Item
+from src.events import Event # noqa; This is used in type hints
+from src.items import Item # noqa; This is used in type hints
 from src.npc import Merchant
 
 
@@ -38,6 +38,8 @@ class Object:
         if event != "":
             self.events.append(event)
             return event
+        else:
+            return None
 
 
 class TileDescription(Object):
@@ -270,7 +272,7 @@ class Container(Object):
         self.events.clear()  # Clear the original list
 
         for event in events_to_process:
-            event.params.append(self)
+            #TODO: Test this and make sure events process properly
             self.tile.events_here.append(event)
 
         self.tile.evaluate_events()
@@ -293,9 +295,11 @@ class Container(Object):
             # Find all duplicates of this item type in one pass
             for j in range(i + 1, len(self.inventory)):
                 duplicate_item = self.inventory[j]
-                if (hasattr(duplicate_item, "count") and
-                    master_item.__class__ == duplicate_item.__class__):
-                    master_item.count += duplicate_item.count
+                if (
+                        hasattr(duplicate_item, "count") and
+                        master_item.__class__ == duplicate_item.__class__
+                ):
+                    master_item.count += duplicate_item.count # noqa; attribute guaranteed in conditional
                     items_to_remove.append(j)
 
             # Update grammar if needed
@@ -441,18 +445,6 @@ class Passageway(Object):
         # Drop any merchandise items immediately upon attempting to enter/teleport
         if hasattr(player, 'drop_merchandise_items'):
             player.drop_merchandise_items()
-        # If this is a shop exit, force player to drop all merchandise items before events (legacy logic)
-        if getattr(self, 'is_shop_exit', False):
-            dropped_items = []
-            # Copy inventory to avoid modifying while iterating
-            for item in player.inventory[:]:
-                if getattr(item, 'merchandise', False):
-                    player.inventory.remove(item)
-                    player.tile.items_here.append(item)
-                    dropped_items.append(item.name if hasattr(item, 'name') else str(item))
-            if dropped_items:
-                print(f"Jean placed the following merchandise neatly on the ground: {', '.join(dropped_items)}.")
-                time.sleep(1)
         if self.events_before:
             for event in self.events_before:
                 event.process()
