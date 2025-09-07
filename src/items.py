@@ -468,6 +468,9 @@ class Crystals(Special):
                          value=10, weight=0.1, maintype="Special", subtype="Commodity", merchandise=merchandise)
 
 
+# ---------------------------------------------------------------------------
+# Weapons
+# ---------------------------------------------------------------------------
 class Fists(Weapon):  # equipped automatically when Jean has no other weapon equipped
     def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="fists",
@@ -691,6 +694,9 @@ class Pole(Weapon):
                          subtype="Polearm", wpnrange=(2, 7), merchandise=merchandise)
 
 
+# ---------------------------------------------------------------------------
+# Armor
+# ---------------------------------------------------------------------------
 class TatteredCloth(Armor):
     level: int = 0
 
@@ -701,7 +707,9 @@ class TatteredCloth(Armor):
                          isequipped=False, value=0,
                          protection=1, str_req=1, str_mod=0.1, weight=0.5, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
 
-
+# ---------------------------------------------------------------------------
+# Helms
+# ---------------------------------------------------------------------------
 class ClothHood(Helm):
     level: int = 0
 
@@ -714,6 +722,9 @@ class ClothHood(Helm):
         self.add_fin: int = 1
 
 
+# ---------------------------------------------------------------------------
+# Accessories
+# ---------------------------------------------------------------------------
 class DullMedallion(Accessory):
     def __init__(self, merchandise: bool = False) -> None:
         super().__init__(name="Dull Medallion",
@@ -841,6 +852,9 @@ class SilverBracelet(Accessory):
                          protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet", merchandise=merchandise)
 
 
+# ---------------------------------------------------------------------------
+# Consumables
+# ---------------------------------------------------------------------------
 class Restorative(Consumable):
     power: int
 
@@ -1003,7 +1017,9 @@ class Antidote(Consumable):
         else:
             print("Jean is not beset by poison. He places the Antidote back into his bag.")
 
-
+# ---------------------------------------------------------------------------
+# Arrows
+# ---------------------------------------------------------------------------
 class Arrow(Consumable):  # master class for arrows.
     power: Union[int, float]
     range_base_modifier: Union[int, float]
@@ -1089,3 +1105,47 @@ class FlareArrow(Arrow):
                          helptext=colored("+range, +damage, -decay, ", "green") + colored("----sturdiness", "red"),
                          effects=None, count=count, merchandise=merchandise)
         # todo add fire effect on impact
+
+# ---------------------------------------------------------------------------
+# Unique items
+# ---------------------------------------------------------------------------
+class AncientRelic(Special):
+    """A rare relic. Serves as a very high value unique item.
+
+    Marked by appearing in the predefined unique item list. Additional flavor
+    attributes can be added later (e.g., lore hooks, quest flags).
+    """
+    def __init__(self, merchandise: bool = True) -> None:
+        super().__init__(name="Ancient Relic",
+                         description="A mysterious relic radiating latent, unknowable power. Its surface is etched "
+                                     "with patterns that seem to shift when unobserved.",
+                         value=10000, weight=1.0, maintype="Relic", subtype="Relic", merchandise=merchandise)
+        # Flag baseline uniqueness (the condition will still overwrite / reinforce)
+        setattr(self, 'unique', True)
+
+
+class DragonHeartGem(Special):
+    """Crystallized residue of a dragon's heart flame."""
+    def __init__(self, merchandise: bool = True) -> None:
+        super().__init__(name="Dragon Heart Gem",
+                         description="A pulsing crimson gem that's warm to the touch. It hums faintly with residual "
+                                     "draconic vitality.",
+                         value=15000, weight=0.3, maintype="Relic", subtype="Gem", merchandise=merchandise)
+        setattr(self, 'unique', True)
+        self.add_resistance = {'fire': 0.30}  # example bonus for future systems
+
+
+class CrystalTear(Special):
+    """Prismatic tear-like crystal said to form where realities brush together."""
+    def __init__(self, merchandise: bool = True) -> None:
+        super().__init__(name="Crystal Tear",
+                         description="A prismatic, tear-shaped crystal that refracts light into impossible spectrums."
+                                     " It evokes a sense of distant memories.",
+                         value=12000, weight=0.2, maintype="Relic", subtype="Crystal", merchandise=merchandise)
+        setattr(self, 'unique', True)
+        self.add_resistance = {'spiritual': 0.25}
+
+# List of factories (callables returning new instances) used by UniqueItemInjectionCondition
+unique_item_factories = [AncientRelic, DragonHeartGem, CrystalTear]
+# Registry to track which unique item classes have been spawned in the universe
+unique_items_spawned: set[str] = set()
