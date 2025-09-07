@@ -89,7 +89,8 @@ class MapTile:
             actions.Alter(),
             actions.Supersaiyan(),
             actions.TestEvent(),
-            actions.SpawnObj()
+            actions.SpawnObj(),
+            actions.RefreshMerchants()
         ]
 
         for move in default_moves:

@@ -10,6 +10,7 @@ import functions
 import moves
 import combat
 import skilltree
+from npc import Merchant  # added for refresh_merchants debug action
 
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
@@ -312,6 +313,52 @@ maintenant et à l'heure de notre mort. Amen.""",
             "An intense groaning makes its way through Jean's stomache.",
             "The smell of fresh, sweet lillies dances in Jean's memory. \nThey were Regina's favorite.",
         ]
+
+    def refresh_merchants(self, phrase: str = ''):
+        """Debug command: iterate all maps and force every Merchant to run update_goods().
+
+        Optional phrase filters merchants by case-insensitive substring in their name.
+        Provides a concise summary of successes and any failures.
+        """
+        if not self.universe or not hasattr(self.universe, 'maps'):
+            cprint("Universe not initialized; cannot refresh merchants.", 'red')
+            return
+        target_filter = phrase.lower().strip() if phrase else ''
+        merchants: list[Merchant] = []
+        for game_map in getattr(self.universe, 'maps', []):  # each map is a dict
+            if not isinstance(game_map, dict):
+                continue
+            for coord, tile in game_map.items():
+                if coord == 'name':
+                    continue
+                if not tile:
+                    continue
+                for npc in getattr(tile, 'npcs_here', []):
+                    if isinstance(npc, Merchant):
+                        if target_filter and target_filter not in npc.name.lower():
+                            continue
+                        merchants.append(npc)
+        if not merchants:
+            cprint("No merchants found to refresh." if not target_filter else
+                   f"No merchants matched filter '{target_filter}'.", 'yellow')
+            return
+        success = 0
+        failures: list[tuple[str, str]] = []
+        for m in merchants:
+            try:
+                # Ensure shop initialized if not already
+                if getattr(m, 'shop', None) is None and hasattr(m, 'initialize_shop'):
+                    m.initialize_shop()
+                m.update_goods()
+                success += 1
+            except Exception as e:  # pragma: no cover - defensive logging path
+                failures.append((m.name, str(e)))
+        cprint(f"Merchant refresh complete: {success} succeeded, {len(failures)} failed.", 'cyan')
+        if failures:
+            for name, err in failures[:5]:  # limit spam
+                cprint(f" - {name}: {err}", 'red')
+        # Small pause for readability in interactive sessions
+        time.sleep(0.1)
 
     def cycle_states(self):
         """
