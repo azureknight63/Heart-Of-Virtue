@@ -48,12 +48,10 @@ class ShopCondition:
     Attributes:
         name: Human-readable name of the condition.
         description: Short description for UI / logging.
-        active: Whether this condition should currently apply.
         metadata: Arbitrary data bag for subclass use.
     """
     name: str
     description: str
-    active: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ---- Price Hook -----------------------------------------------------
@@ -108,18 +106,37 @@ class ValueModifierCondition(ShopCondition):
     multiplier: float = 1.0
     target_class: Optional[Type[Item]] = None
 
-    def __post_init__(self) -> None:  # pick a target class if not provided
-        if self.target_class is None:
-            self.target_class = self.random_item_base_class()
-        if self.target_class:
-            if 'target_class_name' not in self.metadata:
-                self.metadata['target_class_name'] = self.target_class.__name__
-            if not self.name:
-                self.name = f"{self.target_class.__name__} Value Modifier"
-            if not self.description:
-                sign = '+' if self.multiplier >= 1 else '-'
-                pct = round(abs(self.multiplier - 1) * 100)
-                self.description = f"{self.target_class.__name__} items {sign}{pct}% value"
+    # Custom __init__ to set default name/description when omitted or blank
+    def __init__(
+        self,
+        multiplier: float = 1.0,
+        target_class: Optional[Type[Item]] = None,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if target_class is None:
+            target_class = self.random_item_base_class()
+        # Compute defaults
+        if target_class:
+            if not name:
+                name = f"{target_class.__name__} Value Modifier"
+            if not description:
+                sign = '+' if multiplier >= 1 else '-'
+                pct = round(abs(multiplier - 1) * 100)
+                description = f"{target_class.__name__} items {sign}{pct}% value"
+        else:
+            # Fallback generic names if no target class resolved
+            if not name:
+                name = "Value Modifier"
+            if not description:
+                description = f"Value modifier x{multiplier}"
+        super().__init__(name=name or "Value Modifier", description=description or "", metadata=metadata or {})
+        self.multiplier = multiplier
+        self.target_class = target_class
+        if self.target_class and 'target_class_name' not in self.metadata:
+            self.metadata['target_class_name'] = self.target_class.__name__
 
     def applies(self, item: Item) -> bool:
         return bool(self.target_class and isinstance(item, self.target_class))
@@ -143,20 +160,36 @@ class RestockWeightBoostCondition(ShopCondition):
     weight_multiplier: float = 2.0
     target_class: Optional[Type[Item]] = None
 
-    def __post_init__(self) -> None:
-        if self.target_class is None:
-            self.target_class = self.random_item_base_class()
-        if self.target_class:
-            if 'target_class_name' not in self.metadata:
-                self.metadata['target_class_name'] = self.target_class.__name__
-            if not self.name:
-                self.name = f"{self.target_class.__name__} Restock Boost"
-            if not self.description:
-                pct = round((self.weight_multiplier - 1) * 100)
-                self.description = f"Increased chance (+{pct}%) for {self.target_class.__name__} items"
+    def __init__(
+        self,
+        weight_multiplier: float = 2.0,
+        target_class: Optional[Type[Item]] = None,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if target_class is None:
+            target_class = self.random_item_base_class()
+        if target_class:
+            if not name:
+                name = f"{target_class.__name__} Restock Boost"
+            if not description:
+                pct = round((weight_multiplier - 1) * 100)
+                description = f"Increased chance (+{pct}%) for {target_class.__name__} items"
+        else:
+            if not name:
+                name = "Restock Boost"
+            if not description:
+                description = f"Restock weight x{weight_multiplier} for chosen class"
+        super().__init__(name=name or "Restock Boost", description=description or "", metadata=metadata or {})
+        self.weight_multiplier = weight_multiplier
+        self.target_class = target_class
+        if self.target_class and 'target_class_name' not in self.metadata:
+            self.metadata['target_class_name'] = self.target_class.__name__
 
     def adjust_restock_weights(self, weight_map: Dict[Type[Item], float]) -> None:  # type: ignore[override]
-        if not (self.active and self.target_class):
+        if not self.target_class:
             return
         for cls, weight in list(weight_map.items()):
             try:
@@ -179,13 +212,26 @@ class UniqueItemInjectionCondition(ShopCondition):
     (or lookup fails) the item is added directly to the merchant's inventory.
     Only one instance of a unique item may exist in the game world at a time.
     """
-    def inject_unique_item(self, merchant: Any) -> Item|None:  # type: ignore[override]
+    def __init__(
+        self,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not name:
+            name = "Unique Item Injection"
+        if not description:
+            description = "Injects a unique item into merchant inventory"
+        super().__init__(name=name, description=description, metadata=metadata or {})
+
+    def inject_unique_items(self, merchant: Any) -> list[Item]:  # type: ignore[override]
         try:
             from items import unique_item_factories, unique_items_spawned  # type: ignore
             # Build list of factories whose item class name has not yet spawned
             available_factories = [f for f in unique_item_factories if f.__name__ not in unique_items_spawned]
             if not available_factories:
-                return None  # nothing left to inject
+                return []  # nothing left to inject
             factory = random.choice(available_factories)
             item = factory()
             # Mark as spawned globally
@@ -208,22 +254,23 @@ class UniqueItemInjectionCondition(ShopCondition):
             except Exception:
                 container = None
 
-            if container is not None:
-                if not hasattr(container, 'inventory'):
-                    setattr(container, 'inventory', [])
+            if container is not None and hasattr(container, 'inventory'):
                 container.inventory.append(item)  # type: ignore[attr-defined]
             else:
                 if not hasattr(merchant, 'inventory'):
                     setattr(merchant, 'inventory', [])
                 merchant.inventory.append(item)  # type: ignore[attr-defined]
 
-            if not self.name:
-                self.name = 'Unique Item Injection'
             if not self.description:
                 self.description = f"Injected unique item: {item.name}"
-            return item
+            return [item]
         except Exception:
-            return None
+            return []
+
+    # Backwards-compatible singular variant used elsewhere in codebase
+    def inject_unique_item(self, merchant: Any):  # pragma: no cover - thin wrapper
+        items = self.inject_unique_items(merchant)
+        return items[0] if items else None
 
 
 __all__ = [
