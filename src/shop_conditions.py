@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import inspect
 import random
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type
+from typing import Any, Dict, List, Optional, Sequence, Type
 
 try:
     from items import Item  # type: ignore
@@ -125,11 +125,9 @@ class ValueModifierCondition(ShopCondition):
         return bool(self.target_class and isinstance(item, self.target_class))
 
     def apply_to_price(self, item: Item, base_price: float) -> float:  # type: ignore[override]
-        if not self.active:
-            return base_price
-        if self.applies(item):
+        if self.applies(item) and not hasattr(item, "unique"):  # do not modify unique items
             try:
-                return max(0, base_price * self.multiplier)
+                return max(0.0, base_price * self.multiplier)
             except Exception:
                 return base_price
         return base_price
@@ -174,74 +172,58 @@ class RestockWeightBoostCondition(ShopCondition):
 
 @dataclass
 class UniqueItemInjectionCondition(ShopCondition):
-    """Adds a unique high-value item to a merchant or one of its containers."""
-    item_factory: Optional[Callable[[], Item]] = None
-    inserted_items: List[Item] = field(default_factory=list)
-    value: int = 10_000
-    # If True, force place into a container instead of merchant inventory when available
-    prefer_container: bool = True
+    """Inject exactly one predefined unique item.
 
-    def _default_factory(self) -> Item:
-        # Late import to reduce circular risk
-        from items import Item  # type: ignore
-        return Item(
-            name="Ancient Relic",
-            description="A mysterious relic radiating latent power.",
-            value=self.value,
-            maintype="Relic",
-            subtype="Relic",
-            discovery_message="an ancient relic.",
-            merchandise=True,
-        )
-
-    def build_unique_item(self) -> Item:
-        factory = self.item_factory or self._default_factory
-        unique_item = factory()
-        # Flag for outside systems that this is special
-        setattr(unique_item, 'unique', True)
-        setattr(unique_item, 'unique_condition', self.name or 'Unique Item Injection')
-        return unique_item
-
-    def inject_unique_items(self, merchant: Any) -> List[Item]:  # type: ignore[override]
-        if not self.active:
-            return []
+    Chooses a random factory from items.unique_item_factories and attempts to
+    place the created item into a merchant-owned container; if none is found
+    (or lookup fails) the item is added directly to the merchant's inventory.
+    Only one instance of a unique item may exist in the game world at a time.
+    """
+    def inject_unique_item(self, merchant: Any) -> Item|None:  # type: ignore[override]
         try:
-            unique_item = self.build_unique_item()
-            target_container = None
-            containers: List[Any] = []
-            # Attempt to gather merchant containers (pattern from npc.py snippet)
+            from items import unique_item_factories, unique_items_spawned  # type: ignore
+            # Build list of factories whose item class name has not yet spawned
+            available_factories = [f for f in unique_item_factories if f.__name__ not in unique_items_spawned]
+            if not available_factories:
+                return None  # nothing left to inject
+            factory = random.choice(available_factories)
+            item = factory()
+            # Mark as spawned globally
+            unique_items_spawned.add(factory.__name__)
+            # Ensure uniqueness flags
+            setattr(item, 'unique', True)
+            setattr(item, 'unique_condition', self.name or 'Unique Item Injection')
+
+            # Attempt to locate a merchant container (first match)
+            container = None
             try:
                 if hasattr(merchant, 'current_room') and getattr(merchant.current_room, 'universe', None):
                     for room in merchant.current_room.universe.map:  # type: ignore[attr-defined]
                         for obj in getattr(room, 'objects', []):
                             if getattr(obj, 'merchant', None) is merchant:
-                                containers.append(obj)
+                                container = obj
+                                break
+                        if container:
+                            break
             except Exception:
-                pass
+                container = None
 
-            if self.prefer_container and containers:
-                target_container = random.choice(containers)
-            if target_container is not None:
-                inv = getattr(target_container, 'inventory', None)
-                if inv is None:
-                    setattr(target_container, 'inventory', [])
-                    inv = target_container.inventory  # type: ignore[attr-defined]
-                inv.append(unique_item)
+            if container is not None:
+                if not hasattr(container, 'inventory'):
+                    setattr(container, 'inventory', [])
+                container.inventory.append(item)  # type: ignore[attr-defined]
             else:
-                # Fallback to merchant inventory
-                inv = getattr(merchant, 'inventory', None)
-                if inv is None:
+                if not hasattr(merchant, 'inventory'):
                     setattr(merchant, 'inventory', [])
-                    inv = merchant.inventory  # type: ignore[attr-defined]
-                inv.append(unique_item)
-            self.inserted_items.append(unique_item)
+                merchant.inventory.append(item)  # type: ignore[attr-defined]
+
             if not self.name:
                 self.name = 'Unique Item Injection'
             if not self.description:
-                self.description = f"Inserted unique item: {unique_item.name}"
-            return [unique_item]
+                self.description = f"Injected unique item: {item.name}"
+            return item
         except Exception:
-            return []
+            return None
 
 
 __all__ = [
@@ -250,4 +232,3 @@ __all__ = [
     'RestockWeightBoostCondition',
     'UniqueItemInjectionCondition',
 ]
-
