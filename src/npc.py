@@ -415,7 +415,7 @@ class Merchant(NPC):
         # Add any unique items from unique item injection conditions, if applicable
         for condition in self.shop_conditions.get("unique", []):
             if isinstance(condition, UniqueItemInjectionCondition):
-                unique_item = condition.inject_unique_item(self.current_room)
+                unique_item = condition.inject_unique_item(self)  # pass merchant, not room
                 if unique_item:
                     placed = self._place_item(unique_item, containers)
                     if not placed:
@@ -539,12 +539,149 @@ class Merchant(NPC):
         return False
 
     def _fill_remaining_stock(self, containers: list[Container]):
-        """Create additional items to extend stock up to stock_count.
-        The weight of each item being selected is affected by the merchant's specialties and
-        any availability conditions in effect."""
-        # Future: weight selection by specialties, rarity, etc.
-        while self.count_stock() < self.stock_count:
+        """Populate merchant + associated containers up to their individual stock caps.
 
+        Rules:
+        - Merchant inventory target: self.stock_count
+        - Each container may define its own stock_count (ignored if missing / 0)
+        - Weighted random selection of Item subclasses (excluding unique factories)
+          * Base weight = 1
+          * If class is (subclass of) a specialty -> *3 weight
+          * Availability conditions (RestockWeightBoostCondition) further multiply weights
+        - Avoid spawning unique items (those provided via unique_item_factories)
+        - Apply enchantments via _maybe_enchant
+        - Stop when all capacities filled or no candidates remain / safety limit reached
+        """
+        if not self.current_room:
+            return
+
+        # Remaining slot helpers
+        def merchant_slots_remaining() -> int:
+            return max(0, self.stock_count - len(self.inventory))
+        def container_slots_remaining(ct: Container) -> int:
+            cap = getattr(ct, 'stock_count', 0)
+            if cap <= 0:
+                return 0
+            return max(0, cap - len(getattr(ct, 'inventory', [])))
+        def all_full() -> bool:
+            if merchant_slots_remaining() > 0:
+                return False
+            for ct in containers:
+                if container_slots_remaining(ct) > 0:
+                    return False
+            return True
+        if all_full():
+            return
+
+        import inspect
+        # Build candidate classes (exclude Item itself & unique factories)
+        try:
+            unique_factories = set(items_module.unique_item_factories)  # type: ignore[attr-defined]
+        except Exception:
+            unique_factories = set()
+        candidates: list[type[Item]] = []
+        for _nm, obj in inspect.getmembers(items_module, inspect.isclass):
+            try:
+                if obj is Item:
+                    continue
+                if not issubclass(obj, Item):
+                    continue
+                if obj in unique_factories:
+                    continue
+                candidates.append(obj)
+            except Exception:
+                continue
+        if not candidates:
+            return
+
+        # Specialties normalization
+        specialty_classes: list[type[Item]] = []
+        for spec in self.specialties or []:
+            try:
+                if isinstance(spec, Item):
+                    specialty_classes.append(spec.__class__)
+                elif isinstance(spec, type) and issubclass(spec, Item):
+                    specialty_classes.append(spec)
+            except Exception:
+                continue
+
+        # Weight map
+        weight_map: dict[type[Item], float] = {}
+        for cls in candidates:
+            w = 1.0
+            if any(issubclass(cls, s) for s in specialty_classes):
+                w *= 3.0
+            weight_map[cls] = w
+
+        # Availability conditions adjust weights
+        for cond in self.shop_conditions.get("availability", []):
+            try:
+                cond.adjust_restock_weights(weight_map)
+            except Exception:
+                continue
+        weight_map = {cls: w for cls, w in weight_map.items() if w > 0}
+        if not weight_map:
+            return
+
+        def weighted_choice() -> type[Item] | None:
+            total = sum(weight_map.values())
+            if total <= 0:
+                return None
+            r = random.uniform(0, total)
+            acc = 0.0
+            for cls, w in weight_map.items():
+                acc += w
+                if r <= acc:
+                    return cls
+            return None
+
+        def eligible_containers_for(item: Item) -> list[Container]:
+            elig: list[Container] = []
+            for ct in containers:
+                if container_slots_remaining(ct) <= 0:
+                    continue
+                allowed = getattr(ct, 'allowed_item_types', None)
+                if not allowed:
+                    continue
+                try:
+                    for t in allowed:
+                        if isinstance(item, t):
+                            elig.append(ct)
+                            break
+                except Exception:
+                    continue
+            return elig
+
+        safety = 0
+        max_iterations = 1000
+        while not all_full() and safety < max_iterations:
+            safety += 1
+            cls = weighted_choice()
+            if cls is None:
+                break
+            try:
+                spawned = self.current_room.spawn_item(cls.__name__, merchandise=True)
+            except Exception:
+                spawned = None
+            if not spawned:
+                continue
+            if not hasattr(spawned, 'base_value'):
+                try:
+                    setattr(spawned, 'base_value', spawned.value)
+                except Exception:
+                    pass
+            self._maybe_enchant(spawned)
+            placed = False
+            elig = eligible_containers_for(spawned)
+            if elig:
+                random.choice(elig).inventory.append(spawned)
+                placed = True
+            elif merchant_slots_remaining() > 0:
+                self.inventory.append(spawned)
+                placed = True
+            if not placed:
+                continue
+        return
 
     def _update_shop_conditions(self):
         """Updates the merchant's shop conditions. These modify prices and availability on goods."""
@@ -708,9 +845,6 @@ friendly enough to Jean.
 
         else:
             print(self.name + " has nothing to say.")
-
-
-""" Monsters """
 
 
 class Slime(NPC):  # target practice
