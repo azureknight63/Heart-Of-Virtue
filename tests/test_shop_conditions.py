@@ -53,14 +53,30 @@ def test_restock_weight_boost_condition():
 
 def test_unique_item_injection_condition():
     merchant = DummyMerchant()
-
-    def factory():
-        return DummyItem()
-
-    cond = UniqueItemInjectionCondition(name="", description="", item_factory=factory)
+    cond = UniqueItemInjectionCondition(name="", description="")
     injected = cond.inject_unique_items(merchant)
     assert len(injected) == 1
     assert injected[0] in merchant.inventory
     assert getattr(injected[0], 'unique', False) is True
     assert getattr(injected[0], 'unique_condition') == cond.name or 'Unique Item Injection'
+    assert injected[0].name in {"Ancient Relic", "Dragon Heart Gem", "Crystal Tear"}
 
+
+def test_unique_item_injection_no_duplicates():
+    from items import unique_items_spawned
+    unique_items_spawned.clear()
+    merchants = [DummyMerchant() for _ in range(4)]  # one more than number of unique items
+    conditions = [UniqueItemInjectionCondition(name="", description="") for _ in range(4)]
+    injected_all = []
+    for cond, merchant in zip(conditions, merchants):
+        injected = cond.inject_unique_items(merchant)
+        if injected:
+            injected_all.extend(injected)
+    # Expect exactly 3 (number of predefined unique items)
+    assert len(injected_all) == 3
+    # All class names should be distinct
+    assert len({item.__class__.__name__ for item in injected_all}) == 3
+    # Further attempt after exhaustion yields no injection
+    extra_cond = UniqueItemInjectionCondition(name="", description="")
+    extra_result = extra_cond.inject_unique_items(DummyMerchant())
+    assert extra_result == []
