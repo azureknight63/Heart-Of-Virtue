@@ -6,8 +6,10 @@ import functions
 from neotermcolor import colored, cprint
 import loot_tables
 from items import Item, Shortsword, Gold, Restorative, Rock, Spear
+import items as items_module  # added for unique item registry management
 from objects import Container
 from interface import ShopInterface as Shop
+from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -294,6 +296,11 @@ class Merchant(NPC):
         self.enchantment_rate = enchantment_rate  # 0 to 10.0 with 0 being none and 10 being 10x the normal rate
         self.stock_count = stock_count  # Number of items to keep in stock after each refresh
         self.always_stock = always_stock  # List of item classes the merchant always keeps in stock
+        self.shop_conditions = {
+            "value": [],
+            "availability": [],
+            "unique": []
+        }
 
 
     def _collect_player_merchandise(self, player):
@@ -399,23 +406,60 @@ class Merchant(NPC):
                 placed = self._place_item(item, containers)
                 if not placed:
                     self.inventory.append(item)
-        # Fill remainder (stub for future logic)
+        # Update shop conditions
+        self._update_shop_conditions()
+        # Fill remainder
         self._fill_remaining_stock(containers)
+        # Apply value conditions to all items in stock
+        self._apply_value_conditions()
+        # Add any unique items from unique item injection conditions, if applicable
+        for condition in self.shop_conditions.get("unique", []):
+            if isinstance(condition, UniqueItemInjectionCondition):
+                unique_item = condition.inject_unique_item(self.current_room)
+                if unique_item:
+                    placed = self._place_item(unique_item, containers)
+                    if not placed:
+                        self.inventory.append(unique_item)
+
 
     # ----------------- Helper Methods (Modularized) -----------------
     def _reset_stock_state(self) -> list[Container]:
         """Clear merchant inventory and any associated container inventories.
         Returns list of containers tied to this merchant.
+        Also releases any unique items about to be removed back into the global
+        unique item registry so they may respawn elsewhere in future restocks.
         """
-        self.inventory = []
+        # Collect unique item class names BEFORE clearing inventories
+        removed_unique: set[str] = set()
+        # Merchant's direct inventory
+        for it in getattr(self, 'inventory', []) or []:
+            if getattr(it, 'unique', False):  # unique flag placed on special one-off items
+                removed_unique.add(it.__class__.__name__)
         containers: list[Container] = []
+        if self.current_room and getattr(self.current_room, 'universe', None):
+            for room in self.current_room.universe.map:
+                for obj in getattr(room, "objects", []):
+                    if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                        # Scan container inventory for unique items prior to clearing
+                        for it in getattr(obj, 'inventory', []) or []:
+                            if getattr(it, 'unique', False):
+                                removed_unique.add(it.__class__.__name__)
+        # Now clear merchant inventory
+        self.inventory = []
+        # And clear container inventories while recording them
         if not self.current_room or not getattr(self.current_room, 'universe', None):
+            # Deregister unique items (safe even if set not present)
+            for cls_name in removed_unique:
+                items_module.unique_items_spawned.discard(cls_name)
             return containers
         for room in self.current_room.universe.map:
             for obj in getattr(room, "objects", []):
                 if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
                     obj.inventory = []
                     containers.append(obj)
+        # Finally, release unique item class names so they can be spawned again later
+        for cls_name in removed_unique:
+            items_module.unique_items_spawned.discard(cls_name)
         return containers
 
     def _create_always_stock_item(self, item_spec) -> Item | None:
@@ -495,12 +539,70 @@ class Merchant(NPC):
         return False
 
     def _fill_remaining_stock(self, containers: list[Container]):
-        """Placeholder for logic to extend stock up to stock_count.
-        Currently preserves existing behavior (no additional items)."""
+        """Create additional items to extend stock up to stock_count.
+        The weight of each item being selected is affected by the merchant's specialties and
+        any availability conditions in effect."""
         # Future: weight selection by specialties, rarity, etc.
         while self.count_stock() < self.stock_count:
-            # Intentionally left as pass-equivalent to mirror original stub behavior
-            break
+
+
+    def _update_shop_conditions(self):
+        """Updates the merchant's shop conditions. These modify prices and availability on goods."""
+        # First, clear any existing conditions by resetting the dict
+        self.shop_conditions = {
+            "value": [],
+            "availability": [],
+            "unique": []
+        }
+        # Value conditions
+        # Up to three random value conditions can be applied. Each one has a 25% chance of being applied.
+        for i in range(3):
+            if random.random() < 0.25:
+                # Set the amount to modify the value to a random value between 50% and 150%, with a 10% step.
+                amount = random.randrange(50, 151, 10) / 100
+                condition = ValueModifierCondition(amount)
+                self.shop_conditions["value"].append(condition)
+
+        # Availability conditions
+        # Up to two random availability conditions can be applied. Each one has a 40% chance of being applied.
+        for i in range(2):
+            if random.random() < 0.4:
+                # Set the weight boost to a random value between 0.25 and 3.0.
+                weight_boost = round(random.uniform(0.25, 3.0), 2)
+                condition = RestockWeightBoostCondition(weight_boost)
+                self.shop_conditions["availability"].append(condition)
+
+        # Unique item injection condition
+        if random.random() < 0.05:  # 5% chance of being applied
+            condition = UniqueItemInjectionCondition()
+            self.shop_conditions["unique"].append(condition)
+
+    def _apply_value_conditions(self):
+        """Applies all value modifier conditions to the merchant's inventory items."""
+        if not self.shop_conditions.get("value"):
+            return
+        for item in self.inventory:
+            base_value = getattr(item, 'base_value', None)
+            if base_value is None:
+                continue
+            modified_value = base_value
+            for condition in self.shop_conditions["value"]:
+                modified_value = condition.apply_to_price(modified_value)
+            # Ensure the final value is at least 1
+            item.value = max(1, int(modified_value))
+        # Also apply to items in containers
+        if self.current_room and getattr(self.current_room, 'universe', None):
+            for room in self.current_room.universe.map:
+                for obj in getattr(room, "objects", []):
+                    if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                        for item in obj.inventory:
+                            base_value = getattr(item, 'base_value', None)
+                            if base_value is None:
+                                continue
+                            modified_value = base_value
+                            for condition in self.shop_conditions["value"]:
+                                modified_value = condition.apply_to_price(modified_value)
+                            item.value = max(1, int(modified_value))
 
 class MiloCurioDealer(Merchant):
     def __init__(self):
