@@ -2,6 +2,7 @@ import random
 import time
 import math
 import traceback
+from typing import TYPE_CHECKING
 
 from switch import switch
 
@@ -10,7 +11,8 @@ import functions
 import moves
 import combat
 import skilltree
-from npc import Merchant  # added for refresh_merchants debug action
+if TYPE_CHECKING:
+    from npc import Merchant  # type: ignore  # for type hints only
 
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
