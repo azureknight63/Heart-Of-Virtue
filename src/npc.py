@@ -393,7 +393,7 @@ class Merchant(NPC):
         """Refresh or update the merchant's inventory.
         High-level orchestration that (1) resets current stock, (2) spawns always-stock items,
         (3) applies enchantments when appropriate, (4) places items into eligible containers, and
-        (5) (future) fills remaining stock up to stock_count.
+        (5) fills remaining stock for the merchant and associated containers up to stock_count.
         """
         containers = self._reset_stock_state()
         # Spawn & place always-stock items
@@ -415,11 +415,8 @@ class Merchant(NPC):
         # Add any unique items from unique item injection conditions, if applicable
         for condition in self.shop_conditions.get("unique", []):
             if isinstance(condition, UniqueItemInjectionCondition):
-                unique_item = condition.inject_unique_item(self)  # pass merchant, not room
-                if unique_item:
-                    placed = self._place_item(unique_item, containers)
-                    if not placed:
-                        self.inventory.append(unique_item)
+                # Rely on condition to inject & place items; avoid double placement of returned items
+                condition.inject_unique_items(self)
 
 
     # ----------------- Helper Methods (Modularized) -----------------
@@ -724,8 +721,12 @@ class Merchant(NPC):
                 continue
             modified_value = base_value
             for condition in self.shop_conditions["value"]:
-                modified_value = condition.apply_to_price(modified_value)
-            # Ensure the final value is at least 1
+                # Corrected: pass both item and current modified_value to condition
+                try:
+                    modified_value = condition.apply_to_price(item, modified_value)
+                except TypeError:
+                    # Fallback for legacy signature (condition.apply_to_price(base_price))
+                    modified_value = condition.apply_to_price(modified_value)  # type: ignore[arg-type]
             item.value = max(1, int(modified_value))
         # Also apply to items in containers
         if self.current_room and getattr(self.current_room, 'universe', None):
@@ -738,7 +739,10 @@ class Merchant(NPC):
                                 continue
                             modified_value = base_value
                             for condition in self.shop_conditions["value"]:
-                                modified_value = condition.apply_to_price(modified_value)
+                                try:
+                                    modified_value = condition.apply_to_price(item, modified_value)
+                                except TypeError:
+                                    modified_value = condition.apply_to_price(modified_value)  # type: ignore[arg-type]
                             item.value = max(1, int(modified_value))
 
 class MiloCurioDealer(Merchant):
