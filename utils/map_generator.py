@@ -33,6 +33,13 @@ def parse_type_hint(annotation):
 
     # Handle string annotations (forward references)
     if isinstance(annotation, str):
+        # Handle list[...] forward reference in string annotations
+        stripped = annotation.strip()
+        if (stripped.startswith('list[') or stripped.startswith('List[')) and stripped.endswith(']'):
+            # extract inner type
+            inner = stripped[stripped.index('[')+1:-1].strip("'\"")
+            base_cls, _, is_opt = parse_type_hint(inner)
+            return base_cls, True, is_opt
         try:
             # Try to resolve the string annotation
             # For forward references like 'Item', we need to look up in the appropriate module
@@ -1076,7 +1083,11 @@ class MapEditor:
                         return d
                 self.map_data = {}
                 for k, tile in data.items():
-                    pos = tuple(int(x) for x in k.strip('()').split(','))
+                    # Skip non-coordinate entries (e.g., 'meta') that cannot be parsed as tuple of ints
+                    try:
+                        pos = tuple(int(x) for x in k.strip('()').split(','))
+                    except ValueError:
+                        continue
                     tile_copy: Dict[str, Any] = dict(tile)
                     for key in ['events','items','npcs','objects']:
                         tile_copy[key] = [deserialize_instance(d) for d in tile_copy.get(key, [])]  # type: ignore[assignment]
