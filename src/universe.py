@@ -194,6 +194,16 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if inst:
                     if hasattr(inst, 'player'):
                         inst.player = player
+                    # Ensure NPCs know which room they occupy. Some NPC classes expect 'current_room',
+                    # others may use 'tile'. Set whichever attribute exists so deserialized merchants
+                    # (e.g. MiloCurioDealer) have their current_room populated.
+                    try:
+                        if hasattr(inst, 'current_room'):
+                            inst.current_room = tile_instance
+                        if hasattr(inst, 'tile'):
+                            inst.tile = tile_instance
+                    except Exception:
+                        pass
                     tile_instance.npcs_here.append(inst)
             # objects
             for obj_payload in tile_data.get('objects', []):
@@ -201,6 +211,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if inst:
                     if hasattr(inst, 'player'):
                         inst.player = player
+                    # Ensure objects receive a reference to their tile if they expect it
+                    try:
+                        if hasattr(inst, 'tile'):
+                            inst.tile = tile_instance
+                    except Exception:
+                        pass
                     tile_instance.objects_here.append(inst)
             this_map[(x, y)] = tile_instance
             if title == 'StartingRoom':
