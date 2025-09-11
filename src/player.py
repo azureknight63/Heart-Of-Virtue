@@ -1565,6 +1565,7 @@ he lets out a barely audible whisper:""", "red")
         """Helper method to take all items that don't exceed weight capacity."""
         items_to_take = []
         total_weight = 0
+        self.refresh_weight()
 
         # First determine which items can be taken
         for item in self.current_room.items_here:
