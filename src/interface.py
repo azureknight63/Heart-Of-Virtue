@@ -64,10 +64,12 @@ class ShopBuyMenu(BaseInterface):
         # Rebuild choices each time menu is displayed
         self.choices = []
         # Show player's weight status
-        #TODO: Fix issue with merchant being None / no items to buy
         if self.shop.player:
             self.shop.player.refresh_weight()
             print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
+            # Show merchant and player gold when entering buy menu
+            if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
+                print(f"{MAGENTA}Merchant Gold: {get_gold(self.shop.merchant.inventory)} | Your Gold: {get_gold(self.shop.player.inventory)}{RESET}")
         if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
             for item in self.shop.merchant.inventory:
                 if getattr(item, 'name', None) != 'Gold':
@@ -80,6 +82,16 @@ class ShopBuyMenu(BaseInterface):
     def handle_choice(self, idx: int):
         item = self.choices[idx]['item']
         price = int(getattr(item, 'value', 1) * self.shop.buy_modifier)
+        # Show detailed item info and current price, ask for confirmation
+        try:
+            print(item)
+        except Exception:
+            print(f"{item.name if hasattr(item, 'name') else str(item)}")
+        print(f"{MAGENTA}Merchant price: {price} gold{RESET}")
+        confirm = input(f"{BOLD}Proceed to buy this item? (y/n): {RESET}")
+        if confirm.lower() != 'y':
+            print(f"{YELLOW}Purchase cancelled.{RESET}")
+            return
         if hasattr(item, 'count'):
             max_qty = min(item.count, get_gold(self.shop.player.inventory) // price)
             self.shop._handle_count_item_transaction(
@@ -130,6 +142,9 @@ class ShopSellMenu(BaseInterface):
         if self.shop.player:
             self.shop.player.refresh_weight()
             print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
+            # Show merchant and player gold when entering sell menu
+            if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
+                print(f"{MAGENTA}Merchant Gold: {get_gold(self.shop.merchant.inventory)} | Your Gold: {get_gold(self.shop.player.inventory)}{RESET}")
         if self.shop.player and hasattr(self.shop.player, 'inventory'):
             for item in self.shop.player.inventory:
                 if getattr(item, 'name', None) != 'Gold':
@@ -142,6 +157,16 @@ class ShopSellMenu(BaseInterface):
     def handle_choice(self, idx: int):
         item = self.choices[idx]['item']
         price = int(getattr(item, 'value', 1) * self.shop.sell_modifier)
+        # Show detailed item info and current sell price, then confirm
+        try:
+            print(item)
+        except Exception:
+            print(f"{item.name if hasattr(item, 'name') else str(item)}")
+        print(f"{MAGENTA}Merchant will pay: {price} gold{RESET}")
+        confirm = input(f"{BOLD}Proceed to sell this item? (y/n): {RESET}")
+        if confirm.lower() != 'y':
+            print(f"{YELLOW}Sale cancelled.{RESET}")
+            return
         if hasattr(item, 'count'):
             max_qty = min(item.count, get_gold(self.shop.merchant.inventory) // price)
             self.shop._handle_count_item_transaction(
@@ -232,6 +257,17 @@ class ShopInterface(BaseInterface):
             return False
 
         total_price = price * qty
+
+        # Show item details and total, ask for final confirmation
+        try:
+            print(item)
+        except Exception:
+            print(f"{item.name if hasattr(item, 'name') else str(item)}")
+        print(f"{MAGENTA}Total {('cost' if transaction_type=='buy' else 'proceeds')}: {total_price} gold{RESET}")
+        final_confirm = input(f"{BOLD}Confirm {transaction_type} of {qty}x {getattr(item,'name',str(item))} for {total_price} gold? (y/n): {RESET}")
+        if final_confirm.lower() != 'y':
+            print(f"{YELLOW}{transaction_type.title()} cancelled.{RESET}")
+            return False
 
         if transaction_type == "buy":
             # Calculate total weight for qty
@@ -552,3 +588,4 @@ class ContainerLootInterface(BaseInterface):
 
         if not self.choices:
             print(f"{YELLOW}The {self.container.nickname} is now empty.{RESET}")
+
