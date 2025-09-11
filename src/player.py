@@ -11,6 +11,7 @@ import functions
 import moves
 import combat
 import skilltree
+# from npc import Merchant
 if TYPE_CHECKING:
     from npc import Merchant  # type: ignore  # for type hints only
 
@@ -322,11 +323,29 @@ maintenant et à l'heure de notre mort. Amen.""",
         Optional phrase filters merchants by case-insensitive substring in their name.
         Provides a concise summary of successes and any failures.
         """
+        # Defensive: guard if universe/maps not present
         if not self.universe or not hasattr(self.universe, 'maps'):
             cprint("Universe not initialized; cannot refresh merchants.", 'red')
             return
+
         target_filter = phrase.lower().strip() if phrase else ''
-        merchants: list[Merchant] = []
+
+        # Helper: returns True for objects whose class MRO contains a class named 'Merchant'.
+        def _is_merchant_instance(obj):
+            if obj is None:
+                return False
+            cls = getattr(obj, '__class__', None)
+            if cls is None:
+                return False
+            try:
+                mro = getattr(cls, 'mro', None)
+                if not callable(mro):
+                    return False
+                return any(getattr(c, '__name__', '') == 'Merchant' for c in cls.mro())
+            except Exception:
+                return False
+
+        merchants = []
         for game_map in getattr(self.universe, 'maps', []):  # each map is a dict
             if not isinstance(game_map, dict):
                 continue
@@ -336,28 +355,47 @@ maintenant et à l'heure de notre mort. Amen.""",
                 if not tile:
                     continue
                 for npc in getattr(tile, 'npcs_here', []):
-                    if isinstance(npc, Merchant):
-                        if target_filter and target_filter not in npc.name.lower():
-                            continue
-                        merchants.append(npc)
+                    try:
+                        if _is_merchant_instance(npc):
+                            npc_name = (getattr(npc, 'name', '') or '').lower()
+                            if target_filter and target_filter not in npc_name:
+                                continue
+                            merchants.append(npc)
+                    except Exception:
+                        # Skip any problematic object
+                        continue
+
         if not merchants:
             cprint("No merchants found to refresh." if not target_filter else
                    f"No merchants matched filter '{target_filter}'.", 'yellow')
             return
+
         success = 0
-        failures: list[tuple[str, str]] = []
+        failures = []  # list[tuple[str, str]]
         for m in merchants:
             try:
-                # Ensure shop initialized if not already
+                # If vendor needs shop initialization
                 if getattr(m, 'shop', None) is None and hasattr(m, 'initialize_shop'):
-                    m.initialize_shop()
-                m.update_goods()
-                success += 1
-            except Exception as e:  # pragma: no cover - defensive logging path
-                failures.append((m.name, str(e)))
+                    try:
+                        m.initialize_shop()
+                    except Exception:
+                        # non-fatal; continue to try update_goods
+                        pass
+                update_fn = getattr(m, 'update_goods', None)
+                if callable(update_fn):
+                    try:
+                        update_fn()
+                        success += 1
+                    except Exception as e:
+                        failures.append((getattr(m, 'name', '<unknown>'), str(e)))
+                else:
+                    failures.append((getattr(m, 'name', '<unknown>'), 'missing update_goods'))
+            except Exception as e:
+                failures.append((getattr(m, 'name', '<unknown>'), str(e)))
+
         cprint(f"Merchant refresh complete: {success} succeeded, {len(failures)} failed.", 'cyan')
         if failures:
-            for name, err in failures[:5]:  # limit spam
+            for name, err in failures[:10]:
                 cprint(f" - {name}: {err}", 'red')
         # Small pause for readability in interactive sessions
         time.sleep(0.1)
