@@ -384,10 +384,11 @@ class Merchant(NPC):
         :return int: The total number of items in stock.
         """
         total = len(self.inventory)
-        for room in self.current_room.universe.map:
-            for obj in getattr(room, "objects", []):
-                if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
-                    total += len(obj.inventory)
+        if self.current_room and hasattr(self.current_room, 'map'):
+            for room in self.current_room.map:
+                for obj in getattr(room, "objects", []):
+                    if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                        total += len(obj.inventory)
         return total
 
     def update_goods(self):
@@ -434,8 +435,8 @@ class Merchant(NPC):
             if getattr(it, 'unique', False):  # unique flag placed on special one-off items
                 removed_unique.add(it.__class__.__name__)
         containers: list[Container] = []
-        if self.current_room and getattr(self.current_room, 'universe', None):
-            for room in self.current_room.universe.map:
+        if self.current_room and getattr(self.current_room, 'map', None):
+            for room in self.current_room.map:
                 for obj in getattr(room, "objects", []):
                     if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
                         # Scan container inventory for unique items prior to clearing
@@ -445,13 +446,13 @@ class Merchant(NPC):
         # Now clear merchant inventory
         self.inventory = []
         # And clear container inventories while recording them
-        if not self.current_room or not getattr(self.current_room, 'universe', None):
+        if not self.current_room or not getattr(self.current_room, 'map', None):
             # Deregister unique items (safe even if set not present)
             for cls_name in removed_unique:
                 items_module.unique_items_spawned.discard(cls_name)
             return containers
-        for room in self.current_room.universe.map:
-            for obj in getattr(room, "objects", []):
+        for room in self.current_room.map:
+            for obj in getattr(room, "objects_here", []):
                 if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
                     obj.inventory = []
                     containers.append(obj)
@@ -673,6 +674,8 @@ class Merchant(NPC):
                     pass
             self._maybe_enchant(spawned)
             placed = False
+            #todo seems to be failing to place anything here
+
             elig = eligible_containers_for(spawned)
             if elig:
                 random.choice(elig).inventory.append(spawned)
@@ -682,6 +685,9 @@ class Merchant(NPC):
                 placed = True
             if not placed:
                 continue
+            if placed:
+                # Successfully placed, so we don't need it to appear in the room
+                self.current_room.items_here.remove(spawned)
         return
 
     def _update_shop_conditions(self):
@@ -733,8 +739,8 @@ class Merchant(NPC):
                     modified_value = condition.apply_to_price(modified_value)  # type: ignore[arg-type]
             item.value = max(1, int(modified_value))
         # Also apply to items in containers
-        if self.current_room and getattr(self.current_room, 'universe', None):
-            for room in self.current_room.universe.map:
+        if self.current_room and getattr(self.current_room, 'map', None):
+            for room in self.current_room.map:
                 for obj in getattr(room, "objects", []):
                     if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
                         for item in obj.inventory:
