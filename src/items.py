@@ -75,7 +75,7 @@ class Item:
     subtype: str
     hidden: bool
     hide_factor: Union[int, float]
-    _merchandise: bool
+    merchandise: bool
     discovery_message: str
     announce: str
     interactions: List[str]
