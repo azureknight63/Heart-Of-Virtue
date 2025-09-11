@@ -9,7 +9,7 @@ import sys
 import copy
 import re
 import importlib
-from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union  # type hinting (removed unused Iterable)
+from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union, Type  # type hinting (removed unused Iterable)
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -987,12 +987,15 @@ class MapEditor:
                     return f"<circular_ref:{type(inst).__name__}>"
                 seen.add(obj_id)
                 def recursive_serialize(val):
+                    # NEW: explicit class (type object) handling so we can restore later
+                    if inspect.isclass(val):
+                        return {"__class_type__": f"{val.__module__}:{val.__name__}"}
                     if isinstance(val, (int, float, str, bool)) or val is None:
                         return val
                     elif isinstance(val, list):
                         return [recursive_serialize(v) for v in val]
                     elif isinstance(val, tuple):
-                        return tuple(recursive_serialize(v) for v in val)
+                        return [recursive_serialize(v) for v in val]  # store tuples as lists
                     elif isinstance(val, dict):
                         return {k: recursive_serialize(v) for k, v in val.items()}
                     elif hasattr(val, '__dict__'):
@@ -1044,6 +1047,18 @@ class MapEditor:
                 with open(filepath, "r") as f:
                     data = json.load(f)
                 def deserialize_instance(d):
+                    # NEW: restore class objects
+                    if isinstance(d, dict) and '__class_type__' in d:
+                        spec = d['__class_type__']
+                        try:
+                            mod_name, cls_name = spec.rsplit(':', 1)
+                            if mod_name and cls_name:
+                                if not mod_name.startswith('src.') and mod_name != 'builtins':
+                                    mod_name = f'src.{mod_name}'
+                                module = importlib.import_module(mod_name)
+                                return getattr(module, cls_name)
+                        except Exception:
+                            return spec  # fallback to string spec
                     # Recursively reconstruct any dict with __class__' and '__module__' as an object
                     if isinstance(d, dict):
                         if '__class__' in d and '__module__' in d:
@@ -1563,18 +1578,43 @@ class TagListFrame(tk.Frame):
 
     def add_tag(self, identifier, lst: List, text: str):
         tag_frame = tk.Frame(self, bd=1, relief='solid', padx=4, pady=2)
+        is_class_object = isinstance(identifier, type)
+        # Set background color for class-type tags
+        if is_class_object:
+            tag_frame.config(bg='#3498db')  # blue background for class-type tags
         tag_label = tk.Label(tag_frame, text=text)
+        # Also set label background for class-type tags
+        if is_class_object:
+            tag_label.config(bg='#3498db', fg='white')
         tag_label.pack(side='left')
         del_btn = tk.Button(tag_frame, text='×', command=lambda: self.remove(identifier, lst), bd=0, padx=2, pady=0)
         del_btn.pack(side='right')
-        if self.on_duplicate:
+        is_class_object = isinstance(identifier, type)
+        if self.on_duplicate and not is_class_object:
             dup_btn = tk.Button(tag_frame, text='⧉', command=lambda: self.on_duplicate(identifier, lst, frame=self), bd=0, padx=2, pady=0)
             dup_btn.pack(side='right')
         tag_frame.pack(side='left', padx=2, pady=2)
-        tag_frame.bind('<Double-Button-1>', lambda e: self.on_edit(self.topLevelWidget, identifier, lst, self))
-        tag_label.bind('<Double-Button-1>', lambda e: self.on_edit(self.topLevelWidget, identifier, lst, self))
-        self._bind_tooltip(tag_frame, identifier)
-        self._bind_tooltip(tag_label, identifier)
+        if not is_class_object:
+            tag_frame.bind('<Double-Button-1>', lambda e: self.on_edit(self.topLevelWidget, identifier, lst, self))
+            tag_label.bind('<Double-Button-1>', lambda e: self.on_edit(self.topLevelWidget, identifier, lst, self))
+            self._bind_tooltip(tag_frame, identifier)
+            self._bind_tooltip(tag_label, identifier)
+        else:
+            # Tooltip for class objects
+            def _show_cls_tooltip(event, cls_obj=identifier):
+                self._hide_tooltip()
+                text = f"Class: {cls_obj.__name__}\nModule: {cls_obj.__module__}"
+                tw = tk.Toplevel(self.winfo_toplevel())
+                tw.wm_overrideredirect(True)
+                lbl = tk.Label(tw, text=text, justify='left', bg='#ffffe0', fg='black', bd=1, relief='solid', font=("Helvetica", 9))
+                lbl.pack(ipadx=4, ipady=2)
+                x = event.x_root + 20
+                y = event.y_root + 20
+                tw.wm_geometry(f"+{x}+{y}")
+                self._tooltip = tw
+            for w in (tag_frame, tag_label):
+                w.bind('<Enter>', _show_cls_tooltip)
+                w.bind('<Leave>', lambda e: self._hide_tooltip())
         self._tags.append((identifier, tag_frame))
 
     def remove(self, identifier, lst: List):
@@ -1981,16 +2021,14 @@ def remove_element(inst, lst: List, frame: TagListFrame):
 
 
 def refresh_tags(lst: List, frame: TagListFrame):
-    """
-    Clears the tag frame and repopulates it with tags for each instance in the list.
-    Each tag displays the class name of the instance.
-    Args:
-        lst: List of instances to display as tags.
-        frame: The TagListFrame to update.
-    """
+    """Populate TagListFrame with entries from lst.
+    Supports instances and class (type) objects. Class objects show their __name__."""
     frame.clear()
     for inst in lst:
-        name = inst.__class__.__name__ if hasattr(inst, '__class__') else str(inst)
+        if isinstance(inst, type):
+            name = inst.__name__
+        else:
+            name = inst.__class__.__name__ if hasattr(inst, '__class__') else str(inst)
         frame.add_tag(inst, lst, name)
 
 
@@ -2122,10 +2160,98 @@ def show_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, dialog_titl
     lb.bind('<Double-Button-1>', on_double)
 
 
+def open_class_type_chooser(dialog_object: tk.Toplevel, base_class_name: str, lst: List[type], tag_frame: TagListFrame):
+    if not base_class_name:
+        messagebox.showerror("Error", "Base class name not provided.")
+        return
+    try:
+        module_paths = _get_module_paths_for_class(base_class_name)
+    except Exception:
+        module_paths = []
+    if not module_paths:
+        messagebox.showerror("Error", f"Could not find base class {base_class_name} or its subclasses in src/.")
+        return
+    show_class_type_hierarchy_chooser(dialog_object, module_paths, f"Choose {base_class_name} Type", lst, tag_frame, base_class_name)
+
+def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, dialog_title, lst: List[type], tag_frame: TagListFrame, filter_by_class: str=None):
+    class_info = {}
+    for module_path in module_paths:
+        if not os.path.isfile(module_path):
+            continue
+        try:
+            ci = parse_module_classes(module_path, project_root)
+            if ci:
+                class_info.update(ci)
+        except Exception:
+            continue
+    class_info = build_class_hierarchy(class_info)
+    allowed = filter_classes(class_info, filter_by_class)
+    roots = sorted([n for n,i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
+    dlg = tk.Toplevel(dialog_object)
+    dlg.title(dialog_title)
+    dlg.geometry('300x430')
+    dlg.transient(dialog_object)
+    dlg.grab_set()
+    filter_frame = tk.Frame(dlg)
+    filter_frame.pack(fill='x', padx=5, pady=5)
+    tk.Label(filter_frame, text='Filter:', anchor='w').pack(side='left')
+    filter_var = tk.StringVar()
+    tk.Entry(filter_frame, textvariable=filter_var).pack(side='left', fill='x', expand=True)
+    frame_lb = tk.Frame(dlg)
+    frame_lb.pack(fill='both', expand=True)
+    lb = tk.Listbox(frame_lb)
+    sb = tk.Scrollbar(frame_lb, orient='vertical', command=lb.yview)
+    lb.configure(yscrollcommand=sb.set)
+    sb.pack(side='right', fill='y')
+    lb.pack(side='left', fill='both', expand=True)
+    metas: List[Dict[str,str]] = []
+    def update_list(*_):
+        search = filter_var.get().lower().strip()
+        lb.delete(0, tk.END)
+        metas.clear()
+        visited = set()
+        def subtree_matches(cname):
+            if cname not in allowed:
+                return False
+            if not search or search in cname.lower():
+                return True
+            return any(subtree_matches(ch) for ch in class_info[cname]['children'])
+        def recurse(names, indent=0):
+            for n in sorted(names):
+                if n in visited or n not in allowed:
+                    continue
+                visited.add(n)
+                if subtree_matches(n):
+                    lb.insert('end', '  '*indent + n)
+                    metas.append({'name': n, 'module': class_info[n]['module']})
+                    if class_info[n]['children']:
+                        recurse(class_info[n]['children'], indent+1)
+        recurse(roots)
+    filter_var.trace_add('write', update_list)
+    update_list()
+    def on_double(_):
+        if not lb.curselection():
+            return
+        idx = lb.curselection()[0]
+        meta = metas[idx]
+        cls_name = meta['name']
+        module_name = meta['module']
+        try:
+            mod = importlib.import_module(module_name)
+            cls_obj = getattr(mod, cls_name)
+            if cls_obj not in lst:
+                lst.append(cls_obj)
+                refresh_tags(lst, tag_frame)
+        except Exception as ex:
+            messagebox.showerror("Error", f"Could not load class: {ex}")
+        dlg.destroy()
+    lb.bind('<Double-Button-1>', on_double)
+
+
 def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, callback=None):
     dlg = tk.Toplevel(parent_dialog_object)
     dlg.title(f"Properties for {cls.__name__}")
-    dlg.geometry('900x550')  # triple width
+    dlg.geometry('900x550')
     dlg.transient(parent_dialog_object)
     dlg.grab_set()
 
@@ -2187,6 +2313,11 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     if meta.get('is_merchant'):
                         # The value is the merchant's name, map it back to the instance
                         kwargs[field_name] = all_merchants.get(raw)
+                        # For hierarchical fields, especially class type lists, ensure we update the object's attribute
+                        # If editing an existing object, assign the list directly to the attribute
+                        if existing is not None:
+                            setattr(existing, field_name, raw)
+                        kwargs[field_name] = raw
                     else:
                         kwargs[field_name] = _ast.literal_eval(raw)
                 except Exception:
@@ -2214,8 +2345,10 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
         # Track map name StringVars so coordinate fields can refresh when map changes
         map_name_vars: List[tk.StringVar] = []
         coord_refreshers: List[callable] = []
+
         def _add_map_var(var: tk.StringVar):
             map_name_vars.append(var)
+
         def _get_selected_map_name() -> Optional[str]:
             # priority order: teleport_map then target_map_name (first non-empty)
             # Iterate in defined param order for deterministic selection
@@ -2231,6 +2364,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                 if val:
                     return val
             return None
+
         def _attach_traces():
             for var in map_name_vars:
                 # ensure multiple traces not duplicated
@@ -2243,6 +2377,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                                 pass
                     return _cb
                 var.trace_add('write', _make_cb())
+
         for idx, p in enumerate(editable_params):
             row = idx if col_count == 1 else idx // col_count
             col = 0 if col_count == 1 else idx % col_count
@@ -2261,6 +2396,25 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     val = p.default
                 else:
                     val = getattr(cls, p.name, '')
+
+            # --- Class TYPE list detection: list[type[Base]] ---
+            try:
+                ann_origin = get_origin(p.annotation)
+                ann_args = get_args(p.annotation)
+                if ann_origin in (list, List) and ann_args:
+                    inner = ann_args[0]
+                    inner_origin = get_origin(inner)
+                    inner_args = get_args(inner)
+                    if inner_origin in (type, Type) and inner_args and inspect.isclass(inner_args[0]):
+                        base_cls = inner_args[0]
+                        type_list = list(getattr(existing, p.name, []) if existing is not None else [])
+                        tag_frame = create_element_frame(dlg, container, f"{p.name}_types_frame")
+                        refresh_tags(type_list, tag_frame)
+                        tk.Button(container, text="Choose Types", command=lambda b=base_cls.__name__, lst_ref=type_list, fr=tag_frame: open_class_type_chooser(dlg, b, lst_ref, fr)).pack(fill='x', padx=(5,0), pady=(2,2))
+                        entries[p.name] = {'type': 'hierarchical', 'get': lambda tl=type_list: tl}
+                        continue
+            except Exception:
+                pass
 
             # NEW: specialized combobox for map name selection
             if p.name in ('teleport_map', 'target_map_name'):
@@ -2333,7 +2487,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                         try:
                             from pathlib import Path
                             base_dir = Path(__file__).resolve().parent
-                            root_dir = base_dir.parent
+                            root_dir = base_dir.parent  # project root (utils' parent)
                             candidate_dirs = [
                                 root_dir / 'src' / 'resources' / 'maps',
                                 base_dir / 'src' / 'resources' / 'maps'
@@ -2505,6 +2659,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                         continue
                     try:
                         import ast as _ast
+                        # Special handling for merchant combobox
                         if meta.get('is_merchant'):
                             kwargs[name] = all_merchants.get(raw)
                         else:
