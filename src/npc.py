@@ -274,6 +274,7 @@ class Merchant(NPC):
                  stock_count: int, inventory:list[Item]=None,
                  specialties: list[Item]=None, enchantment_rate: float=1.0,
                  always_stock: list[Item]=None,
+                 shop: Shop=None,
                  maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
                  faith=10, hidden=False, hide_factor=0, combat_range=(0, 5),
@@ -288,7 +289,7 @@ class Merchant(NPC):
                          alert_message=alert_message,
                          discovery_message=discovery_message,
                          target=target)
-        self.shop = None
+        self.shop = shop
         self.keywords = ["buy", "sell", "trade", "talk"]
         self.specialties = specialties  # List of item classes the merchant specializes in
         if self.specialties is None:
@@ -454,6 +455,9 @@ class Merchant(NPC):
                 if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
                     obj.inventory = []
                     containers.append(obj)
+            for item in getattr(room, "items_here", []):
+                if getattr(item, 'merchandise', None) and item.merchandise:
+                    room.items_here.remove(item)
         # Finally, release unique item class names so they can be spawned again later
         for cls_name in removed_unique:
             items_module.unique_items_spawned.discard(cls_name)
@@ -747,22 +751,6 @@ class Merchant(NPC):
 
 class MiloCurioDealer(Merchant):
     def __init__(self):
-        super().__init__(
-            name="Milo the Traveling Curio Dealer",
-            description="A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. "
-                        "Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
-            damage=2,
-            aggro=False,
-            exp_award=0,
-            inventory=[],
-            maxhp=50,
-            protection=2,
-            speed=12,
-            finesse=14,
-            charisma=18,
-            intelligence=16,
-            stock_count=50
-        )
         # Enchanted Weapon
         enchanted_sword = Shortsword(merchandise=True)
         functions.add_random_enchantments(enchanted_sword, 5)
@@ -774,7 +762,23 @@ class MiloCurioDealer(Merchant):
                           Spear(merchandise=True),
                           enchanted_sword,
                           gold_pouch]
-        self.shop = Shop(merchant=self, player=None, shop_name="The Wandering Curiosities Shop")
+        super().__init__(
+            name="Milo the Traveling Curio Dealer",
+            description="A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. "
+                        "Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
+            damage=2,
+            aggro=False,
+            exp_award=0,
+            inventory=self.inventory,
+            shop=self.shop,
+            maxhp=50,
+            protection=2,
+            speed=12,
+            finesse=14,
+            charisma=18,
+            intelligence=16,
+            stock_count=50
+        )
         self.shop.exit_message = ("Milo nods as you leave his shop, "
                                   "already looking for new curiosities to add to his collection.")
     def talk(self, player):  # noqa
@@ -783,8 +787,8 @@ class MiloCurioDealer(Merchant):
         print("Milo opens his patchwork coat, revealing a dazzling array of curiosities.")
         # Collect merchandise items first (in case Jean picked something up on Milo's floor)
         self._collect_player_merchandise(player)
-        self.shop.set_player(player)
-        self.shop.run()
+        shop = Shop(merchant=self, player=player, shop_name="The Wandering Curiosities Shop")
+        shop.run()
 
 
 """ Friends """
