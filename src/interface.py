@@ -33,6 +33,9 @@ class BaseInterface:
     def run(self):
         self.display_title()
         while True:
+            if not callable(self.display_choices):
+                print(f"{RED}Error: display_choices is not callable! Value: {self.display_choices} (type: {type(self.display_choices)}){RESET}")
+                break
             self.display_choices()
             selection = input(f"{BOLD}Selection:{RESET} ")
             if selection == "x":
@@ -47,9 +50,132 @@ class BaseInterface:
         choice = self.choices[idx]
         print(f"{GREEN}You selected: {choice.get('label', str(choice))}{RESET}")
         submenu = choice.get('submenu')
+        debug_instance_check = isinstance(submenu, BaseInterface)
         if submenu and isinstance(submenu, BaseInterface):
             submenu.run()
         # Override in subclasses for specific behavior
+
+
+class ShopBuyMenu(BaseInterface):
+    def __init__(self, shop_interface):
+        self.shop = shop_interface
+        super().__init__(title="Buy Menu", choices=[], exit_label="Back", exit_message="Leaving Buy Menu!")
+
+    def display_choices(self):
+        # Rebuild choices each time menu is displayed
+        self.choices = []
+        # Show player's weight status
+        #TODO: Fix issue with merchant being None / no items to buy
+        if self.shop.player:
+            self.shop.player.refresh_weight()
+            print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
+        if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
+            print(f"DEBUG: Merchant inventory: {[getattr(item, 'name', None) for item in self.shop.merchant.inventory]}")
+            for item in self.shop.merchant.inventory:
+                if getattr(item, 'name', None) != 'Gold':
+                    price = int(getattr(item, 'value', 1) * self.shop.buy_modifier)
+                    weight = getattr(item, 'weight', 0)
+                    self.choices.append({'label': f"{item.name} (Price: {price}, Weight: {weight})", 'item': item})
+        print(f"DEBUG: BuyMenu choices: {[choice['label'] for choice in self.choices]}")
+        # Call parent method to display the choices
+        super().display_choices()
+
+    def handle_choice(self, idx: int):
+        item = self.choices[idx]['item']
+        price = int(getattr(item, 'value', 1) * self.shop.buy_modifier)
+        if hasattr(item, 'count'):
+            max_qty = min(item.count, get_gold(self.shop.player.inventory) // price)
+            self.shop._handle_count_item_transaction(
+                item=item,
+                price=price,
+                max_qty=max_qty,
+                transaction_type="buy"
+            )
+        else:
+            item_weight = getattr(item, 'weight', 0)
+            weightcap = self.shop.player.weight_tolerance - self.shop.player.weight_current
+            if item_weight > weightcap:
+                print(f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}")
+                return
+            if get_gold(self.shop.player.inventory) >= price:
+                self.shop._transfer_gold(self.shop.player.inventory, -price)
+                self.shop.player.inventory.append(item)
+                self.shop.merchant.inventory.remove(item)
+                item.merchandise = False
+                self.shop._transfer_gold(self.shop.merchant.inventory, price)
+                print(f"{GREEN}You bought {item.name} for {price} gold.{RESET}")
+            else:
+                print(f"{RED}Not enough gold.{RESET}")
+
+    def run(self):
+        self.display_title()
+        while True:
+            self.display_choices()
+            selection = input(f"{BOLD}Selection:{RESET} ")
+            if selection == "x":
+                self.handle_exit()
+                break
+            elif selection.isdigit() and int(selection) < len(self.choices):
+                self.handle_choice(int(selection))
+            else:
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
+
+
+class ShopSellMenu(BaseInterface):
+    def __init__(self, shop_interface):
+        self.shop = shop_interface
+        super().__init__(title="Sell Menu", choices=[], exit_label="Back", exit_message="Leaving Sell Menu!")
+
+    def display_choices(self):
+        # Rebuild choices each time menu is displayed
+        self.choices = []
+        # Show player's weight status
+        if self.shop.player:
+            self.shop.player.refresh_weight()
+            print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
+        if self.shop.player and hasattr(self.shop.player, 'inventory'):
+            for item in self.shop.player.inventory:
+                if getattr(item, 'name', None) != 'Gold':
+                    price = int(getattr(item, 'value', 1) * self.shop.sell_modifier)
+                    weight = getattr(item, 'weight', 0)
+                    self.choices.append({'label': f"{item.name} (Sell Price: {price}, Weight: {weight})", 'item': item})
+        # Call parent method to display the choices
+        super().display_choices()
+
+    def handle_choice(self, idx: int):
+        item = self.choices[idx]['item']
+        price = int(getattr(item, 'value', 1) * self.shop.sell_modifier)
+        if hasattr(item, 'count'):
+            max_qty = min(item.count, get_gold(self.shop.merchant.inventory) // price)
+            self.shop._handle_count_item_transaction(
+                item=item,
+                price=price,
+                max_qty=max_qty,
+                transaction_type="sell"
+            )
+        else:
+            if get_gold(self.shop.merchant.inventory) >= price:
+                self.shop._transfer_gold(self.shop.merchant.inventory, -price)
+                self.shop.merchant.inventory.append(item)
+                self.shop.player.inventory.remove(item)
+                item.merchandise = True
+                self.shop._transfer_gold(self.shop.player.inventory, price)
+                print(f"{GREEN}You sold {item.name} for {price} gold.{RESET}")
+            else:
+                print(f"{RED}Merchant does not have enough gold.{RESET}")
+
+    def run(self):
+        self.display_title()
+        while True:
+            self.display_choices()
+            selection = input(f"{BOLD}Selection:{RESET} ")
+            if selection == "x":
+                self.handle_exit()
+                break
+            elif selection.isdigit() and int(selection) < len(self.choices):
+                self.handle_choice(int(selection))
+            else:
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
 
 
 def get_gold(inventory):
@@ -71,114 +197,19 @@ class ShopInterface(BaseInterface):
         self.buy_modifier = base_buy_modifier  # affected by events, player skills, etc.
         self.sell_modifier = base_sell_modifier  # affected by events, player skills, etc.
 
-        # todo fix issue with inventory not showing if qty > 1
-
         # Buy submenu
-        self.buy_menu = BaseInterface(
-            title="Buy Menu",
-            choices=[],
-            exit_label="Back",
-            exit_message="Leaving Buy Menu!"
-        )
-        def buy_display_choices():
-            self.buy_menu.choices = []
-            # Show player's weight status
-            if self.player:
-                self.player.refresh_weight()
-                print(f"{MAGENTA}Your Weight: {self.player.weight_current}/{self.player.weight_tolerance}{RESET}")
-            if self.merchant and hasattr(self.merchant, 'inventory'):
-                for item in self.merchant.inventory:
-                    if getattr(item, 'name', None) != 'Gold':
-                        price = int(getattr(item, 'value', 1) * self.buy_modifier)
-                        weight = getattr(item, 'weight', 0)
-                        self.buy_menu.choices.append({'label': f"{item.name} (Price: {price}, Weight: {weight})", 'item': item})
-            BaseInterface.display_choices(self.buy_menu)
-        self.buy_menu.display_choices = buy_display_choices
-
-        def buy_handle_choice(idx):
-            idx = int(idx)
-            item = self.buy_menu.choices[idx]['item']
-            price = int(getattr(item, 'value', 1) * self.buy_modifier)
-            if hasattr(item, 'count'):
-                max_qty = min(item.count, get_gold(self.player.inventory) // price)
-                self._handle_count_item_transaction(
-                    item=item,
-                    price=price,
-                    max_qty=max_qty,
-                    transaction_type="buy"
-                )
-            else:
-                item_weight = getattr(item, 'weight', 0)
-                weightcap = self.player.weight_tolerance - self.player.weight_current
-                if item_weight > weightcap:
-                    print(f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}")
-                    return
-                if get_gold(self.player.inventory) >= price:
-                    self._transfer_gold(self.player.inventory, -price)
-                    self.player.inventory.append(item)
-                    self.merchant.inventory.remove(item)
-                    item.merchandise = False
-                    self._transfer_gold(self.merchant.inventory, price)
-                    print(f"{GREEN}You bought {item.name} for {price} gold.{RESET}")
-                else:
-                    print(f"{RED}Not enough gold.{RESET}")
-        self.buy_menu.handle_choice = buy_handle_choice
-
+        self.buy_menu = ShopBuyMenu(self)
+        assert isinstance(self.buy_menu, ShopBuyMenu), "buy_menu is not a ShopBuyMenu instance!"
         # Sell submenu
-        self.sell_menu = BaseInterface(
-            title="Sell Menu",
-            choices=[],
-            exit_label="Back",
-            exit_message="Leaving Sell Menu!"
-        )
-        def sell_display_choices():
-            self.sell_menu.choices = []
-            # Show player's weight status
-            if self.player:
-                self.player.refresh_weight()
-                print(f"{MAGENTA}Your Weight: {self.player.weight_current}/{self.player.weight_tolerance}{RESET}")
-            if self.player and hasattr(self.player, 'inventory'):
-                for item in self.player.inventory:
-                    if getattr(item, 'name', None) != 'Gold':
-                        price = int(getattr(item, 'value', 1) * self.sell_modifier)  # Assume sell price is half of buy price
-                        weight = getattr(item, 'weight', 0)
-                        self.sell_menu.choices.append({'label': f"{item.name} (Sell Price: {price}, Weight: {weight})", 'item': item})
-            BaseInterface.display_choices(self.sell_menu)
-        self.sell_menu.display_choices = sell_display_choices
-
-        def sell_handle_choice(idx):
-            idx = int(idx)
-            item = self.sell_menu.choices[idx]['item']
-            price = int(getattr(item, 'value', 1) * self.sell_modifier)
-            if hasattr(item, 'count'):
-                max_qty = min(item.count, get_gold(self.merchant.inventory) // price)
-                self._handle_count_item_transaction(
-                    item=item,
-                    price=price,
-                    max_qty=max_qty,
-                    transaction_type="sell"
-                )
-            else:
-                if get_gold(self.merchant.inventory) >= price:
-                    self._transfer_gold(self.merchant.inventory, -price)
-                    self.merchant.inventory.append(item)
-                    self.player.inventory.remove(item)
-                    item.merchandise = True
-                    self._transfer_gold(self.player.inventory, price)
-                    print(f"{GREEN}You sold {item.name} for {price} gold.{RESET}")
-                else:
-                    print(f"{RED}Merchant does not have enough gold.{RESET}")
-        self.sell_menu.handle_choice = sell_handle_choice
+        self.sell_menu = ShopSellMenu(self)
+        assert isinstance(self.sell_menu, ShopSellMenu), "sell_menu is not a ShopSellMenu instance!"
 
         # Main shop menu choices use submenus
-        choices = [
+        self.choices = [
             {'label': 'Buy', 'submenu': self.buy_menu},
             {'label': 'Sell', 'submenu': self.sell_menu}
         ]
-        super().__init__(title=shop_name, choices=choices, exit_label="Leave Shop")
-
-    def set_player(self, player):
-        self.player = player
+        super().__init__(title=shop_name, choices=self.choices, exit_label="Leave Shop")
 
     def set_buy_modifier(self, modifier):
         self.buy_modifier = modifier
@@ -250,12 +281,30 @@ class ShopInterface(BaseInterface):
             inventory.append(Gold(amt))
 
     def handle_choice(self, idx: int):
+        self.choices = [
+            {'label': 'Buy', 'submenu': self.buy_menu},
+            {'label': 'Sell', 'submenu': self.sell_menu}
+        ]
         choice = self.choices[idx]
         print(f"{GREEN}You selected: {choice.get('label', str(choice))}{RESET}")
         submenu = choice.get('submenu')
-        if submenu and isinstance(submenu, BaseInterface):
+        print(f"DEBUG: submenu type is {type(submenu)}, run method is {submenu.run}")
+        if submenu and hasattr(submenu, 'run') and callable(submenu.run):
             submenu.run()
         # Override in subclasses for specific behavior
+
+    def run(self):
+        self.display_title()
+        while True:
+            self.display_choices()
+            selection = input(f"{BOLD}Selection:{RESET} ")
+            if selection == "x":
+                self.handle_exit()
+                break
+            elif selection.isdigit() and int(selection) < len(self.choices):
+                self.handle_choice(int(selection))
+            else:
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
 
 
 class InventoryCategorySubmenu(BaseInterface):
