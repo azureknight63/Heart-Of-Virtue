@@ -50,7 +50,6 @@ class BaseInterface:
         choice = self.choices[idx]
         print(f"{GREEN}You selected: {choice.get('label', str(choice))}{RESET}")
         submenu = choice.get('submenu')
-        debug_instance_check = isinstance(submenu, BaseInterface)
         if submenu and isinstance(submenu, BaseInterface):
             submenu.run()
         # Override in subclasses for specific behavior
@@ -70,13 +69,11 @@ class ShopBuyMenu(BaseInterface):
             self.shop.player.refresh_weight()
             print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
         if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
-            print(f"DEBUG: Merchant inventory: {[getattr(item, 'name', None) for item in self.shop.merchant.inventory]}")
             for item in self.shop.merchant.inventory:
                 if getattr(item, 'name', None) != 'Gold':
                     price = int(getattr(item, 'value', 1) * self.shop.buy_modifier)
                     weight = getattr(item, 'weight', 0)
                     self.choices.append({'label': f"{item.name} (Price: {price}, Weight: {weight})", 'item': item})
-        print(f"DEBUG: BuyMenu choices: {[choice['label'] for choice in self.choices]}")
         # Call parent method to display the choices
         super().display_choices()
 
@@ -288,7 +285,6 @@ class ShopInterface(BaseInterface):
         choice = self.choices[idx]
         print(f"{GREEN}You selected: {choice.get('label', str(choice))}{RESET}")
         submenu = choice.get('submenu')
-        print(f"DEBUG: submenu type is {type(submenu)}, run method is {submenu.run}")
         if submenu and hasattr(submenu, 'run') and callable(submenu.run):
             submenu.run()
         # Override in subclasses for specific behavior
