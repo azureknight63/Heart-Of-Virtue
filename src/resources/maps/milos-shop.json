@@ -3,43 +3,16 @@
         "id": "tile_2_2",
         "title": "General Goods",
         "description": "This room contains a bunch of general stuff for sale.",
-        "exits": [],
+        "exits": [
+            "north",
+            "south",
+            "east",
+            "west"
+        ],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": [
-            {
-                "__class__": "Container",
-                "__module__": "src.objects",
-                "props": {
-                    "nickname": "bin",
-                    "possible_states": [
-                        "closed",
-                        "opened"
-                    ],
-                    "state": "closed",
-                    "revealed": false,
-                    "locked": false,
-                    "inventory": [],
-                    "name": "Bargain Bin",
-                    "description": "A bargain bin. There may be something inside.",
-                    "idle_message": "A bargain bin is sitting here.",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "discovery_message": "a bin",
-                    "announce": "A bargain bin is sitting here.",
-                    "keywords": [
-                        "open",
-                        "unlock",
-                        "loot"
-                    ],
-                    "events": [],
-                    "tile": null,
-                    "player": null,
-                    "items": null
-                }
-            }
-        ],
+        "objects": [],
         "block_exit": [],
         "symbol": ""
     },
@@ -59,9 +32,6 @@
                 "__class__": "MiloCurioDealer",
                 "__module__": "src.npc",
                 "props": {
-                    "name": "Milo the Traveling Curio Dealer",
-                    "description": "A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
-                    "current_room": null,
                     "inventory": [
                         {
                             "__class__": "Restorative",
@@ -82,6 +52,7 @@
                                 "type": "Consumable",
                                 "hidden": false,
                                 "hide_factor": 0,
+                                "merchandise": false,
                                 "discovery_message": "a useful item.",
                                 "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
                                 "skills": null,
@@ -116,6 +87,7 @@
                                 "type": "Weapon",
                                 "hidden": false,
                                 "hide_factor": 0,
+                                "merchandise": false,
                                 "discovery_message": "a kind of weapon.",
                                 "announce": "There's a Rock here.",
                                 "interactions": [
@@ -154,6 +126,7 @@
                                 "type": "Weapon",
                                 "hidden": false,
                                 "hide_factor": 0,
+                                "merchandise": false,
                                 "discovery_message": "a kind of weapon.",
                                 "announce": "There's a Spear here.",
                                 "interactions": [
@@ -192,6 +165,7 @@
                                 "type": "Weapon",
                                 "hidden": false,
                                 "hide_factor": 0,
+                                "merchandise": false,
                                 "discovery_message": "a kind of weapon.",
                                 "announce": "There's a Encrusted Encrusted Shortsword here.",
                                 "interactions": [
@@ -220,6 +194,7 @@
                                 "subtype": "Gold",
                                 "hidden": false,
                                 "hide_factor": 0,
+                                "merchandise": false,
                                 "discovery_message": "a small pouch of gold.",
                                 "announce": "There's a small pouch of gold on the ground.",
                                 "interactions": [],
@@ -232,6 +207,9 @@
                             }
                         }
                     ],
+                    "name": "Milo the Traveling Curio Dealer",
+                    "description": "A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
+                    "current_room": null,
                     "idle_message": " is here.",
                     "alert_message": "glares sharply at Jean!",
                     "maxhp": 50,
@@ -486,6 +464,15 @@
                             "exit_label": "Leave Shop",
                             "exit_message": "Milo nods as you leave his shop, already looking for new curiosities to add to his collection."
                         }
+                    },
+                    "specialties": [],
+                    "enchantment_rate": 1.0,
+                    "stock_count": 50,
+                    "always_stock": null,
+                    "shop_conditions": {
+                        "value": [],
+                        "availability": [],
+                        "unique": []
                     }
                 }
             }
@@ -505,9 +492,231 @@
             "northwest"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Spear",
+                "__module__": "src.items",
+                "props": {
+                    "damage": 25,
+                    "str_req": 10,
+                    "fin_req": 1,
+                    "str_mod": 2,
+                    "fin_mod": 0.5,
+                    "weight": 3,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Spear",
+                    "wpnrange": [
+                        3,
+                        8
+                    ],
+                    "name": "Spear",
+                    "description": "A weapon of simple design and great effectiveness. \nHas a longer reach than most melee weapons but is not great at close range.",
+                    "value": 100,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": true,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Spear here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": false
+                }
+            },
+            {
+                "__class__": "Scythe",
+                "__module__": "src.items",
+                "props": {
+                    "damage": 5,
+                    "str_req": 1,
+                    "fin_req": 1,
+                    "str_mod": 2,
+                    "fin_mod": 2,
+                    "weight": 7,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Scythe",
+                    "wpnrange": [
+                        1,
+                        5
+                    ],
+                    "name": "Scythe",
+                    "description": "An unusual weapon that, despite its intimidating appearance, is particularly difficult to wield. Requires two hands.",
+                    "value": 100,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": true,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Scythe here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": true
+                }
+            },
+            {
+                "__class__": "GoldRing",
+                "__module__": "src.items",
+                "props": {
+                    "protection": 0,
+                    "str_mod": 0,
+                    "fin_mod": 0,
+                    "weight": 0.1,
+                    "isequipped": false,
+                    "maintype": "Accessory",
+                    "subtype": "Ring",
+                    "name": "Gold Ring",
+                    "description": "A shiny gold ring. \nTypically a sign of marital vows, though it may also be worn to exhibit wealth.",
+                    "value": 200,
+                    "type": "Accessory",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": true,
+                    "discovery_message": "a small trinket.",
+                    "announce": "There's a Gold Ring here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false
+                }
+            }
+        ],
         "npcs": [],
-        "objects": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "src.objects",
+                "props": {
+                    "nickname": "weapon rack",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "state": "closed",
+                    "revealed": false,
+                    "locked": false,
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "src.items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Mace",
+                            "__module__": "src.items",
+                            "props": {
+                                "damage": 25,
+                                "str_req": 10,
+                                "fin_req": 5,
+                                "str_mod": 2,
+                                "fin_mod": 0.5,
+                                "weight": 5.0,
+                                "isequipped": false,
+                                "maintype": "Weapon",
+                                "subtype": "Bludgeon",
+                                "wpnrange": [
+                                    0,
+                                    5
+                                ],
+                                "name": "Mace",
+                                "description": "A small mace. Heavy and slow, but packs a decent punch.",
+                                "value": 100,
+                                "type": "Weapon",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a kind of weapon.",
+                                "announce": "There's a Mace here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": true,
+                                "twohand": false
+                            }
+                        },
+                        {
+                            "__class__": "SilverRing",
+                            "__module__": "src.items",
+                            "props": {
+                                "protection": 0,
+                                "str_mod": 0,
+                                "fin_mod": 0,
+                                "weight": 0.1,
+                                "isequipped": false,
+                                "maintype": "Accessory",
+                                "subtype": "Ring",
+                                "name": "Silver Ring",
+                                "description": "A shiny silver ring. \nA small bauble favored by people of typically lower class.",
+                                "value": 50,
+                                "type": "Accessory",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a small trinket.",
+                                "announce": "There's a Silver Ring here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        }
+                    ],
+                    "name": "Weapon Rack",
+                    "description": "A weapon rack. There are some rather sharp objects being displayed.",
+                    "idle_message": "A weapon rack hangs from the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a weapon rack!",
+                    "announce": "A container is sitting here.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "allowed_subtypes": [],
+                    "merchant": "Milo the Traveling Curio Dealer"
+                }
+            }
+        ],
         "block_exit": [],
         "symbol": ""
     },
@@ -523,7 +732,7 @@
         "events": [
             {
                 "__class__": "StMichael",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "Shrine of St Michael the Archangel",
                     "player": null,
@@ -595,7 +804,8 @@
                         3,
                         3
                     ],
-                    "persist": true
+                    "persist": true,
+                    "is_shop_exit": false
                 }
             }
         ],
