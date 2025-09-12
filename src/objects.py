@@ -177,7 +177,7 @@ class Container(Object):
     def __init__(self, name: str="Container", description: str="A container. There may be something inside.",
                  hidden: bool=False, hide_factor: int=0, idle_message: str="A container is sitting here.",
                  discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
-                 nickname: str="container", locked: bool=False, items: list['Item']=None, events: list['Event']=None,
+                 nickname: str="container", locked: bool=False, inventory: list['Item']=None, events: list['Event']=None,
                  merchant: 'Merchant|None'=None, allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
@@ -187,9 +187,7 @@ class Container(Object):
         self._merchant = merchant  # Allows the container to be associated with a merchant for shop functionality
         self.allowed_item_types = allowed_subtypes if allowed_subtypes else [Item]  # List of allowed item types
         self.stock_count = stock_count  # Maximum number of items the container should hold (for shop logic)
-
-        # Initialize inventory with items if provided, using list comprehension for efficiency
-        self.inventory = list(items) if items else []
+        self.inventory = inventory if inventory else []
 
         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
                          idle_message=idle_message,
