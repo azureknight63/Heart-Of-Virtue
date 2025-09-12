@@ -77,6 +77,19 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
     def _deserialize_saved_instance(self, payload):
         """Deserialize an instance saved by map_generator (class+module+props). Returns object or None."""
         # Recursively deserialize nested objects in props, events, etc.
+        # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'src.items:Item'})
+        if isinstance(payload, dict) and '__class_type__' in payload:
+            spec = payload.get('__class_type__')
+            try:
+                mod_name, cls_name = spec.rsplit(':', 1)
+                if mod_name and cls_name:
+                    if not mod_name.startswith('src.') and mod_name != 'builtins':
+                        mod_name = f'src.{mod_name}'
+                    module = __import__(mod_name, fromlist=[cls_name])
+                    return getattr(module, cls_name)
+            except Exception:
+                return None
+
         if not isinstance(payload, dict) or '__class__' not in payload:
             return None
         cls_name = payload.get('__class__')
@@ -90,6 +103,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         def recursive_deserialize(value):
             if isinstance(value, dict):
                 if '__class__' in value and '__module__' in value:
+                    return self._deserialize_saved_instance(value)
+                elif '__class_type__' in value:
                     return self._deserialize_saved_instance(value)
                 else:
                     # Recursively check all dict values

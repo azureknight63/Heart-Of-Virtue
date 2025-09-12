@@ -2284,12 +2284,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
         merchants = [npc for npc in all_npcs if isinstance(npc, Merchant)]
         merchant_map = {}
         for m in merchants:
-            base_name = getattr(m, 'name', str(m))
-            merchant_name = base_name
-            suffix = 2
-            while merchant_name in merchant_map and merchant_map[merchant_name] is not m:
-                merchant_name = f"{base_name} ({suffix})"
-                suffix += 1
+            merchant_name = getattr(m, 'name', str(m))
             merchant_map[merchant_name] = m
         return merchant_map
 
