@@ -451,12 +451,14 @@ class Merchant(NPC):
             for cls_name in removed_unique:
                 items_module.unique_items_spawned.discard(cls_name)
             return containers
-        for room in self.current_room.map:
-            for obj in getattr(room, "objects_here", []):
+        for room in self.current_room.map.values():
+            if isinstance(room, str):
+                continue
+            for obj in room.objects_here:
                 if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
                     obj.inventory = []
                     containers.append(obj)
-            for item in getattr(room, "items_here", []):
+            for item in room.items_here[:]:
                 if getattr(item, 'merchandise', None) and item.merchandise:
                     room.items_here.remove(item)
         # Finally, release unique item class names so they can be spawned again later
