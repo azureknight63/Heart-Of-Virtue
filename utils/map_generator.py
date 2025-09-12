@@ -1003,6 +1003,19 @@ class MapEditor:
                     else:
                         return str(val)
                 data = {kx: recursive_serialize(vx) for kx, vx in vars(inst).items() if not kx.startswith('_')}
+                # Ensure certain virtual/prop attributes (not stored in __dict__) are captured for important classes
+                # e.g., Container objects may expose a 'merchant' property via a descriptor rather than in __dict__
+                try:
+                    if 'merchant' not in data and hasattr(inst, 'merchant'):
+                        try:
+                            merchant_val = getattr(inst, 'merchant')
+                            # Only include if not a private-like attribute
+                            data['merchant'] = recursive_serialize(merchant_val)
+                        except Exception:
+                            # ignore if accessing the property raises
+                            pass
+                except Exception:
+                    pass
                 return {
                     '__class__': inst.__class__.__name__,
                     '__module__': inst.__class__.__module__,
