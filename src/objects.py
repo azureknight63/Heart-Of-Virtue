@@ -8,18 +8,6 @@ from src.player import Player
 from src.tiles import MapTile
 from src.events import Event # noqa; This is used in type hints
 from src.items import Item # noqa; This is used in type hints
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:  # Avoid circular import at runtime for type checkers
-    from src.npc import Merchant  # noqa; This is used in type hints
-else:
-    # Provide a runtime-safe symbol so forward references like 'Merchant | None' and get_type_hints() do not fail.
-    try:
-        from src.npc import Merchant  # type: ignore  # noqa
-    except Exception:  # pragma: no cover - defensive: circular import during initialization
-        class Merchant:  # type: ignore
-            """Runtime stub for Merchant to satisfy forward reference evaluation."""
-            pass
-
 
 #####
 # These are objects that exist on tiles as opposed to items carried by the player
@@ -178,13 +166,13 @@ class Container(Object):
                  hidden: bool=False, hide_factor: int=0, idle_message: str="A container is sitting here.",
                  discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
                  nickname: str="container", locked: bool=False, inventory: list['Item']=None, events: list['Event']=None,
-                 merchant: 'Merchant|None'=None, allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
+                 merchant: str="", allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
         self.state = self._POSSIBLE_STATES[0]  # start closed
         self.revealed = False
         self.locked = locked
-        self._merchant = merchant  # Allows the container to be associated with a merchant for shop functionality
+        self.merchant = merchant  # Allows the container to be associated with a merchant for shop functionality
         self.allowed_item_types = allowed_subtypes if allowed_subtypes else [Item]  # List of allowed item types
         self.stock_count = stock_count  # Maximum number of items the container should hold (for shop logic)
         self.inventory = inventory if inventory else []
@@ -202,14 +190,6 @@ class Container(Object):
 
         self.process_events()  # process initial events (triggers labeled "auto")
         self.stack_items()
-
-    @property
-    def merchant(self) -> 'Merchant | None':
-        return self._merchant
-
-    @merchant.setter
-    def merchant(self, value: 'Merchant | None'):
-        self._merchant = value
 
     def refresh_description(self):
         """Optimized description refresh using f-strings and join for better performance"""
