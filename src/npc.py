@@ -274,7 +274,6 @@ class Merchant(NPC):
                  stock_count: int, inventory:list[Item]=None,
                  specialties: list[Item]=None, enchantment_rate: float=1.0,
                  always_stock: list[Item]=None,
-                 shop: Shop=None,
                  maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
                  faith=10, hidden=False, hide_factor=0, combat_range=(0, 5),
@@ -289,7 +288,6 @@ class Merchant(NPC):
                          alert_message=alert_message,
                          discovery_message=discovery_message,
                          target=target)
-        self.shop = shop
         self.keywords = ["buy", "sell", "trade", "talk"]
         self.specialties = specialties  # List of item classes the merchant specializes in
         if self.specialties is None:
@@ -302,6 +300,9 @@ class Merchant(NPC):
             "availability": [],
             "unique": []
         }
+        self.shop = None
+        self.initialize_shop()
+
 
 
     def _collect_player_merchandise(self, player):
@@ -387,7 +388,8 @@ class Merchant(NPC):
         if self.current_room and hasattr(self.current_room, 'map'):
             for room in self.current_room.map:
                 for obj in getattr(room, "objects", []):
-                    if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                    if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
+                            getattr(obj, "merchant", None) == self.name):
                         total += len(obj.inventory)
         return total
 
@@ -436,9 +438,10 @@ class Merchant(NPC):
                 removed_unique.add(it.__class__.__name__)
         containers: list[Container] = []
         if self.current_room and getattr(self.current_room, 'map', None):
-            for room in self.current_room.map:
+            for room in self.current_room.map.values():
                 for obj in getattr(room, "objects", []):
-                    if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                    if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
+                            getattr(obj, "merchant", None) == self.name):
                         # Scan container inventory for unique items prior to clearing
                         for it in getattr(obj, 'inventory', []) or []:
                             if getattr(it, 'unique', False):
@@ -455,7 +458,8 @@ class Merchant(NPC):
             if isinstance(room, str):
                 continue
             for obj in room.objects_here:
-                if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
+                            getattr(obj, "merchant", None) == self.name):
                     obj.inventory = []
                     containers.append(obj)
             for item in room.items_here[:]:
@@ -649,6 +653,7 @@ class Merchant(NPC):
                     continue
                 try:
                     for t in allowed:
+                        debug_item_class = item.__class__
                         if isinstance(item, t):
                             elig.append(ct)
                             break
@@ -744,7 +749,8 @@ class Merchant(NPC):
         if self.current_room and getattr(self.current_room, 'map', None):
             for room in self.current_room.map:
                 for obj in getattr(room, "objects", []):
-                    if isinstance(obj, Container) and getattr(obj, "merchant", None) == self:
+                    if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
+                            getattr(obj, "merchant", None) == self.name):
                         for item in obj.inventory:
                             base_value = getattr(item, 'base_value', None)
                             if base_value is None:
@@ -778,7 +784,6 @@ class MiloCurioDealer(Merchant):
             aggro=False,
             exp_award=0,
             inventory=self.inventory,
-            shop=self.shop,
             maxhp=50,
             protection=2,
             speed=12,
