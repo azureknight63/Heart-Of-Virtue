@@ -400,6 +400,15 @@
                         "reflexive": "itself",
                         "intensive": "itself"
                     },
+                    "specialties": [],
+                    "enchantment_rate": 1.0,
+                    "stock_count": 50,
+                    "always_stock": null,
+                    "shop_conditions": {
+                        "value": [],
+                        "availability": [],
+                        "unique": []
+                    },
                     "shop": {
                         "__class__": "ShopInterface",
                         "__module__": "src.interface",
@@ -464,15 +473,6 @@
                             "exit_label": "Leave Shop",
                             "exit_message": "Milo nods as you leave his shop, already looking for new curiosities to add to his collection."
                         }
-                    },
-                    "specialties": [],
-                    "enchantment_rate": 1.0,
-                    "stock_count": 50,
-                    "always_stock": null,
-                    "shop_conditions": {
-                        "value": [],
-                        "availability": [],
-                        "unique": []
                     }
                 }
             }
@@ -618,6 +618,7 @@
                     "state": "closed",
                     "revealed": false,
                     "locked": false,
+                    "merchant": "Milo the Traveling Curio Dealer",
                     "allowed_item_types": [
                         {
                             "__class_type__": "src.items:Item"
@@ -712,8 +713,7 @@
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "allowed_subtypes": [],
-                    "merchant": "Milo the Traveling Curio Dealer"
+                    "allowed_subtypes": []
                 }
             }
         ],
