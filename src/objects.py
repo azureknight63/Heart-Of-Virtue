@@ -167,6 +167,30 @@ class Container(Object):
     _POSSIBLE_STATES = ("closed", "opened")
     _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot']
 
+    @property
+    def start_open(self) -> bool:
+        """Indicates whether the container should start opened.
+        Setting this property updates the container's public state and locked flag so
+        that when a Container instance is later created from serialized data (where
+        start_open may be written as an attribute after __init__), the container's
+        state correctly reflects that attribute.
+        """
+        return getattr(self, '_start_open', False)
+
+    @start_open.setter
+    def start_open(self, value: bool):
+        self._start_open = bool(value)
+        # Ensure state matches the boolean flag
+        self.state = self._POSSIBLE_STATES[1] if self._start_open else self._POSSIBLE_STATES[0]
+        # If a container starts open, it cannot be locked
+        if self._start_open:
+            try:
+                # Only override locked if attribute exists or when starting open
+                self.locked = False
+            except Exception:
+                # ignore attribute issues during early init
+                pass
+
     def __init__(self, name: str="Container", description: str="A container. There may be something inside.",
                  hidden: bool=False, hide_factor: int=0, start_open: bool=False,
                  idle_message: str="A container is sitting here.",
@@ -180,9 +204,13 @@ class Container(Object):
         inv = inventory if inventory is not None else (items if items is not None else [])
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
-        self.state = self._POSSIBLE_STATES[0] if not start_open else self._POSSIBLE_STATES[1]
+        # Set default revealed flag
         self.revealed = False
-        self.locked = locked if not start_open else False
+        # Assign initial locked state (may be overridden by start_open semantics)
+        self.locked = locked
+        # Set start_open via property so that later attribute assignment also keeps state consistent
+        self._start_open = False
+        self.start_open = start_open
         # Normalize merchant to name if an object is provided (avoid circular import of Merchant)
         try:
             self.merchant = merchant.name if hasattr(merchant, 'name') else merchant
