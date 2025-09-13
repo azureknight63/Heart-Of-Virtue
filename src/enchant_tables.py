@@ -16,6 +16,25 @@ class Enchantment:
         self.value = value  # multiplier against the item's base value; 1.5 = 50% increase in gold value
         self.equip_states = []  # enchantments can cause states to be applied to the player when the item is equipped
 
+    def _add_resistance(self, key, amount):
+        """
+        Safely add or increment a resistance on the item. Works whether add_resistance
+        is a dict (e.g. loaded from JSON) or an object with attributes.
+        """
+        ar = getattr(self.item, 'add_resistance', None)
+        if ar is None:
+            # create a dict by default
+            self.item.add_resistance = {key: amount}
+            return
+        if isinstance(ar, dict):
+            ar[key] = ar.get(key, 0) + amount
+        else:
+            # object-like: set or increment an attribute
+            if hasattr(ar, key):
+                setattr(ar, key, getattr(ar, key) + amount)
+            else:
+                setattr(ar, key, amount)
+
     def modify(self):
         """
         The modifications that take place against the item. Varies per enchantment
@@ -260,11 +279,8 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
         self.equip_states = [Poisoned(None)]
 
     def modify(self):
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "poison"):
-                self.item.add_resistance.poison += 0.4
-        else:
-            self.item.add_resistance.poison = 0.4
+        # safely add/increment poison resistance (works if add_resistance is dict or object)
+        self._add_resistance("poison", 0.4)
         self.item.value *= 1.3
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
@@ -290,15 +306,8 @@ class Dousing(Enchantment):  # grants resistance to fire when equipped
         super().__init__(item, name="Dousing", rarity=0, group="Prefix", value=1.25)
 
     def modify(self):
-        # add or increase fire resistance on the item
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "fire"):
-                self.item.add_resistance.fire += 0.3
-            else:
-                self.item.add_resistance.fire = 0.3
-        else:
-            # follow existing project pattern: attach attribute directly
-            self.item.add_resistance.fire = 0.3
+        # add or increase fire resistance on the item (works for dict or object)
+        self._add_resistance("fire", 0.3)
         # increase value modestly for the protection
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
@@ -352,7 +361,7 @@ class Icy(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "ice"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1 )/ 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, rimed in frost.".format(self.item.name)
@@ -374,7 +383,7 @@ class Shocking(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "shock"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, humming with electricity.".format(self.item.name)
@@ -396,7 +405,7 @@ class Earthen(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "earth"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, bound with the weight of the earth.".format(self.item.name)
@@ -418,7 +427,7 @@ class Radiant(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "light"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1 )/ 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, glowing with a pure light.".format(self.item.name)
@@ -440,7 +449,7 @@ class Umbral(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "dark"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1 )/ 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, cloaked in shadow.".format(self.item.name)
@@ -462,7 +471,7 @@ class Spiritual(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "spiritual"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, suffused with otherworldly power.".format(self.item.name)
@@ -485,7 +494,7 @@ class Pure(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "pure"
         # scale value based on damage bonus (fractional mod)
-        value_mod = (mod - 1 / 2) + self.value
+        value_mod = ((mod - 1 )/ 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, its edge humming with uncompromising force.".format(self.item.name)
@@ -712,13 +721,9 @@ class Purifying(Enchantment):  # grants resistance to pure damage
         super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
 
     def modify(self):
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "pure"):
-                self.item.add_resistance.pure += 0.35
-            else:
-                self.item.add_resistance.pure = 0.35
-        else:
-            self.item.add_resistance.pure = 0.35
+        # use the helper to safely add/increment pure resistance whether add_resistance
+        # is a dict or an object
+        self._add_resistance("pure", 0.35)
         self.item.value *= 1.5
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
@@ -735,13 +740,7 @@ class Needleproof(Enchantment):  # grants resistance to piercing attacks
         super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
 
     def modify(self):
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "piercing"):
-                self.item.add_resistance.piercing += 0.3
-            else:
-                self.item.add_resistance.piercing = 0.3
-        else:
-            self.item.add_resistance.piercing = 0.3
+        self._add_resistance("piercing", 0.3)
         self.item.value *= 1.2
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
@@ -758,13 +757,7 @@ class Edgebound(Enchantment):  # reduces slashing damage
         super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
 
     def modify(self):
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "slashing"):
-                self.item.add_resistance.slashing += 0.3
-            else:
-                self.item.add_resistance.slashing = 0.3
-        else:
-            self.item.add_resistance.slashing = 0.3
+        self._add_resistance("slashing", 0.3)
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
@@ -781,13 +774,7 @@ class Bulwark(Enchantment):  # toughened against crushing impacts
         super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
 
     def modify(self):
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "crushing"):
-                self.item.add_resistance.crushing += 0.35
-            else:
-                self.item.add_resistance.crushing = 0.35
-        else:
-            self.item.add_resistance.crushing = 0.35
+        self._add_resistance("crushing", 0.35)
         self.item.value *= 1.35
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
