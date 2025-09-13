@@ -682,12 +682,12 @@ class Merchant(NPC):
                 spawned = None
             if not spawned:
                 continue
+            self._maybe_enchant(spawned)
             if not hasattr(spawned, 'base_value'):
                 try:
                     setattr(spawned, 'base_value', spawned.value)
                 except Exception:
                     pass
-            self._maybe_enchant(spawned)
             placed = False
 
             elig = eligible_containers_for(spawned)
