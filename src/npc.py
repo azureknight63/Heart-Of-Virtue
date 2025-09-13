@@ -387,12 +387,14 @@ class Merchant(NPC):
         :return int: The total number of items in stock.
         """
         total = len(self.inventory)
-        if self.current_room and hasattr(self.current_room, 'map'):
-            for room in self.current_room.map:
+        if self.current_room and getattr(self.current_room, 'map', None):
+            rooms = self.current_room.map.values() if hasattr(self.current_room.map, 'values') else self.current_room.map
+            for room in rooms:
                 for obj in getattr(room, "objects", []):
-                    if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
-                            getattr(obj, "merchant", None) == self.name):
-                        total += len(obj.inventory)
+                    if (hasattr(obj, "inventory") and hasattr(obj, "merchant")):
+                        owner = getattr(obj, "merchant", None)
+                        if owner == self or owner == self.name:
+                            total += len(getattr(obj, 'inventory', []))
         return total
 
     def update_goods(self):
@@ -442,14 +444,16 @@ class Merchant(NPC):
                 removed_unique.add(it.__class__.__name__)
         containers: list[Container] = []
         if self.current_room and getattr(self.current_room, 'map', None):
-            for room in self.current_room.map.values():
+            rooms = self.current_room.map.values() if hasattr(self.current_room.map, 'values') else self.current_room.map
+            for room in rooms:
                 for obj in getattr(room, "objects", []):
-                    if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
-                            getattr(obj, "merchant", None) == self.name):
-                        # Scan container inventory for unique items prior to clearing
-                        for it in getattr(obj, 'inventory', []) or []:
-                            if getattr(it, 'unique', False):
-                                removed_unique.add(it.__class__.__name__)
+                    if (hasattr(obj, "inventory") and hasattr(obj, "merchant")):
+                        owner = getattr(obj, "merchant", None)
+                        if owner == self or owner == self.name:
+                            # Scan container inventory for unique items prior to clearing
+                            for it in getattr(obj, 'inventory', []) or []:
+                                if getattr(it, 'unique', False):
+                                    removed_unique.add(it.__class__.__name__)
         # Now clear merchant inventory
         self.inventory = []
         # And clear container inventories while recording them
@@ -461,14 +465,26 @@ class Merchant(NPC):
         for room in self.current_room.map.values():
             if isinstance(room, str):
                 continue
-            for obj in room.objects_here:
-                if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
-                            getattr(obj, "merchant", None) == self.name):
-                    obj.inventory = []
-                    containers.append(obj)
-            for item in room.items_here[:]:
-                if getattr(item, 'merchandise', None) and item.merchandise:
-                    room.items_here.remove(item)
+            # support both objects_here and objects attribute on fake rooms
+            for obj in getattr(room, 'objects_here', getattr(room, 'objects', [])):
+                if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
+                    owner = getattr(obj, "merchant", None)
+                    if owner == self or owner == self.name:
+                        obj.inventory = []
+                        containers.append(obj)
+            # support both items_here and items/spawned lists
+            room_items = getattr(room, 'items_here', None)
+            if room_items is None:
+                room_items = getattr(room, 'items', None)
+            if room_items is None:
+                room_items = getattr(room, 'spawned', None)
+            if room_items:
+                for item in list(room_items):
+                    if getattr(item, 'merchandise', None) and item.merchandise:
+                        try:
+                            room_items.remove(item)
+                        except Exception:
+                            pass
         # Finally, release unique item class names so they can be spawned again later
         for cls_name in removed_unique:
             items_module.unique_items_spawned.discard(cls_name)
@@ -701,7 +717,16 @@ class Merchant(NPC):
                 continue
             if placed:
                 # Successfully placed, so we don't need it to appear in the room
-                self.current_room.items_here.remove(spawned)
+                room_items = getattr(self.current_room, 'items_here', None)
+                if room_items is None:
+                    room_items = getattr(self.current_room, 'items', None)
+                if room_items is None:
+                    room_items = getattr(self.current_room, 'spawned', None)
+                if room_items and spawned in room_items:
+                    try:
+                        room_items.remove(spawned)
+                    except Exception:
+                        pass
         return
 
     def _update_shop_conditions(self):
