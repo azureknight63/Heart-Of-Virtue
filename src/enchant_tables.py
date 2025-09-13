@@ -262,9 +262,9 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
     def modify(self):
         if hasattr(self.item, "add_resistance"):
             if hasattr(self.item.add_resistance, "poison"):
-                self.item.add_resistance.poison += 0.8
+                self.item.add_resistance.poison += 0.4
         else:
-            self.item.add_resistance.poison = 0.8
+            self.item.add_resistance.poison = 0.4
         self.item.value *= 1.3
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
@@ -293,12 +293,12 @@ class Dousing(Enchantment):  # grants resistance to fire when equipped
         # add or increase fire resistance on the item
         if hasattr(self.item, "add_resistance"):
             if hasattr(self.item.add_resistance, "fire"):
-                self.item.add_resistance.fire += 0.6
+                self.item.add_resistance.fire += 0.3
             else:
-                self.item.add_resistance.fire = 0.6
+                self.item.add_resistance.fire = 0.3
         else:
             # follow existing project pattern: attach attribute directly
-            self.item.add_resistance.fire = 0.6
+            self.item.add_resistance.fire = 0.3
         # increase value modestly for the protection
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
@@ -703,4 +703,96 @@ class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per 
             "Boots",
             "Accessory"
         ]
+        return self.item.maintype in allowed_maintypes
+
+
+class Purifying(Enchantment):  # grants resistance to pure damage
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
+
+    def modify(self):
+        if hasattr(self.item, "add_resistance"):
+            if hasattr(self.item.add_resistance, "pure"):
+                self.item.add_resistance.pure += 0.35
+            else:
+                self.item.add_resistance.pure = 0.35
+        else:
+            self.item.add_resistance.pure = 0.35
+        self.item.value *= 1.5
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, tempered to guard against absolute force.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes
+
+
+class Needleproof(Enchantment):  # grants resistance to piercing attacks
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
+
+    def modify(self):
+        if hasattr(self.item, "add_resistance"):
+            if hasattr(self.item.add_resistance, "piercing"):
+                self.item.add_resistance.piercing += 0.3
+            else:
+                self.item.add_resistance.piercing = 0.3
+        else:
+            self.item.add_resistance.piercing = 0.3
+        self.item.value *= 1.2
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, its fibers woven to shrug off arrows and needles.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes
+
+
+class Edgebound(Enchantment):  # reduces slashing damage
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
+
+    def modify(self):
+        if hasattr(self.item, "add_resistance"):
+            if hasattr(self.item.add_resistance, "slashing"):
+                self.item.add_resistance.slashing += 0.3
+            else:
+                self.item.add_resistance.slashing = 0.3
+        else:
+            self.item.add_resistance.slashing = 0.3
+        self.item.value *= 1.25
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, its plates deflect blade and saber alike.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes
+
+
+class Bulwark(Enchantment):  # toughened against crushing impacts
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
+
+    def modify(self):
+        if hasattr(self.item, "add_resistance"):
+            if hasattr(self.item.add_resistance, "crushing"):
+                self.item.add_resistance.crushing += 0.35
+            else:
+                self.item.add_resistance.crushing = 0.35
+        else:
+            self.item.add_resistance.crushing = 0.35
+        self.item.value *= 1.35
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, bulked and braced to take heavy blows.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
         return self.item.maintype in allowed_maintypes
