@@ -5,7 +5,8 @@ import src.moves as moves
 import src.functions as functions
 from neotermcolor import colored, cprint
 import src.loot_tables as loot_tables
-from src.items import Item, Shortsword, Gold, Restorative, Rock, Spear
+from src.items import (Item, Shortsword, Gold, Restorative, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
+                       Gloves, Helm, Boots, Armor, Weapon, Arrow)
 import src.items as items_module  # added for unique item registry management
 from src.objects import Container
 from src.interface import ShopInterface as Shop
@@ -273,7 +274,7 @@ class Merchant(NPC):
     def __init__(self, name: str, description: str, damage: int, aggro: bool, exp_award: int,
                  stock_count: int, inventory:list[Item]=None,
                  specialties: list[Item]=None, enchantment_rate: float=1.0,
-                 always_stock: list[Item]=None,
+                 always_stock: list[Item]=None, base_gold: int=300,
                  maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
                  faith=10, hidden=False, hide_factor=0, combat_range=(0, 5),
@@ -295,6 +296,7 @@ class Merchant(NPC):
         self.enchantment_rate = enchantment_rate  # 0 to 10.0 with 0 being none and 10 being 10x the normal rate
         self.stock_count = stock_count  # Number of items to keep in stock after each refresh
         self.always_stock = always_stock  # List of item classes the merchant always keeps in stock
+        self.base_gold = base_gold  # Amount of gold the merchant has to buy items from the player
         self.shop_conditions = {
             "value": [],
             "availability": [],
@@ -421,6 +423,8 @@ class Merchant(NPC):
             if isinstance(condition, UniqueItemInjectionCondition):
                 # Rely on condition to inject & place items; avoid double placement of returned items
                 condition.inject_unique_items(self)
+        gold_random_modifier = random.uniform(0.75, 1.25)
+        self.inventory.append(Gold(int(self.base_gold * gold_random_modifier)))
 
 
     # ----------------- Helper Methods (Modularized) -----------------
@@ -588,6 +592,8 @@ class Merchant(NPC):
         except Exception:
             unique_factories = set()
         candidates: list[type[Item]] = []
+        disallowed_classes = {Gold, Rock, Fists, Key, Special, Consumable, Accessory,
+                              Gloves, Helm, Boots, Armor, Weapon, Arrow}
         for _nm, obj in inspect.getmembers(items_module, inspect.isclass):
             try:
                 if obj is Item:
@@ -595,6 +601,8 @@ class Merchant(NPC):
                 if not issubclass(obj, Item):
                     continue
                 if obj in unique_factories:
+                    continue
+                if obj in disallowed_classes:
                     continue
                 candidates.append(obj)
             except Exception:
@@ -681,7 +689,6 @@ class Merchant(NPC):
                     pass
             self._maybe_enchant(spawned)
             placed = False
-            #todo seems to be failing to place anything here
 
             elig = eligible_containers_for(spawned)
             if elig:
@@ -776,6 +783,7 @@ class MiloCurioDealer(Merchant):
                           Spear(merchandise=True),
                           enchanted_sword,
                           gold_pouch]
+        self.base_gold = 5000
         super().__init__(
             name="Milo the Traveling Curio Dealer",
             description="A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. "
@@ -790,7 +798,8 @@ class MiloCurioDealer(Merchant):
             finesse=14,
             charisma=18,
             intelligence=16,
-            stock_count=30
+            stock_count=30,
+            base_gold=self.base_gold
         )
         self.shop.exit_message = ("Milo nods as you leave his shop, "
                                   "already looking for new curiosities to add to his collection.")
