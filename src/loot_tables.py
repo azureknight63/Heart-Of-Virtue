@@ -1,6 +1,6 @@
-'''
-All of the loot tables for NPCs can be found here. These are called from the npc module.
-'''
+"""
+All the loot tables for NPCs can be found here. These are called from the npc module.
+"""
 
 import inspect, random
 import items, enchant_tables, functions
