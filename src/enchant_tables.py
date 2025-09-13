@@ -661,7 +661,7 @@ class OfSupplication(Enchantment):  # Increase faith by 1-3
         return True
 
 
-class OfRelief(Enchantment):  # Increase weight tolerance by 2-5 lbs
+class OfRelief(Enchantment):  # Increase weight tolerance slightly
     tier = 1
 
     def __init__(self, item):
