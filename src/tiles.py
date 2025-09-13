@@ -120,7 +120,10 @@ class MapTile:
         return npc
 
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-        items_mod = __import__('items')
+        # python
+        import importlib
+
+        items_mod = importlib.import_module('src.items')
         amt = max(1, int(amt))
         spawned = []
 
