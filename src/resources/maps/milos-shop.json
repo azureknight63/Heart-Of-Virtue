@@ -626,7 +626,47 @@
                         }
                     ],
                     "stock_count": 10,
-                    "inventory": [],
+                    "inventory": [
+                        {
+                            "__class__": "Halberd",
+                            "__module__": "items",
+                            "props": {
+                                "damage": 25,
+                                "str_req": 10,
+                                "fin_req": 1,
+                                "str_mod": 1.75,
+                                "fin_mod": 1,
+                                "weight": 4,
+                                "isequipped": false,
+                                "maintype": "Weapon",
+                                "subtype": "Spear",
+                                "wpnrange": [
+                                    3,
+                                    8
+                                ],
+                                "name": "Halberd",
+                                "description": "Essentially an axe mounted on top of a large pole. \nHas a longer reach than most melee weapons but is not great at close range.",
+                                "value": 100,
+                                "type": "Weapon",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a kind of weapon.",
+                                "announce": "There's a Halberd here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": true,
+                                "twohand": false
+                            }
+                        }
+                    ],
                     "name": "Weapon Rack",
                     "description": "A weapon rack. There are some rather sharp objects being displayed.",
                     "idle_message": "A weapon rack hangs from the wall.",
@@ -644,7 +684,7 @@
                     "player": null,
                     "allowed_subtypes": [
                         {
-                            "__class_type__": "items:Weapon"
+                            "__class_type__": "src.items:Weapon"
                         }
                     ],
                     "start_open": true,
