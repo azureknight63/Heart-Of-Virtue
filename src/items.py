@@ -722,6 +722,81 @@ class ClothHood(Helm):
         self.add_fin: int = 1
 
 
+class LeatherCap(Helm):
+    """A simple, practical helmet made of hardened leather. Provides light protection
+    while remaining comfortable and lightweight.
+    """
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Leather Cap",
+                         description="A simple leather cap offering modest protection without much weight.",
+                         isequipped=False, value=20,
+                         protection=2, str_req=3, str_mod=0.2, weight=0.8, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+        # Small finesse bonus for better handling
+        self.add_fin: int = 1
+
+
+class PaddedCap(Helm):
+    """Very light padded headgear. Cheap and comfortable, minimal protection."""
+    level: int = 0
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Padded Cap",
+                         description="A cheap cap stuffed with padding. Comfortable but offers only trivial protection.",
+                         isequipped=False, value=5,
+                         protection=1, str_req=1, str_mod=0.05, weight=0.6, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class HunterHood(Helm):
+    """A hood favored by scouts and hunters. Lightweight with small bonuses to finesse."""
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Hunter's Hood",
+                         description="A muted hood designed to muffle sound and blend into foliage. Lightweight and practical.",
+                         isequipped=False, value=15,
+                         protection=1, str_req=2, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+        self.add_fin: int = 2
+
+
+class StuddedSkullcap(Helm):
+    """A skullcap reinforced with small metal studs for added protection while remaining compact."""
+    level: int = 2
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Studded Skullcap",
+                         description="A close-fitting cap reinforced with metal studs. Offers respectable protection for its size.",
+                         isequipped=False, value=60,
+                         protection=3, str_req=5, str_mod=0.25, weight=1.4, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+        # Slight balance to handling
+        self.add_fin: int = 1
+
+
+class ChainCoif(Helm):
+    """Mail coif that protects the head and neck. Heavier, but provides solid defense."""
+    level: int = 3
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Chain Coif",
+                         description="A hood of interlinked metal rings. Offers good protection against slashes at modest weight.",
+                         isequipped=False, value=120,
+                         protection=5, str_req=8, str_mod=0.5, weight=2.5, maintype="Helm", subtype="Medium Helm", merchandise=merchandise)
+        # Heavier headgear; small strength tradeoff handled by str_mod
+
+
+class IronHelm(Helm):
+    """A simple iron helm. Bulky and sturdy; suitable as dependable mid-tier protection."""
+    level: int = 4
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Iron Helm",
+                         description="A solid iron helm. Heavy, but provides dependable protection to the wearer.",
+                         isequipped=False, value=220,
+                         protection=7, str_req=12, str_mod=0.8, weight=4.0, maintype="Helm", subtype="Heavy Helm", merchandise=merchandise)
+        # Heavy helms may reduce finesse slightly; provide no finesse bonus
+
 # ---------------------------------------------------------------------------
 # Accessories
 # ---------------------------------------------------------------------------
