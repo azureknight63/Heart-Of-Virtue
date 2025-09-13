@@ -12,11 +12,11 @@ import time
 from neotermcolor import colored, cprint
 from intro_scene import intro
 
-import combat
-import functions
-import items
-from player import Player
-from universe import Universe, tile_exists
+from src.combat import combat
+import src.functions as functions
+import src.items as items
+from src.player import Player
+from src.universe import Universe, tile_exists
 import sys
 import configparser
 import ast
@@ -187,7 +187,7 @@ _\\|//__( | )______)_/
             player.combat_list = functions.check_for_combat(player)
             if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!", "red"))
-                combat.combat(player)
+                combat(player)
             # check to make sure entering the most recent tile hasn't ended the game
             if not player.is_alive():
                 player.death()

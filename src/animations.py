@@ -3,7 +3,8 @@ import sys
 # import time
 from pathlib import Path
 
-import functions
+# Avoid importing src.functions at module import time to prevent circular imports.
+# clean_string is imported only where needed (inside animate_to_main_screen).
 
 from asciimatics.effects import Cycle, Stars, Print
 from asciimatics.renderers import FigletText, ColourImageFile, ImageFile, SpeechBubble
@@ -157,7 +158,9 @@ def animate_to_main_screen(animation, rawtext=""):
     filename of a gif in resources/animations, as a string
     :param rawtext: Text to display with the animation, if any. You can pass in colored text (color will be stripped)
     """
-    text = functions.clean_string(rawtext)
+    # Import here to avoid circular import: functions imports moves, and moves imports animations.
+    from src.functions import clean_string
+    text = clean_string(rawtext)
     if ".gif" in animation:
         file_to_play = animation.replace(".gif", "")
         Screen.wrapper(func=play_gif, arguments=[file_to_play, text])

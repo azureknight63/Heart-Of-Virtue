@@ -1,9 +1,10 @@
-'''
-All of the loot tables for NPCs can be found here. These are called from the npc module.
-'''
+"""
+All the loot tables for NPCs can be found here. These are called from the npc module.
+"""
 
 import random, decimal
-import items, states
+from src.items import item_types
+from src.states import Poisoned, PhoenixRevive
 
 
 class Enchantment:
@@ -51,7 +52,7 @@ class Sharp(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Blade"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Blade"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -75,7 +76,7 @@ class Weighted(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Blunt"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Blunt"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -99,7 +100,7 @@ class Balanced(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Ranged"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -120,7 +121,7 @@ class Hollow(Enchantment):  # reduced weight and damage
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Ranged"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -254,7 +255,7 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
     tier = 2
     def __init__(self, item):
         super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
-        self.equip_states = [states.Poisoned(None)]
+        self.equip_states = [Poisoned(None)]
 
     def modify(self):
         if hasattr(self.item, "add_resistance"):
@@ -474,7 +475,7 @@ class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per 
 
     def __init__(self, item):
         super().__init__(item, name="of the Phoenix", rarity=0, group="Suffix", value=2)
-        self.equip_states = [states.PhoenixRevive(None)]
+        self.equip_states = [PhoenixRevive(None)]
 
     def modify(self):
         self.item.value *= self.value

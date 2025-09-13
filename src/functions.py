@@ -12,8 +12,8 @@ import types
 
 from typing import Any
 
-import moves
-import enchant_tables
+from src import moves
+from src import enchant_tables
 
 from neotermcolor import colored, cprint
 from os import listdir

@@ -1,9 +1,14 @@
 from __future__ import annotations
 import random
 import time
-import functions
 import states
 from neotermcolor import colored, cprint
+
+try:
+    import functions as functions
+except Exception:
+    import src.functions as functions
+
 from src.player import Player
 from src.tiles import MapTile
 from src.events import Event # noqa; This is used in type hints
@@ -166,16 +171,26 @@ class Container(Object):
                  hidden: bool=False, hide_factor: int=0, idle_message: str="A container is sitting here.",
                  discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
                  nickname: str="container", locked: bool=False, inventory: list['Item']=None, events: list['Event']=None,
-                 merchant: str="", allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
+                 merchant: object="", items: list['Item']=None, allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
+        """Accept both 'items' (legacy/tests) and 'inventory'. Normalize merchant to a name when possible.
+        Also accept 'allowed_subtypes' and expose as allowed_item_types (list of types).
+        """
+        # Normalize inventory parameter: accept items alias for tests/tools
+        inv = inventory if inventory is not None else (items if items is not None else [])
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
         self.state = self._POSSIBLE_STATES[0]  # start closed
         self.revealed = False
         self.locked = locked
-        self.merchant = merchant  # Allows the container to be associated with a merchant for shop functionality
-        self.allowed_item_types = allowed_subtypes if allowed_subtypes else [Item]  # List of allowed item types
+        # Normalize merchant to name if an object is provided (avoid circular import of Merchant)
+        try:
+            self.merchant = merchant.name if hasattr(merchant, 'name') else merchant
+        except Exception:
+            self.merchant = merchant
+        # allowed_subtypes may be provided as tuple/list of types; default to Item if falsy
+        self.allowed_item_types = list(allowed_subtypes) if allowed_subtypes else [Item]
         self.stock_count = stock_count  # Maximum number of items the container should hold (for shop logic)
-        self.inventory = inventory if inventory else []
+        self.inventory = inv if inv else []
 
         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
                          idle_message=idle_message,

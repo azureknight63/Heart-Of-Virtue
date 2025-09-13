@@ -3,8 +3,7 @@ Combat states to be used within combat module. May also spill over to the standa
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
 from neotermcolor import colored
-
-import functions
+from src.functions import print_slow, await_input
 
 
 def dialogue(speaker, text, speaker_color="cyan", text_color="white"):
@@ -18,8 +17,8 @@ def dialogue(speaker, text, speaker_color="cyan", text_color="white"):
         speaker_color (str, optional): Color for the speaker's name. Defaults to "cyan".
         text_color (str, optional): Color for the dialogue text. Defaults to "white".
     """
-    functions.print_slow((colored(speaker + ": ", speaker_color) + colored(text, text_color)), "fast")
-    functions.await_input()
+    print_slow((colored(speaker + ": ", speaker_color) + colored(text, text_color)), "fast")
+    await_input()
 
 
 class Event:  # master class for all events

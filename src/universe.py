@@ -1,7 +1,13 @@
 __author__ = 'Alex Egbert'
 
-import functions
-import json, inspect
+# import functions (robust to package vs top-level import)
+try:
+    # Prefer top-level import so tests that monkeypatch 'functions' (imported as 'functions') affect us
+    import functions as functions
+except Exception:
+    # Fallback when running as package (src package on path)
+    import src.functions as functions
+import json, inspect, importlib
 from pathlib import Path
 from typing import Final
 
@@ -118,7 +124,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         props = {k: recursive_deserialize(v) for k, v in props.items()}
 
         try:
-            module = __import__(mod_name, fromlist=[cls_name])
+            module = importlib.import_module(mod_name)
             cls = getattr(module, cls_name)
             # Try to supply only parameters accepted by __init__ (excluding self)
             try:
@@ -173,7 +179,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             try:
                 tile_cls = functions.seek_class(title, 'tilesets')
             except Exception:
-                from tiles import MapTile as tile_cls  # fallback
+                try:
+                    tiles_mod = importlib.import_module('src.tiles')
+                    tile_cls = getattr(tiles_mod, 'MapTile')
+                except Exception:
+                    from tiles import MapTile as tile_cls  # fallback
             tile_instance = tile_cls(self, this_map, x, y, description=description)
             # block exits & symbol
             if 'block_exit' in tile_data and isinstance(tile_data['block_exit'], list):
@@ -328,9 +338,15 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                                                                  hfactor=hfactor)
                 else:
                     tile_name = block_contents
-                    this_map[(x, y)] = None if tile_name == '' else getattr(__import__('tiles'), tile_name)(self,
-                                                                                                            this_map, x,
-                                                                                                            y)
+                    if tile_name == '':
+                        this_map[(x, y)] = None
+                    else:
+                        try:
+                            tiles_mod = importlib.import_module('src.tiles')
+                            this_map[(x, y)] = getattr(tiles_mod, tile_name)(self, this_map, x, y)
+                        except Exception:
+                            # legacy fallback
+                            this_map[(x, y)] = getattr(__import__('tiles'), tile_name)(self, this_map, x, y)
                 if tile_name == 'StartingRoom':  # there can only be one of these in the game
                     self.starting_position = (x, y)
 
