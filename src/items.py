@@ -60,6 +60,10 @@ def get_all_subtypes() -> None:
 
 def get_base_damage_type(item: Any) -> str:
     damagetype: str = "pure"  # default
+    # If an item explicitly defines a base_damage_type (set by an enchantment), respect it.
+    override = getattr(item, 'base_damage_type', None)
+    if isinstance(override, str) and override:
+        return override
     for basetype, weapontypes in item_types['weapons']['base_damage_types'].items():  # type: ignore[index]
         if getattr(item, 'subtype', None) in weapontypes:
             damagetype = basetype
