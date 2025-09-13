@@ -207,6 +207,7 @@
                             }
                         }
                     ],
+                    "base_gold": 5000,
                     "name": "Milo the Traveling Curio Dealer",
                     "description": "A spry, eccentric merchant with a patchwork coat and a twinkle in his eye. Milo claims to have traveled the world, collecting rare oddities and useful adventuring gear.",
                     "current_room": null,
@@ -625,79 +626,7 @@
                         }
                     ],
                     "stock_count": 10,
-                    "inventory": [
-                        {
-                            "__class__": "Mace",
-                            "__module__": "src.items",
-                            "props": {
-                                "damage": 25,
-                                "str_req": 10,
-                                "fin_req": 5,
-                                "str_mod": 2,
-                                "fin_mod": 0.5,
-                                "weight": 5.0,
-                                "isequipped": false,
-                                "maintype": "Weapon",
-                                "subtype": "Bludgeon",
-                                "wpnrange": [
-                                    0,
-                                    5
-                                ],
-                                "name": "Mace",
-                                "description": "A small mace. Heavy and slow, but packs a decent punch.",
-                                "value": 100,
-                                "type": "Weapon",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "merchandise": true,
-                                "discovery_message": "a kind of weapon.",
-                                "announce": "There's a Mace here.",
-                                "interactions": [
-                                    "drop",
-                                    "equip"
-                                ],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": true,
-                                "twohand": false
-                            }
-                        },
-                        {
-                            "__class__": "SilverRing",
-                            "__module__": "src.items",
-                            "props": {
-                                "protection": 0,
-                                "str_mod": 0,
-                                "fin_mod": 0,
-                                "weight": 0.1,
-                                "isequipped": false,
-                                "maintype": "Accessory",
-                                "subtype": "Ring",
-                                "name": "Silver Ring",
-                                "description": "A shiny silver ring. \nA small bauble favored by people of typically lower class.",
-                                "value": 50,
-                                "type": "Accessory",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "merchandise": true,
-                                "discovery_message": "a small trinket.",
-                                "announce": "There's a Silver Ring here.",
-                                "interactions": [
-                                    "drop",
-                                    "equip"
-                                ],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": false
-                            }
-                        }
-                    ],
+                    "inventory": [],
                     "name": "Weapon Rack",
                     "description": "A weapon rack. There are some rather sharp objects being displayed.",
                     "idle_message": "A weapon rack hangs from the wall.",
@@ -713,7 +642,13 @@
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "allowed_subtypes": []
+                    "allowed_subtypes": [
+                        {
+                            "__class_type__": "items:Weapon"
+                        }
+                    ],
+                    "start_open": true,
+                    "items": []
                 }
             }
         ],
