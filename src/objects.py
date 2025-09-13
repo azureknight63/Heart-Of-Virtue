@@ -168,7 +168,8 @@ class Container(Object):
     _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot']
 
     def __init__(self, name: str="Container", description: str="A container. There may be something inside.",
-                 hidden: bool=False, hide_factor: int=0, idle_message: str="A container is sitting here.",
+                 hidden: bool=False, hide_factor: int=0, start_open: bool=False,
+                 idle_message: str="A container is sitting here.",
                  discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
                  nickname: str="container", locked: bool=False, inventory: list['Item']=None, events: list['Event']=None,
                  merchant: object="", items: list['Item']=None, allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
@@ -179,9 +180,9 @@ class Container(Object):
         inv = inventory if inventory is not None else (items if items is not None else [])
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
-        self.state = self._POSSIBLE_STATES[0]  # start closed
+        self.state = self._POSSIBLE_STATES[0] if not start_open else self._POSSIBLE_STATES[1]
         self.revealed = False
-        self.locked = locked
+        self.locked = locked if not start_open else False
         # Normalize merchant to name if an object is provided (avoid circular import of Merchant)
         try:
             self.merchant = merchant.name if hasattr(merchant, 'name') else merchant
