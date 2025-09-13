@@ -1,15 +1,15 @@
 import random
 import time
-import genericng
-import moves
-import functions
+import src.genericng as genericng
+import src.moves as moves
+import src.functions as functions
 from neotermcolor import colored, cprint
-import loot_tables
-from items import Item, Shortsword, Gold, Restorative, Rock, Spear
-import items as items_module  # added for unique item registry management
-from objects import Container
-from interface import ShopInterface as Shop
-from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+import src.loot_tables as loot_tables
+from src.items import Item, Shortsword, Gold, Restorative, Rock, Spear
+import src.items as items_module  # added for unique item registry management
+from src.objects import Container
+from src.interface import ShopInterface as Shop
+from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -790,7 +790,7 @@ class MiloCurioDealer(Merchant):
             finesse=14,
             charisma=18,
             intelligence=16,
-            stock_count=50
+            stock_count=30
         )
         self.shop.exit_message = ("Milo nods as you leave his shop, "
                                   "already looking for new curiosities to add to his collection.")
