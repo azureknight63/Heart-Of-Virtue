@@ -14,6 +14,7 @@ from typing import Any
 
 from src import moves
 from src import enchant_tables
+from src.items import Item
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -658,39 +659,85 @@ def inflict(state, target, chance=1.0, force=False):
         success(target, state)
 
 
-def add_random_enchantments(item, count):
-    ench_pool = count
-    enchantment_level = [0, 0]
-    enchantments = [None, None]
+def add_random_enchantments(item: Item, count: int) -> None:
+    """
+    Add up to `count` random enchantments to `item`.
+
+    The function:
+      - Caches enchantment classes from `enchant_tables` by their `tier` attribute.
+      - Performs `count` enchantment rolls, choosing between prefix (0) and suffix (1)
+        groups and incrementing that group's tier each time it is selected.
+      - Instantiates candidate enchantments for the computed tier and filters them
+        by their `requirements()` and `rarity` attributes.
+      - Applies the chosen enchantments by calling `modify()` and merging any
+        `equip_states` into `item.equip_states`.
+
+    Args:
+        item: Target item object that enchantment classes accept as their constructor arg.
+        count: Number of enchantment rolls to attempt (int-like).
+
+    Notes:
+        This function is intentionally tolerant of instantiation/modify errors and
+        will skip failing enchantments rather than raise.
+    """
+    ench_pool = int(count)
+    enchantment_level: list[int] = [0, 0]
+    enchantments: list[Any] = [None, None]
+
+    # Cache enchantment classes by tier to avoid repeated reflection/lookup
+    class_by_tier: dict[int, list[type]] = {}
+    for _, cls in inspect.getmembers(enchant_tables, inspect.isclass):
+        if hasattr(cls, "tier"):
+            class_by_tier.setdefault(int(cls.tier), []).append(cls)
+
     while ench_pool > 0:
-        group = random.randint(0, 1)  # 0 = "Prefix", 1 = "Suffix"
+        group = random.randrange(2)  # 0 = "Prefix", 1 = "Suffix"
         enchantment_level[group] += 1
-        candidates = []
+        tier = enchantment_level[group]
+
         rarity = random.randint(0, 100)
-        for name, obj in inspect.getmembers(enchant_tables):
-            if inspect.isclass(obj):
-                if hasattr(obj, "tier"):
-                    if obj.tier == enchantment_level[group]:
-                        ench = getattr(enchant_tables, name)(item)
-                        if ench.requirements() and (rarity >= ench.rarity):
-                            candidates.append(ench)
-        if not candidates:  # skip ahead if there are no available enchantments
+        candidates: list[Any] = []
+        for cls in class_by_tier.get(tier, ()):
+            try:
+                ench = cls(item)
+                req = getattr(ench, "requirements", None)
+                requirements_ok = req() if callable(req) else bool(req) if req is not None else True
+                if requirements_ok and rarity >= int(getattr(ench, "rarity", 0)):
+                    candidates.append(ench)
+            except Exception:
+                # Skip classes that fail instantiation or checks
+                continue
+
+        if not candidates:
             ench_pool -= 1
             continue
-        # for candidate in candidates:
-        #     print(candidate.name + " req? " + str(candidate.requirements()))
-        #     if not candidate.requirements() or (rarity < candidate.rarity):
-        #         candidates.remove(candidate)
-        # print("Candidates: " + str(candidates))
-        select = random.randint(0, len(candidates) - 1)
-        enchantments[group] = candidates[select]
+
+        enchant = random.choice(candidates)
+        enchantments[group] = enchant
         ench_pool -= 1
-    if enchantments[0]:
-        enchantments[0].modify()
-        item.equip_states += enchantments[0].equip_states
-    if enchantments[1]:
-        enchantments[1].modify()
-        item.equip_states += enchantments[1].equip_states
+
+    for ench in enchantments:
+        if ench:
+            try:
+                ench.modify()
+            except Exception:
+                pass
+            equip_states = getattr(ench, "equip_states", None)
+            if equip_states:
+                if not hasattr(item, "equip_states") or item.equip_states is None:
+                    try:
+                        item.equip_states = []
+                    except Exception:
+                        # If item doesn't support assignment, skip merging
+                        continue
+                try:
+                    item.equip_states += equip_states
+                except Exception:
+                    # Fallback to extend if necessary
+                    try:
+                        item.equip_states.extend(equip_states)
+                    except Exception:
+                        pass
 
 
 def add_preference(player, preftype, setting):
