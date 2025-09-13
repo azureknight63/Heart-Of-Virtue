@@ -292,10 +292,81 @@ class Boots(Item):
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name, self.description, self.value, self.protection, self.weight)
+                    self.name, self.description, self.value, self.protection, self.weight)
         else:
             return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
+
+
+class ClothBoots(Boots):
+    """Very light cloth boots. Minimal protection and very low weight."""
+    level: int = 0
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Cloth Boots",
+                         description="Simple stitched cloth boots. Keeps feet warm but offers almost no protection.",
+                         isequipped=False, value=3,
+                         protection=1, str_req=1, str_mod=0.03, weight=0.6, maintype="Boots", subtype="Light Boots", merchandise=merchandise)
+        # slight finesse benefit for light footwear
+        self.add_fin: int = 1
+
+
+class PaddedBoots(Boots):
+    """Padded boots with modest cushioning for comfort and minor protection."""
+    level: int = 0
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Padded Boots",
+                         description="Boots lined with padding to absorb small impacts and protect the feet.",
+                         isequipped=False, value=12,
+                         protection=2, str_req=1, str_mod=0.08, weight=1.0, maintype="Boots", subtype="Light Boots", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class LeatherBoots(Boots):
+    """Treated leather boots that balance protection and mobility."""
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Leather Boots",
+                         description="Durable leather boots treated to resist wear and offer solid protection without much bulk.",
+                         isequipped=False, value=45,
+                         protection=3, str_req=3, str_mod=0.15, weight=1.8, maintype="Boots", subtype="Light Boots", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class StuddedBoots(Boots):
+    """Leather boots reinforced with metal studs; tougher while still usable for skirmishers."""
+    level: int = 2
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Studded Boots",
+                         description="Leather boots reinforced with small metal studs. Good protection without excessive weight.",
+                         isequipped=False, value=110,
+                         protection=5, str_req=6, str_mod=0.3, weight=2.6, maintype="Boots", subtype="Medium Boots", merchandise=merchandise)
+
+
+class ChainSabaton(Boots):
+    """Chain sabatons (mail footwear) providing solid protection with flexible rings."""
+    level: int = 3
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Chain Sabatons",
+                         description="Footwear woven of small interlinked rings. Offers good protection for skirmishers and infantry.",
+                         isequipped=False, value=230,
+                         protection=8, str_req=9, str_mod=0.5, weight=5.0, maintype="Boots", subtype="Medium Boots", merchandise=merchandise)
+
+
+class IronGreaves(Boots):
+    """Heavy iron greaves/boots. Bulky and protective for frontline combatants."""
+    level: int = 4
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Iron Greaves",
+                         description="Heavy iron footwear that provides strong protection but reduces nimbleness.",
+                         isequipped=False, value=420,
+                         protection=12, str_req=13, str_mod=0.9, weight=8.0, maintype="Boots", subtype="Heavy Boots", merchandise=merchandise)
+        # heavy boots do not grant finesse bonus
 
 
 class Helm(Item):
@@ -352,10 +423,82 @@ class Gloves(Item):
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
             return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name, self.description, self.value, self.protection, self.weight)
+                    self.name, self.description, self.value, self.protection, self.weight)
         else:
             return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
                 self.name, self.description, self.value, self.protection, self.weight)
+
+
+# New gloves subclasses (low -> medium value)
+class ClothMitts(Gloves):
+    """Very light cloth mitts. Minimal protection but do not hinder dexterity."""
+    level: int = 0
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Cloth Mitts",
+                         description="Simple cloth mitts stitched from scraps. They keep hands warm but offer almost no protection.",
+                         isequipped=False, value=2,
+                         protection=0, str_req=1, str_mod=0.02, weight=0.2, maintype="Gloves", subtype="Light Gloves", merchandise=merchandise)
+        # tiny finesse bonus
+        self.add_fin: int = 1
+
+
+class PaddedGloves(Gloves):
+    """Padded gloves with modest cushioning for the hands."""
+    level: int = 0
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Padded Gloves",
+                         description="Gloves stuffed with quilted padding. Comfortable and inexpensive protection for hands.",
+                         isequipped=False, value=8,
+                         protection=1, str_req=1, str_mod=0.05, weight=0.5, maintype="Gloves", subtype="Light Gloves", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class LeatherGloves(Gloves):
+    """Hardened leather gloves providing a good balance of protection and dexterity."""
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Leather Gloves",
+                         description="Treated leather gloves that protect the hands without overly restricting movement.",
+                         isequipped=False, value=35,
+                         protection=2, str_req=3, str_mod=0.15, weight=0.8, maintype="Gloves", subtype="Light Gloves", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class StuddedGloves(Gloves):
+    """Leather gloves reinforced with studs for added protection."""
+    level: int = 2
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Studded Gloves",
+                         description="Gloves of leather with small metal studs riveted into the surface. Tough and practical.",
+                         isequipped=False, value=90,
+                         protection=3, str_req=6, str_mod=0.3, weight=1.4, maintype="Gloves", subtype="Medium Gloves", merchandise=merchandise)
+
+
+class ChainGauntlets(Gloves):
+    """Interlinked ring gauntlets offering solid protection with reasonable flexibility."""
+    level: int = 3
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Chain Gauntlets",
+                         description="Gauntlets woven from small metal rings. Good protection with moderate weight.",
+                         isequipped=False, value=180,
+                         protection=5, str_req=9, str_mod=0.5, weight=2.5, maintype="Gloves", subtype="Medium Gloves", merchandise=merchandise)
+
+
+class IronGauntlets(Gloves):
+    """Solid iron gauntlets. Heavy but protective for frontline fighters."""
+    level: int = 4
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Iron Gauntlets",
+                         description="Heavy iron gauntlets that provide strong protection at the cost of dexterity.",
+                         isequipped=False, value=360,
+                         protection=7, str_req=14, str_mod=0.85, weight=4.0, maintype="Gloves", subtype="Heavy Gloves", merchandise=merchandise)
+        # heavy gloves do not grant finesse bonus
 
 
 class Accessory(Item):
@@ -706,6 +849,76 @@ class TatteredCloth(Armor):
                                      "Lightweight, but offering little in protection.",
                          isequipped=False, value=0,
                          protection=1, str_req=1, str_mod=0.1, weight=0.5, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+
+
+class PaddedJerkin(Armor):
+    """Very light, padded jerkin. Comfortable and cheap; minimal protection."""
+    level: int = 0
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Padded Jerkin",
+                         description="A jerkin sewn from layers of fabric and padding. Lightweight and inexpensive.",
+                         isequipped=False, value=10,
+                         protection=2, str_req=1, str_mod=0.1, weight=1.0, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class QuiltedVest(Armor):
+    """Quilted vest offering a balance of comfort and light protection."""
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Quilted Vest",
+                         description="A vest sewn with quilted padding. Good for scouts and caravan guards.",
+                         isequipped=False, value=35,
+                         protection=3, str_req=3, str_mod=0.15, weight=1.8, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class LeatherArmor(Armor):
+    """Hardened leather armor. A reliable light armor choice for early adventurers."""
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Leather Armor",
+                         description="Thick leather treated to resist wear and improve protection.",
+                         isequipped=False, value=50,
+                         protection=4, str_req=4, str_mod=0.2, weight=2.5, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+        self.add_fin: int = 1
+
+
+class StuddedLeather(Armor):
+    """Leather armor reinforced with metal studs. Good protection for modest weight."""
+    level: int = 2
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Studded Leather",
+                         description="A leather cuirass reinforced with small metal studs. Popular with rangers and skirmishers.",
+                         isequipped=False, value=120,
+                         protection=6, str_req=6, str_mod=0.3, weight=3.0, maintype="Armor", subtype="Medium Armor", merchandise=merchandise)
+
+
+class ChainmailShirt(Armor):
+    """A short chain shirt providing solid protection without the bulk of full mail."""
+    level: int = 3
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Chainmail Shirt",
+                         description="A shirt of interlocking metal rings. Good defense against slashes.",
+                         isequipped=False, value=250,
+                         protection=9, str_req=10, str_mod=0.5, weight=7.0, maintype="Armor", subtype="Medium Armor", merchandise=merchandise)
+
+
+class IronCuirass(Armor):
+    """A heavy iron cuirass offering dependable mid-tier protection."""
+    level: int = 4
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(name="Iron Cuirass",
+                         description="A solid iron breastplate. Heavy, but provides strong protection for front-line fighters.",
+                         isequipped=False, value=500,
+                         protection=14, str_req=14, str_mod=0.9, weight=12.0, maintype="Armor", subtype="Heavy Armor", merchandise=merchandise)
+
 
 # ---------------------------------------------------------------------------
 # Helms
