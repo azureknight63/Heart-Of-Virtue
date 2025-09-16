@@ -87,6 +87,7 @@
                     "subtype": "Gold",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a small pouch of gold.",
                     "announce": "There's a small pouch of gold on the ground.",
                     "interactions": [],
@@ -117,6 +118,7 @@
                     "type": "Consumable",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a useful item.",
                     "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
                     "skills": null,
@@ -147,6 +149,7 @@
                     "type": "Consumable",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a useful item.",
                     "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
                     "skills": null,
@@ -181,6 +184,7 @@
                     "type": "Weapon",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a kind of weapon.",
                     "announce": "There's a Spear here.",
                     "interactions": [
@@ -219,6 +223,7 @@
                     "type": "Weapon",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a kind of weapon.",
                     "announce": "There's a Scythe here.",
                     "interactions": [
@@ -257,6 +262,7 @@
                     "type": "Weapon",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a kind of weapon.",
                     "announce": "There's a Pickaxe here.",
                     "interactions": [
@@ -295,6 +301,7 @@
                     "type": "Weapon",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a kind of weapon.",
                     "announce": "There's a Battleaxe here.",
                     "interactions": [
@@ -322,13 +329,371 @@
         "description": "A newly created room at (2, 3).",
         "exits": [
             "north",
-            "northeast",
-            "east"
+            "east",
+            "northeast"
         ],
         "events": [],
         "items": [],
-        "npcs": [],
-        "objects": []
+        "npcs": [
+            {
+                "__class__": "JamboHealsU",
+                "__module__": "npc",
+                "props": {
+                    "inventory": [],
+                    "name": "Jambo",
+                    "description": "A wiry, dark-skinned merchant always wearing an oversized turban and a massive grin.",
+                    "current_room": null,
+                    "idle_message": " is here.",
+                    "alert_message": "glares sharply at Jean!",
+                    "maxhp": 35,
+                    "maxhp_base": 35,
+                    "hp": 35,
+                    "damage": 1,
+                    "damage_base": 1,
+                    "protection": 1,
+                    "protection_base": 1,
+                    "speed": 10,
+                    "speed_base": 10,
+                    "finesse": 12,
+                    "finesse_base": 12,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 10,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 100,
+                    "maxfatigue_base": 100,
+                    "endurance": 10,
+                    "endurance_base": 10,
+                    "strength": 10,
+                    "strength_base": 10,
+                    "charisma": 14,
+                    "charisma_base": 14,
+                    "intelligence": 14,
+                    "intelligence_base": 14,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 100,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcRest",
+                            "__module__": "src.moves",
+                            "props": {
+                                "name": "Rest",
+                                "description": "Rest for a moment to restore fatigue.",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    1,
+                                    2,
+                                    0
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "Jambo rests for a moment.",
+                                    "Jambo is resting.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:JamboHealsU>",
+                                "user": "<circular_ref:JamboHealsU>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "someone interesting.",
+                    "friend": false,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        5
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [
+                        "buy",
+                        "sell",
+                        "trade",
+                        "talk"
+                    ],
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    },
+                    "specialties": [
+                        {
+                            "__class_type__": "src.items:Consumable"
+                        }
+                    ],
+                    "enchantment_rate": 0.0,
+                    "stock_count": 15,
+                    "always_stock": [
+                        {
+                            "__class__": "Restorative",
+                            "__module__": "src.items",
+                            "props": {
+                                "weight": 0.25,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 5,
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "name": "Restorative",
+                                "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                                "value": 100,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a useful item.",
+                                "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "power": 60
+                            }
+                        },
+                        {
+                            "__class__": "Draught",
+                            "__module__": "src.items",
+                            "props": {
+                                "weight": 0.25,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 4,
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "name": "Draught",
+                                "description": "A green fluid giving off a warm, pleasant glow.\nInvigorating for any tired adventurer.",
+                                "value": 75,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a useful item.",
+                                "announce": "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'",
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "power": 100
+                            }
+                        },
+                        {
+                            "__class__": "Antidote",
+                            "__module__": "src.items",
+                            "props": {
+                                "weight": 0.25,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 3,
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "name": "Antidote",
+                                "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                                "value": 175,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a useful item.",
+                                "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "power": 15
+                            }
+                        }
+                    ],
+                    "base_gold": 800,
+                    "shop_conditions": {
+                        "value": [],
+                        "availability": [],
+                        "unique": []
+                    },
+                    "shop": {
+                        "__class__": "ShopInterface",
+                        "__module__": "src.interface",
+                        "props": {
+                            "merchant": "<circular_ref:JamboHealsU>",
+                            "player": null,
+                            "base_buy_modifier": 1.0,
+                            "base_sell_modifier": 0.5,
+                            "buy_modifier": 1.0,
+                            "sell_modifier": 0.5,
+                            "buy_menu": {
+                                "__class__": "ShopBuyMenu",
+                                "__module__": "src.interface",
+                                "props": {
+                                    "shop": "<circular_ref:ShopInterface>",
+                                    "title": "Buy Menu",
+                                    "choices": [],
+                                    "exit_label": "Back",
+                                    "exit_message": "Leaving Buy Menu!"
+                                }
+                            },
+                            "sell_menu": {
+                                "__class__": "ShopSellMenu",
+                                "__module__": "src.interface",
+                                "props": {
+                                    "shop": "<circular_ref:ShopInterface>",
+                                    "title": "Sell Menu",
+                                    "choices": [],
+                                    "exit_label": "Back",
+                                    "exit_message": "Leaving Sell Menu!"
+                                }
+                            },
+                            "choices": [
+                                {
+                                    "label": "Buy",
+                                    "submenu": "<circular_ref:ShopBuyMenu>"
+                                },
+                                {
+                                    "label": "Sell",
+                                    "submenu": "<circular_ref:ShopSellMenu>"
+                                }
+                            ],
+                            "title": "Jambo's Shop",
+                            "exit_label": "Leave Shop",
+                            "exit_message": "Jambo waves enthusiastically and loudly calls out, 'Jambo wishes you well on your travels and don't forget: When you blue, Jambo Heals U!'"
+                        }
+                    }
+                }
+            }
+        ],
+        "objects": [],
+        "block_exit": [],
+        "symbol": ""
     },
     "(4, 3)": {
         "id": "tile_4_3",
