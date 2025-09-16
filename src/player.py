@@ -1232,6 +1232,10 @@ he lets out a barely audible whisper:""", "red")
                         continue
                     for i, item in enumerate(choices):
                         if i == int(inventory_selection):
+                            # Prevent using merchandise items until purchased
+                            if getattr(item, 'merchandise', False):
+                                cprint("You must purchase {} before using or equipping it.".format(item.name), "red")
+                                break
                             if "use" in item.interactions and hasattr(item, "use"):
                                 print("Jean used {}!".format(item.name))
                                 item.use(self)
@@ -1261,6 +1265,10 @@ he lets out a barely audible whisper:""", "red")
                 if issubclass(item.__class__, items.Consumable) or issubclass(item.__class__, items.Special):
                     search_item = item.name.lower() + ' ' + item.announce.lower()
                     if lower_phrase in search_item and hasattr(item, "use"):
+                        # Block using merchandise items by phrase as well
+                        if getattr(item, 'merchandise', False):
+                            # Exclude merchandise from possible items to use
+                            continue
                         confirm = input(colored("Use {}? (y/n)".format(item.name), "cyan"))
                         acceptable_confirm_phrases = ['y', 'Y', 'yes', 'Yes', 'YES']
                         if confirm in acceptable_confirm_phrases:
