@@ -120,10 +120,35 @@ class Item:
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
 
     def on_equip(self, player: 'Player') -> None:
+        # Prevent equipping merchandise items until purchased
+        if getattr(self, 'merchandise', False):
+            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            # Ensure the item is not marked as equipped on the player
+            try:
+                if hasattr(self, 'isequipped'):
+                    self.isequipped = False  # type: ignore[assignment]
+                    # If it is a weapon, ensure the player's eq_weapon falls back to fists
+                    if issubclass(self.__class__, Weapon):
+                        player.eq_weapon = getattr(player, 'fists', player.eq_weapon)
+                # restore interactions to allow equip later
+                if "unequip" in self.interactions:
+                    try:
+                        self.interactions.remove("unequip")
+                    except ValueError:
+                        pass
+                if "equip" not in self.interactions:
+                    self.interactions.append("equip")
+                functions.refresh_stat_bonuses(player)
+                player.refresh_protection_rating()
+            except Exception:
+                # If anything goes wrong here, fail gracefully without breaking the equip flow
+                pass
+            return
+        # Normal equip behavior: apply any equip states
         if len(self.equip_states) > 0:
             for state in self.equip_states:
                 player.apply_state(state)
-        pass
+        return
 
     def on_unequip(self, player: 'Player') -> None:
         pass
@@ -1179,11 +1204,15 @@ class Restorative(Consumable):
         self.use(player)
 
     def use(self, player: 'Player') -> None:
+        # Prevent using merchandise items until purchased
+        if getattr(self, 'merchandise', False):
+            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            return
         if player.hp < player.maxhp:
             print(
-                "Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
-                "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
-                "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
+               "Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
+               "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
+               "muscles relaxing, and the myriad of scratches and cuts closing up.\n")
             amount: int = int((self.power * random.uniform(0.8, 1.2)))
             missing_hp: int = player.maxhp - player.hp
             if amount > missing_hp:
@@ -1218,7 +1247,7 @@ class Draught(Consumable):
             self.description = "A box filled with bottles of a green fluid giving off a warm, pleasant glow.\n" \
                                "Invigorating for any tired adventurer.\n" \
                                "There appear to be {} bottles in the box.\n".format(self.count)
-            self.announce = "There is a box of small glass bottles here."
+            self.announce = "There is a box of small glass bottles containing glowing green fluid here."
         else:
             self.description = "A green fluid giving off a warm, pleasant glow.\n" \
                                "Invigorating for any tired adventurer."
@@ -1229,6 +1258,9 @@ class Draught(Consumable):
         self.use(player)
 
     def use(self, player: 'Player') -> None:
+        if getattr(self, 'merchandise', False):
+            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            return
         if player.hp < player.maxhp:
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                   "to have lifted off of his shoulders for the time being.".format(self.name))
@@ -1268,7 +1300,7 @@ class Antidote(Consumable):
                                "Drinking one restores a small amount of health and \n" \
                                "neutralizes harmful toxins in the bloodstream. \n" \
                                "There appear to be {} vials in the box.\n".format(self.count)
-            self.announce = "There is a box of small glass bottles here."
+            self.announce = "There is a box of small glass bottles containing a murky green fluid here."
         else:
             self.description = "A murky green fluid of questionable chemistry.\n" \
                                "Drinking it restores a small amount of health and \n" \
@@ -1280,6 +1312,9 @@ class Antidote(Consumable):
         self.use(player)
 
     def use(self, player: 'Player') -> None:
+        if getattr(self, 'merchandise', False):
+            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            return
         poisons: List[Any] = []
         for state in player.states:
             if hasattr(state, "statustype"):
