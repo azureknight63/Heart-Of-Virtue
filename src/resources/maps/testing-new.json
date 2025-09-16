@@ -539,7 +539,7 @@
                         }
                     ],
                     "enchantment_rate": 0.0,
-                    "stock_count": 15,
+                    "stock_count": 6,
                     "always_stock": [
                         {
                             "__class__": "Restorative",
@@ -693,7 +693,7 @@
         ],
         "objects": [],
         "block_exit": [],
-        "symbol": ""
+        "symbol": "J"
     },
     "(4, 3)": {
         "id": "tile_4_3",
