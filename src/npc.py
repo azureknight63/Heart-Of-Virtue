@@ -5,7 +5,7 @@ import src.moves as moves
 import src.functions as functions
 from neotermcolor import colored, cprint
 import src.loot_tables as loot_tables
-from src.items import (Item, Shortsword, Gold, Restorative, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
+from src.items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
                        Gloves, Helm, Boots, Armor, Weapon, Arrow)
 import src.items as items_module  # added for unique item registry management
 from src.objects import Container
@@ -273,7 +273,7 @@ class NPC:
 class Merchant(NPC):
     def __init__(self, name: str, description: str, damage: int, aggro: bool, exp_award: int,
                  stock_count: int, inventory:list[Item]=None,
-                 specialties: list[Item]=None, enchantment_rate: float=1.0,
+                 specialties: list[type[Item]]=None, enchantment_rate: float=1.0,
                  always_stock: list[Item]=None, base_gold: int=300,
                  maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
@@ -368,7 +368,7 @@ class Merchant(NPC):
         It should handle the trading logic, such as buying and selling items.
         """
         print(f"{self.name} is ready to trade with you.")
-        # First, absorb any merchandise Jean carried over so it appears in the Buy list.
+        # First, absorb any merchandise Jean carried over so it appears in the Buy menu.
         self._collect_player_merchandise(player)
         if self.shop:
             self.shop.player = player
@@ -838,6 +838,56 @@ class MiloCurioDealer(Merchant):
         shop.run()
 
 
+class JamboHealsU(Merchant):
+    """Apothecary-style merchant who always keeps core potions in stock
+
+    Always-stock is limited to common consumable potions; only a few
+    spare/random slots are filled on restock (small stock_count).
+    """
+    def __init__(self):
+        # Starter inventory so shop works before first restock
+        always_stock = [
+            Restorative(count=5, merchandise=True),
+            Draught(count=4, merchandise=True),
+            Antidote(count=3, merchandise=True),
+        ]
+        specialties = [Consumable]
+        self.inventory = []
+        super().__init__(
+            name="Jambo",
+            description="A wiry, dark-skinned merchant always wearing an oversized turban and a massive grin.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            stock_count=6,               # only a few spare slots for random stock
+            inventory=self.inventory,
+            specialties=specialties,
+            enchantment_rate=0.0,        # potions are not enchanted
+            always_stock=always_stock,
+            base_gold=800,
+            maxhp=35,
+            protection=1,
+            speed=10,
+            finesse=12,
+            charisma=14,
+            intelligence=14,
+        )
+
+    def talk(self, player):  # pragma: no cover - simple flavor
+        print("Jambo chuckles: 'Feeling a bit under the weather, friend? Well no worry; Jambo Heals U! "
+              "Come and see my selection of potions and draughts!'")
+
+    def trade(self, player):
+        # Collect any merchandise Jean brought in so it appears in the Buy list.
+        self._collect_player_merchandise(player)
+        self.shop = Shop(merchant=self, player=player, shop_name="Jambo Heals U")
+        self.shop.exit_message = ("Jambo waves enthusiastically and loudly calls out, "
+                                  "'Jambo wishes you well on your travels "
+                                  "and don't forget: When you blue, Jambo Heals U!'")
+        self.shop.player = player
+        self.shop.run()
+
+
 """ Friends """
 
 
@@ -983,3 +1033,4 @@ class GiantSpider(NPC):
         self.add_move(moves.Withdraw(self))
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self), 2)
+
