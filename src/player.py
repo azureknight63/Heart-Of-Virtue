@@ -4,6 +4,7 @@ import math
 import traceback
 from typing import TYPE_CHECKING
 
+from functions import stack_inv_items
 from switch import switch
 
 import items
@@ -1400,18 +1401,8 @@ he lets out a barely audible whisper:""", "red")
         functions.save_select(self)
 
     def stack_inv_items(self):
-        for master_item in self.inventory:  # traverse the inventory for stackable items, then stack them
-            if hasattr(master_item, "count"):
-                remove_duplicates = []
-                for duplicate_item in self.inventory:
-                    if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__\
-                            and hasattr(duplicate_item, "count"):
-                        master_item.count += duplicate_item.count
-                        remove_duplicates.append(duplicate_item)
-                if hasattr(master_item, "stack_grammar"):
-                    master_item.stack_grammar()
-                for duplicate in remove_duplicates:
-                    self.inventory.remove(duplicate)
+        # Alias call to functions.stack_inv_items to keep player code cleaner
+        stack_inv_items(self)
 
     def commands(self):
         possible_actions = self.current_room.available_actions()

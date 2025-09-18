@@ -1,3 +1,10 @@
+from functions import stack_inv_items
+from player import Player
+from npc import NPC
+from objects import Object
+from items import Item
+import copy as _copy
+
 # ANSI color codes
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -94,7 +101,7 @@ class ShopBuyMenu(BaseInterface):
             return
         if hasattr(item, 'count'):
             max_qty = min(item.count, get_gold(self.shop.player.inventory) // price)
-            self.shop._handle_count_item_transaction(
+            self.shop.handle_count_item_transaction(
                 item=item,
                 price=price,
                 max_qty=max_qty,
@@ -107,11 +114,8 @@ class ShopBuyMenu(BaseInterface):
                 print(f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}")
                 return
             if get_gold(self.shop.player.inventory) >= price:
-                self.shop._transfer_gold(self.shop.player.inventory, -price)
-                self.shop.player.inventory.append(item)
-                self.shop.merchant.inventory.remove(item)
-                item.merchandise = False
-                self.shop._transfer_gold(self.shop.merchant.inventory, price)
+                transfer_gold(self.shop.player.inventory, self.shop.merchant.inventory, price)
+                transfer_item(self.shop.merchant, self.shop.player, item)
                 print(f"{GREEN}You bought {item.name} for {price} gold.{RESET}")
             else:
                 print(f"{RED}Not enough gold.{RESET}")
@@ -169,7 +173,7 @@ class ShopSellMenu(BaseInterface):
             return
         if hasattr(item, 'count'):
             max_qty = min(item.count, get_gold(self.shop.merchant.inventory) // price)
-            self.shop._handle_count_item_transaction(
+            self.shop.handle_count_item_transaction(
                 item=item,
                 price=price,
                 max_qty=max_qty,
@@ -177,11 +181,8 @@ class ShopSellMenu(BaseInterface):
             )
         else:
             if get_gold(self.shop.merchant.inventory) >= price:
-                self.shop._transfer_gold(self.shop.merchant.inventory, -price)
-                self.shop.merchant.inventory.append(item)
-                self.shop.player.inventory.remove(item)
-                item.merchandise = True
-                self.shop._transfer_gold(self.shop.player.inventory, price)
+                transfer_gold(self.shop.merchant.inventory, self.shop.player.inventory, price)
+                transfer_item(self.shop.player, self.shop.merchant, item)
                 print(f"{GREEN}You sold {item.name} for {price} gold.{RESET}")
             else:
                 print(f"{RED}Merchant does not have enough gold.{RESET}")
@@ -200,12 +201,113 @@ class ShopSellMenu(BaseInterface):
                 print(f"{RED}Invalid selection. Please try again.{RESET}")
 
 
-def get_gold(inventory):
+def get_gold(inventory: list) -> int:
+    """
+    Calculate total gold amount in an inventory list.
+    :param inventory:
+    :return:
+    """
     gold_amt = 0
     for item in inventory:
         if hasattr(item, 'name') and item.name == 'Gold':
             gold_amt += getattr(item, 'amt', 0)
     return gold_amt
+
+
+def transfer_gold(from_inventory: list, to_inventory: list, amt: int) -> None:
+    """
+    Transfer a quantity of gold between two inventories.
+
+    Ensures each inventory has a `Gold` item (creates one with zero amount if missing),
+    then subtracts `amt` from the `from_inventory` gold item and adds `amt` to the
+    `to_inventory` gold item. Resulting negative amounts are clamped to zero.
+
+    Parameters:
+        from_inventory: list - inventory containing items; should contain or will be given a `Gold` item.
+        to_inventory: list - inventory containing items; should contain or will be given a `Gold` item.
+        amt: int - amount of gold to move from `from_inventory` to `to_inventory`.
+                   Positive `amt` moves gold from `from_inventory` to `to_inventory`.
+    """
+    def _find_gold_item(inventory: list) -> object | None:
+        for search_item in inventory:
+            if hasattr(search_item, 'name') and search_item.name == 'Gold':
+                return search_item
+        return None
+
+    def _create_new_gold_item(inventory: list) -> object:
+        from items import Gold
+        new_gold = Gold(0)
+        inventory.append(new_gold)
+        return new_gold
+
+    gold_item_to = _find_gold_item(to_inventory)
+    if not gold_item_to:
+        gold_item_to = _create_new_gold_item(to_inventory)
+
+    gold_item_from = _find_gold_item(from_inventory)
+    if not gold_item_from:
+        gold_item_from = _create_new_gold_item(from_inventory)
+
+    if gold_item_from and gold_item_to:
+        gold_item_from.amt -= amt
+        gold_item_to.amt += amt
+        if gold_item_from.amt < 0:
+            gold_item_from.amt = 0
+        if gold_item_to.amt < 0:
+            gold_item_to.amt = 0
+
+
+def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: Item, qty: int=1) -> None:
+    """
+    Transfer an item (or a quantity of a stackable item) from `source` to `target`.
+
+    Behavior:
+    - Both `source` and `target` must have an `inventory` attribute (list-like). If not, a
+      message is printed and the function returns.
+    - If `item` is stackable (has `count`) and `qty` > 1, the requested quantity is clamped
+      to the available `item.count`. The source `item.count` is reduced and a copy with the
+      transferred quantity is appended to the target inventory.
+    - If the item is not stackable or a single unit is transferred, the whole item object is
+      moved from `source.inventory` to `target.inventory`.
+    - The `merchandise` flag is set on moved items according to whether the `target` is a
+      `Player` (False) or not (True).
+    - After transfer, inventories may be stacked via `stack_inv_items` and `refresh_weight`
+      is called on both `source` and `target` if available.
+    - No exceptions are raised; failures are communicated via printed messages.
+    """
+    if not hasattr(source, 'inventory') or not hasattr(target, 'inventory'):
+        print(f"{RED}Error: Source or target does not have an inventory!{RESET}")
+        return
+    from_inventory = source.inventory
+    to_inventory = target.inventory
+    if item in from_inventory:
+        if hasattr(item, 'count') and item.count > 1 and qty > 1:  # noqa: Item already checked for attribute
+            if qty > item.count:
+                qty = item.count
+            item.count -= qty
+            # Instantiate a separate item instance with the same attributes but a new count
+            new_item = item.__class__.__new__(item.__class__)
+            if hasattr(item, '__dict__'):
+                for k, v in item.__dict__.items():
+                    setattr(new_item, k, _copy.copy(v))
+            # Ensure the transferred stack size and merchandise flag are correctly set
+            setattr(new_item, 'count', qty)
+            new_item.merchandise = False if isinstance(target, Player) else True
+            to_inventory.append(new_item)
+            stack_inv_items(target)
+            if item.count <= 0:
+                from_inventory.remove(item)
+        else:
+            from_inventory.remove(item)
+            to_inventory.append(item)
+            item.merchandise = False if isinstance(target, Player) else True
+        # Stack items in to_inventory if applicable
+        if hasattr(item, 'count'):
+            stack_inv_items(target)
+        if hasattr(source, 'refresh_weight') and callable(source.refresh_weight):
+            source.refresh_weight()
+        if hasattr(target, 'refresh_weight') and callable(target.refresh_weight):
+            target.refresh_weight()
 
 
 class ShopInterface(BaseInterface):
@@ -239,7 +341,7 @@ class ShopInterface(BaseInterface):
     def set_sell_modifier(self, modifier):
         self.sell_modifier = modifier
 
-    def _handle_count_item_transaction(self, item, price, max_qty, transaction_type):
+    def handle_count_item_transaction(self, item, price, max_qty, transaction_type):
         if max_qty < 1:
             msg = f"{RED}Not enough gold or item unavailable.{RESET}" if transaction_type == "buy" \
                 else f"{RED}Merchant does not have enough gold or item unavailable.{RESET}"
@@ -276,42 +378,15 @@ class ShopInterface(BaseInterface):
             if item_weight > weightcap:
                 print(f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}")
                 return False
-            self._transfer_gold(self.player.inventory, -total_price)
-            self.player.inventory.append(item)
-            self.player.stack_inv_items()
-            self.player.refresh_weight()
-            item.count -= qty
-            if item.count <= 0:
-                self.merchant.inventory.remove(item)
-            self._transfer_gold(self.merchant.inventory, total_price)
+            transfer_gold(self.player.inventory, self.merchant.inventory, total_price)
+            transfer_item(self.merchant, self.player, item, qty)
             print(f"{GREEN}You bought {qty}x {item.name} for {total_price} gold.{RESET}")
         else:  # sell
-            self._transfer_gold(self.merchant.inventory, -total_price)
-            # Add to merchant inventory (stack or new item)
-            if hasattr(item, 'copy'):
-                self.merchant.inventory.append(item.copy(qty))
-            else:
-                self.merchant.inventory.append(item)
-            item.count -= qty
-            if item.count <= 0:
-                self.player.inventory.remove(item)
-            self.player.refresh_weight()
-            self._transfer_gold(self.player.inventory, total_price)
+            transfer_gold(self.merchant.inventory, self.player.inventory, total_price)
+            transfer_item(self.player, self.merchant, item, qty)
             print(f"{GREEN}You sold {qty}x {item.name} for {total_price} gold.{RESET}")
 
         return True
-
-    def _transfer_gold(self, inventory, amt):
-        for item in inventory:
-            if hasattr(item, 'name') and item.name == 'Gold':
-                item.amt += amt
-                if item.amt <= 0:
-                    inventory.remove(item)
-                return
-        if amt > 0:
-            # Add gold if not present
-            from items import Gold
-            inventory.append(Gold(amt))
 
     def handle_choice(self, idx: int):
         self.choices = [

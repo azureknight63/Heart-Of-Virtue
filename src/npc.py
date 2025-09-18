@@ -1,16 +1,15 @@
 import random
 import time
-import src.genericng as genericng
-import src.moves as moves
-import src.functions as functions
+import genericng as genericng
+import moves as moves
+import functions as functions
 from neotermcolor import colored, cprint
-import src.loot_tables as loot_tables
-from src.items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
+import loot_tables as loot_tables
+from items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
                        Gloves, Helm, Boots, Armor, Weapon, Arrow)
-import src.items as items_module  # added for unique item registry management
-from src.objects import Container
-from src.interface import ShopInterface as Shop
-from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+import items as items_module  # added for unique item registry management
+from objects import Container
+from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -25,7 +24,8 @@ class NPC:
         self.name = name
         self.description = description
         self.current_room = None
-        self.inventory: list[Item] = inventory
+        # Preserve provided inventory instead of always clobbering it
+        self.inventory: list[Item] = inventory if inventory is not None else []
         self.idle_message = idle_message
         self.alert_message = alert_message
         self.maxhp = maxhp
@@ -138,7 +138,6 @@ class NPC:
         self.known_moves = [moves.NpcRest(self)]
         self.current_move = None
         self.states = []
-        self.inventory = []
         self.in_combat = False
         self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5,
         # ranged is 20. Distance is in feet (for reference)
@@ -313,6 +312,9 @@ class Merchant(NPC):
         Rationale: If Jean brings unpaid shop goods to the merchant, presume intent to purchase and
         surface them in the Buy menu. Similar pacing & flavor to player.drop_merchandise_items().
         """
+        #Todo: this seems to be grabbing recently-purchased items.
+        #todo: Additionally, the qty is wrong when it appears in shop; it seems the wrong count is set on purchase
+        #todo: not sure what I did but merchants won't spawn now!
         if not player or not hasattr(player, 'inventory'):
             return
         phrases = [
@@ -357,7 +359,15 @@ class Merchant(NPC):
         """
         if self.inventory is None:
             self.inventory = []
-        self.shop = Shop(merchant=self, player=None, shop_name=f"{self.name}'s Shop")
+        # Local import to avoid circular import with interface -> npc
+        try:
+            from interface import ShopInterface as Shop
+        except Exception:
+            Shop = None
+        if Shop:
+            self.shop = Shop(merchant=self, player=None, shop_name=f"{self.name}'s Shop")
+        else:
+            self.shop = None
 
     def talk(self, player):
         print(self.name + " has nothing to say.")
@@ -387,15 +397,35 @@ class Merchant(NPC):
         :return int: The total number of items in stock.
         """
         total = len(self.inventory)
-        if self.current_room and getattr(self.current_room, 'map', None):
-            rooms = self.current_room.map.values() if hasattr(self.current_room.map, 'values') else self.current_room.map
+        # Support room.universe.map for test harnesses when room.map is missing
+        rooms_source = None
+        if self.current_room:
+            rooms_source = getattr(self.current_room, 'map', None)
+            if rooms_source is None:
+                uni = getattr(self.current_room, 'universe', None)
+                if uni is not None:
+                    rooms_source = getattr(uni, 'map', None)
+        if rooms_source:
+            rooms = rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source
             for room in rooms:
                 for obj in getattr(room, "objects", []):
-                    if (hasattr(obj, "inventory") and hasattr(obj, "merchant")):
+                    if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                         owner = getattr(obj, "merchant", None)
                         if owner == self or owner == self.name:
                             total += len(getattr(obj, 'inventory', []))
         return total
+
+    def _remove_placed_item_from_room(self, item: Item):
+        room_items = getattr(self.current_room, 'items_here', None)
+        if room_items is None:
+            room_items = getattr(self.current_room, 'items', None)
+        if room_items is None:
+            room_items = getattr(self.current_room, 'spawned', None)
+        if room_items and item in room_items:
+            try:
+                room_items.remove(item)
+            except Exception:
+                pass
 
     def update_goods(self):
         """Refresh or update the merchant's inventory.
@@ -414,6 +444,7 @@ class Merchant(NPC):
                 placed = self._place_item(item, containers)
                 if not placed:
                     self.inventory.append(item)
+                self._remove_placed_item_from_room(item)
         # Update shop conditions
         self._update_shop_conditions()
         # Fill remainder
@@ -443,11 +474,19 @@ class Merchant(NPC):
             if getattr(it, 'unique', False):  # unique flag placed on special one-off items
                 removed_unique.add(it.__class__.__name__)
         containers: list[Container] = []
-        if self.current_room and getattr(self.current_room, 'map', None):
-            rooms = self.current_room.map.values() if hasattr(self.current_room.map, 'values') else self.current_room.map
+        # Support both real Room.map and fake test harness where room.universe.map is provided
+        rooms_source = None
+        if self.current_room:
+            rooms_source = getattr(self.current_room, 'map', None)
+            if rooms_source is None:
+                uni = getattr(self.current_room, 'universe', None)
+                if uni is not None:
+                    rooms_source = getattr(uni, 'map', None)
+        if rooms_source:
+            rooms = rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source
             for room in rooms:
                 for obj in getattr(room, "objects", []):
-                    if (hasattr(obj, "inventory") and hasattr(obj, "merchant")):
+                    if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                         owner = getattr(obj, "merchant", None)
                         if owner == self or owner == self.name:
                             # Scan container inventory for unique items prior to clearing
@@ -457,12 +496,23 @@ class Merchant(NPC):
         # Now clear merchant inventory
         self.inventory = []
         # And clear container inventories while recording them
-        if not self.current_room or not getattr(self.current_room, 'map', None):
+        if not self.current_room:
             # Deregister unique items (safe even if set not present)
             for cls_name in removed_unique:
                 items_module.unique_items_spawned.discard(cls_name)
             return containers
-        for room in self.current_room.map.values():
+        # Recompute rooms_source defensively in case current_room.map was missing earlier
+        rooms_source = getattr(self.current_room, 'map', None)
+        if rooms_source is None:
+            uni = getattr(self.current_room, 'universe', None)
+            if uni is not None:
+                rooms_source = getattr(uni, 'map', None)
+        if not rooms_source:
+            # Nothing to iterate; deregister uniques and return
+            for cls_name in removed_unique:
+                items_module.unique_items_spawned.discard(cls_name)
+            return containers
+        for room in (rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source):
             if isinstance(room, str):
                 continue
             # support both objects_here and objects attribute on fake rooms
@@ -495,13 +545,12 @@ class Merchant(NPC):
         Supports either an Item subclass or an Item instance (used as a template).
         Preserves count when provided on a template instance.
         """
-        # Determine desired count (if template instance supplies it and >1)
+        # Ensure defaults
         desired_count = 0
-        template_instance = None
-        if isinstance(item_spec, Item):
-            template_instance = item_spec
-            if hasattr(item_spec, 'count') and getattr(item_spec, 'count', 0) > 1:
-                desired_count = item_spec.count
+        # Accept both class objects (e.g. Restorative) and template instances (possibly from a different module)
+        if hasattr(item_spec, '__class__') and not isinstance(item_spec, type):
+            # It's an instance; preserve count if present and derive class name from its class
+            desired_count = getattr(item_spec, 'count', 0) or 0
             item_class_name = item_spec.__class__.__name__
         else:
             # Assume it's a class / type; fall back gracefully
@@ -509,8 +558,8 @@ class Merchant(NPC):
                 item_class_name = item_spec.__name__
             else:
                 return None
-            if hasattr(item_spec, 'count') and getattr(item_spec, 'count', 0) > 1:
-                desired_count = item_spec.count
+            if getattr(item_spec, 'count', 0) > 1:
+                desired_count = getattr(item_spec, 'count', 0)
         if not self.current_room:
             return None
         spawned = self.current_room.spawn_item(item_class_name, merchandise=True)
@@ -717,16 +766,7 @@ class Merchant(NPC):
                 continue
             if placed:
                 # Successfully placed, so we don't need it to appear in the room
-                room_items = getattr(self.current_room, 'items_here', None)
-                if room_items is None:
-                    room_items = getattr(self.current_room, 'items', None)
-                if room_items is None:
-                    room_items = getattr(self.current_room, 'spawned', None)
-                if room_items and spawned in room_items:
-                    try:
-                        room_items.remove(spawned)
-                    except Exception:
-                        pass
+                self._remove_placed_item_from_room(spawned)
         return
 
     def _update_shop_conditions(self):
@@ -778,11 +818,19 @@ class Merchant(NPC):
                     modified_value = condition.apply_to_price(modified_value)  # type: ignore[arg-type]
             item.value = max(1, int(modified_value))
         # Also apply to items in containers
-        if self.current_room and getattr(self.current_room, 'map', None):
-            for room in self.current_room.map:
+        rooms_source = None
+        if self.current_room:
+            rooms_source = getattr(self.current_room, 'map', None)
+            if rooms_source is None:
+                uni = getattr(self.current_room, 'universe', None)
+                if uni is not None:
+                    rooms_source = getattr(uni, 'map', None)
+        if rooms_source:
+            rooms_iter = rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source
+            for room in rooms_iter:
                 for obj in getattr(room, "objects", []):
                     if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
-                            getattr(obj, "merchant", None) == self.name):
+                            getattr(obj, "merchant", None) in (self, self.name)):
                         for item in obj.inventory:
                             base_value = getattr(item, 'base_value', None)
                             if base_value is None:
@@ -834,6 +882,8 @@ class MiloCurioDealer(Merchant):
         print("Milo opens his patchwork coat, revealing a dazzling array of curiosities.")
         # Collect merchandise items first (in case Jean picked something up on Milo's floor)
         self._collect_player_merchandise(player)
+        # Local import to avoid circular import at module load
+        from interface import ShopInterface as Shop
         shop = Shop(merchant=self, player=player, shop_name="The Wandering Curiosities Shop")
         shop.run()
 
@@ -880,6 +930,8 @@ class JamboHealsU(Merchant):
     def trade(self, player):
         # Collect any merchandise Jean brought in so it appears in the Buy list.
         self._collect_player_merchandise(player)
+        # Local import to avoid circular import at module load
+        from interface import ShopInterface as Shop
         self.shop = Shop(merchant=self, player=player, shop_name="Jambo Heals U")
         self.shop.exit_message = ("Jambo waves enthusiastically and loudly calls out, "
                                   "'Jambo wishes you well on your travels "
@@ -914,7 +966,7 @@ class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the 
     # His name is initially unknown. Species name is Grondite.
     def __init__(self):
         description = """
-A massive creature that somewhat resembles a man, 
+A massive creature that somewhat resembles a man,
 except he is covered head-to-toe in rock-like armor. He seems a bit clumsy and his
 speech is painfully slow and deep. He seems to prefer gestures over actual speech,
 though this makes his intent a bit difficult to interpret. At any rate, he seems
@@ -1034,3 +1086,4 @@ class GiantSpider(NPC):
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self), 2)
 
+# Agent Support: This is the end of the file npc.py

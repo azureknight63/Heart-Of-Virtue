@@ -818,3 +818,69 @@ def instantiate_event(event_cls, player, tile, params=None, repeat=False, name=N
         except Exception:
             return event_cls
 
+
+def stack_inv_items(target):
+    """
+    Collapse stackable items in `target.inventory` by summing their `count`
+    and removing duplicate instances.
+
+    Behavior:
+      - Operates only if `target.inventory` exists and is a list with 2+ items.
+      - Only items with a `count` attribute are considered stackable.
+      - Items are grouped by a best-effort stacking key:
+          1. If an item provides `stack_key()` or `stackable_key()`, that is used.
+          2. Otherwise a tuple of (class, name, description) is used.
+      - For each group, the first instance is kept as the master; other instances'
+        counts are added to the master and the duplicates are removed from the
+        inventory.
+      - If an item has `stack_grammar()`, it is called on the master after stacking.
+    """
+    if not hasattr(target, "inventory"):
+        return
+    inventory = target.inventory
+    if not isinstance(inventory, list):
+        return
+    if len(inventory) < 2:
+        return
+
+    # Build groups of stackable items without modifying the inventory in-place
+    groups: dict[tuple, list] = {}
+    for item in list(inventory):
+        if not hasattr(item, "count"):
+            # leave non-stackable items alone
+            continue
+        # Prefer explicit stack key methods if provided by the item
+        if hasattr(item, "stack_key") and callable(getattr(item, "stack_key")):
+            key = (item.__class__, "stack_key", item.stack_key())
+        elif hasattr(item, "stackable_key") and callable(getattr(item, "stackable_key")):
+            key = (item.__class__, "stackable_key", item.stackable_key())
+        else:
+            # Fallback: use class + name + description where available
+            key = (item.__class__, getattr(item, "name", None), getattr(item, "description", None))
+        groups.setdefault(key, []).append(item)
+
+    # Merge each group into a single master item and remove duplicates
+    for items in groups.values():
+        master = items[0]
+        # Sum counts from duplicates into master
+        for dup in items[1:]:
+            if dup is master:
+                continue
+            try:
+                master.count += getattr(dup, "count", 0)
+            except Exception:
+                # Fail-safe: skip problematic duplicates
+                continue
+        # Allow item to update any derived text/grammar after counts changed
+        if hasattr(master, "stack_grammar") and callable(getattr(master, "stack_grammar")):
+            try:
+                master.stack_grammar()
+            except Exception:
+                pass
+        # Remove duplicate instances from the inventory
+        for dup in items[1:]:
+            try:
+                if dup in inventory:
+                    inventory.remove(dup)
+            except ValueError:
+                pass
