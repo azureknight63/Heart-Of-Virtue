@@ -280,34 +280,89 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
         return
     from_inventory = source.inventory
     to_inventory = target.inventory
-    if item in from_inventory:
-        if hasattr(item, 'count') and item.count > 1 and qty > 1:  # noqa: Item already checked for attribute
-            if qty > item.count:
-                qty = item.count
-            item.count -= qty
-            # Instantiate a separate item instance with the same attributes but a new count
+
+    # Helper to set merchandise flag consistently
+    def _set_merch_flag(obj, is_target_player):
+        try:
+            obj.merchandise = False if is_target_player else True
+        except Exception:
+            # ignore if cannot set
+            pass
+
+    # Ensure qty is at least 1
+    if qty < 1:
+        qty = 1
+
+    # If the item isn't in the source inventory, nothing to do
+    if item not in from_inventory:
+        print(f"{RED}Error: Item not found in source inventory.{RESET}")
+        return
+
+    is_target_player = target.name == "Jean"
+
+    # Handle stackable items
+    if hasattr(item, 'count') and getattr(item, 'count', 0) > 1:
+        available = getattr(item, 'count', 0)
+        # Clamp requested qty to available
+        if qty >= available:
+            # Move entire stack object
+            try:
+                from_inventory.remove(item)
+            except ValueError:
+                pass
+            to_inventory.append(item)
+            _set_merch_flag(item, is_target_player)
+        else:
+            # Split stack: decrement source and create a new instance for the transferred qty
+            item.count = available - qty
+            if hasattr(item, "stack_grammar") and callable(item.stack_grammar):
+                item.stack_grammar()
+            # Create a shallow copy of the item object then set count to qty
             new_item = item.__class__.__new__(item.__class__)
             if hasattr(item, '__dict__'):
                 for k, v in item.__dict__.items():
-                    setattr(new_item, k, _copy.copy(v))
-            # Ensure the transferred stack size and merchandise flag are correctly set
+                    try:
+                        setattr(new_item, k, _copy.copy(v))
+                    except Exception:
+                        try:
+                            setattr(new_item, k, v)
+                        except Exception:
+                            pass
             setattr(new_item, 'count', qty)
-            new_item.merchandise = False if isinstance(target, Player) else True
+            _set_merch_flag(new_item, is_target_player)
             to_inventory.append(new_item)
-            stack_inv_items(target)
-            if item.count <= 0:
-                from_inventory.remove(item)
-        else:
+            # If source stack was reduced to zero for some reason, remove it
+            if getattr(item, 'count', 0) <= 0:
+                try:
+                    from_inventory.remove(item)
+                except ValueError:
+                    pass
+    else:
+        # Non-stackable or single-count item: move the object itself
+        try:
             from_inventory.remove(item)
-            to_inventory.append(item)
-            item.merchandise = False if isinstance(target, Player) else True
-        # Stack items in to_inventory if applicable
-        if hasattr(item, 'count'):
-            stack_inv_items(target)
-        if hasattr(source, 'refresh_weight') and callable(source.refresh_weight):
+        except ValueError:
+            pass
+        to_inventory.append(item)
+        _set_merch_flag(item, is_target_player)
+
+    # Attempt to stack items on the receiving side if needed
+    try:
+        stack_inv_items(target)
+    except Exception:
+        pass
+
+    # Refresh weights if possible
+    if hasattr(source, 'refresh_weight') and callable(source.refresh_weight):
+        try:
             source.refresh_weight()
-        if hasattr(target, 'refresh_weight') and callable(target.refresh_weight):
+        except Exception:
+            pass
+    if hasattr(target, 'refresh_weight') and callable(target.refresh_weight):
+        try:
             target.refresh_weight()
+        except Exception:
+            pass
 
 
 class ShopInterface(BaseInterface):

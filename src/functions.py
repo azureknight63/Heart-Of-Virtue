@@ -850,10 +850,8 @@ def stack_inv_items(target):
             # leave non-stackable items alone
             continue
         # Prefer explicit stack key methods if provided by the item
-        if hasattr(item, "stack_key") and callable(getattr(item, "stack_key")):
-            key = (item.__class__, "stack_key", item.stack_key())
-        elif hasattr(item, "stackable_key") and callable(getattr(item, "stackable_key")):
-            key = (item.__class__, "stackable_key", item.stackable_key())
+        if hasattr(item, "stack_key"):
+            key = (item.__class__, "stack_key", item.stack_key)
         else:
             # Fallback: use class + name + description where available
             key = (item.__class__, getattr(item, "name", None), getattr(item, "description", None))
