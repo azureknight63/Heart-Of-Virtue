@@ -855,6 +855,9 @@ def stack_inv_items(target):
         else:
             # Fallback: use class + name + description where available
             key = (item.__class__, getattr(item, "name", None), getattr(item, "description", None))
+        if hasattr(item, "merchandise") and item.merchandise is True:
+            # Differentiate merchandise items by their merchant status
+            key += ("merchandise",)
         groups.setdefault(key, []).append(item)
 
     # Merge each group into a single master item and remove duplicates
