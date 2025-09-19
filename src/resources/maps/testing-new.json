@@ -112,6 +112,7 @@
                         "drink",
                         "drop"
                     ],
+                    "stack_key": "Antidote",
                     "name": "Antidote",
                     "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
                     "value": 175,
@@ -143,6 +144,7 @@
                         "drink",
                         "drop"
                     ],
+                    "stack_key": "Restorative",
                     "name": "Restorative",
                     "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
                     "value": 100,
@@ -337,7 +339,7 @@
         "npcs": [
             {
                 "__class__": "JamboHealsU",
-                "__module__": "npc",
+                "__module__": "src.npc",
                 "props": {
                     "inventory": [],
                     "name": "Jambo",
@@ -554,6 +556,7 @@
                                     "drink",
                                     "drop"
                                 ],
+                                "stack_key": "Restorative",
                                 "name": "Restorative",
                                 "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
                                 "value": 100,
@@ -585,6 +588,7 @@
                                     "drink",
                                     "drop"
                                 ],
+                                "stack_key": "Draught",
                                 "name": "Draught",
                                 "description": "A green fluid giving off a warm, pleasant glow.\nInvigorating for any tired adventurer.",
                                 "value": 75,
@@ -616,6 +620,7 @@
                                     "drink",
                                     "drop"
                                 ],
+                                "stack_key": "Antidote",
                                 "name": "Antidote",
                                 "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
                                 "value": 175,
@@ -691,7 +696,45 @@
                 }
             }
         ],
-        "objects": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "sack",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "Jambo",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Consumable"
+                        }
+                    ],
+                    "stock_count": 2,
+                    "inventory": [],
+                    "name": "Burlap Sack",
+                    "description": "A large burlap sack containing various medicines.",
+                    "idle_message": "A burlap sack is sitting here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a burlap sack!",
+                    "announce": "A burlap sack is sitting here.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
         "block_exit": [],
         "symbol": "J"
     },
