@@ -482,6 +482,8 @@ class InventoryCategorySubmenu(BaseInterface):
                 label += " (Equipped)"
             if hasattr(item, 'count') and getattr(item, 'count', 1) > 1:
                 label += f" ({item.count})"
+            if hasattr(item, "merchandise") and item.merchandise:
+                label += " (Merch)"
             choices.append({'label': label, 'item': item})
         super().__init__(title=f"{player.name}'s {category_name}", choices=choices, exit_label="Back", exit_message="Returning to category selection...")
 
@@ -503,6 +505,8 @@ class InventoryCategorySubmenu(BaseInterface):
                     label += " (Equipped)"
                 if hasattr(item, 'count') and getattr(item, 'count', 1) > 1:
                     label += f" ({item.count})"
+                if hasattr(item, "merchandise") and item.merchandise:
+                    label += " (Merch)"
                 self.choices.append({'label': label, 'item': item})
 
     def handle_exit(self):
