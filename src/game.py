@@ -144,6 +144,7 @@ _\\|//__( | )______)_/
                     item.interactions.remove("equip")
         if not testing_mode:
             intro()
+        player.refresh_merchants()
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()
@@ -160,6 +161,7 @@ _\\|//__( | )______)_/
                 functions.autosave(player)
                 auto_save_timer = 0
             check_time = now
+            player.universe.game_tick_events()
 
             for item in player.inventory:
                 if item.owner is not player:
@@ -247,6 +249,7 @@ _\\|//__( | )______)_/
                             break
                     if not success:  # Nothing was found matching the arbitrary input, so Jean is mightily confused
                         cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+            player.universe.game_tick += 1
             time.sleep(0.5)
 
 

@@ -352,6 +352,21 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
 
         self.maps.append(this_map)
 
+    def game_tick_events(self):
+        """
+        Processes any events that should occur on a game tick.
+        A game tick occurs whenever the game loop iterates,
+        which is generally whenever the player takes an action.
+        """
+        print(f"\033[91m[DEBUG] game_tick: {self.game_tick}\033[0m")
+        if self.game_tick == 0:
+            return
+        if self.game_tick % 1000 == 0:
+            # Refresh merchant inventories globally.
+            # This will clear any merchandise-tagged items and merchant inventory.
+            # It will reset the merchant's gold as well and apply shop conditions.
+            self.player.refresh_merchants()
+
     @staticmethod
     def parse_hidden(setting: str) -> tuple[bool, int]:
         hidden = False
