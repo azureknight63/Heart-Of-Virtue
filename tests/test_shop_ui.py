@@ -13,6 +13,8 @@ class FakeMerchant:
     def __init__(self):
         self.name = 'Shopkeep'
         self.inventory = []
+        # production code detects merchants by presence of a 'shop' attribute
+        self.shop = None
 
 
 def _mock_input_sequence(seq):
@@ -48,6 +50,7 @@ def test_shop_buy_partial_stack(monkeypatch):
     player_stacks = [itm for itm in player.inventory if isinstance(itm, Restorative)]
     assert len(player_stacks) == 1
     assert getattr(player_stacks[0], 'count', 0) == 3
+    # Transferred item from merchant to player should be marked as not merchandise (owned by player)
     assert getattr(player_stacks[0], 'merchandise', True) is False
 
     # Gold should have moved from player to merchant (merchant gold increased)
@@ -82,6 +85,7 @@ def test_shop_sell_partial_stack(monkeypatch):
     merchant_stacks = [itm for itm in merchant.inventory if isinstance(itm, Restorative)]
     assert len(merchant_stacks) == 1
     assert getattr(merchant_stacks[0], 'count', 0) == 2
+    # Transferred item from player to merchant should be marked as merchandise
     assert getattr(merchant_stacks[0], 'merchandise', False) is True
 
     # Gold moved from merchant to player equals price * 2

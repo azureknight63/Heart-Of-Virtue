@@ -13,6 +13,8 @@ class FakeMerchant:
         self.inventory = []
         # Name used by transfer_item logic to detect players vs merchants in this codebase
         self.name = "Merchant"
+        # production code detects merchants by presence of a 'shop' attribute
+        self.shop = None
 
 
 def test_transfer_partial_stack_from_merchant_to_player():
