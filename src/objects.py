@@ -165,7 +165,7 @@ class Container(Object):
 
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
-    _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot']
+    _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot', 'check', 'view', 'examine', 'inspect', 'search', 'peruse']
 
     @property
     def start_open(self) -> bool:
@@ -296,6 +296,24 @@ class Container(Object):
         # Create and run the loot interface
         loot_interface = ContainerLootInterface(self, self.player)
         loot_interface.run()
+
+    def check(self):
+        return self.loot()
+
+    def view(self):
+        return self.loot()
+
+    def examine(self):
+        return self.loot()
+
+    def inspect(self):
+        return self.loot()
+
+    def search(self):
+        return self.loot()
+
+    def peruse(self):
+        return self.loot()
 
     def process_events(self):
         """Optimized process_events method with early return and cleaner iteration"""
