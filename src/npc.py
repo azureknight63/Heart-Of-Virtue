@@ -312,21 +312,45 @@ class Merchant(NPC):
         Rationale: If Jean brings unpaid shop goods to the merchant, presume intent to purchase and
         surface them in the Buy menu. Similar pacing & flavor to player.drop_merchandise_items().
         """
-        #Todo: this seems to be grabbing recently-purchased items.
-        #todo: Additionally, the qty is wrong when it appears in shop; it seems the wrong count is set on purchase
-        #todo: not sure what I did but merchants won't spawn now!
         if not player or not hasattr(player, 'inventory'):
             return
         phrases = [
             "{merchant} arches a brow: 'Ahh, eyeing the {item}, are we? I'll just set that out proper.'",
-            "{merchant} deftly relieves Jean of the {item} and adds it to the display.",
+            "{merchant} deftly takes the {item} and adds it to the display.",
             "With a practiced motion {merchant} places the {item} among the wares.",
             "'{item}? Fine taste,' {merchant} says, arranging it for sale.",
             "{merchant} chuckles softly and logs the {item} into a battered ledger.",
-            "'{player}, I'll catalog that {item} for you first,' {merchant} murmurs." ,
-            "The {item} is whisked from Jean's hands and rotated under the light before joining the stock." ,
-            "{merchant} nods knowingly— the {item} now sits center shelf." ,
-            "'Curious about the {item}? Let's price it properly,' says {merchant}."
+            "'I'll catalog that {item} for you first,' {merchant} murmurs.",
+            "The {item} is swept into a polished tray and set beneath a lamp by {merchant}.",
+            "{merchant} nods knowingly; the {item} now sits at the center of the shelf.",
+            "'Curious about the {item}? Let's price it properly,' says {merchant}.",
+            "{merchant} rubs the {item} with a cloth, revealing a faint maker's mark.",
+            "{merchant} inspects the {item} closely, humming as if counting its merits.",
+            "A small tag is tied to the {item} and {merchant} sets it upright for viewing.",
+            "{merchant} smiles: 'This will fetch a good coin or two on market day.'",
+            "{merchant} sets the {item} beneath glass and adjusts its angle for the light.",
+            "'A rare find,' {merchant} whispers, handling the {item} with care.",
+            "{merchant} dips a finger in a small pot and brushes away dust from the {item}.",
+            "The {item} is rotated slowly as {merchant} asks a passing customer if they fancy it.",
+            "{merchant} murmurs to themselves while weighing the {item}'s qualities.",
+            "A tiny charcoal sketch of the {item} is scribbled into the ledger by {merchant}.",
+            "'Keep an eye on that one,' {merchant} says, pointing to the {item} as he cocks a smile.",
+            "{merchant} wraps the {item} in cloth and tucks it among the curios for safekeeping.",
+            "{merchant} hums an old tune while polishing the {item}'s edges.",
+            "The {item} is placed upon a velvet cushion and presented as if it were a trinket of kings.",
+            "{merchant} traces a worn seam on the {item} and nods appreciatively.",
+            "'I'll put a modest price to start,' {merchant} decides, fastening a tag to the {item}.",
+            "{merchant} tests the {item}'s weight with a practiced hand before shelving it.",
+            "A faint smile crosses {merchant}'s face as he tucks the {item} into the display case.",
+            "{merchant} murmurs, 'There's history in this piece,' as the {item} is set out.",
+            "The {item} receives a final dusting before being propped among the wares by {merchant}.",
+            "{merchant} whispers, 'Keep this quiet — it's a curious thing,' and gifts it a place of honor.",
+            "{merchant} consults a small book of prices, then scribbles a number next to the {item}.",
+            "{merchant} cradles the {item} for a moment, then places it where passersby may admire it.",
+            "A thin ribbon is looped about the {item} and tied by {merchant} with a flourish.",
+            "'Handled gently,' {merchant} notes, placing the {item} where only careful hands may reach.",
+            "{merchant} leans in, as if to tell a story about the {item}, "
+            "but decides against it and places it on display."
         ]
         took_any = False
         for it in player.inventory[:]:
@@ -342,8 +366,7 @@ class Merchant(NPC):
                 self.inventory.append(it)
                 msg = random.choice(phrases).format(
                     merchant=self.name.split(' ')[0],
-                    item=getattr(it, 'name', 'item'),
-                    player=getattr(player, 'name', 'Jean')
+                    item=getattr(it, 'name', 'item')
                 )
                 print(msg)
                 time.sleep(0.15)
