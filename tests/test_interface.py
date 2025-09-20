@@ -299,8 +299,8 @@ class TestContainerLootInterface(unittest.TestCase):
         self.assertEqual(self.player.inventory[0], self.item1)
         self.assertEqual(len(self.container.inventory), 2)
 
-        # Check print output (current implementation prints quantity like '1x')
-        PatchedPrint(mock_print).assert_any_call_stripped("Jean takes 1x Sword.")
+        # Check print output
+        PatchedPrint(mock_print).assert_any_call_stripped("Jean takes Sword.")
 
     @patch('builtins.print')
     def test_handle_choice_take_all(self, mock_print):
