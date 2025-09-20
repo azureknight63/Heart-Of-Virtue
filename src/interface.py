@@ -298,7 +298,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
         print(f"{RED}Error: Item not found in source inventory.{RESET}")
         return
 
-    is_target_player = target.name == "Jean"
+    is_target_player = (hasattr(target, "name") and target.name == "Jean")
 
     # Handle stackable items
     if hasattr(item, 'count') and getattr(item, 'count', 0) > 1:
