@@ -1,9 +1,10 @@
-'''
-All of the loot tables for NPCs can be found here. These are called from the npc module.
-'''
+"""
+All the loot tables for NPCs can be found here. These are called from the npc module.
+"""
 
 import random, decimal
-import items, states
+from src.items import item_types
+from src.states import Poisoned, PhoenixRevive
 
 
 class Enchantment:
@@ -15,18 +16,37 @@ class Enchantment:
         self.value = value  # multiplier against the item's base value; 1.5 = 50% increase in gold value
         self.equip_states = []  # enchantments can cause states to be applied to the player when the item is equipped
 
+    def _add_resistance(self, key, amount):
+        """
+        Safely add or increment a resistance on the item. Works whether add_resistance
+        is a dict (e.g. loaded from JSON) or an object with attributes.
+        """
+        ar = getattr(self.item, 'add_resistance', None)
+        if ar is None:
+            # create a dict by default
+            self.item.add_resistance = {key: amount}
+            return
+        if isinstance(ar, dict):
+            ar[key] = ar.get(key, 0) + amount
+        else:
+            # object-like: set or increment an attribute
+            if hasattr(ar, key):
+                setattr(ar, key, getattr(ar, key) + amount)
+            else:
+                setattr(ar, key, amount)
+
     def modify(self):
-        '''
+        """
         The modifications that take place against the item. Varies per enchantment
         :return:
-        '''
+        """
         pass
 
     def requirements(self):
-        '''
+        """
         Requirements that must be met for the enchantment to be selected
         :return: True or False
-        '''
+        """
         return True
 
 
@@ -45,13 +65,14 @@ class Sharp(Enchantment):
         if amount < 1:
             amount = 1
         self.item.damage += amount
-        self.item.value *= mod
-        self.item.value = int(self.item.value)
+        # scale value based on the extra damage in a manner consistent with Flaming
+        value_mod = ((mod - 1) / 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Blade"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Blade"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -75,7 +96,7 @@ class Weighted(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Blunt"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Blunt"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -93,13 +114,14 @@ class Balanced(Enchantment):
         if amount < 1:
             amount = 1
         self.item.damage += amount
-        self.item.value *= mod
-        self.item.value = int(self.item.value)
+        # scale value based on the extra damage in a manner consistent with Flaming
+        value_mod = ((mod - 1) / 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Ranged"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -120,7 +142,7 @@ class Hollow(Enchantment):  # reduced weight and damage
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = items.item_types['weapons']['archetypes']["Ranged"]
+        allowed_subtypes = item_types['weapons']['archetypes']["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -254,14 +276,11 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
     tier = 2
     def __init__(self, item):
         super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
-        self.equip_states = [states.Poisoned(None)]
+        self.equip_states = [Poisoned(None)]
 
     def modify(self):
-        if hasattr(self.item, "add_resistance"):
-            if hasattr(self.item.add_resistance, "poison"):
-                self.item.add_resistance.poison += 0.8
-        else:
-            self.item.add_resistance.poison = 0.8
+        # safely add/increment poison resistance (works if add_resistance is dict or object)
+        self._add_resistance("poison", 0.4)
         self.item.value *= 1.3
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
@@ -280,6 +299,208 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
         else:
             return False
 
+
+class Dousing(Enchantment):  # grants resistance to fire when equipped
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Dousing", rarity=0, group="Prefix", value=1.25)
+
+    def modify(self):
+        # add or increase fire resistance on the item (works for dict or object)
+        self._add_resistance("fire", 0.3)
+        # increase value modestly for the protection
+        self.item.value *= 1.25
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, treated against flame.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = [
+            "Armor",
+            "Helm",
+            "Gloves",
+            "Boots",
+            "Accessory"
+        ]
+        return self.item.maintype in allowed_maintypes
+
+
+class Flaming(Enchantment):
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Flaming", rarity=0, group="Prefix", value=1.3)
+
+    def modify(self):
+        # modest elemental damage boost
+        mod = random.uniform(1.12, 1.28)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        # force weapon to do fire damage as its base damage type
+        self.item.base_damage_type = "fire"
+        value_mod = ((mod - 1) / 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, crackling with heat.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Icy(Enchantment):
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Icy", rarity=0, group="Prefix", value=1.25)
+
+    def modify(self):
+        mod = random.uniform(1.12, 1.28)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "ice"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1 )/ 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, rimed in frost.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Shocking(Enchantment):
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Shocking", rarity=0, group="Prefix", value=1.35)
+
+    def modify(self):
+        mod = random.uniform(1.10, 1.25)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "shock"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1) / 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, humming with electricity.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Earthen(Enchantment):
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Earthen", rarity=0, group="Prefix", value=1.2)
+
+    def modify(self):
+        mod = random.uniform(1.08, 1.22)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "earth"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1) / 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, bound with the weight of the earth.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Radiant(Enchantment):
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Radiant", rarity=0, group="Prefix", value=1.5)
+
+    def modify(self):
+        mod = random.uniform(1.15, 1.30)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "light"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1 )/ 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, glowing with a pure light.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Umbral(Enchantment):
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Umbral", rarity=0, group="Prefix", value=1.5)
+
+    def modify(self):
+        mod = random.uniform(1.15, 1.30)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "dark"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1 )/ 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, cloaked in shadow.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Spiritual(Enchantment):
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Spiritual", rarity=0, group="Prefix", value=1.4)
+
+    def modify(self):
+        mod = random.uniform(1.10, 1.25)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "spiritual"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1) / 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, suffused with otherworldly power.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
+
+
+class Pure(Enchantment):
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Pure", rarity=0, group="Prefix", value=1.4)
+
+    def modify(self):
+        # 'Pure' enchanment makes attacks ignore some resistances by converting to pure damage
+        mod = random.uniform(1.15, 1.30)
+        amount = self.item.damage * mod
+        if amount < 1:
+            amount = 1
+        self.item.damage += amount
+        self.item.base_damage_type = "pure"
+        # scale value based on damage bonus (fractional mod)
+        value_mod = ((mod - 1 )/ 2) + self.value
+        self.item.value = int(self.item.value * value_mod)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, its edge humming with uncompromising force.".format(self.item.name)
+
+    def requirements(self):
+        return getattr(self.item, 'maintype', None) == "Weapon"
 
 ### SUFFIXES ###
 
@@ -449,7 +670,7 @@ class OfSupplication(Enchantment):  # Increase faith by 1-3
         return True
 
 
-class OfRelief(Enchantment):  # Increase weight tolerance by 2-5 lbs
+class OfRelief(Enchantment):  # Increase weight tolerance slightly
     tier = 1
 
     def __init__(self, item):
@@ -474,7 +695,7 @@ class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per 
 
     def __init__(self, item):
         super().__init__(item, name="of the Phoenix", rarity=0, group="Suffix", value=2)
-        self.equip_states = [states.PhoenixRevive(None)]
+        self.equip_states = [PhoenixRevive(None)]
 
     def modify(self):
         self.item.value *= self.value
@@ -493,4 +714,72 @@ class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per 
         ]
         return self.item.maintype in allowed_maintypes
 
-# todo: add more enchantments!
+
+class Purifying(Enchantment):  # grants resistance to pure damage
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
+
+    def modify(self):
+        # use the helper to safely add/increment pure resistance whether add_resistance
+        # is a dict or an object
+        self._add_resistance("pure", 0.35)
+        self.item.value *= 1.5
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, tempered to guard against absolute force.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes
+
+
+class Needleproof(Enchantment):  # grants resistance to piercing attacks
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
+
+    def modify(self):
+        self._add_resistance("piercing", 0.3)
+        self.item.value *= 1.2
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, its fibers woven to shrug off arrows and needles.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes
+
+
+class Edgebound(Enchantment):  # reduces slashing damage
+    tier = 2
+    def __init__(self, item):
+        super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
+
+    def modify(self):
+        self._add_resistance("slashing", 0.3)
+        self.item.value *= 1.25
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, its plates deflect blade and saber alike.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes
+
+
+class Bulwark(Enchantment):  # toughened against crushing impacts
+    tier = 3
+    def __init__(self, item):
+        super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
+
+    def modify(self):
+        self._add_resistance("crushing", 0.35)
+        self.item.value *= 1.35
+        self.item.value = int(self.item.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = "There's a {} here, bulked and braced to take heavy blows.".format(self.item.name)
+
+    def requirements(self):
+        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        return self.item.maintype in allowed_maintypes

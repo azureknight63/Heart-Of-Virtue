@@ -89,7 +89,8 @@ class MapTile:
             actions.Alter(),
             actions.Supersaiyan(),
             actions.TestEvent(),
-            actions.SpawnObj()
+            actions.SpawnObj(),
+            actions.RefreshMerchants()
         ]
 
         for move in default_moves:
@@ -118,25 +119,43 @@ class MapTile:
         npc.current_room = self
         return npc
 
-    def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0):
+    def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
+        # python
+        import importlib
+
+        items_mod = importlib.import_module('src.items')
+        amt = max(1, int(amt))
+        spawned = []
+
         if item_type == 'Gold':
-            item = getattr(__import__('items'), item_type)(amt)
+            item = getattr(items_mod, item_type)(amt)
+            spawned.append(item)
         else:
-            item = getattr(__import__('items'), item_type)()
-            if hasattr(item, 'count'):
+            item_cls = getattr(items_mod, item_type)
+            # create a sample to inspect attributes
+            sample = item_cls()
+            if hasattr(sample, 'count'):
+                # stackable: create a single item with the requested count
+                item = sample
+                if hasattr(item, 'merchandise'):
+                    item.merchandise = merchandise
                 item.count = amt
-            else:  # item is non-stackable, so spawn duplicates
-                if amt > 1:
-                    for i in range(1, amt):
-                        dupitem = getattr(__import__('items'), item_type)()
-                        if hidden:
-                            dupitem.hidden = True
-                            dupitem.hide_factor = hfactor
-                        self.items_here.append(dupitem)
+                spawned.append(item)
+            else:
+                # non-stackable: create separate instances
+                for _ in range(amt):
+                    inst = item_cls()
+                    if hasattr(inst, 'merchandise'):
+                        inst.merchandise = merchandise
+                    spawned.append(inst)
+                item = spawned[0]
+
         if hidden:
-            item.hidden = True
-            item.hide_factor = hfactor
-        self.items_here.append(item)
+            for it in spawned:
+                it.hidden = True
+                it.hide_factor = hfactor
+
+        self.items_here.extend(spawned)
         return item
 
     def spawn_event(self, event_type, player, tile, repeat=False, params=None):

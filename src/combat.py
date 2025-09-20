@@ -1,7 +1,8 @@
 from neotermcolor import colored, cprint
 import time
 import random
-import functions
+
+from src.functions import refresh_stat_bonuses, is_input_integer, await_input
 
 
 def combat(player):
@@ -133,9 +134,9 @@ def combat(player):
 
         #  at this point, the player is alive and at least one enemy remains
         for friendly in player.combat_list_allies:
-            functions.refresh_stat_bonuses(friendly)
+            refresh_stat_bonuses(friendly)
         for enemy in player.combat_list:
-            functions.refresh_stat_bonuses(enemy)
+            refresh_stat_bonuses(enemy)
 
         #  Recovery / Entropy for HEAT
         if player.heat < 1:  # recovery
@@ -182,7 +183,7 @@ def combat(player):
                 available_moves += move_str
             print(available_moves)
             selected_move = input("Selection: ")
-            while not functions.is_input_integer(selected_move):  # only allow integers here
+            while not is_input_integer(selected_move):  # only allow integers here
                 cprint("Invalid selection.", "red", attrs=['bold'])
                 selected_move = input("Selection: ")
             try:
@@ -221,7 +222,7 @@ def combat(player):
                                         if choice.lower() == "x":
                                             player.current_move = None
                                             break
-                                        if not functions.is_input_integer(choice):
+                                        if not is_input_integer(choice):
                                             cprint("Invalid selection!", "red")
                                             continue
                                         choice = int(choice)
@@ -245,7 +246,7 @@ def combat(player):
                                                                               player.current_move.calculate_hit_chance(
                                                                                   enemy[0])), "cyan"))
                                     choice = input("Target: ")
-                                    if not functions.is_input_integer(choice):
+                                    if not is_input_integer(choice):
                                         cprint("Invalid selection!", "red")
                                         continue
                                     choice = int(choice)
@@ -300,7 +301,7 @@ def combat(player):
     for status in player.states:
         if not status.persistent:
             player.states.remove(status)
-    functions.await_input()
+    await_input()
     player.in_combat = False
     player.current_move = None
     player.current_room.evaluate_events()

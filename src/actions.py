@@ -1,5 +1,4 @@
-from player import Player
-
+from src.player import Player
 
 class Action():
     def __init__(self, method, name, hotkey, **kwargs):
@@ -154,3 +153,8 @@ class TestEvent(Action):
 class SpawnObj(Action):
     def __init__(self):
         super().__init__(method=Player.spawnobject, name="SpawnObj", hotkey=('so', 'spawn', 'spawnobject'))
+
+class RefreshMerchants(Action):  # debug utility to refresh all merchant inventories
+    def __init__(self):
+        super().__init__(method=Player.refresh_merchants, name="Refresh Merchants", hotkey=(
+            'rm', 'refreshmerchants', 'merchrefresh', 'updatemerchants'))

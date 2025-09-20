@@ -4,7 +4,6 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "south",
             "east",
             "southeast"
         ],
@@ -22,8 +21,7 @@
             "west",
             "south",
             "east",
-            "southeast",
-            "southwest"
+            "southeast"
         ],
         "block_exit": [],
         "events": [],

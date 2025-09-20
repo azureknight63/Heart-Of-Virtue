@@ -2,7 +2,9 @@ import random
 import time
 import math
 import traceback
+from typing import TYPE_CHECKING
 
+from functions import stack_inv_items
 from switch import switch
 
 import items
@@ -10,6 +12,9 @@ import functions
 import moves
 import combat
 import skilltree
+# from npc import Merchant
+if TYPE_CHECKING:
+    from npc import Merchant  # type: ignore  # for type hints only
 
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
@@ -313,6 +318,89 @@ maintenant et à l'heure de notre mort. Amen.""",
             "The smell of fresh, sweet lillies dances in Jean's memory. \nThey were Regina's favorite.",
         ]
 
+    def refresh_merchants(self, phrase: str = ''):
+        """Debug command: iterate all maps and force every Merchant to run update_goods().
+
+        Optional phrase filters merchants by case-insensitive substring in their name.
+        Provides a concise summary of successes and any failures.
+        """
+        # Defensive: guard if universe/maps not present
+        if not self.universe or not hasattr(self.universe, 'maps'):
+            cprint("Universe not initialized; cannot refresh merchants.", 'red')
+            return
+
+        target_filter = phrase.lower().strip() if phrase else ''
+
+        # Helper: returns True for objects whose class MRO contains a class named 'Merchant'.
+        def _is_merchant_instance(obj):
+            if obj is None:
+                return False
+            cls = getattr(obj, '__class__', None)
+            if cls is None:
+                return False
+            try:
+                mro = getattr(cls, 'mro', None)
+                if not callable(mro):
+                    return False
+                return any(getattr(c, '__name__', '') == 'Merchant' for c in cls.mro())
+            except Exception:
+                return False
+
+        merchants = []
+        for game_map in getattr(self.universe, 'maps', []):  # each map is a dict
+            if not isinstance(game_map, dict):
+                continue
+            for coord, tile in game_map.items():
+                if coord == 'name':
+                    continue
+                if not tile:
+                    continue
+                for npc in getattr(tile, 'npcs_here', []):
+                    try:
+                        if _is_merchant_instance(npc):
+                            npc_name = (getattr(npc, 'name', '') or '').lower()
+                            if target_filter and target_filter not in npc_name:
+                                continue
+                            merchants.append(npc)
+                    except Exception:
+                        # Skip any problematic object
+                        continue
+
+        if not merchants:
+            cprint("No merchants found to refresh." if not target_filter else
+                   f"No merchants matched filter '{target_filter}'.", 'yellow')
+            return
+
+        success = 0
+        failures = []  # list[tuple[str, str]]
+        for m in merchants:
+            try:
+                # If vendor needs shop initialization
+                if getattr(m, 'shop', None) is None and hasattr(m, 'initialize_shop'):
+                    try:
+                        m.initialize_shop()
+                    except Exception:
+                        # non-fatal; continue to try update_goods
+                        pass
+                update_fn = getattr(m, 'update_goods', None)
+                if callable(update_fn):
+                    try:
+                        update_fn()
+                        success += 1
+                    except Exception as e:
+                        failures.append((getattr(m, 'name', '<unknown>'), str(e)))
+                else:
+                    failures.append((getattr(m, 'name', '<unknown>'), 'missing update_goods'))
+            except Exception as e:
+                failures.append((getattr(m, 'name', '<unknown>'), str(e)))
+
+        cprint(f"Merchant refresh complete: {success} succeeded, {len(failures)} failed.", 'cyan')
+        if failures:
+            for name, err in failures[:10]:
+                cprint(f" - {name}: {err}", 'red')
+        # Small pause for readability in interactive sessions
+        time.sleep(0.1)
+
     def cycle_states(self):
         """
         Loop through all of the states on the player and process the effects of each one
@@ -520,25 +608,58 @@ maintenant et à l'heure de notre mort. Amen.""",
         else:
             print("### ERR IN SETTING VAR; NO ENTRY: " + params[0] + " " + params[1] + " ###")
 
-    def teleport(self, phrase=''):
+    def drop_merchandise_items(self):
+        """Drop all merchandise items in current location with individual messages."""
+        try:
+            current_tile = tile_exists(self.map, self.location_x, self.location_y)
+        except Exception:
+            current_tile = None
+        if not current_tile:
+            return
+        dropped = False
+        phrases = [
+            "Jean sets {item} down; unpaid goods don't leave the shop.",
+            "Jean places {item} carefully against the wall.",
+            "Jean pauses and returns {item} to the shop floor.",
+            "With a quiet sigh Jean lays {item} aside—he hasn't bought it yet.",
+            "Jean leaves {item} behind for the shopkeeper.",
+            "Jean props {item} where the merchant will easily find it."
+        ]
+        for item in self.inventory[:]:
+            if getattr(item, 'merchandise', False):
+                try:
+                    self.inventory.remove(item)
+                    current_tile.items_here.append(item)
+                except ValueError:
+                    continue
+                msg = random.choice(phrases).format(item=getattr(item, 'name', str(item)))
+                print(msg)
+                time.sleep(0.15)
+                dropped = True
+        if dropped:
+            # brief pause after dropping sequence for readability
+            time.sleep(0.25)
+
+    def teleport(self, target_map: str, target_coordinates: tuple):
         """
         Teleports the player to a specified area and coordinates.
 
         Args:
-            phrase (str): A string containing the area name, x, and y coordinates separated by spaces.
-                          Example: "Forest 3 5"
+            target_map (str): The name of the area to teleport to.
+            target_coordinates (tuple): The (x, y) coordinates to teleport to.
 
         Behavior:
             - If the area and coordinates are valid, moves the player there and prints the tile's intro text.
             - If invalid, prints an error message.
         """
-        params = phrase.split()
-        area_name = params[0] if len(params) > 0 else None
-        x = int(params[1]) if len(params) > 1 and params[1].isdigit() else None
-        y = int(params[2]) if len(params) > 2 and params[2].isdigit() else None
-
+        # Before teleporting, drop any merchandise items at the origin
+        self.drop_merchandise_items()
+        x = target_coordinates[0]
+        y = target_coordinates[1]
         for area in self.universe.maps:
-            if area.get('name') == area_name and x is not None and y is not None:
+            if (area.get('name') == target_map
+                    and x is not None
+                    and y is not None):
                 tile = tile_exists(area, x, y)
                 if tile:
                     self.map = area
@@ -548,9 +669,9 @@ maintenant et à l'heure de notre mort. Amen.""",
                     print(tile.intro_text())
                     return
                 else:
-                    print(f"### INVALID TELEPORT LOCATION: {phrase} ###")
+                    print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
                     return
-        print(f"### INVALID TELEPORT LOCATION: {phrase} ###")
+        print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
 
     def level_up(self):
         cprint(r"""
@@ -788,95 +909,8 @@ he lets out a barely audible whisper:""", "red")
                 finished = True
 
     def print_inventory(self):
-        item_types = set()
-        item_categories = {
-            "Consumable": {"hotkey": "c", "class": items.Consumable},
-            "Weapon": {"hotkey": "w", "class": items.Weapon},
-            "Armor": {"hotkey": "a", "class": items.Armor},
-            "Boots": {"hotkey": "b", "class": items.Boots},
-            "Helm": {"hotkey": "h", "class": items.Helm},
-            "Gloves": {"hotkey": "g", "class": items.Gloves},
-            "Accessory": {"hotkey": "y", "class": items.Accessory},
-            "Special": {"hotkey": "s", "class": items.Special}
-        }
-        gold_amt = 0
-        for item in self.inventory:
-            if hasattr(item, 'maintype'):
-                item_types.add(item.maintype)
-                if getattr(item, 'subtype', None) == "Gold":
-                    gold_amt += getattr(item, 'amt', 0)
-        item_counts = {item_type: 0 for item_type in item_types}
-        item_counts["Gold"] = gold_amt
-
-        for item in self.inventory:
-            if hasattr(item, 'maintype') and getattr(item, 'subtype', None) != "Gold":
-                item_counts[item.maintype] += 1
-
-        while True:
-            self.refresh_weight()
-            cprint(f"=====\nInventory\n=====\nWeight: {self.weight_current} / {self.weight_tolerance}", "cyan")
-            cprint(f"Gold: {item_counts['Gold']}\n\nSelect a category to view:\n\n", "cyan")
-            for item_type, count in item_counts.items():
-                if count > 0 and item_type in item_categories:
-                    hotkey = item_categories[item_type]["hotkey"]
-                    cprint(f"({hotkey}) {item_type}: {count}", "cyan")
-            cprint("(x) Cancel\n", "cyan")
-            inventory_selection = input(colored('Selection: ', "cyan"))
-            if inventory_selection == 'x':
-                break
-
-            selected_category = None
-            for key, value in item_categories.items():
-                if inventory_selection == value["hotkey"]:
-                    selected_category = key
-                    break
-
-            choices = []
-            if selected_category:
-                category_class = item_categories[selected_category]["class"]
-                for item in self.inventory:
-                    if isinstance(item, category_class):
-                        choices.append(item)
-
-            if choices:
-                for i, item in enumerate(choices):
-                    item_preference_value = colored("(P)", "magenta") if item.name in self.preferences.values() else ""
-                    display = f"{i}: {item.name} {item_preference_value}"
-                    if getattr(item, 'isequipped', False):
-                        print(f"{display} {colored('(Equipped)', 'green')}\n")
-                    elif hasattr(item, 'count'):
-                        print(f"{display} ({item.count})\n")
-                    else:
-                        print(f"{display}\n")
-                view_selection = input(colored('View which? ', "cyan"))
-                if not functions.is_input_integer(view_selection):
-                    continue
-                selected_index = int(view_selection)
-                if 0 <= selected_index < len(choices):
-                    item = choices[selected_index]
-                    print(item, '\n')
-                    if getattr(item, "subtype", None) == "Arrow" and self.preferences.get("arrow") == item.name:
-                        print('\nThis is your preferred arrow type. You will choose this when shooting '
-                              'your bow as long as you have enough.\n'
-                              'If you select "prefer" again, you will remove this preference.'
-                              ' Having no arrow preference will force you to'
-                              ' choose the arrow you want each time you shoot.\n')
-                    if getattr(item, "interactions", None):
-                        self.inventory_item_sub_menu(item)
-                    else:
-                        functions.await_input()
-
-    def inventory_item_sub_menu(self, item):
-        cprint("What would you like to do with this item?\n", "cyan")
-        for i, action in enumerate(item.interactions):
-            print("{}: {}".format(i, action.title()))
-        print("(x): Nothing, nevermind.\n")
-        selection = input(colored("Selection: ", "cyan"))
-        if functions.is_input_integer(selection):
-            selection = int(selection)
-            if hasattr(item, item.interactions[selection]):
-                method = getattr(item, item.interactions[selection])
-                method(self)
+        from interface import InventoryInterface
+        InventoryInterface(self).run()
 
     def print_status(self):
         functions.refresh_stat_bonuses(self)
@@ -1199,6 +1233,10 @@ he lets out a barely audible whisper:""", "red")
                         continue
                     for i, item in enumerate(choices):
                         if i == int(inventory_selection):
+                            # Prevent using merchandise items until purchased
+                            if getattr(item, 'merchandise', False):
+                                cprint("You must purchase {} before using or equipping it.".format(item.name), "red")
+                                break
                             if "use" in item.interactions and hasattr(item, "use"):
                                 print("Jean used {}!".format(item.name))
                                 item.use(self)
@@ -1228,6 +1266,10 @@ he lets out a barely audible whisper:""", "red")
                 if issubclass(item.__class__, items.Consumable) or issubclass(item.__class__, items.Special):
                     search_item = item.name.lower() + ' ' + item.announce.lower()
                     if lower_phrase in search_item and hasattr(item, "use"):
+                        # Block using merchandise items by phrase as well
+                        if getattr(item, 'merchandise', False):
+                            # Exclude merchandise from possible items to use
+                            continue
                         confirm = input(colored("Use {}? (y/n)".format(item.name), "cyan"))
                         acceptable_confirm_phrases = ['y', 'Y', 'yes', 'Yes', 'YES']
                         if confirm in acceptable_confirm_phrases:
@@ -1359,18 +1401,8 @@ he lets out a barely audible whisper:""", "red")
         functions.save_select(self)
 
     def stack_inv_items(self):
-        for master_item in self.inventory:  # traverse the inventory for stackable items, then stack them
-            if hasattr(master_item, "count"):
-                remove_duplicates = []
-                for duplicate_item in self.inventory:
-                    if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__\
-                            and hasattr(duplicate_item, "count"):
-                        master_item.count += duplicate_item.count
-                        remove_duplicates.append(duplicate_item)
-                if hasattr(master_item, "stack_grammar"):
-                    master_item.stack_grammar()
-                for duplicate in remove_duplicates:
-                    self.inventory.remove(duplicate)
+        # Alias call to functions.stack_inv_items to keep player code cleaner
+        stack_inv_items(self)
 
     def commands(self):
         possible_actions = self.current_room.available_actions()
@@ -1570,6 +1602,7 @@ he lets out a barely audible whisper:""", "red")
         """Helper method to take all items that don't exceed weight capacity."""
         items_to_take = []
         total_weight = 0
+        self.refresh_weight()
 
         # First determine which items can be taken
         for item in self.current_room.items_here:

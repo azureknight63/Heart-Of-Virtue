@@ -1,4 +1,4 @@
 # Add your dependencies here
 # Example:
 neotermcolor
-
+pytest-cov

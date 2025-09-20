@@ -6,7 +6,7 @@ import random
 import time
 from src import functions
 from src import states
-from ..events import *
+from src.events import Event
 
 
 class Effect(Event):
@@ -120,23 +120,27 @@ class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a p
 
 class Teleport(Event):
     """
-    Teleports the player to another location. Format is "t.mapname x-coord y-coord"
+    Event that teleports the player to a specified location on a target map.
+
+    Args:
+        player: The player to teleport.
+        tile: The current tile of the player.
+        target_map_name (str): Name of the destination map.
+        target_coordinates (tuple): Coordinates (x, y) on the destination map.
+        repeat (bool): Whether the event can repeat.
+        name (str): Name of the event.
     """
-    def __init__(self, player, tile, params=None, repeat=False, name='Teleport'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+    def __init__(self, player, tile, target_map_name: str, target_coordinates: tuple=(0,0), repeat=False, name='Teleport'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
+        self.target_map_name = target_map_name
+        self.target_coordinates = target_coordinates
 
     def check_conditions(self):
         if True:
             self.pass_conditions_to_process()
 
     def process(self):
-        for thing in self.params:
-            # account for the events associated with this object. Max of 1 event.
-            # Triggers after interacting with the shrine.
-            if thing[0] == 't':
-                param = thing.replace('t.', '')
-                self.player.teleport(param)
-
+        self.player.teleport(self.target_map_name, self.target_coordinates)
 
 class Shrine(Event):  # Generic class for Shrine-based events
     def __init__(self, player, tile, params=None, repeat=False, name='Shrine'):

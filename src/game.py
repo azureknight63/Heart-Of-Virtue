@@ -12,11 +12,11 @@ import time
 from neotermcolor import colored, cprint
 from intro_scene import intro
 
-import combat
-import functions
-import items
-from player import Player
-from universe import Universe, tile_exists
+from src.combat import combat
+import src.functions as functions
+import src.items as items
+from src.player import Player
+from src.universe import Universe, tile_exists
 import sys
 import configparser
 import ast
@@ -102,12 +102,11 @@ _\\|//__( | )______)_/
             elif selected_option == 'QUIT TO DESKTOP':
                 sys.exit()
         player = functions.load_select() if not newgame else Player()
-        universe = Universe()
-        player.universe = universe
+        player.universe = Universe(player)
         player.universe.build(player)
         starting_map_name = "default"
         try:
-            config.read('../config_dev.ini')
+            config.read('config_dev.ini')
             testing_mode = config.getboolean('Startup', 'testmode')
             skip_dialog = config.getboolean('Startup', 'skipdialog')
             if skip_dialog:
@@ -129,7 +128,7 @@ _\\|//__( | )______)_/
             player.skill_exp['Unarmed'] = 9999
 
         player.testing_mode = testing_mode
-        universe.testing_mode = testing_mode
+        player.universe.testing_mode = testing_mode
         player.map = starting_map
         player.location_x, player.location_y = startposition
         room = tile_exists(player.map, player.location_x, player.location_y)
@@ -145,6 +144,7 @@ _\\|//__( | )______)_/
                     item.interactions.remove("equip")
         if not testing_mode:
             intro()
+        player.refresh_merchants()
         print(room.intro_text())
         player.main_menu = False
         check_time = time.time()
@@ -161,6 +161,7 @@ _\\|//__( | )______)_/
                 functions.autosave(player)
                 auto_save_timer = 0
             check_time = now
+            player.universe.game_tick_events()
 
             for item in player.inventory:
                 if item.owner is not player:
@@ -188,7 +189,7 @@ _\\|//__( | )______)_/
             player.combat_list = functions.check_for_combat(player)
             if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!", "red"))
-                combat.combat(player)
+                combat(player)
             # check to make sure entering the most recent tile hasn't ended the game
             if not player.is_alive():
                 player.death()
@@ -248,6 +249,7 @@ _\\|//__( | )______)_/
                             break
                     if not success:  # Nothing was found matching the arbitrary input, so Jean is mightily confused
                         cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+            player.universe.game_tick += 1
             time.sleep(0.5)
 
 

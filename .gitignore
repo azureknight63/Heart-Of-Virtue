@@ -26,3 +26,7 @@ config_dev.ini
 /venv
 /venv/*
 /src/test.sav
+/autosave*.sav
+/test*.sav
+cov_*.json
+cov_*.txt
