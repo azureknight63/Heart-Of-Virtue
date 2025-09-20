@@ -516,7 +516,9 @@ class InventoryCategorySubmenu(BaseInterface):
         item = self.choices[idx]['item']
         print(item, '\n')
         if getattr(item, "subtype", None) == "Arrow" and self.player.preferences.get("arrow") == item.name:
-            print('\nThis is your preferred arrow type. You will choose this when shooting your bow as long as you have enough.\nIf you select "prefer" again, you will remove this preference. Having no arrow preference will force you to choose the arrow you want each time you shoot.\n')
+            print('\nThis is your preferred arrow type. You will choose this when shooting your bow as '
+                  'long as you have enough.\nIf you select "prefer" again, you will remove this preference. '
+                  'Having no arrow preference will force you to choose the arrow you want each time you shoot.\n')
         if getattr(item, "interactions", None):
             InventoryInterface.inventory_item_sub_menu_static(item, self.player)
             # After interaction, rebuild so dropped/changed items update immediately
@@ -723,7 +725,8 @@ class ContainerLootInterface(BaseInterface):
 
             # Perform transfer
             transfer_item(self.container, self.player, item, qty_to_transfer)
-            print(f"{GREEN}Jean takes {qty_to_transfer}x {getattr(item, 'name', str(item))}.{RESET}")
+            multiple_items_text = f"{qty_to_transfer}x" if qty_to_transfer > 1 else ""
+            print(f"{GREEN}Jean takes {multiple_items_text} {getattr(item, 'name', str(item))}.{RESET}")
             # Refresh container and choices, then process events
             try:
                 self.container.refresh_description()
