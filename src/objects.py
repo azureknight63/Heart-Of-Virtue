@@ -165,7 +165,7 @@ class Container(Object):
 
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
-    _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot', 'check', 'view', 'examine', 'inspect', 'search', 'peruse']
+    _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot', 'check', 'view', 'examine', 'inspect', 'peruse']
 
     @property
     def start_open(self) -> bool:
@@ -307,9 +307,6 @@ class Container(Object):
         return self.loot()
 
     def inspect(self):
-        return self.loot()
-
-    def search(self):
         return self.loot()
 
     def peruse(self):
