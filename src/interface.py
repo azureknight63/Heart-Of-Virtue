@@ -614,8 +614,10 @@ class ContainerLootInterface(BaseInterface):
         # Build choices from container inventory
         choices = []
         for i, item in enumerate(container.inventory):
+            tag_count = f"({item.count})" if hasattr(item, "count") else ""
+            tag_merch = "(Merch)" if hasattr(item, "merchandise") and item.merchandise else ""
             choices.append({
-                'label': f"{item.name} - {item.description}",
+                'label': f"{item.name} {tag_count} {tag_merch}",
                 'item': item,
                 'index': i
             })
@@ -631,7 +633,7 @@ class ContainerLootInterface(BaseInterface):
             title=f"Looting {container.nickname}",
             choices=choices,
             exit_label="Cancel",
-            exit_message="Jean closes the container without taking anything."
+            exit_message=f"Jean closes the {container.nickname}."
         )
 
     def display_title(self):
@@ -689,8 +691,10 @@ class ContainerLootInterface(BaseInterface):
         self.choices.clear()
 
         for i, item in enumerate(self.container.inventory):
+            tag_count = f"({item.count})" if hasattr(item, "count") else ""
+            tag_merch = "(Merch)" if hasattr(item, "merchandise") and item.merchandise else ""
             self.choices.append({
-                'label': f"{item.name} - {item.description}",
+                'label': f"{item.name} {tag_count} {tag_merch}",
                 'item': item,
                 'index': i
             })
