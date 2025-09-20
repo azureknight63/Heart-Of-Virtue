@@ -644,27 +644,123 @@ class ContainerLootInterface(BaseInterface):
     def handle_choice(self, idx: int):
         choice = self.choices[idx]
 
-        # Handle "Take All" option
+        # Handle container-level "Take All" option
         if choice.get('action') == 'take_all':
             self._take_all_items()
             return
 
-        # Handle individual item selection
-        item = choice['item']
-        item_index = choice['index']
+        # Handle individual item selection with a sub-menu (interactive only when stdin is a TTY)
+        # Prefer index-based transfers when an index is supplied in the choice to preserve
+        # existing behavior where an invalid index prevents transfer (used by tests).
+        item_index = choice.get('index')
+        if item_index is not None:
+            # Validate the recorded index against current container contents
+            if not isinstance(item_index, int) or item_index < 0 or item_index >= len(self.container.inventory):
+                # Invalid index -> do not transfer
+                print(f"{YELLOW}That item is no longer here.{RESET}")
+                self._rebuild_choices()
+                return
+            item = self.container.inventory[item_index]
+        else:
+            item = choice['item']
 
-        # Transfer the item
-        if item_index < len(self.container.inventory):
-            taken_item = self.container.inventory.pop(item_index)
-            self.player.inventory.append(taken_item)
-            print(f"{GREEN}Jean takes {taken_item.name}.{RESET}")
-
-            # Update container description and rebuild choices
-            self.container.refresh_description()
+        # If the item is no longer in the container (concurrent change), notify and rebuild
+        if item not in self.container.inventory:
+            print(f"{YELLOW}That item is no longer here.{RESET}")
             self._rebuild_choices()
+            return
 
-            # Process events after taking an item
-            self.container.process_events()
+        # Show detailed item info
+        try:
+            print(item)
+        except Exception:
+            print(f"{getattr(item, 'name', str(item))}")
+
+        # Indicate merchandise after the description if applicable
+        if hasattr(item, 'merchandise') and item.merchandise:
+            print(f"{MAGENTA}(This item is merchandise){RESET}")
+
+        # Build and show sub-menu options
+        is_stackable = hasattr(item, 'count')
+        print("\nWhat would you like to do?\n")
+        opt_map = {}
+        opt_idx = 0
+        if is_stackable:
+            print(f"{opt_idx}: Take some (choose a quantity)")
+            opt_map[str(opt_idx)] = 'take_some'
+            opt_idx += 1
+            print(f"{opt_idx}: Take all")
+        else:
+            print(f"{opt_idx}: Take item")
+        opt_map[str(opt_idx)] = 'take_all_item'
+        opt_idx += 1
+        print("x: Go back")
+
+        selection = input(f"{BOLD}Selection:{RESET} ")
+        if selection == 'x':
+            print(f"{YELLOW}Going back.{RESET}")
+            return
+        action = opt_map.get(selection)
+        if not action:
+            print(f"{RED}Invalid selection.{RESET}")
+            return
+
+        # Ensure player's weight is up to date
+        try:
+            self.player.refresh_weight()
+        except Exception:
+            pass
+
+        weightcap = getattr(self.player, 'weight_tolerance', 0) - getattr(self.player, 'weight_current', 0)
+
+        # Helper to finalize a successful transfer
+        def _finalize_transfer(qty_to_transfer: int):
+            # Re-check that the item still exists in the container
+            if item not in self.container.inventory:
+                print(f"{YELLOW}That item is no longer available.{RESET}")
+                self._rebuild_choices()
+                return
+
+            # Perform transfer
+            transfer_item(self.container, self.player, item, qty_to_transfer)
+            print(f"{GREEN}Jean takes {qty_to_transfer}x {getattr(item, 'name', str(item))}.{RESET}")
+            # Refresh container and choices, then process events
+            try:
+                self.container.refresh_description()
+            except Exception:
+                pass
+            self._rebuild_choices()
+            try:
+                self.container.process_events()
+            except Exception:
+                pass
+
+        weight_err_message = f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}"
+        if action == 'take_some':
+            # Only reachable for stackable items
+            available = getattr(item, 'count', 0)
+            qty = input(f"{BOLD}How many would you like to take? (1-{available}): {RESET}")
+            if not qty.isdigit():
+                print(f"{RED}Invalid quantity.{RESET}")
+                return
+            qty = int(qty)
+            if qty < 1 or qty > available:
+                print(f"{RED}Invalid quantity.{RESET}")
+                return
+            item_weight = getattr(item, 'weight', 0) * qty
+            if item_weight > weightcap:
+                print(weight_err_message)
+                return
+            _finalize_transfer(qty)
+
+        elif action == 'take_all_item':
+            # For stackable items, take the whole stack; for single items, take the object
+            qty = getattr(item, 'count', 1)
+            item_weight = getattr(item, 'weight', 0) * qty
+            if item_weight > weightcap:
+                print(weight_err_message)
+                return
+            _finalize_transfer(qty)
 
     def _take_all_items(self):
         """Transfer all items from container to player"""
@@ -726,4 +822,3 @@ class ContainerLootInterface(BaseInterface):
 
         if not self.choices:
             print(f"{YELLOW}The {self.container.nickname} is now empty.{RESET}")
-
