@@ -282,12 +282,15 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
     to_inventory = target.inventory
 
     # Helper to set merchandise flag consistently
-    def _set_merch_flag(obj, is_target_player):
-        try:
-            obj.merchandise = False if is_target_player else True
-        except Exception:
-            # ignore if cannot set
-            pass
+    def _set_merch_flag(obj, item_target, item_source):
+        if not hasattr(obj, 'merchandise'):
+            return
+        is_player = lambda ent: getattr(ent, "name", None) == "Jean"
+        is_merchant = lambda ent: hasattr(ent, "shop")
+        if is_player(item_target) and is_merchant(item_source):
+            obj.merchandise = False
+        elif is_player(item_source) and is_merchant(item_target):
+            obj.merchandise = True
 
     # Ensure qty is at least 1
     if qty < 1:
@@ -297,8 +300,6 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
     if item not in from_inventory:
         print(f"{RED}Error: Item not found in source inventory.{RESET}")
         return
-
-    is_target_player = (hasattr(target, "name") and target.name == "Jean")
 
     # Handle stackable items
     if hasattr(item, 'count') and getattr(item, 'count', 0) > 1:
@@ -311,7 +312,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
             except ValueError:
                 pass
             to_inventory.append(item)
-            _set_merch_flag(item, is_target_player)
+            _set_merch_flag(item, target, source)
         else:
             # Split stack: decrement source and create a new instance for the transferred qty
             item.count = available - qty
@@ -329,7 +330,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
                         except Exception:
                             pass
             setattr(new_item, 'count', qty)
-            _set_merch_flag(new_item, is_target_player)
+            _set_merch_flag(new_item, target, source)
             to_inventory.append(new_item)
             # If source stack was reduced to zero for some reason, remove it
             if getattr(item, 'count', 0) <= 0:
@@ -344,7 +345,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
         except ValueError:
             pass
         to_inventory.append(item)
-        _set_merch_flag(item, is_target_player)
+        _set_merch_flag(item, target, source)
 
     # Attempt to stack items on the receiving side if needed
     try:
@@ -766,24 +767,52 @@ class ContainerLootInterface(BaseInterface):
             _finalize_transfer(qty)
 
     def _take_all_items(self):
-        """Transfer all items from container to player"""
+        """Transfer all items from container to player, validating weight for each item individually"""
         if not self.container.inventory:
             print(f"{YELLOW}The container is already empty.{RESET}")
             return
 
-        taken_items = self.container.inventory.copy()
-        self.container.inventory.clear()
-        self.player.inventory.extend(taken_items)
+        snapshot = self.container.inventory.copy()
+        for item in snapshot:
+            qty_available = getattr(item, 'count', 1)
+            item_weight = getattr(item, 'weight', 0)
 
-        for item in taken_items:
-            print(f"{GREEN}Jean takes {item.name}.{RESET}")
+            # Refresh player's weight and compute remaining capacity
+            try:
+                self.player.refresh_weight()
+            except Exception:
+                pass
+            weightcap = getattr(self.player, 'weight_tolerance', 0) - getattr(self.player, 'weight_current', 0)
 
-        self.container.refresh_description()
-        self.container.process_events()
+            # Determine how many of this item can be taken
+            if item_weight <= 0:
+                qty_to_take = qty_available
+            else:
+                max_fit = weightcap // item_weight
+                if max_fit <= 0:
+                    print(f"{YELLOW}Jean can't carry any of {getattr(item, 'name', str(item))} right now.{RESET}")
+                    continue
+                qty_to_take = min(qty_available, max_fit)
 
-        # Clear choices since container is now empty
-        self.choices.clear()
-        print(f"{YELLOW}Jean has taken everything from the {self.container.nickname}.{RESET}")
+            transfer_item(self.container, self.player, item, qty_to_take)
+            multiple_items_text = f"{qty_to_take}x " if qty_to_take > 1 else ""
+            print(f"{GREEN}Jean takes {multiple_items_text}{getattr(item, 'name', str(item))}.{RESET}")
+
+        try:
+            self.container.refresh_description()
+        except Exception:
+            pass
+        try:
+            self.container.process_events()
+        except Exception:
+            pass
+
+        # Rebuild choices to reflect remaining items
+        self._rebuild_choices()
+        if not self.choices:
+            print(f"{YELLOW}Jean has taken everything from the {self.container.nickname}.{RESET}")
+        else:
+            print(f"{YELLOW}Jean has taken what he can; some items remain in the {self.container.nickname}.{RESET}")
 
     def _rebuild_choices(self):
         """Rebuild the choices list after items are taken"""
