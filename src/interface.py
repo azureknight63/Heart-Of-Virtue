@@ -726,8 +726,8 @@ class ContainerLootInterface(BaseInterface):
 
             # Perform transfer
             transfer_item(self.container, self.player, item, qty_to_transfer)
-            multiple_items_text = f"{qty_to_transfer}x" if qty_to_transfer > 1 else ""
-            print(f"{GREEN}Jean takes {multiple_items_text} {getattr(item, 'name', str(item))}.{RESET}")
+            multiple_items_text = f"{qty_to_transfer}x " if qty_to_transfer > 1 else ""
+            print(f"{GREEN}Jean takes {multiple_items_text}{getattr(item, 'name', str(item))}.{RESET}")
             # Refresh container and choices, then process events
             try:
                 self.container.refresh_description()
