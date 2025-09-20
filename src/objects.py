@@ -298,19 +298,19 @@ class Container(Object):
         loot_interface.run()
 
     def check(self):
-        return self.loot()
+        self.loot()
 
     def view(self):
-        return self.loot()
+        self.loot()
 
     def examine(self):
-        return self.loot()
+        self.loot()
 
     def inspect(self):
-        return self.loot()
+        self.loot()
 
     def peruse(self):
-        return self.loot()
+        self.loot()
 
     def process_events(self):
         """Optimized process_events method with early return and cleaner iteration"""
