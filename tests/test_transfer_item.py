@@ -11,6 +11,8 @@ from items import Restorative
 class FakeMerchant:
     def __init__(self):
         self.inventory = []
+        # Name used by transfer_item logic to detect players vs merchants in this codebase
+        self.name = "Merchant"
 
 
 def test_transfer_partial_stack_from_merchant_to_player():
@@ -84,4 +86,3 @@ def test_selling_stack_sets_merchandise_true_on_merchant():
     assert len(merchant_stacks) == 1
     assert getattr(merchant_stacks[0], 'count', 0) == 2
     assert getattr(merchant_stacks[0], 'merchandise', False) is True
-
