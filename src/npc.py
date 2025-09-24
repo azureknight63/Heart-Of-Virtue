@@ -1033,6 +1033,15 @@ class Mynx(Friend):
         # Short LLM interaction history: list of {'prompt': str, 'response': str}, most recent last
         self._llm_history: list[dict] = []
 
+    # Precompiled regex patterns (avoid recompiling each call)
+    _re_whitespace = re.compile(r"\s+")
+    _re_sentence_split = re.compile(r"[.!?]")
+    _re_capitalized_token = re.compile(r"^[A-Z][A-Za-z\-']+$")
+    _re_disallowed_name_token = re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
+    _re_self_actions = re.compile(r"\b(batting|pawing|swatting|tapping) at (?:{name}|{pronoun})\b", re.IGNORECASE)
+    _re_duplicate_pronoun_template = r"\b({p})\s+\1\b"
+    _gendered_pronouns = re.compile(r"\b(he|him|his|she|her|hers)\b", re.IGNORECASE)
+
     def _append_llm_history(self, prompt: str, response: str):
         """Append a short normalized prompt/response pair to the in-memory history (keep last 3).
         This is intentionally lightweight (whitespace normalized, truncated) to avoid long prompts.
@@ -1222,110 +1231,179 @@ class Mynx(Friend):
         except Exception:
             return text
 
-    def _check_and_correct_mynx_text(self, text: str, prompt: str, roster) -> str | None:
-        """Validate and lightly correct LLM output. Return corrected text or None if unacceptable.
-        Heuristics:
-          - <= 2 sentences (split on . ! ?) with non-empty content.
-          - No disallowed proper nouns (capitalized tokens) outside roster + Jean + mynx name.
-          - Present-tense preference: avoid obvious past-tense verbs ending in 'ed' at start.
-          - 1-200 chars after trimming.
-          - No quotes / speech lines.
-        Correction attempts:
-          - Trim to first 2 sentences.
-          - Remove disallowed names (replace with pronoun 'it'). Disallowed possessives become possessive adjective ('its').
-          - Ensure ends with period.
-        Fallback: return None to signal caller to use deterministic stub.
-        """
+    # Strict pronoun & invented-name enforcement (post-sanitize)
+    def _enforce_pronouns_and_names(self, text: str, roster_set: set[str]) -> str:
         try:
-            import re
-            if not isinstance(text, str):
-                return None
-            raw = text.strip()
-            if not raw:
-                return None
-            if '"' in raw or ("'" in raw and (' says ' in raw or raw.count('"') >= 2)):
-                return None  # speech-y
-            # Sentence split
-            sentences = [s.strip() for s in re.split(r"[.!?]", raw) if s.strip()]
-            if len(sentences) == 0:
-                return None
-            if len(sentences) > 2:
-                sentences = sentences[:2]
-            candidate = ". ".join(sentences)
-            # Allowed proper nouns
-            allowed = set(roster or []) | {self.name, 'Jean'}
-            pronoun = self.pronouns.get("personal", "it") if hasattr(self, "pronouns") else "it"
-            poss_adj = None
-            if hasattr(self, "pronouns"):
-                poss_adj = self.pronouns.get("possessive_adjective") or ("its" if pronoun == "it" else f"{pronoun}'s")
-            else:
-                poss_adj = "its" if pronoun == "it" else f"{pronoun}'s"
-            # Remove disallowed capitalized words (including possessive forms)
-            pattern = re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
-            def fix_token(m):
+            if not text:
+                return text
+            pron_mynx = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
+            poss_mynx = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
+            allowed = set(roster_set) | {self.name, 'Jean'}
+            # Replace invented capitalized tokens not in allowed with pronoun (neutral they for other NPCs ambiguous)
+            def repl_name(m):
                 base = m.group(1)
                 possessive = m.group(2)
                 if base in allowed:
-                    return base + (possessive or '')
-                if possessive:
-                    return poss_adj
-                return pronoun
-            candidate = pattern.sub(fix_token, candidate)
-            # Basic past-tense check: if majority of verbs end with 'ed' revert
-            ed_tokens = [t for t in candidate.split() if t.lower().endswith('ed')]
-            if len(ed_tokens) > 3 and len(ed_tokens) >= len(candidate.split()) * 0.4:
-                return None
-            # Length guard
-            if not (5 <= len(candidate) <= 200):
-                return None
-            # Ensure ends with period
-            if not candidate.endswith('.'):
-                candidate += '.'
-            return candidate
+                    return m.group(0)
+                # Invented name: treat as referring to mynx if close in sentence to mynx name else generic 'it'
+                replacement = pron_mynx
+                return replacement + ("'s" if possessive else '')
+            text = self._re_disallowed_name_token.sub(repl_name, text)
+            # Replace any lingering gendered pronouns (he/him/his/she/her/hers) with mynx pronouns if mynx name preceded in sentence
+            def repl_gendered(m):
+                token = m.group(1).lower()
+                # Map all to mynx pronouns; simple heuristic (could differentiate Jean by name)
+                if token in ("he", "she"):
+                    return pron_mynx
+                if token in ("him", "her"):
+                    return pron_mynx
+                if token in ("his", "hers"):
+                    return poss_mynx
+                return pron_mynx
+            text = self._gendered_pronouns.sub(repl_gendered, text)
+            # Collapse duplicate pronouns
+            dup_re = re.compile(self._re_duplicate_pronoun_template.format(p=pron_mynx), re.IGNORECASE)
+            text = dup_re.sub(pron_mynx, text)
+            return self._normalize_ws(text)
         except Exception:
-            return None
+            return text
+
+    # Extract environment scanning into helper returning env_lists string
+    def _gather_environment_lists(self):
+        nearby_items = []
+        nearby_objects = []
+        other_npcs = []
+        room = getattr(self, 'current_room', None)
+        if not room:
+            return '', set()
+        try:
+            room_items = getattr(room, 'items_here', None) or getattr(room, 'items', None) or getattr(room, 'spawned', None) or []
+            for itm in room_items or []:
+                nm = getattr(itm, 'name', None) or getattr(itm, 'title', None)
+                desc = getattr(itm, 'description', None) or getattr(itm, 'short_description', None)
+                if isinstance(nm, str) and nm.strip():
+                    name = self._normalize_ws(nm)[:60]
+                    if isinstance(desc, str) and desc.strip():
+                        d = self._normalize_ws(desc)[:140]
+                        nearby_items.append(f"{name} — {d}")
+                    else:
+                        nearby_items.append(f"{name} — (no description)")
+            room_objs = getattr(room, 'objects_here', None) or getattr(room, 'objects', None) or []
+            for obj in room_objs or []:
+                onm = getattr(obj, 'name', None)
+                odesc = getattr(obj, 'description', None) or getattr(obj, 'summary', None)
+                if isinstance(onm, str) and onm.strip():
+                    name = self._normalize_ws(onm)[:60]
+                    if isinstance(odesc, str) and odesc.strip():
+                        s = self._normalize_ws(odesc).split('.')[0][:140]
+                        nearby_objects.append(f"{name} — {s}")
+                    else:
+                        nearby_objects.append(f"{name} — (no description)")
+            for npc_inst in getattr(room, 'npcs_here', []) or []:
+                nm = getattr(npc_inst, 'name', None)
+                if isinstance(nm, str) and nm.strip() and nm != self.name:
+                    ndesc = getattr(npc_inst, 'description', None) or getattr(npc_inst, 'discovery_message', None)
+                    name = self._normalize_ws(nm)[:60]
+                    if isinstance(ndesc, str) and ndesc.strip():
+                        nd = self._normalize_ws(ndesc)[:140]
+                        other_npcs.append(f"{name} — {nd}")
+                    else:
+                        other_npcs.append(f"{name} — (no description)")
+        except Exception:
+            pass
+        def prep(lst):
+            try:
+                return '; '.join(list(dict.fromkeys(lst))[:5])
+            except Exception:
+                return ''
+        ni = prep(nearby_items)
+        no = prep(nearby_objects)
+        nn = prep(other_npcs)
+        env_parts = []
+        if ni: env_parts.append(f"Nearby items (name — description): {ni}.")
+        if no: env_parts.append(f"Nearby objects (name — description): {no}.")
+        if nn: env_parts.append(f"Other nearby NPCs (name — description): {nn}.")
+        return (' ' + ' '.join(env_parts) if env_parts else ''), set()
+
+    def _build_history_block(self):
+        history_lines = []
+        try:
+            for h in (self._llm_history or [])[-3:]:
+                ph = h.get('prompt', '')
+                rh = h.get('response', '')
+                phs = self._normalize_ws(str(ph))[:120]
+                rhs = self._normalize_ws(str(rh))[:180]
+                if phs or rhs:
+                    history_lines.append(f"Prompt: '{phs}' -> Resp: '{rhs}'")
+        except Exception:
+            pass
+        if history_lines:
+            return " Conversation history (most recent last): " + " | ".join(history_lines) + "."
+        return ''
+
+    def _build_pronoun_guidance(self, jean_pronoun_line: str, jean_snippet: str):
+        mynx_personal = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
+        mynx_possessive = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
+        try:
+            pg = []
+            if jean_pronoun_line:
+                pg.append(f"For Jean use: {jean_pronoun_line.strip()}")
+            pg.append(f"For the mynx use: {mynx_personal}/{mynx_possessive}.")
+            pg.append("For any other nearby NPCs, prefer using their NAME; if a pronoun is needed, use they/them/their.")
+            return ' '.join(pg) + f" {jean_snippet}" if jean_snippet else ' '.join(pg)
+        except Exception:
+            return "Use Jean and Mynx pronouns consistently; prefer names for others or they/them."
+
+    def _build_llm_context(self, roster_set: set[str], prompt: str, jean_pronoun_line: str, jean_snippet: str):
+        room_desc_raw = getattr(self.current_room, 'description', '') if getattr(self, 'current_room', None) else ''
+        room_desc_raw = self._normalize_ws(room_desc_raw)
+        room_desc = f" You are in {room_desc_raw}." if room_desc_raw else '.'
+        env_lists, _ = self._gather_environment_lists()
+        history_block = self._build_history_block()
+        pronoun_guidance = self._build_pronoun_guidance(jean_pronoun_line, jean_snippet)
+        allowed_names = ', '.join(sorted(roster_set | {'Jean'}))
+        # Assemble with list join to reduce concatenation overhead
+        parts = [
+            "You describe only what the mynx does in one immediate, nonverbal action.",
+            f"The mynx's proper name is {self.name}.",
+            f"{self.name} is the ACTOR, never its own target.",
+            f"Allowed entity names you may reference (no others): {allowed_names}.",
+            "Do not invent other creature names. If the player is referenced use 'Jean'.",
+            pronoun_guidance,
+            "Keep it present-tense, concise (<=2 short sentences), no speech.",
+            f"Player action/intent: '{prompt or 'interact'}'.",
+            room_desc + env_lists,
+            "Respond in a way that's appropriate for the environment.",
+            history_block,
+            "Try not to repeat recent actions or descriptions; be novel relative to the above history."
+        ]
+        ctx = ' '.join(filter(None, parts))
+        if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
+            try:
+                print(f"[MYNX_LLM_DEBUG] Built context ({len(ctx)} chars): {ctx[:4000]}")
+            except Exception:
+                pass
+        return ctx
 
     def interact_with_player(self, player, prompt: str | None = None, structured: bool = False):
-        """Player initiates an interaction. For now, this is a local stub that returns safe, lore-compatible
-        descriptions or a structured action object. Later this method should call into an LLM using the
-        advisor file in `ai/npc/animal/mynx.json` to synthesize responses.
-
-        Args:
-            player: the player instance (may be None in tests). Do not assume attributes on it in this stub.
-            prompt: short string describing the player's action or intent (e.g., 'offer food', 'pet', 'greet').
-            structured: when True, return a JSON-like dict describing the action; otherwise return a short text.
-        """
         # Minimal prompt normalization
-        p = (prompt or "").strip().lower()
-
-        # Print a short description of Jean's action before the mynx responds
+        p = (prompt or '').strip().lower()
         action_print = None
         if p in ("pet", "stroke", "scritch"):
             action_print = "Jean reaches out to pet the mynx."
         elif p in ("feed", "offer food", "give food"):
             action_print = "Jean offers a morsel of food to the mynx."
         elif p.startswith("play with ") or p in ("play", "toy", "tease"):
-            # extract item name when present
-            item_name = None
-            if p.startswith("play with "):
-                item_name = p[len("play with "):].strip()
-            if item_name:
-                action_print = f"Jean plays with the mynx using {item_name}."
-            else:
-                action_print = "Jean tries to play with the mynx."
+            item_name = p[len("play with "):].strip() if p.startswith("play with ") else None
+            action_print = f"Jean plays with the mynx using {item_name}." if item_name else "Jean tries to play with the mynx."
         elif p:
             action_print = f"Jean {p}."
         else:
             action_print = "Jean interacts with the mynx."
-
-        # Perform the print so the game shows the player's initiating action first
         try:
             print(action_print)
         except Exception:
-            # Non-fatal: if printing fails for any reason, continue to the response
             pass
-
-        # Attempt LLM generation when enabled and available
         adapter = self._get_llm_adapter()
         roster = []
         if getattr(self, 'current_room', None) is not None:
@@ -1340,7 +1418,6 @@ class Mynx(Friend):
             roster.append(self.name)
         roster_set = set(roster)
         if adapter is not None:
-            # Load Jean advisor for richer context (pronouns, demeanor snippet)
             jean_adv = self._load_player_advisor() or {}
             jean_pronouns = jean_adv.get('pronouns', {})
             jean_snippet = jean_adv.get('system_prompt_snippet', '')[:300]
@@ -1349,177 +1426,50 @@ class Mynx(Friend):
                 subj = jean_pronouns.get('subject', 'he')
                 obj = jean_pronouns.get('object', 'him')
                 poss = jean_pronouns.get('possessive_adjective', 'his')
-                jean_pronoun_line = f"Jean pronouns: {subj}/{obj}/{poss}. "
-            # Short room description (if available)
-            room_desc = getattr(self.current_room, 'description', '').strip()
-            room_desc = re.sub(r'\s+', ' ', room_desc)  # normalize whitespace
-            if room_desc:
-                room_desc = f" You are in {room_desc}."
-            else:
-                room_desc = "."
-
-            # Collect nearby items, objects, and other NPCs to provide richer environmental context
-            # Include explicit short descriptions for each entry (truncated)
-            nearby_items = []  # will hold strings like "Name — short desc"
-            nearby_objects = []
-            other_npcs = []
-            try:
-                room = self.current_room
-                # items: prefer items_here, fallback to items or spawned
-                room_items = getattr(room, 'items_here', None) or getattr(room, 'items', None) or getattr(room, 'spawned', None) or []
-                for itm in room_items or []:
-                    nm = getattr(itm, 'name', None) or getattr(itm, 'title', None) or None
-                    desc = getattr(itm, 'description', None) or getattr(itm, 'short_description', None) or None
-                    if isinstance(nm, str) and nm.strip():
-                        name = re.sub(r'\s+', ' ', nm).strip()[:60]
-                        if isinstance(desc, str) and desc.strip():
-                            d = re.sub(r'\s+', ' ', desc).strip()[:140]
-                            nearby_items.append(f"{name} — {d}")
-                        else:
-                            nearby_items.append(f"{name} — (no description)")
-                # objects: prefer objects_here or objects
-                room_objs = getattr(room, 'objects_here', None) or getattr(room, 'objects', None) or []
-                for obj in room_objs or []:
-                    onm = getattr(obj, 'name', None) or None
-                    odesc = getattr(obj, 'description', None) or getattr(obj, 'summary', None) or None
-                    if isinstance(onm, str) and onm.strip():
-                        name = re.sub(r'\s+', ' ', onm).strip()[:60]
-                        if isinstance(odesc, str) and odesc.strip():
-                            # take first sentence of long descriptions then truncate
-                            s = re.sub(r'\s+', ' ', odesc).strip()
-                            s = s.split('.')[0].strip()[:140]
-                            nearby_objects.append(f"{name} — {s}")
-                        else:
-                            nearby_objects.append(f"{name} — (no description)")
-                # other NPCs in room (excluding self)
-                for npc_inst in getattr(room, 'npcs_here', []) or []:
-                    nm = getattr(npc_inst, 'name', None)
-                    ndesc = getattr(npc_inst, 'description', None) or getattr(npc_inst, 'discovery_message', None) or None
-                    if isinstance(nm, str) and nm.strip() and nm != self.name:
-                        name = re.sub(r'\s+', ' ', nm).strip()[:60]
-                        if isinstance(ndesc, str) and ndesc.strip():
-                            nd = re.sub(r'\s+', ' ', ndesc).strip()[:140]
-                            other_npcs.append(f"{name} — {nd}")
-                        else:
-                            other_npcs.append(f"{name} — (no description)")
-            except Exception:
-                nearby_items = []
-                nearby_objects = []
-                other_npcs = []
-
-            # Deduplicate, sort, and limit lists for brevity
-            try:
-                ni_list = list(dict.fromkeys(nearby_items))[:5]
-                no_list = list(dict.fromkeys(nearby_objects))[:5]
-                nn_list = list(dict.fromkeys(other_npcs))[:5]
-                ni = '; '.join(ni_list)
-                no = '; '.join(no_list)
-                nn = '; '.join(nn_list)
-            except Exception:
-                ni = no = nn = ''
-
-            env_lists = ''
-            if ni:
-                env_lists += f" Nearby items (name — description): {ni}."
-            if no:
-                env_lists += f" Nearby objects (name — description): {no}."
-            if nn:
-                env_lists += f" Other nearby NPCs (name — description): {nn}."
-
-            # Build a concise history summary of the last up to 3 prompt/response pairs
-            history_lines = []
-            try:
-                for h in (self._llm_history or [])[-3:]:
-                    ph = h.get('prompt', '')
-                    rh = h.get('response', '')
-                    # normalize and truncate for safety
-                    phs = re.sub(r'\s+', ' ', str(ph)).strip()[:120]
-                    rhs = re.sub(r'\s+', ' ', str(rh)).strip()[:180]
-                    if phs or rhs:
-                        history_lines.append(f"Prompt: '{phs}' -> Resp: '{rhs}'")
-            except Exception:
-                history_lines = []
-            history_block = ''
-            if history_lines:
-                history_block = " Conversation history (most recent last): " + " | ".join(history_lines) + "."
-
-            # Build explicit pronoun guidance: Jean (from advisor) and the mynx; instruct to prefer names for others
-            mynx_personal = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
-            mynx_possessive = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
-            pronoun_guidance = ''
-            try:
-                if jean_pronoun_line:
-                    pronoun_guidance += f"For Jean use: {jean_pronoun_line.strip()} "
-                pronoun_guidance += f"For the mynx use: {mynx_personal}/{mynx_possessive}. "
-                pronoun_guidance += "For any other nearby NPCs, prefer using their NAME rather than a pronoun; if a pronoun is necessary, use gender-neutral they/them/their."
-            except Exception:
-                pronoun_guidance = "Use Jean and Mynx pronouns consistently; prefer names for others or use they/them."
-
-            context = (
-                f"You describe only what the mynx does in one immediate, nonverbal action. "
-                f"The mynx's proper name is {self.name}. {self.name} is the ACTOR, never its own target. "
-                f"Allowed entity names you may reference (no others): {', '.join(sorted(roster_set | {'Jean'}))}. "
-                f"Do not invent other creature names. If the player is referenced use 'Jean'. "
-                f"{pronoun_guidance} {jean_snippet} "
-                f"Keep it present-tense, concise (<=2 short sentences), no speech. "
-                f"Player action/intent: '{(prompt or '').strip().lower() or 'interact'}'."
-                f"{room_desc}{env_lists} Respond in a way that's appropriate for the environment."
-                f"{history_block} Try not to repeat recent actions or descriptions; be novel relative to the above history."
-            )
+                jean_pronoun_line = f"{subj}/{obj}/{poss}."
+            context = self._build_llm_context(roster_set, p, jean_pronoun_line, jean_snippet)
             responded = False
             try:
                 if structured:
                     obj = adapter.generate_structured(context=context)
                     if isinstance(obj, dict) and isinstance(obj.get('description'), str):
                         if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
-                            try:
-                                print(f"[MYNX_LLM_DEBUG] Raw structured description: {obj.get('description')}")
-                            except Exception:
-                                pass
+                            try: print(f"[MYNX_LLM_DEBUG] Raw structured description: {obj.get('description')}")
+                            except Exception: pass
                         desc = self._sanitize_mynx_llm_text(obj['description'], roster_set)
+                        desc = self._enforce_pronouns_and_names(desc, roster_set)
                         desc_checked = self._check_and_correct_mynx_text(desc, p, roster)
                         if desc_checked is None:
-                            obj = None  # force fallback
+                            obj = None
                         else:
                             obj['description'] = desc_checked
                             self._llm_last_response = obj
-                            # record history (prompt and cleaned response)
-                            try:
-                                self._append_llm_history(p, desc_checked)
-                            except Exception:
-                                pass
+                            try: self._append_llm_history(p, desc_checked)
+                            except Exception: pass
                             responded = True
                             return obj
                 else:
                     text_resp = adapter.generate_plain(context=context)
                     if isinstance(text_resp, str) and text_resp:
                         if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
-                            try:
-                                print(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
-                            except Exception:
-                                pass
+                            try: print(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
+                            except Exception: pass
                         sanitized = self._sanitize_mynx_llm_text(text_resp, roster_set)
+                        sanitized = self._enforce_pronouns_and_names(sanitized, roster_set)
                         checked = self._check_and_correct_mynx_text(sanitized, p, roster)
                         if checked is not None:
                             self._llm_last_response = {
-                                'action': 'narrate',
-                                'intensity': 'low',
-                                'description': checked,
-                                'duration_seconds': 2,
-                                'audible': 'soft chitter'
+                                'action': 'narrate', 'intensity': 'low', 'description': checked,
+                                'duration_seconds': 2, 'audible': 'soft chitter'
                             }
-                            # append to history before returning
-                            try:
-                                self._append_llm_history(p, checked)
-                            except Exception:
-                                pass
+                            try: self._append_llm_history(p, checked)
+                            except Exception: pass
                             print(checked)
                             responded = True
                             return checked
             except Exception as e:
                 if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
                     print(f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}")
-            # Continue to deterministic stub if not responded
         # Deterministic stub fallback responses (legacy behavior for tests / offline mode)
         if p in ("pet", "stroke", "scritch"):
             text = f"{self.name} leans into the hand, purring a soft chitter and nudging the wrist with its head."
@@ -1578,7 +1528,16 @@ class Mynx(Friend):
         if structured:
             return structured_obj
         print(text)
-        time.sleep(3)
+        # configurable delay (default legacy 1.5s) to avoid slowing tests/game unnecessarily
+        try:
+            delay = float(os.getenv("MYNX_FALLBACK_DELAY", "1.5"))
+        except Exception:
+            delay = 1.5
+        try:
+            if delay > 0:
+                time.sleep(delay)
+        except Exception:
+            pass
         return text
 
     # Override talk to use the interaction framework
@@ -1597,6 +1556,65 @@ class Mynx(Friend):
         if item:
             prompt = f"play with {str(item)}"
         return self.interact_with_player(player, prompt=prompt, structured=structured)
+
+    def _normalize_ws(self, text: str) -> str:
+        try:
+            return self._re_whitespace.sub(" ", text).strip()
+        except Exception:
+            return text.strip() if isinstance(text, str) else str(text)
+
+    def _check_and_correct_mynx_text(self, text: str, prompt: str, roster) -> str | None:
+        """Validate and lightly correct LLM output. Return corrected text or None if unacceptable.
+        Heuristics:
+          - <= 2 sentences (split on . ! ?) with non-empty content.
+          - No disallowed proper nouns (capitalized tokens) outside roster + Jean + mynx name.
+          - Present-tense preference: avoid majority past-tense tokens ending with 'ed'.
+          - Length 5..200 chars.
+          - Reject speech / quoted dialogue.
+        Correction attempts:
+          - Trim to first 2 sentences.
+          - Replace disallowed capitalized tokens (and possessives) with mynx pronouns / possessive adjective.
+          - Ensure terminal period.
+        """
+        try:
+            import re as _re
+            if not isinstance(text, str):
+                return None
+            raw = text.strip()
+            if not raw:
+                return None
+            if '"' in raw or ("'" in raw and (' says ' in raw or raw.count('"') >= 2)):
+                return None
+            sentences = [s.strip() for s in _re.split(r"[.!?]", raw) if s.strip()]
+            if not sentences:
+                return None
+            if len(sentences) > 2:
+                sentences = sentences[:2]
+            candidate = '. '.join(sentences)
+            allowed = set(roster or []) | {self.name, 'Jean'}
+            pronoun = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
+            poss_adj = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
+            pattern = _re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
+            def fix_token(m):
+                base = m.group(1)
+                possessive = m.group(2)
+                if base in allowed:
+                    return base + (possessive or '')
+                if possessive:
+                    return poss_adj
+                return pronoun
+            candidate = pattern.sub(fix_token, candidate)
+            ed_tokens = [t for t in candidate.split() if t.lower().endswith('ed')]
+            if len(ed_tokens) > 3 and len(ed_tokens) >= len(candidate.split()) * 0.4:
+                return None
+            candidate = candidate.strip()
+            if not (5 <= len(candidate) <= 200):
+                return None
+            if not candidate.endswith('.'):
+                candidate += '.'
+            return candidate
+        except Exception:
+            return None
 
 class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.
     def __init__(self):
