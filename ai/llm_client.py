@@ -228,10 +228,10 @@ class MynxLLMAdapter:
         user_prompt = self._build_user_prompt(context=context, structured=structured)
         client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
         headers = {}
-        # if self._openrouter_site:
-        #     headers["HTTP-Referer"] = self._openrouter_site
-        # if self._openrouter_site_title:
-        #     headers["X-Title"] = self._openrouter_site_title
+        if self._openrouter_site:
+            headers["HTTP-Referer"] = self._openrouter_site
+        if self._openrouter_site_title:
+            headers["X-Title"] = self._openrouter_site_title
         try:
             completion = client.chat.completions.create(
                 model=self.model,
