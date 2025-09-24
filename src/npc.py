@@ -10,6 +10,9 @@ from items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock,
 import items as items_module  # added for unique item registry management
 from objects import Container
 from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+from pathlib import Path
+import os
+import importlib.util
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -1022,6 +1025,8 @@ class Mynx(Friend):
 
         # Basic state useful for LLM-driven behavior
         self._llm_last_response = None
+        # Lazy-initialized LLM adapter
+        self._llm_adapter = None
 
     # Prevent joining combat lists
     def combat_engage(self, player):
@@ -1034,6 +1039,39 @@ class Mynx(Friend):
 
     def can_enter_combat(self) -> bool:
         return False
+
+    # Helper: lazy-load local LLM adapter when enabled
+    def _get_llm_adapter(self):
+        if self._llm_adapter is not None:
+            return self._llm_adapter
+        if os.getenv("MYNX_LLM_ENABLED", "0") not in ("1", "true", "True"):
+            self._llm_adapter = None
+            return None
+        try:
+            root = Path(__file__).resolve().parent.parent  # project root
+            adapter_path = root / "ai" / "llm_client.py"
+            if not adapter_path.exists():
+                self._llm_adapter = None
+                return None
+            spec = importlib.util.spec_from_file_location("ai.llm_client", str(adapter_path))
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                Adapter = getattr(mod, "MynxLLMAdapter", None)
+                if Adapter is None:
+                    self._llm_adapter = None
+                    return None
+                inst = Adapter()
+                # only keep if available
+                if getattr(inst, "available")() is True:
+                    self._llm_adapter = inst
+                else:
+                    self._llm_adapter = None
+            else:
+                self._llm_adapter = None
+        except Exception:
+            self._llm_adapter = None
+        return self._llm_adapter
 
     # High-level interaction entrypoint used by the game (stubbed LLM integration)
     def interact_with_player(self, player, prompt: str | None = None, structured: bool = False):
@@ -1075,6 +1113,33 @@ class Mynx(Friend):
         except Exception:
             # Non-fatal: if printing fails for any reason, continue to the response
             pass
+
+        # Attempt local LLM generation when enabled and available
+        adapter = self._get_llm_adapter()
+        if adapter is not None:
+            context = f"{self.name} is nearby. Player prompt: '{p or 'interact'}'."
+            try:
+                if structured:
+                    obj = adapter.generate_structured(context=context)
+                    if isinstance(obj, dict):
+                        # Record and return
+                        self._llm_last_response = obj
+                        return obj
+                else:
+                    text_resp = adapter.generate_plain(context=context)
+                    if isinstance(text_resp, str) and text_resp:
+                        self._llm_last_response = {
+                            "action": "narrate",
+                            "intensity": "low",
+                            "description": text_resp,
+                            "duration_seconds": 2,
+                            "audible": "soft chitter"
+                        }
+                        print(text_resp)
+                        return text_resp
+            except Exception:
+                # If LLM call fails, fall back to deterministic stub below
+                pass
 
         # Basic deterministic stub responses (keeps outputs nonverbal and present-tense)
         if p in ("pet", "stroke", "scritch"):
