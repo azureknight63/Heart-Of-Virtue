@@ -30,3 +30,4 @@ config_dev.ini
 /test*.sav
 cov_*.json
 cov_*.txt
+.env
