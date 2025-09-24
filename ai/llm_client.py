@@ -89,27 +89,67 @@ class MynxLLMAdapter:
 
         # Probe availability lazily; we don't want to fail import-time
         self._available: Optional[bool] = None
+        self._unavailable_reason: Optional[str] = None
 
     def available(self) -> bool:
         if not self.enabled:
+            self._unavailable_reason = "Adapter disabled (set MYNX_LLM_ENABLED=1 to enable)."
             return False
         if self._available is not None:
             return self._available
+        # Reset reason before probe
+        self._unavailable_reason = None
         if self.provider == "ollama":
             try:
                 import requests  # type: ignore
                 r = requests.get(self.base_url + "/api/tags", timeout=1.5)
-                self._available = r.status_code == 200
-            except Exception:
+                if r.status_code == 200:
+                    self._available = True
+                else:
+                    self._available = False
+                    self._unavailable_reason = f"Ollama server reachable but returned status {r.status_code} at {self.base_url}."
+            except Exception as e:
                 self._available = False
+                self._unavailable_reason = f"Failed connecting to Ollama at {self.base_url}: {e}"
             return self._available
         if self.provider == "openrouter":
-            # Consider it available if API key present; we avoid a network probe to keep tests fast/offline-safe.
-            self._available = bool(self._openrouter_api_key)
-            return self._available
+            if not self._openrouter_api_key:
+                self._available = False
+                self._unavailable_reason = "Missing OPENROUTER_API_KEY."
+                return self._available
+            # Verify openai SDK importable OR be ready to fallback
+            try:
+                from openai import OpenAI as _OpenAIClass  # type: ignore  # noqa: F401
+                # If it's the project stub (has _is_stub) we can still be 'available' because we'll do direct HTTP fallback
+                # Mark reason only for transparency in debug.
+                if getattr(_OpenAIClass, "_is_stub", False):
+                    self._available = True
+                    # Only set a reason that indicates fallback if debug flag set later.
+                else:
+                    self._available = True
+            except Exception as e:
+                # We can still attempt direct HTTP call w/out SDK, so mark available.
+                self._available = True
+                self._unavailable_reason = f"openai SDK import failed; will use direct HTTP fallback: {e}"
+            return True
         # Unknown provider
         self._available = False
+        self._unavailable_reason = f"Unknown provider '{self.provider}'."
         return False
+
+    def debug_status(self) -> Dict[str, Any]:
+        """Return a dictionary summarizing adapter configuration & availability.
+        Safe to call even when unavailable; does not make network calls beyond the availability probe.
+        """
+        avail = self.available()
+        return {
+            "enabled": self.enabled,
+            "provider": self.provider,
+            "model": self.model,
+            "available": avail,
+            "reason": None if avail else self._unavailable_reason,
+            "allowed_actions_count": len(self._allowed_actions),
+        }
 
     def generate_plain(self, context: str) -> Optional[str]:
         if not self.available():
@@ -218,22 +258,80 @@ class MynxLLMAdapter:
 
     # Provider-specific implementation: OpenRouter (remote API)
     def _openrouter_chat(self, context: str, structured: bool) -> Optional[Any]:
+        # Build prompt early; we may need it for either SDK or direct HTTP.
+        user_prompt = self._build_user_prompt(context=context, structured=structured)
+
+        # Attempt to import the OpenAI SDK (new style). If stub or import error, we'll do direct HTTP.
+        sdk_client = None
+        sdk_is_stub = False
         try:
-            # Import openai lazily so the dependency is optional when provider not in use
             from openai import OpenAI  # type: ignore
+            if getattr(OpenAI, "_is_stub", False):
+                sdk_is_stub = True
+            else:
+                # Instantiate SDK client only if real
+                sdk_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
         except Exception:
-            return None
+            sdk_client = None
+
         if not self._openrouter_api_key:
             return None
-        user_prompt = self._build_user_prompt(context=context, structured=structured)
-        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
+
         headers = {}
         if self._openrouter_site:
             headers["HTTP-Referer"] = self._openrouter_site
         if self._openrouter_site_title:
             headers["X-Title"] = self._openrouter_site_title
+
+        # Direct HTTP fallback when SDK unavailable or stub detected
+        if sdk_client is None or sdk_is_stub:
+            try:
+                import requests  # type: ignore
+                http_headers = {
+                    "Authorization": f"Bearer {self._openrouter_api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
+                # Merge optional ranking headers
+                for k, v in (headers or {}).items():
+                    if v:
+                        http_headers[k] = v
+                payload = {
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": self._system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "max_tokens": 256 if not structured else 180,
+                }
+                resp = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=http_headers, timeout=30)
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                content = None
+                if isinstance(data, dict):
+                    choices = data.get("choices")
+                    if isinstance(choices, list) and choices:
+                        first = choices[0]
+                        if isinstance(first, dict):
+                            msg = first.get("message")
+                            if isinstance(msg, dict):
+                                content = msg.get("content")
+                            if not content:
+                                content = first.get("text") or first.get("content")
+                if not content:
+                    return None
+                if structured:
+                    return _JSONTools.try_parse_json(str(content))
+                return _JSONTools.sanitize_text(str(content))
+            except Exception:
+                return None
+
+        # SDK path
         try:
-            completion = client.chat.completions.create(
+            completion = sdk_client.chat.completions.create(  # type: ignore
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self._system_prompt},
