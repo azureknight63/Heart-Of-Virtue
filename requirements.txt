@@ -3,3 +3,6 @@
 neotermcolor
 pytest-cov
 requests
+openai>=1.0.0,<2.0.0
+asciimatics>=1.15.0
+Pillow>=10.0.0
