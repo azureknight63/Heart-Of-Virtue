@@ -1578,7 +1578,7 @@ class Mynx(Friend):
         if structured:
             return structured_obj
         print(text)
-        time.sleep(1.5)
+        time.sleep(3)
         return text
 
     # Override talk to use the interaction framework
