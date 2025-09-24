@@ -2,3 +2,4 @@
 # Example:
 neotermcolor
 pytest-cov
+requests
