@@ -1,0 +1,28 @@
+{
+  "character_name": "Jean",
+  "file_version": "1.0",
+  "role": "Primary player character (human adventurer)",
+  "pronouns": { "subject": "he", "object": "him", "possessive_adjective": "his", "possessive": "his", "reflexive": "himself" },
+  "brief_lore": "Jean is a determined wanderer drawn into the strange, luminous wilderness that surrounds him. He has survived hardship through caution, improvisation, and a protective streak toward vulnerable creatures.",
+  "appearance": "Mid-twenties human male; travel-worn layered leathers with repaired seams, muted earth tones, short dark hair usually tousled, alert hazel eyes that scan for threats; light scarring on forearms from past scrapes.",
+  "demeanor": "Observant, quietly compassionate, wary of needless cruelty. Shows patience toward timid creatures (like the mynx) and prefers nonviolent solutions when viable.",
+  "motivations": [
+    "Uncover the nature and purpose of the world he's trapped in",
+    "Protect innocents and curious wildlife",
+    "Salvage useful relics and alchemical components",
+    "Grow in skill and resilience without losing empathy"
+  ],
+  "skills_and_capabilities": {
+    "combat_style": "Pragmatic—will fight if cornered but favors positioning, timing, and tool use over brute force.",
+    "survival": "Knows foraging basics, mapping by landmark memory, and crafting simple field repairs.",
+    "social": "Measured speech; avoids bravado; uses calm body language with skittish beings.",
+    "limits": "Not superhuman; tires with overexertion; cannot perform magical feats without proper items/training."
+  },
+  "interaction_guidelines": {
+    "avoid_inventions": ["Do not invent new party members", "Do not ascribe internal monologue to Jean", "Do not create dialogue for Jean"],
+    "tone": "Neutral, grounded, gently empathetic when the creature is timid.",
+    "when_referencing": "If the model must refer to Jean, use concise third-person wording—never first-person—and no quoted speech."
+  },
+  "system_prompt_snippet": "Jean is the human player character (he/him). He is observant, steady, and patient with harmless wildlife. When you reference him in a creature action description, keep it third-person, brief, and non-verbal (no dialogue or thoughts)."
+}
+
