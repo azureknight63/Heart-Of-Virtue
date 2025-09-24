@@ -14,14 +14,68 @@
                 "__class__": "Restorative",
                 "__module__": "src.items",
                 "props": {
-                    "count": 1
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
                 }
             },
             {
                 "__class__": "WoodenArrow",
                 "__module__": "src.items",
                 "props": {
-                    "count": 6
+                    "weight": 0.05,
+                    "maintype": "Consumable",
+                    "subtype": "Arrow",
+                    "count": 6,
+                    "interactions": [
+                        "drop",
+                        "prefer"
+                    ],
+                    "stack_key": "Wooden Arrow",
+                    "name": "Wooden Arrow",
+                    "description": "A useful device composed of a sharp tip, a shaft of sorts, and fletching. \nThis one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. \nThey tend to break frequently.",
+                    "value": 1,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices an arrow on the ground.",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 20,
+                    "range_base_modifier": 1.2,
+                    "range_decay_modifier": 0.8,
+                    "sturdiness": 0.4,
+                    "helptext": "+range, -decay, -damage, -sturdiness",
+                    "effects": null
                 }
             }
         ],
@@ -35,8 +89,8 @@
                         "pet",
                         "play"
                     ],
-                    "name": "Mynx",
-                    "description": "A small creature that reminds Jean of a strange mix between a monkey and a cat. It seems rather playful.",
+                    "name": "Snookums",
+                    "description": "A cute little Mynx.",
                     "current_room": null,
                     "inventory": [],
                     "idle_message": " flicks its tail.",
@@ -163,7 +217,7 @@
                                 "beats_left": 3,
                                 "stage_announce": [
                                     "",
-                                    "Mynx flicks its tail.",
+                                    "Snookums flicks its tail.",
                                     "",
                                     ""
                                 ],
@@ -246,14 +300,64 @@
                 "__class__": "Restorative",
                 "__module__": "src.items",
                 "props": {
-                    "count": 2
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 2,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
                 }
             },
             {
                 "__class__": "Antidote",
                 "__module__": "src.items",
                 "props": {
-                    "count": 1
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
+                    "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                    "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 15
                 }
             }
         ],
@@ -986,14 +1090,57 @@
                 "__class__": "Gold",
                 "__module__": "src.items",
                 "props": {
-                    "amt": 35
+                    "amt": 35,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 35 gold pieces.",
+                    "value": 35,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false
                 }
             },
             {
                 "__class__": "Draught",
                 "__module__": "src.items",
                 "props": {
-                    "count": 1
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Draught",
+                    "name": "Draught",
+                    "description": "A green fluid giving off a warm, pleasant glow.\nInvigorating for any tired adventurer.",
+                    "value": 75,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 100
                 }
             }
         ],
@@ -1013,13 +1160,78 @@
             {
                 "__class__": "Shortbow",
                 "__module__": "src.items",
-                "props": {}
+                "props": {
+                    "damage": 8,
+                    "str_req": 5,
+                    "fin_req": 5,
+                    "str_mod": 1,
+                    "fin_mod": 1,
+                    "weight": 1.5,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Bow",
+                    "wpnrange": [
+                        0,
+                        5
+                    ],
+                    "name": "Shortbow",
+                    "description": "A reliable missile weapon. Useful as a weak bludgeon at close range.\nRequires two hands.",
+                    "value": 50,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Shortbow here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": false,
+                    "range_base": 20,
+                    "range_decay": 0.05
+                }
             },
             {
                 "__class__": "WoodenArrow",
                 "__module__": "src.items",
                 "props": {
-                    "count": 12
+                    "weight": 0.05,
+                    "maintype": "Consumable",
+                    "subtype": "Arrow",
+                    "count": 12,
+                    "interactions": [
+                        "drop",
+                        "prefer"
+                    ],
+                    "stack_key": "Wooden Arrow",
+                    "name": "Wooden Arrow",
+                    "description": "A useful device composed of a sharp tip, a shaft of sorts, and fletching. \nThis one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. \nThey tend to break frequently.",
+                    "value": 1,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices an arrow on the ground.",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 20,
+                    "range_base_modifier": 1.2,
+                    "range_decay_modifier": 0.8,
+                    "sturdiness": 0.4,
+                    "helptext": "+range, -decay, -damage, -sturdiness",
+                    "effects": null
                 }
             }
         ],
@@ -1039,12 +1251,68 @@
             {
                 "__class__": "LeatherBoots",
                 "__module__": "src.items",
-                "props": {}
+                "props": {
+                    "protection": 3,
+                    "str_req": 3,
+                    "str_mod": 0.15,
+                    "weight": 1.8,
+                    "isequipped": false,
+                    "maintype": "Boots",
+                    "subtype": "Light Boots",
+                    "name": "Leather Boots",
+                    "description": "Durable leather boots treated to resist wear and offer solid protection without much bulk.",
+                    "value": 45,
+                    "type": "Boots",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a pair of footgear.",
+                    "announce": "There's a Leather Boots here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "add_fin": 1
+                }
             },
             {
                 "__class__": "PaddedCap",
                 "__module__": "src.items",
-                "props": {}
+                "props": {
+                    "protection": 1,
+                    "str_req": 1,
+                    "str_mod": 0.05,
+                    "weight": 0.6,
+                    "isequipped": false,
+                    "maintype": "Helm",
+                    "subtype": "Light Helm",
+                    "name": "Padded Cap",
+                    "description": "A cheap cap stuffed with padding. Comfortable but offers only trivial protection.",
+                    "value": 5,
+                    "type": "Helm",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a kind of head covering.",
+                    "announce": "There's a Padded Cap here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "add_fin": 1
+                }
             }
         ],
         "npcs": [],
