@@ -15,7 +15,7 @@ class _JSONTools:
         # Quick guard: trim code fences if present
         if s.startswith("```"):
             # remove first fence line
-            s = "\n".join(line for line in s.splitlines() if not line.strip().startswith("```"))
+            s = "\n".join(line for line in s.splitlines() if not line.strip().startswith("```") )
             s = s.strip()
         # Attempt direct parse
         try:
@@ -45,23 +45,41 @@ class _JSONTools:
 
 
 class MynxLLMAdapter:
-    """Adapter for generating Mynx responses using a local 7B LLM.
+    """Adapter for generating Mynx responses using either a local Ollama model or an OpenRouter API model.
 
-    Supports an Ollama-compatible local endpoint when enabled via env vars.
-    Falls back to None if not configured/available so callers can use deterministic stubs.
+    Providers:
+      - ollama      (local inference)
+      - openrouter  (remote via OpenRouter API compatible w/ OpenAI SDK)
 
-    Env configuration:
-      - MYNX_LLM_ENABLED=1            -> enable calling the local LLM
-      - MYNX_LLM_PROVIDER=ollama      -> provider type (only 'ollama' supported now)
-      - MYNX_LLM_MODEL=llama3.1:7b    -> local model name/tag in the provider
-      - MYNX_LLM_URL=http://localhost:11434  -> base URL for provider if not default
+    Common Env configuration:
+      - MYNX_LLM_ENABLED=1                  -> enable calling an LLM provider
+      - MYNX_LLM_PROVIDER=ollama|openrouter -> provider type (default 'ollama')
+      - MYNX_LLM_MODEL=<model_id>           -> model name (ollama tag or openrouter model id)
+
+    Provider-specific:
+      Ollama:
+        - MYNX_LLM_URL=http://localhost:11434  (optional override)
+      OpenRouter:
+        - OPENROUTER_API_KEY=... (required when provider=openrouter)
+        - OPENROUTER_SITE=https://example.com (optional ranking metadata)
+        - OPENROUTER_SITE_TITLE="Your Site"   (optional ranking metadata)
+
+    Defaults:
+      - model: 'llama3.1:7b' for ollama, 'x-ai/grok-4-fast:free' for openrouter (if unset)
     """
 
     def __init__(self):
         self.enabled = os.getenv("MYNX_LLM_ENABLED", "0") in ("1", "true", "True")
         self.provider = os.getenv("MYNX_LLM_PROVIDER", "").strip().lower() or "ollama"
-        self.model = os.getenv("MYNX_LLM_MODEL", "").strip() or "llama3.1:7b"
+        # Choose a sensible default model per provider if user did not specify
+        default_model = "llama3.1:7b" if self.provider == "ollama" else "x-ai/grok-4-fast:free"
+        self.model = os.getenv("MYNX_LLM_MODEL", "").strip() or default_model
         self.base_url = os.getenv("MYNX_LLM_URL", "").strip() or "http://localhost:11434"
+
+        # OpenRouter specific configuration
+        self._openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        self._openrouter_site = os.getenv("OPENROUTER_SITE", "").strip() or None
+        self._openrouter_site_title = os.getenv("OPENROUTER_SITE_TITLE", "").strip() or None
 
         self._advisor = self._load_mynx_advisor()
         self._allowed_actions = set(self._advisor.get("behavior_profile", {}).get("typical_actions", []))
@@ -85,6 +103,10 @@ class MynxLLMAdapter:
             except Exception:
                 self._available = False
             return self._available
+        if self.provider == "openrouter":
+            # Consider it available if API key present; we avoid a network probe to keep tests fast/offline-safe.
+            self._available = bool(self._openrouter_api_key)
+            return self._available
         # Unknown provider
         self._available = False
         return False
@@ -94,6 +116,8 @@ class MynxLLMAdapter:
             return None
         if self.provider == "ollama":
             return self._ollama_chat(context=context, structured=False)
+        if self.provider == "openrouter":
+            return self._openrouter_chat(context=context, structured=False)
         return None
 
     def generate_structured(self, context: str) -> Optional[Dict[str, Any]]:
@@ -101,18 +125,21 @@ class MynxLLMAdapter:
             return None
         if self.provider == "ollama":
             obj = self._ollama_chat(context=context, structured=True)
-            if isinstance(obj, dict):
-                valid = self._validate_structured(obj)
-                if valid:
-                    return obj
-                # attempt a minimal repair: coerce action and description
-                repaired = self._repair_structured(obj)
-                if repaired and self._validate_structured(repaired):
-                    return repaired
+        elif self.provider == "openrouter":
+            obj = self._openrouter_chat(context=context, structured=True)
+        else:
             return None
+        if isinstance(obj, dict):
+            valid = self._validate_structured(obj)
+            if valid:
+                return obj
+            # attempt a minimal repair: coerce action and description
+            repaired = self._repair_structured(obj)
+            if repaired and self._validate_structured(repaired):
+                return repaired
         return None
 
-    # Provider-specific implementation
+    # Provider-specific implementation: Ollama (local)
     def _ollama_chat(self, context: str, structured: bool) -> Optional[Any]:
         import requests  # type: ignore
         url = self.base_url + "/api/chat"
@@ -178,8 +205,6 @@ class MynxLLMAdapter:
             # Fallback to raw text body
             if not content:
                 raw = r.text or ""
-                # if response is tiny or not json, try to extract any JSON block or use full text
-                # prefer r.text when structured parsing fails
                 content = raw.strip()
 
             if structured:
@@ -190,6 +215,51 @@ class MynxLLMAdapter:
             return _JSONTools.sanitize_text(content or "")
         except Exception:
             return None
+
+    # Provider-specific implementation: OpenRouter (remote API)
+    def _openrouter_chat(self, context: str, structured: bool) -> Optional[Any]:
+        try:
+            # Import openai lazily so the dependency is optional when provider not in use
+            from openai import OpenAI  # type: ignore
+        except Exception:
+            return None
+        if not self._openrouter_api_key:
+            return None
+        user_prompt = self._build_user_prompt(context=context, structured=structured)
+        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
+        headers = {}
+        # if self._openrouter_site:
+        #     headers["HTTP-Referer"] = self._openrouter_site
+        # if self._openrouter_site_title:
+        #     headers["X-Title"] = self._openrouter_site_title
+        try:
+            completion = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self._system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                extra_headers=headers or None,
+                temperature=0.2,
+                top_p=0.9,
+                # Provide a gentle max tokens guard (OpenRouter accepts OpenAI fields)
+                max_tokens=256 if not structured else 180,
+            )
+        except Exception:
+            return None
+        # Extract first message content (OpenAI-compatible schema)
+        try:
+            msg = completion.choices[0].message  # type: ignore
+            content = getattr(msg, "content", None)
+            if not content and isinstance(msg, dict):
+                content = msg.get("content")
+        except Exception:
+            content = None
+        if not content:
+            return None
+        if structured:
+            return _JSONTools.try_parse_json(str(content))
+        return _JSONTools.sanitize_text(str(content))
 
     def _build_user_prompt(self, context: str, structured: bool) -> str:
         ctx = context.strip()
