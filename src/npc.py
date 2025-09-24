@@ -1358,6 +1358,74 @@ class Mynx(Friend):
             else:
                 room_desc = "."
 
+            # Collect nearby items, objects, and other NPCs to provide richer environmental context
+            # Include explicit short descriptions for each entry (truncated)
+            nearby_items = []  # will hold strings like "Name — short desc"
+            nearby_objects = []
+            other_npcs = []
+            try:
+                room = self.current_room
+                # items: prefer items_here, fallback to items or spawned
+                room_items = getattr(room, 'items_here', None) or getattr(room, 'items', None) or getattr(room, 'spawned', None) or []
+                for itm in room_items or []:
+                    nm = getattr(itm, 'name', None) or getattr(itm, 'title', None) or None
+                    desc = getattr(itm, 'description', None) or getattr(itm, 'short_description', None) or None
+                    if isinstance(nm, str) and nm.strip():
+                        name = re.sub(r'\s+', ' ', nm).strip()[:60]
+                        if isinstance(desc, str) and desc.strip():
+                            d = re.sub(r'\s+', ' ', desc).strip()[:140]
+                            nearby_items.append(f"{name} — {d}")
+                        else:
+                            nearby_items.append(f"{name} — (no description)")
+                # objects: prefer objects_here or objects
+                room_objs = getattr(room, 'objects_here', None) or getattr(room, 'objects', None) or []
+                for obj in room_objs or []:
+                    onm = getattr(obj, 'name', None) or None
+                    odesc = getattr(obj, 'description', None) or getattr(obj, 'summary', None) or None
+                    if isinstance(onm, str) and onm.strip():
+                        name = re.sub(r'\s+', ' ', onm).strip()[:60]
+                        if isinstance(odesc, str) and odesc.strip():
+                            # take first sentence of long descriptions then truncate
+                            s = re.sub(r'\s+', ' ', odesc).strip()
+                            s = s.split('.')[0].strip()[:140]
+                            nearby_objects.append(f"{name} — {s}")
+                        else:
+                            nearby_objects.append(f"{name} — (no description)")
+                # other NPCs in room (excluding self)
+                for npc_inst in getattr(room, 'npcs_here', []) or []:
+                    nm = getattr(npc_inst, 'name', None)
+                    ndesc = getattr(npc_inst, 'description', None) or getattr(npc_inst, 'discovery_message', None) or None
+                    if isinstance(nm, str) and nm.strip() and nm != self.name:
+                        name = re.sub(r'\s+', ' ', nm).strip()[:60]
+                        if isinstance(ndesc, str) and ndesc.strip():
+                            nd = re.sub(r'\s+', ' ', ndesc).strip()[:140]
+                            other_npcs.append(f"{name} — {nd}")
+                        else:
+                            other_npcs.append(f"{name} — (no description)")
+            except Exception:
+                nearby_items = []
+                nearby_objects = []
+                other_npcs = []
+
+            # Deduplicate, sort, and limit lists for brevity
+            try:
+                ni_list = list(dict.fromkeys(nearby_items))[:5]
+                no_list = list(dict.fromkeys(nearby_objects))[:5]
+                nn_list = list(dict.fromkeys(other_npcs))[:5]
+                ni = '; '.join(ni_list)
+                no = '; '.join(no_list)
+                nn = '; '.join(nn_list)
+            except Exception:
+                ni = no = nn = ''
+
+            env_lists = ''
+            if ni:
+                env_lists += f" Nearby items (name — description): {ni}."
+            if no:
+                env_lists += f" Nearby objects (name — description): {no}."
+            if nn:
+                env_lists += f" Other nearby NPCs (name — description): {nn}."
+
             # Build a concise history summary of the last up to 3 prompt/response pairs
             history_lines = []
             try:
@@ -1375,15 +1443,27 @@ class Mynx(Friend):
             if history_lines:
                 history_block = " Conversation history (most recent last): " + " | ".join(history_lines) + "."
 
+            # Build explicit pronoun guidance: Jean (from advisor) and the mynx; instruct to prefer names for others
+            mynx_personal = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
+            mynx_possessive = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
+            pronoun_guidance = ''
+            try:
+                if jean_pronoun_line:
+                    pronoun_guidance += f"For Jean use: {jean_pronoun_line.strip()} "
+                pronoun_guidance += f"For the mynx use: {mynx_personal}/{mynx_possessive}. "
+                pronoun_guidance += "For any other nearby NPCs, prefer using their NAME rather than a pronoun; if a pronoun is necessary, use gender-neutral they/them/their."
+            except Exception:
+                pronoun_guidance = "Use Jean and Mynx pronouns consistently; prefer names for others or use they/them."
+
             context = (
                 f"You describe only what the mynx does in one immediate, nonverbal action. "
                 f"The mynx's proper name is {self.name}. {self.name} is the ACTOR, never its own target. "
                 f"Allowed entity names you may reference (no others): {', '.join(sorted(roster_set | {'Jean'}))}. "
                 f"Do not invent other creature names. If the player is referenced use 'Jean'. "
-                f"{jean_pronoun_line}{jean_snippet} "
+                f"{pronoun_guidance} {jean_snippet} "
                 f"Keep it present-tense, concise (<=2 short sentences), no speech. "
                 f"Player action/intent: '{(prompt or '').strip().lower() or 'interact'}'."
-                f"{room_desc} Respond in a way that's appropriate for the environment."
+                f"{room_desc}{env_lists} Respond in a way that's appropriate for the environment."
                 f"{history_block} Try not to repeat recent actions or descriptions; be novel relative to the above history."
             )
             responded = False
