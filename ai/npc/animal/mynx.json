@@ -8,7 +8,18 @@
     "temperament": "Curious, skittish around strangers, intensely social in small groups, playful, and opportunistic foragers.",
     "movement": "Arboreal and terrestrial—moves with agile leaps, tail-assisted balance, and quick, silent steps when stalking or hiding.",
     "senses": "Acute vision and hearing, good spatial memory. Smells faintly of moss and citrus when excited.",
-    "typical_actions": ["investigate_object", "groom", "playful_tussle", "steal_food", "alert_owner", "hide", "nest_building"]
+    "typical_actions": [
+      "investigate_object",
+      "groom",
+      "playful_tussle",
+      "steal_food",
+      "alert_owner",
+      "hide",
+      "nest_building",
+      "take_food",
+      "play",
+      "investigate"
+    ]
   },
   "communication_constraints": {
     "verbal": "The mynx cannot speak human words. Never output dialog or attributed speech for the creature.",
@@ -41,4 +52,3 @@
   "system_prompt_snippet": "You are an assistant guiding descriptive output for an in-game creature called the mynx. Only produce nonverbal action descriptions or compact JSON action objects as specified. Never output direct speech, internal thoughts, or game-engine instructions. Keep descriptions present-tense, concise, and consistent with the creature's physical abilities. Use the example outputs as templates.",
   "usage_notes": "When integrating with an LLM, feed this file's `system_prompt_snippet` as the system role. If the game engine expects structured output, request the model to return the `example_structured_response` JSON schema exactly. Otherwise, prefer the short plain descriptions from `example_plain_responses`."
 }
-
