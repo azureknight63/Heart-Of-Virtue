@@ -336,7 +336,7 @@ class Merchant(NPC):
             "{merchant} dips a finger in a small pot and brushes away dust from the {item}.",
             "The {item} is rotated slowly as {merchant} asks a passing customer if they fancy it.",
             "{merchant} murmurs to themselves while weighing the {item}'s qualities.",
-            "A tiny charcoal sketch of the {item} is scribbled into the ledger by {merchant}.",
+            "A tiny charcoal sketch of the {item} is scribbled into a ledger by {merchant}.",
             "'Keep an eye on that one,' {merchant} says, pointing to the {item} as he cocks a smile.",
             "{merchant} wraps the {item} in cloth and tucks it among the curios for safekeeping.",
             "{merchant} hums an old tune while polishing the {item}'s edges.",
@@ -1027,6 +1027,33 @@ class Mynx(Friend):
         self._llm_last_response = None
         # Lazy-initialized LLM adapter
         self._llm_adapter = None
+        # Cached player (Jean) advisor data
+        self._jean_advisor = None
+
+    def _load_player_advisor(self):
+        """Lazy load Jean's advisor JSON (ai/player/jean.json). Returns dict or minimal fallback."""
+        if self._jean_advisor is not None:
+            return self._jean_advisor
+        try:
+            root = Path(__file__).resolve().parent.parent  # project root
+            jean_path = root / 'ai' / 'player' / 'jean.json'
+            if jean_path.exists():
+                import json as _json
+                with open(jean_path, 'r', encoding='utf-8') as f:
+                    self._jean_advisor = _json.load(f)
+            else:
+                self._jean_advisor = {
+                    'character_name': 'Jean',
+                    'pronouns': {'subject': 'he', 'object': 'him', 'possessive_adjective': 'his'},
+                    'system_prompt_snippet': 'Jean is the human player (he/him). Keep references to him concise and third-person.'
+                }
+        except Exception:
+            self._jean_advisor = {
+                'character_name': 'Jean',
+                'pronouns': {'subject': 'he', 'object': 'him', 'possessive_adjective': 'his'},
+                'system_prompt_snippet': 'Jean is the human player (he/him). Keep references concise.'
+            }
+        return self._jean_advisor
 
     # Prevent joining combat lists
     def combat_engage(self, player):
@@ -1046,12 +1073,16 @@ class Mynx(Friend):
             return self._llm_adapter
         if os.getenv("MYNX_LLM_ENABLED", "0") not in ("1", "true", "True"):
             self._llm_adapter = None
+            if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                print("[MYNX_LLM_DEBUG] Adapter disabled: set MYNX_LLM_ENABLED=1 to enable.")
             return None
         try:
             root = Path(__file__).resolve().parent.parent  # project root
             adapter_path = root / "ai" / "llm_client.py"
             if not adapter_path.exists():
                 self._llm_adapter = None
+                if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                    print(f"[MYNX_LLM_DEBUG] llm_client.py not found at {adapter_path}.")
                 return None
             spec = importlib.util.spec_from_file_location("ai.llm_client", str(adapter_path))
             if spec and spec.loader:
@@ -1060,20 +1091,176 @@ class Mynx(Friend):
                 Adapter = getattr(mod, "MynxLLMAdapter", None)
                 if Adapter is None:
                     self._llm_adapter = None
+                    if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                        print("[MYNX_LLM_DEBUG] MynxLLMAdapter class not found in llm_client module.")
                     return None
                 inst = Adapter()
                 # only keep if available
-                if getattr(inst, "available")() is True:
+                try:
+                    avail = getattr(inst, "available")()
+                except Exception as e:
+                    avail = False
+                    if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                        print(f"[MYNX_LLM_DEBUG] Exception checking availability: {e}")
+                if avail is True:
                     self._llm_adapter = inst
+                    if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                        # If debug_status exists, show it
+                        if hasattr(inst, "debug_status"):
+                            print(f"[MYNX_LLM_DEBUG] Adapter available: {inst.debug_status()}")
+                        else:
+                            print("[MYNX_LLM_DEBUG] Adapter available.")
                 else:
+                    if hasattr(inst, "debug_status") and os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                        try:
+                            print(f"[MYNX_LLM_DEBUG] Adapter unavailable: {inst.debug_status()}")
+                        except Exception:
+                            pass
                     self._llm_adapter = None
             else:
                 self._llm_adapter = None
-        except Exception:
+                if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                    print("[MYNX_LLM_DEBUG] Failed to create module spec for llm_client.")
+        except Exception as e:
             self._llm_adapter = None
+            if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
+                print(f"[MYNX_LLM_DEBUG] Exception loading adapter: {e}")
         return self._llm_adapter
 
-    # High-level interaction entrypoint used by the game (stubbed LLM integration)
+    def _sanitize_mynx_llm_text(self, text: str, allowed_names) -> str:
+        """Post-process LLM text to reduce self-referential confusion.
+        Rules:
+          - Keep only the first occurrence of any allowed proper noun (other than Jean) for the mynx itself; later occurrences -> pronoun.
+          - Remove self-targeting phrases like 'batting at <name/pronoun>'.
+          - Strip OR replace with pronoun any capitalized tokens not in allowed_names + {'Jean'}.
+          - Preserve possessive forms (Jean's, Snookums's) of allowed names; for disallowed names in possessive form, use the possessive adjective pronoun (its, his, her) instead of pronoun + apostrophe.
+        allowed_names: iterable of permitted entity names (case sensitive as provided) including the mynx's name.
+        """
+        try:
+            import re
+            if not text:
+                return text
+            allowed = set(allowed_names or [])
+            allowed.add(self.name)
+            allowed.add('Jean')
+            # Pre-compute possessive variants for quick membership test
+            allowed_possessives = {f"{n}'s" for n in allowed}
+            pronoun = self.pronouns.get("personal", "it") if hasattr(self, "pronouns") else "it"
+            poss_adj = None
+            if hasattr(self, "pronouns"):
+                poss_adj = self.pronouns.get("possessive_adjective") or ("its" if pronoun == "it" else f"{pronoun}'s")
+            else:
+                poss_adj = "its" if pronoun == "it" else f"{pronoun}'s"
+            name = self.name
+
+            # Normalize whitespace
+            text = re.sub(r"\s+", " ", text).strip()
+
+            # Replace subsequent occurrences of mynx's own name with pronoun
+            count = 0
+            def repl_self(m):
+                nonlocal count
+                count += 1
+                return name if count == 1 else pronoun
+            pattern_self = re.compile(re.escape(name), re.IGNORECASE)
+            text = pattern_self.sub(repl_self, text)
+
+            # Remove self-targeting action patterns
+            text = re.sub(rf"\b(batting|pawing|swatting|tapping) at (?:{re.escape(name)}|{pronoun})\b",
+                          r"\1 playfully", text, flags=re.IGNORECASE)
+
+            # Token pass to remove invented capitalized single words while preserving allowed possessives
+            tokens = text.split(" ")
+            cleaned = []
+            for t in tokens:
+                if re.match(r"^[A-Z][A-Za-z\-']+$", t):
+                    if t in allowed or t in allowed_possessives:
+                        cleaned.append(t)
+                        continue
+                    # Handle possessive form of an allowed name (e.g., Jean's) that might differ by case
+                    if t.endswith("'s"):
+                        base = t[:-2]
+                        if base in allowed:
+                            cleaned.append(t)  # allowed possessive
+                            continue
+                        # Disallowed possessive -> use possessive adjective pronoun
+                        cleaned.append(poss_adj)
+                        continue
+                    # Disallowed capitalized token (non-possessive)
+                    cleaned.append(pronoun)
+                else:
+                    cleaned.append(t)
+            text = " ".join(cleaned)
+            # Collapse duplicate pronouns (case-insensitive)
+            text = re.sub(rf"\b({pronoun})\s+\1\b", pronoun, text, flags=re.IGNORECASE)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+        except Exception:
+            return text
+
+    def _check_and_correct_mynx_text(self, text: str, prompt: str, roster) -> str | None:
+        """Validate and lightly correct LLM output. Return corrected text or None if unacceptable.
+        Heuristics:
+          - <= 2 sentences (split on . ! ?) with non-empty content.
+          - No disallowed proper nouns (capitalized tokens) outside roster + Jean + mynx name.
+          - Present-tense preference: avoid obvious past-tense verbs ending in 'ed' at start.
+          - 1-200 chars after trimming.
+          - No quotes / speech lines.
+        Correction attempts:
+          - Trim to first 2 sentences.
+          - Remove disallowed names (replace with pronoun 'it'). Disallowed possessives become possessive adjective ('its').
+          - Ensure ends with period.
+        Fallback: return None to signal caller to use deterministic stub.
+        """
+        try:
+            import re
+            if not isinstance(text, str):
+                return None
+            raw = text.strip()
+            if not raw:
+                return None
+            if '"' in raw or ("'" in raw and (' says ' in raw or raw.count('"') >= 2)):
+                return None  # speech-y
+            # Sentence split
+            sentences = [s.strip() for s in re.split(r"[.!?]", raw) if s.strip()]
+            if len(sentences) == 0:
+                return None
+            if len(sentences) > 2:
+                sentences = sentences[:2]
+            candidate = ". ".join(sentences)
+            # Allowed proper nouns
+            allowed = set(roster or []) | {self.name, 'Jean'}
+            pronoun = self.pronouns.get("personal", "it") if hasattr(self, "pronouns") else "it"
+            poss_adj = None
+            if hasattr(self, "pronouns"):
+                poss_adj = self.pronouns.get("possessive_adjective") or ("its" if pronoun == "it" else f"{pronoun}'s")
+            else:
+                poss_adj = "its" if pronoun == "it" else f"{pronoun}'s"
+            # Remove disallowed capitalized words (including possessive forms)
+            pattern = re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
+            def fix_token(m):
+                base = m.group(1)
+                possessive = m.group(2)
+                if base in allowed:
+                    return base + (possessive or '')
+                if possessive:
+                    return poss_adj
+                return pronoun
+            candidate = pattern.sub(fix_token, candidate)
+            # Basic past-tense check: if majority of verbs end with 'ed' revert
+            ed_tokens = [t for t in candidate.split() if t.lower().endswith('ed')]
+            if len(ed_tokens) > 3 and len(ed_tokens) >= len(candidate.split()) * 0.4:
+                return None
+            # Length guard
+            if not (5 <= len(candidate) <= 200):
+                return None
+            # Ensure ends with period
+            if not candidate.endswith('.'):
+                candidate += '.'
+            return candidate
+        except Exception:
+            return None
+
     def interact_with_player(self, player, prompt: str | None = None, structured: bool = False):
         """Player initiates an interaction. For now, this is a local stub that returns safe, lore-compatible
         descriptions or a structured action object. Later this method should call into an LLM using the
@@ -1114,34 +1301,85 @@ class Mynx(Friend):
             # Non-fatal: if printing fails for any reason, continue to the response
             pass
 
-        # Attempt local LLM generation when enabled and available
+        # Attempt LLM generation when enabled and available
         adapter = self._get_llm_adapter()
+        roster = []
+        if getattr(self, 'current_room', None) is not None:
+            try:
+                for npc_inst in getattr(self.current_room, 'npcs_here', []) or []:
+                    nm = getattr(npc_inst, 'name', None)
+                    if isinstance(nm, str):
+                        roster.append(nm)
+            except Exception:
+                pass
+        if self.name not in roster:
+            roster.append(self.name)
+        roster_set = set(roster)
         if adapter is not None:
-            context = f"{self.name} is nearby. Player prompt: '{p or 'interact'}'."
+            # Load Jean advisor for richer context (pronouns, demeanor snippet)
+            jean_adv = self._load_player_advisor() or {}
+            jean_pronouns = jean_adv.get('pronouns', {})
+            jean_snippet = jean_adv.get('system_prompt_snippet', '')[:300]
+            jean_pronoun_line = ''
+            if jean_pronouns:
+                subj = jean_pronouns.get('subject', 'he')
+                obj = jean_pronouns.get('object', 'him')
+                poss = jean_pronouns.get('possessive_adjective', 'his')
+                jean_pronoun_line = f"Jean pronouns: {subj}/{obj}/{poss}. "
+            context = (
+                f"You describe only what the mynx does in one immediate, nonverbal action. "
+                f"The mynx's proper name is {self.name}. {self.name} is the ACTOR, never its own target. "
+                f"Allowed entity names you may reference (no others): {', '.join(sorted(roster_set | {'Jean'}))}. "
+                f"Do not invent other creature names. If the player is referenced use 'Jean'. "
+                f"{jean_pronoun_line}{jean_snippet} "
+                f"Keep it present-tense, concise (<=2 short sentences), no speech. "
+                f"Player action/intent: '{(prompt or '').strip().lower() or 'interact'}'."
+            )
+            responded = False
             try:
                 if structured:
                     obj = adapter.generate_structured(context=context)
-                    if isinstance(obj, dict):
-                        # Record and return
-                        self._llm_last_response = obj
-                        return obj
+                    if isinstance(obj, dict) and isinstance(obj.get('description'), str):
+                        if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
+                            try:
+                                print(f"[MYNX_LLM_DEBUG] Raw structured description: {obj.get('description')}")
+                            except Exception:
+                                pass
+                        desc = self._sanitize_mynx_llm_text(obj['description'], roster_set)
+                        desc_checked = self._check_and_correct_mynx_text(desc, p, roster)
+                        if desc_checked is None:
+                            obj = None  # force fallback
+                        else:
+                            obj['description'] = desc_checked
+                            self._llm_last_response = obj
+                            responded = True
+                            return obj
                 else:
                     text_resp = adapter.generate_plain(context=context)
                     if isinstance(text_resp, str) and text_resp:
-                        self._llm_last_response = {
-                            "action": "narrate",
-                            "intensity": "low",
-                            "description": text_resp,
-                            "duration_seconds": 2,
-                            "audible": "soft chitter"
-                        }
-                        print(text_resp)
-                        return text_resp
-            except Exception:
-                # If LLM call fails, fall back to deterministic stub below
-                pass
-
-        # Basic deterministic stub responses (keeps outputs nonverbal and present-tense)
+                        if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
+                            try:
+                                print(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
+                            except Exception:
+                                pass
+                        sanitized = self._sanitize_mynx_llm_text(text_resp, roster_set)
+                        checked = self._check_and_correct_mynx_text(sanitized, p, roster)
+                        if checked is not None:
+                            self._llm_last_response = {
+                                'action': 'narrate',
+                                'intensity': 'low',
+                                'description': checked,
+                                'duration_seconds': 2,
+                                'audible': 'soft chitter'
+                            }
+                            print(checked)
+                            responded = True
+                            return checked
+            except Exception as e:
+                if os.getenv('MYNX_LLM_DEBUG', '0') in ('1', 'true', 'True'):
+                    print(f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}")
+            # Continue to deterministic stub if not responded
+        # Deterministic stub fallback responses (legacy behavior for tests / offline mode)
         if p in ("pet", "stroke", "scritch"):
             text = f"{self.name} leans into the hand, purring a soft chitter and nudging the wrist with its head."
             structured_obj = {
@@ -1154,7 +1392,7 @@ class Mynx(Friend):
         elif p in ("feed", "offer food", "give food"):
             text = f"{self.name} eyes the offered morsel, snatches it with a quick paw, and tucks it into its tail-fur triumphantly."
             structured_obj = {
-                "action": "take_food",
+                "action": "take_food",  # legacy test expectation; synonym of 'steal_food'
                 "intensity": "medium",
                 "description": text,
                 "duration_seconds": 3,
@@ -1163,65 +1401,46 @@ class Mynx(Friend):
         elif p in ("play", "toy", "tease"):
             text = f"{self.name} bats the object with nimble paws, then darts back and forth in a brief, jubilant display."
             structured_obj = {
-                "action": "play",
+                "action": "play",  # legacy test expectation; synonym of 'playful_tussle'
                 "intensity": "high",
                 "description": text,
                 "duration_seconds": 4,
                 "audible": "rapid chitters"
             }
         else:
-            # Default curious investigation
             text = f"{self.name} pads forward on silent paws, head cocked, whiskers twitching as it studies you."
             structured_obj = {
-                "action": "investigate",
+                "action": "investigate",  # legacy test expectation; synonym of 'investigate_object'
                 "intensity": "low",
                 "description": text,
                 "duration_seconds": 3,
                 "audible": "soft chitter"
             }
-
-        # Record last response for debugging / later telemetry
         self._llm_last_response = structured_obj
-
         if structured:
             return structured_obj
-        # Print to match other NPC 'talk' style behaviors and return the text
         print(text)
+        time.sleep(1.5)
         return text
 
     # Override talk to use the interaction framework
     def talk(self, player, prompt: str | None = None, structured: bool = False):
-        """Public talking API for game code. Accepts an optional prompt describing the player's input.
-        Currently uses the local stub; later this will route to an LLM and validate outputs against
-        the mynx advisor JSON.
-        """
         try:
             return self.interact_with_player(player, prompt=prompt, structured=structured)
-        except Exception as e:
-            # Fail-safe: never crash the game loop when LLM integration is incomplete
+        except Exception:
             print(f"{self.name} tilts its head and makes a confused chitter.")
             return None
 
     def pet(self, player=None, structured: bool = False):
-        """Player pets the mynx. Triggers an LLM-driven (stubbed) nonverbal response.
-
-        Returns either a short text description (and prints it) or a structured dict when structured=True.
-        """
         return self.interact_with_player(player, prompt="pet", structured=structured)
 
     def play(self, player=None, item=None, structured: bool = False):
-        """Player plays with the mynx. Optionally include an item name to provide context.
-
-        This triggers an LLM-driven (stubbed) response.
-        """
         prompt = "play"
         if item:
-            # include item name in the prompt string to allow richer LLM responses later
             prompt = f"play with {str(item)}"
         return self.interact_with_player(player, prompt=prompt, structured=structured)
 
 class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.
-    # His name is initially unknown. Species name is Grondite.
     def __init__(self):
         description = """
 A massive creature that somewhat resembles a man,
@@ -1241,11 +1460,9 @@ friendly enough to Jean.
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Parry(self), 2)
         self.keywords = ["talk"]
-        self.pronouns = {
-            "personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"
-        }
+        self.pronouns = {"personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"}
 
-    def before_death(self):  # this essentially makes Gorran invulnerable, though he will likely have to rest
+    def before_death(self):
         print(colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
         self.fatigue /= 2
         self.hp = self.maxhp
@@ -1254,15 +1471,12 @@ friendly enough to Jean.
     def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
             self.current_room.events_here.append(
-                functions.seek_class("AfterGorranIntro", "story")(player,
-                                                                  self.current_room, None, False))
+                functions.seek_class("AfterGorranIntro", "story")(player, self.current_room, None, False))
             self.current_room.universe.story["gorran_first"] = "1"
-
         else:
             print(self.name + " has nothing to say.")
 
-
-class Slime(NPC):  # target practice
+class Slime(NPC):
     def __init__(self):
         description = "Goop that moves. Gross."
         super().__init__(name="Slime " + genericng.generate(4, 5), description=description, maxhp=10,
@@ -1274,8 +1488,7 @@ class Slime(NPC):  # target practice
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self))
 
-
-class Testexp(NPC):  # target practice
+class Testexp(NPC):
     def __init__(self):
         description = "Goop that moves. Gross."
         super().__init__(name="Slime " + genericng.generate(4, 5), description=description, maxhp=200,
@@ -1287,12 +1500,11 @@ class Testexp(NPC):  # target practice
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self))
 
-
 class RockRumbler(NPC):
     def __init__(self):
-        description = "A burly creature covered in a rock-like carapace somewhat resembling a stout crocodile." \
-                      "Highly resistant to most weapons. You'd probably be better off avoiding combat with this" \
-                      "one."
+        description = ("A burly creature covered in a rock-like carapace somewhat resembling a stout crocodile."
+                      "Highly resistant to most weapons. You'd probably be better off avoiding combat with this"
+                      "one.")
         super().__init__(name="Rock Rumbler " + genericng.generate(2, 4), description=description, maxhp=30,
                          damage=22, protection=30, awareness=25, aggro=True, exp_award=100)
         self.resistance_base["earth"] = 0.5
@@ -1306,11 +1518,10 @@ class RockRumbler(NPC):
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self))
 
-
 class Lurker(NPC):
     def __init__(self):
-        description = "A grisly demon of the dark. Its body is vaguely humanoid in shape. Long, thin arms end" \
-                      "in sharp, poisonous claws. It prefers to hide in the dark, making it difficult to surprise."
+        description = ("A grisly demon of the dark. Its body is vaguely humanoid in shape. Long, thin arms end"
+                      "in sharp, poisonous claws. It prefers to hide in the dark, making it difficult to surprise.")
         super().__init__(name="Lurker " + genericng.generate(2, 4), description=description, maxhp=250,
                          damage=25, protection=0, awareness=60, endurance=20, aggro=True, exp_award=800)
         self.loot = loot.lev1
