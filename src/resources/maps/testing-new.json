@@ -2,14 +2,29 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "tile_2_2",
-        "description": "A newly created room at (9, 6).",
+        "description": "A mossy alcove beneath a leaning cypress. Claw marks on the stone hint at small creatures living nearby.",
         "exits": [
             "south",
             "east",
             "southeast"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "src.items",
+                "props": {
+                    "count": 1
+                }
+            },
+            {
+                "__class__": "WoodenArrow",
+                "__module__": "src.items",
+                "props": {
+                    "count": 6
+                }
+            }
+        ],
         "npcs": [
             {
                 "__class__": "Mynx",
@@ -218,7 +233,7 @@
     "(3, 2)": {
         "id": "tile_3_2",
         "title": "Milo's Space",
-        "description": "It's pretty cool in this space.",
+        "description": "A tidy stone chamber with a standing portal etched in silver runes. The air hums faintly.",
         "exits": [
             "south",
             "west",
@@ -226,7 +241,22 @@
             "southwest"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "src.items",
+                "props": {
+                    "count": 2
+                }
+            },
+            {
+                "__class__": "Antidote",
+                "__module__": "src.items",
+                "props": {
+                    "count": 1
+                }
+            }
+        ],
         "npcs": [],
         "objects": [
             {
@@ -267,7 +297,7 @@
     "(3, 3)": {
         "id": "tile_3_3",
         "title": "Starting Spot",
-        "description": "Welcome to the test zone! Have fun!",
+        "description": "A sunlit clearing marked for testing. Paths lead in several directions.",
         "exits": [
             "northwest",
             "north",
@@ -530,7 +560,7 @@
     "(2, 3)": {
         "id": "tile_2_3",
         "title": "tile_2_3",
-        "description": "A newly created room at (2, 3).",
+        "description": "A roadside stall draped in colorful cloth. The scent of herbs and tonics hangs in the air.",
         "exits": [
             "north",
             "east",
@@ -943,7 +973,7 @@
     "(4, 3)": {
         "id": "tile_4_3",
         "title": "tile_4_3",
-        "description": "A newly created room at (4, 3).",
+        "description": "A windswept ridge with loose gravel underfoot. You can see far to the east.",
         "exits": [
             "northwest",
             "west",
@@ -951,33 +981,72 @@
             "southeast"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "src.items",
+                "props": {
+                    "amt": 35
+                }
+            },
+            {
+                "__class__": "Draught",
+                "__module__": "src.items",
+                "props": {
+                    "count": 1
+                }
+            }
+        ],
         "npcs": [],
         "objects": []
     },
     "(5, 3)": {
         "id": "tile_5_3",
         "title": "tile_5_3",
-        "description": "A newly created room at (5, 3).",
+        "description": "A narrow pass between boulders. Scrapes on the rock suggest frequent traffic.",
         "exits": [
             "west",
             "south"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Shortbow",
+                "__module__": "src.items",
+                "props": {}
+            },
+            {
+                "__class__": "WoodenArrow",
+                "__module__": "src.items",
+                "props": {
+                    "count": 12
+                }
+            }
+        ],
         "npcs": [],
         "objects": []
     },
     "(5, 4)": {
         "id": "tile_5_4",
         "title": "tile_5_4",
-        "description": "A newly created room at (5, 4).",
+        "description": "A sheltered hollow beneath an overhang. It's quiet here, and footprints circle the edge.",
         "exits": [
             "northwest",
             "north"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "LeatherBoots",
+                "__module__": "src.items",
+                "props": {}
+            },
+            {
+                "__class__": "PaddedCap",
+                "__module__": "src.items",
+                "props": {}
+            }
+        ],
         "npcs": [],
         "objects": []
     }
