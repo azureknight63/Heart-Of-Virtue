@@ -13,6 +13,7 @@ from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition,
 from pathlib import Path
 import os
 import importlib.util
+import re
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -1029,6 +1030,29 @@ class Mynx(Friend):
         self._llm_adapter = None
         # Cached player (Jean) advisor data
         self._jean_advisor = None
+        # Short LLM interaction history: list of {'prompt': str, 'response': str}, most recent last
+        self._llm_history: list[dict] = []
+
+    def _append_llm_history(self, prompt: str, response: str):
+        """Append a short normalized prompt/response pair to the in-memory history (keep last 3).
+        This is intentionally lightweight (whitespace normalized, truncated) to avoid long prompts.
+        """
+        try:
+            if not isinstance(prompt, str):
+                prompt = str(prompt or "")
+            if not isinstance(response, str):
+                response = str(response or "")
+            p = re.sub(r"\s+", " ", prompt).strip()[:200]
+            r = re.sub(r"\s+", " ", response).strip()[:300]
+            if not p and not r:
+                return
+            self._llm_history.append({"prompt": p, "response": r})
+            # keep only last 3
+            if len(self._llm_history) > 3:
+                self._llm_history = self._llm_history[-3:]
+        except Exception:
+            # non-fatal; history is advisory only
+            return
 
     def _load_player_advisor(self):
         """Lazy load Jean's advisor JSON (ai/player/jean.json). Returns dict or minimal fallback."""
@@ -1326,6 +1350,31 @@ class Mynx(Friend):
                 obj = jean_pronouns.get('object', 'him')
                 poss = jean_pronouns.get('possessive_adjective', 'his')
                 jean_pronoun_line = f"Jean pronouns: {subj}/{obj}/{poss}. "
+            # Short room description (if available)
+            room_desc = getattr(self.current_room, 'description', '').strip()
+            room_desc = re.sub(r'\s+', ' ', room_desc)  # normalize whitespace
+            if room_desc:
+                room_desc = f" You are in {room_desc}."
+            else:
+                room_desc = "."
+
+            # Build a concise history summary of the last up to 3 prompt/response pairs
+            history_lines = []
+            try:
+                for h in (self._llm_history or [])[-3:]:
+                    ph = h.get('prompt', '')
+                    rh = h.get('response', '')
+                    # normalize and truncate for safety
+                    phs = re.sub(r'\s+', ' ', str(ph)).strip()[:120]
+                    rhs = re.sub(r'\s+', ' ', str(rh)).strip()[:180]
+                    if phs or rhs:
+                        history_lines.append(f"Prompt: '{phs}' -> Resp: '{rhs}'")
+            except Exception:
+                history_lines = []
+            history_block = ''
+            if history_lines:
+                history_block = " Conversation history (most recent last): " + " | ".join(history_lines) + "."
+
             context = (
                 f"You describe only what the mynx does in one immediate, nonverbal action. "
                 f"The mynx's proper name is {self.name}. {self.name} is the ACTOR, never its own target. "
@@ -1334,6 +1383,8 @@ class Mynx(Friend):
                 f"{jean_pronoun_line}{jean_snippet} "
                 f"Keep it present-tense, concise (<=2 short sentences), no speech. "
                 f"Player action/intent: '{(prompt or '').strip().lower() or 'interact'}'."
+                f"{room_desc} Respond in a way that's appropriate for the environment."
+                f"{history_block} Try not to repeat recent actions or descriptions; be novel relative to the above history."
             )
             responded = False
             try:
@@ -1352,6 +1403,11 @@ class Mynx(Friend):
                         else:
                             obj['description'] = desc_checked
                             self._llm_last_response = obj
+                            # record history (prompt and cleaned response)
+                            try:
+                                self._append_llm_history(p, desc_checked)
+                            except Exception:
+                                pass
                             responded = True
                             return obj
                 else:
@@ -1372,6 +1428,11 @@ class Mynx(Friend):
                                 'duration_seconds': 2,
                                 'audible': 'soft chitter'
                             }
+                            # append to history before returning
+                            try:
+                                self._append_llm_history(p, checked)
+                            except Exception:
+                                pass
                             print(checked)
                             responded = True
                             return checked
@@ -1389,6 +1450,11 @@ class Mynx(Friend):
                 "duration_seconds": 2,
                 "audible": "soft purr/chitter"
             }
+            # record fallback in history
+            try:
+                self._append_llm_history(p, text)
+            except Exception:
+                pass
         elif p in ("feed", "offer food", "give food"):
             text = f"{self.name} eyes the offered morsel, snatches it with a quick paw, and tucks it into its tail-fur triumphantly."
             structured_obj = {
@@ -1398,6 +1464,10 @@ class Mynx(Friend):
                 "duration_seconds": 3,
                 "audible": "happy chitter"
             }
+            try:
+                self._append_llm_history(p, text)
+            except Exception:
+                pass
         elif p in ("play", "toy", "tease"):
             text = f"{self.name} bats the object with nimble paws, then darts back and forth in a brief, jubilant display."
             structured_obj = {
@@ -1407,6 +1477,10 @@ class Mynx(Friend):
                 "duration_seconds": 4,
                 "audible": "rapid chitters"
             }
+            try:
+                self._append_llm_history(p, text)
+            except Exception:
+                pass
         else:
             text = f"{self.name} pads forward on silent paws, head cocked, whiskers twitching as it studies you."
             structured_obj = {
@@ -1416,6 +1490,10 @@ class Mynx(Friend):
                 "duration_seconds": 3,
                 "audible": "soft chitter"
             }
+            try:
+                self._append_llm_history(p, text)
+            except Exception:
+                pass
         self._llm_last_response = structured_obj
         if structured:
             return structured_obj
