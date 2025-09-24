@@ -985,6 +985,176 @@ class Friend(NPC):
         print(self.name + " has nothing to say.")
 
 
+# Mynx: a friendly, non-combatant monkey-cat hybrid NPC with LLM-driven interaction hooks.
+class Mynx(Friend):
+    """A small, nimble forest creature (mynx) that is friendly to the player and cannot fight.
+
+    Behavior and interaction methods are provided as stubs so an LLM can be integrated later.
+    """
+
+    def __init__(self, name: str = "Mynx", description: str | None = None):
+        if description is None:
+            description = (
+                "A small, nimble creature with spotted fur, a prehensile tufted tail, and bright curious eyes. "
+                "It chirrs and chatters but cannot speak human words."
+            )
+        # Damage is zero and aggro False; exp_award 0 since it's non-combatant
+        super().__init__(name=name, description=description, damage=0, aggro=False, exp_award=0,
+                         inventory=None, maxhp=30, protection=1, speed=18, finesse=16,
+                         awareness=20, maxfatigue=50, endurance=8, strength=4, charisma=14,
+                         intelligence=12, faith=6, hidden=False, hide_factor=0, combat_range=(0, 0),
+                         idle_message=" flicks its tail.", alert_message="startles and chatters!",
+                         discovery_message="a curious mynx.")
+
+        # Mynx-specific traits
+        self.pronouns = {"personal": "it", "possessive": "its", "reflexive": "itself", "intensive": "itself"}
+        self.keywords = ["talk", "pet", "play"]
+
+        # Ensure the mynx never enters combat
+        self.in_combat = False
+        self._combat_disabled = True
+
+        # Minimal move set (no attacks)
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
+        # Basic state useful for LLM-driven behavior
+        self._llm_last_response = None
+
+    # Prevent joining combat lists
+    def combat_engage(self, player):
+        """Override to prevent the mynx from entering combat.
+        This intentionally does nothing; mynx can never be attacked or enter combat by design.
+        """
+        # Keep flags consistent but do not add to player's combat lists
+        self.in_combat = False
+        return
+
+    def can_enter_combat(self) -> bool:
+        return False
+
+    # High-level interaction entrypoint used by the game (stubbed LLM integration)
+    def interact_with_player(self, player, prompt: str | None = None, structured: bool = False):
+        """Player initiates an interaction. For now, this is a local stub that returns safe, lore-compatible
+        descriptions or a structured action object. Later this method should call into an LLM using the
+        advisor file in `ai/npc/animal/mynx.json` to synthesize responses.
+
+        Args:
+            player: the player instance (may be None in tests). Do not assume attributes on it in this stub.
+            prompt: short string describing the player's action or intent (e.g., 'offer food', 'pet', 'greet').
+            structured: when True, return a JSON-like dict describing the action; otherwise return a short text.
+        """
+        # Minimal prompt normalization
+        p = (prompt or "").strip().lower()
+
+        # Print a short description of Jean's action before the mynx responds
+        action_print = None
+        if p in ("pet", "stroke", "scritch"):
+            action_print = "Jean reaches out to pet the mynx."
+        elif p in ("feed", "offer food", "give food"):
+            action_print = "Jean offers a morsel of food to the mynx."
+        elif p.startswith("play with ") or p in ("play", "toy", "tease"):
+            # extract item name when present
+            item_name = None
+            if p.startswith("play with "):
+                item_name = p[len("play with "):].strip()
+            if item_name:
+                action_print = f"Jean plays with the mynx using {item_name}."
+            else:
+                action_print = "Jean tries to play with the mynx."
+        elif p:
+            action_print = f"Jean {p}."
+        else:
+            action_print = "Jean interacts with the mynx."
+
+        # Perform the print so the game shows the player's initiating action first
+        try:
+            print(action_print)
+        except Exception:
+            # Non-fatal: if printing fails for any reason, continue to the response
+            pass
+
+        # Basic deterministic stub responses (keeps outputs nonverbal and present-tense)
+        if p in ("pet", "stroke", "scritch"):
+            text = f"{self.name} leans into the hand, purring a soft chitter and nudging the wrist with its head."
+            structured_obj = {
+                "action": "groom",
+                "intensity": "gentle",
+                "description": text,
+                "duration_seconds": 2,
+                "audible": "soft purr/chitter"
+            }
+        elif p in ("feed", "offer food", "give food"):
+            text = f"{self.name} eyes the offered morsel, snatches it with a quick paw, and tucks it into its tail-fur triumphantly."
+            structured_obj = {
+                "action": "take_food",
+                "intensity": "medium",
+                "description": text,
+                "duration_seconds": 3,
+                "audible": "happy chitter"
+            }
+        elif p in ("play", "toy", "tease"):
+            text = f"{self.name} bats the object with nimble paws, then darts back and forth in a brief, jubilant display."
+            structured_obj = {
+                "action": "play",
+                "intensity": "high",
+                "description": text,
+                "duration_seconds": 4,
+                "audible": "rapid chitters"
+            }
+        else:
+            # Default curious investigation
+            text = f"{self.name} pads forward on silent paws, head cocked, whiskers twitching as it studies you."
+            structured_obj = {
+                "action": "investigate",
+                "intensity": "low",
+                "description": text,
+                "duration_seconds": 3,
+                "audible": "soft chitter"
+            }
+
+        # Record last response for debugging / later telemetry
+        self._llm_last_response = structured_obj
+
+        if structured:
+            return structured_obj
+        # Print to match other NPC 'talk' style behaviors and return the text
+        print(text)
+        return text
+
+    # Override talk to use the interaction framework
+    def talk(self, player, prompt: str | None = None, structured: bool = False):
+        """Public talking API for game code. Accepts an optional prompt describing the player's input.
+        Currently uses the local stub; later this will route to an LLM and validate outputs against
+        the mynx advisor JSON.
+        """
+        try:
+            return self.interact_with_player(player, prompt=prompt, structured=structured)
+        except Exception as e:
+            # Fail-safe: never crash the game loop when LLM integration is incomplete
+            print(f"{self.name} tilts its head and makes a confused chitter.")
+            return None
+
+    def pet(self, player=None, structured: bool = False):
+        """Player pets the mynx. Triggers an LLM-driven (stubbed) nonverbal response.
+
+        Returns either a short text description (and prints it) or a structured dict when structured=True.
+        """
+        return self.interact_with_player(player, prompt="pet", structured=structured)
+
+    def play(self, player=None, item=None, structured: bool = False):
+        """Player plays with the mynx. Optionally include an item name to provide context.
+
+        This triggers an LLM-driven (stubbed) response.
+        """
+        prompt = "play"
+        if item:
+            # include item name in the prompt string to allow richer LLM responses later
+            prompt = f"play with {str(item)}"
+        return self.interact_with_player(player, prompt=prompt, structured=structured)
+
 class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.
     # His name is initially unknown. Species name is Grondite.
     def __init__(self):

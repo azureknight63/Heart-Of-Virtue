@@ -10,8 +10,210 @@
         ],
         "events": [],
         "items": [],
-        "npcs": [],
-        "objects": []
+        "npcs": [
+            {
+                "__class__": "Mynx",
+                "__module__": "npc",
+                "props": {
+                    "keywords": [
+                        "talk",
+                        "pet",
+                        "play"
+                    ],
+                    "name": "Mynx",
+                    "description": "A small creature that reminds Jean of a strange mix between a monkey and a cat. It seems rather playful.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " flicks its tail.",
+                    "alert_message": "startles and chatters!",
+                    "maxhp": 30,
+                    "maxhp_base": 30,
+                    "hp": 30,
+                    "damage": 0,
+                    "damage_base": 0,
+                    "protection": 1,
+                    "protection_base": 1,
+                    "speed": 18,
+                    "speed_base": 18,
+                    "finesse": 16,
+                    "finesse_base": 16,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 20,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 50,
+                    "maxfatigue_base": 50,
+                    "endurance": 8,
+                    "endurance_base": 8,
+                    "strength": 4,
+                    "strength_base": 4,
+                    "charisma": 14,
+                    "charisma_base": 14,
+                    "intelligence": 12,
+                    "intelligence_base": 12,
+                    "faith": 6,
+                    "faith_base": 6,
+                    "fatigue": 50,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Mynx flicks its tail.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Mynx>",
+                                "user": "<circular_ref:Mynx>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a curious mynx.",
+                    "friend": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        0
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    }
+                }
+            }
+        ],
+        "objects": [],
+        "block_exit": [],
+        "symbol": "C"
     },
     "(3, 2)": {
         "id": "tile_3_2",
@@ -699,7 +901,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "objects",
+                "__module__": "src.objects",
                 "props": {
                     "nickname": "sack",
                     "possible_states": [
@@ -712,7 +914,7 @@
                     "merchant": "Jambo",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "items:Consumable"
+                            "__class_type__": "src.items:Consumable"
                         }
                     ],
                     "stock_count": 2,
