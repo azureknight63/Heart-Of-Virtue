@@ -2,7 +2,7 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "tile_2_2",
-        "description": "A mossy alcove tucked beneath a leaning cypress. Damp earth and the sweet tang of crushed fern hang in the air; tiny clawed tracks scar the stone and the soft rustle of hidden life whispers from the shadows, as if small, watchful creatures have claimed this nook as their own.",
+        "description": "A mossy alcove beneath a leaning cypress. Claw marks on the stone hint at small creatures living nearby.",
         "exits": [
             "south",
             "east",
