@@ -1239,36 +1239,103 @@ class Mynx(Friend):
             pron_mynx = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
             poss_mynx = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
             allowed = set(roster_set) | {self.name, 'Jean'}
-            # Replace invented capitalized tokens not in allowed with pronoun (neutral they for other NPCs ambiguous)
+
+            # First, replace invented capitalized tokens not in allowed with pronoun
             def repl_name(m):
                 base = m.group(1)
                 possessive = m.group(2)
                 if base in allowed:
                     return m.group(0)
-                # Invented name: treat as referring to mynx if close in sentence to mynx name else generic 'it'
+                # Invented name -> neutral replacement: prefer generic pronoun
                 replacement = pron_mynx
                 return replacement + ("'s" if possessive else '')
             text = self._re_disallowed_name_token.sub(repl_name, text)
-            # Replace any lingering gendered pronouns (he/him/his/she/her/hers) with mynx pronouns if mynx name preceded in sentence
-            def repl_gendered(m):
-                token = m.group(1).lower()
-                # Map all to mynx pronouns; simple heuristic (could differentiate Jean by name)
-                if token in ("he", "she"):
+
+            # Now perform sentence-aware gendered-pronoun replacement.
+            # If a sentence contains 'Jean' we map gendered pronouns to Jean's configured pronouns.
+            # If a sentence contains the mynx's name, prefer mynx pronouns. Otherwise prefer neutral they/their to avoid misassignment.
+            jean_adv = self._load_player_advisor() or {}
+            jean_pronouns = jean_adv.get('pronouns', {}) or {}
+            jean_subj = jean_pronouns.get('subject', 'he')
+            jean_obj = jean_pronouns.get('object', 'him')
+            jean_poss = jean_pronouns.get('possessive_adjective') or jean_pronouns.get('possessive') or 'his'
+
+            # helper to map gendered token to replacement based on target ('jean'|'mynx'|'neutral')
+            def map_token(token, target):
+                t = token.lower()
+                if target == 'jean':
+                    if t in ('he', 'she'):
+                        return jean_subj
+                    if t in ('him', 'her'):
+                        return jean_obj
+                    if t in ('his', 'hers'):
+                        return jean_poss
+                    return jean_subj
+                if target == 'mynx':
+                    if t in ('he', 'she'):
+                        return pron_mynx
+                    if t in ('him', 'her'):
+                        return pron_mynx
+                    if t in ('his', 'hers'):
+                        return poss_mynx
                     return pron_mynx
-                if token in ("him", "her"):
-                    return pron_mynx
-                if token in ("his", "hers"):
-                    return poss_mynx
-                return pron_mynx
-            text = self._gendered_pronouns.sub(repl_gendered, text)
+                # neutral
+                if t in ('he', 'she'):
+                    return 'they'
+                if t in ('him', 'her'):
+                    return 'them'
+                if t in ('his', 'hers'):
+                    return 'their'
+                return 'they'
+
+            # split into sentences and replace gendered pronouns per-sentence
+            parts = []
+            last_end = 0
+            for sep in re.finditer(r'[.!?]+', text):
+                end = sep.end()
+                sentence = text[last_end:end]
+                last_end = end
+                parts.append(sentence)
+            # tail
+            if last_end < len(text):
+                parts.append(text[last_end:])
+
+            processed = []
+            for sent in parts:
+                s = sent
+                # determine who is the likely antecedent
+                lowered = s.lower()
+                target = None
+                if 'jean' in lowered:
+                    target = 'jean'
+                elif self.name.lower() in lowered:
+                    target = 'mynx'
+                else:
+                    # look for any other roster names; if a roster name (other NPC) appears, prefer neutral
+                    found_other = False
+                    for nm in roster_set:
+                        if nm.lower() != self.name.lower() and nm.lower() in lowered:
+                            found_other = True
+                            break
+                    target = 'neutral' if found_other else 'neutral'
+
+                # replace gendered pronouns in this sentence according to target
+                def repl_gendered_local(m):
+                    token = m.group(1)
+                    return map_token(token, target)
+
+                s = self._gendered_pronouns.sub(repl_gendered_local, s)
+                processed.append(s)
+
+            text = ''.join(processed)
+
             # Collapse duplicate pronouns
-            dup_re = re.compile(self._re_duplicate_pronoun_template.format(p=pron_mynx), re.IGNORECASE)
+            dup_re = re.compile(self._re_duplicate_pronoun_template.format(p=re.escape(pron_mynx)), re.IGNORECASE)
             text = dup_re.sub(pron_mynx, text)
             return self._normalize_ws(text)
         except Exception:
             return text
 
-    # Extract environment scanning into helper returning env_lists string
     def _gather_environment_lists(self):
         nearby_items = []
         nearby_objects = []
