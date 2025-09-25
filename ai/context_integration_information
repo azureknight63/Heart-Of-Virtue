@@ -1,0 +1,17 @@
+Recommended integration pattern with 7b LLM
+Feed the system_prompt_snippet entry from mynx.json as the system role. That snippet constrains the model to produce only the allowed types of outputs.
+When your game engine expects structured output, request the model return JSON exactly matching the example_structured_response schema in the file.
+Otherwise prefer the short plain-text descriptions from example_plain_responses.
+Copyable system prompt snippet (from the file) You can paste this as the system message for the model: "You are an assistant guiding descriptive output for an in-game creature called the mynx. Only produce nonverbal action descriptions or compact JSON action objects as specified. Never output direct speech, internal thoughts, or game-engine instructions. Keep descriptions present-tense, concise, and consistent with the creature's physical abilities. Use the example outputs as templates."
+Two example user prompts and expected outputs
+Plain description mode
+User prompt: "Context: The player drops a shiny coin near a low branch. The mynx is two paces away and notices it. Describe one immediate action of the mynx."
+Expected model output (example): "The mynx pads forward on silent paws, head cocked, whiskers twitching as it studies the dropped coin."
+(Present tense, nonverbal, short.)
+Structured JSON mode (when engine needs parsed data)
+User prompt: "Return exactly one JSON action object using the schema in the advisor. Context: mynx sees a small pouch on the ground, nearby. Output a single JSON action."
+Expected model output (example): { "action": "investigate_object", "intensity": "low", "description": "The mynx sniffs the small pouch, circles once, then reaches a cautious paw to tap the clasp.", "duration_seconds": 3, "audible": "soft chitter" } (Ensure your calling code parses the returned JSON safely.)
+Notes and integration tips
+Always pass the system prompt (above) as the system role. Then include a concise user prompt specifying either "Return plain description" or "Return structured JSON" and provide the immediate context (object, players, positions).
+Enforce post‑processing sanity checks server‑side (e.g., ensure returned JSON uses only allowed actions from behavior_profile.typical_actions and that no forbidden keys or speech appear).
+The validator validate_mynx.py can be run to catch accidental edits to the JSON schema.

@@ -1,0 +1,816 @@
+{
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 1)": {
+        "id": "tile_8_1",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "src.items",
+                "props": {
+                    "amt": 1,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 1 gold pieces.",
+                    "value": 1,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 40
+                }
+            },
+            {
+                "__class__": "Draught",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 3,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Draught",
+                    "name": "Draught",
+                    "description": "A green fluid giving off a warm, pleasant glow.\nInvigorating for any tired adventurer.",
+                    "value": 75,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 100
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "VerdetteRoom2",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "exits": [
+            "north",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 2)": {
+        "id": "tile_5_2",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 2)": {
+        "id": "tile_8_2",
+        "title": "VerdetteRoom2",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "exits": [
+            "north",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 3)": {
+        "id": "tile_1_3",
+        "title": "VerdetteRoom2",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "exits": [
+            "south",
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 3)": {
+        "id": "tile_3_3",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "east",
+            "northwest"
+        ],
+        "block_exit": [
+            "southeast"
+        ],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Antidote",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 3,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
+                    "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                    "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 15
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 3)": {
+        "id": "tile_4_3",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "south",
+            "west",
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(6, 3)": {
+        "id": "tile_6_3",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "east",
+            "northwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(7, 3)": {
+        "id": "tile_7_3",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "west",
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 0,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
+                }
+            },
+            {
+                "__class__": "Draught",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 0,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Draught",
+                    "name": "Draught",
+                    "description": "A green fluid giving off a warm, pleasant glow.\nInvigorating for any tired adventurer.",
+                    "value": 75,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 100
+                }
+            },
+            {
+                "__class__": "SilverRing",
+                "__module__": "src.items",
+                "props": {
+                    "protection": 0,
+                    "str_mod": 0,
+                    "fin_mod": 0,
+                    "weight": 0.1,
+                    "isequipped": false,
+                    "maintype": "Accessory",
+                    "subtype": "Ring",
+                    "name": "Silver Ring",
+                    "description": "A shiny silver ring. \nA small bauble favored by people of typically lower class.",
+                    "value": 50,
+                    "type": "Accessory",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small trinket.",
+                    "announce": "There's a Silver Ring here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 0
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 4)": {
+        "id": "tile_1_4",
+        "title": "VerdetteRoom5",
+        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
+        "exits": [
+            "north",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 4)": {
+        "id": "tile_4_4",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "north",
+            "south"
+        ],
+        "block_exit": [
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 5)": {
+        "id": "tile_1_5",
+        "title": "VerdetteRoom4",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "src.items",
+                "props": {
+                    "amt": 1,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 1 gold pieces.",
+                    "value": 1,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 20
+                }
+            },
+            {
+                "__class__": "Antidote",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
+                    "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                    "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 15
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(4, 5)": {
+        "id": "tile_4_5",
+        "title": "VerdetteRoom2",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "exits": [
+            "north",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(6, 5)": {
+        "id": "tile_6_5",
+        "title": "VerdetteRoom3",
+        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
+        "exits": [
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(7, 5)": {
+        "id": "tile_7_5",
+        "title": "VerdetteRoom3",
+        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
+        "exits": [
+            "south",
+            "west",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 6)": {
+        "id": "tile_3_6",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "south",
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 6)": {
+        "id": "tile_5_6",
+        "title": "VerdetteRoom3",
+        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
+        "exits": [
+            "east",
+            "northeast",
+            "northwest",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(6, 6)": {
+        "id": "tile_6_6",
+        "title": "VerdetteRoom4",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "exits": [
+            "north",
+            "south",
+            "west",
+            "east",
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(7, 6)": {
+        "id": "tile_7_6",
+        "title": "VerdetteRoom5",
+        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
+        "exits": [
+            "north",
+            "west",
+            "northwest",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 7)": {
+        "id": "tile_3_7",
+        "title": "VerdetteRoom2",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "exits": [
+            "north",
+            "south",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(6, 7)": {
+        "id": "tile_6_7",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "north",
+            "northeast",
+            "northwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Antidote",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 2,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
+                    "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                    "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 15
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 7)": {
+        "id": "tile_8_7",
+        "title": "VerdetteRoom2",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "exits": [
+            "south",
+            "northwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 8)": {
+        "id": "tile_3_8",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "north",
+            "east",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 8)": {
+        "id": "tile_4_8",
+        "title": "VerdetteRoom4",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "exits": [
+            "west",
+            "northwest",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Antidote",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 2,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
+                    "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                    "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 15
+                }
+            },
+            {
+                "__class__": "Restorative",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 2,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
+                }
+            },
+            {
+                "__class__": "Gold",
+                "__module__": "src.items",
+                "props": {
+                    "amt": 1,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 1 gold pieces.",
+                    "value": 1,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 0
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 8)": {
+        "id": "tile_8_8",
+        "title": "VerdetteRoom4",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "AfterDefeatingLurker",
+                "__module__": "src.story.ch02",
+                "props": {}
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 9)": {
+        "id": "tile_1_9",
+        "title": "VerdetteRoom",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "exits": [
+            "east"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "StMichael",
+                "__module__": "src.story.effects",
+                "props": {}
+            }
+        ],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Shrine",
+                "__module__": "src.objects",
+                "props": {}
+            }
+        ],
+        "objects": []
+    },
+    "(2, 9)": {
+        "id": "tile_2_9",
+        "title": "VerdetteRoom5",
+        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
+        "exits": [
+            "west",
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 9)": {
+        "id": "tile_5_9",
+        "title": "VerdetteSpring",
+        "description": "The unmistakable sound of water trickling over rock can be heard echoing throughout this small chamber. The air is filled\n        with a fresh, life-giving smell that immediately improves Jean's mood. This would be an excellent place to stop for a short\n        rest before continuing on.",
+        "exits": [
+            "northwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    }
+}
