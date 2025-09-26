@@ -153,6 +153,7 @@ _\\|//__( | )______)_/
         items.get_all_subtypes()  # creates the 'All' archetypes for each item group; used for states/item effects/etc.
 
         while player.is_alive() and not player.victory and not player.main_menu:
+            player.refresh_weight()
             now = time.time()
             elapsed_time = now - check_time
             player.time_elapsed += elapsed_time
