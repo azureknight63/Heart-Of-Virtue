@@ -45,62 +45,100 @@ def execute_arbitrary_method(method, player):
         method(player)
 
 
-def confirm(thing, action, context):
-    player = context[0]
-    args_list = context[1]
-    check = input(colored("{} {}? (y/n)".format(args_list[0].title(), thing.name), "cyan"))
-    if check.lower() == ('y' or 'yes'):
+def confirm(thing, action, player, args_list):
+    """Prompt the user to confirm an action on `thing`.
+
+    Parameters:
+      thing: target object to act upon
+      action: string name of the method/interaction to call on `thing` if confirmed
+      player: the player instance (passed to the action when executed)
+      args_list: full argument list from the original command (used for display)
+    """
+    # Use the first token of the original args for a friendly prompt if available
+    prompt_verb = args_list[0].title() if args_list else ''
+    check = input(colored(f"{prompt_verb} {thing.name}? (y/n)", "cyan"))
+    if check.lower() in ("y", "yes"):
         execute_arbitrary_method(thing.__getattribute__(action), player)
         return True
-    else:
-        return False
+    return False
 
 
-def enumerate_for_interactions(subjects, context):
-    player = context[0]
-    args_list = context[1]
-    action_input = context[2]
+def enumerate_for_interactions(subjects, player, args_list, action_input):
+    # `confirm()` now accepts explicit player and args_list parameters; no
+    # legacy context tuple is constructed.
+
+    # Normalize commonly used values for faster comparisons
+    action_attr = args_list[0] if len(args_list) > 0 else ''
+    action_key = action_attr.lower()
+    action_input_key = action_input.lower() if isinstance(action_input, str) else action_input
+
+    candidates = []
+
+    # Mode 1: only action provided (e.g., user typed a single verb)
     if len(args_list) == 1:
-        candidates = []
         for thing in subjects:
-            if hasattr(thing, "keywords"):
-                if not thing.hidden:
-                    for keyword in thing.keywords:
-                        if action_input == keyword:
-                            candidates.append(thing)
-            elif hasattr(thing, "interactions"):
-                for interaction in thing.interactions:
-                    if action_input == interaction:
+            if getattr(thing, 'hidden', False):
+                continue
+            # Prefer keyword-based matching if available
+            kws = getattr(thing, 'keywords', None)
+            if kws:
+                for kw in kws:
+                    if isinstance(kw, str) and action_input_key == kw:
                         candidates.append(thing)
-        if len(candidates) == 1:  # if there is only one possibility, skip the confirmation step
-            execute_arbitrary_method(candidates[0].__getattribute__(args_list[0]), player)
+                        break
+                continue
+            # Fall back to interactions list
+            inters = getattr(thing, 'interactions', None)
+            if inters:
+                for it in inters:
+                    if isinstance(it, str) and action_input_key == it:
+                        candidates.append(thing)
+                        break
+
+        if len(candidates) == 1:
+            execute_arbitrary_method(candidates[0].__getattribute__(action_attr), player)
             return True
-        elif candidates:  # otherwise, if there is more than one possibility, ask the player to confirm
+        elif candidates:
             for candidate in candidates:
-                if confirm(candidate, action_input, context):
+                # preserve original behavior: pass action_input as the action param to confirm()
+                if confirm(candidate, action_input, player, args_list):
                     return True
+
+    # Mode 2: verb + target provided (e.g., 'take apple')
     elif len(args_list) > 1:
-        candidates = []
-        for i, thing in enumerate(subjects):
-            if hasattr(thing, "keywords"):
-                search_item = thing.name.lower() + ' ' + thing.idle_message.lower()
-                if args_list[1] in search_item and not thing.hidden:
-                    for keyword in thing.keywords:
-                        if args_list[0] == keyword:
+        target_fragment = args_list[1].lower() if isinstance(args_list[1], str) else args_list[1]
+        for thing in subjects:
+            if getattr(thing, 'hidden', False):
+                continue
+            kws = getattr(thing, 'keywords', None)
+            if kws is not None:
+                # Search name + idle_message for the fragment
+                search_item = (getattr(thing, 'name', '') or '').lower() + ' ' + (getattr(thing, 'idle_message', '') or '').lower()
+                if target_fragment in search_item:
+                    for kw in kws:
+                        if isinstance(kw, str) and action_key == kw.lower():
                             candidates.append(thing)
-            elif hasattr(thing, "interactions"):
-                search_item = thing.name.lower() + ' ' + thing.description.lower() + ' ' + thing.announce.lower()
-                if args_list[1] in search_item and not thing.hidden:
-                    for interaction in thing.interactions:
-                        if args_list[0] == interaction:
+                            break
+                continue
+            # Fallback: interactions-based objects use description/announce
+            inters = getattr(thing, 'interactions', None)
+            if inters is not None:
+                search_item = (getattr(thing, 'name', '') or '').lower() + ' ' + (getattr(thing, 'description', '') or '').lower() + ' ' + (getattr(thing, 'announce', '') or '').lower()
+                if target_fragment in search_item:
+                    for it in inters:
+                        if isinstance(it, str) and action_key == it.lower():
                             candidates.append(thing)
-        if len(candidates) == 1:  # if there is only one possibility, skip the confirmation step
-            execute_arbitrary_method(candidates[0].__getattribute__(args_list[0]), player)
+                            break
+
+        if len(candidates) == 1:
+            execute_arbitrary_method(candidates[0].__getattribute__(action_attr), player)
             return True
-        elif candidates:  # otherwise, if there is more than one possibility, ask the player to confirm
+        elif candidates:
             for candidate in candidates:
-                if confirm(candidate, args_list[0], context):
+                # preserve original behavior: pass args_list[0] as the action param to confirm()
+                if confirm(candidate, args_list[0], player, args_list):
                     return True
+
     return False
 
 

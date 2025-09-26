@@ -247,7 +247,7 @@ _\\|//__( | )______)_/
                         ]
                     success = False
                     for scope in interaction_scopes:
-                        if functions.enumerate_for_interactions(scope, (player, count_args, action_input)):
+                        if functions.enumerate_for_interactions(scope, player, count_args, action_input):
                             success = True  # Check each scope separately and, if an interaction is found,
                             # don't check the remaining scope(s)
                             break
