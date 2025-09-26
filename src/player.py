@@ -1560,114 +1560,17 @@ he lets out a barely audible whisper:""", "red")
         self.weight_current = round(self.weight_current, 2)
 
     def take(self, phrase=''):
-        """Take an item from the current room and add it to inventory.
+            """Open the room take interface or delegate phrase-based shortcuts.
 
-        Args:
-            phrase (str): The item to take. If empty, shows a list of items that can be taken.
-                          If 'all', takes all items that won't exceed weight capacity.
-        """
-        # TODO: Test this refactored code.
-        # No items in the room
-        if not self.current_room.items_here:
-            cprint("There doesn't seem to be anything here for Jean to take.", 'red')
-            return
-
-        # Take all items
-        if phrase.lower() == 'all':
-            self._take_all_items()
-            return
-
-        # Take specific item by name
-        if phrase and phrase.lower() != 'all':
-            self._take_specific_item(phrase.lower())
-            return
-
-        # Show menu of items to take
-        print("What are you trying to take?")
-        for i, item in enumerate(self.current_room.items_here):
-            print(f"{i}: {item.name}\n")
-
-        selection = input(colored('Selection: ', "cyan"))
-        if not functions.is_input_integer(selection):
-            cprint("Jean isn't sure exactly what he's trying to do.", 'red')
-            return
-
-        try:
-            item = self.current_room.items_here[int(selection)]
-            self._take_item(item)
-        except IndexError:
-            cprint("That's not a valid selection.", 'red')
-
-    def _take_all_items(self):
-        """Helper method to take all items that don't exceed weight capacity."""
-        items_to_take = []
-        total_weight = 0
-        self.refresh_weight()
-
-        # First determine which items can be taken
-        for item in self.current_room.items_here:
-            if hasattr(item, "weight"):
-                item_weight = item.weight
-                if hasattr(item, "count"):
-                    item_weight *= item.count
-
-                if self.weight_current + total_weight + item_weight <= self.weight_tolerance:
-                    items_to_take.append(item)
-                    total_weight += item_weight
-                else:
-                    cprint(f"Jean can't carry {item.name}. He's reached his weight limit.", 'red')
-            else:
-                items_to_take.append(item)
-
-        # Then take the items
-        for item in items_to_take:
-            self.inventory.append(item)
-            print(f'Jean takes {item.name}.')
-            self.current_room.items_here.remove(item)
-            item.owner = self
-
-        if not items_to_take:
-            cprint("Jean can't carry anything more. He needs to drop something first.", 'red')
-
-    def _take_specific_item(self, phrase):
-        """Helper method to take a specific item by name."""
-        for i, item in enumerate(self.current_room.items_here):
-            search_item = (item.name.lower() + ' ' +
-                          getattr(item, 'announce', '').lower())
-
-            if phrase in search_item:
-                self._take_item(item, i)
-                return
-
-        cprint(f"Jean doesn't see any {phrase} to take.", 'red')
-
-    def _take_item(self, item, index=None):
-        """Helper method to take a single item, checking weight restrictions.
-
-        Args:
-            item: The item to take
-            index: Optional index in items_here list (for using pop)
-        """
-        if hasattr(item, "weight"):
-            item_weight = item.weight
-            if hasattr(item, "count"):
-                item_weight *= item.count
-
-            weightcap = self.weight_tolerance - self.weight_current
-            if item_weight > weightcap:
-                cprint("Jean can't carry that much weight! He needs to drop something first.", 'red')
-                return
-
-        self.inventory.append(item)
-        print(f'Jean takes {item.name}.')
-
-        # Remove item from room (using either remove or pop)
-        if index is not None:
-            self.current_room.items_here.pop(index)
-        else:
-            self.current_room.items_here.remove(item)
-
-        item.owner = self
+            This delegates interactive UI to `RoomTakeInterface` (in `interface.py`) while
+            preserving the helper methods `_take_all_items`, `_take_specific_item`, and
+            `_take_item` which the interface uses.
+            """
+            # Import here to avoid circular import issues at module import time
+            from interface import RoomTakeInterface
+            iface = RoomTakeInterface(self)
+            # If phrase is provided, pass it through (interface supports 'all' and name shortcuts)
+            iface.run(phrase)
 
     def add_items_to_inventory(self, items_received: list):
         """Add a list of items to the player's inventory, checking weight limits."""

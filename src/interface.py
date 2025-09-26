@@ -1,4 +1,4 @@
-from functions import stack_inv_items
+from functions import stack_inv_items, cprint
 from player import Player
 from npc import NPC
 from objects import Object
@@ -854,3 +854,265 @@ class ContainerLootInterface(BaseInterface):
 
         if not self.choices:
             print(f"{YELLOW}The {self.container.nickname} is now empty.{RESET}")
+
+
+class RoomTakeInterface(BaseInterface):
+    """
+    Interface for taking items from the current room. Mirrors the old Player.take behavior
+    but lives in `interface.py` so the UI is centralized in interface classes.
+    """
+    def __init__(self, player, room=None):
+        self.player = player
+        self.room = room if room is not None else getattr(player, 'current_room', None)
+        # Build choices from room items
+        choices = []
+        if self.room and hasattr(self.room, 'items_here'):
+            for i, item in enumerate(self.room.items_here):
+                choices.append({'label': f"{item.name}", 'item': item, 'index': i})
+        # Add 'Take all' option if there are items
+        if choices:
+            choices.append({'label': 'Take all', 'action': 'take_all'})
+        super().__init__(title=f"Take Items", choices=choices, exit_label="Cancel", exit_message="Nevermind.")
+
+    def display_title(self):
+        print(f"{BOLD}{CYAN}\n=== What are you trying to take? ===\n{RESET}")
+
+    def run(self, phrase: str = ''):
+        # Non-interactive shortcuts: if phrase provided, delegate to player's helpers
+        if not self.room or not getattr(self.room, 'items_here', []):
+            print(f"{RED}There doesn't seem to be anything here for Jean to take.{RESET}")
+            return
+
+        if phrase:
+            # 'all' shortcut
+            if isinstance(phrase, str) and phrase.lower() == 'all':
+                try:
+                    # Player already has a helper for taking all items
+                    self._take_all_items()
+                except Exception:
+                    pass
+                return
+            else:
+                try:
+                    self._take_specific_item(phrase.lower())
+                except Exception:
+                    pass
+                return
+
+        # Interactive mode
+        while True:
+            # Rebuild choices to reflect possible concurrent changes
+            self._rebuild_choices()
+            if not self.choices:
+                print(f"{YELLOW}There's nothing here to take.{RESET}")
+                return
+
+            # Display choices using BaseInterface style
+            self.display_title()
+            for idx, c in enumerate(self.choices):
+                label = c.get('label', str(c))
+                print(f"{YELLOW}{idx}: {label}{RESET}")
+            print(f"{RED}x: {self.exit_label}{RESET}")
+
+            selection = input(f"{BOLD}Selection:{RESET} ")
+            if selection == 'x':
+                print(f"{YELLOW}Going back.{RESET}")
+                return
+            if not selection.isdigit():
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
+                continue
+
+            sel = int(selection)
+            if sel < 0 or sel >= len(self.choices):
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
+                continue
+
+            choice = self.choices[sel]
+
+            # Handle 'Take all' action
+            if choice.get('action') == 'take_all':
+                try:
+                    self._take_all_items()
+                except Exception:
+                    pass
+                # After taking all, refresh choices and continue loop (or exit if empty)
+                self._rebuild_choices()
+                if not self.choices:
+                    print(f"{YELLOW}You have taken everything that you can.{RESET}")
+                    return
+                continue
+
+            # Individual item selected: validate index and perform transfer via player's helper
+            item_index = choice.get('index')
+            if item_index is not None:
+                # Validate the recorded index against current room contents
+                if not isinstance(item_index, int) or item_index < 0 or item_index >= len(self.room.items_here):
+                    print(f"{YELLOW}That item is no longer here.{RESET}")
+                    continue
+                item = self.room.items_here[item_index]
+            else:
+                item = choice.get('item')
+
+            # If the item is gone, notify and continue
+            if item not in self.room.items_here:
+                print(f"{YELLOW}That item is no longer here.{RESET}")
+                continue
+
+            # Show detailed item info if possible
+            try:
+                print(item)
+            except Exception:
+                print(f"{getattr(item, 'name', str(item))}")
+
+            # Delegate the actual take operation to the Player helper
+            try:
+                # Use index where possible to preserve semantics of Player._take_item
+                idx = item_index if item_index is not None else None
+                # Prefer player's helper if it exists (some Player implementations provide _take_item)
+                if hasattr(self.player, '_take_item') and callable(getattr(self.player, '_take_item')):
+                    success = False
+                    try:
+                        success = self._take_item(item, idx)
+                    except Exception:
+                        success = False
+                else:
+                    try:
+                        success = self._take_item(item, idx)
+                    except Exception:
+                        success = False
+
+                if not success:
+                    print(f"{RED}Failed to take the item.{RESET}")
+                else:
+                    # successful take already prints confirmation inside the helper
+                    pass
+            except Exception:
+                print(f"{RED}Failed to take the item.{RESET}")
+
+    def _rebuild_choices(self):
+        self.choices.clear()
+        if not self.room or not hasattr(self.room, 'items_here'):
+            return
+        for i, item in enumerate(self.room.items_here):
+            self.choices.append({'label': f"{item.name}", 'item': item, 'index': i})
+        if self.choices:
+            self.choices.append({'label': 'Take all', 'action': 'take_all'})
+
+    def _take_all_items(self):
+        """Helper method to take all items that don't exceed weight capacity."""
+        items_to_take = []
+        total_weight = 0
+        self.player.refresh_weight()
+
+        # First determine which items can be taken
+        for item in self.room.items_here:
+            if hasattr(item, "weight"):
+                item_weight = item.weight
+                if hasattr(item, "count"):
+                    item_weight *= item.count
+
+                if self.player.weight_current + total_weight + item_weight <= self.player.weight_tolerance:
+                    items_to_take.append(item)
+                    total_weight += item_weight
+                else:
+                    cprint(f"Jean can't carry {item.name}. He's reached his weight limit.", 'red')
+            else:
+                items_to_take.append(item)
+
+        # Then take the items
+        for item in items_to_take:
+            self.player.inventory.append(item)
+            print(f'Jean takes {item.name}.')
+            self.room.items_here.remove(item)
+            item.owner = self.player
+
+        if not items_to_take:
+            cprint("Jean can't carry anything more. He needs to drop something first.", 'red')
+
+    def _take_specific_item(self, phrase):
+        """Helper method to take a specific item by name."""
+        for i, item in enumerate(self.room.items_here):
+            search_item = (item.name.lower() + ' ' +
+                          getattr(item, 'announce', '').lower())
+
+            if phrase in search_item:
+                self._take_item(item, i)
+                return
+
+        cprint(f"Jean doesn't see any {phrase} to take.", 'red')
+
+    def _take_item(self, item, index=None):
+        """Helper method to take a single item, checking weight restrictions.
+
+        Returns True on success, False on failure. Does not raise under normal error
+        conditions (removal errors are handled and reported).
+        """
+        # Ensure player's weight is up-to-date
+        try:
+            if hasattr(self.player, 'refresh_weight') and callable(self.player.refresh_weight):
+                self.player.refresh_weight()
+        except Exception:
+            pass
+
+        if hasattr(item, "weight"):
+            item_weight = item.weight
+            if hasattr(item, "count"):
+                item_weight *= item.count
+
+            weightcap = self.player.weight_tolerance - self.player.weight_current
+            if item_weight > weightcap:
+                cprint("Jean can't carry that much weight! He needs to drop something first.", 'red')
+                return False
+
+        # Add to player's inventory
+        try:
+            self.player.inventory.append(item)
+        except Exception:
+            return False
+
+        # Remove item from room safely
+        removed = False
+        if index is not None:
+            try:
+                # index might be stale; guard against IndexError
+                self.room.items_here.pop(index)
+                removed = True
+            except Exception:
+                # Fallback to removing by object identity
+                try:
+                    self.room.items_here.remove(item)
+                    removed = True
+                except Exception:
+                    removed = False
+        else:
+            try:
+                self.room.items_here.remove(item)
+                removed = True
+            except Exception:
+                removed = False
+
+        if not removed:
+            # Couldn't remove from room; rollback and report failure
+            try:
+                # remove the item we added to player's inventory if present
+                if item in self.player.inventory:
+                    self.player.inventory.remove(item)
+            except Exception:
+                pass
+            return False
+
+        # Successful transfer
+        try:
+            item.owner = self.player
+        except Exception:
+            pass
+
+        # Refresh player's weight after taking
+        try:
+            if hasattr(self.player, 'refresh_weight') and callable(self.player.refresh_weight):
+                self.player.refresh_weight()
+        except Exception:
+            pass
+
+        print(f'Jean takes {item.name}.')
+        return True
