@@ -64,9 +64,51 @@ def confirm(thing, action, player, args_list):
 
 
 def enumerate_for_interactions(subjects, player, args_list, action_input):
-    # `confirm()` now accepts explicit player and args_list parameters; no
-    # legacy context tuple is constructed.
+    """Find and execute or confirm an interaction for a list of subjects.
 
+    This helper searches a list of candidate objects (e.g., room objects,
+    NPCs, or the player's inventory) for interactions that match the
+    player's arbitrary input. It supports two primary modes:
+
+      - Single-token actions (len(args_list) == 1): the player typed only a
+        verb/command (e.g. "look"). The function checks each subject's
+        `keywords` and `interactions` to find objects that expose the
+        requested action. If exactly one candidate matches, the action is
+        executed immediately. If multiple candidates match, the user is
+        prompted to confirm which object to act on via `confirm()`.
+
+      - Verb + target (len(args_list) > 1): the player typed a verb and a
+        target fragment (e.g. "take apple"). The function searches object
+        names and descriptive fields for the target fragment and then checks
+        whether the requested verb is supported by matching `keywords` or
+        `interactions`. Resolution rules mirror the single-token mode.
+
+    Parameters
+    ----------
+    subjects : iterable
+        Iterable of candidate objects to evaluate (objects, NPCs, items).
+    player : object
+        The player instance; passed to executed interaction methods.
+    args_list : list[str]
+        Tokenized player command (e.g., ['take', 'apple']). The first
+        element is treated as the action verb.
+    action_input : str
+        Raw action input (often the same as args_list joined or the original
+        typed string). Used for keyword matching and for building prompts.
+
+    Returns
+    -------
+    bool
+        True if an interaction was handled (executed or confirmed+executed),
+        False if no suitable interaction was found.
+
+    Notes
+    -----
+    - Confirmation prompts are performed with the module-level `confirm`
+      function which now accepts explicit `player` and `args_list` args.
+    - The function performs a best-effort fuzzy search over names,
+      descriptions, announce/idle text, and declared `keywords`/`interactions`.
+    """
     # Normalize commonly used values for faster comparisons
     action_attr = args_list[0] if len(args_list) > 0 else ''
     action_key = action_attr.lower()
@@ -110,25 +152,32 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
         for thing in subjects:
             if getattr(thing, 'hidden', False):
                 continue
-            kws = getattr(thing, 'keywords', None)
-            if kws is not None:
-                # Search name + idle_message for the fragment
-                search_item = (getattr(thing, 'name', '') or '').lower() + ' ' + (getattr(thing, 'idle_message', '') or '').lower()
-                if target_fragment in search_item:
-                    for kw in kws:
-                        if isinstance(kw, str) and action_key == kw.lower():
-                            candidates.append(thing)
-                            break
+            # Build a searchable string for the thing containing name/idle/description/announce
+            search_item = (
+                (getattr(thing, 'name', '') or '') + ' ' +
+                (getattr(thing, 'idle_message', '') or '') + ' ' +
+                (getattr(thing, 'description', '') or '') + ' ' +
+                (getattr(thing, 'announce', '') or '')
+            )
+            search_item = search_item.lower()
+            if target_fragment not in search_item:
                 continue
-            # Fallback: interactions-based objects use description/announce
+
+            # Prefer explicit interactions list when provided (these list verbs the object supports)
             inters = getattr(thing, 'interactions', None)
             if inters is not None:
-                search_item = (getattr(thing, 'name', '') or '').lower() + ' ' + (getattr(thing, 'description', '') or '').lower() + ' ' + (getattr(thing, 'announce', '') or '').lower()
-                if target_fragment in search_item:
-                    for it in inters:
-                        if isinstance(it, str) and action_key == it.lower():
-                            candidates.append(thing)
-                            break
+                for it in inters:
+                    if isinstance(it, str) and action_key == it.lower():
+                        candidates.append(thing)
+                        break
+                # we've evaluated interactions; move on to next subject
+                continue
+
+            # If no explicit interactions are declared, fall back to method presence
+            # (e.g., the object may implement a `take` method).
+            if hasattr(thing, action_attr):
+                candidates.append(thing)
+                continue
 
         if len(candidates) == 1:
             execute_arbitrary_method(candidates[0].__getattribute__(action_attr), player)
