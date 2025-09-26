@@ -164,10 +164,10 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
     for idx, (thing, _m) in enumerate(candidates, start=1):
         display_name = getattr(thing, 'name', str(thing))
         print(colored(f"{idx}: {display_name}", 'yellow'))
-    print(colored("0: Cancel", 'red'))
+    print(colored("X: Cancel", 'red'))
 
     selection = input(colored("Selection: ", 'cyan')).strip().lower()
-    if selection in ('0', 'x', 'cancel'):
+    if selection in ('0', 'x', 'X', 'cancel'):
         print(colored("Jean decides against it for now.", 'yellow'))
         return False
     if selection.isdigit():

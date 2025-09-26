@@ -220,6 +220,13 @@ class Gold(Item):
                          discovery_message="a small pouch of gold.")
         self.announce = "There's a small pouch of gold on the ground."
         self.interactions = []
+        self.count = self.amt  # allow gold to stack in inventory
+
+    def drop(self, player: 'Player') -> None:
+        pass  # cannot drop gold
+
+    def stack_grammar(self):
+        pass  # gold does not need special grammar handling
 
 
 class Weapon(Item):
