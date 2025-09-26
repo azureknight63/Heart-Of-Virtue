@@ -10,6 +10,8 @@ __author__ = 'Alex Egbert'
 import time
 
 from neotermcolor import colored, cprint
+
+from functions import refresh_stat_bonuses
 from intro_scene import intro
 
 from src.combat import combat
@@ -154,6 +156,7 @@ _\\|//__( | )______)_/
 
         while player.is_alive() and not player.victory and not player.main_menu:
             player.refresh_weight()
+            refresh_stat_bonuses(player)
             now = time.time()
             elapsed_time = now - check_time
             player.time_elapsed += elapsed_time

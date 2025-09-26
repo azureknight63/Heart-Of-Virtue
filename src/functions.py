@@ -8,7 +8,6 @@ import datetime
 import importlib
 import time
 import pkgutil
-import types
 
 from typing import Any
 
@@ -179,7 +178,6 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
     for category in target.resistance_base:  # roll up all of the resistances and status resistances into the
         # bonuses list
         bonuses["add_resistance"][category] = category       # doing this here will allow changes on the
-        # target's class to be reflected
     for category in target.status_resistance_base:
         bonuses["add_status_resistance"][category] = category
     adder_group = []
@@ -221,7 +219,10 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
     # Process other things which may affect stats, such as weight
     if target.name == "Jean":
         target.refresh_weight()
-        target.weight_tolerance += round((target.strength + target.endurance) / 2, 2)
+        # Ensure weight_tolerance is deterministically derived from the base value
+        # plus attribute-based bonus. Use assignment (not +=) so repeated calls
+        # to refresh_stat_bonuses don't inadvertently stack the bonus.
+        target.weight_tolerance = target.weight_tolerance_base + round((target.strength + target.endurance) / 2, 2)
         check_weight = target.weight_tolerance - target.weight_current
         if check_weight > (
                 target.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
@@ -701,7 +702,11 @@ def add_random_enchantments(item: Item, count: int) -> None:
             try:
                 ench = cls(item)
                 req = getattr(ench, "requirements", None)
-                requirements_ok = req() if callable(req) else bool(req) if req is not None else True
+                # Normalize the optional `requirements` attribute. It may be:
+                # - a callable returning bool
+                # - a truthy/falsey value (e.g., bool)
+                # - None (meaning 'no requirement' -> allowed)
+                requirements_ok = req() if callable(req) else (bool(req) if req is not None else True)
                 if requirements_ok and rarity >= int(getattr(ench, "rarity", 0)):
                     candidates.append(ench)
             except Exception:
@@ -885,3 +890,4 @@ def stack_inv_items(target):
                     inventory.remove(dup)
             except ValueError:
                 pass
+
