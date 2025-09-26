@@ -2,21 +2,292 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "tile_2_2",
-        "description": "A newly created room at (9, 6).",
+        "description": "A mossy alcove beneath a leaning cypress. Claw marks on the stone hint at small creatures living nearby.",
         "exits": [
             "south",
             "east",
             "southeast"
         ],
         "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": []
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
+                }
+            },
+            {
+                "__class__": "WoodenArrow",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.05,
+                    "maintype": "Consumable",
+                    "subtype": "Arrow",
+                    "count": 6,
+                    "interactions": [
+                        "drop",
+                        "prefer"
+                    ],
+                    "stack_key": "Wooden Arrow",
+                    "name": "Wooden Arrow",
+                    "description": "A useful device composed of a sharp tip, a shaft of sorts, and fletching. \nThis one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. \nThey tend to break frequently.",
+                    "value": 1,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices an arrow on the ground.",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 20,
+                    "range_base_modifier": 1.2,
+                    "range_decay_modifier": 0.8,
+                    "sturdiness": 0.4,
+                    "helptext": "+range, -decay, -damage, -sturdiness",
+                    "effects": null
+                }
+            }
+        ],
+        "npcs": [
+            {
+                "__class__": "Mynx",
+                "__module__": "npc",
+                "props": {
+                    "keywords": [
+                        "talk",
+                        "pet",
+                        "play"
+                    ],
+                    "name": "Snookums",
+                    "description": "A cute little Mynx.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " flicks its tail.",
+                    "alert_message": "startles and chatters!",
+                    "maxhp": 30,
+                    "maxhp_base": 30,
+                    "hp": 30,
+                    "damage": 0,
+                    "damage_base": 0,
+                    "protection": 1,
+                    "protection_base": 1,
+                    "speed": 18,
+                    "speed_base": 18,
+                    "finesse": 16,
+                    "finesse_base": 16,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 20,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 50,
+                    "maxfatigue_base": 50,
+                    "endurance": 8,
+                    "endurance_base": 8,
+                    "strength": 4,
+                    "strength_base": 4,
+                    "charisma": 14,
+                    "charisma_base": 14,
+                    "intelligence": 12,
+                    "intelligence_base": 12,
+                    "faith": 6,
+                    "faith_base": 6,
+                    "fatigue": 50,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Snookums flicks its tail.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Mynx>",
+                                "user": "<circular_ref:Mynx>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a curious mynx.",
+                    "friend": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        0
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    }
+                }
+            }
+        ],
+        "objects": [],
+        "block_exit": [],
+        "symbol": "C"
     },
     "(3, 2)": {
         "id": "tile_3_2",
         "title": "Milo's Space",
-        "description": "It's pretty cool in this space.",
+        "description": "A tidy stone chamber with a standing portal etched in silver runes. The air hums faintly.",
         "exits": [
             "south",
             "west",
@@ -24,7 +295,72 @@
             "southwest"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 2,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
+                }
+            },
+            {
+                "__class__": "Antidote",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
+                    "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                    "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 15
+                }
+            }
+        ],
         "npcs": [],
         "objects": [
             {
@@ -65,7 +401,7 @@
     "(3, 3)": {
         "id": "tile_3_3",
         "title": "Starting Spot",
-        "description": "Welcome to the test zone! Have fun!",
+        "description": "A sunlit clearing marked for testing. Paths lead in several directions.",
         "exits": [
             "northwest",
             "north",
@@ -328,7 +664,7 @@
     "(2, 3)": {
         "id": "tile_2_3",
         "title": "tile_2_3",
-        "description": "A newly created room at (2, 3).",
+        "description": "A roadside stall draped in colorful cloth. The scent of herbs and tonics hangs in the air.",
         "exits": [
             "north",
             "east",
@@ -699,7 +1035,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "objects",
+                "__module__": "src.objects",
                 "props": {
                     "nickname": "sack",
                     "possible_states": [
@@ -712,7 +1048,7 @@
                     "merchant": "Jambo",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "items:Consumable"
+                            "__class_type__": "src.items:Consumable"
                         }
                     ],
                     "stock_count": 2,
@@ -741,7 +1077,7 @@
     "(4, 3)": {
         "id": "tile_4_3",
         "title": "tile_4_3",
-        "description": "A newly created room at (4, 3).",
+        "description": "A windswept ridge with loose gravel underfoot. You can see far to the east.",
         "exits": [
             "northwest",
             "west",
@@ -749,33 +1085,236 @@
             "southeast"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "src.items",
+                "props": {
+                    "amt": 35,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 35 gold pieces.",
+                    "value": 35,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false
+                }
+            },
+            {
+                "__class__": "Draught",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Draught",
+                    "name": "Draught",
+                    "description": "A green fluid giving off a warm, pleasant glow.\nInvigorating for any tired adventurer.",
+                    "value": 75,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle of glowing green fluid on the ground. Its label reads, simply, 'Draught.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 100
+                }
+            }
+        ],
         "npcs": [],
         "objects": []
     },
     "(5, 3)": {
         "id": "tile_5_3",
         "title": "tile_5_3",
-        "description": "A newly created room at (5, 3).",
+        "description": "A narrow pass between boulders. Scrapes on the rock suggest frequent traffic.",
         "exits": [
             "west",
             "south"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Shortbow",
+                "__module__": "src.items",
+                "props": {
+                    "damage": 8,
+                    "str_req": 5,
+                    "fin_req": 5,
+                    "str_mod": 1,
+                    "fin_mod": 1,
+                    "weight": 1.5,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Bow",
+                    "wpnrange": [
+                        0,
+                        5
+                    ],
+                    "name": "Shortbow",
+                    "description": "A reliable missile weapon. Useful as a weak bludgeon at close range.\nRequires two hands.",
+                    "value": 50,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Shortbow here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "twohand": false,
+                    "range_base": 20,
+                    "range_decay": 0.05
+                }
+            },
+            {
+                "__class__": "WoodenArrow",
+                "__module__": "src.items",
+                "props": {
+                    "weight": 0.05,
+                    "maintype": "Consumable",
+                    "subtype": "Arrow",
+                    "count": 12,
+                    "interactions": [
+                        "drop",
+                        "prefer"
+                    ],
+                    "stack_key": "Wooden Arrow",
+                    "name": "Wooden Arrow",
+                    "description": "A useful device composed of a sharp tip, a shaft of sorts, and fletching. \nThis one is made of wood. Wooden arrows are lightweight, so they generally improve accuracy at the cost of impact force. \nThey tend to break frequently.",
+                    "value": 1,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices an arrow on the ground.",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 20,
+                    "range_base_modifier": 1.2,
+                    "range_decay_modifier": 0.8,
+                    "sturdiness": 0.4,
+                    "helptext": "+range, -decay, -damage, -sturdiness",
+                    "effects": null
+                }
+            }
+        ],
         "npcs": [],
         "objects": []
     },
     "(5, 4)": {
         "id": "tile_5_4",
         "title": "tile_5_4",
-        "description": "A newly created room at (5, 4).",
+        "description": "A sheltered hollow beneath an overhang. It's quiet here, and footprints circle the edge.",
         "exits": [
             "northwest",
             "north"
         ],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "LeatherBoots",
+                "__module__": "src.items",
+                "props": {
+                    "protection": 3,
+                    "str_req": 3,
+                    "str_mod": 0.15,
+                    "weight": 1.8,
+                    "isequipped": false,
+                    "maintype": "Boots",
+                    "subtype": "Light Boots",
+                    "name": "Leather Boots",
+                    "description": "Durable leather boots treated to resist wear and offer solid protection without much bulk.",
+                    "value": 45,
+                    "type": "Boots",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a pair of footgear.",
+                    "announce": "There's a Leather Boots here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "add_fin": 1
+                }
+            },
+            {
+                "__class__": "PaddedCap",
+                "__module__": "src.items",
+                "props": {
+                    "protection": 1,
+                    "str_req": 1,
+                    "str_mod": 0.05,
+                    "weight": 0.6,
+                    "isequipped": false,
+                    "maintype": "Helm",
+                    "subtype": "Light Helm",
+                    "name": "Padded Cap",
+                    "description": "A cheap cap stuffed with padding. Comfortable but offers only trivial protection.",
+                    "value": 5,
+                    "type": "Helm",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a kind of head covering.",
+                    "announce": "There's a Padded Cap here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "add_fin": 1
+                }
+            }
+        ],
         "npcs": [],
         "objects": []
     }
