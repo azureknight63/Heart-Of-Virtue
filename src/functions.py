@@ -64,130 +64,120 @@ def confirm(thing, action, player, args_list):
 
 
 def enumerate_for_interactions(subjects, player, args_list, action_input):
-    """Find and execute or confirm an interaction for a list of subjects.
+    """Resolve and execute an interaction on one of several candidate subjects.
 
-    This helper searches a list of candidate objects (e.g., room objects,
-    NPCs, or the player's inventory) for interactions that match the
-    player's arbitrary input. It supports two primary modes:
+    This function unifies the logic for handling both single-verb inputs (e.g. "look")
+    and verb + target inputs (e.g. "take apple"). It searches a provided iterable of
+    candidate objects (items, NPCs, room objects, inventory objects) for those that
+    expose the requested interaction.
 
-      - Single-token actions (len(args_list) == 1): the player typed only a
-        verb/command (e.g. "look"). The function checks each subject's
-        `keywords` and `interactions` to find objects that expose the
-        requested action. If exactly one candidate matches, the action is
-        executed immediately. If multiple candidates match, the user is
-        prompted to confirm which object to act on via `confirm()`.
-
-      - Verb + target (len(args_list) > 1): the player typed a verb and a
-        target fragment (e.g. "take apple"). The function searches object
-        names and descriptive fields for the target fragment and then checks
-        whether the requested verb is supported by matching `keywords` or
-        `interactions`. Resolution rules mirror the single-token mode.
+    Resolution rules:
+      1. Parse the action verb from args_list[0]. If additional tokens exist, treat
+         args_list[1] as a target fragment used to filter candidates by fuzzy
+         substring matching over object name / description style fields.
+      2. A subject is considered to support the action if:
+           - it declares an 'interactions' list containing the verb (case-insensitive), OR
+           - it has an attribute/method named after the verb (fallback), OR
+           - (single-token mode only) the raw action input exactly matches one of its 'keywords'.
+      3. If zero candidates are found -> return False (not handled).
+         If exactly one candidate -> execute its method immediately.
+         If multiple candidates -> display a menu (similar to RoomTakeInterface) allowing
+         the player to choose one; selection 0 or 'x' cancels.
 
     Parameters
     ----------
     subjects : iterable
-        Iterable of candidate objects to evaluate (objects, NPCs, items).
+        Collection of game entities to inspect.
     player : object
-        The player instance; passed to executed interaction methods.
+        Player instance passed to interaction methods when needed.
     args_list : list[str]
-        Tokenized player command (e.g., ['take', 'apple']). The first
-        element is treated as the action verb.
+        Tokenized user command (first element: verb; second (optional): target fragment).
     action_input : str
-        Raw action input (often the same as args_list joined or the original
-        typed string). Used for keyword matching and for building prompts.
+        The raw (possibly original-cased) action input used for keyword matches in single-token mode.
 
     Returns
     -------
     bool
-        True if an interaction was handled (executed or confirmed+executed),
-        False if no suitable interaction was found.
-
-    Notes
-    -----
-    - Confirmation prompts are performed with the module-level `confirm`
-      function which now accepts explicit `player` and `args_list` args.
-    - The function performs a best-effort fuzzy search over names,
-      descriptions, announce/idle text, and declared `keywords`/`interactions`.
+        True if an interaction was executed; False otherwise or if user cancelled.
     """
-    # Normalize commonly used values for faster comparisons
-    action_attr = args_list[0] if len(args_list) > 0 else ''
-    action_key = action_attr.lower()
-    action_input_key = action_input.lower() if isinstance(action_input, str) else action_input
+    if not args_list:
+        return False
 
-    candidates = []
+    action_attr = args_list[0]
+    verb = action_attr.lower()
+    multi_token = len(args_list) > 1
+    target_fragment = args_list[1].lower() if multi_token and isinstance(args_list[1], str) else None
+    raw_input_lower = action_input.lower() if isinstance(action_input, str) else ''
 
-    # Mode 1: only action provided (e.g., user typed a single verb)
-    if len(args_list) == 1:
-        for thing in subjects:
-            if getattr(thing, 'hidden', False):
+    candidates = []  # list of (thing, resolved_method_name)
+
+    for thing in subjects:
+        if getattr(thing, 'hidden', False):
+            continue
+
+        # Build search corpus once for potential target filtering
+        search_corpus = ' '.join(filter(None, [
+            getattr(thing, 'name', ''),
+            getattr(thing, 'idle_message', ''),
+            getattr(thing, 'description', ''),
+            getattr(thing, 'announce', '')
+        ])).lower()
+
+        if multi_token:
+            # Require fuzzy target match
+            if target_fragment and target_fragment not in search_corpus:
                 continue
-            # Prefer keyword-based matching if available
+            # Action support: interactions OR method OR (keywords only used in single-token mode)
+            supported = False
+            inters = getattr(thing, 'interactions', None)
+            if inters and any(isinstance(i, str) and i.lower() == verb for i in inters):
+                supported = True
+            elif hasattr(thing, action_attr):
+                supported = True
+            if supported:
+                candidates.append((thing, action_attr))
+        else:
+            # Single-token mode: allow keyword exact matches or interactions or attr fallback
             kws = getattr(thing, 'keywords', None)
-            if kws:
-                for kw in kws:
-                    if isinstance(kw, str) and action_input_key == kw:
-                        candidates.append(thing)
-                        break
+            if kws and any(isinstance(k, str) and raw_input_lower == k.lower() for k in kws):
+                candidates.append((thing, action_attr))
                 continue
-            # Fall back to interactions list
             inters = getattr(thing, 'interactions', None)
-            if inters:
-                for it in inters:
-                    if isinstance(it, str) and action_input_key == it:
-                        candidates.append(thing)
-                        break
-
-        if len(candidates) == 1:
-            execute_arbitrary_method(candidates[0].__getattribute__(action_attr), player)
-            return True
-        elif candidates:
-            for candidate in candidates:
-                # preserve original behavior: pass action_input as the action param to confirm()
-                if confirm(candidate, action_input, player, args_list):
-                    return True
-
-    # Mode 2: verb + target provided (e.g., 'take apple')
-    elif len(args_list) > 1:
-        target_fragment = args_list[1].lower() if isinstance(args_list[1], str) else args_list[1]
-        for thing in subjects:
-            if getattr(thing, 'hidden', False):
+            if inters and any(isinstance(i, str) and raw_input_lower == i.lower() for i in inters):
+                candidates.append((thing, action_attr))
                 continue
-            # Build a searchable string for the thing containing name/idle/description/announce
-            search_item = (
-                (getattr(thing, 'name', '') or '') + ' ' +
-                (getattr(thing, 'idle_message', '') or '') + ' ' +
-                (getattr(thing, 'description', '') or '') + ' ' +
-                (getattr(thing, 'announce', '') or '')
-            )
-            search_item = search_item.lower()
-            if target_fragment not in search_item:
-                continue
-
-            # Prefer explicit interactions list when provided (these list verbs the object supports)
-            inters = getattr(thing, 'interactions', None)
-            if inters is not None:
-                for it in inters:
-                    if isinstance(it, str) and action_key == it.lower():
-                        candidates.append(thing)
-                        break
-                # we've evaluated interactions; move on to next subject
-                continue
-
-            # If no explicit interactions are declared, fall back to method presence
-            # (e.g., the object may implement a `take` method).
+            # Fallback: method presence (only if no keywords/interactions matched)
             if hasattr(thing, action_attr):
-                candidates.append(thing)
-                continue
+                candidates.append((thing, action_attr))
 
-        if len(candidates) == 1:
-            execute_arbitrary_method(candidates[0].__getattribute__(action_attr), player)
+    if not candidates:
+        return False
+
+    # Single candidate: execute immediately
+    if len(candidates) == 1:
+        thing, method_name = candidates[0]
+        execute_arbitrary_method(getattr(thing, method_name), player)
+        return True
+
+    # Multiple candidates: show selection menu
+    print(colored(f"Multiple targets match '{verb}' command:" + (f" '{target_fragment}'" if target_fragment else ''), 'cyan'))
+    for idx, (thing, _m) in enumerate(candidates, start=1):
+        display_name = getattr(thing, 'name', str(thing))
+        print(colored(f"{idx}: {display_name}", 'yellow'))
+    print(colored("0: Cancel", 'red'))
+
+    selection = input(colored("Selection: ", 'cyan')).strip().lower()
+    if selection in ('0', 'x', 'cancel'):
+        print(colored("Jean decides against it for now.", 'yellow'))
+        return False
+    if selection.isdigit():
+        choice = int(selection)
+        if 1 <= choice <= len(candidates):
+            thing, method_name = candidates[choice - 1]
+            execute_arbitrary_method(getattr(thing, method_name), player)
             return True
-        elif candidates:
-            for candidate in candidates:
-                # preserve original behavior: pass args_list[0] as the action param to confirm()
-                if confirm(candidate, args_list[0], player, args_list):
-                    return True
 
+    print(colored("Invalid selection. Nothing happens.", 'red'))
     return False
 
 
