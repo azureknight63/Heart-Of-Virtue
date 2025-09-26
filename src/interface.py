@@ -966,26 +966,22 @@ class RoomTakeInterface(BaseInterface):
 
             # Delegate the actual take operation to the Player helper
             try:
-                # Use index where possible to preserve semantics of Player._take_item
                 idx = item_index if item_index is not None else None
-                # Prefer player's helper if it exists (some Player implementations provide _take_item)
+                success = False
                 if hasattr(self.player, '_take_item') and callable(getattr(self.player, '_take_item')):
-                    success = False
                     try:
-                        success = self._take_item(item, idx)
+                        success = self.player._take_item(item, idx)
                     except Exception:
                         success = False
-                else:
-                    try:
-                        success = self._take_item(item, idx)
-                    except Exception:
-                        success = False
-
+                if not success:
+                    # Fallback to interface implementation
+                    if hasattr(self, '_take_item') and callable(getattr(self, '_take_item')):
+                        try:
+                            success = self._take_item(item, idx)
+                        except Exception:
+                            success = False
                 if not success:
                     print(f"{RED}Failed to take the item.{RESET}")
-                else:
-                    # successful take already prints confirmation inside the helper
-                    pass
             except Exception:
                 print(f"{RED}Failed to take the item.{RESET}")
 
@@ -1029,18 +1025,6 @@ class RoomTakeInterface(BaseInterface):
         if not items_to_take:
             cprint("Jean can't carry anything more. He needs to drop something first.", 'red')
 
-    def _take_specific_item(self, phrase):
-        """Helper method to take a specific item by name."""
-        for i, item in enumerate(self.room.items_here):
-            search_item = (item.name.lower() + ' ' +
-                          getattr(item, 'announce', '').lower())
-
-            if phrase in search_item:
-                self._take_item(item, i)
-                return
-
-        cprint(f"Jean doesn't see any {phrase} to take.", 'red')
-
     def _take_item(self, item, index=None):
         """Helper method to take a single item, checking weight restrictions.
 
@@ -1074,11 +1058,9 @@ class RoomTakeInterface(BaseInterface):
         removed = False
         if index is not None:
             try:
-                # index might be stale; guard against IndexError
                 self.room.items_here.pop(index)
                 removed = True
             except Exception:
-                # Fallback to removing by object identity
                 try:
                     self.room.items_here.remove(item)
                     removed = True
@@ -1092,22 +1074,18 @@ class RoomTakeInterface(BaseInterface):
                 removed = False
 
         if not removed:
-            # Couldn't remove from room; rollback and report failure
             try:
-                # remove the item we added to player's inventory if present
                 if item in self.player.inventory:
                     self.player.inventory.remove(item)
             except Exception:
                 pass
             return False
 
-        # Successful transfer
         try:
             item.owner = self.player
         except Exception:
             pass
 
-        # Refresh player's weight after taking
         try:
             if hasattr(self.player, 'refresh_weight') and callable(self.player.refresh_weight):
                 self.player.refresh_weight()
@@ -1116,3 +1094,78 @@ class RoomTakeInterface(BaseInterface):
 
         print(f'Jean takes {item.name}.')
         return True
+
+    def _take_specific_item(self, phrase):
+        """Helper method to take a specific item (or items) by a search phrase.
+
+        Behavior:
+        - Collect all room items whose name or announce text contains the phrase (case-insensitive).
+        - If no matches: inform player.
+        - If exactly one match: take that item immediately (current behavior preserved).
+        - If multiple matches: present a lightweight, non-persistent submenu allowing the player to:
+            0: Take all matching items (subject to weight limits).
+            n: Take a specific listed item.
+           'x': Cancel (do nothing).
+        """
+        if not self.room or not hasattr(self.room, 'items_here'):
+            return
+        target = phrase.lower() if isinstance(phrase, str) else phrase
+        matches = []  # list of (item, room_index_at_time_of_match)
+        for i, item in enumerate(self.room.items_here):
+            try:
+                search_item = (item.name.lower() + ' ' + getattr(item, 'announce', '').lower())
+            except Exception:
+                continue
+            if target in search_item:
+                matches.append((item, i))
+
+        if not matches:
+            cprint(f"Jean doesn't see any {phrase} to take.", 'red')
+            return
+
+        if len(matches) == 1:  # single match: act immediately
+            item, idx = matches[0]
+            # Prefer index removal but fall back to object removal if stale
+            success = self._take_item(item, idx)
+            if not success and item in self.room.items_here:
+                # Retry without index if first attempt failed (stale index)
+                self._take_item(item, None)
+            return
+
+        # Multiple matches: show submenu
+        print(f"{BOLD}{CYAN}Multiple items match '{phrase}':{RESET}")
+        print(f"{YELLOW}0: Take ALL matching items{RESET}")
+        for menu_i, (item, _idx) in enumerate(matches, start=1):
+            print(f"{YELLOW}{menu_i}: {getattr(item, 'name', str(item))}{RESET}")
+        print(f"{RED}x: Cancel{RESET}")
+
+        selection = input(f"{BOLD}Selection:{RESET} ").strip().lower()
+        if selection == 'x':
+            print(f"{YELLOW}Jean decides against taking anything just yet.{RESET}")
+            return
+        if selection.isdigit():
+            choice = int(selection)
+            if choice == 0:
+                # Take all matching items (iterate over a copy to avoid mutation issues)
+                taken_any = False
+                for item, _idx in list(matches):
+                    if item not in self.room.items_here:
+                        continue
+                    # Use object removal to avoid index staleness from earlier removals
+                    if self._take_item(item, None):
+                        taken_any = True
+                if not taken_any:
+                    cprint("Jean can't carry any of those items.", 'red')
+                return
+            elif 1 <= choice <= len(matches):
+                item, idx = matches[choice - 1]
+                if item not in self.room.items_here:
+                    print(f"{YELLOW}That item is no longer here.{RESET}")
+                    return
+                if not self._take_item(item, idx):
+                    # Retry without index if failure potentially due to stale index
+                    if item in self.room.items_here:
+                        self._take_item(item, None)
+                return
+        # Fallback invalid input
+        print(f"{RED}Invalid selection. No items taken.{RESET}")

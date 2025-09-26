@@ -172,3 +172,32 @@ def test_take_all_with_weight_constraints(player, simple_room, capsys):
     # total weight should not exceed tolerance
     total_weight = sum(getattr(i, 'weight', 0) * getattr(i, 'count', 1) for i in player.inventory)
     assert total_weight <= player.weight_tolerance
+
+
+def test_take_specific_item_ambiguous_choose_specific(monkeypatch, player, simple_room):
+    # Two items matching 'axe'
+    from src.interface import RoomTakeInterface
+    i1 = DummyItem('Pickaxe', weight=1)
+    i2 = DummyItem('Battleaxe', weight=1)
+    simple_room.items_here.extend([i1, i2])
+    player.current_room = simple_room
+    ri = RoomTakeInterface(player, room=simple_room)
+    # Simulate user selecting option 2 (Battleaxe) then exit (selection handled inside helper only once)
+    inputs = iter(['2'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    ri.run(phrase='axe')
+    assert i2 in player.inventory and i1 not in player.inventory
+
+
+def test_take_specific_item_ambiguous_take_all(monkeypatch, player, simple_room):
+    from src.interface import RoomTakeInterface
+    i1 = DummyItem('Pickaxe', weight=1)
+    i2 = DummyItem('Battleaxe', weight=1)
+    simple_room.items_here.extend([i1, i2])
+    player.current_room = simple_room
+    ri = RoomTakeInterface(player, room=simple_room)
+    # Select 0 (take all matching)
+    inputs = iter(['0'])
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(inputs))
+    ri.run(phrase='axe')
+    assert i1 in player.inventory and i2 in player.inventory
