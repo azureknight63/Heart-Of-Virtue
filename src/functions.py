@@ -114,6 +114,9 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
     for thing in subjects:
         if getattr(thing, 'hidden', False):
             continue
+        # Exclude Gold
+        if verb == 'drop' and getattr(thing, 'name', '').lower() == 'gold':
+            continue
 
         # Build search corpus once for potential target filtering
         search_corpus = ' '.join(filter(None, [
