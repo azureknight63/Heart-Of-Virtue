@@ -839,45 +839,60 @@ def await_input():
 
 def inflict(state, target, chance=1.0, force=False):
     """
-    attempt to inflict a state on a target player or NPC.
-    :param state: new instance of the state object to be inflicted
-    :param target: target to receive the state
-    :param chance: base chance of success; further altered by resistances
-    :param force: if true, inflicting will never fail regardless of resistance
-    :return: returns the state object that was inflicted/compounded or False if it failed
+    Attempt to inflict a state on a target player or NPC.
+
+    Args:
+        state: A new instance of a State (or subclass) to be inflicted.
+        target: The entity that may receive the state (must have `states` and `status_resistance`).
+        chance (float): Base chance of success; modified by target resistance. (1.0 = 100%).
+        force (bool): If True, bypasses resistance & chance rolls and always applies/compounds.
+
+    Returns:
+        The active state object (either the newly applied instance or the pre-existing compounded one)
+        on success, otherwise False when the state fails to apply (e.g., resistance immunity or failed roll).
+
+    Notes:
+        Previous implementation sometimes returned None on success and called on_application without the
+        target param in one branch. This version standardizes behavior, improves clarity & micro-performance,
+        and guards against missing resistance keys.
     """
-
-    def success(victim, status):
-        for existing_state in victim.states:
-            if isinstance(existing_state, status.__class__):
-                if existing_state.compounding:
-                    # if the state already exists on the target and it's a compounding state, execute the compounding
-                    # effect and return the existing state
-                    existing_state.compound(victim)
-                    return existing_state
-                else:
-                    # the state already exists and is non-compounding, so replace it with the new state
-                    victim.states.remove(existing_state)
-                    victim.states.append(status)
-                    status.on_application()
-                    return status
-        # the state does not yet exist on the target
-        target.states.append(status)
-        status.on_application(target)
-        return status
-
+    # Fast-fail path unless forcing
     if not force:
-        chance *= (1 - target.status_resistance[state.statustype])
-        if chance <= 0:
-            return False  # target is immune
-        else:
-            roll = random.uniform(0, 1)
-            if chance >= roll:  # success! Status gets inflicted!
-                success(target, state)
-            else:
-                return False  # state failed to apply
-    else:
-        success(target, state)
+        resistance = target.status_resistance.get(getattr(state, 'statustype', ''), 0.0)
+        effective_chance = chance * (1 - resistance)
+        if effective_chance <= 0:
+            return False  # Immune
+        if effective_chance < 1.0:
+            # Only roll RNG if we aren't guaranteed success
+            if random.random() > effective_chance:
+                return False  # Failed application
+    # At this point we are applying / compounding
+    states_list = target.states
+    new_cls = state.__class__
+    for idx, existing in enumerate(states_list):
+        if isinstance(existing, new_cls):
+            # Existing matching state found
+            if getattr(existing, 'compounding', False) and hasattr(existing, 'compound'):
+                existing.compound(target)
+                return existing
+            # Replace in-place (cheaper & preserves ordering index)
+            states_list[idx] = state
+            # Ensure on_application always receives target
+            if hasattr(state, 'on_application'):
+                try:
+                    state.on_application(target)
+                except TypeError:
+                    # Backwards compatibility for states with signature ()
+                    state.on_application()  # type: ignore
+            return state
+    # No existing matching state; append
+    states_list.append(state)
+    if hasattr(state, 'on_application'):
+        try:
+            state.on_application(target)
+        except TypeError:
+            state.on_application()  # type: ignore
+    return state
 
 
 def add_random_enchantments(item: 'Item', count: int) -> None:
