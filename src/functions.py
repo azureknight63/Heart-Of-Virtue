@@ -393,12 +393,12 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
 
 
 def check_parry(target):
-    parry = False
-    for state in target.states:
-        if state.name == "Parrying":
-            parry = True
-            break
-    return parry
+    states = getattr(target, "states", []) or []
+    for s in states:
+        name = s if isinstance(s, str) else getattr(s, "name", None)
+        if isinstance(name, str) and name.lower() == "parrying":
+            return True
+    return False
 
 
 def spawn_npc(npc_name, tile):
