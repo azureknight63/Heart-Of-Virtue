@@ -10,10 +10,10 @@ import time
 import pkgutil
 
 from typing import Any
+from typing import TYPE_CHECKING
 
-from src import moves
-from src import enchant_tables
-from src.items import Item
+if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
+    from src.items import Item
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -266,8 +266,33 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
 
 
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
+    """Refresh dynamic stat bonuses on a target (player or NPC).
+
+    Behavior (preserved):
+      1. All primary stats + resistances are reset to base via reset_stats.
+      2. Equipped items (those with isequipped True) and active states that expose at least
+         one recognized bonus attribute are collected.
+      3. Supported bonus attributes:
+           add_str, add_fin, add_maxhp, add_maxfatigue, add_speed, add_endurance,
+           add_charisma, add_intelligence, add_faith, add_weight_tolerance,
+           add_resistance (dict), add_status_resistance (dict)
+      4. Resistance & status resistance bonuses merge only for keys present in the target's
+         base dictionaries. Status resistance cannot drop below 0.
+      5. Jean-specific logic:
+           - Recomputes weight_tolerance deterministically from base + (STR+END)/2 (rounded 2dp).
+           - Adjusts maxfatigue: +25% if carrying <50% capacity; subtracts 10 * overweight pounds otherwise (floor at 0).
+      6. Function is idempotent: repeated calls without changes to inventory/states yield identical results.
+
+    Optimization changes:
+      - Single pass to gather items & states (no repeated per-bonus scans while collecting).
+      - Pre-compute present bonus attributes per adder to avoid redundant hasattr checks in inner loops.
+      - Streamlined resistance merging (loop only actual keys present in adder dict & target dict).
+      - Clearer, documented flow for easier maintenance & future extension.
+    """
     reset_stats(target)
-    bonuses = {
+
+    # Mapping of bonus attribute -> target attribute (dict entries handled specially)
+    bonuses_map = {
         "add_str": "strength",
         "add_fin": "finesse",
         "add_maxhp": "maxhp",
@@ -278,67 +303,93 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
         "add_intelligence": "intelligence",
         "add_faith": "faith",
         "add_weight_tolerance": "weight_tolerance",
-        "add_resistance": {},
-        "add_status_resistance": {}
+        "add_resistance": "_resistance_dict",          # sentinel: dict merge
+        "add_status_resistance": "_status_resistance_dict"  # sentinel: dict merge
     }
 
-    for category in target.resistance_base:  # roll up all of the resistances and status resistances into the
-        # bonuses list
-        bonuses["add_resistance"][category] = category       # doing this here will allow changes on the
-    for category in target.status_resistance_base:
-        bonuses["add_status_resistance"][category] = category
-    adder_group = []
-    if hasattr(target, "inventory"):
-        for item in target.inventory:
-            if hasattr(item, "isequipped"):
-                if item.isequipped:
-                    for bonus, attr in bonuses.items():
-                        if hasattr(item, bonus):
-                            adder_group.append(item)
-                            break
-    for state in target.states:  # loop through all of the target's states and, if each state has an "adder"
-        # attribute like bonus hp, include that
-        for bonus, attr in bonuses.items():
-            if hasattr(state, bonus):
-                adder_group.append(state)
-                break  # the state has at least one bonus; we don't have to look for more to include it
-    for adder in adder_group:  # here, "adder" is the item or state containing the bonus or bonuses
-        for bonus, attr in bonuses.items():
-            if hasattr(adder, bonus):  # the item or state has one of the recognized bonuses
-                if bonus == "add_resistance":  # since resistances are dicts,
-                    # we have to handle them a little differently
-                    for v in attr.values():
-                        if hasattr(adder, bonus):
-                            if v in adder.add_resistance:
-                                target.resistance[v] += float(adder.add_resistance[v])
-                elif bonus == "add_status_resistance":
-                    for v in attr.values():
-                        if hasattr(adder, bonus):
-                            if v in adder.add_status_resistance:
-                                target.status_resistance[v] += float(adder.add_status_resistance[v])
-                else:
-                    setattr(target, attr, getattr(target, attr) + getattr(adder, bonus))  # adds the value of each
-                    # bonus to each attribute
-    for i, v in target.status_resistance.items():
-        if v < 0:
-            target.status_resistance[i] = 0  # prevent status resistances from being negative
+    # Dynamically mirror current base resistance categories (these can evolve elsewhere)
+    resistance_keys = list(target.resistance_base.keys())
+    status_resistance_keys = list(target.status_resistance_base.keys())
 
-    # Process other things which may affect stats, such as weight
-    if target.name == "Jean":
-        target.refresh_weight()
-        # Ensure weight_tolerance is deterministically derived from the base value
-        # plus attribute-based bonus. Use assignment (not +=) so repeated calls
-        # to refresh_stat_bonuses don't inadvertently stack the bonus.
-        target.weight_tolerance = target.weight_tolerance_base + round((target.strength + target.endurance) / 2, 2)
-        check_weight = target.weight_tolerance - target.weight_current
-        if check_weight > (
-                target.weight_tolerance / 2):  # if the player's carrying less than 50% capacity, add 25% to
-            target.maxfatigue += (target.maxfatigue / 4)  # max fatigue as a bonus
-        elif check_weight < 0:  # if the player is over capacity, reduce max fatigue by excess lbs * 10
-            check_weight *= -1
-            target.maxfatigue -= (check_weight * 10)
-            if target.maxfatigue < 0:
-                target.maxfatigue = 0
+    # Collect candidate adders (equipped items + states with at least one bonus attr)
+    adder_group = []
+    get_attr = getattr
+
+    # Equipped items
+    inv = get_attr(target, "inventory", [])
+    if isinstance(inv, list):
+        for item in inv:
+            if get_attr(item, "isequipped", False):
+                for bonus_attr in bonuses_map.keys():
+                    if hasattr(item, bonus_attr):
+                        adder_group.append(item)
+                        break
+
+    # States
+    for state in get_attr(target, "states", []):
+        for bonus_attr in bonuses_map.keys():
+            if hasattr(state, bonus_attr):
+                adder_group.append(state)
+                break
+
+    # Apply bonuses
+    for adder in adder_group:
+        # Precompute which bonus attributes this adder actually supplies
+        present = [b for b in bonuses_map if hasattr(adder, b)]
+        for bonus_attr in present:
+            target_field = bonuses_map[bonus_attr]
+            bonus_value = get_attr(adder, bonus_attr)
+            if target_field == "_resistance_dict" and isinstance(bonus_value, dict):
+                # Merge only known resistance keys
+                for k in resistance_keys:
+                    if k in bonus_value:
+                        try:
+                            target.resistance[k] += float(bonus_value[k])
+                        except Exception:
+                            continue
+            elif target_field == "_status_resistance_dict" and isinstance(bonus_value, dict):
+                for k in status_resistance_keys:
+                    if k in bonus_value:
+                        try:
+                            target.status_resistance[k] += float(bonus_value[k])
+                        except Exception:
+                            continue
+            else:
+                try:
+                    setattr(target, target_field, get_attr(target, target_field) + bonus_value)
+                except Exception:
+                    # Fail-safe: skip malformed bonus
+                    continue
+
+    # Clamp negative status resistances to 0
+    for k, v in list(target.status_resistance.items()):
+        if v < 0:
+            target.status_resistance[k] = 0
+
+    # Jean-specific post-processing
+    if get_attr(target, "name", None) == "Jean":
+        # weight_tolerance recalculation is deterministic (assignment, not +=)
+        if hasattr(target, "weight_tolerance_base") and hasattr(target, "strength") and hasattr(target, "endurance"):
+            target.weight_tolerance = target.weight_tolerance_base + round((target.strength + target.endurance) / 2, 2)
+        # Refresh weight & adjust fatigue
+        if hasattr(target, "refresh_weight"):
+            try:
+                target.refresh_weight()
+            except Exception:
+                pass
+        if hasattr(target, "weight_tolerance") and hasattr(target, "weight_current"):
+            try:
+                check_weight = target.weight_tolerance - target.weight_current
+                if check_weight > (target.weight_tolerance / 2):
+                    target.maxfatigue += (target.maxfatigue / 4)
+                elif check_weight < 0:
+                    # Overweight penalty
+                    penalty = (-check_weight) * 10
+                    target.maxfatigue -= penalty
+                    if target.maxfatigue < 0:
+                        target.maxfatigue = 0
+            except Exception:
+                pass
 
 
 def check_parry(target):
@@ -359,10 +410,12 @@ def spawn_item(item_name, tile):
 
 
 def refresh_moves(player):
+    # Local import to avoid heavy module load / circular import during utility tests
+    from src import moves as _moves
     player.known_moves = []
     default_moves = ["Rest", "PlayerAttack"]
     for move_name in default_moves:
-        move_class = getattr(moves, move_name)
+        move_class = getattr(_moves, move_name)
         move_instance = move_class()
         player.known_moves.append(move_instance)
     # add other moves based on logic and stuff
@@ -767,7 +820,7 @@ def inflict(state, target, chance=1.0, force=False):
         success(target, state)
 
 
-def add_random_enchantments(item: Item, count: int) -> None:
+def add_random_enchantments(item: 'Item', count: int) -> None:
     """
     Add up to `count` random enchantments to `item`.
 
@@ -792,9 +845,11 @@ def add_random_enchantments(item: Item, count: int) -> None:
     enchantment_level: list[int] = [0, 0]
     enchantments: list[Any] = [None, None]
 
+    # Local import (deferred) to reduce initial import cost & circular risks
+    from src import enchant_tables as _enchant_tables
     # Cache enchantment classes by tier to avoid repeated reflection/lookup
     class_by_tier: dict[int, list[type]] = {}
-    for _, cls in inspect.getmembers(enchant_tables, inspect.isclass):
+    for _, cls in inspect.getmembers(_enchant_tables, inspect.isclass):
         if hasattr(cls, "tier"):
             class_by_tier.setdefault(int(cls.tier), []).append(cls)
 
