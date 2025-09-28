@@ -410,13 +410,28 @@ def spawn_item(item_name, tile):
 
 
 def refresh_moves(player):
-    # Local import to avoid heavy module load / circular import during utility tests
-    from src import moves as _moves
-    player.known_moves = []
-    default_moves = ["Rest", "PlayerAttack"]
+    """Populate player's known_moves with default move instances (tolerant to import/instantiate errors)."""
+    try:
+        from src import moves as _moves
+    except Exception:
+        _moves = None
+
+    # Ensure known_moves exists and start fresh
+    if not hasattr(player, "known_moves") or player.known_moves is None:
+        player.known_moves = []
+    else:
+        player.known_moves.clear()
+
+    default_moves = ("Rest", "PlayerAttack")
     for move_name in default_moves:
+        if _moves is None or not hasattr(_moves, move_name):
+            continue
         move_class = getattr(_moves, move_name)
-        move_instance = move_class()
+        try:
+            move_instance = move_class()
+        except Exception:
+            # Skip moves that fail to instantiate
+            continue
         player.known_moves.append(move_instance)
     # add other moves based on logic and stuff
 
