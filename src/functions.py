@@ -445,23 +445,48 @@ def is_input_integer(input_to_check):  # useful for checking to see if the playe
 
 
 def reset_stats(target):  # resets all stats to base level
-    target.strength = target.strength_base
-    target.finesse = target.finesse_base
-    target.maxhp = target.maxhp_base
-    target.maxfatigue = target.maxfatigue_base
-    target.speed = target.speed_base
-    target.endurance = target.endurance_base
-    target.charisma = target.charisma_base
-    target.intelligence = target.intelligence_base
-    target.faith = target.faith_base
-    target.resistance.clear()
-    target.status_resistance.clear()
-    for element, resist in target.resistance_base.items():
-        target.resistance[element] = resist
-    for element, resist in target.status_resistance_base.items():
-        target.status_resistance[element] = resist
-    if hasattr(target, 'weight_tolerance'):
-        target.weight_tolerance = target.weight_tolerance_base
+    # Map target attrs to their corresponding base attrs to avoid repetitive code
+    stat_pairs = (
+        ("strength", "strength_base"),
+        ("finesse", "finesse_base"),
+        ("maxhp", "maxhp_base"),
+        ("maxfatigue", "maxfatigue_base"),
+        ("speed", "speed_base"),
+        ("endurance", "endurance_base"),
+        ("charisma", "charisma_base"),
+        ("intelligence", "intelligence_base"),
+        ("faith", "faith_base"),
+    )
+
+    for attr, base_attr in stat_pairs:
+        if hasattr(target, base_attr):
+            try:
+                setattr(target, attr, getattr(target, base_attr))
+            except Exception:
+                # Fail-safe: skip malformed attributes
+                pass
+
+    # Reset resistance dictionaries in a safe, efficient way
+    try:
+        if hasattr(target, "resistance") and hasattr(target, "resistance_base"):
+            target.resistance.clear()
+            target.resistance.update({k: v for k, v in getattr(target, "resistance_base", {}).items()})
+    except Exception:
+        pass
+
+    try:
+        if hasattr(target, "status_resistance") and hasattr(target, "status_resistance_base"):
+            target.status_resistance.clear()
+            target.status_resistance.update({k: v for k, v in getattr(target, "status_resistance_base", {}).items()})
+    except Exception:
+        pass
+
+    # Preserve compatibility for weight_tolerance if present
+    if hasattr(target, "weight_tolerance") and hasattr(target, "weight_tolerance_base"):
+        try:
+            target.weight_tolerance = getattr(target, "weight_tolerance_base")
+        except Exception:
+            pass
 
 
 def load_select():
