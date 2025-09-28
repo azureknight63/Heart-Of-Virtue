@@ -224,26 +224,44 @@ def print_objects_in_room(room):
 
 def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
-    if len(player.current_room.npcs_here) > 0:  # Evaluate the room's enemies. Check if they are aggro
-        # and notice the player.
-        finesse_check = random.randint(int(player.finesse * 0.6), int(player.finesse * 1.4))
-        for move in player.known_moves:
-            if move.name == "Quiet Movement":
-                finesse_check *= 1.2
-                break
-        for e in player.current_room.npcs_here:  # Now go through all of the jerks in the room and do a finesse check
-            if not e.friend:
-                if (finesse_check <= e.awareness) and e.aggro:  # finesse check fails, break and rescan the list,
-                    # adding all aggro enemies
-                    print(e.name + " " + e.alert_message)  # player's been spotted
-                    enemy_combat_list.append(e)
-                    e.in_combat = True
-                    for aggro_enemy in player.current_room.npcs_here:  # the jerk's friends join in the fun
-                        if aggro_enemy.aggro and aggro_enemy != e and not aggro_enemy.friend:
-                            print(aggro_enemy.name + aggro_enemy.alert_message)
-                            enemy_combat_list.append(aggro_enemy)
-                            aggro_enemy.in_combat = True
-                    break  # we don't need to scan any more since the alarm has been raised
+    npcs = getattr(getattr(player, 'current_room', None), 'npcs_here', []) or []
+    if not npcs:
+        return enemy_combat_list
+
+    # Safe finesse roll
+    try:
+        base = float(getattr(player, 'finesse', 0))
+        low = int(base * 0.6)
+        high = int(base * 1.4)
+        if low > high:
+            low, high = high, low
+        finesse_check = random.randint(low, high)
+    except Exception:
+        finesse_check = random.randint(0, 10)
+
+    # Quiet Movement bonus
+    if any(getattr(m, 'name', '') == "Quiet Movement" for m in getattr(player, 'known_moves', [])):
+        finesse_check = int(finesse_check * 1.2)
+
+    for e in npcs:
+        if getattr(e, 'friend', False):
+            continue
+        if not getattr(e, 'aggro', False):
+            continue
+        awareness = getattr(e, 'awareness', float('inf'))
+        if finesse_check <= awareness:
+            print(f"{getattr(e, 'name', '')} {getattr(e, 'alert_message', '')}")
+            enemy_combat_list.append(e)
+            e.in_combat = True
+            # Nearby aggro allies join
+            for aggro_enemy in npcs:
+                if aggro_enemy is e:
+                    continue
+                if getattr(aggro_enemy, 'aggro', False) and not getattr(aggro_enemy, 'friend', False):
+                    print(f"{getattr(aggro_enemy, 'name', '')}{getattr(aggro_enemy, 'alert_message', '')}")
+                    enemy_combat_list.append(aggro_enemy)
+                    aggro_enemy.in_combat = True
+            break  # stop scanning after alarm is raised
     return enemy_combat_list
 
 
