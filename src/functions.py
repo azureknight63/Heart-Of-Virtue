@@ -185,32 +185,41 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
 
 
 def screen_clear():
-    print("\n" * 100)
+    try:
+        # Prefer native terminal clear; fallback to printing newlines
+        if os.name == "nt":
+            os.system("cls")
+        else:
+            os.system("clear")
+    except Exception:
+        print("\n" * 100)
+
+
+def _print_visible_lines(seq, attr_getter):
+    if not seq:
+        return
+    lines = []
+    for obj in seq:
+        if not getattr(obj, "hidden", False):
+            try:
+                lines.append(attr_getter(obj))
+            except Exception:
+                lines.append(str(obj))
+    if lines:
+        print("\n".join(lines))
+        print()
 
 
 def print_npcs_in_room(room):
-    # Does not evaluate combat aggro - that's a different function
-    if len(room.npcs_here) > 0:  # Evaluate the room's NPCs.
-        for npc in room.npcs_here:
-            if not npc.hidden:
-                print(npc.name + npc.idle_message)
-        print("\n")
+    _print_visible_lines(getattr(room, "npcs_here", []), lambda o: f"{getattr(o, 'name', '')}{getattr(o, 'idle_message', '')}")
 
 
 def print_items_in_room(room):
-    if len(room.items_here) > 0:
-        for item in room.items_here:
-            if not item.hidden:
-                print(item.announce)
-        print("\n")
+    _print_visible_lines(getattr(room, "items_here", []), lambda o: getattr(o, "announce", ""))
 
 
 def print_objects_in_room(room):
-    if len(room.objects_here) > 0:
-        for obj in room.objects_here:
-            if not obj.hidden:
-                print(obj.idle_message)
-        print("\n")
+    _print_visible_lines(getattr(room, "objects_here", []), lambda o: getattr(o, "idle_message", ""))
 
 
 def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
@@ -936,7 +945,11 @@ def stack_inv_items(target):
             continue
         # Prefer explicit stack key methods if provided by the item
         if hasattr(item, "stack_key"):
-            key = (item.__class__, "stack_key", item.stack_key)
+            # Invoke if callable (previously the bound method object itself was used as part of the key
+            # which caused each instance to appear unique and blocked stacking). Falling back to the
+            # attribute value preserves legacy behavior for non-callable attributes.
+            key_component = item.stack_key if not callable(getattr(item, "stack_key")) else item.stack_key()
+            key = (item.__class__, "stack_key", key_component)
         else:
             # Fallback: use class + name + description where available
             key = (item.__class__, getattr(item, "name", None), getattr(item, "description", None))
