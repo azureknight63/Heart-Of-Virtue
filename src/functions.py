@@ -490,36 +490,56 @@ def reset_stats(target):  # resets all stats to base level
 
 
 def load_select():
-    if saves_list():
-        while True:
-            print("Select the file you wish to load.")
-            for i, file in enumerate(saves_list()):
-                timestamp = str(datetime.datetime.fromtimestamp(os.path.getmtime(file)))
+    """Interactive save selection.
+
+    Returns:
+        Deserialized player object on success, or None if the user cancels or no saves are found.
+    """
+    saves = saves_list()
+    if not saves:
+        cprint("No save files detected.", "red")
+        return None
+
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+    while True:
+        print("Select the file you wish to load.")
+        for i, file in enumerate(saves):
+            file_path = os.path.join(base_path, file)
+            try:
+                timestamp = str(datetime.datetime.fromtimestamp(os.path.getmtime(file_path)))
                 timestamp = timestamp[:-7]
+            except Exception:
+                timestamp = "unknown"
+            try:
+                check_playtime = load(file_path)
+                playtime = str(datetime.timedelta(seconds=getattr(check_playtime, 'time_elapsed', 0)))
+                playtime = playtime[:-7]
+                descriptor = f"play time: {playtime}" if playtime else "play time: 0"
+            except Exception:
+                descriptor = colored('UNREADABLE (legacy/incompatible)', 'red')
+            print(f'{i}: {file} (last modified {timestamp}) ({descriptor})')
+
+        print('x: Cancel')
+        choice = input("Selection: ").strip()
+        if choice.lower() == 'x':
+            print('Load operation cancelled.')
+            return None
+
+        if is_input_integer(choice):
+            idx = int(choice)
+            if 0 <= idx < len(saves):
+                candidate = os.path.join(base_path, saves[idx])
                 try:
-                    check_playtime = load(file)
-                    playtime = str(datetime.timedelta(seconds=getattr(check_playtime, 'time_elapsed', 0)))
-                    playtime = playtime[:-7]
-                    descriptor = f"play time: {playtime}" if playtime else "play time: 0"
-                except Exception as e:
-                    descriptor = colored('UNREADABLE (legacy/incompatible)', 'red')
-                print(f'{i}: {file} (last modified {timestamp}) ({descriptor})')
-            print('x: Cancel')
-            choice = input("Selection: ")
-            if choice == 'x':
-                print('Load operation cancelled.')
-                return SyntaxError
-            if is_input_integer(choice):
-                try:
-                    candidate = saves_list()[int(choice)]
                     return load(candidate)
                 except TypeError:
                     cprint("Invalid selection.", "red")
                 except Exception as e:
                     cprint(f"Unable to load selected file: {e}", 'red')
-    else:
-        cprint("No save files detected.", "red")
-        return SyntaxError
+            else:
+                cprint("Invalid selection.", "red")
+        else:
+            cprint("Invalid selection.", "red")
 
 
 class _MissingLegacyPlaceholder:

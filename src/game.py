@@ -103,7 +103,15 @@ _\\|//__( | )______)_/
                 newgame = False
             elif selected_option == 'QUIT TO DESKTOP':
                 sys.exit()
-        player = functions.load_select() if not newgame else Player()
+        # Acquire player (either new or loaded). If load cancelled, restart menu loop.
+        if newgame:
+            player = Player()
+        else:
+            loaded = functions.load_select()
+            if loaded is None:
+                # User cancelled or no saves; restart main menu loop
+                continue
+            player = loaded
         player.universe = Universe(player)
         player.universe.build(player)
         starting_map_name = "default"
