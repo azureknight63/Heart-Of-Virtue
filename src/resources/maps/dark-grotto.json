@@ -19,9 +19,9 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "west",
             "south",
             "east",
+            "west",
             "southeast",
             "southwest"
         ],
@@ -35,7 +35,8 @@
                 "__module__": "src.objects",
                 "props": {}
             }
-        ]
+        ],
+        "symbol": ""
     },
     "(3, 1)": {
         "id": "tile_3_1",
@@ -88,39 +89,80 @@
                 "props": {}
             }
         ],
-        "items": [
-            {
-                "__class__": "Gold",
-                "__module__": "src.items",
-                "props": {
-                    "amt": 1,
-                    "maintype": "Gold",
-                    "name": "Gold",
-                    "description": "A small pouch containing 1 gold pieces.",
-                    "value": 1,
-                    "type": "Currency",
-                    "subtype": "Gold",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "discovery_message": "a small pouch of gold.",
-                    "announce": "There's a small pouch of gold on the ground.",
-                    "interactions": [],
-                    "equip_states": [],
-                    "add_resistance": {},
-                    "add_status_resistance": {},
-                    "gives_exp": false,
-                    "count": 12
-                }
-            }
-        ],
+        "items": [],
         "npcs": [],
         "objects": [
             {
-                "__class__": "WoodenChest",
+                "__class__": "Container",
                 "__module__": "src.objects",
-                "props": {}
+                "props": {
+                    "nickname": "wooden chest",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "src.items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "src.items",
+                            "props": {
+                                "amt": 68,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 68 gold pieces.",
+                                "value": 68,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 68
+                            }
+                        }
+                    ],
+                    "name": "Wooden Chest",
+                    "description": "A wooden chest. There may be something inside.",
+                    "idle_message": "A wooden chest is sitting here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a wooden chest!",
+                    "announce": "A wooden chest is sitting here.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
             }
-        ]
+        ],
+        "symbol": ""
     },
     "(1, 2)": {
         "id": "tile_1_2",
@@ -164,11 +206,11 @@
         "title": "BlankTile",
         "description": "The wall here feels warmer than the rest of the cavern. There are scuff marks on the floor that stop abruptly where the wall and floor meet. Jean can hear the muffled sound of flowing water",
         "exits": [
-            "northwest",
             "north",
-            "west",
             "south",
             "east",
+            "west",
+            "northwest",
             "southwest"
         ],
         "block_exit": [
@@ -189,7 +231,8 @@
                 "__module__": "src.objects",
                 "props": {}
             }
-        ]
+        ],
+        "symbol": ""
     },
     "(4, 2)": {
         "id": "tile_4_2",
@@ -215,15 +258,15 @@
         "title": "BlankTile",
         "description": "The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point, large mountains can be seen to the northwest, covered in white clouds at their crowns",
         "exits": [
-            "northeast",
-            "west",
             "east",
+            "west",
+            "northeast",
             "southeast"
         ],
         "block_exit": [
             "east",
-            "southeast",
-            "northeast"
+            "northeast",
+            "southeast"
         ],
         "events": [
             {
@@ -240,7 +283,8 @@
                 "__module__": "src.objects",
                 "props": {}
             }
-        ]
+        ],
+        "symbol": ""
     },
     "(6, 2)": {
         "id": "tile_6_2",
@@ -282,11 +326,11 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "northwest",
             "north",
-            "northeast",
+            "east",
             "west",
-            "east"
+            "northeast",
+            "northwest"
         ],
         "block_exit": [],
         "events": [],
@@ -304,9 +348,12 @@
                     "subtype": "Gold",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a small pouch of gold.",
                     "announce": "There's a small pouch of gold on the ground.",
                     "interactions": [],
+                    "skills": null,
+                    "owner": null,
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
@@ -327,14 +374,18 @@
                         "drink",
                         "drop"
                     ],
+                    "stack_key": "Restorative",
                     "name": "Restorative",
                     "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
                     "value": 100,
                     "type": "Consumable",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a useful item.",
                     "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
@@ -344,13 +395,8 @@
             }
         ],
         "npcs": [],
-        "objects": [
-            {
-                "__class__": "WoodenChest",
-                "__module__": "src.objects",
-                "props": {}
-            }
-        ]
+        "objects": [],
+        "symbol": ""
     },
     "(3, 3)": {
         "id": "tile_3_3",
@@ -409,9 +455,12 @@
                     "subtype": "Gold",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a small pouch of gold.",
                     "announce": "There's a small pouch of gold on the ground.",
                     "interactions": [],
+                    "skills": null,
+                    "owner": null,
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
@@ -421,13 +470,7 @@
             }
         ],
         "npcs": [],
-        "objects": [
-            {
-                "__class__": "WoodenChest",
-                "__module__": "src.objects",
-                "props": {}
-            }
-        ],
+        "objects": [],
         "symbol": ""
     },
     "(5, 4)": {
@@ -487,12 +530,15 @@
                     "type": "Accessory",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a small trinket.",
                     "announce": "There's a Dull Medallion here.",
                     "interactions": [
                         "drop",
                         "equip"
                     ],
+                    "skills": null,
+                    "owner": null,
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
@@ -513,9 +559,12 @@
                     "subtype": "Gold",
                     "hidden": false,
                     "hide_factor": 0,
+                    "merchandise": false,
                     "discovery_message": "a small pouch of gold.",
                     "announce": "There's a small pouch of gold on the ground.",
                     "interactions": [],
+                    "skills": null,
+                    "owner": null,
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
@@ -524,13 +573,7 @@
                 }
             }
         ],
-        "npcs": [
-            {
-                "__class__": "Skeleton",
-                "__module__": "src.objects",
-                "props": {}
-            }
-        ],
+        "npcs": [],
         "objects": [],
         "symbol": ""
     }
