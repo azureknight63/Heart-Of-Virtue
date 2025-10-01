@@ -23,6 +23,43 @@ if src_root not in sys.path:
 from src.npc import Merchant
 
 
+# Added: custom exception to surface rich context about serialization failures
+class MapSerializationError(Exception):
+    def __init__(self, *, tile: Tuple[int,int] | None = None, category: str | None = None,
+                 index: int | None = None, attribute: str | None = None,
+                 object_type: str | None = None, object_repr: str | None = None,
+                 original: Exception | None = None, note: str | None = None):
+        self.tile = tile
+        self.category = category
+        self.index = index
+        self.attribute = attribute
+        self.object_type = object_type
+        self.object_repr = object_repr
+        self.original = original
+        self.note = note
+        super().__init__(self.__str__())
+
+    def __str__(self):
+        parts: List[str] = ["Map save serialization failed"]
+        if self.tile is not None:
+            parts.append(f"tile={self.tile}")
+        if self.category is not None:
+            parts.append(f"category={self.category}")
+        if self.index is not None:
+            parts.append(f"index={self.index}")
+        if self.object_type is not None:
+            parts.append(f"object_type={self.object_type}")
+        if self.attribute is not None:
+            parts.append(f"attribute={self.attribute}")
+        if self.original is not None:
+            parts.append(f"error={type(self.original).__name__}: {self.original}")
+        if self.note:
+            parts.append(f"note={self.note}")
+        if self.object_repr and len(self.object_repr) < 200:
+            parts.append(f"object_repr={self.object_repr}")
+        return " | ".join(parts)
+
+
 def parse_type_hint(annotation):
     """
     Parse a type annotation to determine if it's a class type or list of class types.
@@ -976,46 +1013,97 @@ class MapEditor:
     def save_map(self):
         """
         Saves the current map data to a JSON file.
+        Enhanced: Provides detailed diagnostic information (tile, category, index, object type, attribute) if
+        serialization fails so the user can quickly locate and fix problematic data.
         """
         try:
             # build serializable structure
-            def serialize_instance(inst: Any, seen=None) -> Dict[str, Any] | str:
+            def serialize_instance(inst: Any, seen=None, *, tile_pos=None, category=None, index=None) -> Dict[str, Any] | str:
                 if seen is None:
                     seen = set()
                 obj_id = id(inst)
                 if obj_id in seen:
                     return f"<circular_ref:{type(inst).__name__}>"
                 seen.add(obj_id)
-                def recursive_serialize(val):
-                    # NEW: explicit class (type object) handling so we can restore later
-                    if inspect.isclass(val):
-                        return {"__class_type__": f"{val.__module__}:{val.__name__}"}
-                    if isinstance(val, (int, float, str, bool)) or val is None:
-                        return val
-                    elif isinstance(val, list):
-                        return [recursive_serialize(v) for v in val]
-                    elif isinstance(val, tuple):
-                        return [recursive_serialize(v) for v in val]  # store tuples as lists
-                    elif isinstance(val, dict):
-                        return {k: recursive_serialize(v) for k, v in val.items()}
-                    elif hasattr(val, '__dict__'):
-                        return serialize_instance(val, seen)
-                    else:
-                        return str(val)
-                data = {kx: recursive_serialize(vx) for kx, vx in vars(inst).items() if not kx.startswith('_')}
-                # Ensure certain virtual/prop attributes (not stored in __dict__) are captured for important classes
-                # e.g., Container objects may expose a 'merchant' property via a descriptor rather than in __dict__
+                def recursive_serialize(val, *, attr_name=None):
+                    try:
+                        if inspect.isclass(val):
+                            return {"__class_type__": f"{val.__module__}:{val.__name__}"}
+                        if isinstance(val, (int, float, str, bool)) or val is None:
+                            return val
+                        elif isinstance(val, list):
+                            out = []
+                            for i, subv in enumerate(val):
+                                try:
+                                    out.append(recursive_serialize(subv, attr_name=f"{attr_name}[{i}]") )
+                                except MapSerializationError:
+                                    raise
+                                except Exception as ex_list:
+                                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                                 attribute=f"{attr_name}[{i}]", object_type=type(subv).__name__,
+                                                                 object_repr=repr(subv)[:180], original=ex_list)
+                            return out
+                        elif isinstance(val, tuple):
+                            tup_out = []
+                            for i, subv in enumerate(val):
+                                try:
+                                    tup_out.append(recursive_serialize(subv, attr_name=f"{attr_name}({i})") )
+                                except MapSerializationError:
+                                    raise
+                                except Exception as ex_tup:
+                                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                                 attribute=f"{attr_name}({i})", object_type=type(subv).__name__,
+                                                                 object_repr=repr(subv)[:180], original=ex_tup)
+                            return tup_out  # store tuples as lists
+                        elif isinstance(val, dict):
+                            result_dict = {}
+                            for dk, dv in val.items():
+                                try:
+                                    result_dict[dk] = recursive_serialize(dv, attr_name=f"{attr_name}.{dk}" if attr_name else str(dk))
+                                except MapSerializationError:
+                                    raise
+                                except Exception as ex_dict:
+                                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                                 attribute=f"{attr_name}.{dk}" if attr_name else str(dk),
+                                                                 object_type=type(dv).__name__, object_repr=repr(dv)[:180], original=ex_dict)
+                            return result_dict
+                        elif hasattr(val, '__dict__'):
+                            return serialize_instance(val, seen, tile_pos=tile_pos, category=category, index=index)
+                        else:
+                            # Fallback: best-effort stringification
+                            return str(val)
+                    except MapSerializationError:
+                        raise
+                    except Exception as ex_other:
+                        raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                     attribute=attr_name, object_type=type(val).__name__,
+                                                     object_repr=repr(val)[:180], original=ex_other)
                 try:
+                    data = {}
+                    for kx, vx in vars(inst).items():
+                        if kx.startswith('_'):
+                            continue
+                        try:
+                            data[kx] = recursive_serialize(vx, attr_name=kx)
+                        except MapSerializationError:
+                            raise
+                        except Exception as ex_attr:
+                            raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                         attribute=kx, object_type=type(vx).__name__,
+                                                         object_repr=repr(vx)[:180], original=ex_attr)
+                    # Attempt to include merchant property if accessible
                     if 'merchant' not in data and hasattr(inst, 'merchant'):
                         try:
-                            merchant_val = getattr(inst, 'merchant')
-                            # Only include if not a private-like attribute
-                            data['merchant'] = recursive_serialize(merchant_val)
+                            mval = getattr(inst, 'merchant')
+                            data['merchant'] = recursive_serialize(mval, attr_name='merchant')
                         except Exception:
-                            # ignore if accessing the property raises
                             pass
-                except Exception:
-                    pass
+                except MapSerializationError:
+                    raise
+                except Exception as ex_unknown:
+                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                 attribute='__dict__', object_type=type(inst).__name__,
+                                                 object_repr=repr(inst)[:180], original=ex_unknown)
                 return {
                     '__class__': inst.__class__.__name__,
                     '__module__': inst.__class__.__module__,
@@ -1024,9 +1112,21 @@ class MapEditor:
             serializable_map: Dict[str, Any] = {}
             for k, v in self.map_data.items():
                 tile: Dict[str, Any] = dict(v)
+                # Serialize each instance collection with granular error handling
                 for key in ['events','items','npcs','objects']:
                     inst_list = tile.get(key, [])
-                    tile[key] = [serialize_instance(i) for i in inst_list]
+                    serialized_instances = []
+                    for idx, inst in enumerate(inst_list):
+                        try:
+                            serialized_instances.append(serialize_instance(inst, tile_pos=k, category=key, index=idx))
+                        except MapSerializationError as mse:
+                            # Re-raise to outer except so unified handling occurs
+                            raise mse
+                        except Exception as ex_generic:
+                            raise MapSerializationError(tile=k, category=key, index=idx,
+                                                        object_type=type(inst).__name__, object_repr=repr(inst)[:180],
+                                                        original=ex_generic, note='Generic serialization failure')
+                    tile[key] = serialized_instances
                 serializable_map[str(k)] = tile
 
             # Default save directory
@@ -1034,17 +1134,32 @@ class MapEditor:
             os.makedirs(default_dir, exist_ok=True)
             filepath = filedialog.asksaveasfilename(
                 initialdir=default_dir,
-                defaultextension=".json",
-                filetypes=[("JSON files", "*.json")]
+                defaultextension='.json',
+                filetypes=[('JSON files', '*.json')]
             )
             if filepath:
-                with open(filepath, "w") as f:
-                    json.dump(serializable_map, f, indent=4)
+                try:
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(serializable_map, f, indent=4)
+                except Exception as ex_write:
+                    raise MapSerializationError(note='Failed writing JSON to disk', original=ex_write)
                 self.current_map_filepath = filepath
                 self.update_map_label()
                 self.set_status(f"Map saved to {os.path.basename(filepath)}")
+        except MapSerializationError as mse:
+            detailed = str(mse)
+            self.set_status(f"Error saving map: {detailed}")
+            try:
+                messagebox.showerror('Save Error', detailed)
+            except Exception:
+                pass
         except Exception as e:
-            self.set_status(f"Error saving map: {e}")
+            # Fallback generic error (unexpected)
+            self.set_status(f"Error saving map: {type(e).__name__}: {e}")
+            try:
+                messagebox.showerror('Save Error', f"Unexpected error saving map:\n{type(e).__name__}: {e}")
+            except Exception:
+                pass
 
     def load_map(self, filepath=None):
         """
