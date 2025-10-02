@@ -91,37 +91,40 @@ class WallSwitch(Object):
     A wall switch that does something when pressed.
     """
 
-    def __init__(self, player, tile, params=None):
+    def __init__(self, player, tile, params=None, position: bool=False):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(name="Wall Depression", description=description,
                          idle_message="There's a small depression in the wall.",
                          discovery_message="a small depression in the wall!", player=player, tile=tile)
-        self.position = False
+        self.position: bool = position  # False is unpressed, True is pressed
         self.event_on = None
         self.event_off = None
         self.keywords.append('press')
+        self.keywords.append('touch')
+        self.keywords.append('push')
 
-        for thing in params:
-            # account for the events associated with this switch. Max of 2 events.
-            # The first event, in order of index, is tied to toggling the switch ON.
-            # The second is tied to an OFF toggle.
-            if thing[0] == '!':
-                param = thing.replace('!', '')
-                p_list = param.split(':')
-                repeat = False
-                event_type = p_list.pop(0)
-                for setting in p_list:
-                    if setting == 'r':
-                        repeat = True
-                        p_list.remove(setting)
-                        continue
-                # use adapter for backward compatible signature handling
-                event_cls = functions.seek_class(event_type, "story")
-                event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
-                if self.event_on is None:
-                    self.event_on = event
-                else:
-                    self.event_off = event
+        if params:
+            for thing in params:
+                # account for the events associated with this switch. Max of 2 events.
+                # The first event, in order of index, is tied to toggling the switch ON.
+                # The second is tied to an OFF toggle.
+                if thing[0] == '!':
+                    param = thing.replace('!', '')
+                    p_list = param.split(':')
+                    repeat = False
+                    event_type = p_list.pop(0)
+                    for setting in p_list:
+                        if setting == 'r':
+                            repeat = True
+                            p_list.remove(setting)
+                            continue
+                    # use adapter for backward compatible signature handling
+                    event_cls = functions.seek_class(event_type, "story")
+                    event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
+                    if self.event_on is None:
+                        self.event_on = event
+                    else:
+                        self.event_off = event
 
     def press(self):
         print("Jean hears a faint 'click.'")
@@ -134,6 +137,12 @@ class WallSwitch(Object):
             self.position = False
             if self.event_off is not None:
                 self.event_off.process()
+
+    def push(self):
+        self.press()
+
+    def touch(self):
+        self.press()
 
 
 class WallInscription(Object):
