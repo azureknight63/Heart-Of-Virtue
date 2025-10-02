@@ -407,6 +407,8 @@ class MapEditor:
         self.drag_select_mode = False
         self.drag_start_tile = None
         self.drag_current_tile = None
+        # Timestamp throttle for delete key status messages
+        self._last_delete_block_msg = 0.0
 
         # Add placeholders for coord label methods created later
 
@@ -475,7 +477,8 @@ class MapEditor:
         self.root.bind_all('<Control-X>', lambda e: self.cut_selection())
         self.root.bind_all('<Control-v>', lambda e: self.paste_clipboard())
         self.root.bind_all('<Control-V>', lambda e: self.paste_clipboard())
-        self.root.bind_all('<Delete>', lambda e: self.remove_selected_tile())
+        # Changed: route Delete key through guard handler so it is disabled while editor/property submenus are open.
+        self.root.bind_all('<Delete>', self._delete_hotkey_handler)
         # --- Control Buttons ---
         create_button("New Map", lambda: (self.ensure_add_mode_off(), self.create_new_map()), controls_frame)
         create_button("Load Map", lambda: (self.ensure_add_mode_off(), self.load_map()), controls_frame)
@@ -1627,12 +1630,41 @@ class MapEditor:
                 self.canvas.create_line(cx-half, cy-half, cx+half, cy+half, fill="red", width=2)
                 self.canvas.create_line(cx+half, cy-half, cx-half, cy+half, fill="red", width=2)
 
-    # --- Added missing mouse coordinate helpers ---
-    def _update_mouse_coordinates(self, event=None):
-        """Update the coordinate label based on current pointer location (canvas-relative)."""
-        if not getattr(self, 'coord_label', None):
+    # --- Delete hotkey guard helpers ---
+    def _collect_toplevel_windows(self):
+        """Return list of open editor/property dialogs (Toplevels) excluding root and tooltip windows."""
+        tops = []
+        try:
+            for widget in self.root.winfo_children():
+                try:
+                    if isinstance(widget, tk.Toplevel) and widget is not self.root and widget.winfo_exists():
+                        # Skip overrideredirect tooltips
+                        try:
+                            if widget.wm_overrideredirect():
+                                continue
+                        except Exception:
+                            pass
+                        tops.append(widget)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return tops
+    def _is_submenu_open(self) -> bool:
+        return len(self._collect_toplevel_windows()) > 0
+    def _delete_hotkey_handler(self, event=None):
+        import time as _t
+        if self._is_submenu_open():
+            now = _t.time()
+            if now - self._last_delete_block_msg > 1.5:
+                self.set_status("Delete disabled: close open editor/property dialogs to delete tiles.")
+                self._last_delete_block_msg = now
             return
-        if not self.canvas:
+        self.remove_selected_tile()
+
+    # Coordinate helper methods (restored)
+    def _update_mouse_coordinates(self, event=None):
+        if not getattr(self, 'coord_label', None) or not self.canvas:
             return
         try:
             px = self.root.winfo_pointerx()
@@ -1651,9 +1683,9 @@ class MapEditor:
             pass
 
     def _poll_mouse_position(self):
-        self._update_mouse_coordinates()
         try:
-            self.root.after(200, self._poll_mouse_position)
+            self._update_mouse_coordinates()
+            self.root.after(300, self._poll_mouse_position)
         except Exception:
             pass
     # --- end helpers ---
@@ -2588,7 +2620,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                 elif map_list:
                     pass
                 combo = ttk.Combobox(container, textvariable=combo_var, values=map_list, state='readonly')
-                combo.pack(fill='x', pady=(2,5))
+                combo.pack(fill='x', pady=(2, 5))
                 def _on_map_change(event=None):
                     # trigger coordinate refreshers then autosave
                     for r in coord_refreshers:
