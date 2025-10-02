@@ -94,7 +94,7 @@ class Ch01ChestRumblerBattle(Event):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
-        for thing in self.params:
+        for thing in self.tile.objects_here:
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
                     if len(thing.inventory) == 0:  # if the chest is empty, continue
