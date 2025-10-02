@@ -19,9 +19,9 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
+            "west",
             "south",
             "east",
-            "west",
             "southeast",
             "southwest"
         ],
@@ -81,12 +81,23 @@
             "west",
             "southwest"
         ],
-        "block_exit": [],
+        "block_exit": [
+            "southwest"
+        ],
         "events": [
             {
                 "__class__": "Ch01ChestRumblerBattle",
-                "__module__": "src.story.ch01",
-                "props": {}
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Chest_Rumbler_Battle",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
             }
         ],
         "items": [],
@@ -183,7 +194,7 @@
     },
     "(2, 2)": {
         "id": "tile_2_2",
-        "title": "StartingRoom",
+        "title": "JeanGameStartTile",
         "description": "Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large\n        rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source\n        of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The\n        darkness seems to extend endlessly in all directions.",
         "exits": [
             "northwest",
@@ -192,22 +203,21 @@
             "west",
             "south",
             "east",
-            "southeast",
             "southwest"
         ],
         "block_exit": [],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(3, 2)": {
         "id": "tile_3_2",
-        "title": "BlankTile",
-        "description": "The wall here feels warmer than the rest of the cavern. There are scuff marks on the floor that stop abruptly where the wall and floor meet. Jean can hear the muffled sound of flowing water",
+        "title": "FirstPuzzle",
+        "description": "The wall here feels warmer than the rest of the cavern. \nThere are scuff marks on the floor that stop abruptly where the wall and floor meet. \nJean can hear the muffled sound of flowing water.",
         "exits": [
             "north",
-            "south",
             "east",
             "west",
             "northwest",
@@ -220,7 +230,16 @@
             {
                 "__class__": "Ch01StartOpenWall",
                 "__module__": "src.story.ch01",
-                "props": {}
+                "props": {
+                    "name": "Ch01_Start_Open_Wall",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
             }
         ],
         "items": [],
@@ -228,35 +247,251 @@
         "objects": [
             {
                 "__class__": "WallSwitch",
-                "__module__": "src.objects",
-                "props": {}
+                "__module__": "objects",
+                "props": {
+                    "name": "Wall Depression",
+                    "description": "A small depression in the wall. You may be able to PRESS on it.",
+                    "idle_message": "There's a small depression in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a small depression in the wall!",
+                    "announce": "There's a small depression in the wall.",
+                    "keywords": [
+                        "press"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "position": false,
+                    "event_on": null,
+                    "event_off": null
+                }
             }
         ],
         "symbol": ""
     },
     "(4, 2)": {
         "id": "tile_4_2",
-        "title": "BlankTile",
-        "description": "A long rock ledge juts out from the opening to the west, crossing the chasm below and connecting to another rock wall to the east. The sunlight is blinding, with an open sky overhead. Far below, a river rushes beneath the ledge, spraying water in all directions as it crashes against the walls. The twittering of nearby birds can be heard. Banding to the east and west, a line of rock spires can be seen, including the two adjacent walls, all presumably connected by similar rock ledges. There's a warm breeze blowing mildly from the north",
+        "title": "RockLedgeWest",
+        "description": "A long rock ledge juts out from the opening to the west, crossing the chasm below and connecting to another rock wall to the east. The sunlight is blinding, with an open sky overhead. \nFar below, a river rushes beneath the ledge, spraying water in all directions as it crashes against the walls. \nThe twittering of nearby birds can be heard. Banding to the east and west, a line of rock spires can be seen, including the two adjacent walls, all presumably connected by similar rock ledges. \nThere's a warm breeze blowing mildly from the north.",
         "exits": [
-            "northwest",
-            "west",
             "east",
-            "southwest"
+            "west",
+            "northwest"
         ],
         "block_exit": [
-            "northwest",
-            "southwest"
+            "northwest"
         ],
         "events": [],
         "items": [],
-        "npcs": [],
-        "objects": []
+        "npcs": [
+            {
+                "__class__": "Mynx",
+                "__module__": "npc",
+                "props": {
+                    "keywords": [
+                        "talk",
+                        "pet",
+                        "play"
+                    ],
+                    "name": "Ferdie",
+                    "description": "An excitable mynx with a bit of a temper. Mostly harmless.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " flicks its tail.",
+                    "alert_message": "startles and chatters!",
+                    "maxhp": 30,
+                    "maxhp_base": 30,
+                    "hp": 30,
+                    "damage": 0,
+                    "damage_base": 0,
+                    "protection": 1,
+                    "protection_base": 1,
+                    "speed": 18,
+                    "speed_base": 18,
+                    "finesse": 16,
+                    "finesse_base": 16,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 20,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 50,
+                    "maxfatigue_base": 50,
+                    "endurance": 8,
+                    "endurance_base": 8,
+                    "strength": 4,
+                    "strength_base": 4,
+                    "charisma": 14,
+                    "charisma_base": 14,
+                    "intelligence": 12,
+                    "intelligence_base": 12,
+                    "faith": 6,
+                    "faith_base": 6,
+                    "fatigue": 50,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Ferdie flicks its tail.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Mynx>",
+                                "user": "<circular_ref:Mynx>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a curious mynx.",
+                    "friend": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        0
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    }
+                }
+            }
+        ],
+        "objects": [],
+        "symbol": ""
     },
     "(5, 2)": {
         "id": "tile_5_2",
-        "title": "BlankTile",
-        "description": "The rock ledge continues to the east and terminates as it reaches the wall. From this vantage point, large mountains can be seen to the northwest, covered in white clouds at their crowns",
+        "title": "RockLedgeEast",
+        "description": "The rock ledge continues to the east and terminates as it reaches the wall. \nFrom this vantage point, large mountains can be seen to the northwest, covered in white clouds at their crowns.",
         "exits": [
             "east",
             "west",
@@ -271,8 +506,17 @@
         "events": [
             {
                 "__class__": "Ch01BridgeWall",
-                "__module__": "src.story.ch01",
-                "props": {}
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Bridge_Wall",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
             }
         ],
         "items": [],
@@ -280,8 +524,25 @@
         "objects": [
             {
                 "__class__": "WallSwitch",
-                "__module__": "src.objects",
-                "props": {}
+                "__module__": "objects",
+                "props": {
+                    "name": "Wall Depression",
+                    "description": "A small depression in the wall. You may be able to PRESS on it.",
+                    "idle_message": "There's a small depression in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a small depression in the wall!",
+                    "announce": "There's a small depression in the wall.",
+                    "keywords": [
+                        "press"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "position": false,
+                    "event_on": null,
+                    "event_off": null
+                }
             }
         ],
         "symbol": ""
@@ -326,11 +587,10 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
+            "northwest",
             "north",
-            "east",
-            "west",
             "northeast",
-            "northwest"
+            "west"
         ],
         "block_exit": [],
         "events": [],
@@ -398,24 +658,6 @@
         "objects": [],
         "symbol": ""
     },
-    "(3, 3)": {
-        "id": "tile_3_3",
-        "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
-        "exits": [
-            "northwest",
-            "north",
-            "northeast",
-            "west"
-        ],
-        "block_exit": [
-            "northeast"
-        ],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": []
-    },
     "(6, 3)": {
         "id": "tile_6_3",
         "title": "EmptyCave",
@@ -423,9 +665,14 @@
         "exits": [
             "north",
             "south",
-            "east"
+            "east",
+            "northwest",
+            "southwest"
         ],
-        "block_exit": [],
+        "block_exit": [
+            "northwest",
+            "southwest"
+        ],
         "events": [],
         "items": [],
         "npcs": [],
@@ -437,9 +684,14 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "west"
+            "west",
+            "northwest",
+            "southwest"
         ],
-        "block_exit": [],
+        "block_exit": [
+            "northwest",
+            "southwest"
+        ],
         "events": [],
         "items": [
             {
@@ -479,9 +731,12 @@
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "south",
-            "east"
+            "east",
+            "northeast"
         ],
-        "block_exit": [],
+        "block_exit": [
+            "northeast"
+        ],
         "events": [],
         "items": [],
         "npcs": [],
@@ -494,9 +749,14 @@
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
             "north",
-            "west"
+            "west",
+            "northeast",
+            "southwest"
         ],
-        "block_exit": [],
+        "block_exit": [
+            "northeast",
+            "southwest"
+        ],
         "events": [],
         "items": [],
         "npcs": [],
@@ -508,9 +768,12 @@
         "title": "EmptyCave",
         "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "north"
+            "north",
+            "northeast"
         ],
-        "block_exit": [],
+        "block_exit": [
+            "northeast"
+        ],
         "events": [],
         "items": [
             {
