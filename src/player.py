@@ -1280,10 +1280,18 @@ he lets out a barely audible whisper:""", "red")
         self.universe.game_tick += 1
         self.location_x += dx
         self.location_y += dy
-        print(tile_exists(self.map, self.location_x, self.location_y).intro_text())
-        # if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
-        #         self.location_x, self.location_y).respawn_rate:
-        #     pass
+        tile = tile_exists(self.map, self.location_x, self.location_y)
+        if tile is None:
+            self.location_x -= dx
+            self.location_y -= dy
+            cprint("You cannot go that way.", "red")
+            time.sleep(1)
+        else:
+            print(tile.intro_text())
+            functions.print_items_in_room(tile)
+            functions.print_objects_in_room(tile)
+            functions.advise_player_actions(self, tile)
+
 
     def move_north(self):
         self.move(dx=0, dy=-1)
@@ -1329,6 +1337,10 @@ he lets out a barely audible whisper:""", "red")
             self.view(target)
         else:
             print(self.current_room.intro_text())
+            print()
+            functions.print_items_in_room(self.current_room)
+            functions.print_objects_in_room(self.current_room)
+            functions.advise_player_actions(self)
 
     def view(self, phrase=''):
         # print(phrase)
