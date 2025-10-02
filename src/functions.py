@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from src.items import Item
+    from src.player import Player
+    from src.tiles import MapTile
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -1132,3 +1134,18 @@ def stack_inv_items(target):
             except ValueError:
                 pass
 
+
+def advise_player_actions(player: "Player", room: "MapTile" = None):
+    if room is None:
+        room = player.current_room
+    print("\nChoose an action:\n")
+    available_actions = room.adjacent_moves()
+    move_separator = colored(' | ', "cyan")
+    available_moves = move_separator.join(colored(str(action), "green") for action in available_actions)
+    # Print actions in chunks of 5 for readability
+    actions_split = available_moves.split('|')
+    chunk_size = 5
+    for i in range(0, len(actions_split), chunk_size):
+        chunk = '|'.join(actions_split[i:i + chunk_size])
+        print(chunk)
+    print("\nFor a list of additional commands, enter 'c'.\n")
