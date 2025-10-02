@@ -921,9 +921,11 @@ class MapEditor:
             self.draw_exits(pos, tile)
             self.draw_symbol(pos, tile)
             self.draw_blocked(pos, tile)
-            # bring title on top of all other elements
+            # bring title and counts on top of all other elements
             title_tag = f"title_{pos[0]}_{pos[1]}"
+            counts_tag = f"counts_{pos[0]}_{pos[1]}"
             self.canvas.tag_raise(title_tag)
+            self.canvas.tag_raise(counts_tag)
         # Draw selection outlines for multi-select (including empty selected cells)
         for p in self.selected_tiles:
             if p not in self.map_data:  # empty cell
@@ -970,7 +972,7 @@ class MapEditor:
             self.canvas.create_text(left_x, center_y, text="!", fill="red", font=("Helvetica", ex_size, "bold"))
             self.canvas.create_text(right_x, center_y, text="!", fill="red", font=("Helvetica", ex_size, "bold"))
 
-        # Display truncated title
+        # Display truncated title at top
         title = self.map_data.get(pos, {}).get("title", self.map_data[pos]["id"])
         max_chars = max(int(self.tile_size / 6), 1)
         disp = title if len(title) <= max_chars else title[:max_chars-1] + "…"
@@ -984,6 +986,25 @@ class MapEditor:
             anchor="n",
             tags=(tag, title_tag)
         )
+
+        # NEW: Bottom-centered overlay label with counts of Items, NPCs, and Objects
+        items_cnt = len(tile.get("items", []))
+        npcs_cnt = len(tile.get("npcs", []))
+        objs_cnt = len(tile.get("objects", []))
+        counts_text = f"I:{items_cnt}, N:{npcs_cnt}, O:{objs_cnt}"
+        # dynamic font size scaled to tile size with a minimum for readability
+        font_size = max(6, int(self.tile_size * 0.08))
+        counts_tag = f"counts_{x}_{y}"
+        self.canvas.create_text(
+            (x1 + x2) / 2,
+            y2 - 2,  # slight padding from bottom edge
+            text=counts_text,
+            fill="white",
+            font=("Helvetica", font_size, "bold"),
+            anchor="s",  # anchor south so text sits just above given y
+            tags=(tag, counts_tag)
+        )
+
         # bind tooltip events to tile area
         self.canvas.tag_bind(tag, "<Enter>", lambda e, t=title: self.show_tooltip(e, t))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.hide_tooltip())
