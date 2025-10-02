@@ -17,11 +17,11 @@
     "(2, 1)": {
         "id": "tile_2_1",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "The darkness here is as oppressive as the silence. \nThe best Jean can do is feel his way around. \nEach step seems to get him no further than the last. \nThe air here is quite cold, sending shivers through Jean's body.",
         "exits": [
-            "west",
             "south",
             "east",
+            "west",
             "southeast",
             "southwest"
         ],
@@ -32,8 +32,23 @@
         "objects": [
             {
                 "__class__": "WallInscription",
-                "__module__": "src.objects",
-                "props": {}
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Words scratched into the wall. You think you can make out the words if you READ closely.",
+                    "idle_message": "There appears to be some words inscribed in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "some words etched into the wall!",
+                    "announce": "There appears to be some words inscribed in the wall.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "For I know the plans I have for you, declares the Lord, plans for welfare and not for evil, to give you a future and a hope."
+                }
             }
         ],
         "symbol": ""
@@ -87,7 +102,7 @@
         "events": [
             {
                 "__class__": "Ch01ChestRumblerBattle",
-                "__module__": "story.ch01",
+                "__module__": "src.story.ch01",
                 "props": {
                     "name": "Ch01_Chest_Rumbler_Battle",
                     "player": null,
@@ -247,7 +262,7 @@
         "objects": [
             {
                 "__class__": "WallSwitch",
-                "__module__": "objects",
+                "__module__": "src.objects",
                 "props": {
                     "name": "Wall Depression",
                     "description": "A small depression in the wall. You may be able to PRESS on it.",
@@ -287,7 +302,7 @@
         "npcs": [
             {
                 "__class__": "Mynx",
-                "__module__": "npc",
+                "__module__": "src.npc",
                 "props": {
                     "keywords": [
                         "talk",
@@ -406,7 +421,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcIdle",
-                            "__module__": "moves",
+                            "__module__": "src.moves",
                             "props": {
                                 "name": "Idle",
                                 "description": "What?",
@@ -506,7 +521,7 @@
         "events": [
             {
                 "__class__": "Ch01BridgeWall",
-                "__module__": "story.ch01",
+                "__module__": "src.story.ch01",
                 "props": {
                     "name": "Ch01_Bridge_Wall",
                     "player": null,
@@ -524,7 +539,7 @@
         "objects": [
             {
                 "__class__": "WallSwitch",
-                "__module__": "objects",
+                "__module__": "src.objects",
                 "props": {
                     "name": "Wall Depression",
                     "description": "A small depression in the wall. You may be able to PRESS on it.",
