@@ -2,7 +2,7 @@
     "(1, 1)": {
         "id": "tile_1_1",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.",
         "exits": [
             "south",
             "east",
@@ -17,7 +17,7 @@
     "(2, 1)": {
         "id": "tile_2_1",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. \nThe best Jean can do is feel his way around. \nEach step seems to get him no further than the last. \nThe air here is quite cold, sending shivers through Jean's body.",
+        "description": "Shallow scratches form wavering lines on one wall,\nlike someone traced a thought they dared not speak.\nA faint comfort seems to rest here, stubborn and warm.",
         "exits": [
             "south",
             "east",
@@ -56,7 +56,7 @@
     "(3, 1)": {
         "id": "tile_3_1",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "A dusting of pale grit marks where the ceiling once\ncrumbled. A thin draft threads through a hairline seam,\ncarrying distant echoes that never resolve to words.",
         "exits": [
             "west",
             "south",
@@ -74,7 +74,7 @@
     "(6, 1)": {
         "id": "tile_6_1",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Here the air sits heavier, as though the stone holds\nits breath. A muted thud vibrates once beneath the\nboots, then is gone, like a heart choosing silence.",
         "exits": [
             "south",
             "east",
@@ -91,7 +91,7 @@
     "(7, 1)": {
         "id": "tile_7_1",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "A squat chest rests in a quiet hollow. The stone\naround it bears faint drag scars and a thin crescent\nof splinters. The stillness hums, waiting to be broken.",
         "exits": [
             "west",
             "southwest"
@@ -193,7 +193,7 @@
     "(1, 2)": {
         "id": "tile_1_2",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Clusters of pale mushrooms bead faint dew that\nscatters the light into a ghostly spray. Their sweet\nearth smell softens the harder scents of gravel.",
         "exits": [
             "north",
             "northeast",
@@ -210,7 +210,7 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "JeanGameStartTile",
-        "description": "Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large\n        rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source\n        of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The\n        darkness seems to extend endlessly in all directions.",
+        "description": "A lone shaft of silver light spills through a narrow\ncrack above, crowning a flat stone like an altar. Dust\nmotes orbit lazily, as if choosing to attend your\nwaking. Beyond the glow the cavern swallows shape.",
         "exits": [
             "northwest",
             "north",
@@ -230,7 +230,7 @@
     "(3, 2)": {
         "id": "tile_3_2",
         "title": "FirstPuzzle",
-        "description": "The wall here feels warmer than the rest of the cavern. \nThere are scuff marks on the floor that stop abruptly where the wall and floor meet. \nJean can hear the muffled sound of flowing water.",
+        "description": "The stone here holds a muted warmth, a hush\npressing outward. Floor scuffs converge and stop at\na shallow depression. Behind the wall a slow drip\nkeeps an unhurried, hidden rhythm.",
         "exits": [
             "north",
             "east",
@@ -288,7 +288,7 @@
     "(4, 2)": {
         "id": "tile_4_2",
         "title": "RockLedgeWest",
-        "description": "A long rock ledge juts out from the opening to the west, crossing the chasm below and connecting to another rock wall to the east. The sunlight is blinding, with an open sky overhead. \nFar below, a river rushes beneath the ledge, spraying water in all directions as it crashes against the walls. \nThe twittering of nearby birds can be heard. Banding to the east and west, a line of rock spires can be seen, including the two adjacent walls, all presumably connected by similar rock ledges. \nThere's a warm breeze blowing mildly from the north.",
+        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind\nscatters it inland. A small creature watches, tail\nflicking to some private melody of the river.",
         "exits": [
             "east",
             "west",
@@ -506,7 +506,7 @@
     "(5, 2)": {
         "id": "tile_5_2",
         "title": "RockLedgeEast",
-        "description": "The rock ledge continues to the east and terminates as it reaches the wall. \nFrom this vantage point, large mountains can be seen to the northwest, covered in white clouds at their crowns.",
+        "description": "The ledge narrows and kisses a sealed wall seam.\nMountain silhouettes haze the distance, crowns lost\nin traveling mist. Wind funnels here and thins your\nbreath with a clean, high cold.",
         "exits": [
             "east",
             "west",
@@ -565,7 +565,7 @@
     "(6, 2)": {
         "id": "tile_6_2",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Condensation gathers in neat paired beads, then\ndrops in sync like practiced partners. The echo that\nreturns feels delayed, as though the dark is listening\nbefore answering back.",
         "exits": [
             "north",
             "northeast",
@@ -585,7 +585,7 @@
     "(1, 3)": {
         "id": "tile_1_3",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Loose grit shifts with a soft crunch that feels loud\nin the hush. A faint metallic tang lingers, maybe\nlichen, maybe rusted memory.",
         "exits": [
             "north",
             "northeast",
@@ -600,7 +600,7 @@
     "(2, 3)": {
         "id": "tile_2_3",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Small things lie abandoned where a traveler paused\nlong ago. Fine moss outlines the prints that time has\nblurred. Quiet patience gathers under each pebble.",
         "exits": [
             "northwest",
             "north",
@@ -676,7 +676,7 @@
     "(6, 3)": {
         "id": "tile_6_3",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Sound threads from several unseen corridors, weaving\na restless hush. The air cools at the ankles only, a\nsubtle drift hinting at deeper chambers.",
         "exits": [
             "north",
             "south",
@@ -697,7 +697,7 @@
     "(7, 3)": {
         "id": "tile_7_3",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "A shallow pocket terminates here. Damp stone curves\naround like a closing palm. The air is thick with\nthe scent of wet earth and something faintly floral,\nas if the cave itself were exhaling.",
         "exits": [
             "west",
             "northwest",
@@ -743,7 +743,7 @@
     "(5, 4)": {
         "id": "tile_5_4",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "A cool upward draft grazes the floor, carrying a\nmineral tang and the faint aftertaste of river spray.\nHalf circles scratched in dust suggest someone paced.",
         "exits": [
             "south",
             "east",
@@ -761,7 +761,7 @@
     "(6, 4)": {
         "id": "tile_6_4",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.",
         "exits": [
             "north",
             "west",
@@ -781,7 +781,7 @@
     "(5, 5)": {
         "id": "tile_5_5",
         "title": "EmptyCave",
-        "description": "The darkness here is as oppressive as the silence. The best Jean can do is feel his way around. Each step\n        seems to get him no further than the last. The air here is quite cold, sending shivers through Jean's body.",
+        "description": "The floor sags a little here, a shallow basin where\ncolder air pools. A faint, steady drip marks time\nwithout counting it. Somewhere distant, water moves\nwith a slow, persistent purpose.",
         "exits": [
             "north",
             "northeast"
