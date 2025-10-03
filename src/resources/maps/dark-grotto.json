@@ -210,7 +210,7 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "JeanGameStartTile",
-        "description": "A lone shaft of silver light spills through a narrow\ncrack above, crowning a flat stone like an altar. Dust\nmotes orbit lazily, as if choosing to attend your\nwaking. Beyond the glow the cavern swallows shape.",
+        "description": "This space is like dawn breaking over forgotten stone.\nA shaft of silver light pierces the darkness above, illuminating\nan altar of cold rock. Ancient dust swirls in the beam,\nwhispering of secrets buried in shadow. The cavern breathes\naround you—alive, patient, waiting for you to take your first\nstep into whatever lies beyond the light's reach.",
         "exits": [
             "northwest",
             "north",
@@ -614,11 +614,11 @@
                 "__class__": "Gold",
                 "__module__": "src.items",
                 "props": {
-                    "amt": 1,
+                    "amt": 27,
                     "maintype": "Gold",
                     "name": "Gold",
-                    "description": "A small pouch containing 1 gold pieces.",
-                    "value": 1,
+                    "description": "A small pouch containing 27 gold pieces.",
+                    "value": 27,
                     "type": "Currency",
                     "subtype": "Gold",
                     "hidden": false,
@@ -633,7 +633,7 @@
                     "add_resistance": {},
                     "add_status_resistance": {},
                     "gives_exp": false,
-                    "count": 8
+                    "count": 27
                 }
             },
             {
@@ -716,7 +716,7 @@
                     "amt": 1,
                     "maintype": "Gold",
                     "name": "Gold",
-                    "description": "A small pouch containing 1 gold pieces.",
+                    "description": "A small pouch containing 1 gold piece.",
                     "value": 1,
                     "type": "Currency",
                     "subtype": "Gold",
@@ -743,7 +743,7 @@
     "(5, 4)": {
         "id": "tile_5_4",
         "title": "EmptyCave",
-        "description": "A cool upward draft grazes the floor, carrying a\nmineral tang and the faint aftertaste of river spray.\nHalf circles scratched in dust suggest someone paced.",
+        "description": "A cool upward draft grazes the floor, carrying a\nmineral tang and the faint aftertaste of river spray.\nHalf circles scratched in dust suggest boots pacing impatiently.",
         "exits": [
             "south",
             "east",
@@ -828,11 +828,11 @@
                 "__class__": "Gold",
                 "__module__": "src.items",
                 "props": {
-                    "amt": 1,
+                    "amt": 13,
                     "maintype": "Gold",
                     "name": "Gold",
-                    "description": "A small pouch containing 1 gold pieces.",
-                    "value": 1,
+                    "description": "A small pouch containing 13 gold pieces.",
+                    "value": 13,
                     "type": "Currency",
                     "subtype": "Gold",
                     "hidden": false,
@@ -847,7 +847,7 @@
                     "add_resistance": {},
                     "add_status_resistance": {},
                     "gives_exp": false,
-                    "count": 10
+                    "count": 13
                 }
             }
         ],
