@@ -92,7 +92,7 @@ class Item:
 
     def __init__(self, name: str, description: str, value: Union[int, float], maintype: str, subtype: str,
                  discovery_message: str, hidden: bool = False, hide_factor: Union[int, float] = 0,
-                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False) -> None:
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.name = name
         self.description = description
         self.value = value
@@ -115,6 +115,8 @@ class Item:
                 self.interactions.append("unequip")
             else:
                 self.interactions.append("equip")
+        if enchantment_level > 0:
+            functions.add_random_enchantments(self, enchantment_level)
 
     def __str__(self) -> str:
         return "{}\n=====\n{}\nValue: {}\n".format(self.name, self.description, self.value)
@@ -242,9 +244,11 @@ class Weapon(Item):
     wpnrange: Tuple[int, int]
     twohand: bool
 
-    def __init__(self, name: str, description: str, value: Union[int, float], damage: Union[int, float], isequipped: bool, str_req: int,
-                 fin_req: int, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str, wpnrange: Tuple[int, int] = (0, 5),
-                 discovery_message: str = 'a kind of weapon.', twohand: bool = False, skills: Optional[Dict[Any, int]] = None, merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], damage: Union[int, float],
+                 isequipped: bool, str_req: int, fin_req: int, str_mod: Union[int, float], fin_mod: Union[int, float],
+                 weight: Union[int, float], maintype: str, subtype: str, wpnrange: Tuple[int, int] = (0, 5),
+                 discovery_message: str = 'a kind of weapon.', twohand: bool = False,
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -255,7 +259,9 @@ class Weapon(Item):
         self.maintype = maintype
         self.subtype = subtype
         self.wpnrange = wpnrange  # tuple containing the min and max range for the weapon
-        super().__init__(name, description, value, maintype, subtype, discovery_message, skills=skills, merchandise=merchandise)
+        super().__init__(name, description, value, maintype, subtype,
+                         discovery_message, skills=skills, merchandise=merchandise,
+                         enchantment_level=enchantment_level)
         self.announce = "There's a {} here.".format(self.name)
         self.twohand = twohand
         self.gives_exp = True
@@ -283,8 +289,10 @@ class Armor(Item):
     maintype: str
     subtype: str
 
-    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
-                 discovery_message: str = 'a piece of armor.', merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
+                 isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a piece of armor.',
+                 merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -293,7 +301,7 @@ class Armor(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -313,8 +321,10 @@ class Boots(Item):
     maintype: str
     subtype: str
 
-    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
-                 discovery_message: str = 'a pair of footgear.', merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
+                 isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a pair of footgear.',
+                 merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -323,7 +333,7 @@ class Boots(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -338,11 +348,12 @@ class ClothBoots(Boots):
     """Very light cloth boots. Minimal protection and very low weight."""
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int=0) -> None:
         super().__init__(name="Cloth Boots",
                          description="Simple stitched cloth boots. Keeps feet warm but offers almost no protection.",
                          isequipped=False, value=3,
-                         protection=1, str_req=1, str_mod=0.03, weight=0.6, maintype="Boots", subtype="Light Boots", merchandise=merchandise)
+                         protection=1, str_req=1, str_mod=0.03, weight=0.6, maintype="Boots",
+                         subtype="Light Boots", merchandise=merchandise, enchantment_level=enchantment_level)
         # slight finesse benefit for light footwear
         self.add_fin: int = 1
 
@@ -351,11 +362,12 @@ class PaddedBoots(Boots):
     """Padded boots with modest cushioning for comfort and minor protection."""
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int=0) -> None:
         super().__init__(name="Padded Boots",
                          description="Boots lined with padding to absorb small impacts and protect the feet.",
                          isequipped=False, value=12,
-                         protection=2, str_req=1, str_mod=0.08, weight=1.0, maintype="Boots", subtype="Light Boots", merchandise=merchandise)
+                         protection=2, str_req=1, str_mod=0.08, weight=1.0, maintype="Boots", subtype="Light Boots",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -363,11 +375,12 @@ class LeatherBoots(Boots):
     """Treated leather boots that balance protection and mobility."""
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Leather Boots",
                          description="Durable leather boots treated to resist wear and offer solid protection without much bulk.",
                          isequipped=False, value=45,
-                         protection=3, str_req=3, str_mod=0.15, weight=1.8, maintype="Boots", subtype="Light Boots", merchandise=merchandise)
+                         protection=3, str_req=3, str_mod=0.15, weight=1.8, maintype="Boots", subtype="Light Boots",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -375,33 +388,36 @@ class StuddedBoots(Boots):
     """Leather boots reinforced with metal studs; tougher while still usable for skirmishers."""
     level: int = 2
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Studded Boots",
                          description="Leather boots reinforced with small metal studs. Good protection without excessive weight.",
                          isequipped=False, value=110,
-                         protection=5, str_req=6, str_mod=0.3, weight=2.6, maintype="Boots", subtype="Medium Boots", merchandise=merchandise)
+                         protection=5, str_req=6, str_mod=0.3, weight=2.6, maintype="Boots", subtype="Medium Boots",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class ChainSabaton(Boots):
     """Chain sabatons (mail footwear) providing solid protection with flexible rings."""
     level: int = 3
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Chain Sabatons",
                          description="Footwear woven of small interlinked rings. Offers good protection for skirmishers and infantry.",
                          isequipped=False, value=230,
-                         protection=8, str_req=9, str_mod=0.5, weight=5.0, maintype="Boots", subtype="Medium Boots", merchandise=merchandise)
+                         protection=8, str_req=9, str_mod=0.5, weight=5.0, maintype="Boots", subtype="Medium Boots",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class IronGreaves(Boots):
     """Heavy iron greaves/boots. Bulky and protective for frontline combatants."""
     level: int = 4
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Iron Greaves",
                          description="Heavy iron footwear that provides strong protection but reduces nimbleness.",
                          isequipped=False, value=420,
-                         protection=12, str_req=13, str_mod=0.9, weight=8.0, maintype="Boots", subtype="Heavy Boots", merchandise=merchandise)
+                         protection=12, str_req=13, str_mod=0.9, weight=8.0, maintype="Boots", subtype="Heavy Boots",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # heavy boots do not grant finesse bonus
 
 
@@ -414,8 +430,10 @@ class Helm(Item):
     maintype: str
     subtype: str
 
-    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
-                 discovery_message: str = 'a kind of head covering.', merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
+                 isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a kind of head covering.',
+                 merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -424,7 +442,7 @@ class Helm(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -444,8 +462,10 @@ class Gloves(Item):
     maintype: str
     subtype: str
 
-    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
-                 discovery_message: str = 'a pair of gloves.', merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
+                 isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a pair of gloves.',
+                 merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -454,7 +474,7 @@ class Gloves(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -470,11 +490,12 @@ class ClothMitts(Gloves):
     """Very light cloth mitts. Minimal protection but do not hinder dexterity."""
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Cloth Mitts",
                          description="Simple cloth mitts stitched from scraps. They keep hands warm but offer almost no protection.",
                          isequipped=False, value=2,
-                         protection=0, str_req=1, str_mod=0.02, weight=0.2, maintype="Gloves", subtype="Light Gloves", merchandise=merchandise)
+                         protection=0, str_req=1, str_mod=0.02, weight=0.2, maintype="Gloves", subtype="Light Gloves",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # tiny finesse bonus
         self.add_fin: int = 1
 
@@ -483,11 +504,12 @@ class PaddedGloves(Gloves):
     """Padded gloves with modest cushioning for the hands."""
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Padded Gloves",
                          description="Gloves stuffed with quilted padding. Comfortable and inexpensive protection for hands.",
                          isequipped=False, value=8,
-                         protection=1, str_req=1, str_mod=0.05, weight=0.5, maintype="Gloves", subtype="Light Gloves", merchandise=merchandise)
+                         protection=1, str_req=1, str_mod=0.05, weight=0.5, maintype="Gloves", subtype="Light Gloves",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -495,11 +517,12 @@ class LeatherGloves(Gloves):
     """Hardened leather gloves providing a good balance of protection and dexterity."""
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Leather Gloves",
                          description="Treated leather gloves that protect the hands without overly restricting movement.",
                          isequipped=False, value=35,
-                         protection=2, str_req=3, str_mod=0.15, weight=0.8, maintype="Gloves", subtype="Light Gloves", merchandise=merchandise)
+                         protection=2, str_req=3, str_mod=0.15, weight=0.8, maintype="Gloves", subtype="Light Gloves",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -507,33 +530,36 @@ class StuddedGloves(Gloves):
     """Leather gloves reinforced with studs for added protection."""
     level: int = 2
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Studded Gloves",
                          description="Gloves of leather with small metal studs riveted into the surface. Tough and practical.",
                          isequipped=False, value=90,
-                         protection=3, str_req=6, str_mod=0.3, weight=1.4, maintype="Gloves", subtype="Medium Gloves", merchandise=merchandise)
+                         protection=3, str_req=6, str_mod=0.3, weight=1.4, maintype="Gloves", subtype="Medium Gloves",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class ChainGauntlets(Gloves):
     """Interlinked ring gauntlets offering solid protection with reasonable flexibility."""
     level: int = 3
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Chain Gauntlets",
                          description="Gauntlets woven from small metal rings. Good protection with moderate weight.",
                          isequipped=False, value=180,
-                         protection=5, str_req=9, str_mod=0.5, weight=2.5, maintype="Gloves", subtype="Medium Gloves", merchandise=merchandise)
+                         protection=5, str_req=9, str_mod=0.5, weight=2.5, maintype="Gloves", subtype="Medium Gloves",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class IronGauntlets(Gloves):
     """Solid iron gauntlets. Heavy but protective for frontline fighters."""
     level: int = 4
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Iron Gauntlets",
                          description="Heavy iron gauntlets that provide strong protection at the cost of dexterity.",
                          isequipped=False, value=360,
-                         protection=7, str_req=14, str_mod=0.85, weight=4.0, maintype="Gloves", subtype="Heavy Gloves", merchandise=merchandise)
+                         protection=7, str_req=14, str_mod=0.85, weight=4.0, maintype="Gloves", subtype="Heavy Gloves",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # heavy gloves do not grant finesse bonus
 
 
@@ -546,8 +572,10 @@ class Accessory(Item):
     maintype: str
     subtype: str
 
-    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float], isequipped: bool, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
-                 discovery_message: str = 'a small trinket.', merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
+                 isequipped: bool, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a small trinket.',
+                 merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.protection = protection
         self.str_mod = str_mod
         self.fin_mod = fin_mod
@@ -555,7 +583,8 @@ class Accessory(Item):
         self.isequipped = isequipped
         self.maintype = maintype
         self.subtype = subtype
-        super().__init__(name, description, value, maintype, subtype, discovery_message, merchandise=merchandise)
+        super().__init__(name, description, value, maintype, subtype, discovery_message, merchandise=merchandise,
+                         enchantment_level=enchantment_level)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -572,8 +601,9 @@ class Consumable(Item):
     subtype: str
     count: int
 
-    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float], maintype: str, subtype: str,
-                 discovery_message: str = 'a useful item.', count: int = 1, merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a useful item.', count: int = 1,
+                 merchandise: bool = False, enchantment_level: int = 0) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
@@ -581,7 +611,7 @@ class Consumable(Item):
         self.interactions = ["use", "drop"]
         self.stack_key = name
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
 
     def stack_grammar(self) -> None:
         """Checks the stack count for the item and changes the verbiage accordingly"""
@@ -602,7 +632,9 @@ class Special(Item):
     subtype: str
     count: int
 
-    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float], maintype: str, subtype: str, discovery_message: str = 'a strange object.', merchandise: bool = False) -> None:
+    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a strange object.',
+                 merchandise: bool = False) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
@@ -662,80 +694,81 @@ class Fists(Weapon):  # equipped automatically when Jean has no other weapon equ
 
 
 class Rock(Weapon):
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Rock",
                          description="A fist-sized rock, suitable for bludgeoning.",
                          isequipped=False, value=0,
                          damage=1, str_req=1, fin_req=1, str_mod=3.00, fin_mod=0.50, weight=2.0,
-                         maintype="Weapon", subtype="Bludgeon", merchandise=merchandise)
+                         maintype="Weapon", subtype="Bludgeon", merchandise=merchandise,
+                         enchantment_level=enchantment_level)
 
 
 class RustedIronMace(Weapon):
     level: int = 0
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Rusted Iron Mace",
                          description="A small mace with some rust around the spikes. Heavy and slow, "
                                      "but packs a decent punch.",
                          isequipped=False, value=10,
                          damage=15, str_req=10, fin_req=5, str_mod=2.25, fin_mod=0.5, weight=5.0, maintype="Weapon",
-                         subtype="Bludgeon", merchandise=merchandise)
+                         subtype="Bludgeon", merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Mace(Weapon):
     level: int = 1
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Mace",
                          description="A small mace. Heavy and slow, but packs a decent punch.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=5, str_mod=2, fin_mod=0.5, weight=5.0, maintype="Weapon",
-                         subtype="Bludgeon", merchandise=merchandise)
+                         subtype="Bludgeon", merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class RustedDagger(Weapon):
     level: int = 0
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Rusted Dagger",
                          description="A small dagger with some rust. Somewhat more dangerous than a rock.",
                          isequipped=False, value=10,
                          damage=10, str_req=1, fin_req=12, str_mod=0.25, fin_mod=3, weight=1, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(0, 3), merchandise=merchandise)
+                         subtype="Dagger", wpnrange=(0, 3), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Dagger(Weapon):
     level: int = 1
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Dagger",
                          description="A rogue's best friend.",
                          isequipped=False, value=100,
                          damage=12, str_req=1, fin_req=12, str_mod=0.25, fin_mod=3, weight=1, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(0, 3), merchandise=merchandise)
+                         subtype="Dagger", wpnrange=(0, 3), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Baselard(Weapon):
     level: int = 1
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Baselard",
                          description="A small, sharp dagger with an 'H'-shaped hilt.",
                          isequipped=False, value=100,
                          damage=18, str_req=1, fin_req=12, str_mod=0.2, fin_mod=2.8, weight=1.2, maintype="Weapon",
-                         subtype="Dagger", wpnrange=(0, 3), merchandise=merchandise)
+                         subtype="Dagger", wpnrange=(0, 3), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Shortsword(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Shortsword",
                          description="A double-edged shortsword. A reliable companion in any fight.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=10, str_mod=0.75, fin_mod=1.25, weight=2, maintype="Weapon",
-                         subtype="Sword", wpnrange=(0, 4), merchandise=merchandise)
+                         subtype="Sword", wpnrange=(0, 4), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Epee(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Epee",
                          description="A short dueling sword. Frequently used ceremonially, "
                                      "it is nonetheless effective in combat if wielded properly.\n"
@@ -743,91 +776,92 @@ class Epee(Weapon):
                                      "it is most effective with thrusting attacks or to parry an opponent.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=20, str_mod=0.5, fin_mod=2, weight=3, maintype="Weapon",
-                         subtype="Sword", wpnrange=(0, 5), merchandise=merchandise)
+                         subtype="Sword", wpnrange=(0, 5), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Battleaxe(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Battleaxe",
                          description="A crescent blade affixed to a reinforced wooden haft. "
                                      "It is light and easy to swing.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=5, str_mod=1, fin_mod=0.5, weight=2, maintype="Weapon",
-                         subtype="Axe", wpnrange=(0, 5), merchandise=merchandise)
+                         subtype="Axe", wpnrange=(0, 5), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Pickaxe(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Pickaxe",
                          description="A hardy weapon that can also be used to mine for rare metals, "
                                      "if the user is so-inclined. \n"
                                      "Difficult to wield at very close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=2.5, fin_mod=0.1, weight=3, maintype="Weapon",
-                         subtype="Pick", wpnrange=(1, 5), merchandise=merchandise)
+                         subtype="Pick", wpnrange=(1, 5), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Scythe(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Scythe",
                          description="An unusual weapon that, despite its intimidating appearance, "
                                      "is particularly difficult to wield. Requires two hands.",
                          isequipped=False, value=100,
                          damage=5, str_req=1, fin_req=1, str_mod=2, fin_mod=2, weight=7, maintype="Weapon",
-                         subtype="Scythe", wpnrange=(1, 5), twohand=True, merchandise=merchandise)
+                         subtype="Scythe", wpnrange=(1, 5), twohand=True,
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Spear(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Spear",
                          description="A weapon of simple design and great effectiveness. \n"
                                      "Has a longer reach than most melee weapons but is not great at close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=2, fin_mod=0.5, weight=3, maintype="Weapon",
-                         subtype="Spear", wpnrange=(3, 8), merchandise=merchandise)
+                         subtype="Spear", wpnrange=(3, 8), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Halberd(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Halberd",
                          description="Essentially an axe mounted on top of a large pole. \n"
                                      "Has a longer reach than most melee weapons but is not great at close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=1.75, fin_mod=1, weight=4, maintype="Weapon",
-                         subtype="Spear", wpnrange=(3, 8), merchandise=merchandise)
+                         subtype="Spear", wpnrange=(3, 8), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Hammer(Weapon):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Hammer",
                          description="Great for smashing more heavily-armored foes.",
                          isequipped=False, value=100,
                          damage=25, str_req=10, fin_req=1, str_mod=2.5, fin_mod=0.1, weight=3, maintype="Weapon",
-                         subtype="Bludgeon", merchandise=merchandise)
+                         subtype="Bludgeon", merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class Shortbow(Weapon):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Shortbow",
                          description="A reliable missile weapon. Useful as a weak bludgeon at close range.\n"
                                      "Requires two hands.",
                          isequipped=False, value=50,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=1.5, maintype="Weapon",
-                         subtype="Bow", merchandise=merchandise)
+                         subtype="Bow", merchandise=merchandise, enchantment_level=enchantment_level)
         self.range_base: Union[int, float] = 20
         self.range_decay: Union[int, float] = 0.05
 
@@ -835,14 +869,14 @@ class Shortbow(Weapon):
 class Longbow(Weapon):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Longbow",
                          description="Specialized bow for shooting long distances. Useful as a weak bludgeon at "
                                      "close range.\n"
                                      "Requires two hands.",
                          isequipped=False, value=100,
                          damage=8, str_req=5, fin_req=5, str_mod=1, fin_mod=1, weight=2, maintype="Weapon",
-                         subtype="Bow", merchandise=merchandise)
+                         subtype="Bow", merchandise=merchandise, enchantment_level=enchantment_level)
         self.range_base: Union[int, float] = 25
         self.range_decay: Union[int, float] = 0.04
 
@@ -850,14 +884,14 @@ class Longbow(Weapon):
 class Crossbow(Weapon):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Crossbow",
                          description="Heavier than a standard bow but able to fire more rapidly. "
                                      "It fires bolts instead of arrows.\n"
                                      "Requires two hands.",
                          isequipped=False, value=100,
                          damage=20, str_req=5, fin_req=5, str_mod=1.5, fin_mod=1, weight=4, maintype="Weapon",
-                         subtype="Crossbow", merchandise=merchandise)
+                         subtype="Crossbow", merchandise=merchandise, enchantment_level=enchantment_level)
         self.range_base: Union[int, float] = 15
         self.range_decay: Union[int, float] = 0.06
 
@@ -865,13 +899,13 @@ class Crossbow(Weapon):
 class Pole(Weapon):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Pole",
                          description="A large pole, great for delivering blows from a distance. \n"
                                      "Has a longer reach than most melee weapons but is not great at close range.",
                          isequipped=False, value=100,
                          damage=25, str_req=5, fin_req=5, str_mod=1.25, fin_mod=1.25, weight=2, maintype="Weapon",
-                         subtype="Polearm", wpnrange=(2, 7), merchandise=merchandise)
+                         subtype="Polearm", wpnrange=(2, 7), merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 # ---------------------------------------------------------------------------
@@ -880,23 +914,25 @@ class Pole(Weapon):
 class TatteredCloth(Armor):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Tattered Cloth",
                          description="Shamefully tattered cloth wrappings. \n"
                                      "Lightweight, but offering little in protection.",
                          isequipped=False, value=0,
-                         protection=1, str_req=1, str_mod=0.1, weight=0.5, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+                         protection=1, str_req=1, str_mod=0.1, weight=0.5, maintype="Armor", subtype="Light Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class PaddedJerkin(Armor):
     """Very light, padded jerkin. Comfortable and cheap; minimal protection."""
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Padded Jerkin",
                          description="A jerkin sewn from layers of fabric and padding. Lightweight and inexpensive.",
                          isequipped=False, value=10,
-                         protection=2, str_req=1, str_mod=0.1, weight=1.0, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+                         protection=2, str_req=1, str_mod=0.1, weight=1.0, maintype="Armor", subtype="Light Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -904,11 +940,12 @@ class QuiltedVest(Armor):
     """Quilted vest offering a balance of comfort and light protection."""
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Quilted Vest",
                          description="A vest sewn with quilted padding. Good for scouts and caravan guards.",
                          isequipped=False, value=35,
-                         protection=3, str_req=3, str_mod=0.15, weight=1.8, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+                         protection=3, str_req=3, str_mod=0.15, weight=1.8, maintype="Armor", subtype="Light Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -916,11 +953,12 @@ class LeatherArmor(Armor):
     """Hardened leather armor. A reliable light armor choice for early adventurers."""
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Leather Armor",
                          description="Thick leather treated to resist wear and improve protection.",
                          isequipped=False, value=50,
-                         protection=4, str_req=4, str_mod=0.2, weight=2.5, maintype="Armor", subtype="Light Armor", merchandise=merchandise)
+                         protection=4, str_req=4, str_mod=0.2, weight=2.5, maintype="Armor", subtype="Light Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -928,33 +966,36 @@ class StuddedLeather(Armor):
     """Leather armor reinforced with metal studs. Good protection for modest weight."""
     level: int = 2
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Studded Leather",
                          description="A leather cuirass reinforced with small metal studs. Popular with rangers and skirmishers.",
                          isequipped=False, value=120,
-                         protection=6, str_req=6, str_mod=0.3, weight=3.0, maintype="Armor", subtype="Medium Armor", merchandise=merchandise)
+                         protection=6, str_req=6, str_mod=0.3, weight=3.0, maintype="Armor", subtype="Medium Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class ChainmailShirt(Armor):
     """A short chain shirt providing solid protection without the bulk of full mail."""
     level: int = 3
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Chainmail Shirt",
                          description="A shirt of interlocking metal rings. Good defense against slashes.",
                          isequipped=False, value=250,
-                         protection=9, str_req=10, str_mod=0.5, weight=7.0, maintype="Armor", subtype="Medium Armor", merchandise=merchandise)
+                         protection=9, str_req=10, str_mod=0.5, weight=7.0, maintype="Armor", subtype="Medium Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class IronCuirass(Armor):
     """A heavy iron cuirass offering dependable mid-tier protection."""
     level: int = 4
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Iron Cuirass",
                          description="A solid iron breastplate. Heavy, but provides strong protection for front-line fighters.",
                          isequipped=False, value=500,
-                         protection=14, str_req=14, str_mod=0.9, weight=12.0, maintype="Armor", subtype="Heavy Armor", merchandise=merchandise)
+                         protection=14, str_req=14, str_mod=0.9, weight=12.0, maintype="Armor", subtype="Heavy Armor",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 # ---------------------------------------------------------------------------
@@ -963,12 +1004,13 @@ class IronCuirass(Armor):
 class ClothHood(Helm):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Cloth Hood",
                          description="Stained cloth hood. "
                                      "Enough to conceal your face, but that's about it.",
                          isequipped=False, value=0,
-                         protection=0, str_req=1, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+                         protection=0, str_req=1, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -978,11 +1020,12 @@ class LeatherCap(Helm):
     """
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Leather Cap",
                          description="A simple leather cap offering modest protection without much weight.",
                          isequipped=False, value=20,
-                         protection=2, str_req=3, str_mod=0.2, weight=0.8, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+                         protection=2, str_req=3, str_mod=0.2, weight=0.8, maintype="Helm", subtype="Light Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # Small finesse bonus for better handling
         self.add_fin: int = 1
 
@@ -991,11 +1034,12 @@ class PaddedCap(Helm):
     """Very light padded headgear. Cheap and comfortable, minimal protection."""
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Padded Cap",
                          description="A cheap cap stuffed with padding. Comfortable but offers only trivial protection.",
                          isequipped=False, value=5,
-                         protection=1, str_req=1, str_mod=0.05, weight=0.6, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+                         protection=1, str_req=1, str_mod=0.05, weight=0.6, maintype="Helm", subtype="Light Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 1
 
 
@@ -1003,11 +1047,12 @@ class HunterHood(Helm):
     """A hood favored by scouts and hunters. Lightweight with small bonuses to finesse."""
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Hunter's Hood",
                          description="A muted hood designed to muffle sound and blend into foliage. Lightweight and practical.",
                          isequipped=False, value=15,
-                         protection=1, str_req=2, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+                         protection=1, str_req=2, str_mod=0.1, weight=0.5, maintype="Helm", subtype="Light Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         self.add_fin: int = 2
 
 
@@ -1015,11 +1060,12 @@ class StuddedSkullcap(Helm):
     """A skullcap reinforced with small metal studs for added protection while remaining compact."""
     level: int = 2
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Studded Skullcap",
                          description="A close-fitting cap reinforced with metal studs. Offers respectable protection for its size.",
                          isequipped=False, value=60,
-                         protection=3, str_req=5, str_mod=0.25, weight=1.4, maintype="Helm", subtype="Light Helm", merchandise=merchandise)
+                         protection=3, str_req=5, str_mod=0.25, weight=1.4, maintype="Helm", subtype="Light Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # Slight balance to handling
         self.add_fin: int = 1
 
@@ -1028,11 +1074,12 @@ class ChainCoif(Helm):
     """Mail coif that protects the head and neck. Heavier, but provides solid defense."""
     level: int = 3
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Chain Coif",
                          description="A hood of interlinked metal rings. Offers good protection against slashes at modest weight.",
                          isequipped=False, value=120,
-                         protection=5, str_req=8, str_mod=0.5, weight=2.5, maintype="Helm", subtype="Medium Helm", merchandise=merchandise)
+                         protection=5, str_req=8, str_mod=0.5, weight=2.5, maintype="Helm", subtype="Medium Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # Heavier headgear; small strength tradeoff handled by str_mod
 
 
@@ -1040,11 +1087,12 @@ class IronHelm(Helm):
     """A simple iron helm. Bulky and sturdy; suitable as dependable mid-tier protection."""
     level: int = 4
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Iron Helm",
                          description="A solid iron helm. Heavy, but provides dependable protection to the wearer.",
                          isequipped=False, value=220,
-                         protection=7, str_req=12, str_mod=0.8, weight=4.0, maintype="Helm", subtype="Heavy Helm", merchandise=merchandise)
+                         protection=7, str_req=12, str_mod=0.8, weight=4.0, maintype="Helm", subtype="Heavy Helm",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
         # Heavy helms may reduce finesse slightly; provide no finesse bonus
 
 # ---------------------------------------------------------------------------
@@ -1058,7 +1106,8 @@ class DullMedallion(Accessory):
                                      "land upon it. \n"
                                      "It may have been a family heirloom or a memento of a lost love.",
                          isequipped=False, value=25,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.5, maintype="Accessory", subtype="Necklace", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.5, maintype="Accessory", subtype="Necklace",
+                         merchandise=merchandise)
 
     def on_equip(self, player: 'Player') -> None:
         cprint("Jean feels a slight chill as the medallion's chain settles on his neck.", "green")
@@ -1084,12 +1133,13 @@ class DullMedallion(Accessory):
 class GoldRing(Accessory):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Gold Ring",
                          description="A shiny gold ring. \n"
                                      "Typically a sign of marital vows, though it may also be worn to exhibit wealth.",
                          isequipped=False, value=200,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class JeanWeddingBand(Accessory):
@@ -1125,56 +1175,61 @@ class JeanWeddingBand(Accessory):
 class SilverRing(Accessory):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Silver Ring",
                          description="A shiny silver ring. \n"
                                      "A small bauble favored by people of typically lower class.",
                          isequipped=False, value=50,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Ring",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class GoldChain(Accessory):
     level: int = 2
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Gold Chain",
                          description="A shiny gold chain. \n"
                                      "Worn to impress. An excellent gift for a lady.",
                          isequipped=False, value=300,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Necklace", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Necklace",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class SilverChain(Accessory):
     level: int = 1
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Silver Chain",
                          description="A shiny silver chain. \n"
                                      "An excellent gift for a lady who has simple tastes.",
                          isequipped=False, value=100,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Necklace", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Necklace",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class GoldBracelet(Accessory):
     level: int = 2
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Gold Bracelet",
                          description="A shiny gold bracelet. \n"
                                      "Everyone knows that you need to accessorize in order to make an impression.",
                          isequipped=False, value=300,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class SilverBracelet(Accessory):
     level: int = 0
 
-    def __init__(self, merchandise: bool = False) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Silver Bracelet",
                          description="A shiny silver bracelet. \n"
                                      "More of an eccentricity than anything else.",
                          isequipped=False, value=100,
-                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet", merchandise=merchandise)
+                         protection=0, str_mod=0, fin_mod=0, weight=0.1, maintype="Accessory", subtype="Bracelet",
+                         merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 # ---------------------------------------------------------------------------
@@ -1364,9 +1419,10 @@ class Arrow(Consumable):  # master class for arrows.
     effects: Optional[List[Any]]
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float], power: Union[int, float], range_base_modifier: Union[int, float], range_decay_modifier: Union[int, float], sturdiness: Union[int, float],
-                 helptext: str, effects: Optional[List[Any]], count: int = 1, merchandise: bool = False) -> None:
+                 helptext: str, effects: Optional[List[Any]], count: int = 1, merchandise: bool = False,
+                 enchantment_level: int = 0) -> None:
         super().__init__(name=name, description=description, value=value, weight=weight, maintype="Consumable",
-                         subtype="Arrow", count=count, merchandise=merchandise)
+                         subtype="Arrow", count=count, merchandise=merchandise, enchantment_level=enchantment_level)
         self.power = power
         self.count = count
         self.interactions = ["drop", "prefer"]
@@ -1391,7 +1447,7 @@ class Arrow(Consumable):  # master class for arrows.
 
 
 class WoodenArrow(Arrow):
-    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+    def __init__(self, count: int = 1, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Wooden Arrow",
                          description="A useful device composed of a sharp tip, a shaft of sorts, and fletching. \n"
                                      "This one is made of wood. Wooden arrows are lightweight, "
@@ -1400,11 +1456,11 @@ class WoodenArrow(Arrow):
                          value=1, weight=0.05, power=20, range_base_modifier=1.2, range_decay_modifier=0.8,
                          sturdiness=0.4,
                          helptext=colored("+range, -decay, ", "green") + colored("-damage, -sturdiness", "red"),
-                         effects=None, count=count, merchandise=merchandise)
+                         effects=None, count=count, merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class IronArrow(Arrow):
-    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+    def __init__(self, count: int = 1, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Iron Arrow", description="A useful device composed of a sharp tip, "
                                                         "a shaft of sorts, and fletching. \
         This one is made of iron. Iron arrows are heavy and can be devastating up close. "
@@ -1414,11 +1470,11 @@ class IronArrow(Arrow):
                          value=5, weight=0.25, power=30, range_base_modifier=0.7, range_decay_modifier=1.4,
                          sturdiness=0.6,
                          helptext=colored("+damage, +sturdiness, ", "green") + colored("-range, ++decay", "red"),
-                         effects=None, count=count, merchandise=merchandise)
+                         effects=None, count=count, merchandise=merchandise, enchantment_level=enchantment_level)
 
 
 class GlassArrow(Arrow):
-    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+    def __init__(self, count: int = 1, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(name="Glass Arrow", description="A useful device composed of a sharp tip, "
                                                          "a shaft of sorts, and fletching. \
         This one is made of glass. It is of moderate weight and extremely sharp. \nAs you might expect, "
@@ -1426,7 +1482,8 @@ class GlassArrow(Arrow):
                          value=10, weight=0.1, power=40, range_base_modifier=1.1, range_decay_modifier=1,
                          sturdiness=0.1,
                          helptext=colored("+range, +damage, ", "green") + colored("~decay, ", "yellow") + colored(
-                             "---sturdiness", "red"), effects=None, count=count, merchandise=merchandise)
+                             "---sturdiness", "red"), effects=None, count=count, merchandise=merchandise,
+                         enchantment_level=enchantment_level)
 
 
 class FlareArrow(Arrow):
