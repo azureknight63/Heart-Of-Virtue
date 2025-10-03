@@ -32,7 +32,7 @@
         "objects": [
             {
                 "__class__": "WallInscription",
-                "__module__": "objects",
+                "__module__": "src.objects",
                 "props": {
                     "name": "Inscription",
                     "description": "Words scratched into the wall. You think you can make out the words if you READ closely.",
@@ -210,14 +210,14 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "JeanGameStartTile",
-        "description": "This space is like dawn breaking over forgotten stone.\nA shaft of silver light pierces the darkness above, illuminating\nan altar of cold rock. Ancient dust swirls in the beam,\nwhispering of secrets buried in shadow. The cavern breathes\naround you—alive, patient, waiting for you to take your first\nstep into whatever lies beyond the light's reach.",
+        "description": "This space is like dawn breaking over forgotten stone.\nA shaft of silver light pierces the darkness above, illuminating\nan altar of cold rock. Ancient dust swirls in the beam,\nwhispering of secrets buried in shadow. The cavern breathes\naround you; alive, patient, waiting for you to take your first\nstep into whatever lies beyond the light's reach.",
         "exits": [
-            "northwest",
             "north",
-            "northeast",
-            "west",
             "south",
             "east",
+            "west",
+            "northeast",
+            "northwest",
             "southwest"
         ],
         "block_exit": [],
@@ -781,7 +781,7 @@
     "(5, 5)": {
         "id": "tile_5_5",
         "title": "EmptyCave",
-        "description": "The floor sags a little here, a shallow basin where\ncolder air pools. A faint, steady drip marks time\nwithout counting it. Somewhere distant, water moves\nwith a slow, persistent purpose.",
+        "description": "The floor sags a little here, a shallow basin where\ncolder air pools. A faint, steady drip marks time\nwithout counting it. Somewhere distant, water moves\nwith a slow, persistent purpose.\nThere's an odd feeling which persists in this modest\nalcove; a sense of nostalgic sadness, or perhaps weariness,\nwhich hangs in the air like a faded tapestry adorns the\nwall of a dusty attic.",
         "exits": [
             "north",
             "northeast"
@@ -790,69 +790,144 @@
             "northeast"
         ],
         "events": [],
-        "items": [
+        "items": [],
+        "npcs": [],
+        "objects": [
             {
-                "__class__": "DullMedallion",
-                "__module__": "src.items",
+                "__class__": "Container",
+                "__module__": "src.objects",
                 "props": {
-                    "protection": 0,
-                    "str_mod": 0,
-                    "fin_mod": 0,
-                    "weight": 0.5,
-                    "isequipped": false,
-                    "maintype": "Accessory",
-                    "subtype": "Necklace",
-                    "name": "Dull Medallion",
-                    "description": "A rather unremarkable medallion. \nIt's face is dull, and seems to swallow any light unlucky enough to land upon it. \nIt may have been a family heirloom or a memento of a lost love.",
-                    "value": 25,
-                    "type": "Accessory",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "merchandise": false,
-                    "discovery_message": "a small trinket.",
-                    "announce": "There's a Dull Medallion here.",
-                    "interactions": [
-                        "drop",
-                        "equip"
+                    "nickname": "remains",
+                    "possible_states": [
+                        "closed",
+                        "opened"
                     ],
-                    "skills": null,
-                    "owner": null,
-                    "equip_states": [],
-                    "add_resistance": {},
-                    "add_status_resistance": {},
-                    "gives_exp": false,
-                    "count": 1
-                }
-            },
-            {
-                "__class__": "Gold",
-                "__module__": "src.items",
-                "props": {
-                    "amt": 13,
-                    "maintype": "Gold",
-                    "name": "Gold",
-                    "description": "A small pouch containing 13 gold pieces.",
-                    "value": 13,
-                    "type": "Currency",
-                    "subtype": "Gold",
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "src.items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "DullMedallion",
+                            "__module__": "src.items",
+                            "props": {
+                                "protection": 0,
+                                "str_mod": 0,
+                                "fin_mod": 0,
+                                "weight": 0.5,
+                                "isequipped": false,
+                                "maintype": "Accessory",
+                                "subtype": "Necklace",
+                                "name": "Dull Medallion",
+                                "description": "A rather unremarkable medallion. \nIt's face is dull, and seems to swallow any light unlucky enough to land upon it. \nIt may have been a family heirloom or a memento of a lost love.",
+                                "value": 25,
+                                "type": "Accessory",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small trinket.",
+                                "announce": "There's a Dull Medallion here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        },
+                        {
+                            "__class__": "Gold",
+                            "__module__": "src.items",
+                            "props": {
+                                "amt": 133,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 133 gold pieces.",
+                                "value": 133,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 133
+                            }
+                        },
+                        {
+                            "__class__": "ClothBoots",
+                            "__module__": "src.items",
+                            "props": {
+                                "protection": 1,
+                                "str_req": 1,
+                                "str_mod": 0.03,
+                                "weight": 0.6,
+                                "isequipped": false,
+                                "maintype": "Boots",
+                                "subtype": "Light Boots",
+                                "name": "Cloth Boots",
+                                "description": "Simple stitched cloth boots. Keeps feet warm but offers almost no protection.",
+                                "value": 3,
+                                "type": "Boots",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a pair of footgear.",
+                                "announce": "There's a Cloth Boots here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
+                            }
+                        }
+                    ],
+                    "name": "Remains",
+                    "description": "The remains of a poor traveler. There's not much left besides grey bone and tattered clothes.",
+                    "idle_message": "The old remains of a traveler are here, leaning against the rock wall.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "merchandise": false,
-                    "discovery_message": "a small pouch of gold.",
-                    "announce": "There's a small pouch of gold on the ground.",
-                    "interactions": [],
-                    "skills": null,
-                    "owner": null,
-                    "equip_states": [],
-                    "add_resistance": {},
-                    "add_status_resistance": {},
-                    "gives_exp": false,
-                    "count": 13
+                    "discovery_message": " a container!",
+                    "announce": "The old remains of a traveler are here, leaning against the rock wall.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
                 }
             }
         ],
-        "npcs": [],
-        "objects": [],
         "symbol": ""
     }
 }
