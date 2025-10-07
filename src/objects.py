@@ -400,21 +400,22 @@ class Shrine(Object):
         self.event = None
         self.keywords.append('pray')
 
-        for thing in params:
-            # account for the events associated with this object. Max of 1 event.
-            # Triggers after interacting with the shrine.
-            if thing[0] == '!':
-                param = thing.replace('!', '')
-                p_list = param.split(':')
-                repeat = False
-                event_type = p_list.pop(0)
-                for setting in p_list:
-                    if setting == 'r':
-                        repeat = True
-                        p_list.remove(setting)
-                        continue
-                event_cls = functions.seek_class(event_type, "story")
-                self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
+        if params:
+            for thing in params:
+                # account for the events associated with this object. Max of 1 event.
+                # Triggers after interacting with the shrine.
+                if thing[0] == '!':
+                    param = thing.replace('!', '')
+                    p_list = param.split(':')
+                    repeat = False
+                    event_type = p_list.pop(0)
+                    for setting in p_list:
+                        if setting == 'r':
+                            repeat = True
+                            p_list.remove(setting)
+                            continue
+                    event_cls = functions.seek_class(event_type, "story")
+                    self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
 
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
