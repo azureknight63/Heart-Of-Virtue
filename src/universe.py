@@ -360,12 +360,36 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         """
         print(f"\033[91m[DEBUG] game_tick: {self.game_tick}\033[0m")
         if self.game_tick == 0:
+            # Single evaluation pass (includes repeat events once) to avoid double spawning
+            self._evaluate_map_entry_spawners(process_repeats=True)
             return
         if self.game_tick % 1000 == 0:
-            # Refresh merchant inventories globally.
-            # This will clear any merchandise-tagged items and merchant inventory.
-            # It will reset the merchant's gold as well and apply shop conditions.
             self.player.refresh_merchants()
+        self._evaluate_map_entry_spawners(process_repeats=True)
+
+    def _evaluate_map_entry_spawners(self, process_repeats=False):
+        """Scan current map for events that expose evaluate_for_map_entry() and trigger them."""
+        try:
+            current_map = self.player.map
+            if not isinstance(current_map, dict):
+                return
+            for coord, tile in current_map.items():
+                if not isinstance(coord, tuple):  # skip non-coordinate entries like 'name'
+                    continue
+                if tile is None:
+                    continue
+                # Work on a shallow copy since event list may mutate during iteration
+                for ev in list(getattr(tile, 'events_here', [])):
+                    if hasattr(ev, 'evaluate_for_map_entry'):
+                        has_run = getattr(ev, 'has_run', False)
+                        is_repeat = getattr(ev, 'repeat', False)
+                        if (not has_run) or (process_repeats and is_repeat):
+                            try:
+                                ev.evaluate_for_map_entry(self.player)
+                            except Exception:
+                                continue
+        except Exception:
+            pass
 
     @staticmethod
     def parse_hidden(setting: str) -> tuple[bool, int]:
