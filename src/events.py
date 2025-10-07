@@ -4,6 +4,7 @@ Combat states to be used within combat module. May also spill over to the standa
 """
 from neotermcolor import colored
 from src.functions import print_slow, await_input
+from typing import List, Optional
 
 
 def dialogue(speaker, text, speaker_color="cyan", text_color="white"):
