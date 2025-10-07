@@ -5,16 +5,32 @@ import traceback
 from typing import TYPE_CHECKING
 
 from functions import stack_inv_items
-from switch import switch
+try:
+    from switch import switch
+except Exception:  # fallback when executed as a package (src context)
+    from src.switch import switch
 
-import items
-import functions
-import moves
-import combat
-import skilltree
-# from npc import Merchant
-if TYPE_CHECKING:
-    from npc import Merchant  # type: ignore  # for type hints only
+# Fallback imports for package vs top-level execution
+try:
+    import items  # type: ignore
+except ModuleNotFoundError:
+    from src import items  # type: ignore
+try:
+    import functions  # type: ignore
+except ModuleNotFoundError:
+    from src import functions  # type: ignore
+try:
+    import moves  # type: ignore
+except ModuleNotFoundError:
+    from src import moves  # type: ignore
+try:
+    import combat  # type: ignore
+except ModuleNotFoundError:
+    from src import combat  # type: ignore
+try:
+    import skilltree  # type: ignore
+except ModuleNotFoundError:
+    from src import skilltree  # type: ignore
 
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
