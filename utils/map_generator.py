@@ -12,6 +12,8 @@ import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union, Type  # type hinting (removed unused Iterable)
 from typing import get_type_hints  # added for resolving postponed annotations
 
+from events import Event
+
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
@@ -2128,6 +2130,37 @@ def create_element_frame(dialog_object: tk.Toplevel, parent: tk.Frame, attr_stri
     setattr(dialog_object, attr_string, frame)
     return frame
 
+def _is_event_like(obj):
+    """
+    Return True if `obj` is an Event instance/class even if the Event base
+    resolves from a different import path (e.g. src.events.Event).
+    """
+    try:
+        cls = obj if isinstance(obj, type) else obj.__class__
+    except Exception:
+        return False
+
+    # Prefer exact identity if available
+    for base in inspect.getmro(cls):
+        if base is Event:
+            return True
+
+    # Accept any base class named 'Event' coming from a module whose final
+    # component is 'events' (covers both 'events' and 'src.events').
+    for base in inspect.getmro(cls):
+        try:
+            if base.__name__ == 'Event' and base.__module__.split('.')[-1] == 'events':
+                return True
+        except Exception:
+            continue
+
+    # Fallback: accept any base simply named 'Event'
+    for base in inspect.getmro(cls):
+        if base.__name__ == 'Event':
+            return True
+
+    return False
+
 def add_element(inst, lst: List, frame: TagListFrame):
     """
     Adds an instance `inst` to the list `lst` for the given frame of `obj`.
@@ -2139,7 +2172,9 @@ def add_element(inst, lst: List, frame: TagListFrame):
         messagebox.showerror("Error", "Invalid object instance.")
         return
     # stacking logic: if item has a count attribute, stack with existing same-class item
-    if hasattr(inst, 'count'):
+    # Ignores Event instances for stacking since events should never stack
+    inst_is_event_subclass = _is_event_like(inst)
+    if hasattr(inst, 'count') and not inst_is_event_subclass:
         for existing in lst:
             if isinstance(existing, inst.__class__):
                 try:
@@ -2951,7 +2986,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
     def on_add_save():
         if existing:
-            # For existing objects, just close dialog since auto-save handles changes
+            auto_save()
             dlg.destroy()
         else:
             # For new objects, create the object and add it
