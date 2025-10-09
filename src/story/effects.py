@@ -234,14 +234,14 @@ class NPCSpawnerEvent(Event):
                  npc_cls: type[NPC]=None, count: int | None = None, name: str = "NPCSpawnerEvent"):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         self.spawn_tile = tile  # default
-        resolved_npc_cls = npc_cls
-        resolved_count = count
+        self.npc_cls = npc_cls
+        self.count = count
         if params:
             try:
-                if resolved_npc_cls is None:
-                    resolved_npc_cls = params[0]
-                if resolved_count is None and len(params) > 1:
-                    resolved_count = params[1]
+                if self.npc_cls is None:
+                    self.npc_cls = params[0]
+                if self.count is None and len(params) > 1:
+                    self.count = params[1]
                 if len(params) > 2 and isinstance(params[2], (list, tuple)) and len(params[2]) == 2:
                     # attempt coordinate override within same map
                     coord = tuple(params[2])
@@ -249,9 +249,8 @@ class NPCSpawnerEvent(Event):
                         self.spawn_tile = tile.map.get(coord)
             except Exception:
                 pass
-        self.npc_cls = resolved_npc_cls
         try:
-            self.count = max(1, int(resolved_count)) if resolved_count is not None else 1
+            self.count = max(1, int(self.count)) if self.count is not None else 1
         except Exception:
             self.count = 1
         self.spawned_npcs: List = []
