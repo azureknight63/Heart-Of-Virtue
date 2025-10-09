@@ -2,7 +2,7 @@
     "(2, 1)": {
         "id": "tile_2_1",
         "title": "VerdetteCavernsRoom",
-        "description": "At the northern edge of the cavern system, this chamber serves as a natural gateway into the depths below.\nCrystalline formations jut from the walls like frozen lightning, their pale luminescence casting dancing shadows\nacross the rough-hewn stone. The air carries a metallic tang mixed with the earthy scent of ancient rock, while\na persistent draft whispers of deeper passages yet unexplored.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south"
         ],
@@ -15,7 +15,7 @@
     "(8, 1)": {
         "id": "tile_8_1",
         "title": "VerdetteCavernsRoom",
-        "description": "The northeastern reaches of the cavern system stretch before you, marked by towering stone pillars that support\nthe weight of ages above. Veins of luminescent mineral deposits snake through the rock face, pulsing with an\nethereal glow that seems to respond to your presence. The chamber echoes with distant drippings and the subtle\ngroan of settling stone, reminders of the living mountain that surrounds you.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south"
         ],
@@ -88,22 +88,44 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "VerdetteCavernsRoom",
-        "description": "This junction chamber splits into multiple pathways, each tunnel mouth yawning like a hungry maw in the\ncrystal-lit gloom. The walls here bear the scars of ancient water flow, smooth grooves carved by millennia\nof underground streams that have since found new courses. A crosswind stirs the air, carrying with it the\nmingled scents of mineral deposits and the faint mustiness of unexplored depths.",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
             "southeast",
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(5, 2)": {
         "id": "tile_5_2",
         "title": "VerdetteCavernsRoom",
-        "description": "A natural amphitheater of stone opens before you, its curved walls rising in terraced layers that seem to\nfocus sound toward the center. Ancient mineral deposits have created a stunning display of stratified colors,\neach band telling the story of geological epochs. The acoustics here are remarkable - even the softest whisper\ncarries clearly across the chamber, while footsteps echo with an almost musical resonance.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "southeast",
             "southwest"
@@ -117,7 +139,7 @@
     "(8, 2)": {
         "id": "tile_8_2",
         "title": "VerdetteCavernsRoom",
-        "description": "The eastern passage constricts here, forcing travelers to duck beneath low-hanging rock formations that\njut down like the fangs of some primordial beast. Sharp crystalline protrusions catch what little light\nfilters through, creating a treacherous maze of glittering obstacles. The walls press close on either side,\nand the ceiling seems to drop with each step forward, demanding careful navigation.",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
             "southwest"
@@ -132,7 +154,7 @@
     "(1, 3)": {
         "id": "tile_1_3",
         "title": "VerdetteCavernsRoom",
-        "description": "Along the western edge of the cavern system, this cramped passage forces even the most agile explorer to\ncrouch and weave between jutting stone formations. The air moves sluggishly here, thick with the accumulated\nmoisture of ages, and every surface gleams with a film of condensation. Despite the challenging terrain,\nthe passage offers glimpses of wider chambers beyond through narrow gaps in the rock.",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "south",
             "northeast"
@@ -147,7 +169,7 @@
     "(3, 3)": {
         "id": "tile_3_3",
         "title": "VerdetteCavernsRoom",
-        "description": "This chamber pulses with an otherworldly energy, its walls lined with veins of phosphorescent crystal that\ncast dancing patterns of rose-colored light across the uneven floor. The air here carries a faint metallic\ntaste, and strange harmonics seem to emanate from the very stones themselves. Ancient scratches on the walls\nsuggest this place has been visited before, though by whom or what remains a mystery.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "east",
             "northwest"
@@ -196,7 +218,7 @@
     "(4, 3)": {
         "id": "tile_4_3",
         "title": "VerdetteCavernsRoom",
-        "description": "A crossroads chamber where multiple passages converge, their entrances marked by naturally formed archways\nof weathered limestone. The convergence creates interesting air currents that carry scents and sounds from\ndistant parts of the cavern system. Flowstone formations cascade down one wall like a frozen waterfall,\ntheir rippled surface catching and reflecting the ambient crystal-light in mesmerizing patterns.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south",
             "west",
@@ -212,7 +234,7 @@
     "(6, 3)": {
         "id": "tile_6_3",
         "title": "VerdetteCavernsRoom",
-        "description": "The northern portion of this chamber features a dramatic overhang of striated rock, its layers telling\nthe story of ancient seas and shifting continents. Beneath this natural shelter, the floor is carpeted\nwith fine crystalline sand that crunches softly underfoot. The overhang creates a natural acoustic chamber,\namplifying even the smallest sounds and lending an air of reverent solemnity to the space.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "east",
             "northwest"
@@ -227,7 +249,7 @@
     "(7, 3)": {
         "id": "tile_7_3",
         "title": "VerdetteCavernsRoom",
-        "description": "Ancient merchant remains rest against the far wall of this chamber, a grim reminder of the dangers that\nlurk within these depths. The skeleton still clutches a weathered leather satchel, and scattered coins\nglint among the bones. Despite the macabre scene, the chamber itself is striking - stalactites and\nstalagmites have grown so close they nearly form complete columns, creating a natural colonnade.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "west",
             "northeast"
@@ -507,7 +529,7 @@
     "(1, 4)": {
         "id": "tile_1_4",
         "title": "VerdetteCavernsRoom",
-        "description": "A treacherous waterlogged chamber where shallow pools reflect the ethereal glow of overhead crystals.\nSubmerged stone spires rise like the grasping fingers of ancient titans, creating a hazardous obstacle course\nfor the unwary traveler. The water is surprisingly warm, heated by geothermal vents deep beneath the surface,\nand wisps of steam curl upward in ghostly spirals that dance in the crystal-light.",
+        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
         "exits": [
             "north",
             "south"
@@ -521,7 +543,7 @@
     "(4, 4)": {
         "id": "tile_4_4",
         "title": "VerdetteCavernsRoom",
-        "description": "A narrow corridor stretches between towering walls of sedimentary rock, their layers visible like pages\nin an ancient geological tome. The passage creates a natural wind tunnel, channeling air currents that\ncarry whispers of distant chambers and the faint scent of mineral springs. Phosphorescent lichen clings\nto the upper reaches of the walls, providing just enough illumination to navigate safely.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "north",
             "south"
@@ -537,7 +559,7 @@
     "(1, 5)": {
         "id": "tile_1_5",
         "title": "VerdetteCavernsRoom",
-        "description": "A remarkable natural skylight pierces the cavern ceiling here, allowing precious sunlight to stream down\ninto the underground realm. The harsh brightness creates a stark contrast with the surrounding darkness,\nwhile thick carpets of emerald moss have taken advantage of the light to colonize every available surface.\nThe intersection of surface and subterranean worlds creates an almost magical atmosphere of renewal.",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "north"
         ],
@@ -610,7 +632,7 @@
     "(4, 5)": {
         "id": "tile_4_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The passage constricts dramatically here, forcing travelers to navigate between razor-sharp crystal formations\nthat jut from floor and ceiling like the teeth of some primordial trap. A melodic breeze flows through\nthe crystalline maze, creating haunting tones that seem to echo from the very heart of the mountain.\nDespite the challenging terrain, the chamber possesses an otherworldly beauty that few dare to appreciate.",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
             "southeast",
@@ -625,7 +647,7 @@
     "(6, 5)": {
         "id": "tile_6_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The cavern expands into a vast cathedral-like space here, its vaulted ceiling disappearing into shadows\nthat even the brightest crystal formations cannot penetrate. The silence is profound and almost oppressive,\nbroken only by the distant echo of dripping water and the soft whisper of air currents. Standing in this\nspace, one cannot help but feel dwarfed by the immense age and power of the living rock.",
+        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
         "exits": [
             "south",
             "east",
@@ -642,7 +664,7 @@
     "(7, 5)": {
         "id": "tile_7_5",
         "title": "VerdetteCavernsRoom",
-        "description": "Another cathedral chamber stretches eastward from here, its soaring stone arches formed by eons of patient\nwater erosion. Scattered crystal clusters provide pools of soft light in the encompassing darkness, while\nthe air carries the faint mineral tang of deep earth. The overwhelming sense of space and time creates\nan almost spiritual atmosphere that demands respect from any who venture into these ancient halls.",
+        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
         "exits": [
             "south",
             "west",
@@ -652,13 +674,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": [],
-        "symbol": ""
+        "objects": []
     },
     "(3, 6)": {
         "id": "tile_3_6",
         "title": "VerdetteCavernsRoom",
-        "description": "This smaller antechamber serves as a transitional space between the larger caverns, its intimate proportions\noffering a welcome respite from the overwhelming vastness beyond. The walls here are smooth and curved,\npolished by countless years of water flow, and decorated with veins of quartz that catch and amplify\nthe ambient light. The gentle acoustics make this an ideal place for rest and contemplation.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south",
             "northeast"
@@ -673,7 +694,7 @@
     "(5, 6)": {
         "id": "tile_5_6",
         "title": "VerdetteCavernsRoom",
-        "description": "The heart of the great cathedral chamber system opens before you, where multiple passages converge beneath\na dome of living rock that rises beyond the reach of sight. Ancient flowstone cascades have frozen into\nspectacular formations that resemble organ pipes and draperies. The acoustics here are extraordinary -\nevery footstep and whisper carries with crystalline clarity throughout the vast space.",
+        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
         "exits": [
             "east",
             "northeast",
@@ -690,7 +711,7 @@
     "(6, 6)": {
         "id": "tile_6_6",
         "title": "VerdetteCavernsRoom",
-        "description": "A second natural skylight bathes this central chamber in golden rays that seem to transform the very\natmosphere of the cavern. Where the light touches stone, it reveals intricate mineral veins and hidden\ncrystal formations that sparkle like captured starlight. Lush moss gardens flourish in the radiance,\ncreating patches of verdant life that seem almost impossible in this subterranean realm.",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "north",
             "south",
@@ -707,7 +728,7 @@
     "(7, 6)": {
         "id": "tile_7_6",
         "title": "VerdetteCavernsRoom",
-        "description": "An extensive flooded chamber where deeper pools mirror the ceiling's crystalline formations in perfect\nreflection. The submerged landscape creates a dreamlike environment where up and down become confused,\nand hidden stone pillars emerge from the depths like sleeping giants. The water here moves with subtle\ncurrents that suggest connections to distant underground rivers and hidden springs.",
+        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
         "exits": [
             "north",
             "west",
@@ -719,13 +740,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": [],
-        "symbol": ""
+        "objects": []
     },
     "(3, 7)": {
         "id": "tile_3_7",
         "title": "VerdetteCavernsRoom",
-        "description": "A constricted passage that challenges even experienced spelunkers, where crystalline protrusions create\na natural obstacle course requiring careful navigation. The melodic wind that flows through these formations\nproduces haunting harmonies that seem to emanate from the very soul of the mountain. Each step must be\nplaced with precision to avoid the razor-sharp edges of the singing crystals.",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
             "south",
@@ -735,13 +755,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": [],
-        "symbol": ""
+        "objects": []
     },
     "(6, 7)": {
         "id": "tile_6_7",
         "title": "VerdetteCavernsRoom",
-        "description": "The southern reaches of this chamber are dominated by a series of natural terraces carved from flowstone,\neach level decorated with clusters of amethyst-hued crystals that pulse with inner light. The terraced\nformation creates multiple levels of exploration, while the crystal formations cast prismatic patterns\nacross the walls that shift and dance with every movement of air through the chamber.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "north",
             "northeast",
@@ -784,13 +803,12 @@
             }
         ],
         "npcs": [],
-        "objects": [],
-        "symbol": ""
+        "objects": []
     },
     "(8, 7)": {
         "id": "tile_8_7",
         "title": "VerdetteCavernsRoom",
-        "description": "The easternmost passage contracts to barely shoulder-width here, forcing travelers to move single-file\nbetween towering walls of sedimentary stone. Ancient fossils are embedded in these walls, their shapes\ntelling stories of creatures that lived eons before the caverns were formed. The narrow passage amplifies\nevery sound, creating an intimate acoustic environment that makes whispers seem thunderous.",
+        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "south",
             "northwest"
@@ -805,7 +823,7 @@
     "(3, 8)": {
         "id": "tile_3_8",
         "title": "VerdetteCavernsRoom",
-        "description": "A transitional chamber where multiple tunnel systems converge beneath a dome of weathered limestone.\nThe convergence creates complex air currents that carry the mixed scents of mineral deposits, distant\nwater sources, and the deep earth itself. Phosphorescent mineral veins trace geometric patterns across\nthe dome, creating a natural map of the geological forces that shaped this underground realm.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "north",
             "east",
@@ -820,7 +838,7 @@
     "(4, 8)": {
         "id": "tile_4_8",
         "title": "VerdetteCavernsRoom",
-        "description": "Another natural skylight illuminates this chamber, but here the light falls at a sharp angle, creating\ndramatic contrasts between brilliant illumination and deep shadow. The interplay of light and darkness\nreveals hidden alcoves and secret passages that might otherwise go unnoticed. Emerald moss cascades\ndown the walls like living waterfalls, thriving in the precious gift of surface light.",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "west",
             "northwest",
@@ -927,7 +945,7 @@
     "(8, 8)": {
         "id": "tile_8_8",
         "title": "VerdetteCavernsRoom",
-        "description": "The final skylight chamber marks the deepest extent of natural illumination within the cavern system.\nHere, the light filters down through layers of crystal and stone, creating an ethereal atmosphere that\nseems to bridge the gap between the surface world and the mysterious depths below. The chamber holds\nan air of finality, as if marking the boundary between the known and the unknowable.",
+        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "north"
         ],
@@ -947,7 +965,7 @@
     "(1, 9)": {
         "id": "tile_1_9",
         "title": "VerdetteCavernsRoom",
-        "description": "A remote western alcove where the cavern system reaches its furthest extent from the main passages.\nThe isolation here is profound, broken only by the distant echo of dripping water and the soft whisper\nof air currents. Crystal formations in this chamber have grown undisturbed for millennia, creating\ndelicate spires and curtains that seem too fragile to exist in the harsh underground environment.",
+        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "east"
         ],
@@ -961,7 +979,7 @@
     "(2, 9)": {
         "id": "tile_2_9",
         "title": "VerdetteCavernsRoom",
-        "description": "The lowest point of the accessible cavern system, where water has carved smooth channels through the\nliving rock over countless ages. Hidden stone formations rise from the shallow pools like ancient\nmonuments, their surfaces polished to mirror brightness by the constant caress of flowing water.\nThe gentle sound of trickling streams creates a peaceful counterpoint to the cavern's usual silence.",
+        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
         "exits": [
             "west",
             "northeast"
