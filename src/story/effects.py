@@ -271,7 +271,10 @@ class NPCSpawnerEvent(Event):
 
     def _do_spawn(self):
         if not self.spawn_tile:
-            return
+            if self.tile:
+                self.spawn_tile = self.tile
+            else:
+                return
         cls_name = self._resolve_npc_class_name()
         if not cls_name:
             return
