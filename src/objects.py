@@ -374,10 +374,16 @@ class Container(Object):
         for idx in sorted(items_to_remove, reverse=True):
             self.inventory.pop(idx)
 
-# Patch the evaluated annotation for allowed_subtypes so inspect.signature shows a real typing object (not a str)
-# This lets typing.get_origin on the raw Parameter.annotation return list as expected by the test.
-try:  # pragma: no cover - defensive; shouldn't fail
-    Container.__init__.__annotations__['allowed_subtypes'] = list[type[Item]]
+# --- Annotation normalization patch ---
+# Ensure that the 'allowed_subtypes' annotation on Container.__init__ is an evaluated type
+# instead of a postponed string (due to from __future__ import annotations) so that
+# inspect.get_origin returns 'list' as expected by tests and runtime reflection.
+try:
+    _ann = Container.__init__.__annotations__.get('allowed_subtypes')  # type: ignore[attr-defined]
+    if isinstance(_ann, str):
+        # Rebind with concrete evaluated type
+        from src.items import Item as _Item  # local import to avoid re-export side effects
+        Container.__init__.__annotations__['allowed_subtypes'] = list[type[_Item]]  # type: ignore[index]
 except Exception:
     pass
 
