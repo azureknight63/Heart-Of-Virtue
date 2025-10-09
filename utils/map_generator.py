@@ -10,6 +10,7 @@ import copy
 import re
 import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union, Type  # type hinting (removed unused Iterable)
+from typing import get_type_hints  # added for resolving postponed annotations
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -2354,6 +2355,95 @@ def open_class_type_chooser(dialog_object: tk.Toplevel, base_class_name: str, ls
         return
     show_class_type_hierarchy_chooser(dialog_object, module_paths, f"Choose {base_class_name} Type", lst, tag_frame, base_class_name)
 
+# NEW: single-selection variant for Type[Base] (non-list) annotations
+# Reuses the same hierarchy building logic but ensures only one class can be selected.
+def open_single_class_type_chooser(dialog_object: tk.Toplevel, base_class_name: str, lst: List[type], tag_frame: TagListFrame):
+    if not base_class_name:
+        messagebox.showerror("Error", "Base class name not provided.")
+        return
+    try:
+        module_paths = _get_module_paths_for_class(base_class_name)
+    except Exception:
+        module_paths = []
+    if not module_paths:
+        messagebox.showerror("Error", f"Could not find base class {base_class_name} or its subclasses in src/.")
+        return
+    # We inline a lightweight variant of show_class_type_hierarchy_chooser to inject single-select behavior.
+    class_info = {}
+    for module_path in module_paths:
+        if not os.path.isfile(module_path):
+            continue
+        try:
+            ci = parse_module_classes(module_path, project_root)
+            if ci:
+                class_info.update(ci)
+        except Exception:
+            continue
+    class_info = build_class_hierarchy(class_info)
+    allowed = filter_classes(class_info, base_class_name)
+    roots = sorted([n for n, i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
+    dlg = tk.Toplevel(dialog_object)
+    dlg.title(f"Choose {base_class_name} Type")
+    dlg.geometry('300x430')
+    dlg.transient(dialog_object)
+    dlg.grab_set()
+    filter_frame = tk.Frame(dlg)
+    filter_frame.pack(fill='x', padx=5, pady=5)
+    tk.Label(filter_frame, text='Filter:', anchor='w').pack(side='left')
+    filter_var = tk.StringVar()
+    tk.Entry(filter_frame, textvariable=filter_var).pack(side='left', fill='x', expand=True)
+    frame_lb = tk.Frame(dlg)
+    frame_lb.pack(fill='both', expand=True)
+    lb = tk.Listbox(frame_lb)
+    sb = tk.Scrollbar(frame_lb, orient='vertical', command=lb.yview)
+    lb.configure(yscrollcommand=sb.set)
+    sb.pack(side='right', fill='y')
+    lb.pack(side='left', fill='both', expand=True)
+    metas: List[Dict[str, str]] = []
+    def update_list(*_):
+        search = filter_var.get().lower().strip()
+        lb.delete(0, tk.END)
+        metas.clear()
+        visited = set()
+        def subtree_matches(cname):
+            if cname not in allowed:
+                return False
+            if not search or search in cname.lower():
+                return True
+            return any(subtree_matches(ch) for ch in class_info[cname]['children'])
+        def recurse(names, indent=0):
+            for n in sorted(names):
+                if n in visited or n not in allowed:
+                    continue
+                visited.add(n)
+                if subtree_matches(n):
+                    lb.insert('end', '  '*indent + n)
+                    metas.append({'name': n, 'module': class_info[n]['module']})
+                    if class_info[n]['children']:
+                        recurse(class_info[n]['children'], indent+1)
+        recurse(roots)
+    filter_var.trace_add('write', update_list)
+    update_list()
+    def on_double(_):
+        if not lb.curselection():
+            return
+        idx = lb.curselection()[0]
+        meta = metas[idx]
+        cls_name = meta['name']
+        module_name = meta['module']
+        try:
+            mod = importlib.import_module(module_name)
+            cls_obj = getattr(mod, cls_name)
+            # Single-selection enforcement
+            lst.clear()
+            lst.append(cls_obj)
+            refresh_tags(lst, tag_frame)
+        except Exception as ex:
+            messagebox.showerror("Error", f"Could not load class: {ex}")
+        dlg.destroy()
+    lb.bind('<Double-Button-1>', on_double)
+
+
 def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, dialog_title, lst: List[type], tag_frame: TagListFrame, filter_by_class: str=None):
     class_info = {}
     for module_path in module_paths:
@@ -2367,7 +2457,7 @@ def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, 
             continue
     class_info = build_class_hierarchy(class_info)
     allowed = filter_classes(class_info, filter_by_class)
-    roots = sorted([n for n,i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
+    roots = sorted([n for n, i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
     dlg = tk.Toplevel(dialog_object)
     dlg.title(dialog_title)
     dlg.geometry('300x430')
@@ -2385,7 +2475,7 @@ def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, 
     lb.configure(yscrollcommand=sb.set)
     sb.pack(side='right', fill='y')
     lb.pack(side='left', fill='both', expand=True)
-    metas: List[Dict[str,str]] = []
+    metas: List[Dict[str, str]] = []
     def update_list(*_):
         search = filter_var.get().lower().strip()
         lb.delete(0, tk.END)
@@ -2438,6 +2528,11 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
     entries = {}  # name -> {'type': 'text'|'bool'|'hierarchical', 'get': callable}
     editable_params, excluded_params = get_editable_params(cls)
+    # Resolve annotations (handles PEP 563 postponed evaluation so get_origin works)
+    try:
+        resolved_hints = get_type_hints(cls.__init__)
+    except Exception:
+        resolved_hints = {}
 
     # Moved and optimized merchant collection
     def get_all_merchants(map_data):
@@ -2575,8 +2670,20 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
             # --- Class TYPE list detection: list[type[Base]] ---
             try:
-                ann_origin = get_origin(p.annotation)
-                ann_args = get_args(p.annotation)
+                # Use resolved annotation if available
+                ann_for_detection = resolved_hints.get(p.name, p.annotation)
+                ann_origin = get_origin(ann_for_detection)
+                ann_args = get_args(ann_for_detection)
+                # helper creators to avoid mutable default argument warnings
+                def _make_list_getter(ref_list: List[type]):
+                    return lambda: ref_list
+                def _make_single_getter(ref_list: List[type]):
+                    return lambda: (ref_list[0] if ref_list else None)
+                def _make_multi_btn_handler(base_name: str, ref_list: List[type], frame_ref: TagListFrame):
+                    return lambda: open_class_type_chooser(dlg, base_name, ref_list, frame_ref)
+                def _make_single_btn_handler(base_name: str, ref_list: List[type], frame_ref: TagListFrame):
+                    return lambda: open_single_class_type_chooser(dlg, base_name, ref_list, frame_ref)
+                # First: list[Type[Base]] existing behavior
                 if ann_origin in (list, List) and ann_args:
                     inner = ann_args[0]
                     inner_origin = get_origin(inner)
@@ -2586,9 +2693,32 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                         type_list = list(getattr(existing, p.name, []) if existing is not None else [])
                         tag_frame = create_element_frame(dlg, container, f"{p.name}_types_frame")
                         refresh_tags(type_list, tag_frame)
-                        tk.Button(container, text="Choose Types", command=lambda b=base_cls.__name__, lst_ref=type_list, fr=tag_frame: open_class_type_chooser(dlg, b, lst_ref, fr)).pack(fill='x', padx=(5,0), pady=(2,2))
-                        entries[p.name] = {'type': 'hierarchical', 'get': lambda tl=type_list: tl}
+                        tk.Button(container, text="Choose Types", command=_make_multi_btn_handler(base_cls.__name__, type_list, tag_frame)).pack(fill='x', padx=(5,0), pady=(2,2))
+                        entries[p.name] = {'type': 'hierarchical', 'get': _make_list_getter(type_list)}
                         continue
+                # NEW: Single Type[Base] support (including Optional/Union[Type[Base], None])
+                target_base_cls = None
+                single_mode = False
+                if ann_origin in (type, Type) and ann_args and inspect.isclass(ann_args[0]):
+                    target_base_cls = ann_args[0]
+                    single_mode = True
+                # Optional / Union handling: Union[Type[Base], None]
+                elif ann_origin is Union and ann_args:
+                    for arg in ann_args:
+                        arg_origin = get_origin(arg)
+                        arg_args = get_args(arg)
+                        if arg_origin in (type, Type) and arg_args and inspect.isclass(arg_args[0]):
+                            target_base_cls = arg_args[0]
+                            single_mode = True
+                            break
+                if single_mode and target_base_cls is not None:
+                    existing_val = getattr(existing, p.name, None) if existing is not None else None
+                    single_list: List[type] = [existing_val] if isinstance(existing_val, type) else []
+                    tag_frame = create_element_frame(dlg, container, f"{p.name}_type_frame")
+                    refresh_tags(single_list, tag_frame)
+                    tk.Button(container, text="Choose Type", command=_make_single_btn_handler(target_base_cls.__name__, single_list, tag_frame)).pack(fill='x', padx=(5,0), pady=(2,2))
+                    entries[p.name] = {'type': 'hierarchical', 'get': _make_single_getter(single_list)}
+                    continue
             except Exception:
                 pass
 
@@ -2768,19 +2898,21 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     text="Choose",
                     command=lambda this_dlg=dlg, this_base_class_name=base_class_name,
                                        this_is_event=is_event, this_tag_frame=tag_frame,
-                                       this_field_type=field_type, this_current_value=current_value:
-                        open_chooser(
+                                       this_field_type=field_type: open_chooser(
                             this_dlg,
-                            this_current_value if this_field_type == 'list' else (this_current_value[0] if this_current_value else []),
+                            current_value if this_field_type == 'list' else (current_value[0] if current_value else []),
                             this_tag_frame,
                             base_class_name=this_base_class_name,
                             is_event=this_is_event
                         )
                 )
                 choose_btn.pack(fill='x', padx=(5, 0), pady=(2, 2))
-                entries[p.name] = {'type': 'hierarchical',
-                                   'get': lambda cv=current_value, ft=field_type: cv if ft == 'list'
-                                   else (cv[0] if cv else None)}
+                # Helper to avoid mutable default capture
+                def _make_hier_getter(field_type_local: str, ref_list_local: List[Any]):
+                    if field_type_local == 'list':
+                        return lambda: ref_list_local
+                    return lambda: (ref_list_local[0] if ref_list_local else None)
+                entries[p.name] = {'type': 'hierarchical', 'get': _make_hier_getter(field_type, current_value)}
             elif p.name == 'merchant':
                 if not all_merchants:
                     tk.Label(container, text="Add a Merchant NPC to this map first.",
