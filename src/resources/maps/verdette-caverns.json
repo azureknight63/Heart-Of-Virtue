@@ -8,9 +8,52 @@
         ],
         "block_exit": [],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Battleaxe",
+                "__module__": "items",
+                "props": {
+                    "damage": 120.96010380979605,
+                    "str_req": 5,
+                    "fin_req": 5,
+                    "str_mod": 1,
+                    "fin_mod": 0.5,
+                    "weight": 2,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Axe",
+                    "wpnrange": [
+                        0,
+                        5
+                    ],
+                    "name": "Spiritual Umbral Battleaxe",
+                    "description": "A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
+                    "value": 238,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Spiritual Umbral Battleaxe here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "base_damage_type": "spiritual",
+                    "twohand": false,
+                    "enchantment_level": 99
+                }
+            }
+        ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(8, 1)": {
         "id": "tile_8_1",
@@ -98,7 +141,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -110,7 +153,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:Slime"
+                        "__class_type__": "src.npc:Slime"
                     },
                     "count": 2,
                     "spawned_npcs": []
@@ -225,7 +268,48 @@
             "northeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "src.story.effects",
+                "props": {
+                    "name": "Slimes",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "src.npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "src.story.effects",
+                "props": {
+                    "name": "Rumblers",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "src.npc:RockRumbler"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [],
@@ -255,7 +339,28 @@
             "northeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 5,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [
             {
                 "__class__": "Restorative",
@@ -639,10 +744,32 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(6, 5)": {
         "id": "tile_6_5",
@@ -655,7 +782,28 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [],
@@ -671,10 +819,32 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(3, 6)": {
         "id": "tile_3_6",
@@ -767,7 +937,48 @@
             "northwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [
             {
                 "__class__": "Antidote",
@@ -803,7 +1014,8 @@
             }
         ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(8, 7)": {
         "id": "tile_8_7",
@@ -830,10 +1042,52 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 5,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(4, 8)": {
         "id": "tile_4_8",
@@ -998,7 +1252,28 @@
             "northwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Mynx"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [
