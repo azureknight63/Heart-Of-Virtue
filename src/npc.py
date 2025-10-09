@@ -1022,7 +1022,9 @@ class Mynx(Friend):
     Behavior and interaction methods are provided as stubs so an LLM can be integrated later.
     """
 
-    def __init__(self, name: str = "Mynx", description: str | None = None):
+    def __init__(self, name: str = None, description: str | None = None):
+        if name is None:
+            name = "Mynx " + genericng.generate(1, 3)
         if description is None:
             description = (
                 "A small, nimble creature with spotted fur, a prehensile tufted tail, and bright curious eyes. "
