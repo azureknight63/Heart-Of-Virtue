@@ -11,7 +11,7 @@
         "items": [
             {
                 "__class__": "Battleaxe",
-                "__module__": "items",
+                "__module__": "src.items",
                 "props": {
                     "damage": 120.96010380979605,
                     "str_req": 5,
@@ -342,7 +342,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -354,7 +354,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:Slime"
+                        "__class_type__": "src.npc:Slime"
                     },
                     "count": 5,
                     "spawned_npcs": []
@@ -747,7 +747,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -759,7 +759,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:RockRumbler"
+                        "__class_type__": "src.npc:RockRumbler"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -785,7 +785,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -797,7 +797,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:Slime"
+                        "__class_type__": "src.npc:Slime"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -822,7 +822,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -834,7 +834,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:RockRumbler"
+                        "__class_type__": "src.npc:RockRumbler"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -940,7 +940,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -952,7 +952,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:RockRumbler"
+                        "__class_type__": "src.npc:RockRumbler"
                     },
                     "count": 2,
                     "spawned_npcs": []
@@ -960,7 +960,7 @@
             },
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -972,7 +972,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:Slime"
+                        "__class_type__": "src.npc:Slime"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -1045,7 +1045,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -1057,7 +1057,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:RockRumbler"
+                        "__class_type__": "src.npc:RockRumbler"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -1065,7 +1065,7 @@
             },
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -1077,7 +1077,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:Slime"
+                        "__class_type__": "src.npc:Slime"
                     },
                     "count": 5,
                     "spawned_npcs": []
@@ -1206,6 +1206,26 @@
         "block_exit": [],
         "events": [
             {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Lurker"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
                 "__class__": "AfterDefeatingLurker",
                 "__module__": "src.story.ch02",
                 "props": {}
@@ -1255,7 +1275,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "story.effects",
+                "__module__": "src.story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -1267,7 +1287,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "npc:Mynx"
+                        "__class_type__": "src.npc:Mynx"
                     },
                     "count": 1,
                     "spawned_npcs": []
