@@ -38,6 +38,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.locked_chests = []
 
     def build(self, player):  # builds all the maps as they are, then loads them into self.maps
+        # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
+        self.player = player
         if player.saveuniv is not None and player.savestat is not None:
             self.maps = player.saveuniv
         else:  # new game
@@ -144,15 +146,14 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Apply remaining props as attributes
             for k, v in props.items():
                 try:
-                    # Avoid overwriting a populated container inventory with an empty list from serialized props
                     if (
                         k == 'inventory'
                         and hasattr(inst, 'inventory')
-                        and getattr(inst, 'inventory')  # current inventory is non-empty
+                        and getattr(inst, 'inventory')
                         and isinstance(v, list)
-                        and len(v) == 0  # incoming serialized inventory is empty
+                        and len(v) == 0
                     ):
-                        continue  # skip destructive overwrite
+                        continue
                     setattr(inst, k, v)
                 except Exception:
                     pass
@@ -198,9 +199,41 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 inst = self._deserialize_saved_instance(ev_payload)
                 if inst:
                     try:
-                        # attach minimal expected attributes if missing
-                        if hasattr(inst, 'tile'):
+                        # Robust handling for events whose __init__ could not be executed (missing required args like 'tile').
+                        # If the event instance lacks a 'tile' attribute entirely, attempt re-instantiation supplying player & tile.
+                        if not hasattr(inst, 'tile'):
+                            try:
+                                cls = inst.__class__
+                                sig = inspect.signature(cls.__init__)
+                                params = sig.parameters
+                                init_kwargs = {}
+                                if 'player' in params:
+                                    init_kwargs['player'] = player
+                                if 'tile' in params:
+                                    init_kwargs['tile'] = tile_instance
+                                if 'params' in params:
+                                    init_kwargs['params'] = None
+                                if 'repeat' in params:
+                                    init_kwargs['repeat'] = False
+                                if 'name' in params:
+                                    # Preserve existing name attribute if any, else class name
+                                    init_kwargs['name'] = getattr(inst, 'name', cls.__name__)
+                                reinited = cls(**init_kwargs)
+                                inst = reinited
+                            except Exception:
+                                # Fallback: synthesize minimal attributes
+                                try:
+                                    inst.player = player
+                                except Exception:
+                                    pass
+                                try:
+                                    inst.tile = tile_instance
+                                except Exception:
+                                    pass
+                        # If 'tile' exists but is None, assign it now.
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
                             inst.tile = tile_instance
+                        # Always ensure player reference if attribute exists or expected by common pattern.
                         if hasattr(inst, 'player'):
                             inst.player = player
                         tile_instance.events_here.append(inst)
@@ -212,6 +245,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if inst:
                     if hasattr(inst, 'player'):
                         inst.player = player
+                    # Only assign tile if attribute exists and is currently None
+                    try:
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
+                            inst.tile = tile_instance
+                    except Exception:
+                        pass
                     tile_instance.items_here.append(inst)
             # npcs
             for npc_payload in tile_data.get('npcs', []):
@@ -220,12 +259,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     if hasattr(inst, 'player'):
                         inst.player = player
                     # Ensure NPCs know which room they occupy. Some NPC classes expect 'current_room',
-                    # others may use 'tile'. Set whichever attribute exists so deserialized merchants
-                    # (e.g. MiloCurioDealer) have their current_room populated.
+                    # others may use 'tile'. Set whichever attribute exists and is None so deserialized merchants
+                    # have their current_room populated without overwriting an existing reference.
                     try:
-                        if hasattr(inst, 'current_room'):
+                        if hasattr(inst, 'current_room') and getattr(inst, 'current_room', None) is None:
                             inst.current_room = tile_instance
-                        if hasattr(inst, 'tile'):
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
                             inst.tile = tile_instance
                     except Exception:
                         pass
@@ -236,9 +275,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if inst:
                     if hasattr(inst, 'player'):
                         inst.player = player
-                    # Ensure objects receive a reference to their tile if they expect it
+                    # Ensure objects receive a reference to their tile if they expect it, but don't overwrite
                     try:
-                        if hasattr(inst, 'tile'):
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
                             inst.tile = tile_instance
                     except Exception:
                         pass
