@@ -549,3 +549,233 @@ class Passageway(Object):
 
     def exit(self, player):
         self.enter(player)
+
+
+class MarketBell(Object):
+    """
+        Represents a bell mounted near a stall or booth in the Ecumerium. Players can RING it to summon attention or
+        trigger a configured event. The bell provides feedback when rung and can optionally process an attached event.
+    """
+    def __init__(self, player: Player, tile: MapTile, event: Event=None):
+        description = "A small metal bell hangs from a short iron hook; it looks like it can be RUNG to draw attention."
+        super().__init__(name="Market Bell", description=description,
+                         idle_message="A small bell hangs here, waiting to be rung.",
+                         discovery_message="a small bell mounted by a stall!", player=player, tile=tile)
+        self.keywords.append('ring')
+        self.keywords.append('use')
+        self.event = event
+
+    def ring(self):
+        """Player rings the bell. If an event is attached, process it. Otherwise provide a simple cue."""
+        cprint("Jean reaches up and rings the bell.", color='cyan')
+        time.sleep(0.4)
+        print("A clear, bright tone rings through the arcade, briefly carrying above the market din.")
+        if self.event is not None:
+            # process and clear non-repeat events; instantiate_event handles repeat flag behavior
+            time.sleep(0.6)
+            self.event.process()
+            # if the event was non-repeat it will typically be consumed; mirror Shrine behavior by clearing
+            try:
+                if not getattr(self.event, 'repeat', False):
+                    self.event = None
+            except Exception:
+                self.event = None
+        functions.await_input()
+
+    def use(self):
+        self.ring()
+
+
+class Fountain(Object):
+    """A decorative stone fountain providing simple ambiance. Jean can DRINK (minor refresh) or LISTEN/ADMIRE it.
+    Optionally an event may be attached which triggers the first time it is drunk from.
+    """
+    def __init__(self, player: Player, tile: MapTile, event: Event=None):
+        description = "A low circular fountain murmurs softly; clear water bubbles up and spills over carved stone."\
+                      " You could probably DRINK from it or just LISTEN to the water."  # noqa: E501
+        super().__init__(name="Fountain", description=description,
+                         idle_message="A small stone fountain murmurs here.",
+                         discovery_message="a murmuring fountain!", player=player, tile=tile)
+        self.keywords.extend(['drink', 'listen', 'admire', 'use'])
+        self.event = event
+
+    def drink(self):
+        cprint("Jean cups some water from the fountain and takes a cool sip.", 'cyan')
+        time.sleep(0.5)
+        if self.event:
+            time.sleep(0.5)
+            self.event.process()
+            if not getattr(self.event, 'repeat', False):
+                self.event = None
+        functions.await_input()
+
+    def listen(self):
+        print("Jean closes his eyes a moment, listening to the gentle splash of water.")
+        functions.await_input()
+
+    def admire(self):
+        print("The craftsmanship of the fountain is simple but pleasant.")
+        functions.await_input()
+
+    def use(self):  # alias
+        self.drink()
+
+
+class StreetLantern(Object):
+    """A wrought iron street lantern that can be LIGHTed or DOUSEd. Optional events may trigger on state change.
+    """
+    def __init__(self, player: Player, tile: MapTile, event_when_lighting: Event=None, event_when_dousing: Event=None,
+                 lit: bool=False):
+        description = "An iron street lantern stands here, its glass panes slightly clouded." + \
+                      (" It is currently lit, casting a warm glow in all directions." if lit
+                       else " It is dark; maybe you could LIGHT it.")
+        super().__init__(name="Street Lantern", description=description,
+                         idle_message="A wrought iron street lantern stands here.",
+                         discovery_message="a street lantern!", player=player, tile=tile)
+        self.keywords.extend(['light', 'douse', 'extinguish', 'inspect'])
+        self.lit = lit
+        self.event_on = event_when_lighting
+        self.event_off = event_when_dousing
+        self._update_description()
+
+    def _update_description(self):
+        state_text = "lit" if self.lit else "dark"
+        self.description = f"An iron street lantern stands here. It is {state_text}."
+
+    def light(self):
+        if self.lit:
+            print("The lantern is already lit.")
+            return
+        print("Jean strikes a spark and coaxes the lantern to life.")
+        self.lit = True
+        self._update_description()
+        if self.event_on:
+            self.event_on.process()
+            if not getattr(self.event_on, 'repeat', False):
+                self.event_on = None
+        functions.await_input()
+
+    def douse(self):
+        if not self.lit:
+            print("The lantern is already dark.")
+            return
+        print("Jean shields the flame and pinches it out.")
+        self.lit = False
+        self._update_description()
+        if self.event_off:
+            self.event_off.process()
+            if not getattr(self.event_off, 'repeat', False):
+                self.event_off = None
+        functions.await_input()
+
+    def extinguish(self):
+        self.douse()
+
+    def inspect(self):
+        print(self.description)
+        functions.await_input()
+
+
+class NoticeBoard(Object):
+    """A public notice board. Jean can READ posted notes. Optional single event
+    triggers on first READ.
+    """
+    def __init__(self, player: Player, tile: MapTile, event: Event=None, notes: list[str]=None):
+        description = "A wooden notice board stands here with a scattering of parchment scraps pinned to it."
+        super().__init__(name="Notice Board", description=description,
+                         idle_message="A wooden notice board is here.",
+                         discovery_message="a notice board!", player=player, tile=tile)
+        self.keywords.extend(['read', 'use'])
+        self.notes: list[str] = notes if notes else [
+            "Lost: One black cat with a white spot on its chest. Answers to 'Midnight'. Reward offered.",
+            "For Sale: Handmade pottery bowls, vases, and mugs. All proceeds support the local orphanage.",
+            "Help Wanted: Looking for an assistant to help with daily chores and errands. Inquire within.",
+            "Event: The annual Ecumerium Festival will take place next week! Music, food, and games for all ages.",
+            "Notice: Please keep the market area clean. Trash bins are provided throughout the arcade."
+        ]
+        self.event = event
+        self._read_once = False
+
+    def read(self):
+        print("Jean scans the various notes:")
+        for note in self.notes:
+            print(f"  - {note}")
+        if self.event and (not self._read_once or getattr(self.event, 'repeat', False)):
+            time.sleep(0.3)
+            self.event.process()
+            if not getattr(self.event, 'repeat', False):
+                self._read_once = True
+        functions.await_input()
+
+    def use(self):
+        self.read()
+
+
+class PrayerCandleRack(Object):
+    """A rack of small votive candles. Jean can LIGHT a candle (increments count) or PRAY. Optional single event on PRAY.
+    """
+    def __init__(self, player: Player, tile: MapTile, lit_candles: int=0, event: Event=None):
+        description = "A wrought rack of small votive candles. A few flicker; many are unlit."  # noqa: E501
+        super().__init__(name="Candle Rack", description=description,
+                         idle_message="A rack of votive candles stands here.",
+                         discovery_message="a rack of small candles!", player=player, tile=tile)
+        self.keywords.extend(['light', 'pray', 'use'])
+        self.lit_candles = lit_candles
+        self.event = event
+
+    def light(self):
+        if self.lit_candles >= 20:
+            print("All the candles are already lit.")
+            functions.await_input()
+            return
+        self.lit_candles += 1
+        print(f"Jean lights a small candle. ({self.lit_candles} now flicker.)")
+        functions.await_input()
+
+    def pray(self):
+        print("Jean bows his head silently before the little flames.")
+        time.sleep(5)
+        print("A strange feeling fills his chest, as if there's a tune he can't quite remember.")
+        time.sleep(0.5)
+        if self.event:
+            self.event.process()
+            if not getattr(self.event, 'repeat', False):
+                self.event = None
+        functions.await_input()
+
+    def use(self):
+        self.pray()
+
+
+class MarketGong(Object):
+    """A larger bronze gong used to signal openings or special sales. Jean can STRIKE/HIT it; optional event triggers.
+    """
+    def __init__(self, player: Player, tile: MapTile, event: Event=None):
+        description = "A wide bronze gong is suspended from a stout frame. A padded mallet invites someone to STRIKE it."  # noqa: E501
+        super().__init__(name="Market Gong", description=description,
+                         idle_message="A bronze gong hangs here, silent.",
+                         discovery_message="a large bronze gong!", player=player, tile=tile)
+        self.keywords.extend(['strike', 'hit', 'bang', 'use'])
+        self.event = event
+
+    def strike(self):
+        cprint("Jean swings the mallet into the gong with a resonant BOOOONG...", 'cyan')
+        time.sleep(0.7)
+        print("The deep tone rolls outward and slowly fades.")
+        time.sleep(1)
+        print("Some nearby shoppers glance over, momentarily distracted. More than a few wear a confused expression.")
+        if self.event:
+            time.sleep(0.4)
+            self.event.process()
+            if not getattr(self.event, 'repeat', False):
+                self.event = None
+        functions.await_input()
+
+    def hit(self):
+        self.strike()
+
+    def bang(self):
+        self.strike()
+
+    def use(self):
+        self.strike()
