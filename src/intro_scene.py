@@ -1,5 +1,5 @@
 import time
-import src.functions as functions
+import functions
 
 
 def intro():
