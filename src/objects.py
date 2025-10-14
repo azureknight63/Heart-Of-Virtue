@@ -828,7 +828,7 @@ class Book(Object):
                          discovery_message="a book!", player=player, tile=tile)
         self.event = event
         self.keywords.append('read')
-        if text_file_path and not text:
+        if text_file_path:
             try:
                 with open(text_file_path, 'r', encoding='utf-8') as f:
                     self.text = f.read()
