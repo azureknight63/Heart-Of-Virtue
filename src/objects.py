@@ -387,6 +387,40 @@ try:
 except Exception:
     pass
 
+
+class Crate(Container):
+    """
+    This is meant to be a merchant crate with all merchandise and a stock count.
+    The purpose of this object is to be a convenient, predefined container for rapid map creation.
+    """
+    def __init__(self, player, tile, events: list['Event']=None,
+                 merchant: object="", allowed_subtypes: list[type[Item]] = None, stock_count: int=20):
+        description = "A large wooden crate containing merchandise."
+        super().__init__(name="Crate", description=description,
+                         idle_message="A large wooden crate is here.", events=events,
+                         merchant=merchant, allowed_subtypes=allowed_subtypes,
+                         discovery_message=" a large wooden crate!", player=player, tile=tile,
+                         nickname="crate", locked=False, start_open=True, stock_count=stock_count)
+        self.keywords.remove("open")
+        self.keywords.remove("unlock")
+
+
+class Shelf(Container):
+    """
+    This is meant to be a merchant shelf with all merchandise and a stock count.
+    The purpose of this object is to be a convenient, predefined container for rapid map creation.
+    """
+    def __init__(self, player, tile, events: list['Event']=None,
+                 merchant: object="", allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
+        description = "A practical wooden shelf displaying merchandise."
+        super().__init__(name="Shelf", description=description,
+                         idle_message="A shelf displaying merchandise is here.", events=events,
+                         merchant=merchant, allowed_subtypes=allowed_subtypes,
+                         discovery_message=" a wooden shelf!", player=player, tile=tile,
+                         nickname="shelf", locked=False, start_open=True, stock_count=stock_count)
+        self.keywords.remove("open")
+        self.keywords.remove("unlock")
+
 """
 World objects
 """
@@ -779,3 +813,137 @@ class MarketGong(Object):
 
     def use(self):
         self.strike()
+
+
+class Book(Object):
+    """
+    A book. Jean can READ it. Optionally, an event may be tied to reading the book.
+    """
+
+    def __init__(self, player: Player, tile: MapTile, event: Event=None,
+                 description: str="A dusty old book, full of mysteries and sentiments.",
+                 text: str=None, text_file_path: str=None, chars_per_page: int=800):
+        super().__init__(name="Book", description=description, hidden=False, hide_factor=0,
+                         idle_message="There's a book here.",
+                         discovery_message="a book!", player=player, tile=tile)
+        self.event = event
+        self.keywords.append('read')
+        if text_file_path and not text:
+            try:
+                with open(text_file_path, 'r', encoding='utf-8') as f:
+                    self.text = f.read()
+            except Exception as e:
+                cprint(f"Error loading book text from {text_file_path}: {e}", "red")
+                self.text = text if text else "This book is mysteriously blank."
+        elif text:
+            self.text = text
+        else:
+            self.text = "This book is mysteriously blank."
+        self.chars_per_page = chars_per_page  # characters per page for pagination
+
+    def _paginate_text(self, text: str) -> list[str]:
+        """Break text into pages of approximately chars_per_page characters, breaking at sentence boundaries."""
+        if not text or len(text) <= self.chars_per_page:
+            return [text] if text else []
+        
+        pages = []
+        current_page = ""
+        
+        # Split by sentences (basic sentence detection)
+        sentences = text.replace('! ', '!|').replace('? ', '?|').replace('. ', '.|').split('|')
+        
+        for sentence in sentences:
+            # If a single sentence is longer than chars_per_page, we need to force-split it
+            if len(sentence) > self.chars_per_page:
+                # If current_page has content, save it first
+                if current_page.strip():
+                    pages.append(current_page.strip())
+                    current_page = ""
+                
+                # Split the long sentence into chunks
+                while len(sentence) > self.chars_per_page:
+                    pages.append(sentence[:self.chars_per_page].strip())
+                    sentence = sentence[self.chars_per_page:]
+                
+                # Add remaining part to current page
+                if sentence.strip():
+                    current_page = sentence
+                continue
+            
+            # If adding this sentence would exceed page limit and we have content, start new page
+            if len(current_page) + len(sentence) > self.chars_per_page and current_page:
+                pages.append(current_page.strip())
+                current_page = sentence
+            else:
+                current_page += sentence
+        
+        # Add the last page if there's remaining content
+        if current_page.strip():
+            pages.append(current_page.strip())
+        
+        return pages if pages else [text]
+
+    def _display_page(self, page_text: str, page_num: int, total_pages: int):
+        """Display a single page with header and footer."""
+        functions.screen_clear()
+        cprint(f"--- {self.name} (Page {page_num} of {total_pages}) ---", "cyan")
+        print()
+        # Wrap text to 80 characters for readability
+        import textwrap
+        wrapped = textwrap.fill(page_text, width=80)
+        print(wrapped)
+        print()
+        cprint(f"--- Page {page_num} of {total_pages} ---", "cyan")
+
+    def _show_page_navigation(self, current_page: int, total_pages: int) -> str:
+        """Display navigation options and get user input."""
+        print()
+        options = []
+        if current_page > 1:
+            options.append(colored("P: Previous Page", "yellow"))
+        if current_page < total_pages:
+            options.append(colored("N: Next Page", "yellow"))
+        options.append(colored("C: Close Book", "red"))
+        
+        print(" | ".join(options))
+        
+        choice = input(colored("Selection: ", "cyan")).strip().lower()
+        return choice
+
+    def read(self):
+        if self.text:
+            cprint(f"{self.player.name} begins reading...", color="cyan")
+            time.sleep(0.5)
+            
+            # Check if text is long enough to paginate (threshold: ~600 chars)
+            if len(self.text) > 600:
+                pages = self._paginate_text(self.text)
+                current_page = 1
+                
+                while True:
+                    self._display_page(pages[current_page - 1], current_page, len(pages))
+                    choice = self._show_page_navigation(current_page, len(pages))
+                    
+                    if choice in ('p', 'prev', 'previous') and current_page > 1:
+                        current_page -= 1
+                    elif choice in ('n', 'next') and current_page < len(pages):
+                        current_page += 1
+                    elif choice in ('c', 'close', 'x', 'exit'):
+                        cprint(f"{self.player.name} closes the book.", "cyan")
+                        break
+                    else:
+                        cprint("Invalid choice. Please try again.", "red")
+                        time.sleep(1)
+            else:
+                # Short text - just print it normally
+                functions.print_slow(self.text, speed="fast")
+                functions.await_input()
+        else:
+            print(self.description)
+
+        if self.event:
+            time.sleep(0.5)
+            self.event.process()
+            if not getattr(self.event, 'repeat', False):
+                self.event = None
+            functions.await_input()
