@@ -36,3 +36,4 @@ cov_*.txt
 *\__pycache__
 config_dev.ini
 .coverage
+.vscode
