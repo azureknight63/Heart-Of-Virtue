@@ -37,3 +37,4 @@ cov_*.txt
 config_dev.ini
 .coverage
 .vscode
+utils/legacy-maps/
