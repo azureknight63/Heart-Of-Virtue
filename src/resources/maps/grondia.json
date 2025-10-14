@@ -1,0 +1,798 @@
+{
+    "(1, 2)": {
+        "id": "tile_1_2",
+        "title": "Passage",
+        "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use,\n        and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered,\n        and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift as you move.\n        The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 2)": {
+        "id": "tile_10_2",
+        "title": "Conclave",
+        "description": "The Conclave's chamber opens beneath a high, vaulted ceiling carved with concentric sigils.\n        Smooth stone benches ring a low central dais, and deep grooves in the floor suggest ritual processions.\n        Faded murals and bas-relief panels decorate the walls, their pigments muted by time. The air holds a\n        persistent, dry scent of resin and stone dust, and shafts of reflected light pick out the worn edges of the carvings.",
+        "exits": [
+            "south",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 3)": {
+        "id": "tile_1_3",
+        "title": "Passage",
+        "description": "This narrow tunnel narrows further on the far side, its ceiling rubbed smooth where travelers brushed past.\n        Thin, trailing roots from above thread down and cling to damp seams in the stone. The floor is mixed slate and\n        packed earth, and a faint cool draft speaks of a larger void ahead. Light here is patchy; the hush of the\n        corridor makes even the smallest sound feel significant.",
+        "exits": [
+            "north",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 3)": {
+        "id": "tile_9_3",
+        "title": "Conclave",
+        "description": "A side chamber opening from the main Conclave, this space holds shallow niches and a low stone plinth.\n        Intricate floor sigils converge here, their edges worn smooth by feet and time. Frescoes reach up toward\n        a darkened cornice where small, weathered reliefs sit in shadow. The stone smells faintly of oil and dust,\n        and the chamber carries a reverent quiet that suggets careful upkeep.",
+        "exits": [
+            "northeast",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 3)": {
+        "id": "tile_10_3",
+        "title": "Conclave",
+        "description": "This inner hall of the Conclave is dominated by a broad mosaic set into the floor, its tesserae\n        depicting concentric maps and abstract constellations meaningful to the Grondites. Pillared arches rise\n        around the room and carry dim reflected light from openings above. The air is hushed and cool, and the\n        polished stone of the walls picks out every footfall with a soft clarity.",
+        "exits": [
+            "north",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 3)": {
+        "id": "tile_11_3",
+        "title": "Conclave",
+        "description": "An annex to the Conclave lined with narrow alcoves and hanging tapestries of woven stone-fiber.\n        The tapestries soften echoes and carry patterns woven from mythic scenes; their colors have dulled with\n        age but the weave remains tight. Low, inset shelves are carved into the walls and the entire space feels\n        like a quiet antechamber for contemplation and slow footsteps.",
+        "exits": [
+            "northwest",
+            "west",
+            "south",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 4)": {
+        "id": "tile_2_4",
+        "title": "Passage",
+        "description": "A crossroads of worn corridors, where several tunnels converge and the floor bears many shallow\n        grooves from travelers and carts. The stone here is smoother, rubbed bright in places. A cool eddy of air\n        moves through the junction, carrying the faint, mineral tang of deeper caverns. Light from one corridor\n        reveals a stepped recess used as a temporary shelter or resting place.",
+        "exits": [
+            "northwest",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 4)": {
+        "id": "tile_8_4",
+        "title": "Arcology",
+        "description": "A vertical hive of carved living chambers, the Arcology stacks dwellings into the rock like tiers.\n        Narrow walkways and carved doorways line the concourse; small bridges and stairlets connect levels.\n        Large crystalline protrusions descend from the ceiling, bathing the area in a steady, warm red glow that\n        softens the shadows and gives the stone a warm, polished sheen.",
+        "exits": [
+            "northeast",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 4)": {
+        "id": "tile_9_4",
+        "title": "Residences",
+        "description": "A dense cluster of small doorways and stacked thresholds opens onto this short street of residences.\n        Each doorway is framed by carved lintels and narrow ledges where pots or small household objects might\n        be placed. Passage here is slower; the floor is swept and the architecture leans close, creating a sheltered,\n        intimate feel protected from the wider concourse.",
+        "exits": [
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 4)": {
+        "id": "tile_10_4",
+        "title": "Conclave",
+        "description": "An outer terrace of the Conclave, open to a high internal court. The floor here is arranged with\n        shallow channels that guide run-off toward a central basin and the walls hold plaques incised with lineage\n        marks and clan sigils. Light from high openings eases the gloom, and the terrace acts as a measured,\n        ceremonial threshold between the busy concourse and the inner sanctums.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 4)": {
+        "id": "tile_11_4",
+        "title": "Residences",
+        "description": "Clustered residences press close along a narrow, sheltered lane carved into the stone. Low thresholds\n        and carved lintels mark each doorway; woven ropes and weathered hooks hold cloth awnings and small\n        trinkets on shallow ledges. Warm, reflected light from ceiling crystals pools on the swept floor,\n        and the architecture leans inward, creating a string of private alcoves and tiny courtyards between homes.",
+        "exits": [
+            "northwest",
+            "north",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(12, 4)": {
+        "id": "tile_12_4",
+        "title": "Ecumerium",
+        "description": "Beneath a high, vaulted ceiling the Ecumerium unfolds as a spacious arcade of stalls and low booths.\n        Hanging banners and carved signboards swing from iron hooks, and rows of stone counters receive passing\n        trade beneath skylights that catch stray light from upper chambers. The floor bears worn channels\n        cut to manage runoff; the space smells faintly of spice resin and polished stone.",
+        "exits": [
+            "south",
+            "west",
+            "northwest",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Mynx"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "StreetLantern",
+                "__module__": "objects",
+                "props": {
+                    "name": "Street Lantern",
+                    "description": "An iron street lantern stands here. It is lit.",
+                    "idle_message": "A wrought iron street lantern stands here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a street lantern!",
+                    "announce": "A wrought iron street lantern stands here.",
+                    "keywords": [
+                        "light",
+                        "douse",
+                        "extinguish",
+                        "inspect"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "lit": true,
+                    "event_on": null,
+                    "event_off": null
+                }
+            },
+            {
+                "__class__": "MarketBell",
+                "__module__": "objects",
+                "props": {
+                    "name": "Market Bell",
+                    "description": "A small metal bell hangs from a short iron hook; it looks like it can be RUNG to draw attention.",
+                    "idle_message": "A small bell hangs here, waiting to be rung.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a small bell mounted by a stall!",
+                    "announce": "A small bell hangs here, waiting to be rung.",
+                    "keywords": [
+                        "ring",
+                        "use"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(3, 5)": {
+        "id": "tile_3_5",
+        "title": "Passage",
+        "description": "A broad conduit cut through living rock, this passage widens here into a short, hummed corridor.\n        Scuffs and shallow wheel grooves scatter across the packed floor; occasional niches have been carved\n        into the wall for lamps or small offerings. Moisture beads along seams of the stone, and a faint, cool\n        draft pushes along the corridor toward darker tunnels beyond.",
+        "exits": [
+            "northwest",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 5)": {
+        "id": "tile_4_5",
+        "title": "Passage",
+        "description": "This stretch of passage narrows where the rock bulges, forcing travelers into single file beneath\n        a low, scalloped ceiling. The stone here is darker and holds a faint salt bloom, and thin roots hang\n        in strands from small fissures. Patches of compacted earth suggest where travelers have paused; the\n        hush of the tunnel feels like a held breath before the next opening.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 5)": {
+        "id": "tile_5_5",
+        "title": "GateWest",
+        "description": "A seamless, monolithic wall rises here, its face cut and polished to an eerie smoothness. A faint\n        outline of a gate is etched into the stone, rimmed with slow-draining channels and weathered glyphs.\n        Drafts leak through tiny seams around the frame and carry the distant, muffled rhythms of the city.\n        The sheer scale and lack of an obvious mechanism make the threshold feel deliberately forbidding.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(6, 5)": {
+        "id": "tile_6_5",
+        "title": "Antechamber",
+        "description": "Angular planes of polished stone give this antechamber an unnatural, crafted order. Pink crystalline\n        clusters hang like chandeliers and wash the room in a slow, pulsing light that throws long, soft shadows.\n        Low benches and carved niches suggest a place of waiting or preparation; the air hums faintly with the\n        crystals' resonance and the pattern of light seems to coax a steady, thoughtful pace from those who enter.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(7, 5)": {
+        "id": "tile_7_5",
+        "title": "Arcology",
+        "description": "A tiered arcade of dwellings rises on either side of a narrow concourse; terraces and carved\n        ledges stack like honeycombs into the rock. Linen awnings and ropes bridge between openings, and\n        narrow stairlets climb to upper tiers. The concourse breathes with the city's slow circulation,\n        and the warm glow of embedded crystals bathes doorways in an amber cast.",
+        "exits": [
+            "northeast",
+            "west",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "Ch02GuideToCitadel",
+                "__module__": "src.story.ch02",
+                "props": {}
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 5)": {
+        "id": "tile_8_5",
+        "title": "Arcology",
+        "description": "Here the arcology opens into a slightly broader tier where small bridges and bridges of stone\n        link opposite ledges. Carved gutters collect the scant runoff and channel it toward recessed basins.\n        Doorways are set into the rock in uneven rows, and the sound of distant footfalls echoes from the\n        twisting alleys that run between the stacked dwellings.",
+        "exits": [
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 5)": {
+        "id": "tile_9_5",
+        "title": "Arcology",
+        "description": "A busier tier of the arcology, where carved thresholds open onto a tighter weave of alleys.\n        Small stone platforms serve as outdoor workspaces, and narrow railings keep passersby from steep drops.\n        The glow from clustered crystals above throws the concourse into alternating bands of light and shadow,\n        making the levels feel both intimate and vertically extensive.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 5)": {
+        "id": "tile_10_5",
+        "title": "Citadel",
+        "description": "The Citadel's outer forecourt opens into a solemn, orderly space of polished stone and raised\n        platforms. Banners and carved reliefs mark clan houses, and a broad stair leads upward toward the\n        inner halls. The air here feels intentionally controlled; water-swept channels and carefully placed\n        braziers regulate scent and humidity, and the architecture speaks of authority practiced with restraint.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 5)": {
+        "id": "tile_11_5",
+        "title": "Ecumerium",
+        "description": "A broad arcade opens beneath a high, ribbed vault where carved stone ribs meet at aged bosses.\n        Long stone counters run in ordered rows, their surfaces smoothed by generations of trade; iron hooks\n        and signboards hang from low beams, marking booths and guild spaces. Light filters through\n        clerestory slits, pooling in shallow channels cut into the floor to gather runoff. The air smells\n        faintly of spice resin and warm stone; the place feels organized for steady commerce and passing crowds.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(12, 5)": {
+        "id": "tile_12_5",
+        "title": "Ecumerium",
+        "description": "This stretch of the Ecumerium widens into a market courtyard beneath a vaulted ceiling carved\n        with clan emblems. Low booths and counters are arranged around a central drainage channel, and\n        tapestries fastened to iron rings damp the echoes. Lantern racks hang from stout posts, their\n        brackets blackened by long use. The floor is swept but stained where water and trade have left\n        their marks; the arcade feels like a deliberate meeting place for merchants and visitors alike.",
+        "exits": [
+            "north",
+            "south",
+            "east",
+            "west",
+            "northwest",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Fountain",
+                "__module__": "objects",
+                "props": {
+                    "name": "Fountain",
+                    "description": "A low circular fountain murmurs softly; clear water bubbles up and spills over carved stone. You could probably DRINK from it or just LISTEN to the water.",
+                    "idle_message": "A small stone fountain murmurs here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a murmuring fountain!",
+                    "announce": "A small stone fountain murmurs here.",
+                    "keywords": [
+                        "drink",
+                        "listen",
+                        "admire",
+                        "use"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "MarketBell",
+                "__module__": "objects",
+                "props": {
+                    "name": "Market Bell",
+                    "description": "A small metal bell hangs from a short iron hook; it looks like it can be RUNG to draw attention.",
+                    "idle_message": "A small bell hangs here, waiting to be rung.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a small bell mounted by a stall!",
+                    "announce": "A small bell hangs here, waiting to be rung.",
+                    "keywords": [
+                        "ring",
+                        "use"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "MarketGong",
+                "__module__": "objects",
+                "props": {
+                    "name": "Market Gong",
+                    "description": "A wide bronze gong is suspended from a stout frame. A padded mallet invites someone to STRIKE it.",
+                    "idle_message": "A bronze gong hangs here, silent.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a large bronze gong!",
+                    "announce": "A bronze gong hangs here, silent.",
+                    "keywords": [
+                        "strike",
+                        "hit",
+                        "bang",
+                        "use"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "NoticeBoard",
+                "__module__": "objects",
+                "props": {
+                    "name": "Notice Board",
+                    "description": "A wooden notice board stands here with a scattering of parchment scraps pinned to it.",
+                    "idle_message": "A wooden notice board is here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a notice board!",
+                    "announce": "A wooden notice board is here.",
+                    "keywords": [
+                        "read",
+                        "use"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "notes": [
+                        "This note appears to be from a human merchant: 'Mattress for sale. Lightly used. Extremely firm - high quality stone.'",
+                        "A note written in the odd chalky scratches of the Golemite language: 'I<ou][]|.._|-__=' (and so on.)"
+                    ],
+                    "event": null
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(13, 5)": {
+        "id": "tile_13_5",
+        "title": "Ecumerium",
+        "description": "A row of recessed stalls lines this side of the Ecumerium, each set beneath a carved lintel.\n        Stone counters are inset with small basins to catch drips, and hinged shutters fold into the walls\n        when empty. Painted plaques above each stall show faded emblems and slogans; many have been repainted\n        over time. The space carries the constant low murmur of commerce and the creak of ropes and shutters.",
+        "exits": [
+            "northwest",
+            "west",
+            "east",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(14, 5)": {
+        "id": "tile_14_5",
+        "title": "Antechamber",
+        "description": "A compact antechamber with sharply faceted walls, more angular than the rough caverns nearby.\n        Pink crystalline clusters hang from the ceiling like sculpted lamps, their slow pulses bathing the\n        room in a soft, cyclical glow. Carved benches line the walls and a low stone table sits in the center,\n        its surface smoothed by hands and time. The space feels deliberate and domestic, an interior pause\n        between the city and the private quarters that open from it.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(15, 5)": {
+        "id": "tile_15_5",
+        "title": "GateEast",
+        "description": "A broad, featureless wall rises here and a rough path curls away to the east. The gate set\n        into the stone is suggested only by a faint seam and weathered grooves; no visible mechanism exists.\n        Narrow drainage channels trace the base of the wall and a shallow step leads up to the framed arch.\n        The monumentality of the barrier and the absence of a handle mark it as a threshold meant for the\n        Grondites' larger designs rather than casual passage.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 6)": {
+        "id": "tile_8_6",
+        "title": "Arcology",
+        "description": "The arcology here widens into a bustling spine where terraces step up in tight tiers. Narrow\n        bridges of carved stone connect opposite ledges; iron rings and ropes secure small awnings above\n        doorways. The concourse narrows and widens rhythmically, creating pockets of shadow and light where\n        residents might pause. Embedded crystals inset in the walls cast a steady, warm radiance that softens\n        the roughness of the carved stonework.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 6)": {
+        "id": "tile_9_6",
+        "title": "Residences",
+        "description": "Narrow thresholds open from a confined lane into a cluster of modest homes. Carved lintels\n        and patched stonework speak of continuous repair and practical care. Small ledges project from the\n        walls where simple offerings or nightly tools might rest; a low drain runs the length of the lane to\n        move away spills. The area feels private and sheltered, a quieter backstreet removed from the main\n        concourse.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 6)": {
+        "id": "tile_10_6",
+        "title": "Fabricarium",
+        "description": "The Fabricarium's working floor opens into a cross-cut gallery of workshops. Heavy stone\n        benches and low tool racks line the walls; the floors bear the dark smears of metalworking and\n        polishing. Venting channels rise toward high flues to carry away heat and dust, and iron supports\n        brace the carved roof where pulley blocks and beams transmit force. The space smells faintly of\n        warm stone and metal, and its layout prioritizes work and movement over display.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 6)": {
+        "id": "tile_11_6",
+        "title": "Residences",
+        "description": "A stepped courtyard opens between a row of residences, its floor worn smooth by foot traffic.\n        Low stone seats and shallow basins are set into the perimeter walls; narrow stairlets lead to upper\n        doors. The layout fosters small gatherings and domestic chores, and carved motifs over each entry\n        mark family or craft affiliations. The air is cooler here, shaded by overhanging terraces and awnings.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(12, 6)": {
+        "id": "tile_12_6",
+        "title": "Ecumerium",
+        "description": "At this edge of the Ecumerium, stalls give way to a broader thoroughfare with carved\n        pilasters and more elaborate signboards. Stone channels run along the center to collect runoff and\n        guide it toward covered basins. Decorative reliefs depict merchant routes and distant caverns, and\n        worn thresholds show where carts and pack carriers have passed. The space hums with movement, but\n        its architecture keeps the flow deliberate and navigable.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(9, 7)": {
+        "id": "tile_9_7",
+        "title": "Fabricarium",
+        "description": "This chamber serves as a finishing floor where polished surfaces are brought to a mirror sheen.\n        Low basins of water sit beside abrasive stones and leather pads; fine metallic dust coats the ledges.\n        Overhead racks hold long tools while wheeled trolleys rest against the walls ready to carry finished\n        components. The space hums with small, precise motions rather than the raw impact of heavy forging.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "east",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 7)": {
+        "id": "tile_10_7",
+        "title": "Fabricarium",
+        "description": "A network of workbenches and packing stations occupies this level, where shaped pieces are\n        assembled into larger fittings. Crates and simple wooden carts stand ready along a clear aisle; pulley\n        blocks descend from carved beams to lift heavy loads for transfer. The floor bears scuffs and wheel\n        grooves from repeated traffic, and a low canopy of woven fiber shades the busiest benches.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(11, 7)": {
+        "id": "tile_11_7",
+        "title": "Fabricarium",
+        "description": "A quality hall with measured jigs and templates mounted to the walls, used to check tolerances\n        and alignment. Stone pedestals support sample pieces while small lamps are fixed overhead to reveal\n        imperfections. Cross-vent channels run here to carry away smoke from nearby ovens, and the tiled\n        floor is scoured nightly to keep grit from marring finished surfaces.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(8, 8)": {
+        "id": "tile_8_8",
+        "title": "Passage",
+        "description": "A long, echoing passage that links deeper workshops to the arcology above. The ceiling here\n        sits low and the walls are scored with old tool marks; rope rings and iron brackets are set into\n        niches where lamps or banners might be affixed. Cool drafts sweep the corridor, carrying the mixed\n        scents of stone and metal. Faint scratches in the floor trace the passage of trolleys and handcarts.",
+        "exits": [
+            "northeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 8)": {
+        "id": "tile_10_8",
+        "title": "Fabricarium",
+        "description": "A storage and staging alcove where packed components await dispatch. Sturdy racks rise in rows,\n        bearing crates and wrapped bundles secured with woven fiber. A shallow loading ramp gives access to a\n        narrow service corridor; chalk marks on the beams record previous loads and destinations. The air here\n        is drier, and the floor is kept deliberately swept to ease handling during busy transfer hours.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(7, 9)": {
+        "id": "tile_7_9",
+        "title": "GrondelithEntrance",
+        "description": "The chamber opens into a wide basin of mineral pools ringed by towering crystalline spires.\n        Pools of clear, mineral-rich water sit in carved basins, reflecting fractured light across the walls.\n        Fine, glittering detritus collects on shallow ledges and the air tastes faintly metallic, sharp and\n        mineral. The constant, gentle tinkle of water and the resonant ring of shifting crystals fills the space\n        with a slow, crystalline music.",
+        "exits": [
+            "northeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(10, 9)": {
+        "id": "tile_10_9",
+        "title": "Antechamber",
+        "description": "An intimate antechamber carved with neat, geometric niches and a low, central table of smoothed\n        stone. Pale crystals embedded in the ceiling throw a diffuse light; the walls are incised with simple\n        runes and maintenance marks rather than ornate imagery. A narrow shelf holds folded cloth and utility\n        implements; the room feels like a quiet preparatory space between workings and private rooms beyond.",
+        "exits": [
+            "north",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(10, 10)": {
+        "id": "tile_10_10",
+        "title": "GateSouth",
+        "description": "A massive, smooth wall extends to the north, its surface unmarred except for a faint seam\n        that hints at a concealed threshold. The approach is punctuated by small, recessed pools that glow a\n        pale blue and collect condensation from higher chambers. Heavy grooves and weathering at the base show\n        where mechanisms were once housed; the absence of visible hardware suggests deliberate concealment in\n        the original design and long, slow maintenance rather than frequent opening.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    }
+}
