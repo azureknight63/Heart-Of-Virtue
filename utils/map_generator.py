@@ -12,8 +12,6 @@ import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union, Type  # type hinting (removed unused Iterable)
 from typing import get_type_hints  # added for resolving postponed annotations
 
-from events import Event
-
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
 src_root = os.path.join(project_root, 'src')
@@ -23,6 +21,7 @@ if project_root not in sys.path:
 if src_root not in sys.path:
     sys.path.insert(0, src_root)
 
+from events import Event  # noqa
 from src.npc import Merchant
 
 
