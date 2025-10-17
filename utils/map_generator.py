@@ -21,8 +21,8 @@ if project_root not in sys.path:
 if src_root not in sys.path:
     sys.path.insert(0, src_root)
 
-from events import Event  # noqa
-from src.npc import Merchant
+from events import Event  # type: ignore
+from npc import Merchant  # type: ignore
 
 
 # Added: custom exception to surface rich context about serialization failures
@@ -88,7 +88,7 @@ def parse_type_hint(annotation):
             # Try to import from src modules
             for module_name in ['items', 'objects', 'npc', 'events']:
                 try:
-                    module = importlib.import_module(f'src.{module_name}')
+                    module = importlib.import_module(f'{module_name}')
                     if hasattr(module, annotation):
                         return getattr(module, annotation), False, False
                 except ImportError:
@@ -140,7 +140,7 @@ def get_class_hierarchy(base_class, module_names=None):
     # Search through specified modules
     for module_name in module_names:
         try:
-            module = importlib.import_module(f'src.{module_name}')
+            module = importlib.import_module(f'{module_name}')
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
                 if (inspect.isclass(attr) and
@@ -1207,8 +1207,8 @@ class MapEditor:
                         try:
                             mod_name, cls_name = spec.rsplit(':', 1)
                             if mod_name and cls_name:
-                                if not mod_name.startswith('src.') and mod_name != 'builtins':
-                                    mod_name = f'src.{mod_name}'
+                                if mod_name.startswith('src.'):
+                                    mod_name = mod_name[4:]
                                 module = importlib.import_module(mod_name)
                                 return getattr(module, cls_name)
                         except Exception:
@@ -1219,8 +1219,8 @@ class MapEditor:
                             cls_name = d.get('__class__')
                             mod_name = d.get('__module__')
                             # Normalize module name for items, moves, etc.
-                            if mod_name != 'builtins' and not mod_name.startswith('src.'):
-                                mod_name = f'src.{mod_name}'
+                            if mod_name.startswith('src.'):
+                                mod_name = mod_name[4:]
                             props = d.get('props', {})
                             try:
                                 module = importlib.import_module(mod_name)
@@ -1346,14 +1346,14 @@ class MapEditor:
                 if not class_name or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', class_name):
                     return None
                 search_modules = [
-                    'src.items', 'src.npc', 'src.objects'
+                    'items', 'npc', 'objects'
                 ]
                 # add story modules
                 story_dir = os.path.join(project_root, 'src', 'story')
                 if os.path.isdir(story_dir):
                     for fn in os.listdir(story_dir):
                         if fn.endswith('.py') and not fn.startswith('__'):
-                            mod_path = f"src.story.{fn[:-3]}"
+                            mod_path = f"story.{fn[:-3]}"
                             if mod_path not in search_modules:
                                 search_modules.append(mod_path)
                 for mod_name in search_modules:
