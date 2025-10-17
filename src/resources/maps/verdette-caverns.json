@@ -11,7 +11,7 @@
         "items": [
             {
                 "__class__": "Battleaxe",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 120.96010380979605,
                     "str_req": 5,
@@ -67,7 +67,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -93,7 +93,7 @@
             },
             {
                 "__class__": "Draught",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -141,7 +141,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -153,7 +153,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Slime"
+                        "__class_type__": "npc:Slime"
                     },
                     "count": 2,
                     "spawned_npcs": []
@@ -224,7 +224,7 @@
         "items": [
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -271,7 +271,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "Slimes",
                     "player": null,
@@ -283,7 +283,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Slime"
+                        "__class_type__": "npc:Slime"
                     },
                     "count": 2,
                     "spawned_npcs": []
@@ -291,7 +291,7 @@
             },
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "Rumblers",
                     "player": null,
@@ -303,7 +303,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:RockRumbler"
+                        "__class_type__": "npc:RockRumbler"
                     },
                     "count": 1,
                     "spawned_npcs": []
@@ -342,7 +342,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -354,7 +354,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Slime"
+                        "__class_type__": "npc:Slime"
                     },
                     "count": 5,
                     "spawned_npcs": []
@@ -364,7 +364,7 @@
         "items": [
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -396,7 +396,7 @@
             },
             {
                 "__class__": "Draught",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -431,7 +431,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "nickname": "remains",
                     "possible_states": [
@@ -444,14 +444,14 @@
                     "merchant": "",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Item"
+                            "__class_type__": "items:Item"
                         }
                     ],
                     "stock_count": 10,
                     "inventory": [
                         {
                             "__class__": "Gold",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "amt": 23,
                                 "maintype": "Gold",
@@ -477,7 +477,7 @@
                         },
                         {
                             "__class__": "LeatherCap",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "protection": 2,
                                 "str_req": 3,
@@ -510,7 +510,7 @@
                         },
                         {
                             "__class__": "SilverRing",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "protection": 0,
                                 "str_mod": 0,
@@ -542,7 +542,7 @@
                         },
                         {
                             "__class__": "Antidote",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -574,7 +574,7 @@
                         },
                         {
                             "__class__": "LeatherGloves",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "protection": 2,
                                 "str_req": 3,
@@ -673,7 +673,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -699,7 +699,7 @@
             },
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -747,7 +747,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -759,7 +759,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:RockRumbler"
+                        "__class_type__": "npc:RockRumbler"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -785,7 +785,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -797,7 +797,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Slime"
+                        "__class_type__": "npc:Slime"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -822,7 +822,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -834,7 +834,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:RockRumbler"
+                        "__class_type__": "npc:RockRumbler"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -940,7 +940,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -952,7 +952,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:RockRumbler"
+                        "__class_type__": "npc:RockRumbler"
                     },
                     "count": 2,
                     "spawned_npcs": []
@@ -960,7 +960,7 @@
             },
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -972,7 +972,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Slime"
+                        "__class_type__": "npc:Slime"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -982,7 +982,7 @@
         "items": [
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -1045,7 +1045,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -1057,7 +1057,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:RockRumbler"
+                        "__class_type__": "npc:RockRumbler"
                     },
                     "count": 3,
                     "spawned_npcs": []
@@ -1065,7 +1065,7 @@
             },
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -1077,7 +1077,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Slime"
+                        "__class_type__": "npc:Slime"
                     },
                     "count": 5,
                     "spawned_npcs": []
@@ -1103,7 +1103,7 @@
         "items": [
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -1135,7 +1135,7 @@
             },
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -1167,7 +1167,7 @@
             },
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -1227,7 +1227,7 @@
             },
             {
                 "__class__": "AfterDefeatingLurker",
-                "__module__": "src.story.ch02",
+                "__module__": "story.ch02",
                 "props": {}
             }
         ],
@@ -1275,7 +1275,7 @@
         "events": [
             {
                 "__class__": "NPCSpawnerEvent",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "NPCSpawnerEvent",
                     "player": null,
@@ -1287,7 +1287,7 @@
                     "referenceobj": null,
                     "spawn_tile": null,
                     "npc_cls": {
-                        "__class_type__": "src.npc:Mynx"
+                        "__class_type__": "npc:Mynx"
                     },
                     "count": 1,
                     "spawned_npcs": []
@@ -1299,7 +1299,7 @@
         "objects": [
             {
                 "__class__": "HealingSpring",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "HealingSpring",
                     "description": "A burbling spring with fresh smelling water. It is clean and very inviting.",

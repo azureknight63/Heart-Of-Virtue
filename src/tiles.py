@@ -6,19 +6,9 @@ import importlib
 
 from neotermcolor import colored
 
-# Provide resilient imports (top-level or package) to support both execution modes
-try:  # actions
-    import actions  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src import actions  # type: ignore
-try:  # functions
-    import functions  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src import functions  # type: ignore
-try:  # universe.tile_exists
-    from universe import tile_exists as tile_exists  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src.universe import tile_exists as tile_exists  # type: ignore
+import actions  # type: ignore
+import functions  # type: ignore
+from universe import tile_exists as tile_exists  # type: ignore
 
 
 class MapTile:
@@ -121,10 +111,7 @@ class MapTile:
         try:
             module = __import__('npc')
         except ModuleNotFoundError:
-            try:
-                module = importlib.import_module('src.npc')
-            except Exception:
-                module = None
+            module = None
         npc_cls = None
         if module:
             try:
@@ -169,7 +156,7 @@ class MapTile:
         # python
         import importlib
 
-        items_mod = importlib.import_module('src.items')
+        items_mod = importlib.import_module('items')
         amt = max(1, int(amt))
         spawned = []
 

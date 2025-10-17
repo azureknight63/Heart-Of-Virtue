@@ -2,7 +2,7 @@ from neotermcolor import colored, cprint
 import time
 import random
 
-from src.functions import refresh_stat_bonuses, is_input_integer, await_input
+from functions import refresh_stat_bonuses, is_input_integer, await_input
 
 
 def combat(player):

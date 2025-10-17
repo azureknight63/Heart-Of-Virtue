@@ -3,8 +3,8 @@ All the loot tables for NPCs can be found here. These are called from the npc mo
 """
 
 import random, decimal
-from src.items import item_types
-from src.states import Poisoned, PhoenixRevive
+from items import item_types
+from states import Poisoned, PhoenixRevive
 
 
 class Enchantment:

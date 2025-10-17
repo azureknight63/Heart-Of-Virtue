@@ -32,7 +32,7 @@
         "objects": [
             {
                 "__class__": "WallInscription",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Inscription",
                     "description": "Words scratched into the wall. You think you can make out the words if you READ closely.",
@@ -102,7 +102,7 @@
         "events": [
             {
                 "__class__": "Ch01ChestRumblerBattle",
-                "__module__": "src.story.ch01",
+                "__module__": "story.ch01",
                 "props": {
                     "name": "Ch01_Chest_Rumbler_Battle",
                     "player": null,
@@ -120,7 +120,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "nickname": "wooden chest",
                     "possible_states": [
@@ -133,14 +133,14 @@
                     "merchant": "",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Item"
+                            "__class_type__": "items:Item"
                         }
                     ],
                     "stock_count": 10,
                     "inventory": [
                         {
                             "__class__": "Gold",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "amt": 68,
                                 "maintype": "Gold",
@@ -244,7 +244,7 @@
         "events": [
             {
                 "__class__": "Ch01StartOpenWall",
-                "__module__": "src.story.ch01",
+                "__module__": "story.ch01",
                 "props": {
                     "name": "Ch01_Start_Open_Wall",
                     "player": null,
@@ -262,7 +262,7 @@
         "objects": [
             {
                 "__class__": "WallSwitch",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Wall Depression",
                     "description": "A small depression in the wall. You may be able to PRESS on it.",
@@ -302,7 +302,7 @@
         "npcs": [
             {
                 "__class__": "Mynx",
-                "__module__": "src.npc",
+                "__module__": "npc",
                 "props": {
                     "keywords": [
                         "talk",
@@ -421,7 +421,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcIdle",
-                            "__module__": "src.moves",
+                            "__module__": "moves",
                             "props": {
                                 "name": "Idle",
                                 "description": "What?",
@@ -521,7 +521,7 @@
         "events": [
             {
                 "__class__": "Ch01BridgeWall",
-                "__module__": "src.story.ch01",
+                "__module__": "story.ch01",
                 "props": {
                     "name": "Ch01_Bridge_Wall",
                     "player": null,
@@ -539,7 +539,7 @@
         "objects": [
             {
                 "__class__": "WallSwitch",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Wall Depression",
                     "description": "A small depression in the wall. You may be able to PRESS on it.",
@@ -612,7 +612,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 27,
                     "maintype": "Gold",
@@ -638,7 +638,7 @@
             },
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -711,7 +711,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -795,7 +795,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "nickname": "remains",
                     "possible_states": [
@@ -808,14 +808,14 @@
                     "merchant": "",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Item"
+                            "__class_type__": "items:Item"
                         }
                     ],
                     "stock_count": 10,
                     "inventory": [
                         {
                             "__class__": "DullMedallion",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "protection": 0,
                                 "str_mod": 0,
@@ -847,7 +847,7 @@
                         },
                         {
                             "__class__": "Gold",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "amt": 133,
                                 "maintype": "Gold",
@@ -873,7 +873,7 @@
                         },
                         {
                             "__class__": "ClothBoots",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "protection": 1,
                                 "str_req": 1,

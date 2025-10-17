@@ -1,40 +1,14 @@
 import random
 import time
-# Resilient imports for top-level vs package execution contexts
-try:
-    import genericng as genericng  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src import genericng as genericng  # type: ignore
-try:
-    import moves as moves  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src import moves as moves  # type: ignore
-try:
-    import functions as functions  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src import functions as functions  # type: ignore
-try:
-    import loot_tables as loot_tables  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src import loot_tables as loot_tables  # type: ignore
-try:
-    from items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
+import genericng as genericng  # type: ignore
+import moves as moves  # type: ignore
+import functions as functions  # type: ignore
+import loot_tables as loot_tables  # type: ignore
+from items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
                        Gloves, Helm, Boots, Armor, Weapon, Arrow)  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src.items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
-                           Gloves, Helm, Boots, Armor, Weapon, Arrow)  # type: ignore
-try:
-    import items as items_module  # type: ignore  # added for unique item registry management
-except ModuleNotFoundError:  # pragma: no cover
-    from src import items as items_module  # type: ignore
-try:
-    from objects import Container  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src.objects import Container  # type: ignore
-try:
-    from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition  # type: ignore
+import items as items_module  # type: ignore  # added for unique item registry management
+from objects import Container  # type: ignore
+from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition  # type: ignore
 from neotermcolor import colored, cprint
 from pathlib import Path
 import os

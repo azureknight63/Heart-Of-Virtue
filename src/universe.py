@@ -1,12 +1,6 @@
 __author__ = 'Alex Egbert'
 
-# import functions (robust to package vs top-level import)
-try:
-    # Prefer top-level import so tests that monkeypatch 'functions' (imported as 'functions') affect us
-    import functions as functions
-except Exception:
-    # Fallback when running as package (src package on path)
-    import src.functions as functions
+import functions as functions
 import json, inspect, importlib
 from pathlib import Path
 from typing import Final
@@ -85,14 +79,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
     def _deserialize_saved_instance(self, payload):
         """Deserialize an instance saved by map_generator (class+module+props). Returns object or None."""
         # Recursively deserialize nested objects in props, events, etc.
-        # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'src.items:Item'})
+        # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'items:Item'})
         if isinstance(payload, dict) and '__class_type__' in payload:
             spec = payload.get('__class_type__')
             try:
                 mod_name, cls_name = spec.rsplit(':', 1)
                 if mod_name and cls_name:
-                    if not mod_name.startswith('src.') and mod_name != 'builtins':
-                        mod_name = f'src.{mod_name}'
                     module = __import__(mod_name, fromlist=[cls_name])
                     return getattr(module, cls_name)
             except Exception:
@@ -104,9 +96,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         mod_name = payload.get('__module__')
         props = payload.get('props', {})
 
-        # Normalize module name
-        if mod_name != 'builtins' and not mod_name.startswith('src.'):
-            mod_name = f'src.{mod_name}'
+        # Throw error if mod name has improper format; 'src.' prefix should not be present.
+        if mod_name.startswith('src.'):
+            raise ValueError(f"Invalid module name format: {mod_name}")
 
         def recursive_deserialize(value):
             if isinstance(value, dict):
@@ -181,7 +173,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 tile_cls = functions.seek_class(title, 'tilesets')
             except Exception:
                 try:
-                    tiles_mod = importlib.import_module('src.tiles')
+                    tiles_mod = importlib.import_module('tiles')
                     tile_cls = getattr(tiles_mod, 'MapTile')
                 except Exception:
                     from tiles import MapTile as tile_cls  # fallback
@@ -381,7 +373,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                         this_map[(x, y)] = None
                     else:
                         try:
-                            tiles_mod = importlib.import_module('src.tiles')
+                            tiles_mod = importlib.import_module('tiles')
                             this_map[(x, y)] = getattr(tiles_mod, tile_name)(self, this_map, x, y)
                         except Exception:
                             # legacy fallback

@@ -30,12 +30,12 @@
         "npcs": [
             {
                 "__class__": "MiloCurioDealer",
-                "__module__": "src.npc",
+                "__module__": "npc",
                 "props": {
                     "inventory": [
                         {
                             "__class__": "Restorative",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -66,7 +66,7 @@
                         },
                         {
                             "__class__": "Rock",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "damage": 1,
                                 "str_req": 1,
@@ -105,7 +105,7 @@
                         },
                         {
                             "__class__": "Spear",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "damage": 25,
                                 "str_req": 10,
@@ -144,7 +144,7 @@
                         },
                         {
                             "__class__": "Shortsword",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "damage": 25,
                                 "str_req": 5,
@@ -183,7 +183,7 @@
                         },
                         {
                             "__class__": "Gold",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "amt": 100,
                                 "maintype": "Gold",
@@ -319,7 +319,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcRest",
-                            "__module__": "src.moves",
+                            "__module__": "moves",
                             "props": {
                                 "name": "Rest",
                                 "description": "Rest for a moment to restore fatigue.",
@@ -412,7 +412,7 @@
                     },
                     "shop": {
                         "__class__": "ShopInterface",
-                        "__module__": "src.interface",
+                        "__module__": "interface",
                         "props": {
                             "merchant": "<circular_ref:MiloCurioDealer>",
                             "player": null,
@@ -422,7 +422,7 @@
                             "sell_modifier": 0.5,
                             "buy_menu": {
                                 "__class__": "BaseInterface",
-                                "__module__": "src.interface",
+                                "__module__": "interface",
                                 "props": {
                                     "title": "Buy Menu",
                                     "choices": [],
@@ -442,7 +442,7 @@
                             },
                             "sell_menu": {
                                 "__class__": "BaseInterface",
-                                "__module__": "src.interface",
+                                "__module__": "interface",
                                 "props": {
                                     "title": "Sell Menu",
                                     "choices": [],
@@ -496,7 +496,7 @@
         "items": [
             {
                 "__class__": "Spear",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 25,
                     "str_req": 10,
@@ -535,7 +535,7 @@
             },
             {
                 "__class__": "Scythe",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 5,
                     "str_req": 1,
@@ -574,7 +574,7 @@
             },
             {
                 "__class__": "GoldRing",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "protection": 0,
                     "str_mod": 0,
@@ -609,7 +609,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "nickname": "weapon rack",
                     "possible_states": [
@@ -622,7 +622,7 @@
                     "merchant": "Milo the Traveling Curio Dealer",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Item"
+                            "__class_type__": "items:Item"
                         }
                     ],
                     "stock_count": 10,
@@ -684,7 +684,7 @@
                     "player": null,
                     "allowed_subtypes": [
                         {
-                            "__class_type__": "src.items:Weapon"
+                            "__class_type__": "items:Weapon"
                         }
                     ],
                     "start_open": true,
@@ -707,7 +707,7 @@
         "events": [
             {
                 "__class__": "StMichael",
-                "__module__": "src.story.effects",
+                "__module__": "story.effects",
                 "props": {
                     "name": "Shrine of St Michael the Archangel",
                     "player": null,
@@ -754,7 +754,7 @@
         "objects": [
             {
                 "__class__": "Passageway",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Passageway",
                     "description": "A passageway leading elsewhere is here.",

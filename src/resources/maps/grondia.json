@@ -264,6 +264,36 @@
                     "player": null,
                     "event": null
                 }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Jambo's Tent",
+                    "description": "A tent is here with a hand-painted sign reading \"Jambo Heals U.\"",
+                    "idle_message": "There is a tent entrance here with a sign reading \"Jambo Heals U.\"",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a tent!",
+                    "announce": "There is a tent entrance here with a sign reading \"Jambo Heals U.\"",
+                    "keywords": [
+                        "enter",
+                        "go",
+                        "leave",
+                        "exit"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia-jambos_shop",
+                    "teleport_tile": [
+                        2,
+                        2
+                    ],
+                    "persist": true
+                }
             }
         ],
         "symbol": ""
@@ -338,7 +368,7 @@
         "events": [
             {
                 "__class__": "Ch02GuideToCitadel",
-                "__module__": "src.story.ch02",
+                "__module__": "story.ch02",
                 "props": {}
             }
         ],

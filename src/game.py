@@ -14,11 +14,11 @@ from neotermcolor import colored, cprint
 from functions import refresh_stat_bonuses
 from intro_scene import intro
 
-from src.combat import combat
-import src.functions as functions
-import src.items as items
-from src.player import Player
-from src.universe import Universe, tile_exists
+from combat import combat
+import functions as functions
+import items as items
+from player import Player
+from universe import Universe, tile_exists
 import sys
 import configparser
 import ast

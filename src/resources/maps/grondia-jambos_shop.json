@@ -11,7 +11,7 @@
         "npcs": [
             {
                 "__class__": "JamboHealsU",
-                "__module__": "src.npc",
+                "__module__": "npc",
                 "props": {
                     "inventory": [],
                     "name": "Jambo",
@@ -125,7 +125,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcRest",
-                            "__module__": "src.moves",
+                            "__module__": "moves",
                             "props": {
                                 "name": "Rest",
                                 "description": "Rest for a moment to restore fatigue.",
@@ -209,7 +209,7 @@
                     },
                     "specialties": [
                         {
-                            "__class_type__": "src.items:Consumable"
+                            "__class_type__": "items:Consumable"
                         }
                     ],
                     "enchantment_rate": 0.0,
@@ -217,7 +217,7 @@
                     "always_stock": [
                         {
                             "__class__": "Restorative",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -249,7 +249,7 @@
                         },
                         {
                             "__class__": "Draught",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -281,7 +281,7 @@
                         },
                         {
                             "__class__": "Antidote",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -320,7 +320,7 @@
                     },
                     "shop": {
                         "__class__": "ShopInterface",
-                        "__module__": "src.interface",
+                        "__module__": "interface",
                         "props": {
                             "merchant": "<circular_ref:JamboHealsU>",
                             "player": null,
@@ -330,7 +330,7 @@
                             "sell_modifier": 0.5,
                             "buy_menu": {
                                 "__class__": "ShopBuyMenu",
-                                "__module__": "src.interface",
+                                "__module__": "interface",
                                 "props": {
                                     "shop": "<circular_ref:ShopInterface>",
                                     "title": "Buy Menu",
@@ -341,7 +341,7 @@
                             },
                             "sell_menu": {
                                 "__class__": "ShopSellMenu",
-                                "__module__": "src.interface",
+                                "__module__": "interface",
                                 "props": {
                                     "shop": "<circular_ref:ShopInterface>",
                                     "title": "Sell Menu",
@@ -371,7 +371,7 @@
         "objects": [
             {
                 "__class__": "Passageway",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Tent Flap",
                     "description": "A tent flap leading out into the city.",
@@ -417,7 +417,7 @@
         "objects": [
             {
                 "__class__": "Crate",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "nickname": "crate",
                     "possible_states": [
@@ -430,7 +430,7 @@
                     "merchant": "Jambo",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Consumable"
+                            "__class_type__": "items:Consumable"
                         }
                     ],
                     "stock_count": 12,
@@ -472,7 +472,7 @@
         "objects": [
             {
                 "__class__": "Book",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Book",
                     "description": "A worn book with leather binding. The cover has, in faded black ink, the title \"Jambo's Book Of Business.\"",
@@ -488,9 +488,9 @@
                     "tile": null,
                     "player": null,
                     "event": null,
-                    "text": "This book is mysteriously blank.",
+                    "text": "This should not be shown. SHAZBOT!",
                     "chars_per_page": 800,
-                    "text_file_path": "docs/lore/jambos-book-of-business-wisdom"
+                    "text_file_path": "src\\resources\\books\\jambos-book-of-business-wisdom.txt"
                 }
             }
         ],

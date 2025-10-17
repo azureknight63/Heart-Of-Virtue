@@ -12,7 +12,7 @@
         "items": [
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -44,7 +44,7 @@
             },
             {
                 "__class__": "WoodenArrow",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.05,
                     "maintype": "Consumable",
@@ -298,7 +298,7 @@
         "items": [
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -330,7 +330,7 @@
             },
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -365,7 +365,7 @@
         "objects": [
             {
                 "__class__": "Passageway",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "name": "Passageway",
                     "description": "A passageway leading elsewhere is here.",
@@ -412,7 +412,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 50000,
                     "maintype": "Gold",
@@ -437,7 +437,7 @@
             },
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -469,7 +469,7 @@
             },
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -501,7 +501,7 @@
             },
             {
                 "__class__": "Spear",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 25,
                     "str_req": 10,
@@ -540,7 +540,7 @@
             },
             {
                 "__class__": "Scythe",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 5,
                     "str_req": 1,
@@ -579,7 +579,7 @@
             },
             {
                 "__class__": "Pickaxe",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 25,
                     "str_req": 10,
@@ -618,7 +618,7 @@
             },
             {
                 "__class__": "Battleaxe",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 25,
                     "str_req": 5,
@@ -675,7 +675,7 @@
         "npcs": [
             {
                 "__class__": "JamboHealsU",
-                "__module__": "src.npc",
+                "__module__": "npc",
                 "props": {
                     "inventory": [],
                     "name": "Jambo",
@@ -789,7 +789,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcRest",
-                            "__module__": "src.moves",
+                            "__module__": "moves",
                             "props": {
                                 "name": "Rest",
                                 "description": "Rest for a moment to restore fatigue.",
@@ -873,7 +873,7 @@
                     },
                     "specialties": [
                         {
-                            "__class_type__": "src.items:Consumable"
+                            "__class_type__": "items:Consumable"
                         }
                     ],
                     "enchantment_rate": 0.0,
@@ -881,7 +881,7 @@
                     "always_stock": [
                         {
                             "__class__": "Restorative",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -913,7 +913,7 @@
                         },
                         {
                             "__class__": "Draught",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -945,7 +945,7 @@
                         },
                         {
                             "__class__": "Antidote",
-                            "__module__": "src.items",
+                            "__module__": "items",
                             "props": {
                                 "weight": 0.25,
                                 "maintype": "Consumable",
@@ -984,7 +984,7 @@
                     },
                     "shop": {
                         "__class__": "ShopInterface",
-                        "__module__": "src.interface",
+                        "__module__": "interface",
                         "props": {
                             "merchant": "<circular_ref:JamboHealsU>",
                             "player": null,
@@ -994,7 +994,7 @@
                             "sell_modifier": 0.5,
                             "buy_menu": {
                                 "__class__": "ShopBuyMenu",
-                                "__module__": "src.interface",
+                                "__module__": "interface",
                                 "props": {
                                     "shop": "<circular_ref:ShopInterface>",
                                     "title": "Buy Menu",
@@ -1005,7 +1005,7 @@
                             },
                             "sell_menu": {
                                 "__class__": "ShopSellMenu",
-                                "__module__": "src.interface",
+                                "__module__": "interface",
                                 "props": {
                                     "shop": "<circular_ref:ShopInterface>",
                                     "title": "Sell Menu",
@@ -1035,7 +1035,7 @@
         "objects": [
             {
                 "__class__": "Container",
-                "__module__": "src.objects",
+                "__module__": "objects",
                 "props": {
                     "nickname": "sack",
                     "possible_states": [
@@ -1048,7 +1048,7 @@
                     "merchant": "Jambo",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Consumable"
+                            "__class_type__": "items:Consumable"
                         }
                     ],
                     "stock_count": 2,
@@ -1088,7 +1088,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 35,
                     "maintype": "Gold",
@@ -1113,7 +1113,7 @@
             },
             {
                 "__class__": "Draught",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -1159,7 +1159,7 @@
         "items": [
             {
                 "__class__": "Shortbow",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "damage": 8,
                     "str_req": 5,
@@ -1200,7 +1200,7 @@
             },
             {
                 "__class__": "WoodenArrow",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.05,
                     "maintype": "Consumable",
@@ -1250,7 +1250,7 @@
         "items": [
             {
                 "__class__": "LeatherBoots",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "protection": 3,
                     "str_req": 3,
@@ -1283,7 +1283,7 @@
             },
             {
                 "__class__": "PaddedCap",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "protection": 1,
                     "str_req": 1,
