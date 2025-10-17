@@ -4,15 +4,11 @@ import time
 import states
 from neotermcolor import colored, cprint
 
-try:
-    import functions as functions
-except Exception:
-    import src.functions as functions
-
-from src.player import Player
-from src.tiles import MapTile
-from src.events import Event # noqa; This is used in type hints
-from src.items import Item # noqa; This is used in type hints
+import functions as functions
+from player import Player
+from tiles import MapTile
+from events import Event # noqa; This is used in type hints
+from items import Item # noqa; This is used in type hints
 
 #####
 # These are objects that exist on tiles as opposed to items carried by the player
@@ -305,7 +301,7 @@ class Container(Object):
             return
 
         # Import the interface class
-        from src.interface import ContainerLootInterface
+        from interface import ContainerLootInterface
 
         # Create and run the loot interface
         loot_interface = ContainerLootInterface(self, self.player)
@@ -382,7 +378,7 @@ try:
     _ann = Container.__init__.__annotations__.get('allowed_subtypes')  # type: ignore[attr-defined]
     if isinstance(_ann, str):
         # Rebind with concrete evaluated type
-        from src.items import Item as _Item  # local import to avoid re-export side effects
+        from items import Item as _Item  # local import to avoid re-export side effects
         Container.__init__.__annotations__['allowed_subtypes'] = list[type[_Item]]  # type: ignore[index]
 except Exception:
     pass
@@ -555,7 +551,6 @@ class Passageway(Object):
         self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
     def enter(self, player):
-        from src import functions  # local import
         # Drop any merchandise items immediately upon attempting to enter/teleport
         if hasattr(player, 'drop_merchandise_items'):
             player.drop_merchandise_items()
@@ -828,18 +823,35 @@ class Book(Object):
                          discovery_message="a book!", player=player, tile=tile)
         self.event = event
         self.keywords.append('read')
-        if text_file_path:
-            try:
-                with open(text_file_path, 'r', encoding='utf-8') as f:
-                    self.text = f.read()
-            except Exception as e:
-                cprint(f"Error loading book text from {text_file_path}: {e}", "red")
-                self.text = text if text else "This book is mysteriously blank."
-        elif text:
-            self.text = text
-        else:
-            self.text = "This book is mysteriously blank."
+        self.text_file_path = text_file_path
+        self._text = None  # Cache for loaded text
+        
+        # Only set _text if text_file_path is not provided
+        if not text_file_path:
+            if text:
+                self._text = text
+            else:
+                self._text = "This book is mysteriously blank."
+        # If text_file_path is provided, text will be loaded lazily via property
+        
         self.chars_per_page = chars_per_page  # characters per page for pagination
+
+    @property
+    def text(self):
+        """Lazy load text from file if needed."""
+        if self._text is None and self.text_file_path:
+            try:
+                with open(self.text_file_path, 'r', encoding='utf-8') as f:
+                    self._text = f.read()
+            except Exception as e:
+                cprint(f"Error loading book text from {self.text_file_path}: {e}", "red")
+                self._text = "This book is mysteriously blank."
+        return self._text if self._text else "This book is mysteriously blank."
+    
+    @text.setter
+    def text(self, value):
+        """Allow direct setting of text (for deserialization)."""
+        self._text = value
 
     def _paginate_text(self, text: str) -> list[str]:
         """Break text into pages of approximately chars_per_page characters, breaking at sentence boundaries."""
