@@ -2,7 +2,9 @@
 
 ## Overview
 
-The `Book` object now supports automatic pagination for long text content. When a player reads a book with text longer than 600 characters, the content is automatically broken into pages with navigation controls.
+The `Book` item now supports automatic pagination for long text content. When a player reads a book with text longer than 600 characters, the content is automatically broken into pages with navigation controls.
+
+**Note:** `Book` is now an item (subclass of `Special`) that can be carried in inventory, rather than a tile object.
 
 ## Features
 
@@ -29,22 +31,18 @@ Each page shows:
 
 ### Basic Usage
 ```python
-from src.objects import Book
-from src.player import Player
-from src.tiles import MapTile
+from src.items import Book
 
 # Short book (no pagination)
 short_book = Book(
-    player=player,
-    tile=tile,
+    name="Small Note",
     text="A brief inscription.",
     description="A small note."
 )
 
 # Long book (with pagination, default 800 chars per page)
 long_book = Book(
-    player=player,
-    tile=tile,
+    name="Ancient Tome",
     text="<very long text here>",
     description="An ancient tome."
 )
@@ -55,8 +53,7 @@ You can customize the characters per page:
 ```python
 # Smaller pages for denser content
 detailed_book = Book(
-    player=player,
-    tile=tile,
+    name="Detailed Manuscript",
     text=long_text,
     description="A detailed manuscript.",
     chars_per_page=500  # Custom page size
