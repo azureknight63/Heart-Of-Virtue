@@ -648,6 +648,35 @@ class Special(Item):
             self.name, self.description, self.value, self.weight)
 
 
+class Commodity(Special):
+    """Intermediate class for commodity-type items (creature loot with no practical purpose other than selling).
+    
+    Commodities stack like consumables and are primarily meant to be sold to merchants for gold.
+    """
+    stack_key: str
+
+    def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
+                 maintype: str, subtype: str, discovery_message: str = 'a commodity item.',
+                 count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(name, description, value, weight, maintype, subtype,
+                         discovery_message, merchandise=merchandise)
+        self.count = count
+        self.stack_key = name
+        self.interactions = ["drop"]
+
+    def stack_grammar(self) -> None:
+        """Checks the stack count for the item and changes the verbiage accordingly"""
+        pass
+
+    def __str__(self) -> str:  # pragma: no cover - display logic
+        return "{}\n=====\n{}\n" \
+               "Count: {}\n" \
+               "Value: {} gold each, {} gold total\n" \
+               "Weight: {} lbs each, {} lbs total".format(self.name, self.description, self.count, self.value,
+                                                          self.value * self.count, self.weight,
+                                                          self.weight * self.count)
+
+
 class Key(Special):
     lock: Optional[Any]
 
@@ -665,8 +694,8 @@ class Key(Special):
         self.interactions = ["drop"]
 
 
-class Crystals(Special):
-    def __init__(self, merchandise: bool = False) -> None:
+class Crystals(Commodity):
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
         """
         Crystals are commodity drops from certain creatures like Rock Rumblers.
         They can also be found growing naturally in some caves and mountain areas.
@@ -677,7 +706,21 @@ class Crystals(Special):
                          description="A beautiful collection of scintillating purple and aquamarine crystals. "
                                      "Interesting baubles to most, but a valuable"
                                      " food source to Rock Rumblers and their gentler cousins, the Grondites.",
-                         value=10, weight=0.1, maintype="Special", subtype="Commodity", merchandise=merchandise)
+                         value=10, weight=0.1, maintype="Special", subtype="Commodity",
+                         discovery_message="some shimmering crystals.", count=count, merchandise=merchandise)
+        self.announce = "Jean notices some crystals on the ground."
+
+    def stack_grammar(self) -> None:
+        if self.count > 1:
+            self.announce = "Jean notices a pile of crystals on the ground."
+            self.description = "A beautiful collection of scintillating purple and aquamarine crystals. " \
+                             "Interesting baubles to most, but a valuable " \
+                             "food source to Rock Rumblers and their gentler cousins, the Grondites."
+        else:
+            self.announce = "Jean notices some crystals on the ground."
+            self.description = "A beautiful collection of scintillating purple and aquamarine crystals. " \
+                             "Interesting baubles to most, but a valuable " \
+                             "food source to Rock Rumblers and their gentler cousins, the Grondites."
 
 
 # ---------------------------------------------------------------------------
