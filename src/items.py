@@ -1584,3 +1584,166 @@ class CrystalTear(Special):
 unique_item_factories = [AncientRelic, DragonHeartGem, CrystalTear]
 # Registry to track which unique item classes have been spawned in the universe
 unique_items_spawned: set[str] = set()
+
+
+class Book(Special):
+    """
+    A book that Jean can READ. Books are now items that can be carried in inventory.
+    Optionally, an event may be tied to reading the book.
+    """
+
+    def __init__(self, name: str = "Book",
+                 description: str = "A dusty old book, full of mysteries and sentiments.",
+                 value: Union[int, float] = 5,
+                 weight: Union[int, float] = 2.0,
+                 event: Optional[Any] = None,
+                 text: Optional[str] = None,
+                 text_file_path: Optional[str] = None,
+                 chars_per_page: int = 800,
+                 merchandise: bool = False,
+                 discovery_message: str = "a book!") -> None:
+        super().__init__(name=name, description=description, value=value, weight=weight,
+                         maintype="Book", subtype="Book", discovery_message=discovery_message,
+                         merchandise=merchandise)
+        self.event = event
+        self.interactions.append('read')
+        self.text_file_path = text_file_path
+        self._text: Optional[str] = None  # Cache for loaded text
+        
+        # Priority: file path > explicit text parameter > blank message
+        if text_file_path:
+            # If file path is provided, text will be loaded lazily via property (even if text is also set)
+            pass  # _text remains None for lazy loading
+        elif text is not None:
+            # If no file path but text is explicitly provided, use it
+            self._text = text
+        else:
+            # No file path and no text means blank book
+            self._text = "This book is mysteriously blank."
+        
+        self.chars_per_page = chars_per_page  # characters per page for pagination
+
+    @property
+    def text(self) -> str:
+        """Lazy load text from file if needed."""
+        if self._text is None and self.text_file_path:
+            try:
+                with open(self.text_file_path, 'r', encoding='utf-8') as f:
+                    self._text = f.read()
+            except Exception as e:
+                cprint(f"Error loading book text from {self.text_file_path}: {e}", "red")
+                self._text = "This book is mysteriously blank."
+        return self._text if self._text else "This book is mysteriously blank."
+    
+    @text.setter
+    def text(self, value: Optional[str]) -> None:
+        """Allow direct setting of text (for deserialization)."""
+        self._text = value
+
+    def _paginate_text(self, text: str) -> list[str]:
+        """Break text into pages of approximately chars_per_page characters, breaking at sentence boundaries."""
+        if not text or len(text) <= self.chars_per_page:
+            return [text] if text else []
+        
+        pages: list[str] = []
+        current_page = ""
+        
+        # Split by sentences (basic sentence detection)
+        sentences = text.replace('! ', '!|').replace('? ', '?|').replace('. ', '.|').split('|')
+        
+        for sentence in sentences:
+            # If a single sentence is longer than chars_per_page, we need to force-split it
+            if len(sentence) > self.chars_per_page:
+                # If current_page has content, save it first
+                if current_page.strip():
+                    pages.append(current_page.strip())
+                    current_page = ""
+                
+                # Split the long sentence into chunks
+                while len(sentence) > self.chars_per_page:
+                    pages.append(sentence[:self.chars_per_page].strip())
+                    sentence = sentence[self.chars_per_page:]
+                
+                # Add remaining part to current page
+                if sentence.strip():
+                    current_page = sentence
+                continue
+            
+            # If adding this sentence would exceed page limit and we have content, start new page
+            if len(current_page) + len(sentence) > self.chars_per_page and current_page:
+                pages.append(current_page.strip())
+                current_page = sentence
+            else:
+                current_page += sentence
+        
+        # Add the last page if there's remaining content
+        if current_page.strip():
+            pages.append(current_page.strip())
+        
+        return pages if pages else [text]
+
+    def _display_page(self, page_text: str, page_num: int, total_pages: int) -> None:
+        """Display a single page with header and footer."""
+        functions.screen_clear()
+        cprint(f"--- {self.name} (Page {page_num} of {total_pages}) ---", "cyan")
+        print()
+        # Wrap text to 80 characters for readability
+        import textwrap
+        wrapped = textwrap.fill(page_text, width=80)
+        print(wrapped)
+        print()
+        cprint(f"--- Page {page_num} of {total_pages} ---", "cyan")
+
+    def _show_page_navigation(self, current_page: int, total_pages: int) -> str:
+        """Display navigation options and get user input."""
+        print()
+        options: list[str] = []
+        if current_page > 1:
+            options.append(colored("P: Previous Page", "yellow"))
+        if current_page < total_pages:
+            options.append(colored("N: Next Page", "yellow"))
+        options.append(colored("C: Close Book", "red"))
+        
+        print(" | ".join(options))
+        
+        choice = input(colored("Selection: ", "cyan")).strip().lower()
+        return choice
+
+    def read(self) -> None:
+        """Read the book, with pagination for long texts."""
+        if self.text:
+            cprint("Jean begins reading...", color="cyan")
+            time.sleep(0.5)
+            
+            # Check if text is long enough to paginate (threshold: ~600 chars)
+            if len(self.text) > 600:
+                pages = self._paginate_text(self.text)
+                current_page = 1
+                
+                while True:
+                    self._display_page(pages[current_page - 1], current_page, len(pages))
+                    choice = self._show_page_navigation(current_page, len(pages))
+                    
+                    if choice in ('p', 'prev', 'previous') and current_page > 1:
+                        current_page -= 1
+                    elif choice in ('n', 'next') and current_page < len(pages):
+                        current_page += 1
+                    elif choice in ('c', 'close', 'x', 'exit'):
+                        cprint("Jean closes the book.", "cyan")
+                        break
+                    else:
+                        cprint("Invalid choice. Please try again.", "red")
+                        time.sleep(1)
+            else:
+                # Short text - just print it normally
+                functions.print_slow(self.text, speed="fast")
+                functions.await_input()
+        else:
+            print(self.description)
+
+        if self.event:
+            time.sleep(0.5)
+            self.event.process()
+            if not getattr(self.event, 'repeat', False):
+                self.event = None
+            functions.await_input()

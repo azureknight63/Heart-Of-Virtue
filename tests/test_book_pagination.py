@@ -1,31 +1,12 @@
-"""Tests for Book object pagination functionality."""
+"""Tests for Book item pagination functionality."""
 import pytest
-from src.objects import Book
-from src.player import Player
-from src.tiles import MapTile
+from src.items import Book
 
 
-@pytest.fixture
-def mock_player():
-    """Create a minimal mock player for testing."""
-    class MockPlayer:
-        name = "Jean"
-        inventory = []
-    return MockPlayer()
-
-
-@pytest.fixture
-def mock_tile():
-    """Create a minimal mock tile for testing."""
-    class MockTile:
-        pass
-    return MockTile()
-
-
-def test_book_short_text_no_pagination(mock_player, mock_tile, monkeypatch, capsys):
+def test_book_short_text_no_pagination(monkeypatch, capsys):
     """Test that short text doesn't trigger pagination."""
     short_text = "This is a short book with minimal content."
-    book = Book(mock_player, mock_tile, text=short_text)
+    book = Book(text=short_text)
     
     # Mock await_input to avoid blocking
     monkeypatch.setattr('src.functions.await_input', lambda: None)
@@ -38,11 +19,11 @@ def test_book_short_text_no_pagination(mock_player, mock_tile, monkeypatch, caps
     assert "Page" not in captured.out  # No pagination header
 
 
-def test_book_long_text_pagination(mock_player, mock_tile, monkeypatch, capsys):
+def test_book_long_text_pagination(monkeypatch, capsys):
     """Test that long text triggers pagination system."""
     # Create text long enough to require pagination (>600 chars)
     long_text = "This is a long book. " * 50  # ~1000 characters
-    book = Book(mock_player, mock_tile, text=long_text, chars_per_page=300)
+    book = Book(text=long_text, chars_per_page=300)
     
     # Simulate: view first page, go to next page, then close
     responses = ['n', 'c']
@@ -56,19 +37,19 @@ def test_book_long_text_pagination(mock_player, mock_tile, monkeypatch, capsys):
     assert "Page 1 of" in captured.out or "Page 2 of" in captured.out
 
 
-def test_book_pagination_navigation_forward(mock_player, mock_tile, monkeypatch):
+def test_book_pagination_navigation_forward(monkeypatch):
     """Test navigating forward through pages."""
     long_text = ". ".join([f"Sentence {i}" for i in range(100)])  # Many sentences
-    book = Book(mock_player, mock_tile, text=long_text, chars_per_page=200)
+    book = Book(text=long_text, chars_per_page=200)
     
     pages = book._paginate_text(long_text)
     assert len(pages) > 1  # Should create multiple pages
 
 
-def test_book_pagination_navigation_backward(mock_player, mock_tile, monkeypatch, capsys):
+def test_book_pagination_navigation_backward(monkeypatch, capsys):
     """Test navigating backward through pages."""
     long_text = "This is page content. " * 100
-    book = Book(mock_player, mock_tile, text=long_text, chars_per_page=200)
+    book = Book(text=long_text, chars_per_page=200)
     
     # Simulate: next page, next page, previous page, close
     responses = ['n', 'n', 'p', 'c']
@@ -81,10 +62,10 @@ def test_book_pagination_navigation_backward(mock_player, mock_tile, monkeypatch
     assert "closes the book" in captured.out
 
 
-def test_book_pagination_invalid_choice(mock_player, mock_tile, monkeypatch, capsys):
+def test_book_pagination_invalid_choice(monkeypatch, capsys):
     """Test handling of invalid navigation choice."""
     long_text = "Content here. " * 100
-    book = Book(mock_player, mock_tile, text=long_text, chars_per_page=200)
+    book = Book(text=long_text, chars_per_page=200)
     
     # Simulate: invalid choice, then close
     responses = ['invalid', 'c']
@@ -97,25 +78,25 @@ def test_book_pagination_invalid_choice(mock_player, mock_tile, monkeypatch, cap
     assert "Invalid choice" in captured.out
 
 
-def test_book_pagination_boundary_conditions(mock_player, mock_tile):
+def test_book_pagination_boundary_conditions():
     """Test pagination at page boundaries."""
     # Test with exactly chars_per_page characters
     exact_text = "a" * 800
-    book = Book(mock_player, mock_tile, text=exact_text, chars_per_page=800)
+    book = Book(text=exact_text, chars_per_page=800)
     pages = book._paginate_text(exact_text)
     assert len(pages) == 1
     
     # Test with just over chars_per_page
     over_text = "a" * 801
-    book2 = Book(mock_player, mock_tile, text=over_text, chars_per_page=800)
+    book2 = Book(text=over_text, chars_per_page=800)
     pages2 = book2._paginate_text(over_text)
     assert len(pages2) >= 1
 
 
-def test_book_pagination_preserves_sentences(mock_player, mock_tile):
+def test_book_pagination_preserves_sentences():
     """Test that pagination breaks at sentence boundaries when possible."""
     text_with_sentences = "First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence."
-    book = Book(mock_player, mock_tile, text=text_with_sentences, chars_per_page=40)
+    book = Book(text=text_with_sentences, chars_per_page=40)
     pages = book._paginate_text(text_with_sentences)
     
     # Should break into multiple pages at sentence boundaries
@@ -124,7 +105,7 @@ def test_book_pagination_preserves_sentences(mock_player, mock_tile):
         assert page.strip()  # No empty pages
 
 
-def test_book_with_event(mock_player, mock_tile, monkeypatch, capsys):
+def test_book_with_event(monkeypatch, capsys):
     """Test that book events trigger after reading (with pagination)."""
     class MockEvent:
         repeat = False
@@ -136,7 +117,7 @@ def test_book_with_event(mock_player, mock_tile, monkeypatch, capsys):
     
     event = MockEvent()
     long_text = "Story content. " * 100
-    book = Book(mock_player, mock_tile, event=event, text=long_text, chars_per_page=200)
+    book = Book(event=event, text=long_text, chars_per_page=200)
     
     # Simulate: immediately close book
     responses = ['c']
@@ -151,27 +132,115 @@ def test_book_with_event(mock_player, mock_tile, monkeypatch, capsys):
     assert "Event triggered!" in captured.out
 
 
-def test_book_empty_text(mock_player, mock_tile, capsys):
-    """Test book with no text shows description only."""
-    book = Book(mock_player, mock_tile, text=None)
+def test_book_empty_text(monkeypatch, capsys):
+    """Test book with no text shows the blank book message."""
+    monkeypatch.setattr('src.functions.await_input', lambda: None)
+    monkeypatch.setattr('src.functions.print_slow', lambda text, speed: print(text))
+    book = Book(text=None)
     
     book.read()
     
     captured = capsys.readouterr()
-    assert book.description in captured.out
+    # Book with None text should show the blank message
+    assert "mysteriously blank" in captured.out
 
 
-def test_book_custom_chars_per_page(mock_player, mock_tile):
+def test_book_custom_chars_per_page():
     """Test custom chars_per_page parameter."""
     text = "a" * 1000
     
     # Default pagination
-    book1 = Book(mock_player, mock_tile, text=text)
+    book1 = Book(text=text)
     pages1 = book1._paginate_text(text)
     
     # Custom smaller pages
-    book2 = Book(mock_player, mock_tile, text=text, chars_per_page=100)
+    book2 = Book(text=text, chars_per_page=100)
     pages2 = book2._paginate_text(text)
     
     # Smaller page size should create more pages
     assert len(pages2) > len(pages1)
+
+
+def test_book_text_from_file_only(tmp_path, monkeypatch, capsys):
+    """Test book that loads text from a file with no text property set."""
+    # Create a temporary file with book content (keep it short to avoid pagination)
+    book_file = tmp_path / "test_book.txt"
+    file_content = "This is content loaded from a file."
+    book_file.write_text(file_content, encoding='utf-8')
+    
+    # Create book with only text_file_path set (no text parameter)
+    book = Book(name="File Book", text_file_path=str(book_file))
+    
+    # Mock functions to avoid blocking
+    monkeypatch.setattr('src.functions.await_input', lambda: None)
+    monkeypatch.setattr('src.functions.print_slow', lambda text, speed: print(text))
+    
+    # Verify the text property lazily loads from file
+    assert book.text == file_content
+    
+    # Verify reading works
+    book.read()
+    captured = capsys.readouterr()
+    assert file_content in captured.out
+
+
+def test_book_file_overrides_text_property(tmp_path, monkeypatch, capsys):
+    """Test that file takes precedence when both text and text_file_path are set."""
+    # Create a temporary file
+    book_file = tmp_path / "test_book.txt"
+    file_content = "This content is in the file and should be used."
+    book_file.write_text(file_content, encoding='utf-8')
+    
+    # Create book with BOTH text and text_file_path
+    text_property_content = "This is the text property content that should be ignored."
+    book = Book(name="Override Book", text=text_property_content, text_file_path=str(book_file))
+    
+    # Mock functions to avoid blocking
+    monkeypatch.setattr('src.functions.await_input', lambda: None)
+    monkeypatch.setattr('src.functions.print_slow', lambda text, speed: print(text))
+    
+    # Verify file content is used, not the text property
+    assert book.text == file_content
+    assert text_property_content not in book.text
+    
+    # Verify reading uses file content
+    book.read()
+    captured = capsys.readouterr()
+    assert file_content in captured.out
+    assert text_property_content not in captured.out
+
+
+def test_book_neither_text_nor_file(monkeypatch, capsys):
+    """Test book with neither text property nor file path shows blank message."""
+    # Create book with neither text nor text_file_path
+    book = Book(name="Empty Book")
+    
+    # Mock functions to avoid blocking
+    monkeypatch.setattr('src.functions.await_input', lambda: None)
+    monkeypatch.setattr('src.functions.print_slow', lambda text, speed: print(text))
+    
+    # Verify it shows the blank message
+    assert "mysteriously blank" in book.text
+    
+    # Verify reading shows the blank message
+    book.read()
+    captured = capsys.readouterr()
+    assert "mysteriously blank" in captured.out
+
+
+def test_book_file_not_found_fallback(monkeypatch, capsys):
+    """Test that book gracefully handles missing file by showing blank message."""
+    # Create book with non-existent file path
+    book = Book(name="Missing File Book", text_file_path="/nonexistent/path/to/book.txt")
+    
+    # Mock functions to avoid blocking
+    monkeypatch.setattr('src.functions.await_input', lambda: None)
+    monkeypatch.setattr('src.functions.print_slow', lambda text, speed: print(text))
+    
+    # Verify it falls back to blank message when file doesn't exist
+    assert "mysteriously blank" in book.text
+    
+    # Verify reading shows the blank message
+    book.read()
+    captured = capsys.readouterr()
+    assert "mysteriously blank" in captured.out
