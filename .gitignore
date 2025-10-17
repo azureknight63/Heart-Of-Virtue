@@ -35,6 +35,5 @@ cov_*.txt
 /utils/ai-prompts/
 *\__pycache__
 config_dev.ini
-.coverage
 .vscode
 utils/legacy-maps/
