@@ -400,7 +400,9 @@
                 }
             }
         ],
-        "block_exit": [],
+        "block_exit": [
+            "northeast"
+        ],
         "symbol": "E"
     },
     "(3, 2)": {
@@ -467,34 +469,45 @@
             "south"
         ],
         "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [
+        "items": [
             {
                 "__class__": "Book",
-                "__module__": "objects",
+                "__module__": "items",
                 "props": {
-                    "name": "Book",
-                    "description": "A worn book with leather binding. The cover has, in faded black ink, the title \"Jambo's Book Of Business.\"",
-                    "idle_message": "There's a book here.",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "discovery_message": "a book!",
-                    "announce": "There's a book here.",
-                    "keywords": [
+                    "weight": 2.0,
+                    "maintype": "Book",
+                    "subtype": "Book",
+                    "count": 1,
+                    "interactions": [
+                        "drop",
                         "read"
                     ],
-                    "events": [],
-                    "tile": null,
-                    "player": null,
+                    "name": "Jambo's Little Book of Big Deals",
+                    "description": "This pithy tome appears to be a collection of hand-written advice from Jambo himself.",
+                    "value": 15,
+                    "type": "Book",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a book!",
+                    "announce": "There's a Book here.",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
                     "event": null,
-                    "text": "This should not be shown. SHAZBOT!",
-                    "chars_per_page": 800,
-                    "text_file_path": "src\\resources\\books\\jambos-book-of-business-wisdom.txt"
+                    "text_file_path": "src\\resources\\books\\jambos-book-of-business-wisdom.txt",
+                    "chars_per_page": 800
                 }
             }
         ],
-        "block_exit": [],
+        "npcs": [],
+        "objects": [],
+        "block_exit": [
+            "southwest"
+        ],
         "symbol": ""
     }
 }
