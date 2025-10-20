@@ -1591,7 +1591,6 @@ class Book(Special):
     A book that Jean can READ. Books are now items that can be carried in inventory.
     Optionally, an event may be tied to reading the book.
     """
-
     def __init__(self, name: str = "Book",
                  description: str = "A dusty old book, full of mysteries and sentiments.",
                  value: Union[int, float] = 5,
@@ -1641,27 +1640,34 @@ class Book(Special):
         self._text = value
 
     def _paginate_text(self, text: str) -> list[str]:
-        """Break text into pages of approximately chars_per_page characters, breaking at sentence boundaries."""
+        """Break text into pages of approximately chars_per_page characters, breaking at sentence boundaries while preserving newlines."""
         if not text or len(text) <= self.chars_per_page:
             return [text] if text else []
         
         pages: list[str] = []
         current_page = ""
         
-        # Split by sentences (basic sentence detection)
-        sentences = text.replace('! ', '!|').replace('? ', '?|').replace('. ', '.|').split('|')
+        # Split by sentences while preserving newlines
+        # First, protect newlines by replacing them with a unique marker
+        text_with_markers = text.replace('\n', '<!NEWLINE!>')
+        
+        # Split by sentences (basic sentence detection) - preserve the space by including it in the delimiter
+        sentences = text_with_markers.replace('! ', '! |').replace('? ', '? |').replace('. ', '. |').split('|')
         
         for sentence in sentences:
+            # Restore newlines in this sentence
+            sentence = sentence.replace('<!NEWLINE!>', '\n')
+            
             # If a single sentence is longer than chars_per_page, we need to force-split it
             if len(sentence) > self.chars_per_page:
                 # If current_page has content, save it first
                 if current_page.strip():
-                    pages.append(current_page.strip())
+                    pages.append(current_page.rstrip())
                     current_page = ""
                 
                 # Split the long sentence into chunks
                 while len(sentence) > self.chars_per_page:
-                    pages.append(sentence[:self.chars_per_page].strip())
+                    pages.append(sentence[:self.chars_per_page].rstrip())
                     sentence = sentence[self.chars_per_page:]
                 
                 # Add remaining part to current page
@@ -1671,14 +1677,14 @@ class Book(Special):
             
             # If adding this sentence would exceed page limit and we have content, start new page
             if len(current_page) + len(sentence) > self.chars_per_page and current_page:
-                pages.append(current_page.strip())
+                pages.append(current_page.rstrip())
                 current_page = sentence
             else:
                 current_page += sentence
         
         # Add the last page if there's remaining content
         if current_page.strip():
-            pages.append(current_page.strip())
+            pages.append(current_page.rstrip())
         
         return pages if pages else [text]
 
@@ -1687,9 +1693,18 @@ class Book(Special):
         functions.screen_clear()
         cprint(f"--- {self.name} (Page {page_num} of {total_pages}) ---", "cyan")
         print()
-        # Wrap text to 80 characters for readability
+        # Wrap text to 80 characters for readability, preserving paragraph breaks
         import textwrap
-        wrapped = textwrap.fill(page_text, width=80)
+        # Split by double newlines to preserve paragraphs
+        paragraphs = page_text.split('\n\n')
+        wrapped_paragraphs = []
+        for para in paragraphs:
+            if para.strip():  # Only process non-empty paragraphs
+                # Preserve single newlines within paragraphs but wrap long lines
+                wrapped = textwrap.fill(para, width=80)
+                wrapped_paragraphs.append(wrapped)
+        # Join paragraphs with blank lines
+        wrapped = '\n\n'.join(wrapped_paragraphs)
         print(wrapped)
         print()
         cprint(f"--- Page {page_num} of {total_pages} ---", "cyan")
