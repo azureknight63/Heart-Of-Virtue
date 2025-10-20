@@ -442,5 +442,68 @@ class TestContainerLootInterface(unittest.TestCase):
         # Should show empty message
         PatchedPrint(mock_print).assert_any_call_stripped("The small_chest is now empty.")
 
+class DummyBook:
+    def __init__(self, name, count=1):
+        self.name = name
+        self.maintype = "Book"
+        self.count = count
+        self.interactions = ["read", "drop"]
+    def read(self, player):
+        pass
+
+class DummyRelic:
+    def __init__(self, name, count=1):
+        self.name = name
+        self.maintype = "Relic"
+        self.count = count
+        self.interactions = ["drop"]
+
+class DummySpecialItem:
+    def __init__(self, name, count=1):
+        self.name = name
+        self.maintype = "Special"
+        self.count = count
+        self.interactions = ["drop"]
+
+class TestSpecialCategoryWithBooksAndCrystals(unittest.TestCase):
+    @patch('builtins.input', side_effect=["s", "x", "x"])
+    @patch('builtins.print')
+    def test_special_category_shows_books_and_relics(self, mock_print, mock_input):
+        """Test that the Special category includes Books, Relics, and Special items"""
+        player = DummyPlayer()
+        # Add a Book, a Relic (Crystal), and a Special item
+        player.inventory = [
+            DummyBook("Ancient Tome"),
+            DummyRelic("Crystal Tear"),
+            DummySpecialItem("Strange Key")
+        ]
+        iface = interface.InventoryInterface(player)
+        iface.run()
+        
+        # Check that all three items appear when viewing Special category
+        calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
+        special_items_shown = [call for call in calls if "Ancient Tome" in call or "Crystal Tear" in call or "Strange Key" in call]
+        self.assertGreaterEqual(len(special_items_shown), 3)
+
+    @patch('builtins.input', side_effect=["x"])
+    @patch('builtins.print')
+    def test_special_category_count_includes_books_and_relics(self, mock_print, mock_input):
+        """Test that the Special category count includes Books and Relics"""
+        player = DummyPlayer()
+        # Add multiple special-type items
+        player.inventory = [
+            DummyBook("Book 1"),
+            DummyBook("Book 2"),
+            DummyRelic("Crystal 1"),
+            DummySpecialItem("Key 1")
+        ]
+        iface = interface.InventoryInterface(player)
+        iface.run()
+        
+        # Check that Special category shows count of 4
+        calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
+        special_count_shown = [call for call in calls if "(s) Special: 4" in call]
+        self.assertEqual(len(special_count_shown), 1, f"Expected '(s) Special: 4' in calls, got: {calls}")
+
 if __name__ == "__main__":
     unittest.main()
