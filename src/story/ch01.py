@@ -6,9 +6,9 @@ from neotermcolor import cprint, colored
 import time
 import random
 
-from src.events import Event, dialogue
-import src.objects as objects
-from src.functions import print_slow, await_input
+from events import Event, dialogue
+import objects as objects
+from functions import print_slow, await_input
 
 class Ch01StartOpenWall(Event):
     """
