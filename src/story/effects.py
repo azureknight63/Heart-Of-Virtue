@@ -8,9 +8,9 @@ import random
 import time
 
 from npc import NPC
-from src import functions
-from src import states
-from src.events import Event
+import functions
+import states
+from events import Event
 
 
 class Effect(Event):
@@ -261,7 +261,7 @@ class NPCSpawnerEvent(Event):
         if isinstance(self.npc_cls, str):
             return self.npc_cls
         try:
-            from src.npc import NPC  # local import avoids circular on module load
+            from npc import NPC  # local import avoids circular on module load
             if isinstance(self.npc_cls, type) and issubclass(self.npc_cls, NPC):
                 return self.npc_cls.__name__
         except Exception:
