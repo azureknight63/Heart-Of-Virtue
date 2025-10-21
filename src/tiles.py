@@ -199,8 +199,53 @@ class MapTile:
             return event
         return None
 
-    def spawn_object(self, obj_type, player, tile, params, hidden=False, hfactor=0):
-        obj = getattr(__import__('objects'), obj_type)(player, tile, params)
+    def spawn_object(self, obj_type, player, tile, params=None, hidden=False, hfactor=0, **kwargs):
+        """
+        Spawn an object on this tile.
+        
+        Args:
+            obj_type: The class name of the object to spawn
+            player: The player instance
+            tile: The tile instance
+            params: Legacy parameter (list/dict) for objects that parse params
+            hidden: Whether the object starts hidden
+            hfactor: Hide factor for discovery
+            **kwargs: Modern named parameters passed directly to object constructor
+        """
+        # For backward compatibility: if params is a string like "t.grondia 1 3", parse it
+        if isinstance(params, str) and obj_type == "Passageway":
+            # Parse old-style Passageway params: "t.mapname x y" or "mapname x y"
+            parts = params.split()
+            if len(parts) >= 3:
+                map_part = parts[0]
+                # Handle both "t.mapname" and "mapname" formats
+                if map_part.startswith('t.'):
+                    teleport_map = map_part[2:]  # Remove "t." prefix
+                else:
+                    teleport_map = map_part
+                try:
+                    x = int(parts[1])
+                    y = int(parts[2])
+                    kwargs['teleport_map'] = teleport_map
+                    kwargs['teleport_tile'] = (x, y)
+                    params = None  # Don't pass the string to constructor
+                except (ValueError, IndexError):
+                    pass  # Fall back to passing params as-is
+        
+        # Import the object class
+        obj_cls = getattr(__import__('objects'), obj_type)
+        
+        # Try to instantiate with kwargs first (modern approach)
+        if kwargs:
+            try:
+                obj = obj_cls(player=player, tile=tile, **kwargs)
+            except TypeError:
+                # Fall back to params if kwargs don't work
+                obj = obj_cls(player, tile, params)
+        else:
+            # Use params (legacy approach)
+            obj = obj_cls(player, tile, params)
+        
         if hidden:
             obj.hidden = True
             obj.hide_factor = hfactor
