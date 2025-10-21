@@ -30,10 +30,11 @@ class AfterDefeatingLurker(Event):
               "With a low rumble, he begins spreading the wall apart, gradually revealing a passage not unlike the "
               "last that he opened in the same manner.")
         time.sleep(2)
-        print("Gorran turns back around to face Jean.")
-        dialogue("Gorran", "Gr-rrondia-a-a... this way...", "green")
+        print("Gorran turns back around to face Jean and rumbles in what has to be something like relief mixed with fatigue.")
         await_input()
-        self.tile.spawn_object("Passageway", self.player, self.tile, params="t.grondia 1 3")
+        # Spawn a passageway to Grondia at coordinates (1, 3)
+        self.tile.spawn_object("Passageway", self.player, self.tile, 
+                              teleport_map="grondia", teleport_tile=(1, 3))
         print("Gorran ducked low, disappearing beneath a curving shelf of grey rock. Looking closely, "
               "Jean could see a conspicuous divot along the bottom of the shelf, near where his mighty "
               "friend's massive head had passed just moments ago. Scratches covered the divot, marking "
