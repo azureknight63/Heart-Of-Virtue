@@ -1,10 +1,3 @@
-"""
-My take on Phillip Johnson's text adventure tutorial
-Not much is left of the original code.
-
-REMINDERS:
-
-"""
 __author__ = 'Alex Egbert'
 
 import time
