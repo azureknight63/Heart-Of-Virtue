@@ -38,3 +38,4 @@ cov_*.txt
 utils/legacy-maps/
 .coverage
 
+.github/copilot-instructions.md
