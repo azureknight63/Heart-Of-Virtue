@@ -2,7 +2,7 @@ from src.tiles import *
 
 
 class StartingRoom(MapTile):
-    def __init__(self, universe, current_map, x, y):
+    def __init__(self, universe, current_map, x, y, description: str=None):
         super().__init__(universe, current_map, x, y, description="""
         Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large
         rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source

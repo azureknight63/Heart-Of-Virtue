@@ -10,6 +10,7 @@ import copy
 import re
 import importlib
 from typing import Any, Dict, List, Tuple, Optional, cast, get_origin, get_args, Union, Type  # type hinting (removed unused Iterable)
+from typing import get_type_hints  # added for resolving postponed annotations
 
 # Ensure the src directory is in sys.path for imports
 project_root = os.path.dirname(os.path.dirname(__file__))
@@ -20,7 +21,45 @@ if project_root not in sys.path:
 if src_root not in sys.path:
     sys.path.insert(0, src_root)
 
-from src.npc import Merchant
+from events import Event  # type: ignore
+from npc import Merchant  # type: ignore
+
+
+# Added: custom exception to surface rich context about serialization failures
+class MapSerializationError(Exception):
+    def __init__(self, *, tile: Tuple[int,int] | None = None, category: str | None = None,
+                 index: int | None = None, attribute: str | None = None,
+                 object_type: str | None = None, object_repr: str | None = None,
+                 original: Exception | None = None, note: str | None = None):
+        self.tile = tile
+        self.category = category
+        self.index = index
+        self.attribute = attribute
+        self.object_type = object_type
+        self.object_repr = object_repr
+        self.original = original
+        self.note = note
+        super().__init__(self.__str__())
+
+    def __str__(self):
+        parts: List[str] = ["Map save serialization failed"]
+        if self.tile is not None:
+            parts.append(f"tile={self.tile}")
+        if self.category is not None:
+            parts.append(f"category={self.category}")
+        if self.index is not None:
+            parts.append(f"index={self.index}")
+        if self.object_type is not None:
+            parts.append(f"object_type={self.object_type}")
+        if self.attribute is not None:
+            parts.append(f"attribute={self.attribute}")
+        if self.original is not None:
+            parts.append(f"error={type(self.original).__name__}: {self.original}")
+        if self.note:
+            parts.append(f"note={self.note}")
+        if self.object_repr and len(self.object_repr) < 200:
+            parts.append(f"object_repr={self.object_repr}")
+        return " | ".join(parts)
 
 
 def parse_type_hint(annotation):
@@ -49,7 +88,7 @@ def parse_type_hint(annotation):
             # Try to import from src modules
             for module_name in ['items', 'objects', 'npc', 'events']:
                 try:
-                    module = importlib.import_module(f'src.{module_name}')
+                    module = importlib.import_module(f'{module_name}')
                     if hasattr(module, annotation):
                         return getattr(module, annotation), False, False
                 except ImportError:
@@ -101,7 +140,7 @@ def get_class_hierarchy(base_class, module_names=None):
     # Search through specified modules
     for module_name in module_names:
         try:
-            module = importlib.import_module(f'src.{module_name}')
+            module = importlib.import_module(f'{module_name}')
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
                 if (inspect.isclass(attr) and
@@ -370,6 +409,8 @@ class MapEditor:
         self.drag_select_mode = False
         self.drag_start_tile = None
         self.drag_current_tile = None
+        # Timestamp throttle for delete key status messages
+        self._last_delete_block_msg = 0.0
 
         # Add placeholders for coord label methods created later
 
@@ -438,7 +479,8 @@ class MapEditor:
         self.root.bind_all('<Control-X>', lambda e: self.cut_selection())
         self.root.bind_all('<Control-v>', lambda e: self.paste_clipboard())
         self.root.bind_all('<Control-V>', lambda e: self.paste_clipboard())
-        self.root.bind_all('<Delete>', lambda e: self.remove_selected_tile())
+        # Changed: route Delete key through guard handler so it is disabled while editor/property submenus are open.
+        self.root.bind_all('<Delete>', self._delete_hotkey_handler)
         # --- Control Buttons ---
         create_button("New Map", lambda: (self.ensure_add_mode_off(), self.create_new_map()), controls_frame)
         create_button("Load Map", lambda: (self.ensure_add_mode_off(), self.load_map()), controls_frame)
@@ -884,9 +926,11 @@ class MapEditor:
             self.draw_exits(pos, tile)
             self.draw_symbol(pos, tile)
             self.draw_blocked(pos, tile)
-            # bring title on top of all other elements
+            # bring title and counts on top of all other elements
             title_tag = f"title_{pos[0]}_{pos[1]}"
+            counts_tag = f"counts_{pos[0]}_{pos[1]}"
             self.canvas.tag_raise(title_tag)
+            self.canvas.tag_raise(counts_tag)
         # Draw selection outlines for multi-select (including empty selected cells)
         for p in self.selected_tiles:
             if p not in self.map_data:  # empty cell
@@ -933,7 +977,7 @@ class MapEditor:
             self.canvas.create_text(left_x, center_y, text="!", fill="red", font=("Helvetica", ex_size, "bold"))
             self.canvas.create_text(right_x, center_y, text="!", fill="red", font=("Helvetica", ex_size, "bold"))
 
-        # Display truncated title
+        # Display truncated title at top
         title = self.map_data.get(pos, {}).get("title", self.map_data[pos]["id"])
         max_chars = max(int(self.tile_size / 6), 1)
         disp = title if len(title) <= max_chars else title[:max_chars-1] + "…"
@@ -947,6 +991,25 @@ class MapEditor:
             anchor="n",
             tags=(tag, title_tag)
         )
+
+        # NEW: Bottom-centered overlay label with counts of Items, NPCs, and Objects
+        items_cnt = len(tile.get("items", []))
+        npcs_cnt = len(tile.get("npcs", []))
+        objs_cnt = len(tile.get("objects", []))
+        counts_text = f"I:{items_cnt}, N:{npcs_cnt}, O:{objs_cnt}"
+        # dynamic font size scaled to tile size with a minimum for readability
+        font_size = max(6, int(self.tile_size * 0.08))
+        counts_tag = f"counts_{x}_{y}"
+        self.canvas.create_text(
+            (x1 + x2) / 2,
+            y2 - 2,  # slight padding from bottom edge
+            text=counts_text,
+            fill="white",
+            font=("Helvetica", font_size, "bold"),
+            anchor="s",  # anchor south so text sits just above given y
+            tags=(tag, counts_tag)
+        )
+
         # bind tooltip events to tile area
         self.canvas.tag_bind(tag, "<Enter>", lambda e, t=title: self.show_tooltip(e, t))
         self.canvas.tag_bind(tag, "<Leave>", lambda e: self.hide_tooltip())
@@ -976,46 +1039,97 @@ class MapEditor:
     def save_map(self):
         """
         Saves the current map data to a JSON file.
+        Enhanced: Provides detailed diagnostic information (tile, category, index, object type, attribute) if
+        serialization fails so the user can quickly locate and fix problematic data.
         """
         try:
             # build serializable structure
-            def serialize_instance(inst: Any, seen=None) -> Dict[str, Any] | str:
+            def serialize_instance(inst: Any, seen=None, *, tile_pos=None, category=None, index=None) -> Dict[str, Any] | str:
                 if seen is None:
                     seen = set()
                 obj_id = id(inst)
                 if obj_id in seen:
                     return f"<circular_ref:{type(inst).__name__}>"
                 seen.add(obj_id)
-                def recursive_serialize(val):
-                    # NEW: explicit class (type object) handling so we can restore later
-                    if inspect.isclass(val):
-                        return {"__class_type__": f"{val.__module__}:{val.__name__}"}
-                    if isinstance(val, (int, float, str, bool)) or val is None:
-                        return val
-                    elif isinstance(val, list):
-                        return [recursive_serialize(v) for v in val]
-                    elif isinstance(val, tuple):
-                        return [recursive_serialize(v) for v in val]  # store tuples as lists
-                    elif isinstance(val, dict):
-                        return {k: recursive_serialize(v) for k, v in val.items()}
-                    elif hasattr(val, '__dict__'):
-                        return serialize_instance(val, seen)
-                    else:
-                        return str(val)
-                data = {kx: recursive_serialize(vx) for kx, vx in vars(inst).items() if not kx.startswith('_')}
-                # Ensure certain virtual/prop attributes (not stored in __dict__) are captured for important classes
-                # e.g., Container objects may expose a 'merchant' property via a descriptor rather than in __dict__
+                def recursive_serialize(val, *, attr_name=None):
+                    try:
+                        if inspect.isclass(val):
+                            return {"__class_type__": f"{val.__module__}:{val.__name__}"}
+                        if isinstance(val, (int, float, str, bool)) or val is None:
+                            return val
+                        elif isinstance(val, list):
+                            out = []
+                            for i, subv in enumerate(val):
+                                try:
+                                    out.append(recursive_serialize(subv, attr_name=f"{attr_name}[{i}]") )
+                                except MapSerializationError:
+                                    raise
+                                except Exception as ex_list:
+                                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                                 attribute=f"{attr_name}[{i}]", object_type=type(subv).__name__,
+                                                                 object_repr=repr(subv)[:180], original=ex_list)
+                            return out
+                        elif isinstance(val, tuple):
+                            tup_out = []
+                            for i, subv in enumerate(val):
+                                try:
+                                    tup_out.append(recursive_serialize(subv, attr_name=f"{attr_name}({i})") )
+                                except MapSerializationError:
+                                    raise
+                                except Exception as ex_tup:
+                                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                                 attribute=f"{attr_name}({i})", object_type=type(subv).__name__,
+                                                                 object_repr=repr(subv)[:180], original=ex_tup)
+                            return tup_out  # store tuples as lists
+                        elif isinstance(val, dict):
+                            result_dict = {}
+                            for dk, dv in val.items():
+                                try:
+                                    result_dict[dk] = recursive_serialize(dv, attr_name=f"{attr_name}.{dk}" if attr_name else str(dk))
+                                except MapSerializationError:
+                                    raise
+                                except Exception as ex_dict:
+                                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                                 attribute=f"{attr_name}.{dk}" if attr_name else str(dk),
+                                                                 object_type=type(dv).__name__, object_repr=repr(dv)[:180], original=ex_dict)
+                            return result_dict
+                        elif hasattr(val, '__dict__'):
+                            return serialize_instance(val, seen, tile_pos=tile_pos, category=category, index=index)
+                        else:
+                            # Fallback: best-effort stringification
+                            return str(val)
+                    except MapSerializationError:
+                        raise
+                    except Exception as ex_other:
+                        raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                     attribute=attr_name, object_type=type(val).__name__,
+                                                     object_repr=repr(val)[:180], original=ex_other)
                 try:
+                    data = {}
+                    for kx, vx in vars(inst).items():
+                        if kx.startswith('_'):
+                            continue
+                        try:
+                            data[kx] = recursive_serialize(vx, attr_name=kx)
+                        except MapSerializationError:
+                            raise
+                        except Exception as ex_attr:
+                            raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                         attribute=kx, object_type=type(vx).__name__,
+                                                         object_repr=repr(vx)[:180], original=ex_attr)
+                    # Attempt to include merchant property if accessible
                     if 'merchant' not in data and hasattr(inst, 'merchant'):
                         try:
-                            merchant_val = getattr(inst, 'merchant')
-                            # Only include if not a private-like attribute
-                            data['merchant'] = recursive_serialize(merchant_val)
+                            mval = getattr(inst, 'merchant')
+                            data['merchant'] = recursive_serialize(mval, attr_name='merchant')
                         except Exception:
-                            # ignore if accessing the property raises
                             pass
-                except Exception:
-                    pass
+                except MapSerializationError:
+                    raise
+                except Exception as ex_unknown:
+                    raise MapSerializationError(tile=tile_pos, category=category, index=index,
+                                                 attribute='__dict__', object_type=type(inst).__name__,
+                                                 object_repr=repr(inst)[:180], original=ex_unknown)
                 return {
                     '__class__': inst.__class__.__name__,
                     '__module__': inst.__class__.__module__,
@@ -1024,9 +1138,21 @@ class MapEditor:
             serializable_map: Dict[str, Any] = {}
             for k, v in self.map_data.items():
                 tile: Dict[str, Any] = dict(v)
+                # Serialize each instance collection with granular error handling
                 for key in ['events','items','npcs','objects']:
                     inst_list = tile.get(key, [])
-                    tile[key] = [serialize_instance(i) for i in inst_list]
+                    serialized_instances = []
+                    for idx, inst in enumerate(inst_list):
+                        try:
+                            serialized_instances.append(serialize_instance(inst, tile_pos=k, category=key, index=idx))
+                        except MapSerializationError as mse:
+                            # Re-raise to outer except so unified handling occurs
+                            raise mse
+                        except Exception as ex_generic:
+                            raise MapSerializationError(tile=k, category=key, index=idx,
+                                                        object_type=type(inst).__name__, object_repr=repr(inst)[:180],
+                                                        original=ex_generic, note='Generic serialization failure')
+                    tile[key] = serialized_instances
                 serializable_map[str(k)] = tile
 
             # Default save directory
@@ -1034,17 +1160,32 @@ class MapEditor:
             os.makedirs(default_dir, exist_ok=True)
             filepath = filedialog.asksaveasfilename(
                 initialdir=default_dir,
-                defaultextension=".json",
-                filetypes=[("JSON files", "*.json")]
+                defaultextension='.json',
+                filetypes=[('JSON files', '*.json')]
             )
             if filepath:
-                with open(filepath, "w") as f:
-                    json.dump(serializable_map, f, indent=4)
+                try:
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(serializable_map, f, indent=4)
+                except Exception as ex_write:
+                    raise MapSerializationError(note='Failed writing JSON to disk', original=ex_write)
                 self.current_map_filepath = filepath
                 self.update_map_label()
                 self.set_status(f"Map saved to {os.path.basename(filepath)}")
+        except MapSerializationError as mse:
+            detailed = str(mse)
+            self.set_status(f"Error saving map: {detailed}")
+            try:
+                messagebox.showerror('Save Error', detailed)
+            except Exception:
+                pass
         except Exception as e:
-            self.set_status(f"Error saving map: {e}")
+            # Fallback generic error (unexpected)
+            self.set_status(f"Error saving map: {type(e).__name__}: {e}")
+            try:
+                messagebox.showerror('Save Error', f"Unexpected error saving map:\n{type(e).__name__}: {e}")
+            except Exception:
+                pass
 
     def load_map(self, filepath=None):
         """
@@ -1066,8 +1207,8 @@ class MapEditor:
                         try:
                             mod_name, cls_name = spec.rsplit(':', 1)
                             if mod_name and cls_name:
-                                if not mod_name.startswith('src.') and mod_name != 'builtins':
-                                    mod_name = f'src.{mod_name}'
+                                if mod_name.startswith('src.'):
+                                    mod_name = mod_name[4:]
                                 module = importlib.import_module(mod_name)
                                 return getattr(module, cls_name)
                         except Exception:
@@ -1078,8 +1219,8 @@ class MapEditor:
                             cls_name = d.get('__class__')
                             mod_name = d.get('__module__')
                             # Normalize module name for items, moves, etc.
-                            if mod_name != 'builtins' and not mod_name.startswith('src.'):
-                                mod_name = f'src.{mod_name}'
+                            if mod_name.startswith('src.'):
+                                mod_name = mod_name[4:]
                             props = d.get('props', {})
                             try:
                                 module = importlib.import_module(mod_name)
@@ -1205,14 +1346,14 @@ class MapEditor:
                 if not class_name or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', class_name):
                     return None
                 search_modules = [
-                    'src.items', 'src.npc', 'src.objects'
+                    'items', 'npc', 'objects'
                 ]
                 # add story modules
                 story_dir = os.path.join(project_root, 'src', 'story')
                 if os.path.isdir(story_dir):
                     for fn in os.listdir(story_dir):
                         if fn.endswith('.py') and not fn.startswith('__'):
-                            mod_path = f"src.story.{fn[:-3]}"
+                            mod_path = f"story.{fn[:-3]}"
                             if mod_path not in search_modules:
                                 search_modules.append(mod_path)
                 for mod_name in search_modules:
@@ -1491,12 +1632,41 @@ class MapEditor:
                 self.canvas.create_line(cx-half, cy-half, cx+half, cy+half, fill="red", width=2)
                 self.canvas.create_line(cx+half, cy-half, cx-half, cy+half, fill="red", width=2)
 
-    # --- Added missing mouse coordinate helpers ---
-    def _update_mouse_coordinates(self, event=None):
-        """Update the coordinate label based on current pointer location (canvas-relative)."""
-        if not getattr(self, 'coord_label', None):
+    # --- Delete hotkey guard helpers ---
+    def _collect_toplevel_windows(self):
+        """Return list of open editor/property dialogs (Toplevels) excluding root and tooltip windows."""
+        tops = []
+        try:
+            for widget in self.root.winfo_children():
+                try:
+                    if isinstance(widget, tk.Toplevel) and widget is not self.root and widget.winfo_exists():
+                        # Skip overrideredirect tooltips
+                        try:
+                            if widget.wm_overrideredirect():
+                                continue
+                        except Exception:
+                            pass
+                        tops.append(widget)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return tops
+    def _is_submenu_open(self) -> bool:
+        return len(self._collect_toplevel_windows()) > 0
+    def _delete_hotkey_handler(self, event=None):
+        import time as _t
+        if self._is_submenu_open():
+            now = _t.time()
+            if now - self._last_delete_block_msg > 1.5:
+                self.set_status("Delete disabled: close open editor/property dialogs to delete tiles.")
+                self._last_delete_block_msg = now
             return
-        if not self.canvas:
+        self.remove_selected_tile()
+
+    # Coordinate helper methods (restored)
+    def _update_mouse_coordinates(self, event=None):
+        if not getattr(self, 'coord_label', None) or not self.canvas:
             return
         try:
             px = self.root.winfo_pointerx()
@@ -1515,9 +1685,9 @@ class MapEditor:
             pass
 
     def _poll_mouse_position(self):
-        self._update_mouse_coordinates()
         try:
-            self.root.after(200, self._poll_mouse_position)
+            self._update_mouse_coordinates()
+            self.root.after(300, self._poll_mouse_position)
         except Exception:
             pass
     # --- end helpers ---
@@ -1959,6 +2129,37 @@ def create_element_frame(dialog_object: tk.Toplevel, parent: tk.Frame, attr_stri
     setattr(dialog_object, attr_string, frame)
     return frame
 
+def _is_event_like(obj):
+    """
+    Return True if `obj` is an Event instance/class even if the Event base
+    resolves from a different import path (e.g. src.events.Event).
+    """
+    try:
+        cls = obj if isinstance(obj, type) else obj.__class__
+    except Exception:
+        return False
+
+    # Prefer exact identity if available
+    for base in inspect.getmro(cls):
+        if base is Event:
+            return True
+
+    # Accept any base class named 'Event' coming from a module whose final
+    # component is 'events' (covers both 'events' and 'src.events').
+    for base in inspect.getmro(cls):
+        try:
+            if base.__name__ == 'Event' and base.__module__.split('.')[-1] == 'events':
+                return True
+        except Exception:
+            continue
+
+    # Fallback: accept any base simply named 'Event'
+    for base in inspect.getmro(cls):
+        if base.__name__ == 'Event':
+            return True
+
+    return False
+
 def add_element(inst, lst: List, frame: TagListFrame):
     """
     Adds an instance `inst` to the list `lst` for the given frame of `obj`.
@@ -1970,7 +2171,9 @@ def add_element(inst, lst: List, frame: TagListFrame):
         messagebox.showerror("Error", "Invalid object instance.")
         return
     # stacking logic: if item has a count attribute, stack with existing same-class item
-    if hasattr(inst, 'count'):
+    # Ignores Event instances for stacking since events should never stack
+    inst_is_event_subclass = _is_event_like(inst)
+    if hasattr(inst, 'count') and not inst_is_event_subclass:
         for existing in lst:
             if isinstance(existing, inst.__class__):
                 try:
@@ -2186,6 +2389,95 @@ def open_class_type_chooser(dialog_object: tk.Toplevel, base_class_name: str, ls
         return
     show_class_type_hierarchy_chooser(dialog_object, module_paths, f"Choose {base_class_name} Type", lst, tag_frame, base_class_name)
 
+# NEW: single-selection variant for Type[Base] (non-list) annotations
+# Reuses the same hierarchy building logic but ensures only one class can be selected.
+def open_single_class_type_chooser(dialog_object: tk.Toplevel, base_class_name: str, lst: List[type], tag_frame: TagListFrame):
+    if not base_class_name:
+        messagebox.showerror("Error", "Base class name not provided.")
+        return
+    try:
+        module_paths = _get_module_paths_for_class(base_class_name)
+    except Exception:
+        module_paths = []
+    if not module_paths:
+        messagebox.showerror("Error", f"Could not find base class {base_class_name} or its subclasses in src/.")
+        return
+    # We inline a lightweight variant of show_class_type_hierarchy_chooser to inject single-select behavior.
+    class_info = {}
+    for module_path in module_paths:
+        if not os.path.isfile(module_path):
+            continue
+        try:
+            ci = parse_module_classes(module_path, project_root)
+            if ci:
+                class_info.update(ci)
+        except Exception:
+            continue
+    class_info = build_class_hierarchy(class_info)
+    allowed = filter_classes(class_info, base_class_name)
+    roots = sorted([n for n, i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
+    dlg = tk.Toplevel(dialog_object)
+    dlg.title(f"Choose {base_class_name} Type")
+    dlg.geometry('300x430')
+    dlg.transient(dialog_object)
+    dlg.grab_set()
+    filter_frame = tk.Frame(dlg)
+    filter_frame.pack(fill='x', padx=5, pady=5)
+    tk.Label(filter_frame, text='Filter:', anchor='w').pack(side='left')
+    filter_var = tk.StringVar()
+    tk.Entry(filter_frame, textvariable=filter_var).pack(side='left', fill='x', expand=True)
+    frame_lb = tk.Frame(dlg)
+    frame_lb.pack(fill='both', expand=True)
+    lb = tk.Listbox(frame_lb)
+    sb = tk.Scrollbar(frame_lb, orient='vertical', command=lb.yview)
+    lb.configure(yscrollcommand=sb.set)
+    sb.pack(side='right', fill='y')
+    lb.pack(side='left', fill='both', expand=True)
+    metas: List[Dict[str, str]] = []
+    def update_list(*_):
+        search = filter_var.get().lower().strip()
+        lb.delete(0, tk.END)
+        metas.clear()
+        visited = set()
+        def subtree_matches(cname):
+            if cname not in allowed:
+                return False
+            if not search or search in cname.lower():
+                return True
+            return any(subtree_matches(ch) for ch in class_info[cname]['children'])
+        def recurse(names, indent=0):
+            for n in sorted(names):
+                if n in visited or n not in allowed:
+                    continue
+                visited.add(n)
+                if subtree_matches(n):
+                    lb.insert('end', '  '*indent + n)
+                    metas.append({'name': n, 'module': class_info[n]['module']})
+                    if class_info[n]['children']:
+                        recurse(class_info[n]['children'], indent+1)
+        recurse(roots)
+    filter_var.trace_add('write', update_list)
+    update_list()
+    def on_double(_):
+        if not lb.curselection():
+            return
+        idx = lb.curselection()[0]
+        meta = metas[idx]
+        cls_name = meta['name']
+        module_name = meta['module']
+        try:
+            mod = importlib.import_module(module_name)
+            cls_obj = getattr(mod, cls_name)
+            # Single-selection enforcement
+            lst.clear()
+            lst.append(cls_obj)
+            refresh_tags(lst, tag_frame)
+        except Exception as ex:
+            messagebox.showerror("Error", f"Could not load class: {ex}")
+        dlg.destroy()
+    lb.bind('<Double-Button-1>', on_double)
+
+
 def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, dialog_title, lst: List[type], tag_frame: TagListFrame, filter_by_class: str=None):
     class_info = {}
     for module_path in module_paths:
@@ -2199,7 +2491,7 @@ def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, 
             continue
     class_info = build_class_hierarchy(class_info)
     allowed = filter_classes(class_info, filter_by_class)
-    roots = sorted([n for n,i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
+    roots = sorted([n for n, i in class_info.items() if not any(b in class_info for b in i['bases']) and n in allowed])
     dlg = tk.Toplevel(dialog_object)
     dlg.title(dialog_title)
     dlg.geometry('300x430')
@@ -2217,7 +2509,7 @@ def show_class_type_hierarchy_chooser(dialog_object: tk.Toplevel, module_paths, 
     lb.configure(yscrollcommand=sb.set)
     sb.pack(side='right', fill='y')
     lb.pack(side='left', fill='both', expand=True)
-    metas: List[Dict[str,str]] = []
+    metas: List[Dict[str, str]] = []
     def update_list(*_):
         search = filter_var.get().lower().strip()
         lb.delete(0, tk.END)
@@ -2270,6 +2562,11 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
     entries = {}  # name -> {'type': 'text'|'bool'|'hierarchical', 'get': callable}
     editable_params, excluded_params = get_editable_params(cls)
+    # Resolve annotations (handles PEP 563 postponed evaluation so get_origin works)
+    try:
+        resolved_hints = get_type_hints(cls.__init__)
+    except Exception:
+        resolved_hints = {}
 
     # Moved and optimized merchant collection
     def get_all_merchants(map_data):
@@ -2407,8 +2704,20 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
             # --- Class TYPE list detection: list[type[Base]] ---
             try:
-                ann_origin = get_origin(p.annotation)
-                ann_args = get_args(p.annotation)
+                # Use resolved annotation if available
+                ann_for_detection = resolved_hints.get(p.name, p.annotation)
+                ann_origin = get_origin(ann_for_detection)
+                ann_args = get_args(ann_for_detection)
+                # helper creators to avoid mutable default argument warnings
+                def _make_list_getter(ref_list: List[type]):
+                    return lambda: ref_list
+                def _make_single_getter(ref_list: List[type]):
+                    return lambda: (ref_list[0] if ref_list else None)
+                def _make_multi_btn_handler(base_name: str, ref_list: List[type], frame_ref: TagListFrame):
+                    return lambda: open_class_type_chooser(dlg, base_name, ref_list, frame_ref)
+                def _make_single_btn_handler(base_name: str, ref_list: List[type], frame_ref: TagListFrame):
+                    return lambda: open_single_class_type_chooser(dlg, base_name, ref_list, frame_ref)
+                # First: list[Type[Base]] existing behavior
                 if ann_origin in (list, List) and ann_args:
                     inner = ann_args[0]
                     inner_origin = get_origin(inner)
@@ -2418,9 +2727,32 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                         type_list = list(getattr(existing, p.name, []) if existing is not None else [])
                         tag_frame = create_element_frame(dlg, container, f"{p.name}_types_frame")
                         refresh_tags(type_list, tag_frame)
-                        tk.Button(container, text="Choose Types", command=lambda b=base_cls.__name__, lst_ref=type_list, fr=tag_frame: open_class_type_chooser(dlg, b, lst_ref, fr)).pack(fill='x', padx=(5,0), pady=(2,2))
-                        entries[p.name] = {'type': 'hierarchical', 'get': lambda tl=type_list: tl}
+                        tk.Button(container, text="Choose Types", command=_make_multi_btn_handler(base_cls.__name__, type_list, tag_frame)).pack(fill='x', padx=(5,0), pady=(2,2))
+                        entries[p.name] = {'type': 'hierarchical', 'get': _make_list_getter(type_list)}
                         continue
+                # NEW: Single Type[Base] support (including Optional/Union[Type[Base], None])
+                target_base_cls = None
+                single_mode = False
+                if ann_origin in (type, Type) and ann_args and inspect.isclass(ann_args[0]):
+                    target_base_cls = ann_args[0]
+                    single_mode = True
+                # Optional / Union handling: Union[Type[Base], None]
+                elif ann_origin is Union and ann_args:
+                    for arg in ann_args:
+                        arg_origin = get_origin(arg)
+                        arg_args = get_args(arg)
+                        if arg_origin in (type, Type) and arg_args and inspect.isclass(arg_args[0]):
+                            target_base_cls = arg_args[0]
+                            single_mode = True
+                            break
+                if single_mode and target_base_cls is not None:
+                    existing_val = getattr(existing, p.name, None) if existing is not None else None
+                    single_list: List[type] = [existing_val] if isinstance(existing_val, type) else []
+                    tag_frame = create_element_frame(dlg, container, f"{p.name}_type_frame")
+                    refresh_tags(single_list, tag_frame)
+                    tk.Button(container, text="Choose Type", command=_make_single_btn_handler(target_base_cls.__name__, single_list, tag_frame)).pack(fill='x', padx=(5,0), pady=(2,2))
+                    entries[p.name] = {'type': 'hierarchical', 'get': _make_single_getter(single_list)}
+                    continue
             except Exception:
                 pass
 
@@ -2452,7 +2784,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                 elif map_list:
                     pass
                 combo = ttk.Combobox(container, textvariable=combo_var, values=map_list, state='readonly')
-                combo.pack(fill='x', pady=(2,5))
+                combo.pack(fill='x', pady=(2, 5))
                 def _on_map_change(event=None):
                     # trigger coordinate refreshers then autosave
                     for r in coord_refreshers:
@@ -2600,19 +2932,21 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
                     text="Choose",
                     command=lambda this_dlg=dlg, this_base_class_name=base_class_name,
                                        this_is_event=is_event, this_tag_frame=tag_frame,
-                                       this_field_type=field_type, this_current_value=current_value:
-                        open_chooser(
+                                       this_field_type=field_type: open_chooser(
                             this_dlg,
-                            this_current_value if this_field_type == 'list' else (this_current_value[0] if this_current_value else []),
+                            current_value if this_field_type == 'list' else (current_value[0] if current_value else []),
                             this_tag_frame,
                             base_class_name=this_base_class_name,
                             is_event=this_is_event
                         )
                 )
                 choose_btn.pack(fill='x', padx=(5, 0), pady=(2, 2))
-                entries[p.name] = {'type': 'hierarchical',
-                                   'get': lambda cv=current_value, ft=field_type: cv if ft == 'list'
-                                   else (cv[0] if cv else None)}
+                # Helper to avoid mutable default capture
+                def _make_hier_getter(field_type_local: str, ref_list_local: List[Any]):
+                    if field_type_local == 'list':
+                        return lambda: ref_list_local
+                    return lambda: (ref_list_local[0] if ref_list_local else None)
+                entries[p.name] = {'type': 'hierarchical', 'get': _make_hier_getter(field_type, current_value)}
             elif p.name == 'merchant':
                 if not all_merchants:
                     tk.Label(container, text="Add a Merchant NPC to this map first.",
@@ -2651,7 +2985,7 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
     def on_add_save():
         if existing:
-            # For existing objects, just close dialog since auto-save handles changes
+            auto_save()
             dlg.destroy()
         else:
             # For new objects, create the object and add it

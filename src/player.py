@@ -2,20 +2,13 @@ import random
 import time
 import math
 import traceback
-from typing import TYPE_CHECKING
-
 from functions import stack_inv_items
 from switch import switch
-
-import items
-import functions
-import moves
-import combat
-import skilltree
-# from npc import Merchant
-if TYPE_CHECKING:
-    from npc import Merchant  # type: ignore  # for type hints only
-
+import items  # type: ignore
+import functions  # type: ignore
+import moves  # type: ignore
+import combat  # type: ignore
+import skilltree  # type: ignore
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
 
@@ -1052,7 +1045,8 @@ he lets out a barely audible whisper:""", "red")
                     answer = input(colored("Would you like to remove it? (y/n) ", "cyan"))
                     if answer == 'y':
                         target_item.isequipped = False
-                        if issubclass(target_item.__class__, items.Weapon):  # if the player is now unarmed,
+                        if hasattr(target_item, "maintype") and target_item.maintype == "Weapon":  
+                            # if the player is now unarmed,
                             # "equip" fists
                             self.eq_weapon = self.fists
                         cprint("Jean put {} back into his bag.".format(target_item.name), "cyan")
@@ -1086,7 +1080,7 @@ he lets out a barely audible whisper:""", "red")
                     target_item.on_equip(self)
                     target_item.interactions.remove("equip")
                     target_item.interactions.append("unequip")
-                    if issubclass(target_item.__class__, items.Weapon):
+                    if hasattr(target_item, "maintype") and target_item.maintype == "Weapon":
                         self.eq_weapon = target_item
                     if hasattr(target_item, "subtype") and target_item.gives_exp:
                         if target_item.subtype not in self.combat_exp:
@@ -1099,86 +1093,74 @@ he lets out a barely audible whisper:""", "red")
                     self.refresh_protection_rating()
 
     def equip_item_menu(self):
-        num_weapon = 0
-        num_armor = 0
-        num_boots = 0
-        num_helm = 0
-        num_gloves = 0
-        num_accessories = 0
-        while True:
-            for item in self.inventory:  # get the counts of each item in each category
-                if issubclass(item.__class__, items.Weapon):
-                    num_weapon += 1
-                if issubclass(item.__class__, items.Armor):
-                    num_armor += 1
-                if issubclass(item.__class__, items.Boots):
-                    num_boots += 1
-                if issubclass(item.__class__, items.Helm):
-                    num_helm += 1
-                if issubclass(item.__class__, items.Gloves):
-                    num_gloves += 1
-                if issubclass(item.__class__, items.Accessory):
-                    num_accessories += 1
-                else:
-                    pass
-            cprint(f"=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
-                   f"(w) Weapons: {num_weapon}\n(a) Armor: {num_armor}\n(b) Boots: {num_boots}\n(h) Helms: {num_helm}"
-                   f"\n(g) Gloves: {num_gloves}\n(y) Accessories: {num_accessories}\n(x) Cancel\n",
-                   "cyan")
+        """Interactive equipment selection menu.
 
-            choices = []
+        Optimizations:
+        - Uses a constant for available categories.
+        - Single pass to categorize inventory items.
+        - Direct mapping of user selection to category list.
+        - Returns selected item or None on cancel/invalid exit.
+        """
+        AVAILABLE_CATEGORIES = ["weapon", "armor", "boots", "helm", "gloves", "accessory"]
+        SELECTION_MAP = {
+            'w': 'weapon', 'weapons': 'weapon', 'weapon': 'weapon',
+            'a': 'armor', 'armor': 'armor',
+            'b': 'boots', 'boots': 'boots',
+            'h': 'helm', 'helms': 'helm', 'helm': 'helm',
+            'g': 'gloves', 'glove': 'gloves',
+            'y': 'accessory', 'accessories': 'accessory', 'accessory': 'accessory'
+        }
+
+        while True:
+            # Categorize items in a single pass
+            categories = {cat: [] for cat in AVAILABLE_CATEGORIES}
+            for item in self.inventory:
+                maintype = getattr(item, "maintype", None)
+                if maintype is None:
+                    continue
+                key = maintype.lower()
+                if key in categories:
+                    categories[key].append(item)
+
+            # Display category counts
+            cprint(
+                f"=====\nChange Equipment\n=====\nSelect a category to view:\n\n"
+                f"(w) Weapons: {len(categories['weapon'])}\n"
+                f"(a) Armor: {len(categories['armor'])}\n"
+                f"(b) Boots: {len(categories['boots'])}\n"
+                f"(h) Helms: {len(categories['helm'])}\n"
+                f"(g) Gloves: {len(categories['gloves'])}\n"
+                f"(y) Accessories: {len(categories['accessory'])}\n"
+                f"(x) Cancel\n",
+                "cyan"
+            )
+
             inventory_selection = input(colored('Selection: ', "cyan"))
-            for case in switch(inventory_selection):
-                if case('w', 'Weapons', 'weapons'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Weapon):
-                            choices.append(item)
-                    break
-                if case('a', 'Armor', 'armor'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Armor):
-                            choices.append(item)
-                    break
-                if case('b', 'Boots', 'boots'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Boots):
-                            choices.append(item)
-                    break
-                if case('h', 'Helms', 'helms'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Helm):
-                            choices.append(item)
-                    break
-                if case('g', 'Gloves', 'gloves'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Gloves):
-                            choices.append(item)
-                    break
-                if case('y', 'Accessories', 'accessories'):
-                    for item in self.inventory:
-                        if issubclass(item.__class__, items.Accessory):
-                            choices.append(item)
-                    break
-                if case():
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = 0
-                    break
-            if len(choices) > 0:
-                for i, item in enumerate(choices):
-                    if item.isequipped:
-                        print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
-                    else:
-                        print(i, ': ', item.name, '\n')
-                inventory_selection = input(colored('Equip which? ', "cyan"))
-                if not functions.is_input_integer(inventory_selection):
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = 0
-                    continue
-                for i, item in enumerate(choices):
-                    if i == int(inventory_selection):
-                        return item
-                    num_weapon = num_armor = num_boots = num_helm = num_gloves = num_accessories = 0
-                    continue
-            else:
+            selection_lower = inventory_selection.lower().strip()
+            if selection_lower in ('x', 'cancel', 'exit'):
                 return None
+
+            category_key = SELECTION_MAP.get(selection_lower)
+            choices = categories.get(category_key, []) if category_key else []
+
+            if not choices:
+                continue
+
+            # Display choices
+            for i, item in enumerate(choices):
+                if getattr(item, 'isequipped', False):
+                    print(i, ': ', item.name, colored('(Equipped)', 'green'), '\n')
+                else:
+                    print(i, ': ', item.name, '\n')
+
+            inventory_selection = input(colored('Equip which? ', "cyan"))
+            if not functions.is_input_integer(inventory_selection):
+                continue
+            idx = int(inventory_selection)
+            if 0 <= idx < len(choices):
+                return choices[idx]
+            # Out of range -> re-loop
+            continue
 
     def use_item(self, phrase=''):
         if phrase == '':
@@ -1280,10 +1262,18 @@ he lets out a barely audible whisper:""", "red")
         self.universe.game_tick += 1
         self.location_x += dx
         self.location_y += dy
-        print(tile_exists(self.map, self.location_x, self.location_y).intro_text())
-        # if self.game_tick - world.tile_exists(self.location_x, self.location_y).last_entered >= world.tile_exists(
-        #         self.location_x, self.location_y).respawn_rate:
-        #     pass
+        tile = tile_exists(self.map, self.location_x, self.location_y)
+        if tile is None:
+            self.location_x -= dx
+            self.location_y -= dy
+            cprint("You cannot go that way.", "red")
+            time.sleep(1)
+        else:
+            print(tile.intro_text())
+            functions.print_items_in_room(tile)
+            functions.print_objects_in_room(tile)
+            functions.advise_player_actions(self, tile)
+
 
     def move_north(self):
         self.move(dx=0, dy=-1)
@@ -1329,6 +1319,10 @@ he lets out a barely audible whisper:""", "red")
             self.view(target)
         else:
             print(self.current_room.intro_text())
+            print()
+            functions.print_items_in_room(self.current_room)
+            functions.print_objects_in_room(self.current_room)
+            functions.advise_player_actions(self)
 
     def view(self, phrase=''):
         # print(phrase)

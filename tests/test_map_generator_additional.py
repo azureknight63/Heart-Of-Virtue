@@ -132,30 +132,30 @@ def test_parse_type_hint_list_optional():
 
 
 def test_parse_type_hint_string_forward():
-    # Provide a dummy module and class to resolve by name
-    dummy_mod = types.ModuleType('src.events')
+    # Provide a dummy module and class to resolve by name (without 'src.' prefix as per implementation)
+    dummy_mod = types.ModuleType('events')
     class ForwardClass: ...
     dummy_mod.ForwardClass = ForwardClass
-    sys.modules['src.events'] = dummy_mod
+    sys.modules['events'] = dummy_mod
     try:
         cls, is_list, is_opt = parse_type_hint('ForwardClass')
         assert cls is ForwardClass
     finally:
-        del sys.modules['src.events']
+        del sys.modules['events']
 
 
 def test_get_class_hierarchy(monkeypatch):
-    # Create dummy modules with subclasses
-    mod_items = types.ModuleType('src.items')
+    # Create dummy modules with subclasses (without 'src.' prefix as per implementation)
+    mod_items = types.ModuleType('items')
     class ItemBase: ...
     class ItemSub(ItemBase): ...
     mod_items.ItemBase = ItemBase
     mod_items.ItemSub = ItemSub
-    sys.modules['src.items'] = mod_items
+    sys.modules['items'] = mod_items
     try:
         h = get_class_hierarchy(ItemBase)
         assert 'ItemBase' in h and 'ItemSub' in h
         assert h['ItemSub'] is ItemSub
     finally:
-        del sys.modules['src.items']
+        del sys.modules['items']
 

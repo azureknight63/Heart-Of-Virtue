@@ -1,20 +1,63 @@
 {
     "(2, 1)": {
         "id": "tile_2_1",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south"
         ],
         "block_exit": [],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Battleaxe",
+                "__module__": "items",
+                "props": {
+                    "damage": 120.96010380979605,
+                    "str_req": 5,
+                    "fin_req": 5,
+                    "str_mod": 1,
+                    "fin_mod": 0.5,
+                    "weight": 2,
+                    "isequipped": false,
+                    "maintype": "Weapon",
+                    "subtype": "Axe",
+                    "wpnrange": [
+                        0,
+                        5
+                    ],
+                    "name": "Spiritual Umbral Battleaxe",
+                    "description": "A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
+                    "value": 238,
+                    "type": "Weapon",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a kind of weapon.",
+                    "announce": "There's a Spiritual Umbral Battleaxe here.",
+                    "interactions": [
+                        "drop",
+                        "equip"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": true,
+                    "base_damage_type": "spiritual",
+                    "twohand": false,
+                    "enchantment_level": 99
+                }
+            }
+        ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(8, 1)": {
         "id": "tile_8_1",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south"
@@ -24,7 +67,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -50,7 +93,7 @@
             },
             {
                 "__class__": "Draught",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -82,11 +125,12 @@
             }
         ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(2, 2)": {
         "id": "tile_2_2",
-        "title": "VerdetteRoom2",
+        "title": "VerdetteCavernsRoom",
         "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
@@ -94,14 +138,36 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(5, 2)": {
         "id": "tile_5_2",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "southeast",
@@ -115,7 +181,7 @@
     },
     "(8, 2)": {
         "id": "tile_8_2",
-        "title": "VerdetteRoom2",
+        "title": "VerdetteCavernsRoom",
         "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
@@ -125,11 +191,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(1, 3)": {
         "id": "tile_1_3",
-        "title": "VerdetteRoom2",
+        "title": "VerdetteCavernsRoom",
         "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "south",
@@ -139,11 +206,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(3, 3)": {
         "id": "tile_3_3",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "east",
@@ -156,7 +224,7 @@
         "items": [
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -192,7 +260,7 @@
     },
     "(4, 3)": {
         "id": "tile_4_3",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south",
@@ -200,14 +268,56 @@
             "northeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "Slimes",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "Rumblers",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(6, 3)": {
         "id": "tile_6_3",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "east",
@@ -217,22 +327,44 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(7, 3)": {
         "id": "tile_7_3",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "west",
             "northeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 5,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -264,7 +396,7 @@
             },
             {
                 "__class__": "Draught",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -293,47 +425,215 @@
                     "gives_exp": false,
                     "power": 100
                 }
-            },
-            {
-                "__class__": "SilverRing",
-                "__module__": "src.items",
-                "props": {
-                    "protection": 0,
-                    "str_mod": 0,
-                    "fin_mod": 0,
-                    "weight": 0.1,
-                    "isequipped": false,
-                    "maintype": "Accessory",
-                    "subtype": "Ring",
-                    "name": "Silver Ring",
-                    "description": "A shiny silver ring. \nA small bauble favored by people of typically lower class.",
-                    "value": 50,
-                    "type": "Accessory",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "merchandise": false,
-                    "discovery_message": "a small trinket.",
-                    "announce": "There's a Silver Ring here.",
-                    "interactions": [
-                        "drop",
-                        "equip"
-                    ],
-                    "skills": null,
-                    "owner": null,
-                    "equip_states": [],
-                    "add_resistance": {},
-                    "add_status_resistance": {},
-                    "gives_exp": false,
-                    "count": 0
-                }
             }
         ],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "remains",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 23,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 23 gold pieces.",
+                                "value": 23,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 23
+                            }
+                        },
+                        {
+                            "__class__": "LeatherCap",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 2,
+                                "str_req": 3,
+                                "str_mod": 0.2,
+                                "weight": 0.8,
+                                "isequipped": false,
+                                "maintype": "Helm",
+                                "subtype": "Light Helm",
+                                "name": "Leather Cap",
+                                "description": "A simple leather cap offering modest protection without much weight.",
+                                "value": 20,
+                                "type": "Helm",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a kind of head covering.",
+                                "announce": "There's a Leather Cap here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
+                            }
+                        },
+                        {
+                            "__class__": "SilverRing",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 0,
+                                "str_mod": 0,
+                                "fin_mod": 0,
+                                "weight": 0.1,
+                                "isequipped": false,
+                                "maintype": "Accessory",
+                                "subtype": "Ring",
+                                "name": "Silver Ring",
+                                "description": "A shiny silver ring. \nA small bauble favored by people of typically lower class.",
+                                "value": 50,
+                                "type": "Accessory",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small trinket.",
+                                "announce": "There's a Silver Ring here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        },
+                        {
+                            "__class__": "Antidote",
+                            "__module__": "items",
+                            "props": {
+                                "weight": 0.25,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 1,
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "stack_key": "Antidote",
+                                "name": "Antidote",
+                                "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
+                                "value": 175,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a useful item.",
+                                "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "power": 15
+                            }
+                        },
+                        {
+                            "__class__": "LeatherGloves",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 2,
+                                "str_req": 3,
+                                "str_mod": 0.15,
+                                "weight": 0.8,
+                                "isequipped": false,
+                                "maintype": "Gloves",
+                                "subtype": "Light Gloves",
+                                "name": "Leather Gloves",
+                                "description": "Treated leather gloves that protect the hands without overly restricting movement.",
+                                "value": 35,
+                                "type": "Gloves",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a pair of gloves.",
+                                "announce": "There's a Leather Gloves here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
+                            }
+                        }
+                    ],
+                    "name": "Remains",
+                    "description": "The remains of an unfortunate merchant, trapped in the caverns long ago.",
+                    "idle_message": "There are some remains here, lying pitifully against the cavern wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " some remains!",
+                    "announce": "There are some remains here, lying pitifully against the cavern wall.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
+        "symbol": ""
     },
     "(1, 4)": {
         "id": "tile_1_4",
-        "title": "VerdetteRoom5",
+        "title": "VerdetteCavernsRoom",
         "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
         "exits": [
             "north",
@@ -347,7 +647,7 @@
     },
     "(4, 4)": {
         "id": "tile_4_4",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "north",
@@ -363,7 +663,7 @@
     },
     "(1, 5)": {
         "id": "tile_1_5",
-        "title": "VerdetteRoom4",
+        "title": "VerdetteCavernsRoom",
         "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "north"
@@ -373,7 +673,7 @@
         "items": [
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -399,7 +699,7 @@
             },
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -436,7 +736,7 @@
     },
     "(4, 5)": {
         "id": "tile_4_5",
-        "title": "VerdetteRoom2",
+        "title": "VerdetteCavernsRoom",
         "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
@@ -444,14 +744,36 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(6, 5)": {
         "id": "tile_6_5",
-        "title": "VerdetteRoom3",
+        "title": "VerdetteCavernsRoom",
         "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
         "exits": [
             "south",
@@ -460,14 +782,36 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(7, 5)": {
         "id": "tile_7_5",
-        "title": "VerdetteRoom3",
+        "title": "VerdetteCavernsRoom",
         "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
         "exits": [
             "south",
@@ -475,14 +819,36 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(3, 6)": {
         "id": "tile_3_6",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "south",
@@ -492,11 +858,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(5, 6)": {
         "id": "tile_5_6",
-        "title": "VerdetteRoom3",
+        "title": "VerdetteCavernsRoom",
         "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
         "exits": [
             "east",
@@ -508,11 +875,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(6, 6)": {
         "id": "tile_6_6",
-        "title": "VerdetteRoom4",
+        "title": "VerdetteCavernsRoom",
         "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "north",
@@ -529,7 +897,7 @@
     },
     "(7, 6)": {
         "id": "tile_7_6",
-        "title": "VerdetteRoom5",
+        "title": "VerdetteCavernsRoom",
         "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
         "exits": [
             "north",
@@ -546,7 +914,7 @@
     },
     "(3, 7)": {
         "id": "tile_3_7",
-        "title": "VerdetteRoom2",
+        "title": "VerdetteCavernsRoom",
         "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "north",
@@ -561,7 +929,7 @@
     },
     "(6, 7)": {
         "id": "tile_6_7",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "north",
@@ -569,11 +937,52 @@
             "northwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -605,11 +1014,12 @@
             }
         ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(8, 7)": {
         "id": "tile_8_7",
-        "title": "VerdetteRoom2",
+        "title": "VerdetteCavernsRoom",
         "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
         "exits": [
             "south",
@@ -619,11 +1029,12 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(3, 8)": {
         "id": "tile_3_8",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "north",
@@ -631,14 +1042,56 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:RockRumbler"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 5,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(4, 8)": {
         "id": "tile_4_8",
-        "title": "VerdetteRoom4",
+        "title": "VerdetteCavernsRoom",
         "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "west",
@@ -650,7 +1103,7 @@
         "items": [
             {
                 "__class__": "Antidote",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -682,7 +1135,7 @@
             },
             {
                 "__class__": "Restorative",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "weight": 0.25,
                     "maintype": "Consumable",
@@ -714,7 +1167,7 @@
             },
             {
                 "__class__": "Gold",
-                "__module__": "src.items",
+                "__module__": "items",
                 "props": {
                     "amt": 1,
                     "maintype": "Gold",
@@ -740,11 +1193,12 @@
             }
         ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(8, 8)": {
         "id": "tile_8_8",
-        "title": "VerdetteRoom4",
+        "title": "VerdetteCavernsRoom",
         "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
         "exits": [
             "north"
@@ -752,43 +1206,53 @@
         "block_exit": [],
         "events": [
             {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Lurker"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
                 "__class__": "AfterDefeatingLurker",
-                "__module__": "src.story.ch02",
+                "__module__": "story.ch02",
                 "props": {}
             }
         ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "symbol": ""
     },
     "(1, 9)": {
         "id": "tile_1_9",
-        "title": "VerdetteRoom",
+        "title": "VerdetteCavernsRoom",
         "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
         "exits": [
             "east"
         ],
         "block_exit": [],
-        "events": [
-            {
-                "__class__": "StMichael",
-                "__module__": "src.story.effects",
-                "props": {}
-            }
-        ],
+        "events": [],
         "items": [],
-        "npcs": [
-            {
-                "__class__": "Shrine",
-                "__module__": "src.objects",
-                "props": {}
-            }
-        ],
-        "objects": []
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
     },
     "(2, 9)": {
         "id": "tile_2_9",
-        "title": "VerdetteRoom5",
+        "title": "VerdetteCavernsRoom",
         "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
         "exits": [
             "west",
@@ -802,15 +1266,60 @@
     },
     "(5, 9)": {
         "id": "tile_5_9",
-        "title": "VerdetteSpring",
+        "title": "VerdetteCavernsSpring",
         "description": "The unmistakable sound of water trickling over rock can be heard echoing throughout this small chamber. The air is filled\n        with a fresh, life-giving smell that immediately improves Jean's mood. This would be an excellent place to stop for a short\n        rest before continuing on.",
         "exits": [
             "northwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Mynx"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "HealingSpring",
+                "__module__": "objects",
+                "props": {
+                    "name": "HealingSpring",
+                    "description": "A burbling spring with fresh smelling water. It is clean and very inviting.",
+                    "idle_message": "There is a small spring bubbling here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a healing spring!",
+                    "announce": "There is a small spring bubbling here.",
+                    "keywords": [
+                        "drink",
+                        "clean",
+                        "wash"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            }
+        ],
+        "symbol": ""
     }
 }

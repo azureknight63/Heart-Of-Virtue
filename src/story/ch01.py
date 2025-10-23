@@ -6,9 +6,9 @@ from neotermcolor import cprint, colored
 import time
 import random
 
-from src.events import Event, dialogue
-import src.objects as objects
-from src.functions import print_slow, await_input
+from events import Event, dialogue
+import objects as objects
+from functions import print_slow, await_input
 
 class Ch01StartOpenWall(Event):
     """
@@ -94,7 +94,7 @@ class Ch01ChestRumblerBattle(Event):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
-        for thing in self.params:
+        for thing in self.tile.objects_here:
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
                     if len(thing.inventory) == 0:  # if the chest is empty, continue
@@ -186,7 +186,7 @@ class Ch01PostRumbler2(Event):
         cprint("Two more rock creatures advance on him, snapping their heavy jaws.")
         time.sleep(3)
         cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, "
-               "then turns to face the creatures.")
+               "then turns to face the creatures. A loud rumble billows out from the figure, vibrating Jean's chest.")
         time.sleep(4)
         cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.")
         time.sleep(3)
@@ -339,13 +339,20 @@ class AfterTheRumblerFight(Event):
         time.sleep(3)
         dialogue("Jean", "I suppose I should thank you for saving my skin. What is your name?", "cyan")
         print("The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. "
-              "He begins to speak in low, rumbling tones.")
+              "He begins to speak in low, rumbling tones, little of which Jean can understand.")
+        time.sleep(3)
+        print("Seeming to sense Jean's incomprehension, the Rock-Man places his open palm on his chest before emitting what could " \
+        "best be described as an avalanche falling in love with an earthquake.")
+        time.sleep(4)
         dialogue("Rock-Man", "Mmmmm... Go-rra-nnnnnn...", "green")
         dialogue("Jean", "Go... rran? Well, thank you, Gorran. But what were those things? "
                          "I've never seen their like in my life!", "cyan")
         print("Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came.")
-        dialogue("Rock-Man", "Time... short. Not... safe to... linger. Speak... to Gorran again... "
-                             "when ready.", "green")
+        time.sleep(3)
+        print("Gorran points at himself, then at Jean, and finally gestures toward the recently opened passage.")
+        print("He makes a series of rumbling sounds and waves his hands, clearly inviting Jean to approach him again.")
+        print("It seems Gorran wants to communicate further, but words are not his way. Perhaps Jean should try speaking to him once more.")
+
         for npc_here in self.tile.npcs_here:
             if npc_here.name == "Rock-Man":
                 npc_here.name = "Gorran"
@@ -376,4 +383,4 @@ class AfterGorranIntro(Event):
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)
                 gorran.friend = True
-        self.player.teleport("verdette_caverns", (2, 1))
+        self.player.teleport("verdette-caverns", (2, 1))

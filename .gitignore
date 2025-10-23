@@ -31,3 +31,11 @@ config_dev.ini
 cov_*.json
 cov_*.txt
 .env
+.venv
+/utils/ai-prompts/
+*\__pycache__
+.vscode
+utils/legacy-maps/
+.coverage
+
+.github/copilot-instructions.md

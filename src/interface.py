@@ -539,7 +539,7 @@ class InventoryInterface(BaseInterface):
             "Helm": {"hotkey": "h", "class": __import__('items').Helm},
             "Gloves": {"hotkey": "g", "class": __import__('items').Gloves},
             "Accessory": {"hotkey": "y", "class": __import__('items').Accessory},
-            "Special": {"hotkey": "s", "class": __import__('items').Special}
+            "Special": {"hotkey": "s", "class": __import__('items').Special, "include_maintypes": ["Special", "Book", "Relic"]}
         }
         super().__init__(title=f"{player.name}'s Inventory", exit_label="Exit Inventory")
 
@@ -553,24 +553,25 @@ class InventoryInterface(BaseInterface):
             gold_amt = sum(getattr(item, 'amt', 0) for item in self.player.inventory if getattr(item, 'subtype', None) == "Gold")
             print(f"Gold: {gold_amt}\n\nSelect a category to view:\n")
             # Build item_types and item_counts robustly
-            item_types = set()
-            item_counts = {}
-            for item in self.player.inventory:
-                if hasattr(item, 'maintype') and item.maintype in self.item_categories:
-                    item_types.add(item.maintype)
-                    if item.maintype not in item_counts:
-                        item_counts[item.maintype] = 0
-                    if hasattr(item, 'count'):
-                        item_counts[item.maintype] += item.count
-                    else:
-                        item_counts[item.maintype] += 1
-            item_counts["Gold"] = gold_amt
-            # Display categories
-            for item_type in item_types:
-                count = item_counts.get(item_type, 0)
-                if count > 0 and item_type in self.item_categories:
-                    hotkey = self.item_categories[item_type]["hotkey"]
-                    print(f"({hotkey}) {item_type}: {count}")
+            # Track which categories have items
+            category_counts = {}
+            for cat_name, cat_data in self.item_categories.items():
+                category_counts[cat_name] = 0
+                include_maintypes = cat_data.get("include_maintypes", [cat_data["class"].__name__])
+                for item in self.player.inventory:
+                    item_maintype = getattr(item, 'maintype', None)
+                    if item_maintype in include_maintypes:
+                        if hasattr(item, 'count'):
+                            category_counts[cat_name] += item.count
+                        else:
+                            category_counts[cat_name] += 1
+            
+            # Display categories with items
+            for cat_name, cat_data in self.item_categories.items():
+                count = category_counts.get(cat_name, 0)
+                if count > 0:
+                    hotkey = cat_data["hotkey"]
+                    print(f"({hotkey}) {cat_name}: {count}")
             print("(x) Cancel\n")
             inventory_selection = input("Selection: ")
             if inventory_selection == 'x':
@@ -582,9 +583,10 @@ class InventoryInterface(BaseInterface):
                     break
             choices = []
             if selected_category:
-                category_class = self.item_categories[selected_category]["class"]
+                cat_data = self.item_categories[selected_category]
+                include_maintypes = cat_data.get("include_maintypes", [cat_data["class"].__name__])
                 for item in self.player.inventory:
-                    if getattr(item, 'maintype', None) == category_class.__name__:
+                    if getattr(item, 'maintype', None) in include_maintypes:
                         choices.append(item)
             if choices:
                 submenu = InventoryCategorySubmenu(choices, self.player, selected_category)
@@ -603,7 +605,15 @@ class InventoryInterface(BaseInterface):
             selection = int(selection)
             if hasattr(item, item.interactions[selection]):
                 method = getattr(item, item.interactions[selection])
-                method(player)
+                # Inspect method signature to determine if it expects a player argument
+                import inspect
+                sig = inspect.signature(method)
+                # Count parameters excluding 'self' (for bound methods, 'self' is already bound)
+                params = [p for p in sig.parameters.values() if p.name != 'self']
+                if len(params) > 0:
+                    method(player)
+                else:
+                    method()
 
 
 class ContainerLootInterface(BaseInterface):

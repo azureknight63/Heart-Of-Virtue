@@ -29,18 +29,19 @@ class ChestObj:
 
 @pytest.fixture(autouse=True)
 def inject_dummy_modules(monkeypatch):
-    mod_items = types.ModuleType('src.items')
+    # Register modules without 'src.' prefix to match how load_class imports them
+    mod_items = types.ModuleType('items')
     mod_items.ItemA = ItemA
     mod_items.ItemB = ItemB
     mod_items.EventA = EventA  # make EventA discoverable by legacy loader
-    mod_objects = types.ModuleType('src.objects')
+    mod_objects = types.ModuleType('objects')
     mod_objects.ChestObj = ChestObj
-    mod_npc = types.ModuleType('src.npc')
-    sys.modules['src.items'] = mod_items
-    sys.modules['src.objects'] = mod_objects
-    sys.modules['src.npc'] = mod_npc
+    mod_npc = types.ModuleType('npc')
+    sys.modules['items'] = mod_items
+    sys.modules['objects'] = mod_objects
+    sys.modules['npc'] = mod_npc
     yield
-    for m in ['src.items','src.objects','src.npc']:
+    for m in ['items','objects','npc']:
         sys.modules.pop(m, None)
 
 @pytest.fixture

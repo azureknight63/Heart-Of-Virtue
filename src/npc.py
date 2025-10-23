@@ -1,15 +1,15 @@
 import random
 import time
-import genericng as genericng
-import moves as moves
-import functions as functions
-from neotermcolor import colored, cprint
-import loot_tables as loot_tables
+import genericng as genericng  # type: ignore
+import moves as moves  # type: ignore
+import functions as functions  # type: ignore
+import loot_tables as loot_tables  # type: ignore
 from items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
-                       Gloves, Helm, Boots, Armor, Weapon, Arrow)
-import items as items_module  # added for unique item registry management
-from objects import Container
-from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+                       Gloves, Helm, Boots, Armor, Weapon, Arrow)  # type: ignore
+import items as items_module  # type: ignore  # added for unique item registry management
+from objects import Container  # type: ignore
+from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition  # type: ignore
+from neotermcolor import colored, cprint
 from pathlib import Path
 import os
 import importlib.util
@@ -996,7 +996,9 @@ class Mynx(Friend):
     Behavior and interaction methods are provided as stubs so an LLM can be integrated later.
     """
 
-    def __init__(self, name: str = "Mynx", description: str | None = None):
+    def __init__(self, name: str = None, description: str | None = None):
+        if name is None:
+            name = "Mynx " + genericng.generate(1, 3)
         if description is None:
             description = (
                 "A small, nimble creature with spotted fur, a prehensile tufted tail, and bright curious eyes. "

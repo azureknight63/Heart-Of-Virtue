@@ -28,17 +28,17 @@ class DummyMerchant:
 
 @pytest.fixture(autouse=True)
 def dummy_modules(monkeypatch):
-    # Create dummy modules for deserialization
-    dummy_items = types.ModuleType('src.items')
+    # Create dummy modules for deserialization (without 'src.' prefix as per universe.py implementation)
+    dummy_items = types.ModuleType('items')
     dummy_items.DummyItem = DummyItem
-    sys.modules['src.items'] = dummy_items
-    dummy_npc = types.ModuleType('src.npc')
+    sys.modules['items'] = dummy_items
+    dummy_npc = types.ModuleType('npc')
     dummy_npc.DummyMerchant = DummyMerchant
-    sys.modules['src.npc'] = dummy_npc
+    sys.modules['npc'] = dummy_npc
     yield
     # Cleanup
-    del sys.modules['src.items']
-    del sys.modules['src.npc']
+    del sys.modules['items']
+    del sys.modules['npc']
 
 
 def test_recursive_deserialize_inventory():

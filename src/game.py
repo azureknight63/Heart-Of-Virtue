@@ -14,11 +14,11 @@ from neotermcolor import colored, cprint
 from functions import refresh_stat_bonuses
 from intro_scene import intro
 
-from src.combat import combat
-import src.functions as functions
-import src.items as items
-from src.player import Player
-from src.universe import Universe, tile_exists
+from combat import combat
+import functions as functions
+import items as items
+from player import Player
+from universe import Universe, tile_exists
 import sys
 import configparser
 import ast
@@ -155,7 +155,11 @@ _\\|//__( | )______)_/
         if not testing_mode:
             intro()
         player.refresh_merchants()
+        player.current_room = room
         print(room.intro_text())
+        functions.print_items_in_room(player.current_room)
+        functions.print_objects_in_room(player.current_room)
+        functions.advise_player_actions(player)
         player.main_menu = False
         check_time = time.time()
         auto_save_timer = check_time
@@ -196,8 +200,6 @@ _\\|//__( | )______)_/
                 mark_health = player.hp
             functions.print_npcs_in_room(player.current_room)
             player.current_room.stack_duplicate_items()
-            functions.print_items_in_room(player.current_room)
-            functions.print_objects_in_room(player.current_room)
             player.combat_list = functions.check_for_combat(player)
             if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!", "red"))
@@ -208,19 +210,6 @@ _\\|//__( | )______)_/
             elif player.is_alive() and not player.victory:
                 player.stack_inv_items()
                 player.stack_gold()
-                print("\nChoose an action:\n")
-                available_actions = player.current_room.adjacent_moves()
-                move_separator = colored(' | ', "cyan")
-                available_moves = move_separator.join(colored(str(action), "green") for action in available_actions)
-                while available_moves.count('|') > 4:  # Break the list of moves over multiple lines
-                    cutoff = functions.findnth(available_moves, "|", 4)
-                    print(available_moves[:cutoff + 1])
-                    available_moves = available_moves[cutoff:]
-                    if ":" not in available_moves:  # if there aren't any moves left, erase the tail
-                        available_moves = ""
-                if len(available_moves) > 0:
-                    print(available_moves)
-                print("\nFor a list of additional commands, enter 'c'.\n")
                 action_input = input('Action: ')
                 raw_args = action_input.split(' ')
                 lc_exceptions = ("te", "test",
@@ -263,6 +252,9 @@ _\\|//__( | )______)_/
                         cprint("Jean isn't sure exactly what he's trying to do.", 'red')
             player.universe.game_tick += 1
             time.sleep(0.5)
+
+
+
 
 
 if __name__ == "__main__":

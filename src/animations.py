@@ -159,7 +159,7 @@ def animate_to_main_screen(animation, rawtext=""):
     :param rawtext: Text to display with the animation, if any. You can pass in colored text (color will be stripped)
     """
     # Import here to avoid circular import: functions imports moves, and moves imports animations.
-    from src.functions import clean_string
+    from functions import clean_string
     text = clean_string(rawtext)
     if ".gif" in animation:
         file_to_play = animation.replace(".gif", "")

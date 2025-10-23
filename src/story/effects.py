@@ -1,12 +1,16 @@
 """
 Effects are small, one-time-only events typically fired during combat or in response to some player action
 """
+from typing import List, Optional
+
 from neotermcolor import colored, cprint
 import random
 import time
-from src import functions
-from src import states
-from src.events import Event
+
+from npc import NPC
+import functions
+import states
+from events import Event
 
 
 class Effect(Event):
@@ -203,3 +207,95 @@ class StMichael(Shrine):
         functions.add_random_enchantments(drop, 1)
         cprint("There's a brief flash of light (or was it imagined?) \nSuddenly, at the foot of the shrine, "
                "there sits a {}.".format(drop.name), "cyan")
+
+class NPCSpawnerEvent(Event):
+    """Spawns a number of NPCs of a given class onto a specified tile.
+
+    Usage / JSON params patterns supported (params field on event):
+        ["Slime", 3]                       -> spawn 3 Slime on event tile
+        [Slime, 5]                          -> spawn 5 Slime (class object deserialized) on event tile
+        ["Slime", 2, (x, y)]               -> spawn 2 Slime on the tile at coordinates (x,y) within same map
+        [Slime, 4, (x, y)]                  -> class object variant with coordinate override
+
+    The constructor ALSO accepts npc_cls / count directly if map editor supplies them as properties instead of params.
+    Priority order for resolving values:
+        explicit npc_cls argument > params[0]
+        explicit count argument  > params[1]
+        optional spawn coords    = params[2]
+
+    Trigger conditions:
+    - Fires once the first time the player is in the same map (even if not on the spawn tile yet), OR immediately if
+      the player starts / moves onto the spawn tile before global scan catches it.
+
+    Removal:
+    - Event removes itself after spawning unless repeat=True (repeat use not generally recommended).
+    """
+    def __init__(self, player=None, tile=None, params=None, repeat: bool = False,
+                 npc_cls: type[NPC]=None, count: int | None = None, name: str = "NPCSpawnerEvent"):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        self.spawn_tile = tile  # default
+        self.npc_cls = npc_cls
+        self.count = count
+        if params:
+            try:
+                if self.npc_cls is None:
+                    self.npc_cls = params[0]
+                if self.count is None and len(params) > 1:
+                    self.count = params[1]
+                if len(params) > 2 and isinstance(params[2], (list, tuple)) and len(params[2]) == 2:
+                    # attempt coordinate override within same map
+                    coord = tuple(params[2])
+                    if tile and tile.map and coord in tile.map:
+                        self.spawn_tile = tile.map.get(coord)
+            except Exception:
+                pass
+        try:
+            self.count = max(1, int(self.count)) if self.count is not None else 1
+        except Exception:
+            self.count = 1
+        self.spawned_npcs: List = []
+
+    def _resolve_npc_class_name(self) -> Optional[str]:
+        if self.npc_cls is None:
+            return None
+        if isinstance(self.npc_cls, str):
+            return self.npc_cls
+        try:
+            from npc import NPC  # local import avoids circular on module load
+            if isinstance(self.npc_cls, type) and issubclass(self.npc_cls, NPC):
+                return self.npc_cls.__name__
+        except Exception:
+            return None
+        return None
+
+    def _do_spawn(self):
+        if not self.spawn_tile:
+            if self.tile:
+                self.spawn_tile = self.tile
+            else:
+                return
+        cls_name = self._resolve_npc_class_name()
+        if not cls_name:
+            return
+        for _ in range(self.count):
+            try:
+                npc_obj = self.spawn_tile.spawn_npc(cls_name)
+                self.spawned_npcs.append(npc_obj)
+            except Exception:
+                continue
+
+    def process(self):
+        if self.has_run and not self.repeat:
+            return
+        self._do_spawn()
+        self.has_run = True
+
+    def evaluate_for_map_entry(self, player):
+        if self.has_run and not self.repeat:
+            return
+        # trigger if player map matches spawn tile's map
+        try:
+            if self.spawn_tile and self.spawn_tile.map is player.map:
+                self.pass_conditions_to_process()
+        except Exception:
+            return

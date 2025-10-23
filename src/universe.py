@@ -1,12 +1,6 @@
 __author__ = 'Alex Egbert'
 
-# import functions (robust to package vs top-level import)
-try:
-    # Prefer top-level import so tests that monkeypatch 'functions' (imported as 'functions') affect us
-    import functions as functions
-except Exception:
-    # Fallback when running as package (src package on path)
-    import src.functions as functions
+import functions as functions
 import json, inspect, importlib
 from pathlib import Path
 from typing import Final
@@ -38,6 +32,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.locked_chests = []
 
     def build(self, player):  # builds all the maps as they are, then loads them into self.maps
+        # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
+        self.player = player
         if player.saveuniv is not None and player.savestat is not None:
             self.maps = player.saveuniv
         else:  # new game
@@ -83,14 +79,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
     def _deserialize_saved_instance(self, payload):
         """Deserialize an instance saved by map_generator (class+module+props). Returns object or None."""
         # Recursively deserialize nested objects in props, events, etc.
-        # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'src.items:Item'})
+        # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'items:Item'})
         if isinstance(payload, dict) and '__class_type__' in payload:
             spec = payload.get('__class_type__')
             try:
                 mod_name, cls_name = spec.rsplit(':', 1)
                 if mod_name and cls_name:
-                    if not mod_name.startswith('src.') and mod_name != 'builtins':
-                        mod_name = f'src.{mod_name}'
                     module = __import__(mod_name, fromlist=[cls_name])
                     return getattr(module, cls_name)
             except Exception:
@@ -102,9 +96,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         mod_name = payload.get('__module__')
         props = payload.get('props', {})
 
-        # Normalize module name
-        if mod_name != 'builtins' and not mod_name.startswith('src.'):
-            mod_name = f'src.{mod_name}'
+        # Throw error if mod name has improper format; 'src.' prefix should not be present.
+        if mod_name.startswith('src.'):
+            raise ValueError(f"Invalid module name format: {mod_name}")
 
         def recursive_deserialize(value):
             if isinstance(value, dict):
@@ -144,15 +138,14 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Apply remaining props as attributes
             for k, v in props.items():
                 try:
-                    # Avoid overwriting a populated container inventory with an empty list from serialized props
                     if (
                         k == 'inventory'
                         and hasattr(inst, 'inventory')
-                        and getattr(inst, 'inventory')  # current inventory is non-empty
+                        and getattr(inst, 'inventory')
                         and isinstance(v, list)
-                        and len(v) == 0  # incoming serialized inventory is empty
+                        and len(v) == 0
                     ):
-                        continue  # skip destructive overwrite
+                        continue
                     setattr(inst, k, v)
                 except Exception:
                     pass
@@ -180,7 +173,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 tile_cls = functions.seek_class(title, 'tilesets')
             except Exception:
                 try:
-                    tiles_mod = importlib.import_module('src.tiles')
+                    tiles_mod = importlib.import_module('tiles')
                     tile_cls = getattr(tiles_mod, 'MapTile')
                 except Exception:
                     from tiles import MapTile as tile_cls  # fallback
@@ -198,9 +191,41 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 inst = self._deserialize_saved_instance(ev_payload)
                 if inst:
                     try:
-                        # attach minimal expected attributes if missing
-                        if hasattr(inst, 'tile'):
+                        # Robust handling for events whose __init__ could not be executed (missing required args like 'tile').
+                        # If the event instance lacks a 'tile' attribute entirely, attempt re-instantiation supplying player & tile.
+                        if not hasattr(inst, 'tile'):
+                            try:
+                                cls = inst.__class__
+                                sig = inspect.signature(cls.__init__)
+                                params = sig.parameters
+                                init_kwargs = {}
+                                if 'player' in params:
+                                    init_kwargs['player'] = player
+                                if 'tile' in params:
+                                    init_kwargs['tile'] = tile_instance
+                                if 'params' in params:
+                                    init_kwargs['params'] = None
+                                if 'repeat' in params:
+                                    init_kwargs['repeat'] = False
+                                if 'name' in params:
+                                    # Preserve existing name attribute if any, else class name
+                                    init_kwargs['name'] = getattr(inst, 'name', cls.__name__)
+                                reinited = cls(**init_kwargs)
+                                inst = reinited
+                            except Exception:
+                                # Fallback: synthesize minimal attributes
+                                try:
+                                    inst.player = player
+                                except Exception:
+                                    pass
+                                try:
+                                    inst.tile = tile_instance
+                                except Exception:
+                                    pass
+                        # If 'tile' exists but is None, assign it now.
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
                             inst.tile = tile_instance
+                        # Always ensure player reference if attribute exists or expected by common pattern.
                         if hasattr(inst, 'player'):
                             inst.player = player
                         tile_instance.events_here.append(inst)
@@ -212,6 +237,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if inst:
                     if hasattr(inst, 'player'):
                         inst.player = player
+                    # Only assign tile if attribute exists and is currently None
+                    try:
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
+                            inst.tile = tile_instance
+                    except Exception:
+                        pass
                     tile_instance.items_here.append(inst)
             # npcs
             for npc_payload in tile_data.get('npcs', []):
@@ -220,12 +251,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     if hasattr(inst, 'player'):
                         inst.player = player
                     # Ensure NPCs know which room they occupy. Some NPC classes expect 'current_room',
-                    # others may use 'tile'. Set whichever attribute exists so deserialized merchants
-                    # (e.g. MiloCurioDealer) have their current_room populated.
+                    # others may use 'tile'. Set whichever attribute exists and is None so deserialized merchants
+                    # have their current_room populated without overwriting an existing reference.
                     try:
-                        if hasattr(inst, 'current_room'):
+                        if hasattr(inst, 'current_room') and getattr(inst, 'current_room', None) is None:
                             inst.current_room = tile_instance
-                        if hasattr(inst, 'tile'):
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
                             inst.tile = tile_instance
                     except Exception:
                         pass
@@ -236,9 +267,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if inst:
                     if hasattr(inst, 'player'):
                         inst.player = player
-                    # Ensure objects receive a reference to their tile if they expect it
+                    # Ensure objects receive a reference to their tile if they expect it, but don't overwrite
                     try:
-                        if hasattr(inst, 'tile'):
+                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
                             inst.tile = tile_instance
                     except Exception:
                         pass
@@ -342,7 +373,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                         this_map[(x, y)] = None
                     else:
                         try:
-                            tiles_mod = importlib.import_module('src.tiles')
+                            tiles_mod = importlib.import_module('tiles')
                             this_map[(x, y)] = getattr(tiles_mod, tile_name)(self, this_map, x, y)
                         except Exception:
                             # legacy fallback
@@ -360,12 +391,36 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         """
         print(f"\033[91m[DEBUG] game_tick: {self.game_tick}\033[0m")
         if self.game_tick == 0:
+            # Single evaluation pass (includes repeat events once) to avoid double spawning
+            self._evaluate_map_entry_spawners(process_repeats=True)
             return
         if self.game_tick % 1000 == 0:
-            # Refresh merchant inventories globally.
-            # This will clear any merchandise-tagged items and merchant inventory.
-            # It will reset the merchant's gold as well and apply shop conditions.
             self.player.refresh_merchants()
+        self._evaluate_map_entry_spawners(process_repeats=True)
+
+    def _evaluate_map_entry_spawners(self, process_repeats=False):
+        """Scan current map for events that expose evaluate_for_map_entry() and trigger them."""
+        try:
+            current_map = self.player.map
+            if not isinstance(current_map, dict):
+                return
+            for coord, tile in current_map.items():
+                if not isinstance(coord, tuple):  # skip non-coordinate entries like 'name'
+                    continue
+                if tile is None:
+                    continue
+                # Work on a shallow copy since event list may mutate during iteration
+                for ev in list(getattr(tile, 'events_here', [])):
+                    if hasattr(ev, 'evaluate_for_map_entry'):
+                        has_run = getattr(ev, 'has_run', False)
+                        is_repeat = getattr(ev, 'repeat', False)
+                        if (not has_run) or (process_repeats and is_repeat):
+                            try:
+                                ev.evaluate_for_map_entry(self.player)
+                            except Exception:
+                                continue
+        except Exception:
+            pass
 
     @staticmethod
     def parse_hidden(setting: str) -> tuple[bool, int]:

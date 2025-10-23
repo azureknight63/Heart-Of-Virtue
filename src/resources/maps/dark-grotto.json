@@ -1,0 +1,933 @@
+{
+    "(1, 1)": {
+        "id": "tile_1_1",
+        "title": "EmptyCave",
+        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.",
+        "exits": [
+            "south",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "EmptyCave",
+        "description": "Shallow scratches form wavering lines on one wall,\nlike someone traced a thought they dared not speak.\nA faint comfort seems to rest here, stubborn and warm.",
+        "exits": [
+            "south",
+            "east",
+            "west",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Words scratched into the wall. You think you can make out the words if you READ closely.",
+                    "idle_message": "There appears to be some words inscribed in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "some words etched into the wall!",
+                    "announce": "There appears to be some words inscribed in the wall.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "For I know the plans I have for you, declares the Lord, plans for welfare and not for evil, to give you a future and a hope."
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(3, 1)": {
+        "id": "tile_3_1",
+        "title": "EmptyCave",
+        "description": "A dusting of pale grit marks where the ceiling once\ncrumbled. A thin draft threads through a hairline seam,\ncarrying distant echoes that never resolve to words.",
+        "exits": [
+            "west",
+            "south",
+            "southeast",
+            "southwest"
+        ],
+        "block_exit": [
+            "southeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(6, 1)": {
+        "id": "tile_6_1",
+        "title": "EmptyCave",
+        "description": "Here the air sits heavier, as though the stone holds\nits breath. A muted thud vibrates once beneath the\nboots, then is gone, like a heart choosing silence.",
+        "exits": [
+            "south",
+            "east",
+            "southwest"
+        ],
+        "block_exit": [
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(7, 1)": {
+        "id": "tile_7_1",
+        "title": "EmptyCave",
+        "description": "A squat chest rests in a quiet hollow. The stone\naround it bears faint drag scars and a thin crescent\nof splinters. The stillness hums, waiting to be broken.",
+        "exits": [
+            "west",
+            "southwest"
+        ],
+        "block_exit": [
+            "southwest"
+        ],
+        "events": [
+            {
+                "__class__": "Ch01ChestRumblerBattle",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Chest_Rumbler_Battle",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "wooden chest",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 68,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 68 gold pieces.",
+                                "value": 68,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 68
+                            }
+                        }
+                    ],
+                    "name": "Wooden Chest",
+                    "description": "A wooden chest. There may be something inside.",
+                    "idle_message": "A wooden chest is sitting here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a wooden chest!",
+                    "announce": "A wooden chest is sitting here.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(1, 2)": {
+        "id": "tile_1_2",
+        "title": "EmptyCave",
+        "description": "Clusters of pale mushrooms bead faint dew that\nscatters the light into a ghostly spray. Their sweet\nearth smell softens the harder scents of gravel.",
+        "exits": [
+            "north",
+            "northeast",
+            "south",
+            "east",
+            "southeast"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "JeanGameStartTile",
+        "description": "This space is like dawn breaking over forgotten stone.\nA shaft of silver light pierces the darkness above, illuminating\nan altar of cold rock. Ancient dust swirls in the beam,\nwhispering of secrets buried in shadow. The cavern breathes\naround you; alive, patient, waiting for you to take your first\nstep into whatever lies beyond the light's reach.",
+        "exits": [
+            "north",
+            "south",
+            "east",
+            "west",
+            "northeast",
+            "northwest",
+            "southwest"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(3, 2)": {
+        "id": "tile_3_2",
+        "title": "FirstPuzzle",
+        "description": "The stone here holds a muted warmth, a hush\npressing outward. Floor scuffs converge and stop at\na shallow depression. Behind the wall a slow drip\nkeeps an unhurried, hidden rhythm.",
+        "exits": [
+            "north",
+            "east",
+            "west",
+            "northwest",
+            "southwest"
+        ],
+        "block_exit": [
+            "east"
+        ],
+        "events": [
+            {
+                "__class__": "Ch01StartOpenWall",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Start_Open_Wall",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallSwitch",
+                "__module__": "objects",
+                "props": {
+                    "name": "Wall Depression",
+                    "description": "A small depression in the wall. You may be able to PRESS on it.",
+                    "idle_message": "There's a small depression in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a small depression in the wall!",
+                    "announce": "There's a small depression in the wall.",
+                    "keywords": [
+                        "press"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "position": false,
+                    "event_on": null,
+                    "event_off": null
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(4, 2)": {
+        "id": "tile_4_2",
+        "title": "RockLedgeWest",
+        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind\nscatters it inland. A small creature watches, tail\nflicking to some private melody of the river.",
+        "exits": [
+            "east",
+            "west",
+            "northwest"
+        ],
+        "block_exit": [
+            "northwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Mynx",
+                "__module__": "npc",
+                "props": {
+                    "keywords": [
+                        "talk",
+                        "pet",
+                        "play"
+                    ],
+                    "name": "Ferdie",
+                    "description": "An excitable mynx with a bit of a temper. Mostly harmless.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " flicks its tail.",
+                    "alert_message": "startles and chatters!",
+                    "maxhp": 30,
+                    "maxhp_base": 30,
+                    "hp": 30,
+                    "damage": 0,
+                    "damage_base": 0,
+                    "protection": 1,
+                    "protection_base": 1,
+                    "speed": 18,
+                    "speed_base": 18,
+                    "finesse": 16,
+                    "finesse_base": 16,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 20,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 50,
+                    "maxfatigue_base": 50,
+                    "endurance": 8,
+                    "endurance_base": 8,
+                    "strength": 4,
+                    "strength_base": 4,
+                    "charisma": 14,
+                    "charisma_base": 14,
+                    "intelligence": 12,
+                    "intelligence_base": 12,
+                    "faith": 6,
+                    "faith_base": 6,
+                    "fatigue": 50,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Ferdie flicks its tail.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Mynx>",
+                                "user": "<circular_ref:Mynx>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a curious mynx.",
+                    "friend": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        0
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    }
+                }
+            }
+        ],
+        "objects": [],
+        "symbol": ""
+    },
+    "(5, 2)": {
+        "id": "tile_5_2",
+        "title": "RockLedgeEast",
+        "description": "The ledge narrows and kisses a sealed wall seam.\nMountain silhouettes haze the distance, crowns lost\nin traveling mist. Wind funnels here and thins your\nbreath with a clean, high cold.",
+        "exits": [
+            "east",
+            "west",
+            "northeast",
+            "southeast"
+        ],
+        "block_exit": [
+            "east",
+            "northeast",
+            "southeast"
+        ],
+        "events": [
+            {
+                "__class__": "Ch01BridgeWall",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Bridge_Wall",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallSwitch",
+                "__module__": "objects",
+                "props": {
+                    "name": "Wall Depression",
+                    "description": "A small depression in the wall. You may be able to PRESS on it.",
+                    "idle_message": "There's a small depression in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a small depression in the wall!",
+                    "announce": "There's a small depression in the wall.",
+                    "keywords": [
+                        "press"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "position": false,
+                    "event_on": null,
+                    "event_off": null
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(6, 2)": {
+        "id": "tile_6_2",
+        "title": "EmptyCave",
+        "description": "Condensation gathers in neat paired beads, then\ndrops in sync like practiced partners. The echo that\nreturns feels delayed, as though the dark is listening\nbefore answering back.",
+        "exits": [
+            "north",
+            "northeast",
+            "west",
+            "south",
+            "southeast"
+        ],
+        "block_exit": [
+            "southeast",
+            "northeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 3)": {
+        "id": "tile_1_3",
+        "title": "EmptyCave",
+        "description": "Loose grit shifts with a soft crunch that feels loud\nin the hush. A faint metallic tang lingers, maybe\nlichen, maybe rusted memory.",
+        "exits": [
+            "north",
+            "northeast",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 3)": {
+        "id": "tile_2_3",
+        "title": "EmptyCave",
+        "description": "Small things lie abandoned where a traveler paused\nlong ago. Fine moss outlines the prints that time has\nblurred. Quiet patience gathers under each pebble.",
+        "exits": [
+            "northwest",
+            "north",
+            "northeast",
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "items",
+                "props": {
+                    "amt": 27,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 27 gold pieces.",
+                    "value": 27,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 27
+                }
+            },
+            {
+                "__class__": "Restorative",
+                "__module__": "items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 1,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
+                    "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                    "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "power": 60
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(6, 3)": {
+        "id": "tile_6_3",
+        "title": "EmptyCave",
+        "description": "Sound threads from several unseen corridors, weaving\na restless hush. The air cools at the ankles only, a\nsubtle drift hinting at deeper chambers.",
+        "exits": [
+            "north",
+            "south",
+            "east",
+            "northwest",
+            "southwest"
+        ],
+        "block_exit": [
+            "northwest",
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(7, 3)": {
+        "id": "tile_7_3",
+        "title": "EmptyCave",
+        "description": "A shallow pocket terminates here. Damp stone curves\naround like a closing palm. The air is thick with\nthe scent of wet earth and something faintly floral,\nas if the cave itself were exhaling.",
+        "exits": [
+            "west",
+            "northwest",
+            "southwest"
+        ],
+        "block_exit": [
+            "northwest",
+            "southwest"
+        ],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "items",
+                "props": {
+                    "amt": 1,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 1 gold piece.",
+                    "value": 1,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 12
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(5, 4)": {
+        "id": "tile_5_4",
+        "title": "EmptyCave",
+        "description": "A cool upward draft grazes the floor, carrying a\nmineral tang and the faint aftertaste of river spray.\nHalf circles scratched in dust suggest boots pacing impatiently.",
+        "exits": [
+            "south",
+            "east",
+            "northeast"
+        ],
+        "block_exit": [
+            "northeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(6, 4)": {
+        "id": "tile_6_4",
+        "title": "EmptyCave",
+        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.",
+        "exits": [
+            "north",
+            "west",
+            "northeast",
+            "southwest"
+        ],
+        "block_exit": [
+            "northeast",
+            "southwest"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    },
+    "(5, 5)": {
+        "id": "tile_5_5",
+        "title": "EmptyCave",
+        "description": "The floor sags a little here, a shallow basin where\ncolder air pools. A faint, steady drip marks time\nwithout counting it. Somewhere distant, water moves\nwith a slow, persistent purpose.\nThere's an odd feeling which persists in this modest\nalcove; a sense of nostalgic sadness, or perhaps weariness,\nwhich hangs in the air like a faded tapestry adorns the\nwall of a dusty attic.",
+        "exits": [
+            "north",
+            "northeast"
+        ],
+        "block_exit": [
+            "northeast"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "remains",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "DullMedallion",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 0,
+                                "str_mod": 0,
+                                "fin_mod": 0,
+                                "weight": 0.5,
+                                "isequipped": false,
+                                "maintype": "Accessory",
+                                "subtype": "Necklace",
+                                "name": "Dull Medallion",
+                                "description": "A rather unremarkable medallion. \nIt's face is dull, and seems to swallow any light unlucky enough to land upon it. \nIt may have been a family heirloom or a memento of a lost love.",
+                                "value": 25,
+                                "type": "Accessory",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small trinket.",
+                                "announce": "There's a Dull Medallion here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        },
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 133,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 133 gold pieces.",
+                                "value": 133,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 133
+                            }
+                        },
+                        {
+                            "__class__": "ClothBoots",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 1,
+                                "str_req": 1,
+                                "str_mod": 0.03,
+                                "weight": 0.6,
+                                "isequipped": false,
+                                "maintype": "Boots",
+                                "subtype": "Light Boots",
+                                "name": "Cloth Boots",
+                                "description": "Simple stitched cloth boots. Keeps feet warm but offers almost no protection.",
+                                "value": 3,
+                                "type": "Boots",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a pair of footgear.",
+                                "announce": "There's a Cloth Boots here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
+                            }
+                        }
+                    ],
+                    "name": "Remains",
+                    "description": "The remains of a poor traveler. There's not much left besides grey bone and tattered clothes.",
+                    "idle_message": "The old remains of a traveler are here, leaning against the rock wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a container!",
+                    "announce": "The old remains of a traveler are here, leaning against the rock wall.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
+        "symbol": ""
+    }
+}
