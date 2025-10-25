@@ -160,16 +160,21 @@ def animate_to_main_screen(animation, rawtext=""):
     """
     # Import here to avoid circular import: functions imports moves, and moves imports animations.
     from functions import clean_string
+    import sys
+    
     text = clean_string(rawtext)
     if ".gif" in animation:
         file_to_play = animation.replace(".gif", "")
         Screen.wrapper(func=play_gif, arguments=[file_to_play, text])
     else:
-        if function_exists('animations.py', animation):
+        # Get the current module to check for the animation function
+        current_module = sys.modules[__name__]
+        if hasattr(current_module, animation) and callable(getattr(current_module, animation)):
+            animation_func = getattr(current_module, animation)
             if text:
-                Screen.wrapper(func=getattr('animations.py', animation), arguments=[text])
+                Screen.wrapper(func=animation_func, arguments=[text])
             else:
-                Screen.wrapper(getattr('animations.py', animation))
+                Screen.wrapper(animation_func)
         else:
             print("### Animation not found!")
 
@@ -195,7 +200,7 @@ def memory_flash(screen):
             start_frame=0),
         Stars(screen, 300)
     ]
-    screen.play([Scene(effects, 60)], stop_on_resize=True)
+    screen.play([Scene(effects, 60)], repeat=False, stop_on_resize=True)
 
 
 if __name__ == "__main__":
