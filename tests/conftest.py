@@ -20,7 +20,9 @@ _core_order = [
     'tiles',
     'universe',
     'moves',           # moves before npc so npc can attach move instances
-    'npc'
+    'npc',
+    'skilltree',       # needed by player
+    'player'           # player depends on many modules
 ]
 for _name in _core_order:
     if _name in sys.modules:

@@ -38,7 +38,7 @@ def test_tile_initialization(basic_tile):
     assert basic_tile.discovered is False
     assert basic_tile.respawn_rate == 9999
     assert basic_tile.block_exit == []
-    assert basic_tile.symbol == '='
+    assert basic_tile.symbol == '●'
 
 
 def test_tile_universe_reference(basic_tile, mock_universe):
@@ -489,4 +489,4 @@ def test_tile_respawn_rate_default(basic_tile):
 
 def test_tile_symbol_default(basic_tile):
     """Test default symbol"""
-    assert basic_tile.symbol == '='
+    assert basic_tile.symbol == '●'
