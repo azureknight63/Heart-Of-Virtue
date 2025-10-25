@@ -191,16 +191,30 @@ def memory_flash(screen):
     """
     Displays a memory flash animation - a shimmering, ethereal effect
     to indicate Jean is remembering something from his past.
+    Text pulses between magenta and white for an ethereal, dreamlike quality.
     """
-    effects = [
-        Cycle(
-            screen,
-            FigletText("MEMORY", font='banner'),
-            int(screen.height / 2 - 4),
-            start_frame=0),
-        Stars(screen, 300)
-    ]
-    screen.play([Scene(effects, 60)], repeat=False, stop_on_resize=True)
+    # Duration reduced by 40%: 60 frames -> 36 frames (~1.8 seconds at 20fps)
+    # Create multiple Print effects at different frames to simulate color cycling
+    effects = []
+    
+    # Alternate between magenta (5) and white (7) every 6 frames
+    for i in range(6):
+        color = 5 if i % 2 == 0 else 7  # Magenta, then White
+        effects.append(
+            Print(
+                screen,
+                FigletText("A MEMORY ECHOES", font='banner'),
+                y=int(screen.height / 2 - 4),
+                colour=color,
+                speed=1,
+                start_frame=i * 6,
+                stop_frame=(i + 1) * 6)
+        )
+    
+    # Add stars effect throughout
+    effects.append(Stars(screen, 300))
+    
+    screen.play([Scene(effects, 36)], repeat=False, stop_on_resize=True)
 
 
 if __name__ == "__main__":
