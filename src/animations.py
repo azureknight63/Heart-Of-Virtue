@@ -182,5 +182,21 @@ def image_to_main_screen(image):
     Screen.wrapper(func=display_static_image, arguments=[image])
 
 
+def memory_flash(screen):
+    """
+    Displays a memory flash animation - a shimmering, ethereal effect
+    to indicate Jean is remembering something from his past.
+    """
+    effects = [
+        Cycle(
+            screen,
+            FigletText("MEMORY", font='banner'),
+            int(screen.height / 2 - 4),
+            start_frame=0),
+        Stars(screen, 300)
+    ]
+    screen.play([Scene(effects, 60)], stop_on_resize=True)
+
+
 if __name__ == "__main__":
     main()

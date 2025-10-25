@@ -11,6 +11,91 @@ from npc import NPC
 import functions
 import states
 from events import Event
+import animations
+
+
+def memory_border(style="top"):
+    """Print decorative borders for memory flashes."""
+    border = "═" * 79
+    if style == "top":
+        # Play the memory flash animation
+        animations.animate_to_main_screen("memory_flash")
+        print()  # Blank line after animation
+        cprint(border, "magenta")
+        cprint("✧ A MEMORY STIRS ✧".center(79), "magenta", attrs=["bold"])
+        cprint(border, "magenta")
+        print()  # Blank line for readability
+    elif style == "bottom":
+        print()  # Blank line before bottom border
+        cprint(border, "magenta")
+        cprint("✧ THE MEMORY FADES ✧".center(79), "magenta", attrs=["bold"])
+        cprint(border, "magenta")
+    else:
+        cprint(border, "magenta")
+
+
+class MemoryFlash(Event):
+    """
+    A memory flash event that displays a fragment of Jean's past.
+    These are powerful story moments that reveal Jean's background and motivations.
+    
+    Memory fragments should be:
+    - Brief (5-10 lines of text)
+    - Sensory and evocative
+    - Mysterious but revealing
+    - Emotionally resonant
+    
+    Args:
+        player: The player object
+        tile: The tile where this event triggers
+        memory_lines: List of tuples (text, pause_duration) for each line of the memory
+        aftermath_text: Optional text shown after the memory fades
+        repeat: Whether this memory can trigger again (usually False)
+        name: Event name for tracking
+    """
+    def __init__(self, player, tile, memory_lines, aftermath_text=None, repeat=False, name='MemoryFlash'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=None)
+        self.memory_lines = memory_lines
+        self.aftermath_text = aftermath_text
+    
+    def check_conditions(self):
+        # Memory flashes trigger automatically when conditions are met
+        # Override this in subclasses for specific trigger conditions
+        self.pass_conditions_to_process()
+    
+    def process(self):
+        """Display the memory flash sequence."""
+        # Pause before the memory begins
+        time.sleep(1)
+        print()
+        cprint("For a moment, there is only silence...", "white")
+        time.sleep(1.5)
+        print()
+        
+        # Top border with animation
+        memory_border("top")
+        
+        # Display each memory line with individual timing
+        for line, pause in self.memory_lines:
+            cprint(line, "magenta")
+            time.sleep(pause)
+        
+        # Bottom border
+        memory_border("bottom")
+        print()
+        
+        # Aftermath - Jean's reaction to the memory
+        if self.aftermath_text:
+            time.sleep(1)
+            for line in self.aftermath_text:
+                cprint(line, "cyan")
+                time.sleep(2)
+        
+        # Wait for player acknowledgment
+        functions.await_input()
+        print()
+        cprint("═" * 79, "cyan")
+        print()
 
 
 class Effect(Event):
