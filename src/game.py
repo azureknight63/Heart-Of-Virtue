@@ -149,6 +149,7 @@ _\\|//__( | )______)_/
             intro()
         player.refresh_merchants()
         player.current_room = room
+        room.discovered = True  # Mark starting room as discovered
         print(room.intro_text())
         functions.print_items_in_room(player.current_room)
         functions.print_objects_in_room(player.current_room)

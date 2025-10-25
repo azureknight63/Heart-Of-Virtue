@@ -34,7 +34,7 @@ class MapTile:
         self.respawn_rate = 9999  # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
         self.description = description  # used for the intro_text to make it dynamic
-        self.symbol = '='  # symbol to mark on the map when the tile is fully discovered
+        self.symbol = '●'  # symbol to mark on the map when the tile is fully discovered
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""

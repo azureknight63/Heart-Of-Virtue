@@ -207,6 +207,7 @@ class Player:
         self.level = 1
         self.exp_to_level = 100
         self.location_x, self.location_y = (0, 0)
+        self.prev_location_x, self.prev_location_y = (0, 0)  # Track previous position for map display
         self.current_room = None
         self.victory = False
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are
@@ -1260,12 +1261,18 @@ he lets out a barely audible whisper:""", "red")
 
     def move(self, dx, dy):
         self.universe.game_tick += 1
+        # Store previous position before moving
+        self.prev_location_x = self.location_x
+        self.prev_location_y = self.location_y
         self.location_x += dx
         self.location_y += dy
         tile = tile_exists(self.map, self.location_x, self.location_y)
         if tile is None:
             self.location_x -= dx
             self.location_y -= dy
+            # Restore previous position if move failed
+            self.prev_location_x = self.location_x
+            self.prev_location_y = self.location_y
             cprint("You cannot go that way.", "red")
             time.sleep(1)
         else:
@@ -1589,40 +1596,158 @@ he lets out a barely audible whisper:""", "red")
         self.stack_inv_items()
 
     def view_map(self):
-        """First draw a map of known tiles by iterating over self.map and checking self.map.last_entered to see if the
-        player has discovered that tile. If so, place a square at those coordinates."""
-        # determine boundaries
-        max_x = 0
-        max_y = 0
-        for key in self.map:
-            if key != 'name' and tile_exists(self.map, key[0], key[1]):
-                if tile_exists(self.map, key[0], key[1]).discovered:
-                    test_x = int(key[0])
-                    test_y = int(key[1])
-                    if test_x > max_x:
-                        max_x = test_x
-                    if test_y > max_y:
-                        max_y = test_y
-        # iterate over the map and begin drawing
-        map_lines = []
-        for y in range(max_y + 2):
-            line = ''
-            for x in range(max_x + 2):
-                if tile_exists(self.map, x, y):
-                    if self.map[(x, y)] == self.current_room:
-                        line += 'X'
-                    else:
-                        if self.map[x, y].last_entered > 0:
-                            line += self.map[(x, y)].symbol
-                        elif self.map[x, y].discovered:
-                            line += '?'
+        """Display a map of discovered tiles with player position marked.
+        
+        Iterates discovered tiles to draw a grid where 'X' marks current position,
+        tile symbols show visited areas, and '?' indicates discovered but unvisited tiles.
+        """
+        # Collect discovered tiles and determine grid bounds
+        discovered = []
+        min_x = min_y = float('inf')
+        max_x = max_y = float('-inf')
+        
+        for coord, tile in self.map.items():
+            if coord == 'name':
+                continue
+            if not getattr(tile, 'discovered', False):
+                continue
+            x, y = coord
+            discovered.append((x, y, tile))
+            if x > max_x:
+                max_x = x
+            if x < min_x:
+                min_x = x
+            if y > max_y:
+                max_y = y
+            if y < min_y:
+                min_y = y
+        
+        if not discovered:
+            cprint("Jean hasn't explored enough to draw a map yet.", "yellow")
+            functions.await_input()
+            return
+        
+        # Build map grid
+        grid = {}
+        for x, y, tile in discovered:
+            if tile == self.current_room:
+                grid[(x, y)] = 'X'
+            elif getattr(tile, 'last_entered', 0) > 0:
+                symbol = getattr(tile, 'symbol', '●')
+                # Handle empty string symbols - use default if `symbol is empty
+                grid[(x, y)] = symbol if symbol else '●'
+            else:
+                grid[(x, y)] = '?'
+        
+        # Ensure current position is always marked, even if object reference doesn't match
+        if (self.location_x, self.location_y) in grid and grid[(self.location_x, self.location_y)] != 'X':
+            grid[(self.location_x, self.location_y)] = 'X'
+        
+        # Calculate direction from previous to current position
+        prev_direction = None
+        if (self.prev_location_x, self.prev_location_y) != (self.location_x, self.location_y):
+            dx = self.location_x - self.prev_location_x
+            dy = self.location_y - self.prev_location_y
+            # Determine connector symbol based on direction
+            if dx > 0 and dy == 0:  # moved east
+                prev_direction = ('horizontal', self.prev_location_x, self.location_y)
+            elif dx < 0 and dy == 0:  # moved west
+                prev_direction = ('horizontal', self.location_x, self.location_y)
+            elif dy > 0 and dx == 0:  # moved south
+                prev_direction = ('vertical', self.location_x, self.prev_location_y)
+            elif dy < 0 and dx == 0:  # moved north
+                prev_direction = ('vertical', self.location_x, self.location_y)
+            elif dx != 0 and dy != 0:  # diagonal
+                prev_direction = ('diagonal', dx, dy, self.prev_location_x, self.prev_location_y)
+        
+        # Render map lines with enlarged display
+        print()  # Blank line before map
+        for y in range(min_y, max_y + 1):
+            # Build line with spacing between characters for better visibility
+            chars = [grid.get((x, y), '·') for x in range(min_x, max_x + 1)]
+            
+            # Build the line with connectors
+            line_parts = []
+            for i, ch in enumerate(chars):
+                x = min_x + i
+                # Color the character
+                colored_ch = (
+                    colored(ch, 'red', attrs=['bold']) if ch == 'X' else
+                    colored(ch, 'green') if ch == '●' or (ch != '?' and ch != '·' and ch != "'") else
+                    colored(ch, 'yellow') if ch == '?' else
+                    colored(ch, 'white', attrs=['dark'])
+                )
+                line_parts.append(colored_ch)
+                
+                # Add connector between this and next character
+                if i < len(chars) - 1:
+                    next_x = x + 1
+                    # Check if we should draw a horizontal connector
+                    if prev_direction and prev_direction[0] == 'horizontal':
+                        if prev_direction[2] == y and prev_direction[1] == x:
+                            line_parts.append(colored('-', 'white', attrs=['dark']))
                         else:
-                            line += "'"
-                else:
-                    line += "'"
-            map_lines.append(line)
-        for i in map_lines:
-            print(i)
+                            line_parts.append(' ')
+                    else:
+                        line_parts.append(' ')
+            
+            print(' ' + ''.join(line_parts))
+            
+            # Add vertical connector line if needed
+            if y < max_y:
+                vertical_parts = []
+                for i, ch in enumerate(chars):
+                    x = min_x + i
+                    
+                    # Check if we should draw a vertical connector (in the tile position)
+                    if prev_direction and prev_direction[0] == 'vertical':
+                        if prev_direction[1] == x and prev_direction[2] == y:
+                            vertical_parts.append(colored('|', 'white', attrs=['dark']))
+                        else:
+                            vertical_parts.append(' ')
+                    else:
+                        vertical_parts.append(' ')
+                    
+                    # Add space or diagonal connector between columns
+                    if i < len(chars) - 1:
+                        next_x = x + 1
+                        connector_added = False
+                        
+                        # Check for diagonal connectors (in the space between tiles)
+                        if prev_direction and prev_direction[0] == 'diagonal':
+                            dx_dir = prev_direction[1]
+                            dy_dir = prev_direction[2]
+                            prev_x = prev_direction[3]
+                            prev_y = prev_direction[4]
+                            
+                            # Diagonal connectors appear in the space between tiles
+                            # SE movement (dx=1, dy=1): \ appears between (prev_x, prev_y) and (prev_x+1, prev_y+1)
+                            # SW movement (dx=-1, dy=1): / appears between (prev_x, prev_y) and (prev_x-1, prev_y+1)
+                            # NE movement (dx=1, dy=-1): / appears between (prev_x, prev_y) and (prev_x+1, prev_y-1)
+                            # NW movement (dx=-1, dy=-1): \ appears between (prev_x, prev_y) and (prev_x-1, prev_y-1)
+                            
+                            if dy_dir > 0 and dx_dir > 0:  # SE: \ between prev and current
+                                if x == prev_x and y == prev_y:
+                                    vertical_parts.append(colored('\\', 'white', attrs=['dark']))
+                                    connector_added = True
+                            elif dy_dir > 0 and dx_dir < 0:  # SW: / between prev and current
+                                if x == self.location_x and y == prev_y:
+                                    vertical_parts.append(colored('/', 'white', attrs=['dark']))
+                                    connector_added = True
+                            elif dy_dir < 0 and dx_dir > 0:  # NE: / between prev and current
+                                if x == prev_x and y == self.location_y:
+                                    vertical_parts.append(colored('/', 'white', attrs=['dark']))
+                                    connector_added = True
+                            elif dy_dir < 0 and dx_dir < 0:  # NW: \ between prev and current
+                                if x == self.location_x and y == self.location_y:
+                                    vertical_parts.append(colored('\\', 'white', attrs=['dark']))
+                                    connector_added = True
+                        
+                        if not connector_added:
+                            vertical_parts.append(' ')
+                
+                print(' ' + ''.join(vertical_parts))
+        
         functions.await_input()
 
     def recall_friends(self):
