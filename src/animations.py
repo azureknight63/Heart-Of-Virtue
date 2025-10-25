@@ -214,7 +214,7 @@ def memory_flash(screen):
     # Add stars effect throughout
     effects.append(Stars(screen, 300))
     
-    screen.play([Scene(effects, 36)], repeat=False, stop_on_resize=True)
+    screen.play([Scene(effects, 48)], repeat=False, stop_on_resize=True)
 
 
 if __name__ == "__main__":
