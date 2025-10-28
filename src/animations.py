@@ -203,7 +203,7 @@ def memory_flash(screen):
         effects.append(
             Print(
                 screen,
-                FigletText("A MEMORY ECHOES", font='banner'),
+                FigletText("MIND SHOCK!", font='banner'),
                 y=int(screen.height / 2 - 4),
                 colour=color,
                 speed=1,
