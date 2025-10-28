@@ -12,34 +12,34 @@ from functions import print_slow, await_input
 from story.effects import MemoryFlash
 
 
-class Ch01_Memory_Emily(MemoryFlash):
+class Ch01_Memory_Amelia(MemoryFlash):
     """
     The first memory flash - triggered after defeating the first Rock Rumbler.
-    Jean's mind drifts to a moment with Emily, hinting at loss and love.
+    Jean's mind drifts to a moment with Amelia, hinting at loss and love.
     """
-    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Memory_Emily'):
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Memory_Amelia'):
         # Define the memory fragments with timing
         memory_lines = [
             ("The smell of old parchment and candle wax.", 2),
-            ("", 0.5),  # Blank line for pacing
+            ("", 1),  # Blank line for pacing
             ("A woman's voice, soft and warm, reading aloud by firelight.", 2.5),
-            ("", 0.5),
+            ("", 1),
             ('"Jean, you always were too stubborn for your own good."', 2),
             ("", 0.5),
-            ("Laughter—her laughter—like wind chimes in a summer breeze.", 2.5),
+            ("Laughter— her laughter— like wind chimes in a summer breeze.", 2.5),
             ("", 1),
             ("A hand reaching out, fingers intertwining with his own.", 2),
-            ("The weight of a silver ring, cool against his skin.", 2),
+            ("The weight of a gold ring, cool against his skin.", 2),
             ("", 1),
-            ('"Promise me you\'ll come back. Promise me."', 2),
-            ('"I promise, Emily. I always do."', 2.5),
+            ('"Promise me it\'ll be fine. Promise me."', 2),
+            ('"You worry too much, dear."', 2.5),
             ("", 1.5),
-            ("But that was before...", 2),
-            ("Before the...", 1.5),
+            ("A tender kiss...", 2),
+            ("A warm smile...", 1.5),
             ("", 1),
-            ("...screams...", 1.5),
-            ("...smoke...", 1.5),
-            ("...too late...", 2),
+            ("...but some...", 1.5),
+            ("...some promises...", 1.5),
+            ("...promises...", 2),
         ]
         
         # Jean's reaction after the memory
@@ -47,7 +47,7 @@ class Ch01_Memory_Emily(MemoryFlash):
             "Jean gasps, stumbling backward. His chest feels tight,",
             "his breath coming in short, sharp bursts.",
             "",
-            "Who was that? Emily? The name echoes in his mind,",
+            "Who was that? Regina? The name echoes in his mind,",
             "familiar yet distant, like a half-remembered dream.",
             "",
             "He shakes his head, trying to clear the fog.",
@@ -184,7 +184,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
 
     def process(self):
         # Trigger the first memory flash before more enemies appear
-        memory = Ch01_Memory_Emily(player=self.player, tile=self.tile)
+        memory = Ch01_Memory_Regina(player=self.player, tile=self.tile)
         memory.process()
         
         # Then continue with the original sequence
