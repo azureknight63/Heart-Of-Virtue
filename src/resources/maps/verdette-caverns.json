@@ -175,7 +175,7 @@
                     "npc_cls": {
                         "__class_type__": "npc:CaveBat"
                     },
-                    "count": 1,
+                    "count": 5,
                     "spawned_npcs": []
                 }
             }
@@ -208,7 +208,28 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:CaveBat"
+                    },
+                    "count": 4,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [],
@@ -223,7 +244,28 @@
             "northeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:CaveBat"
+                    },
+                    "count": 6,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [],
@@ -942,7 +984,28 @@
             "southeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:CaveBat"
+                    },
+                    "count": 5,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -1046,7 +1109,28 @@
             "northwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:CaveBat"
+                    },
+                    "count": 4,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [],
