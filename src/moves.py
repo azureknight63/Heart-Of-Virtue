@@ -1853,3 +1853,97 @@ class SpiderBite(Move):  # Poisonous attack
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+
+
+class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
+    def __init__(self, npc):
+        description = "A quick bite that steals a little life from the target."
+        prep = 0
+        execute = 1
+        recoil = 0
+        cooldown = 0
+        fatigue_cost = 0
+        self.power = 0
+        if npc.target is None:
+            npc.target = npc
+        mvrange = npc.combat_range
+        super().__init__(name="BatBite", description=description, xp_gain=1, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
+                         stage_announce=[colored("{} bares its fangs!".format(npc.name), "red"),
+                                         colored("{} bites {} with a ravenous nip!".format(npc.name, npc.target.name), "red"),
+                                         "{} recoils from the attack.".format(npc.name),
+                                         ""],
+                         fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=npc.target, user=npc)
+        self.evaluate()
+
+    def viable(self):
+        viability = False
+        range_min = self.mvrange[0]
+        range_max = self.mvrange[1]
+        for enemy, distance in self.user.combat_proximity.items():
+            if range_min < distance < range_max:
+                viability = True
+                break
+
+        return viability
+
+    def evaluate(self):  # adjusts the move's attributes to match the current game state
+        power = (self.user.damage * random.uniform(0.7, 1.1))
+        prep = int(50 / self.user.speed)
+        if prep < 1:
+            prep = 1
+        execute = 1
+        recoil = int(50 / self.user.speed)
+        if recoil < 0:
+            recoil = 0
+        cooldown = 5 - int(self.user.speed / 10)
+        if cooldown < 0:
+            cooldown = 0
+        fatigue_cost = 120 - (5 * self.user.endurance)
+        if fatigue_cost <= 20:
+            fatigue_cost = 20
+        self.power = power
+        self.stage_beat[0] = prep
+        self.stage_beat[1] = execute
+        self.stage_beat[2] = recoil
+        self.stage_beat[3] = cooldown
+        self.fatigue_cost = fatigue_cost
+        self.mvrange = self.user.combat_range
+
+    def refresh_announcements(self, npc):
+        self.stage_announce = [colored("{} bares its fangs!".format(npc.name), "red"),
+                               colored("{} bites {} with a ravenous nip!".format(npc.name, npc.target.name), "red"),
+                               "{} recoils from the attack.".format(npc.name),
+                               ""]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        print(self.stage_announce[1])
+        self.prep_colors()
+        glance = False
+        if self.viable():
+            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        damage = (self.power - self.target.protection)
+        if damage <= 0:
+            damage = 0
+        if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
+            damage /= 2
+            glance = True
+        damage = int(damage)
+        if hit_chance >= roll:  # a hit!
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                # Heal the user for a fraction of the damage dealt (rounded)
+                heal_amount = max(1, int(damage * 0.5)) if damage > 0 else 0
+                self.user.hp = min(self.user.maxhp, self.user.hp + heal_amount)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost

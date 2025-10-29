@@ -1818,6 +1818,7 @@ class CaveBat(NPC):
         self.status_resistance_base["poison"] = 1.0
         # Movement and combat style
         self.add_move(moves.NpcAttack(self), 5)
+        self.add_move(moves.BatBite(self), 5)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self))
         self.add_move(moves.NpcIdle(self))
