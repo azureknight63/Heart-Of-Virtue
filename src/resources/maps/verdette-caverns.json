@@ -158,6 +158,26 @@
                     "count": 2,
                     "spawned_npcs": []
                 }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:CaveBat"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
             }
         ],
         "items": [],
