@@ -22,6 +22,7 @@ _core_order = [
     'moves',           # moves before npc so npc can attach move instances
     'npc',
     'skilltree',       # needed by player
+    'switch',          # needed by player
     'player'           # player depends on many modules
 ]
 for _name in _core_order:
