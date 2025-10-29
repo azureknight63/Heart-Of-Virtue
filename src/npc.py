@@ -1810,7 +1810,7 @@ class CaveBat(NPC):
         super().__init__(name="Cave Bat " + genericng.generate(2, 4), description=description, maxhp=8,
                          damage=18, protection=0, awareness=14, speed=40, aggro=True, exp_award=4,
                          idle_message=" is hanging from the ceiling.",
-                         alert_message=" screeches and dives!")
+                         alert_message="screeches and dives!")
         # Flavor resistances: bats are more vulnerable to light, indifferent to earth
         self.resistance_base["light"] = 0.8
         self.resistance_base["earth"] = 1.1
