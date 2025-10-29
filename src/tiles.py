@@ -104,7 +104,22 @@ class MapTile:
         return moves
 
     def evaluate_events(self):
-        for event in self.events_here:
+        """
+        Evaluate all events on this tile. NPCSpawnerEvents are processed first
+        to ensure all spawners execute before combat evaluation. This allows
+        multiple spawners (e.g., mixed friendly and adversarial NPCs) to fire
+        simultaneously before combat begins.
+        """
+        from story.effects import NPCSpawnerEvent
+        
+        # First pass: process all NPCSpawnerEvents
+        spawner_events = [event for event in self.events_here if isinstance(event, NPCSpawnerEvent)]
+        for event in spawner_events:
+            event.check_conditions()
+        
+        # Second pass: process all other events
+        other_events = [event for event in self.events_here if not isinstance(event, NPCSpawnerEvent)]
+        for event in other_events:
             event.check_conditions()
 
     def spawn_npc(self, npc_type, hidden=False, hfactor=0, delay=-1):
