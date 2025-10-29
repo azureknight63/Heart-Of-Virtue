@@ -423,11 +423,14 @@ class Advance(Move):
         self.evaluate()
 
     def viable(self):
+        """Advance is only viable if the current target is beyond striking distance (distance > 1)"""
         viability = False
-        for enemy, distance in self.user.combat_proximity.items():
+        # Check if the user has a valid target set
+        if self.target and self.target in self.user.combat_proximity:
+            distance = self.user.combat_proximity[self.target]
+            # Only viable if target is beyond striking distance
             if distance > 1:
                 viability = True
-                break
         return viability
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
