@@ -160,16 +160,21 @@ def animate_to_main_screen(animation, rawtext=""):
     """
     # Import here to avoid circular import: functions imports moves, and moves imports animations.
     from functions import clean_string
+    import sys
+    
     text = clean_string(rawtext)
     if ".gif" in animation:
         file_to_play = animation.replace(".gif", "")
         Screen.wrapper(func=play_gif, arguments=[file_to_play, text])
     else:
-        if function_exists('animations.py', animation):
+        # Get the current module to check for the animation function
+        current_module = sys.modules[__name__]
+        if hasattr(current_module, animation) and callable(getattr(current_module, animation)):
+            animation_func = getattr(current_module, animation)
             if text:
-                Screen.wrapper(func=getattr('animations.py', animation), arguments=[text])
+                Screen.wrapper(func=animation_func, arguments=[text])
             else:
-                Screen.wrapper(getattr('animations.py', animation))
+                Screen.wrapper(animation_func)
         else:
             print("### Animation not found!")
 
@@ -180,6 +185,36 @@ def image_to_main_screen(image):
         :param image: Name of image resources/images, as a string, includes extension
         """
     Screen.wrapper(func=display_static_image, arguments=[image])
+
+
+def memory_flash(screen):
+    """
+    Displays a memory flash animation - a shimmering, ethereal effect
+    to indicate Jean is remembering something from his past.
+    Text pulses between magenta and white for an ethereal, dreamlike quality.
+    """
+    # Duration reduced by 40%: 60 frames -> 36 frames (~1.8 seconds at 20fps)
+    # Create multiple Print effects at different frames to simulate color cycling
+    effects = []
+    
+    # Alternate between magenta (5) and white (7) every 6 frames
+    for i in range(6):
+        color = 5 if i % 2 == 0 else 7  # Magenta, then White
+        effects.append(
+            Print(
+                screen,
+                FigletText("MIND SHOCK!", font='banner'),
+                y=int(screen.height / 2 - 4),
+                colour=color,
+                speed=1,
+                start_frame=i * 6,
+                stop_frame=(i + 1) * 6)
+        )
+    
+    # Add stars effect throughout
+    effects.append(Stars(screen, 300))
+    
+    screen.play([Scene(effects, 48)], repeat=False, stop_on_resize=True)
 
 
 if __name__ == "__main__":

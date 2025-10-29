@@ -9,6 +9,61 @@ import random
 from events import Event, dialogue
 import objects as objects
 from functions import print_slow, await_input
+from story.effects import MemoryFlash
+
+
+class Ch01_Memory_Amelia(MemoryFlash):
+    """
+    The first memory flash - triggered after defeating the first Rock Rumbler.
+    Jean's mind drifts to a moment with Amelia, hinting at loss and love.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Memory_Amelia'):
+        # Define the memory fragments with timing
+        memory_lines = [
+            ("The smell of old parchment and candle wax.", 2),
+            ("", 1),  # Blank line for pacing
+            ("A woman's voice, soft and warm, reading aloud by firelight.", 2.5),
+            ("", 1),
+            ('"Jean, you always were too stubborn for your own good."', 2),
+            ("", 0.5),
+            ("Laughter— her laughter— like wind chimes in a summer breeze.", 2.5),
+            ("", 1),
+            ("A hand reaching out, fingers intertwining with his own.", 2),
+            ("The weight of a gold ring, cool against his skin.", 2),
+            ("", 1),
+            ('"Promise me it\'ll be fine. Promise me."', 2),
+            ('"You worry too much, dear."', 2.5),
+            ("", 1.5),
+            ("A tender kiss...", 2),
+            ("A warm smile...", 1.5),
+            ("", 1),
+            ("...but some...", 1.5),
+            ("...some promises...", 1.5),
+            ("...promises...", 2),
+        ]
+        
+        # Jean's reaction after the memory
+        aftermath = [
+            "Jean gasps, stumbling backward. His chest feels tight,",
+            "his breath coming in short, sharp bursts.",
+            "",
+            "Who was that? Regina? The name echoes in his mind,",
+            "familiar yet distant, like a half-remembered dream.",
+            "",
+            "He shakes his head, trying to clear the fog.",
+            "There's no time to dwell on these strange visions.",
+            "Not here. Not now.",
+        ]
+        
+        super().__init__(
+            player=player,
+            tile=tile,
+            memory_lines=memory_lines,
+            aftermath_text=aftermath,
+            repeat=repeat,
+            name=name
+        )
+
 
 class Ch01StartOpenWall(Event):
     """
@@ -128,6 +183,11 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             self.pass_conditions_to_process()
 
     def process(self):
+        # Trigger the first memory flash before more enemies appear
+        memory = Ch01_Memory_Regina(player=self.player, tile=self.tile)
+        memory.process()
+        
+        # Then continue with the original sequence
         print_slow("\nThe ground quivers slightly as more rock creatures appear.\n")
         time.sleep(0.5)
         for x in range(0, 2):
