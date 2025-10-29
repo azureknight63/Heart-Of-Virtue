@@ -1800,4 +1800,27 @@ class GiantSpider(NPC):
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self), 2)
 
+
+class CaveBat(NPC):
+    def __init__(self):
+        description = (
+            "A small, leathery-winged mammal that nests in caverns and ambushes from above. "
+            "Fragile alone but dangerous in numbers; some variants nibble at blood and drain a little life."
+        )
+        super().__init__(name="Cave Bat " + genericng.generate(2, 4), description=description, maxhp=8,
+                         damage=18, protection=0, awareness=14, speed=40, aggro=True, exp_award=4,
+                         idle_message=" is hanging from the ceiling.",
+                         alert_message=" screeches and dives!")
+        # Flavor resistances: bats are more vulnerable to light, indifferent to earth
+        self.resistance_base["light"] = 0.8
+        self.resistance_base["earth"] = 1.1
+        # Some variants may have a small life-drain implemented elsewhere; leave hooks in status_resistance
+        self.status_resistance_base["poison"] = 1.0
+        # Movement and combat style
+        self.add_move(moves.NpcAttack(self), 5)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.Withdraw(self))
+        self.add_move(moves.NpcIdle(self))
+        self.add_move(moves.Dodge(self), 2)
+
 # Agent Support: This is the end of the file npc.py
