@@ -389,6 +389,407 @@ def npc_select_move(enemy):
 - What happens if a unit is moved by an ability? Does facing change?
   - **Rule:** Facing only changes explicitly via Turn move or ability side effect, not via movement
 
+### 2c. Combat Movement System
+
+#### Overview
+
+The new coordinate-based movement system supports both **basic movement moves** (available to all combatants by default) and **advanced movement skills** (unlocked through progression). This creates a skill-based movement hierarchy where veteran fighters and intelligent enemies have sophisticated tactical movement options unavailable to novices.
+
+#### Basic Movement Moves (Always Available)
+
+All combatants start with access to two fundamental movement moves:
+
+**1. Advance (Toward Designated Target)**
+```python
+class Advance(Move):
+    """Move toward a specified enemy target"""
+    
+    def viable(self):
+        """Can only advance if target exists and distance > 1"""
+        if not self.target or self.target not in self.user.combat_proximity:
+            return False
+        distance = self.user.combat_proximity[self.target]
+        return distance > 1  # Already adjacent
+    
+    def execute(self, user, target):
+        """Move 1-3 squares toward target"""
+        current_pos = user.combat_position
+        target_pos = target.combat_position
+        
+        # Calculate direction toward target
+        dx = sign(target_pos.x - current_pos.x)
+        dy = sign(target_pos.y - current_pos.y)
+        
+        # Move 2 squares (fixed default)
+        squares_moved = 2
+        new_x = current_pos.x + (dx * squares_moved)
+        new_y = current_pos.y + (dy * squares_moved)
+        
+        # Clamp to grid bounds
+        new_x = clamp(new_x, 0, 50)
+        new_y = clamp(new_y, 0, 50)
+        
+        # Update position
+        user.combat_position.x = new_x
+        user.combat_position.y = new_y
+        
+        # Recalculate distances for proximity dict
+        recalculate_proximity(user, all_combatants)
+        
+        print(f"{user.name} advanced toward {target.name}!")
+```
+
+**Costs:**
+- Beats: 1-2 beats
+- Fatigue: 5-10 (low cost, frequent use)
+- Status: Can be interrupted if user is controlled/stunned
+
+**Behavior:**
+- Moves in straight line toward target
+- Cannot pass through other units (stop if blocked)
+- Updates all distance calculations for proximity-based move eligibility
+
+**2. Withdraw (Away from Nearest Enemy)**
+```python
+class Withdraw(Move):
+    """Move away from nearest enemy"""
+    
+    def viable(self):
+        """Always viable if at least one enemy exists and distance < 40"""
+        if not self.user.combat_proximity:
+            return False
+        nearest_distance = min(self.user.combat_proximity.values())
+        return nearest_distance < 40  # Only viable if not already far away
+    
+    def execute(self, user):
+        """Move 2-3 squares away from nearest enemy"""
+        # Find nearest enemy
+        nearest_enemy = min(
+            user.combat_proximity.keys(),
+            key=lambda e: user.combat_proximity[e]
+        )
+        
+        current_pos = user.combat_position
+        enemy_pos = nearest_enemy.combat_position
+        
+        # Calculate direction away from nearest enemy
+        dx = sign(current_pos.x - enemy_pos.x)
+        dy = sign(current_pos.y - enemy_pos.y)
+        
+        # Move 2 squares
+        squares_moved = 2
+        new_x = current_pos.x + (dx * squares_moved)
+        new_y = current_pos.y + (dy * squares_moved)
+        
+        # Clamp to grid bounds
+        new_x = clamp(new_x, 0, 50)
+        new_y = clamp(new_y, 0, 50)
+        
+        # Update position
+        user.combat_position.x = new_x
+        user.combat_position.y = new_y
+        
+        # Recalculate distances
+        recalculate_proximity(user, all_combatants)
+        
+        print(f"{user.name} withdrew from combat!")
+```
+
+**Costs:**
+- Beats: 1-2 beats
+- Fatigue: 5-10 (same as Advance)
+- Status: Can be used defensively or tactically
+
+**Behavior:**
+- Moves away from nearest enemy (most immediate threat)
+- Good for escaping melee, regrouping, or repositioning
+- Cannot pass through other units (stop if blocked)
+
+#### Advanced Movement Skills (Skill-Unlocked)
+
+As combatants gain experience and unlock movement skills, they gain access to sophisticated tactical movement:
+
+**Tier 1 (Novice Skills) - Learned Early**
+
+**1. Rush / Bull Charge**
+```python
+class BullCharge(Move):
+    """Charge toward enemy with increased damage on next attack"""
+    
+    def viable(self):
+        if not self.target or self.target not in self.user.combat_proximity:
+            return False
+        distance = self.user.combat_proximity[self.target]
+        return distance > 5  # Only viable from distance
+    
+    def execute(self, user, target):
+        """Move 4-6 squares toward target with momentum bonus"""
+        # Move more squares than basic Advance
+        current_pos = user.combat_position
+        target_pos = target.combat_position
+        
+        dx = sign(target_pos.x - current_pos.x)
+        dy = sign(target_pos.y - current_pos.y)
+        
+        squares_moved = 5  # More movement than Advance
+        new_x = clamp(current_pos.x + (dx * squares_moved), 0, 50)
+        new_y = clamp(current_pos.y + (dy * squares_moved), 0, 50)
+        
+        user.combat_position.x = new_x
+        user.combat_position.y = new_y
+        
+        # Apply momentum bonus (next attack +20% damage)
+        user.apply_status_effect("Momentum", duration=2_beats)
+        
+        print(f"{user.name} charged toward {target.name}!")
+```
+
+**Costs:** Beats: 2-3, Fatigue: 15-20  
+**Unlock:** Unlocked after ~5 combat encounters or via "Charge" skill tome
+
+**2. Kiting / Tactical Retreat**
+```python
+class TacticalRetreat(Move):
+    """Move away while maintaining angle to continue attacking"""
+    
+    def viable(self):
+        # Must have ranged weapon or ranged ability
+        has_ranged = (
+            hasattr(self.user, 'eq_weapon') and
+            hasattr(self.user.eq_weapon, 'range') and
+            self.user.eq_weapon.range > 5
+        )
+        return has_ranged and len(self.user.combat_proximity) > 0
+    
+    def execute(self, user):
+        """Move away while facing target (maintain kiting angle)"""
+        # Move away from nearest enemy
+        nearest = min(
+            user.combat_proximity.keys(),
+            key=lambda e: user.combat_proximity[e]
+        )
+        
+        current_pos = user.combat_position
+        enemy_pos = nearest.combat_position
+        
+        # Calculate perpendicular movement (kiting circle)
+        # Move away but also sideways to maintain angle
+        angle = atan2(current_pos.y - enemy_pos.y, current_pos.x - enemy_pos.x)
+        perp_angle = angle + π/2  # 90° perpendicular
+        
+        move_dist = 2
+        new_x = clamp(current_pos.x + cos(perp_angle) * move_dist, 0, 50)
+        new_y = clamp(current_pos.y + sin(perp_angle) * move_dist, 0, 50)
+        
+        user.combat_position.x = new_x
+        user.combat_position.y = new_y
+        
+        # Face the enemy (for kiting angle advantage)
+        user.combat_position.facing = calculate_angle_to_target(
+            user.combat_position, enemy_pos
+        )
+        
+        print(f"{user.name} kited away from {nearest.name}!")
+```
+
+**Costs:** Beats: 2-3, Fatigue: 15-20  
+**Unlock:** Requires ranged weapon proficiency + "Kiting" skill tome
+
+**Tier 2 (Intermediate Skills) - Learned Later**
+
+**3. Flanking Maneuver**
+```python
+class FlankingManeuver(Move):
+    """Move to side of enemy for tactical advantage"""
+    
+    def viable(self):
+        if not self.target or self.target not in self.user.combat_proximity:
+            return False
+        distance = self.user.combat_proximity[self.target]
+        return 2 <= distance <= 20  # Works at mid-range
+    
+    def execute(self, user, target):
+        """Move to perpendicular position (90° from target's facing)"""
+        current_pos = user.combat_position
+        target_pos = target.combat_position
+        target_facing = target.combat_position.facing
+        
+        # Calculate 90° perpendicular position
+        perp_angle = target_facing + π/2  # 90° to the side
+        distance_from_target = 3
+        
+        new_x = clamp(
+            target_pos.x + cos(perp_angle) * distance_from_target, 0, 50
+        )
+        new_y = clamp(
+            target_pos.y + sin(perp_angle) * distance_from_target, 0, 50
+        )
+        
+        user.combat_position.x = new_x
+        user.combat_position.y = new_y
+        
+        # Face the target
+        user.combat_position.facing = calculate_angle_to_target(
+            user.combat_position, target_pos
+        )
+        
+        # Apply flanking bonus (next attack +20% damage)
+        user.apply_status_effect("Flanking_Position", duration=2_beats)
+        
+        print(f"{user.name} maneuvered to flank {target.name}!")
+```
+
+**Costs:** Beats: 2-3, Fatigue: 20-25  
+**Unlock:** Requires intermediate combat skill + "Flanking" skill book
+
+**4. Repositioning (Swap Position with Ally)**
+```python
+class QuickSwap(Move):
+    """Swap positions with nearby ally for tactical repositioning"""
+    
+    def viable(self):
+        nearby_allies = [
+            ally for ally in self.user.party
+            if distance_between(
+                self.user.combat_position,
+                ally.combat_position
+            ) <= 4 and ally != self.user
+        ]
+        return len(nearby_allies) > 0
+    
+    def execute(self, user, target_ally):
+        """Exchange positions with selected ally"""
+        temp_pos = (user.combat_position.x, user.combat_position.y)
+        user.combat_position.x = target_ally.combat_position.x
+        user.combat_position.y = target_ally.combat_position.y
+        
+        target_ally.combat_position.x = temp_pos[0]
+        target_ally.combat_position.y = temp_pos[1]
+        
+        # Recalculate all distances
+        recalculate_proximity(user, all_combatants)
+        recalculate_proximity(target_ally, all_combatants)
+        
+        print(f"{user.name} and {target_ally.name} switched positions!")
+```
+
+**Costs:** Beats: 1-2, Fatigue: 10-15  
+**Unlock:** Requires ally in combat + "Coordination" skill
+
+**Tier 3 (Advanced Skills) - High-Level Play**
+
+**5. Dimensional Shift / Teleport**
+```python
+class DimensionalShift(Move):
+    """Teleport to specified coordinate within range"""
+    
+    def viable(self):
+        # High-level ability
+        return self.user.level >= 20 and "Dimensional_Shift" in self.user.unlocked_skills
+    
+    def execute(self, user):
+        """Player selects destination within 8 square range"""
+        destination = player_select_coordinate(
+            max_distance=8,
+            current_pos=user.combat_position
+        )
+        
+        user.combat_position.x = destination.x
+        user.combat_position.y = destination.y
+        
+        # Can choose new facing direction
+        user.combat_position.facing = player_select_facing()
+        
+        # Recalculate distances
+        recalculate_proximity(user, all_combatants)
+        
+        print(f"{user.name} disappeared and reappeared at coordinates!")
+```
+
+**Costs:** Beats: 3-4, Fatigue: 40-50  
+**Unlock:** Level 20+ with rare "Spatial Magic" tome or boss drops
+
+**6. Combat Dance / Evasion Choreography**
+```python
+class CombatDance(Move):
+    """Chain rapid repositioning moves in sequence"""
+    
+    def viable(self):
+        return "Combat_Dance" in self.user.unlocked_skills and self.user.endurance >= 50
+    
+    def execute(self, user):
+        """Execute 3 sequential micro-movements"""
+        for _ in range(3):
+            # Each micro-movement: move 1-2 squares in random direction
+            angle = random() * 2 * π
+            dx = cos(angle) * random_int(1, 2)
+            dy = sin(angle) * random_int(1, 2)
+            
+            user.combat_position.x = clamp(user.combat_position.x + dx, 0, 50)
+            user.combat_position.y = clamp(user.combat_position.y + dy, 0, 50)
+        
+        # Gain evasion bonus for several beats (hard to target while dancing)
+        user.apply_status_effect("Evasion_Bonus", duration=3_beats, bonus=20)
+        
+        print(f"{user.name} executed a combat dance, becoming harder to hit!")
+```
+
+**Costs:** Beats: 4-5, Fatigue: 50  
+**Unlock:** Dexterity 50+ + "Dance" skill tome
+
+#### Enemy AI Movement Selection
+
+**Low-level Enemies (Level 1-5):**
+- Only have access to: Advance, Withdraw
+- Decision logic:
+  ```python
+  if distance_to_player < 5:
+      use_move(Advance, target=player)
+  elif distance_to_player > 20 or health_low:
+      use_move(Withdraw)
+  else:
+      use_basic_attack()
+  ```
+
+**Intermediate Enemies (Level 6-15):**
+- Unlock: Bull Charge, Tactical Retreat, Flanking Maneuver
+- Decision logic considers:
+  - Health status (withdraw if < 30% HP)
+  - Number of allies nearby (group tactics)
+  - Player positioning (flank if possible)
+  - Ranged weapon availability (kite if ranged)
+
+**High-level / Intelligent Enemies (Level 16+, Boss):**
+- Access to: All movement skills + custom variations
+- Advanced tactics:
+  - Coordinate flanking attacks with allies
+  - Use Repositioning to swap defensive positions
+  - Chain movement skills across multiple turns
+  - Boss-specific movement abilities (Dimensional Shift for final bosses)
+
+#### Movement Constraints & Balance
+
+**Grid Collision:**
+- Units cannot occupy the same coordinate
+- If blocked by another unit, movement move fails (can try different target direction)
+- Consider queue system: if multiple units try to occupy same tile, resolve conflicts with priority (higher initiative wins?)
+
+**Movement Speed Scaling:**
+- Speed stat affects beat cost of movement moves
+- Formula: `adjusted_beats = base_beats * (1 - speed_bonus%)`
+- Example: Speed 120 → 20% faster movement
+
+**Stamina/Fatigue System:**
+- Movement moves cost fatigue
+- Low fatigue limits available movement options
+- At 0 fatigue, only Advance/Withdraw available (cannot afford advanced moves)
+
+**Special Cases:**
+- Immobilized/Paralyzed status: Cannot use any movement move
+- Slowed status: Movement costs +50% beats, -50% distance moved
+- Haste status: Movement costs -25% beats, +25% distance moved
+- "Rooted" status: Can still Turn, but cannot move positions (only Advance/Withdraw fail)
+
 ### 3. Position Initialization Strategy
 
 #### Default Positioning
@@ -591,10 +992,10 @@ This allows existing "range 0-5" checks to work naturally:
 6. **Backward compatibility:** Existing move ranges (melee 0-5, ranged 0-20) still work
 
 ### Questions to Resolve
-- **Unit collision:** Can two units occupy same tile? Define stacking rules?
-- **Diagonal movement:** Is movement 8-directional or 4-directional?
-- **Grid visualization:** Should combat UI show a visible grid during battle?
-- **Existing abilities:** Do all current moves translate cleanly to coordinate-based ranges?
+- **Unit collision:** Can two units occupy same tile? Define stacking rules? (No stacking preferred)
+- **Diagonal movement:** Is movement 8-directional or 4-directional? (8-directional preferred)
+- **Grid visualization:** Should combat UI show a visible grid during battle? (Yes, for clarity; show small local grid every few beats, larger grid on player command; player-opted grid can be affected by skills learned (e.g. show better information with "Tactical Vision" skill or a wider radius around the player with "Battlefield Awareness" skill))
+- **Existing abilities:** Do all current moves translate cleanly to coordinate-based ranges? (Yes, but may require adjustments)
 
 ---
 
@@ -641,13 +1042,21 @@ This allows existing "range 0-5" checks to work naturally:
 - NPC spawn preferences and formation behaviors
 - Player/ally passive and active positioning abilities
 - Facing-dependent damage/accuracy modifiers (frontal, flank, backstab)
-- New move types: Turn, Whirl Attack, Feint & Pivot, Knockback/Stun Spin
+- New positioning move types: Turn, Whirl Attack, Feint & Pivot, Knockback/Stun Spin
+- **Skill-gated movement system:**
+  - Basic moves (Advance, Withdraw) available to all
+  - Tier 1 skills (Bull Charge, Tactical Retreat, Flanking)
+  - Tier 2 skills (Repositioning, Quick Swap)
+  - Tier 3 skills (Dimensional Shift, Combat Dance)
+  - Level/intelligence-based NPC movement AI
+- Movement constraints (collision, stamina scaling, status effects)
 
 **Files Modified (Phase 2):**
-- `src/player.py` - Add combat_positions, facing direction
-- `src/npc.py` - Add combat_positions, facing direction, spawn preferences
-- `src/combat.py` - Update synchronize_distances(), initialize positions/facing
-- `src/moves.py` - Update move range checks, add new positioning moves
-- `src/positions.py` (new) - Utility module for coordinate math and facing calculations
-- `src/states.py` - May add facing-dependent status effects
+- `src/player.py` - Add combat_positions, facing direction, movement skills
+- `src/npc.py` - Add combat_positions, facing direction, spawn preferences, AI movement selection
+- `src/combat.py` - Update synchronize_distances(), initialize positions/facing, handle collision
+- `src/moves.py` - Refactor Advance/Withdraw, add new movement skills (Bull Charge, Tactical Retreat, etc.)
+- `src/positions.py` (new) - Utility module for coordinate math, angle calculations, distance functions
+- `src/states.py` - May add facing-dependent and movement-dependent status effects
+- `src/skilltree.py` - Integrate movement skill progression
 
