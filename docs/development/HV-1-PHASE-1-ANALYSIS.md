@@ -18,6 +18,16 @@ This limits ability design and creates logical inconsistencies. The goal is to t
 
 ---
 
+## Terminology & Key Concepts
+
+**Grid Squares:** The new system uses a 50×50 grid of discrete coordinates. Each grid square represents approximately 1 foot of distance in tactical calculations.
+
+**Distance Conversion:** The old system measured distance in feet. The new system stores positions as (x, y) coordinates and converts to distance when needed for move range checks. This maintains backward compatibility.
+
+**Facing Direction:** 8 compass directions (N, NE, E, SE, S, SW, W, NW) representing which direction a combatant is looking. Attacking from different angles (frontal vs flanking vs rear) gives damage/accuracy modifiers.
+
+---
+
 ## Current System Architecture
 
 ### 1. Data Structures
@@ -158,60 +168,69 @@ self.target.combat_proximity[user] = user.combat_proximity[self.target]
 
 ### 2. Data Structure Extensions
 
-**New fields per combatant:**
+**New CombatPosition class (to be created in `src/positions.py`):**
+
 ```python
+from dataclasses import dataclass
+from enum import Enum
+
+class Direction(Enum):
+    """8 compass directions for facing"""
+    N = 0      # North (0°)
+    NE = 45    # Northeast
+    E = 90     # East
+    SE = 135   # Southeast
+    S = 180    # South
+    SW = 225   # Southwest
+    W = 270    # West
+    NW = 315   # Northwest
+
+@dataclass
 class CombatPosition:
-    x: int              # 0-50
-    y: int              # 0-20
-    timestamp: int      # beat when position last updated
+    """Represents a combatant's position and facing on the 50×50 battlefield"""
+    x: int                           # 0-50, left to right
+    y: int                           # 0-50, front to back
+    facing: Direction = Direction.N  # Which direction facing (affects attack angles)
 ```
 
-**Updated structures:**
+**Integration:**
+
+Existing structures (maintained for backward compatibility):
 ```python
-# OLD (keep for backward compatibility initially)
+# OLD - still used but derived from coordinates
 combat_proximity: {unit: distance}
 
-# NEW (coordinate-based)
+# NEW - source of truth
 combat_positions: {unit: CombatPosition}
 
-# Derived calculations (on-demand)
-def get_distance(pos1, pos2) -> float:
-    return sqrt((pos1.x - pos2.x)² + (pos1.y - pos2.y)²)
+# Helper function for backward compatibility
+def get_distance(pos1: CombatPosition, pos2: CombatPosition) -> int:
+    """Convert coordinates to distance in feet"""
+    dx = pos1.x - pos2.x
+    dy = pos1.y - pos2.y
+    return int(sqrt(dx² + dy²))
+```
+
+**Added to Player and NPC classes:**
+```python
+class Player:
+    combat_position: Optional[CombatPosition] = None  # None outside combat
+    # ... existing fields remain ...
+
+class NPC:
+    combat_position: Optional[CombatPosition] = None  # None outside combat
+    # ... existing fields remain ...
 ```
 
 ### 2b. Facing Direction System
 
-**Overview:** Combatants have a **facing direction** (0-360°) or compass direction (N, NE, E, SE, S, SW, W, NW) that determines attack bonuses, accuracy penalties, and interactions with abilities.
+**Overview:** Combatants have a **facing direction** (8 compass directions: N, NE, E, SE, S, SW, W, NW) that determines attack bonuses, accuracy penalties, and interactions with abilities.
 
-#### Facing Direction Specification
-
-```python
-class CombatPosition:
-    x: int              # 0-50
-    y: int              # 0-50
-    facing: int         # 0-359 degrees (or enum: N, NE, E, SE, S, SW, W, NW)
-    timestamp: int      # beat when position last updated
-```
-
-**Direction angles (Cardinal + Diagonal):**
-```
-      N (0°/360°)
-       |
-W------+------E
- \     |     /
-  \    |    /
-   \   |   /
-    \  |  /
-     \ | /
-      \|/
-      S (180°)
-
-N: 0°, NE: 45°, E: 90°, SE: 135°, S: 180°, SW: 225°, W: 270°, NW: 315°
-```
+*Note: Initial implementation uses 8 discrete directions (simpler) rather than continuous 360° angles. Smooth rotation can be added later if needed.*
 
 #### Facing Direction Mechanics
 
-**1. Attack Angle Calculation**
+The facing direction is stored in `CombatPosition.facing` and is used to calculate attack angle advantages.
 When an attacker at position A1 attacks a target at position T1:
 ```python
 def calculate_angle_to_target(attacker_pos, target_pos) -> int:
@@ -233,32 +252,40 @@ def calculate_attack_angle_difference(attack_angle, target_facing) -> int:
     return diff  # 0-180°
 ```
 
-**2. Damage & Accuracy Modifiers Based on Angle**
+**2. Damage & Accuracy Modifiers Based on Attack Angle**
+
+The attack angle difference (0-180°) determines how much damage and accuracy the attacker gets/loses:
+
 ```python
 attack_angle_diff = calculate_attack_angle_difference(
     calculate_angle_to_target(attacker.pos, target.pos),
     target.pos.facing
 )
 
-# Damage and accuracy scale with angle
+# Modifier tiers based on angle difference
 if 0 <= attack_angle_diff <= 45:           # Front quarter
-    damage_mod = 0.85      # -15% damage
-    accuracy_mod = 0.95    # -5% accuracy
+    damage_multiplier = 0.85      # -15% damage (defended position)
+    accuracy_multiplier = 0.95    # -5% accuracy (target can see you)
 elif 45 < attack_angle_diff <= 90:         # Flanking
-    damage_mod = 1.15      # +15% damage
-    accuracy_mod = 1.10    # +10% accuracy
+    damage_multiplier = 1.15      # +15% damage (partial defense)
+    accuracy_multiplier = 1.10    # +10% accuracy (harder to defend)
 elif 90 < attack_angle_diff <= 135:        # Deep flank / rear quarter
-    damage_mod = 1.25      # +25% damage
-    accuracy_mod = 1.20    # +20% accuracy
-elif 135 < attack_angle_diff <= 180:       # Rear
-    damage_mod = 1.40      # +40% damage
-    accuracy_mod = 1.30    # +30% accuracy
+    damage_multiplier = 1.25      # +25% damage (mostly vulnerable)
+    accuracy_multiplier = 1.20    # +20% accuracy (very hard to defend)
+elif 135 < attack_angle_diff <= 180:       # Rear/Backstab
+    damage_multiplier = 1.40      # +40% damage (no defense possible)
+    accuracy_multiplier = 1.30    # +30% accuracy (guaranteed hit essentially)
+
+# Apply modifiers to final damage calculation
+final_damage = base_damage * damage_multiplier
+final_accuracy = base_accuracy * accuracy_multiplier
 ```
 
-**Example Scenarios:**
-- **Frontal attack (0°):** Enemy facing you = normal damage/accuracy
-- **Flanking attack (90°):** Enemy perpendicular to you = +15% damage, +10% accuracy
-- **Backstab (180°):** Enemy facing away = +40% damage, +30% accuracy
+**Application Examples:**
+- Frontal attack (0°): Normal combat, target can defend
+- Flanking attack (90°): Target's shield/armor less effective, +15% damage
+- Backstab (180°): Target unaware, +40% damage, +30% accuracy
+- Diagonal rear (135°): Deep vulnerability, +25% damage
 
 #### Facing Direction Abilities
 
@@ -412,18 +439,19 @@ class Advance(Move):
         return distance > 1  # Already adjacent
     
     def execute(self, user, target):
-        """Move 1-3 squares toward target"""
+        """Move up to 2 grid squares toward target"""
         current_pos = user.combat_position
         target_pos = target.combat_position
         
-        # Calculate direction toward target
+        # Calculate direction toward target (normalized to -1, 0, or 1)
         dx = sign(target_pos.x - current_pos.x)
         dy = sign(target_pos.y - current_pos.y)
         
-        # Move 2 squares (fixed default)
-        squares_moved = 2
-        new_x = current_pos.x + (dx * squares_moved)
-        new_y = current_pos.y + (dy * squares_moved)
+        # Move 2 squares in that direction
+        # Note: grid squares are equivalent to ~1 foot each
+        movement_distance = 2
+        new_x = current_pos.x + (dx * movement_distance)
+        new_y = current_pos.y + (dy * movement_distance)
         
         # Clamp to grid bounds
         new_x = clamp(new_x, 0, 50)
@@ -445,8 +473,9 @@ class Advance(Move):
 - Status: Can be interrupted if user is controlled/stunned
 
 **Behavior:**
-- Moves in straight line toward target
-- Cannot pass through other units (stop if blocked)
+- Moves in straight line toward target (moving diagonally if target is diagonal)
+- **Collision handling:** If blocked by another unit, move fails silently (player can try different target)
+- Cannot pass through other units; stops at last valid position before collision
 - Updates all distance calculations for proximity-based move eligibility
 
 **2. Withdraw (Away from Nearest Enemy)**
@@ -857,17 +886,32 @@ The positioning system supports **scenario-based initialization** for varied tac
 
 #### Combat Scenario Specification
 
-Each combat encounter can specify:
+Each combat encounter specifies how units spawn. Scenarios are defined in map JSON or combat events:
+
 ```python
 combat_scenario = {
     "type": "standard|pincer|melee|boss_arena|custom",
-    "ally_spawn_zone": [(x_min, y_min), (x_max, y_max)],
-    "enemy_spawn_zones": [[(x1_min, y1_min), (x1_max, y1_max)], ...],
+    
+    # Spawn zones: [(x_min, y_min), (x_max, y_max)]
+    "ally_spawn_zone": [(10, 15), (20, 35)],    # Rectangular area for allies to spawn in
+    "enemy_spawn_zones": [                       # Can have multiple zones (for split formations)
+        [(35, 15), (45, 35)],                    # Primary enemy zone
+        [(5, 5), (15, 10)]                       # Optional secondary zone (ambush)
+    ],
+    
+    # How units are arranged within their zone
     "formation_type": "spread|cluster|random",
-    "spacing": 2,  # minimum squares between units
-    "seed": None  # for reproducible positioning in tests
+    "spacing": 2,                                # Minimum squares between units (for collision avoidance)
+    "seed": None                                 # For reproducible positioning in tests/debugging
 }
 ```
+
+**How Scenarios are Used:**
+1. Combat initiates with scenario type (default: "standard")
+2. Allies randomly spawn within `ally_spawn_zone`
+3. Enemies randomly spawn within `enemy_spawn_zones`
+4. `formation_type` affects spacing (spread = 4-5 square gaps, cluster = 1-2 square gaps)
+5. Individual NPC `spawn_preference` can override general formation logic
 
 #### NPC & Enemy Preferences
 
@@ -944,15 +988,32 @@ def initialize_combat_positions(player, enemies, scenario="standard"):
 ### 4. Distance Calculation
 
 **From coordinates to distance (for backward compatibility):**
+
+The coordinate system uses **grid squares** as the primary unit. For compatibility with the old distance-based move ranges (melee 0-5 feet, ranged 0-20+ feet), we need to convert coordinates to distance:
+
 ```python
-def distance_from_coords(pos1, pos2) -> int:
-    euclidean = sqrt((pos1.x - pos2.x)² + (pos1.y - pos2.y)²)
-    return int(euclidean)  # round to feet
+def distance_from_coords(pos1: CombatPosition, pos2: CombatPosition) -> int:
+    """
+    Calculate Euclidean distance between two positions in feet.
+    Each grid square ≈ 1 foot for combat purposes.
+    """
+    dx = pos1.x - pos2.x
+    dy = pos1.y - pos2.y
+    euclidean_distance = sqrt(dx² + dy²)
+    return int(euclidean_distance)  # round to nearest foot
 ```
 
-This allows existing "range 0-5" checks to work naturally:
-- Adjacent squares: ~1-2 feet
-- 5 squares apart: ~5-7 feet
+**Distance Ranges (Converted from Grid Squares):**
+- Adjacent/Melee: 0-3 feet (touching, very close)
+- Sword/Axe range: 0-5 feet (1-2 squares away)
+- Bow/Magic range: 0-20 feet (3-7 squares away)
+- Distant ranged: 0-40+ feet (8+ squares away)
+
+**Note on terminology:**
+- The old system used "feet" as distance units
+- The new system uses grid coordinates (0-50 x, 0-50 y)
+- Distance calculation converts coordinates back to feet for backward compatibility
+- Existing move range checks (e.g., "range 0-5 feet") will work transparently
 
 ---
 
@@ -985,17 +1046,18 @@ This allows existing "range 0-5" checks to work naturally:
 
 ### Must-Handle Scenarios
 1. **Combat spawn consistency:** Same enemy types/counts always spawn predictably
-2. **Movement boundaries:** Units can't move outside 50×20 grid
+2. **Movement boundaries:** Units can't move outside 50×50 grid
 3. **Collision detection:** Two units can't occupy same square (or define stacking rules)
 4. **Mid-combat additions:** New enemies spawned by events initialize correctly
 5. **Non-square-based abilities:** AOE spells with radius affect by distance, not grid squares
 6. **Backward compatibility:** Existing move ranges (melee 0-5, ranged 0-20) still work
 
-### Questions to Resolve
-- **Unit collision:** Can two units occupy same tile? Define stacking rules? (No stacking preferred)
-- **Diagonal movement:** Is movement 8-directional or 4-directional? (8-directional preferred)
-- **Grid visualization:** Should combat UI show a visible grid during battle? (Yes, for clarity; show small local grid every few beats, larger grid on player command; player-opted grid can be affected by skills learned (e.g. show better information with "Tactical Vision" skill or a wider radius around the player with "Battlefield Awareness" skill))
-- **Existing abilities:** Do all current moves translate cleanly to coordinate-based ranges? (Yes, but may require adjustments)
+### Design Decisions (Finalized)
+
+- **Unit collision:** No stacking - two units cannot occupy the same coordinate
+- **Movement directions:** 8-directional (cardinal + diagonal) for maximum tactical flexibility
+- **Grid visualization:** Combat UI will show relevant positioning info; full grid view optional via player preference or "Battlefield Awareness" skill
+- **Existing abilities:** All current moves will work; ranges translate cleanly from feet to grid squares
 
 ---
 
