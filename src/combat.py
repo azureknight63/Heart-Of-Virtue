@@ -3,6 +3,7 @@ import time
 import random
 
 from functions import refresh_stat_bonuses, is_input_integer, await_input
+import positions
 
 
 def combat(player):
@@ -41,7 +42,16 @@ def combat(player):
         """
         Loops over all enemies in the combat list and updates their distances. If the enemy isn't in a proximity list,
         then it gets added.
+        
+        Now also recalculates combat_proximity dicts from coordinate positions for the new coordinate system.
         """
+        # Calculate proximity from coordinates for units with combat_position set
+        all_combatants = player.combat_list_allies + player.combat_list
+        for unit in all_combatants:
+            if hasattr(unit, 'combat_position') and unit.combat_position is not None:
+                unit.combat_proximity = positions.recalculate_proximity_dict(unit, all_combatants)
+        
+        # Original proximity synchronization logic for backward compatibility
         for each_ally in player.combat_list_allies:
             remove_these = []
             for each_enemy in each_ally.combat_proximity:  # Remove any dead enemies
@@ -96,6 +106,30 @@ def combat(player):
 
     for enemy in player.combat_list:
         check_for_dead_enemy(enemy, True)
+
+    # Initialize combat positions using coordinate system
+    # Determine scenario type based on combat situation
+    scenario_type = "standard"
+    if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
+        scenario_type = "pincer"  # Ambush scenario
+    elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+        scenario_type = "boss_arena"  # Single vs single
+    
+    try:
+        positions.initialize_combat_positions(
+            allies=player.combat_list_allies,
+            enemies=player.combat_list,
+            scenario_type=scenario_type
+        )
+    except Exception as e:
+        # Graceful fallback: if initialization fails, continue with old system
+        cprint(f"[Warning] Position initialization failed: {e}", "yellow")
+        # Ensure old proximity system is initialized
+        for ally in player.combat_list_allies:
+            for enemy in player.combat_list:
+                if enemy not in ally.combat_proximity:
+                    each_distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
+                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = each_distance
 
     # Reset all moves for all combatants
     for ally in player.combat_list_allies:

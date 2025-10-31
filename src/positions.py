@@ -468,6 +468,267 @@ def recalculate_proximity_dict(
     return proximity
 
 
+# ============================================================================
+# Combat Initialization
+# ============================================================================
+
+def initialize_combat_positions(
+    allies: List[Any],
+    enemies: List[Any],
+    scenario_type: str = "standard"
+) -> None:
+    """Initialize combat positions for all combatants based on scenario.
+    
+    Sets CombatPosition on each unit and initializes facing directions toward
+    opponent teams. Updates combat_proximity dicts for backward compatibility.
+    
+    Args:
+        allies: List of allied units (player party)
+        enemies: List of enemy units
+        scenario_type: Name of scenario ("standard", "pincer", "melee", "boss_arena", "custom")
+    
+    Raises:
+        ValueError: If scenario_type is not recognized
+    """
+    if scenario_type not in COMBAT_SCENARIOS:
+        raise ValueError(f"Unknown scenario type: {scenario_type}")
+    
+    scenario = COMBAT_SCENARIOS[scenario_type]
+    
+    # Spawn allies in their zone
+    _spawn_units_in_zone(
+        units=allies,
+        zone=scenario.ally_spawn_zone,
+        formation_type=scenario.formation_type,
+        min_spacing=scenario.min_spacing,
+        seed=scenario.seed
+    )
+    
+    # Spawn enemies in their zones
+    for zone_index, zone in enumerate(scenario.enemy_spawn_zones):
+        # Distribute enemies across zones
+        enemies_for_zone = _distribute_units_across_zones(
+            units=enemies,
+            total_zones=len(scenario.enemy_spawn_zones),
+            zone_index=zone_index
+        )
+        
+        _spawn_units_in_zone(
+            units=enemies_for_zone,
+            zone=zone,
+            formation_type=scenario.formation_type,
+            min_spacing=scenario.min_spacing,
+            seed=scenario.seed
+        )
+    
+    # Set initial facing directions
+    for ally in allies:
+        if len(enemies) > 0:
+            # Face toward center of enemy group
+            enemy_center = _calculate_center_position(enemies)
+            ally.combat_position.facing = turn_toward(ally.combat_position, enemy_center)
+    
+    for enemy in enemies:
+        if len(allies) > 0:
+            # Face toward center of ally group
+            ally_center = _calculate_center_position(allies)
+            enemy.combat_position.facing = turn_toward(enemy.combat_position, ally_center)
+    
+    # Update proximity dicts for backward compatibility
+    all_combatants = allies + enemies
+    for unit in all_combatants:
+        unit.combat_proximity = recalculate_proximity_dict(unit, all_combatants)
+
+
+def _spawn_units_in_zone(
+    units: List[Any],
+    zone: Tuple[Tuple[int, int], Tuple[int, int]],
+    formation_type: str = "spread",
+    min_spacing: int = 1,
+    seed: Optional[int] = None
+) -> None:
+    """Spawn units within a zone using the specified formation.
+    
+    Args:
+        units: Units to spawn
+        zone: Spawn zone boundaries
+        formation_type: "spread", "cluster", or "random"
+        min_spacing: Minimum grid squares between units
+        seed: Random seed for reproducibility
+    """
+    if seed is not None:
+        random.seed(seed)
+    
+    spawned = []
+    
+    for unit in units:
+        if formation_type == "spread":
+            # Distribute units across zone with spacing
+            position = _find_spaced_position(
+                zone,
+                spawned,
+                min_spacing
+            )
+        elif formation_type == "cluster":
+            # Cluster units tightly in center of zone
+            position = _find_clustered_position(zone, spawned, min_spacing)
+        else:  # "random"
+            # Random placement with minimum spacing
+            position = _find_random_position(zone, spawned, min_spacing)
+        
+        unit.combat_position = position
+        spawned.append(position)
+
+
+def _find_spaced_position(
+    zone: Tuple[Tuple[int, int], Tuple[int, int]],
+    occupied: List[CombatPosition],
+    min_spacing: int
+) -> CombatPosition:
+    """Find a position in zone with minimum spacing from occupied positions.
+    
+    Attempts to find a valid position, with fallback to random if too constrained.
+    """
+    (x_min, y_min), (x_max, y_max) = zone
+    max_attempts = 20
+    
+    for _ in range(max_attempts):
+        pos = random_position_in_zone(zone)
+        
+        # Check spacing constraint
+        valid = True
+        for occupied_pos in occupied:
+            dist = distance_from_coords(pos, occupied_pos)
+            if dist < min_spacing:
+                valid = False
+                break
+        
+        if valid:
+            return pos
+    
+    # Fallback: return random position anyway
+    return random_position_in_zone(zone)
+
+
+def _find_clustered_position(
+    zone: Tuple[Tuple[int, int], Tuple[int, int]],
+    occupied: List[CombatPosition],
+    min_spacing: int
+) -> CombatPosition:
+    """Find position clustered near other units in zone.
+    
+    For cluster formation: positions are close together rather than spread.
+    """
+    if not occupied:
+        # First unit in cluster: center of zone
+        (x_min, y_min), (x_max, y_max) = zone
+        center_x = (x_min + x_max) // 2
+        center_y = (y_min + y_max) // 2
+        return CombatPosition(x=center_x, y=center_y)
+    
+    # Subsequent units: near existing cluster
+    cluster_center = _calculate_center_position(occupied)
+    
+    # Try positions in spiral around cluster center
+    for distance in range(1, 5):
+        for dx in range(-distance, distance + 1):
+            for dy in range(-distance, distance + 1):
+                if abs(dx) != distance and abs(dy) != distance:
+                    continue  # Only check perimeter
+                
+                x = cluster_center.x + dx
+                y = cluster_center.y + dy
+                
+                if not (0 <= x <= 50 and 0 <= y <= 50):
+                    continue
+                
+                # Check if position is in zone and has spacing
+                if _is_in_zone((x, y), zone):
+                    pos = CombatPosition(x=x, y=y)
+                    
+                    # Verify spacing
+                    valid = True
+                    for occupied_pos in occupied:
+                        if distance_from_coords(pos, occupied_pos) < min_spacing:
+                            valid = False
+                            break
+                    
+                    if valid:
+                        return pos
+    
+    # Fallback
+    return random_position_in_zone(zone)
+
+
+def _find_random_position(
+    zone: Tuple[Tuple[int, int], Tuple[int, int]],
+    occupied: List[CombatPosition],
+    min_spacing: int
+) -> CombatPosition:
+    """Find random position in zone with minimum spacing.
+    
+    Simpler than spread formation - just ensures min_spacing.
+    """
+    return _find_spaced_position(zone, occupied, min_spacing)
+
+
+def _is_in_zone(
+    point: Tuple[int, int],
+    zone: Tuple[Tuple[int, int], Tuple[int, int]]
+) -> bool:
+    """Check if a point is within a zone."""
+    (x_min, y_min), (x_max, y_max) = zone
+    x, y = point
+    return x_min <= x <= x_max and y_min <= y <= y_max
+
+
+def _calculate_center_position(
+    positions: List[Any]
+) -> CombatPosition:
+    """Calculate center point of all combat positions.
+    
+    Args:
+        positions: List of units with combat_position attribute
+    
+    Returns:
+        CombatPosition at center (average x, y)
+    """
+    valid_positions = [
+        u.combat_position for u in positions
+        if hasattr(u, 'combat_position') and u.combat_position is not None
+    ]
+    
+    if not valid_positions:
+        return CombatPosition(x=25, y=25)  # Grid center as fallback
+    
+    avg_x = sum(p.x for p in valid_positions) // len(valid_positions)
+    avg_y = sum(p.y for p in valid_positions) // len(valid_positions)
+    
+    return CombatPosition(x=avg_x, y=avg_y)
+
+
+def _distribute_units_across_zones(
+    units: List[Any],
+    total_zones: int,
+    zone_index: int
+) -> List[Any]:
+    """Distribute units across multiple spawn zones.
+    
+    Args:
+        units: All units to spawn
+        total_zones: Total number of zones
+        zone_index: Current zone index (0-based)
+    
+    Returns:
+        Subset of units for this zone
+    """
+    if total_zones == 1:
+        return units
+    
+    # Simple round-robin distribution
+    return [u for i, u in enumerate(units) if i % total_zones == zone_index]
+
+
 __all__ = [
     'Direction',
     'CombatPosition',
@@ -486,4 +747,5 @@ __all__ = [
     'move_to_flank',
     'turn_toward',
     'recalculate_proximity_dict',
+    'initialize_combat_positions',
 ]
