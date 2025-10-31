@@ -8,7 +8,12 @@
 
 ## Overview
 
-This plan specifies how to implement the configuration features defined in `config_phase4_testing.ini`. Currently, the game only reads `testmode`, `skipdialog`, `startmap`, and `startposition`. This plan extends that to support **40+ new settings** organized into 7 sections.
+This plan specifies how to implement the configuration features defined in `config_phase4_testing.ini`. Currently, the game only reads `testmode`, `skipdialog`, `startmap`, and `startposition`. This plan extends that to support **60+ new settings** organized into 4 sections:
+
+- **[game]** - 55+ settings (graphics, debug, coordination, combat, NPC AI, logging, scenarios, performance, display)
+- **[development]** - 4 settings (code reloading, testing features)
+- **[combat_testing]** - 13 settings (scenario rotation, difficulty, NPC parameters, validation)
+- **[testing_locations]** - 16 settings (spawn coordinates for 4 scenarios)
 
 ---
 
@@ -69,7 +74,7 @@ from dataclasses import dataclass
 class GameConfig:
     """Holds all parsed game configuration."""
     
-    # [game] section
+    # [game] section - Base settings
     testmode: bool = False
     skipdialog: bool = False
     skipintro: bool = False
@@ -79,7 +84,7 @@ class GameConfig:
     enable_animations: bool = True
     animation_speed: float = 1.0
     
-    # Debug settings
+    # [game] section - Debug settings
     debug_mode: bool = False
     debug_positions: bool = False
     debug_movement: bool = False
@@ -88,58 +93,97 @@ class GameConfig:
     debug_ai_decisions: bool = False
     debug_npc_positions: bool = False
     
-    # Coordinate system
-    use_coordinates: bool = True
-    coordinate_grid_size: int = 50
-    use_damage_modifiers: bool = True
-    use_accuracy_modifiers: bool = True
+    # [game] section - Coordinate system
+    coordinate_grid_size: tuple = (50, 50)  # Format: "50, 50" in INI
     
-    # Combat settings
+    # [game] section - Combat settings
     enable_new_combat_moves: bool = True
     enable_flanking_mechanics: bool = True
     enable_tactical_positioning: bool = True
     
-    # NPC AI
-    npc_use_coordinates: bool = True
+    # [game] section - NPC AI
     npc_flanking_enabled: bool = True
     npc_tactical_retreat: bool = True
     ai_difficulty: int = 3
     
-    # Save/Load
+    # [game] section - Save/Load
     autosave_enabled: bool = False
     allow_quicksave: bool = True
     auto_load_latest: bool = False
     
-    # Display
+    # [game] section - Display
     show_combat_distance: bool = True
     show_unit_positions: bool = True
     show_facing_directions: bool = True
     show_damage_modifiers: bool = True
     show_accuracy_modifiers: bool = True
     
-    # Logging
+    # [game] section - Logging
     log_combat_moves: bool = True
     log_distance_calculations: bool = True
     log_angle_calculations: bool = True
     log_npc_decisions: bool = True
     log_file: str = "combat_testing_phase4.log"
     
-    # Scenarios
+    # [game] section - Scenarios
     test_scenario: str = "standard"
     max_enemies_standard: int = 3
     max_enemies_pincer: int = 4
     max_enemies_melee: int = 6
     max_enemies_boss: int = 1
     
-    # Performance
-    monitor_fps: bool = False
-    monitor_memory: bool = False
-    log_performance: bool = False
-    
-    # View
-    follow_player: bool = True
-    show_grid_overlay: bool = False
+    # [game] section - Performance monitoring
+    monitor_bps: bool = True
+    log_performance: bool = True
+    show_full_grid: bool = False
+    grid_display_interval: int = 1
     show_coordinate_display: bool = True
+    
+    # [development] section
+    enable_hot_reload: bool = False
+    show_all_items: bool = False
+    god_mode: bool = False
+    skip_combat: bool = False
+    
+    # [combat_testing] section
+    enable_scenario_rotation: bool = False
+    current_scenario: str = "standard"
+    starting_difficulty: int = 3
+    difficulty_scaling: float = 0.5
+    max_rounds_before_auto_victory: int = 50
+    npc_decision_delay: float = 0.5
+    npc_flanking_threshold: float = 45.0
+    npc_retreat_health_threshold: float = 0.3
+    npc_flanking_distance_range: str = "20.0 to 40.0"  # Range as string, parse in code
+    validate_grid_bounds: bool = True
+    validate_distance_calc: bool = True
+    validate_angle_calc: bool = True
+    validate_modifier_calc: bool = True
+    validate_npc_formations: bool = True
+    
+    # [testing_locations] section - Standard formation
+    standard_player_x: int = 25
+    standard_player_y: int = 10
+    standard_enemy_x: int = 25
+    standard_enemy_y: int = 40
+    
+    # [testing_locations] section - Pincer formation
+    pincer_player_x: int = 25
+    pincer_player_y: int = 25
+    pincer_enemy1_x: int = 10
+    pincer_enemy1_y: int = 25
+    pincer_enemy2_x: int = 40
+    pincer_enemy2_y: int = 25
+    
+    # [testing_locations] section - Melee
+    melee_center_x: int = 25
+    melee_center_y: int = 25
+    melee_spread_radius: int = 5
+    
+    # [testing_locations] section - Boss arena
+    boss_arena_x: int = 25
+    boss_arena_y: int = 25
+    boss_start_distance: int = 30
 
 
 class ConfigManager:
@@ -196,11 +240,13 @@ class ConfigManager:
         self.config.debug_ai_decisions = section.getboolean('debug_ai_decisions', fallback=False)
         self.config.debug_npc_positions = section.getboolean('debug_npc_positions', fallback=False)
         
-        # Coordinate system
-        self.config.use_coordinates = section.getboolean('use_coordinates', fallback=True)
-        self.config.coordinate_grid_size = section.getint('coordinate_grid_size', fallback=50)
-        self.config.use_damage_modifiers = section.getboolean('use_damage_modifiers', fallback=True)
-        self.config.use_accuracy_modifiers = section.getboolean('use_accuracy_modifiers', fallback=True)
+        # Coordinate system (format: "50, 50" in INI)
+        try:
+            grid_str = section.get('coordinate_grid_size', fallback='50, 50')
+            w, h = map(int, grid_str.split(','))
+            self.config.coordinate_grid_size = (w, h)
+        except (ValueError, AttributeError):
+            self.config.coordinate_grid_size = (50, 50)
         
         # Combat settings
         self.config.enable_new_combat_moves = section.getboolean('enable_new_combat_moves', fallback=True)
@@ -208,7 +254,6 @@ class ConfigManager:
         self.config.enable_tactical_positioning = section.getboolean('enable_tactical_positioning', fallback=True)
         
         # NPC AI
-        self.config.npc_use_coordinates = section.getboolean('npc_use_coordinates', fallback=True)
         self.config.npc_flanking_enabled = section.getboolean('npc_flanking_enabled', fallback=True)
         self.config.npc_tactical_retreat = section.getboolean('npc_tactical_retreat', fallback=True)
         self.config.ai_difficulty = section.getint('ai_difficulty', fallback=3)
@@ -239,22 +284,76 @@ class ConfigManager:
         self.config.max_enemies_melee = section.getint('max_enemies_melee', fallback=6)
         self.config.max_enemies_boss = section.getint('max_enemies_boss', fallback=1)
         
-        # Performance
-        self.config.monitor_fps = section.getboolean('monitor_fps', fallback=False)
-        self.config.monitor_memory = section.getboolean('monitor_memory', fallback=False)
+        # Performance monitoring
+        self.config.monitor_bps = section.getboolean('monitor_bps', fallback=False)
         self.config.log_performance = section.getboolean('log_performance', fallback=False)
-        
-        # View
-        self.config.follow_player = section.getboolean('follow_player', fallback=True)
-        self.config.show_grid_overlay = section.getboolean('show_grid_overlay', fallback=False)
+        self.config.show_full_grid = section.getboolean('show_full_grid', fallback=False)
+        self.config.grid_display_interval = section.getint('grid_display_interval', fallback=1)
         self.config.show_coordinate_display = section.getboolean('show_coordinate_display', fallback=True)
     
     def _parse_development_section(self):
-        """Parse [development] section (if implemented)."""
-        pass  # Not needed for Phase 4, but reserved for future
+        """Parse [development] section."""
+        if not self.parser.has_section('development'):
+            return
+        
+        section = self.parser['development']
+        self.config.enable_hot_reload = section.getboolean('enable_hot_reload', fallback=False)
+        self.config.show_all_items = section.getboolean('show_all_items', fallback=False)
+        self.config.god_mode = section.getboolean('god_mode', fallback=False)
+        self.config.skip_combat = section.getboolean('skip_combat', fallback=False)
     
     def _parse_combat_testing_section(self):
-        """Parse [combat_testing] section (if implemented)."""
+        """Parse [combat_testing] section."""
+        if not self.parser.has_section('combat_testing'):
+            return
+        
+        section = self.parser['combat_testing']
+        self.config.enable_scenario_rotation = section.getboolean('enable_scenario_rotation', fallback=False)
+        self.config.current_scenario = section.get('current_scenario', fallback='standard')
+        self.config.starting_difficulty = section.getint('starting_difficulty', fallback=3)
+        self.config.difficulty_scaling = section.getfloat('difficulty_scaling', fallback=0.5)
+        self.config.max_rounds_before_auto_victory = section.getint('max_rounds_before_auto_victory', fallback=50)
+        self.config.npc_decision_delay = section.getfloat('npc_decision_delay', fallback=0.5)
+        self.config.npc_flanking_threshold = section.getfloat('npc_flanking_threshold', fallback=45.0)
+        self.config.npc_retreat_health_threshold = section.getfloat('npc_retreat_health_threshold', fallback=0.3)
+        self.config.npc_flanking_distance_range = section.get('npc_flanking_distance_range', fallback='20.0 to 40.0')
+        self.config.validate_grid_bounds = section.getboolean('validate_grid_bounds', fallback=True)
+        self.config.validate_distance_calc = section.getboolean('validate_distance_calc', fallback=True)
+        self.config.validate_angle_calc = section.getboolean('validate_angle_calc', fallback=True)
+        self.config.validate_modifier_calc = section.getboolean('validate_modifier_calc', fallback=True)
+        self.config.validate_npc_formations = section.getboolean('validate_npc_formations', fallback=True)
+    
+    def _parse_testing_locations_section(self):
+        """Parse [testing_locations] section."""
+        if not self.parser.has_section('testing_locations'):
+            return
+        
+        section = self.parser['testing_locations']
+        
+        # Standard formation
+        self.config.standard_player_x = section.getint('standard_player_x', fallback=25)
+        self.config.standard_player_y = section.getint('standard_player_y', fallback=10)
+        self.config.standard_enemy_x = section.getint('standard_enemy_x', fallback=25)
+        self.config.standard_enemy_y = section.getint('standard_enemy_y', fallback=40)
+        
+        # Pincer formation
+        self.config.pincer_player_x = section.getint('pincer_player_x', fallback=25)
+        self.config.pincer_player_y = section.getint('pincer_player_y', fallback=25)
+        self.config.pincer_enemy1_x = section.getint('pincer_enemy1_x', fallback=10)
+        self.config.pincer_enemy1_y = section.getint('pincer_enemy1_y', fallback=25)
+        self.config.pincer_enemy2_x = section.getint('pincer_enemy2_x', fallback=40)
+        self.config.pincer_enemy2_y = section.getint('pincer_enemy2_y', fallback=25)
+        
+        # Melee
+        self.config.melee_center_x = section.getint('melee_center_x', fallback=25)
+        self.config.melee_center_y = section.getint('melee_center_y', fallback=25)
+        self.config.melee_spread_radius = section.getint('melee_spread_radius', fallback=5)
+        
+        # Boss arena
+        self.config.boss_arena_x = section.getint('boss_arena_x', fallback=25)
+        self.config.boss_arena_y = section.getint('boss_arena_y', fallback=25)
+        self.config.boss_start_distance = section.getint('boss_start_distance', fallback=30)
+
         pass  # Advanced features, can be added later
     
     def _parse_testing_locations_section(self):
@@ -601,19 +700,36 @@ def test_config_load():
     cfg = mgr.load()
     assert cfg.debug_mode == True
     assert cfg.ai_difficulty == 3
-    assert cfg.coordinate_grid_size == 50
+    assert cfg.coordinate_grid_size == (50, 50)
+    assert cfg.monitor_bps == True
+    assert cfg.enable_scenario_rotation == False
+    assert cfg.boss_start_distance == 30
 
 def test_display_config_applied():
     """Test display settings applied to player."""
-    cfg = GameConfig(show_combat_distance=True, ...)
+    cfg = GameConfig(show_combat_distance=True, show_unit_positions=True)
     apply_display_config(player, cfg)
     assert player.show_combat_distance == True
+    assert player.show_unit_positions == True
 
 def test_logger_respects_config():
     """Test logger only logs when enabled."""
-    cfg = LogConfig(log_combat_moves=False, ...)
+    cfg = GameConfig(log_combat_moves=False, log_npc_decisions=True)
     logger = GameLogger('test.log', cfg)
     logger.log_move(...)  # Should NOT write
+    logger.log_npc_decision(...)  # Should write
+
+def test_testing_locations_parsed():
+    """Test all testing location coordinates loaded."""
+    mgr = ConfigManager('config_phase4_testing.ini')
+    cfg = mgr.load()
+    # Standard formation
+    assert cfg.standard_player_x == 25
+    assert cfg.standard_player_y == 10
+    # Pincer formation
+    assert cfg.pincer_player_x == 25
+    # Boss arena
+    assert cfg.boss_start_distance == 30
 ```
 
 ---
@@ -623,14 +739,17 @@ def test_logger_respects_config():
 | Feature | Complexity | Effort | Priority |
 |---------|-----------|--------|----------|
 | ConfigManager (Phase 1) | High | 3-4 hrs | P0 (blocks all) |
-| Display Settings | Low | 1-2 hrs | P1 (visual) |
+| Game Section Parsing | High | 2-3 hrs | P0 (core) |
+| Development Section | Low | 0.5 hr | P2 (optional) |
+| Combat Testing Section | Medium | 1-2 hrs | P1 (validation) |
+| Testing Locations Section | Low | 1 hr | P1 (positions) |
+| Display Settings Integration | Low | 1-2 hrs | P1 (visual) |
 | Logging System | Medium | 2-3 hrs | P1 (debug) |
-| Coordinate System | High | 2-3 hrs | P0 (core) |
-| NPC AI Settings | Medium | 2 hrs | P2 (optional) |
-| Scenario Settings | Medium | 1-2 hrs | P2 (optional) |
+| Scenario Spawn Config | Medium | 1-2 hrs | P1 (spawning) |
+| NPC AI Parameter Config | Medium | 1-2 hrs | P2 (AI tuning) |
 | Integration Testing | Medium | 2-3 hrs | P1 (validation) |
 
-**Total Estimated Effort:** 14-20 hours across 3-4 development sessions
+**Total Estimated Effort:** 16-24 hours across 4-5 development sessions
 
 ---
 
@@ -638,16 +757,20 @@ def test_logger_respects_config():
 
 ✅ **Implementation Complete When:**
 
-- ConfigManager loads all 40+ settings from INI
-- Game applies config settings to player/universe/logger
-- Display settings control what's shown in combat
-- Logging system writes debug output to file
-- Coordinate system can be toggled on/off via config
-- NPC AI respects difficulty/feature flags
-- Scenarios spawn correct enemy counts
+- ConfigManager loads all 60+ settings from INI file
+- All 4 sections ([game], [development], [combat_testing], [testing_locations]) parsed correctly
+- Game applies config settings to player/universe/logger objects
+- Display settings control what's shown in combat (distance, positions, facing, modifiers)
+- Logging system writes selective debug output to `combat_testing_phase4.log`
+- Debug mode flags enable all debug commands when set
+- Coordinate grid size configurable (default 50×50)
+- Scenario spawn locations configurable for all 4 arenas
+- NPC AI parameters tunable (difficulty, flanking threshold, retreat threshold, decision delay)
+- Performance monitoring flags enable FPS/memory tracking
 - All 545 automated tests still passing
-- New integration tests verify config features
-- Phase 4 manual testing can control system via INI
+- New integration tests verify config features load and apply correctly
+- Phase 4 manual testing can fully control system via config_phase4_testing.ini
+- Config defaults sensible if INI missing or incomplete
 
 ---
 
