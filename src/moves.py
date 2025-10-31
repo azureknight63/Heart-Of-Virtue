@@ -6,6 +6,7 @@ import random
 import states
 import functions
 import items
+import positions
 
 # from open_terminal import open_window as animation
 from animations import animate_to_main_screen as animate
@@ -444,6 +445,53 @@ class Advance(Move):
         if not self.target.is_alive():
             self.target = None  # this is to prevent advancing on targets that were killed
             return
+        
+        # Try coordinate-based movement if available
+        if (hasattr(user, 'combat_position') and user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self._execute_coordinate_based(user)
+        else:
+            self._execute_legacy(user)
+
+    def _execute_coordinate_based(self, user):
+        """Execute advance using 2D coordinates."""
+        print("{} advances on {}...".format(user.name, self.target.name))
+        
+        # Calculate movement distance (2-4 squares per advance, based on speed)
+        threshold = self.target.speed
+        performance = random.randint(0, 50) + user.speed
+        distance_moved = max(1, (performance - threshold) // 10)  # Convert to grid squares
+        distance_moved = min(distance_moved, 4)  # Cap at 4 squares
+        
+        # Calculate direction toward target
+        current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        
+        # Move toward target
+        new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
+        user.combat_position = new_pos
+        
+        # Turn to face target
+        user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
+        
+        # Recalculate proximity for backward compatibility
+        new_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        distance_reduced = current_distance - new_distance
+        
+        if distance_reduced <= 0:
+            if user.name == "Jean":
+                color = "red"
+            else:
+                color = "green"
+            cprint("{} was unable to get closer to {}!".format(user.name, self.target.name), color)
+        else:
+            if user.name == "Jean":
+                color = "green"
+            else:
+                color = "red"
+            cprint("{} got {} ft closer to {}!".format(user.name, distance_reduced, self.target.name), color)
+
+    def _execute_legacy(self, user):
+        """Execute advance using old distance-based system."""
         print("{} advances on {}...".format(user.name, self.target.name))
         threshold = self.target.speed
         performance = random.randint(0, 50) + user.speed
@@ -508,6 +556,50 @@ class Withdraw(Move):
         print(self.stage_announce[1])
 
     def execute(self, user):
+        # Try coordinate-based movement if available
+        if hasattr(user, 'combat_position') and user.combat_position is not None:
+            self._execute_coordinate_based(user)
+        else:
+            self._execute_legacy(user)
+
+    def _execute_coordinate_based(self, user):
+        """Execute withdraw using 2D coordinates."""
+        print("{} attempts to fall back...".format(user.name))
+        
+        # Find the nearest threat
+        nearest_threat = None
+        min_distance = float('inf')
+        
+        for enemy in user.combat_proximity.keys():
+            if hasattr(enemy, 'combat_position') and enemy.combat_position is not None:
+                dist = positions.distance_from_coords(user.combat_position, enemy.combat_position)
+                if dist < min_distance:
+                    min_distance = dist
+                    nearest_threat = enemy
+        
+        if nearest_threat is None:
+            return  # No threats to withdraw from
+        
+        # Calculate movement distance (2-3 squares, based on speed)
+        performance = random.randint(0, 35) + (user.speed - nearest_threat.speed)
+        distance_moved = max(1, performance // 15)  # Convert to grid squares
+        distance_moved = min(distance_moved, 3)  # Cap at 3 squares
+        
+        # Move away from nearest threat
+        new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
+        user.combat_position = new_pos
+        
+        # Turn to face the threat they're retreating from (defensive)
+        user.combat_position.facing = positions.turn_toward(user.combat_position, nearest_threat.combat_position)
+        
+        if user.name == "Jean":
+            color = "green"
+        else:
+            color = "red"
+        cprint("{} retreated {} ft away from {}!".format(user.name, distance_moved, nearest_threat.name), color)
+
+    def _execute_legacy(self, user):
+        """Execute withdraw using old distance-based system."""
         print("{} attempts to fall back...".format(user.name))
         enemy_list = {}
         for enemy, distance in self.user.combat_proximity.items():
@@ -536,6 +628,217 @@ class Withdraw(Move):
                 user.combat_proximity[enemy] += distance
                 user.combat_proximity[enemy] = int(user.combat_proximity[enemy])
                 enemy.combat_proximity[user] = user.combat_proximity[enemy]
+
+
+class BullCharge(Move):
+    """Aggressive charge move - advance multiple squares toward target."""
+    def __init__(self, user):
+        description = "Charge at target with force, covering significant distance."
+        prep = 1
+        execute = 3
+        recoil = 2
+        cooldown = 2
+        fatigue_cost = 5
+        target = user
+        super().__init__(name="Bull Charge", description=description, xp_gain=2, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(2, 9999),
+                         stage_announce=["",
+                                         "",
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=target, user=user)
+        self.evaluate()
+
+    def viable(self):
+        """Viable if target exists and isn't too close"""
+        if not self.target or self.target not in self.user.combat_proximity:
+            return False
+        distance = self.user.combat_proximity[self.target]
+        return 3 <= distance <= 20  # Can charge from 3-20 feet away
+
+    def evaluate(self):
+        pass
+
+    def prep(self, user):
+        cprint(f"{user.name} readies for a charge...", "cyan")
+
+    def execute(self, user):
+        if not self.target.is_alive():
+            self.target = None
+            return
+
+        # Try coordinate-based charge if available
+        if (hasattr(user, 'combat_position') and user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self._execute_coordinate_based(user)
+        else:
+            self._execute_legacy(user)
+
+    def _execute_coordinate_based(self, user):
+        """Charge using coordinates - advance 4-6 squares"""
+        print(f"{user.name} charges at {self.target.name}!")
+        
+        distance_moved = random.randint(4, 6)
+        current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        
+        # Move toward target (may overshoot slightly)
+        new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
+        user.combat_position = new_pos
+        
+        # Face target
+        user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
+        
+        new_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        distance_reduced = current_distance - new_distance
+        
+        cprint(f"{user.name} charged {distance_reduced} ft toward {self.target.name}!", "green")
+
+    def _execute_legacy(self, user):
+        """Charge using distance-based system"""
+        distance = user.combat_proximity[self.target] - random.randint(3, 5)
+        if distance < 0:
+            distance = 0
+        user.combat_proximity[self.target] = distance
+        self.target.combat_proximity[user] = distance
+        cprint(f"{user.name} charged at {self.target.name}!", "green")
+
+
+class TacticalRetreat(Move):
+    """Coordinated withdrawal - retreat while maintaining defense."""
+    def __init__(self, user):
+        description = "Strategically fall back while maintaining defensive posture."
+        prep = 1
+        execute = 3
+        recoil = 1
+        cooldown = 2
+        fatigue_cost = 3
+        target = user
+        super().__init__(name="Tactical Retreat", description=description, xp_gain=1, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=False, mvrange=(0, 100),
+                         stage_announce=["",
+                                         "",
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=target, user=user)
+        self.evaluate()
+
+    def viable(self):
+        """Always viable if in combat with enemies"""
+        return len(self.user.combat_proximity) > 0
+
+    def evaluate(self):
+        pass
+
+    def prep(self, user):
+        cprint(f"{user.name} prepares to retreat...", "cyan")
+
+    def execute(self, user):
+        # Try coordinate-based retreat if available
+        if hasattr(user, 'combat_position') and user.combat_position is not None:
+            self._execute_coordinate_based(user)
+        else:
+            self._execute_legacy(user)
+
+    def _execute_coordinate_based(self, user):
+        """Retreat using coordinates - retreat 3-4 squares"""
+        print(f"{user.name} retreats tactically!")
+        
+        # Find nearest threat
+        nearest_threat = None
+        min_distance = float('inf')
+        
+        for enemy in user.combat_proximity.keys():
+            if hasattr(enemy, 'combat_position') and enemy.combat_position is not None:
+                dist = positions.distance_from_coords(user.combat_position, enemy.combat_position)
+                if dist < min_distance:
+                    min_distance = dist
+                    nearest_threat = enemy
+        
+        if nearest_threat is None:
+            return
+        
+        distance_moved = random.randint(3, 4)
+        new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
+        user.combat_position = new_pos
+        
+        # Face threat while retreating (defensive stance)
+        user.combat_position.facing = positions.turn_toward(user.combat_position, nearest_threat.combat_position)
+        
+        cprint(f"{user.name} fell back {distance_moved} ft while staying defensive!", "green")
+
+    def _execute_legacy(self, user):
+        """Retreat using distance-based system"""
+        for enemy in user.combat_proximity.keys():
+            user.combat_proximity[enemy] += random.randint(2, 4)
+            enemy.combat_proximity[user] = user.combat_proximity[enemy]
+        cprint(f"{user.name} fell back defensively!", "green")
+
+
+class FlankingManeuver(Move):
+    """Position to the side of target for combat advantage."""
+    def __init__(self, user):
+        description = "Maneuver to flank target, gaining positional advantage."
+        prep = 2
+        execute = 4
+        recoil = 1
+        cooldown = 3
+        fatigue_cost = 4
+        target = user
+        super().__init__(name="Flanking Maneuver", description=description, xp_gain=2, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(2, 20),
+                         stage_announce=["",
+                                         "",
+                                         "",
+                                         ""], fatigue_cost=fatigue_cost, beats_left=prep,
+                         target=target, user=user)
+        self.evaluate()
+
+    def viable(self):
+        """Viable if target is in range"""
+        if not self.target or self.target not in self.user.combat_proximity:
+            return False
+        distance = self.user.combat_proximity[self.target]
+        return 3 <= distance <= 15
+
+    def evaluate(self):
+        pass
+
+    def prep(self, user):
+        cprint(f"{user.name} prepares to flank...", "cyan")
+
+    def execute(self, user):
+        if not self.target.is_alive():
+            self.target = None
+            return
+
+        # Only works with coordinate-based system
+        if (hasattr(user, 'combat_position') and user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self._execute_coordinate_based(user)
+        else:
+            # Fallback for legacy system
+            cprint(f"{user.name}'s flanking maneuver failed - coordinates unavailable", "yellow")
+
+    def _execute_coordinate_based(self, user):
+        """Flank target by moving perpendicular to their facing direction."""
+        print(f"{user.name} maneuvers to flank {self.target.name}!")
+        
+        # Calculate flanking position (perpendicular to target's facing)
+        flank_distance = random.randint(2, 4)
+        new_pos = positions.move_to_flank(user.combat_position, self.target.combat_position, flank_distance)
+        user.combat_position = new_pos
+        
+        # Face target from flank position
+        user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
+        
+        # Calculate angle difference to show flanking bonus
+        angle = positions.angle_to_target(user.combat_position, self.target.combat_position)
+        angle_diff = positions.attack_angle_difference(angle, self.target.combat_position.facing)
+        
+        if 45 < angle_diff <= 135:
+            cprint(f"{user.name} successfully flanked {self.target.name}! (+15-25% damage)", "green")
+        else:
+            cprint(f"{user.name} moved to the side of {self.target.name}!", "green")
 
 
 class QuietMovement(Move):
