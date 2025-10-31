@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import importlib.util
 import re
+import positions  # type: ignore
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -145,6 +146,7 @@ class NPC:
         self.in_combat = False
         self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5,
         # ranged is 20. Distance is in feet (for reference)
+        self.combat_position = None  # CombatPosition object; None outside combat. Source of truth for positioning
         self.default_proximity = 20
         self.hidden = hidden
         self.hide_factor = hide_factor

@@ -11,6 +11,7 @@ import combat  # type: ignore
 import skilltree  # type: ignore
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
+import positions  # type: ignore
 
 
 def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
@@ -227,6 +228,7 @@ class Player:
         # there looking pretty
         self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5,
         # ranged is 20. Distance is in feet (for reference)
+        self.combat_position = None  # CombatPosition object; None outside combat. Source of truth for positioning
         self.default_proximity = 50
         self.savestat = None
         self.saveuniv = None
