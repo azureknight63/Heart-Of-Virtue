@@ -13,13 +13,11 @@ import items as items
 from player import Player
 from universe import Universe, tile_exists
 import sys
-import configparser
-import ast
+from config_manager import ConfigManager
+
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
-
-config = configparser.ConfigParser()
 
 
 def validate_numerical_input(prompt, min_value, max_value):
@@ -108,20 +106,27 @@ _\\|//__( | )______)_/
         player.universe = Universe(player)
         player.universe.build(player)
         starting_map_name = "default"
-        try:
-            config.read('config_dev.ini')
-            testing_mode = config.getboolean('Startup', 'testmode')
-            skip_dialog = config.getboolean('Startup', 'skipdialog')
-            if skip_dialog:
-                player.skip_dialog = True
-            starting_map_name = config.get('Startup', 'startmap')
-            startposition = ast.literal_eval(config.get('Startup', 'startposition'))
-            starting_map = next((map_item for map_item in player.universe.maps if
-                                 map_item.get('name') == starting_map_name), player.universe.starting_map_default)
-        except FileNotFoundError:
-            testing_mode = False
-            starting_map = player.universe.starting_map_default
-            startposition = player.universe.starting_position
+        
+        # Load configuration using ConfigManager
+        config_mgr = ConfigManager('config_dev.ini')
+        config = config_mgr.load()
+        
+        testing_mode = config.testmode
+        skip_dialog = config.skipdialog
+        if skip_dialog:
+            player.skip_dialog = True
+        starting_map_name = config.startmap
+        startposition = config.startposition
+        
+        # Apply configuration to player and universe
+        player.use_colour = config.use_colour
+        player.enable_animations = config.enable_animations
+        player.animation_speed = config.animation_speed
+        player.testing_mode = testing_mode
+        player.universe.testing_mode = testing_mode
+        
+        starting_map = next((map_item for map_item in player.universe.maps if
+                            map_item.get('name') == starting_map_name), player.universe.starting_map_default)
 
         if testing_mode:
             print(f"\n\n###\nTest Mode: {testing_mode}")
