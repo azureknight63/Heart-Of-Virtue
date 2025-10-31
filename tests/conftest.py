@@ -19,6 +19,7 @@ _core_order = [
     'actions',
     'tiles',
     'universe',
+    'positions',       # needed by moves and player for coordinate-based combat (before moves)
     'moves',           # moves before npc so npc can attach move instances
     'npc',
     'skilltree',       # needed by player
