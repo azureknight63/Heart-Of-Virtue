@@ -136,7 +136,8 @@ class ConfigManager:
             config_file: Path to INI configuration file
         """
         self.config_file = config_file
-        self.parser = configparser.ConfigParser()
+        # Allow inline comments with semicolon and hash
+        self.parser = configparser.ConfigParser(inline_comment_prefixes=(';', '#'))
         self.config = GameConfig()
     
     def load(self) -> GameConfig:
