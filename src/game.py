@@ -123,7 +123,9 @@ _\\|//__( | )______)_/
         player.enable_animations = config.enable_animations
         player.animation_speed = config.animation_speed
         player.testing_mode = testing_mode
+        player.game_config = config
         player.universe.testing_mode = testing_mode
+        player.universe.game_config = config
         
         starting_map = next((map_item for map_item in player.universe.maps if
                             map_item.get('name') == starting_map_name), player.universe.starting_map_default)
@@ -135,8 +137,6 @@ _\\|//__( | )______)_/
             player.skill_exp['Basic'] = 9999
             player.skill_exp['Unarmed'] = 9999
 
-        player.testing_mode = testing_mode
-        player.universe.testing_mode = testing_mode
         player.map = starting_map
         player.location_x, player.location_y = startposition
         room = tile_exists(player.map, player.location_x, player.location_y)

@@ -238,6 +238,11 @@ class Player:
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
         self.skip_dialog = False  # if True, skips sequence dialogue and prints (typically handled in ini file)
+        self.testing_mode = False  # test mode flag from config
+        self.use_colour = True  # whether to use colored terminal output
+        self.enable_animations = True  # whether to enable visual animations
+        self.animation_speed = 1.0  # animation speed multiplier
+        self.game_config = None  # full GameConfig object for access to all settings
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"

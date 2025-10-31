@@ -30,6 +30,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             "gorran_first": "0"
         }
         self.locked_chests = []
+        self.testing_mode = False  # test mode flag from config
+        self.game_config = None  # full GameConfig object for access to all settings
 
     def build(self, player):  # builds all the maps as they are, then loads them into self.maps
         # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
