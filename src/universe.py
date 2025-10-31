@@ -4,6 +4,8 @@ import functions as functions
 import json, inspect, importlib
 from pathlib import Path
 from typing import Final
+from scenario_config import ScenarioConfig
+from coordinate_config import CoordinateSystemConfig
 
 RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
 
@@ -32,10 +34,18 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.locked_chests = []
         self.testing_mode = False  # test mode flag from config
         self.game_config = None  # full GameConfig object for access to all settings
+        self.scenario_config = None  # ScenarioConfig for combat scenario management
+        self.coordinate_config = None  # CoordinateSystemConfig for grid positioning
 
     def build(self, player):  # builds all the maps as they are, then loads them into self.maps
         # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
         self.player = player
+        
+        # Initialize config systems if player has game_config
+        if hasattr(player, 'game_config') and player.game_config:
+            self.scenario_config = ScenarioConfig(player)
+            self.coordinate_config = CoordinateSystemConfig(player)
+        
         if player.saveuniv is not None and player.savestat is not None:
             self.maps = player.saveuniv
         else:  # new game

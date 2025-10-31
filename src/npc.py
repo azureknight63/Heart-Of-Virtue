@@ -15,6 +15,7 @@ import os
 import importlib.util
 import re
 import positions  # type: ignore
+from npc_ai_config import NPCAIConfig  # type: ignore
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
@@ -160,6 +161,7 @@ class NPC:
         self.pronouns = {
             "personal": "it", "possessive": "its", "reflexive": "itself", "intensive": "itself"
         }
+        self.player_ref = None  # Will be set during combat initialization for config access
 
     def is_alive(self):
         return self.hp > 0
@@ -203,6 +205,17 @@ class NPC:
             choice = random.randint(0, num_choices)
             if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
+                
+                # Log NPC decision if debug tracing is enabled
+                if hasattr(self, 'player_ref') and self.player_ref:
+                    player = self.player_ref
+                    if hasattr(player, 'combat_debug_manager') and player.combat_debug_manager:
+                        if player.combat_debug_manager.should_debug_ai_decisions():
+                            player.combat_debug_manager.display_ai_debug_info(
+                                self,
+                                f"Selected {self.current_move.name}",
+                                {"fatigue_cost": self.current_move.fatigue_cost}
+                            )
 
     def add_move(self, move, weight=1):
         """Adds a move to the NPC's known move list. Weight is the number of times to add."""
