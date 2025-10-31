@@ -214,7 +214,8 @@ class Player:
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are
             # viable (moves will check their own conditions)
             moves.Check(self), moves.Wait(self), moves.Rest(self),
-            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self)
+            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self),
+            moves.BullCharge(self), moves.TacticalRetreat(self), moves.FlankingManeuver(self)
         ]
         self.current_move = None
         self.heat = 1.0
