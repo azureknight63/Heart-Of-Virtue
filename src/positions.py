@@ -369,11 +369,11 @@ def move_away_from(
     dx = 0 if current.x == threat.x else (1 if current.x > threat.x else -1)
     dy = 0 if current.y == threat.y else (1 if current.y > threat.y else -1)
     
-    # Move away
-    new_x = current.x + (dx * distance)
-    new_y = current.y + (dy * distance)
+    # Move away, clamping the coordinates before creating the position
+    new_x = max(0, min(50, current.x + (dx * distance)))
+    new_y = max(0, min(50, current.y + (dy * distance)))
     
-    return clamp_position(CombatPosition(x=new_x, y=new_y, facing=current.facing))
+    return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
 
 def move_to_flank(
@@ -400,10 +400,11 @@ def move_to_flank(
     offset_x = math.cos(flank_rad) * distance
     offset_y = math.sin(flank_rad) * distance
     
-    new_x = target.x + offset_x
-    new_y = target.y + offset_y
+    # Clamp coordinates before creating the position
+    new_x = max(0, min(50, int(round(target.x + offset_x))))
+    new_y = max(0, min(50, int(round(target.y + offset_y))))
     
-    return clamp_position(CombatPosition(x=int(round(new_x)), y=int(round(new_y)), facing=current.facing))
+    return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
 
 def turn_toward(

@@ -8,6 +8,7 @@ from display_config import CombatDisplayConfig
 from game_logger import GameLogger
 from debug_manager import DebugManager
 from coordinate_config import CoordinateSystemConfig
+from combat_battlefield import CombatBattlefieldWindow
 
 
 def combat(player):
@@ -21,6 +22,10 @@ def combat(player):
     game_logger = GameLogger(player)
     debug_manager = DebugManager(player)
     coordinate_config = CoordinateSystemConfig(player)
+    
+    # Initialize battlefield window
+    battlefield_window = CombatBattlefieldWindow(title="Combat Battlefield")
+    battlefield_window.create_window()
     
     # Store in player for access throughout combat
     player.combat_display_config = display_config
@@ -53,7 +58,7 @@ def combat(player):
                     npc.current_move.cast()
                     # Log the move execution
                     if npc.current_move:
-                        game_logger.log_move(npc.name, npc.current_move.name, 0)
+                        game_logger.log_combat_move(npc.name, npc.current_move.name)
                         if debug_manager.should_debug_ai_decisions():
                             debug_manager.display_ai_debug_info(
                                 npc, 
@@ -83,7 +88,7 @@ def combat(player):
                 for other_unit in all_combatants:
                     if other_unit != unit and other_unit in unit.combat_proximity:
                         distance = unit.combat_proximity[other_unit]
-                        game_logger.log_distance(unit.name, other_unit.name, distance)
+                        game_logger.log_distance_calculation(unit.name, other_unit.name, distance)
         
         # Original proximity synchronization logic for backward compatibility
         for each_ally in player.combat_list_allies:
@@ -361,6 +366,11 @@ def combat(player):
 
         player.cycle_states()
 
+        # Update battlefield window display
+        battlefield_window.set_beat(beat)
+        battlefield_window.update_all_combatants(player, player.combat_list_allies, player.combat_list)
+        battlefield_window.update_display()
+
         time.sleep(0.5)
         beat += 1
         # print("### CURRENT BEAT: "+str(beat))
@@ -369,6 +379,10 @@ def combat(player):
     for status in player.states:
         if not status.persistent:
             player.states.remove(status)
+    
+    # Close battlefield window
+    battlefield_window.close()
+    
     await_input()
     player.in_combat = False
     player.current_move = None

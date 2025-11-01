@@ -424,15 +424,21 @@ class Advance(Move):
         self.evaluate()
 
     def viable(self):
-        """Advance is only viable if the current target is beyond striking distance (distance > 1)"""
-        viability = False
-        # Check if the user has a valid target set
+        """Advance is only viable if there are enemies beyond striking distance OR current target is at a good distance"""
+        # If a specific target is set
         if self.target and self.target in self.user.combat_proximity:
-            distance = self.user.combat_proximity[self.target]
-            # Only viable if target is beyond striking distance
-            if distance > 1:
-                viability = True
-        return viability
+            target_distance = self.user.combat_proximity[self.target]
+            # Only viable if target is alive and NOT at striking distance
+            if self.target.is_alive and target_distance > 1:
+                return True
+            # If current target IS at striking distance, Advance is not viable (use Attack instead)
+            return False
+        
+        # If no target set, check if there are ANY enemies beyond striking distance
+        for enemy, distance in self.user.combat_proximity.items():
+            if enemy.is_alive and distance > 1:
+                return True
+        return False
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
         # self.stage_beat = [0,2,2,2]
@@ -457,14 +463,18 @@ class Advance(Move):
         """Execute advance using 2D coordinates."""
         print("{} advances on {}...".format(user.name, self.target.name))
         
-        # Calculate movement distance (2-4 squares per advance, based on speed)
-        threshold = self.target.speed
-        performance = random.randint(0, 50) + user.speed
-        distance_moved = max(1, (performance - threshold) // 10)  # Convert to grid squares
-        distance_moved = min(distance_moved, 4)  # Cap at 4 squares
-        
         # Calculate direction toward target
         current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        
+        # Calculate movement distance (6-12 ft baseline, but don't overshoot target)
+        threshold = self.target.speed
+        performance = random.randint(0, 50) + user.speed
+        distance_moved = max(6, (performance - threshold) // 5)  # Baseline: 6-12 ft
+        distance_moved = min(distance_moved, 12)  # Cap at 12 squares
+        
+        # If target is already close, don't force minimum 6 ft
+        if current_distance <= 6:
+            distance_moved = max(1, (performance - threshold) // 5)  # Smaller increments when close
         
         # Move toward target
         new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
@@ -495,9 +505,14 @@ class Advance(Move):
         print("{} advances on {}...".format(user.name, self.target.name))
         threshold = self.target.speed
         performance = random.randint(0, 50) + user.speed
-        distance = performance - threshold
-        if distance < 1:
-            distance = 0
+        
+        # Base calculation: 6-12 ft, but adjust if target is already close
+        current_distance = user.combat_proximity[self.target]
+        if current_distance <= 6:
+            distance = max(1, (performance - threshold) // 5)  # Smaller increments when close
+        else:
+            distance = max(6, (performance - threshold) // 5)  # Baseline: 6-12 ft
+            distance = min(distance, 12)  # Cap at 12 ft
         if distance == 0:
             if user.name == "Jean":
                 color = "red"
@@ -508,14 +523,21 @@ class Advance(Move):
             if user.combat_proximity[self.target] <= distance:
                 distance = user.combat_proximity[self.target] - 3
             distance = int(distance)
-            if user.name == "Jean":
-                color = "green"
+            if distance > 0:
+                if user.name == "Jean":
+                    color = "green"
+                else:
+                    color = "red"
+                cprint("{} got {} ft closer to {}!".format(user.name, distance, self.target.name), color)
+                user.combat_proximity[self.target] -= distance
+                user.combat_proximity[self.target] = int(user.combat_proximity[self.target])
+                self.target.combat_proximity[user] = user.combat_proximity[self.target]
             else:
-                color = "red"
-            cprint("{} got {} ft closer to {}!".format(user.name, distance, self.target.name), color)
-            user.combat_proximity[self.target] -= distance
-            user.combat_proximity[self.target] = int(user.combat_proximity[self.target])
-            self.target.combat_proximity[user] = user.combat_proximity[self.target]
+                if user.name == "Jean":
+                    color = "red"
+                else:
+                    color = "green"
+                cprint("{} was unable to get closer to {}!".format(user.name, self.target.name), color)
 
 
 class Withdraw(Move):
@@ -1085,6 +1107,72 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                          beats_left=execute, target=player, user=player, instant=True)
 
     def prep(self, user):
+        # Check coordinate-based positioning if available
+        if hasattr(user, 'combat_position') and user.combat_position is not None:
+            self._display_coordinate_info(user)
+        else:
+            # Fallback to legacy distance display
+            self._display_legacy_info(user)
+        functions.await_input()
+    
+    def _display_coordinate_info(self, user):
+        """Display coordinate-based positioning information."""
+        for enemy, distance in user.combat_proximity.items():
+            if hasattr(enemy, 'combat_position') and enemy.combat_position is not None:
+                # Display coordinate position and facing
+                pos_str = f"({enemy.combat_position.x}, {enemy.combat_position.y})"
+                facing_str = enemy.combat_position.facing.name
+                
+                # Calculate attack angle from user to enemy
+                attack_angle = positions.angle_to_target(user.combat_position, enemy.combat_position)
+                # Get relative angle difference from enemy's perspective
+                angle_diff = positions.attack_angle_difference(attack_angle, enemy.combat_position.facing)
+                
+                # Determine relative direction (front/flank/rear)
+                if angle_diff < 45:
+                    direction = "front"
+                    color = "red"
+                elif angle_diff < 90:
+                    direction = "flank"
+                    color = "yellow"
+                else:
+                    direction = "rear"
+                    color = "green"
+                
+                cprint("{} at {} facing {} is {} ft away ({}, {}-facing)".format(
+                    enemy.name, pos_str, facing_str, int(distance), direction, facing_str
+                ), color)
+            else:
+                # Fallback if enemy lacks coordinate position
+                cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
+            
+            # Show ally positioning relative to enemies
+            if user.combat_list_allies:
+                for ally in user.combat_list_allies:
+                    if ally.name != "Jean" and hasattr(ally, 'combat_position') and ally.combat_position is not None:
+                        if hasattr(enemy, 'combat_position') and enemy.combat_position is not None:
+                            # Calculate ally's attack angle to enemy
+                            ally_attack_angle = positions.angle_to_target(ally.combat_position, enemy.combat_position)
+                            ally_angle_diff = positions.attack_angle_difference(ally_attack_angle, enemy.combat_position.facing)
+                            
+                            if ally_angle_diff < 45:
+                                ally_dir = "front"
+                            elif ally_angle_diff < 90:
+                                ally_dir = "flank"
+                            else:
+                                ally_dir = "rear"
+                            
+                            cprint("  → {} at ({}, {}) is {} ft away ({}-facing)".format(
+                                ally.name, ally.combat_position.x, ally.combat_position.y,
+                                int(ally.combat_proximity[enemy]), ally_dir
+                            ), "cyan")
+                        else:
+                            cprint("  → {} is {} ft away".format(
+                                ally.name, int(ally.combat_proximity[enemy])
+                            ), "cyan")
+    
+    def _display_legacy_info(self, user):
+        """Display legacy distance-based information (fallback)."""
         for enemy, distance in user.combat_proximity.items():
             cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
             if user.combat_list_allies:
@@ -1092,7 +1180,6 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                     if ally.name != "Jean":
                         cprint("{} is {} ft from {}".format(
                             enemy.name, int(ally.combat_proximity[enemy]), ally.name), "cyan")
-        functions.await_input()
 
 
 class Wait(Move):  # player chooses how many beats he'd like to wait
