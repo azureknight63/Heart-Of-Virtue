@@ -172,7 +172,8 @@ class CombatBattlefieldWindow:
         legend_text = (
             f"Format: [Char][Direction]  {self.PLAYER_CHAR}=Player  {self.ALLY_CHAR}=Ally  {self.ENEMY_CHAR}=Enemy  "
             f"Directions: ↑N ↗NE →E ↘SE ↓S ↙SW ←W ↖NW  "
-            f"Health: !=Injured  !!=Critical  {self.BREADCRUMB_CHAR}=Trail"
+            f"Colors: Green=Healthy  Orange=Injured  Red=Critical  Gray=Dead  "
+            f"{self.BREADCRUMB_CHAR}=Trail"
         )
         legend_label = tk.Label(
             legend_frame,
@@ -288,6 +289,15 @@ class CombatBattlefieldWindow:
                 min_y = min(min_y, y)
                 max_y = max(max_y, y)
         
+        # Ensure we have valid bounds
+        if min_x >= self.GRID_WIDTH or max_x < 0 or min_y >= self.GRID_HEIGHT or max_y < 0:
+            # All combatants are outside the grid, show full grid
+            self.viewport_x_min = 0
+            self.viewport_x_max = self.GRID_WIDTH - 1
+            self.viewport_y_min = 0
+            self.viewport_y_max = self.GRID_HEIGHT - 1
+            return
+        
         # Apply margin
         self.viewport_x_min = max(0, min_x - self.margin)
         self.viewport_x_max = min(self.GRID_WIDTH - 1, max_x + self.margin)
@@ -380,13 +390,6 @@ class CombatBattlefieldWindow:
             # Add facing direction indicator as a suffix
             direction_char = self._get_direction_char(facing_value)
             combined_display = char + direction_char
-            
-            # Add health marker if injured/critical (displayed after facing direction)
-            if is_alive and health_percent < 0.75:
-                if health_percent < 0.25:
-                    combined_display += "!!"
-                else:
-                    combined_display += "!"
             
             # Store in overlay (this will overwrite grid values)
             combatant_overlay[(grid_x, grid_y)] = combined_display
@@ -484,65 +487,41 @@ class CombatBattlefieldWindow:
             grid_x = x - self.viewport_x_min
             grid_y = y - self.viewport_y_min
 
-            # Calculate text position (accounting for top border and 1-indexed tkinter)
-            line = grid_y + 2  # +1 for top border, +1 for 1-indexed
-            col = grid_x + 2   # +1 for left border, +1 for 1-indexed
+            # Calculate text position (accounting for borders and tkinter's 1-indexed coords)
+            # Line: +1 for top border, +1 for tkinter 1-indexing
+            line = grid_y + 2
+            # Column: +1 for left border, +1 for tkinter 1-indexing, and each cell is 2 chars wide
+            col = grid_x * 2 + 2
 
-            # Determine tag to apply for character
+            # Determine tag to apply based on type and health status
+            # Character color represents health: healthy -> injured -> critical -> dead
             if not is_alive:
                 char_tag = "dead"
-                marker_tag = None  # Dead combatants don't show markers
             elif is_player:
                 if health_percent < 0.25:
                     char_tag = "player_critical"
-                    marker_tag = "marker_critical"
                 elif health_percent < 0.75:
                     char_tag = "player_injured"
-                    marker_tag = "marker_injured"
                 else:
                     char_tag = "player"
-                    marker_tag = None
             elif is_ally:
                 if health_percent < 0.25:
                     char_tag = "ally_critical"
-                    marker_tag = "marker_critical"
                 elif health_percent < 0.75:
                     char_tag = "ally_injured"
-                    marker_tag = "marker_injured"
                 else:
                     char_tag = "ally"
-                    marker_tag = None
             else:  # Enemy
                 if health_percent < 0.25:
                     char_tag = "enemy_critical"
-                    marker_tag = "marker_critical"
                 elif health_percent < 0.75:
                     char_tag = "enemy_injured"
-                    marker_tag = "marker_injured"
                 else:
                     char_tag = "enemy"
-                    marker_tag = None
 
-            # Apply tag to the character (first char)
+            # Apply tag to both character and direction arrow (2 chars total)
             try:
-                self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{col + 1}")
-            except tk.TclError:
-                pass
-            
-            # Apply tag to direction and any health markers
-            # Direction is at position col+1, health markers start at col+2
-            try:
-                # Apply char_tag to direction as well (positions col+1 and potentially col+2)
-                display_text = self.combatants_data[name].get("display_text", "")
-                display_len = len(display_text)
-                
-                if display_len > 1:
-                    # Color the direction char with the same tag
-                    self.text_widget.tag_add(char_tag, f"{line}.{col + 1}", f"{line}.{col + 2}")
-                
-                # If there are health markers, color them separately
-                if marker_tag and display_len > 2:
-                    self.text_widget.tag_add(marker_tag, f"{line}.{col + 2}", f"{line}.{col + display_len}")
+                self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{col + 2}")
             except tk.TclError:
                 pass
 
@@ -604,13 +583,6 @@ class CombatBattlefieldWindow:
             direction_char = self._get_direction_char(facing_value)
             display_text = char + direction_char
             
-            # Add health markers if injured/critical
-            if is_alive and health_percent < 0.75:
-                if health_percent < 0.25:
-                    display_text += "!!"
-                else:
-                    display_text += "!"
-            
             self.combatants_data[name]["display_text"] = display_text
             
             # Track movement history
@@ -651,9 +623,17 @@ class CombatBattlefieldWindow:
             if hasattr(player, "current_health") and hasattr(player, "maxhealth"):
                 health_pct = player.current_health / max(1, player.maxhealth)
             
+            # Extract facing value - handle Direction enum or raw value
             facing_val = 0
-            if hasattr(player.combat_position, "facing") and hasattr(player.combat_position.facing, "value"):
-                facing_val = player.combat_position.facing.value
+            if hasattr(player.combat_position, "facing"):
+                facing = player.combat_position.facing
+                if facing is not None:
+                    # Try to get value attribute (for enums or objects)
+                    if hasattr(facing, "value"):
+                        facing_val = facing.value
+                    # Or if it's already a number
+                    elif isinstance(facing, (int, float)):
+                        facing_val = facing
             
             self.set_combatant(
                 player.name if hasattr(player, "name") else "Player",
@@ -672,9 +652,17 @@ class CombatBattlefieldWindow:
                 if hasattr(ally, "current_health") and hasattr(ally, "maxhealth"):
                     health_pct = ally.current_health / max(1, ally.maxhealth)
                 
+                # Extract facing value - handle Direction enum or raw value
                 facing_val = 0
-                if hasattr(ally.combat_position, "facing") and hasattr(ally.combat_position.facing, "value"):
-                    facing_val = ally.combat_position.facing.value
+                if hasattr(ally.combat_position, "facing"):
+                    facing = ally.combat_position.facing
+                    if facing is not None:
+                        # Try to get value attribute (for enums or objects)
+                        if hasattr(facing, "value"):
+                            facing_val = facing.value
+                        # Or if it's already a number
+                        elif isinstance(facing, (int, float)):
+                            facing_val = facing
                 
                 self.set_combatant(
                     ally.name if hasattr(ally, "name") else f"Ally_{id(ally)}",
@@ -693,9 +681,17 @@ class CombatBattlefieldWindow:
                 if hasattr(enemy, "current_health") and hasattr(enemy, "maxhealth"):
                     health_pct = enemy.current_health / max(1, enemy.maxhealth)
                 
+                # Extract facing value - handle Direction enum or raw value
                 facing_val = 0
-                if hasattr(enemy.combat_position, "facing") and hasattr(enemy.combat_position.facing, "value"):
-                    facing_val = enemy.combat_position.facing.value
+                if hasattr(enemy.combat_position, "facing"):
+                    facing = enemy.combat_position.facing
+                    if facing is not None:
+                        # Try to get value attribute (for enums or objects)
+                        if hasattr(facing, "value"):
+                            facing_val = facing.value
+                        # Or if it's already a number
+                        elif isinstance(facing, (int, float)):
+                            facing_val = facing
                 
                 self.set_combatant(
                     enemy.name if hasattr(enemy, "name") else f"Enemy_{id(enemy)}",
