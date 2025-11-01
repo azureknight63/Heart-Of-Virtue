@@ -304,16 +304,22 @@ class CombatBattlefieldWindow:
         visible_width = self.viewport_x_max - self.viewport_x_min + 1
         visible_height = self.viewport_y_max - self.viewport_y_min + 1
         
-        # Initialize grid with breadcrumb characters for the visible area only
-        grid = [[self.BREADCRUMB_CHAR for _ in range(visible_width)] for _ in range(visible_height)]
+        # Initialize grid with empty spaces
+        grid = [[" " for _ in range(visible_width)] for _ in range(visible_height)]
         
         # Track combatant positions for overlay (to avoid breadcrumb overwrites)
         combatant_overlay: Dict[Tuple[int, int], str] = {}
         combatant_positions: set = set()  # Track current combatant positions to avoid breadcrumb collision
 
         # Draw breadcrumb trails first (so they appear under combatants)
+        # Breadcrumbs show the path the unit took - excluding their current position
         for name, history in self.movement_history.items():
+            # Only show breadcrumbs for OLD positions (skip the current/last position)
             for i, pos in enumerate(history):
+                # Skip the most recent position (that's where the combatant is now)
+                if i == len(history) - 1:
+                    continue
+                
                 x = int(pos.x)
                 y = int(pos.y)
                 
@@ -321,10 +327,8 @@ class CombatBattlefieldWindow:
                 if self.viewport_x_min <= x <= self.viewport_x_max and self.viewport_y_min <= y <= self.viewport_y_max:
                     grid_x = x - self.viewport_x_min
                     grid_y = y - self.viewport_y_min
-                    # Only mark OLD positions (not the most recent/current one)
-                    if i < len(history) - 1:
-                        if grid[grid_y][grid_x] == self.BREADCRUMB_CHAR:
-                            grid[grid_y][grid_x] = "·"
+                    # Mark this as a breadcrumb trail position
+                    grid[grid_y][grid_x] = self.BREADCRUMB_CHAR
 
         # Build combatant overlay and track their current positions
         for name, data in self.combatants_data.items():
@@ -380,13 +384,19 @@ class CombatBattlefieldWindow:
                 # Always overwrite with combatant (they're the primary focus)
                 grid[grid_y][grid_x] = display
 
-        # Ensure consistent cell width by padding breadcrumbs to 2 characters
+        # Ensure consistent 2-character cell width for proper alignment
+        # - Combatants (char + direction): Already 2 chars
+        # - Breadcrumbs (·): Pad to "· "
+        # - Empty spaces: Pad to "  " (two spaces)
         for y in range(len(grid)):
             for x in range(len(grid[y])):
                 cell = grid[y][x]
                 if len(cell) == 1:
-                    # Pad single-character cells with space to maintain alignment
+                    # All single-char cells get padded with space
                     grid[y][x] = cell + " "
+                elif len(cell) != 2:
+                    # Shouldn't happen, but handle gracefully
+                    grid[y][x] = (cell + "  ")[:2]
 
         # Convert grid to string with borders
         lines = []
