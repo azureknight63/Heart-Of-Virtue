@@ -352,6 +352,7 @@ class CombatBattlefieldWindow:
             is_alive: bool = data.get("is_alive", True)
             is_player: bool = data.get("is_player", False)
             is_ally: bool = data.get("is_ally", False)
+            health_percent: float = data.get("health_percent", 1.0)
             facing_value: int = data.get("facing_value", 0)
 
             # Determine character to display
@@ -375,6 +376,13 @@ class CombatBattlefieldWindow:
             direction_char = self._get_direction_char(facing_value)
             combined_display = char + direction_char
             
+            # Add health marker if injured/critical (displayed after facing direction)
+            if is_alive and health_percent < 0.75:
+                if health_percent < 0.25:
+                    combined_display += "!!"
+                else:
+                    combined_display += "!"
+            
             # Store in overlay (this will overwrite grid values)
             combatant_overlay[(grid_x, grid_y)] = combined_display
 
@@ -385,18 +393,17 @@ class CombatBattlefieldWindow:
                 grid[grid_y][grid_x] = display
 
         # Ensure consistent 2-character cell width for proper alignment
-        # - Combatants (char + direction): Already 2 chars
+        # - Combatants (char + direction): 2 chars normally
+        # - Combatants with health markers (char + direction + !/!!): 3-4 chars, will overflow naturally
         # - Breadcrumbs (·): Pad to "· "
         # - Empty spaces: Pad to "  " (two spaces)
         for y in range(len(grid)):
             for x in range(len(grid[y])):
                 cell = grid[y][x]
                 if len(cell) == 1:
-                    # All single-char cells get padded with space
+                    # All single-char cells get padded with space (breadcrumbs, empty)
                     grid[y][x] = cell + " "
-                elif len(cell) != 2:
-                    # Shouldn't happen, but handle gracefully
-                    grid[y][x] = (cell + "  ")[:2]
+                # Keep cells with 2+ chars as-is (combatants with/without health markers)
 
         # Convert grid to string with borders
         lines = []
