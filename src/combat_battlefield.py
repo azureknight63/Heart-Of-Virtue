@@ -37,7 +37,7 @@ class CombatBattlefieldWindow:
     GRID_HEIGHT = 50
     
     # Character mappings for different combatants
-    PLAYER_CHAR = "P"
+    PLAYER_CHAR = "J"  # Jean, our hero
     ALLY_CHAR = "A"
     ENEMY_CHAR = "E"
     BREADCRUMB_CHAR = "·"
@@ -82,7 +82,7 @@ class CombatBattlefieldWindow:
         self.is_open: bool = False
         
         # Track movement history for breadcrumb trails
-        # combatant_name -> deque of positions (max 5 recent positions)
+        # combatant_name -> deque of positions (max 3 recent positions for minimal clutter)
         self.movement_history: Dict[str, deque] = {}
         
         # Dynamic viewport for showing only relevant area with margin
@@ -134,7 +134,7 @@ class CombatBattlefieldWindow:
             width=54,  # Initial width (will be dynamic based on viewport)
             height=27,  # Height set for roughly square appearance (2:1 char aspect)
             bg=self.COLOR_BACKGROUND,
-            fg=self.COLOR_GRID,
+            fg=self.COLOR_TEXT,  # Default to white so tags work properly
             font=("Courier New", 10),  # Slightly larger font
             wrap=tk.NONE,
             relief=tk.FLAT,
@@ -443,13 +443,17 @@ class CombatBattlefieldWindow:
             grid_text = self.render_grid()
             self.text_widget.insert(1.0, grid_text)
 
+            # Apply color tags to grid elements
+            self._apply_grid_tags()
+            
             # Apply color tags based on combatant status
             self._apply_color_tags()
 
-            # Update info label
+            # Update info label - count only alive combatants
             if self.info_label:
+                alive_count = sum(1 for data in self.combatants_data.values() if data.get("is_alive", True))
                 self.info_label.config(
-                    text=f"Beat: {self.beat_number} | Combatants: {len(self.combatants_data)} | "
+                    text=f"Beat: {self.beat_number} | Combatants: {alive_count} | "
                          f"Trails: {len(self.movement_history)}"
                 )
 
@@ -460,41 +464,41 @@ class CombatBattlefieldWindow:
             # Window was closed
             self.is_open = False
 
+    def _apply_grid_tags(self) -> None:
+        """Apply color tags to borders and breadcrumbs in the grid."""
+        if not self.text_widget:
+            return
+
+        try:
+            # Tag all borders (# characters) and breadcrumbs (· characters)
+            content = self.text_widget.get(1.0, tk.END)
+            
+            # Find and tag borders
+            for line_num, line in enumerate(content.split('\n'), 1):
+                for col_num, char in enumerate(line, 1):
+                    if char == self.BORDER_CHAR:
+                        self.text_widget.tag_add("border", f"{line_num}.{col_num}", f"{line_num}.{col_num + 1}")
+                    elif char == self.BREADCRUMB_CHAR:
+                        self.text_widget.tag_add("breadcrumb", f"{line_num}.{col_num}", f"{line_num}.{col_num + 1}")
+        except tk.TclError:
+            pass
+
     def _apply_color_tags(self) -> None:
         """Apply color tags to combatant characters based on type and health status."""
         if not self.text_widget:
             return
 
-        # Tag each combatant based on type and health status
+        # Map combatant names to their tag colors
+        char_to_tag = {}
+        
+        # Build mapping of character -> tag for all combatants
         for name, data in self.combatants_data.items():
-            pos = data.get("position")
-            if pos is None:
-                continue
-
             is_alive: bool = data.get("is_alive", True)
             is_player: bool = data.get("is_player", False)
             is_ally: bool = data.get("is_ally", False)
             health_percent: float = data.get("health_percent", 1.0)
 
-            x = int(pos.x)
-            y = int(pos.y)
-            
-            # Check if position is in viewport
-            if not (self.viewport_x_min <= x <= self.viewport_x_max and self.viewport_y_min <= y <= self.viewport_y_max):
-                continue
-            
-            # Calculate grid position within viewport
-            grid_x = x - self.viewport_x_min
-            grid_y = y - self.viewport_y_min
-
-            # Calculate text position (accounting for borders and tkinter's 1-indexed coords)
-            # Line: +1 for top border, +1 for tkinter 1-indexing
-            line = grid_y + 2
-            # Column: +1 for left border, +1 for tkinter 1-indexing, and each cell is 2 chars wide
-            col = grid_x * 2 + 2
-
             # Determine tag to apply based on type and health status
-            # Character color represents health: healthy -> injured -> critical -> dead
             if not is_alive:
                 char_tag = "dead"
             elif is_player:
@@ -519,10 +523,46 @@ class CombatBattlefieldWindow:
                 else:
                     char_tag = "enemy"
 
-            # Apply tag to both character and direction arrow (2 chars total)
+            # Map the combatant's character to its tag
+            if is_alive:
+                if is_player:
+                    char = self.PLAYER_CHAR
+                elif is_ally:
+                    char = self.ALLY_CHAR
+                else:
+                    char = self.ENEMY_CHAR
+            else:
+                if is_player:
+                    char = self.PLAYER_CHAR.lower()
+                elif is_ally:
+                    char = self.ALLY_CHAR.lower()
+                else:
+                    char = self.ENEMY_CHAR.lower()
+            
+            char_to_tag[char] = char_tag
+        
+        # Search for each character and apply its tag
+        for char, char_tag in char_to_tag.items():
             try:
-                self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{col + 2}")
-            except tk.TclError:
+                pos = "1.0"
+                while True:
+                    # Find next occurrence of the character
+                    pos = self.text_widget.search(char, pos, tk.END)
+                    if not pos:
+                        break
+                    
+                    # Parse the position
+                    line_col = pos.split('.')
+                    line = line_col[0]
+                    col = int(line_col[1])
+                    
+                    # Apply tag to both character and direction arrow (2 characters total)
+                    end_col = col + 2
+                    self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{end_col}")
+                    
+                    # Move past this character for next search
+                    pos = f"{line}.{end_col}"
+            except (tk.TclError, ValueError):
                 pass
 
     def set_combatant(
@@ -587,7 +627,7 @@ class CombatBattlefieldWindow:
             
             # Track movement history
             if name not in self.movement_history:
-                self.movement_history[name] = deque(maxlen=5)
+                self.movement_history[name] = deque(maxlen=3)  # Keep only last 3 positions
             
             # Check if position changed and add to history
             history = self.movement_history[name]
