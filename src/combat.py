@@ -268,6 +268,8 @@ def combat(player):
                     if player.fatigue >= move.fatigue_cost and move.current_stage == 0:
                         player.current_move = move
                         player.current_move.user = player
+                        # Log the player's move selection
+                        game_logger.log_combat_move(player.name if hasattr(player, 'name') else "Player", player.current_move.name)
                         if player.current_move.targeted:
                             target = None
                             acceptable_targets = []
@@ -334,6 +336,8 @@ def combat(player):
                         else:
                             player.current_move.target = player
                         player.current_move.cast()
+                        # Display the player's action to the UI
+                        print(colored("Jean uses " + player.current_move.name + "!", "cyan", attrs=['bold']))
                     elif player.fatigue < move.fatigue_cost:
                         cprint("Jean will need to rest a bit before he can do that.", "red")
                     elif move.current_stage == 3:
