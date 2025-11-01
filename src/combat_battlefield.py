@@ -157,6 +157,11 @@ class CombatBattlefieldWindow:
         self.text_widget.tag_config("enemy_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
         
         self.text_widget.tag_config("dead", foreground=self.COLOR_DEAD, font=("Courier New", 10))
+        
+        # Health marker tags - used for the ! and !! indicators
+        self.text_widget.tag_config("marker_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
+        self.text_widget.tag_config("marker_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
+        
         self.text_widget.tag_config("breadcrumb", foreground=self.COLOR_BREADCRUMB)
         self.text_widget.tag_config("border", foreground=self.COLOR_GRID, font=("Courier New", 10, "bold"))
 
@@ -480,38 +485,64 @@ class CombatBattlefieldWindow:
             grid_y = y - self.viewport_y_min
 
             # Calculate text position (accounting for top border and 1-indexed tkinter)
-            # Since each grid cell can now contain a combatant + direction (2 chars), adjust accordingly
             line = grid_y + 2  # +1 for top border, +1 for 1-indexed
             col = grid_x + 2   # +1 for left border, +1 for 1-indexed
 
-            # Determine tag to apply
+            # Determine tag to apply for character
             if not is_alive:
-                tag = "dead"
+                char_tag = "dead"
+                marker_tag = None  # Dead combatants don't show markers
             elif is_player:
                 if health_percent < 0.25:
-                    tag = "player_critical"
+                    char_tag = "player_critical"
+                    marker_tag = "marker_critical"
                 elif health_percent < 0.75:
-                    tag = "player_injured"
+                    char_tag = "player_injured"
+                    marker_tag = "marker_injured"
                 else:
-                    tag = "player"
+                    char_tag = "player"
+                    marker_tag = None
             elif is_ally:
                 if health_percent < 0.25:
-                    tag = "ally_critical"
+                    char_tag = "ally_critical"
+                    marker_tag = "marker_critical"
                 elif health_percent < 0.75:
-                    tag = "ally_injured"
+                    char_tag = "ally_injured"
+                    marker_tag = "marker_injured"
                 else:
-                    tag = "ally"
+                    char_tag = "ally"
+                    marker_tag = None
             else:  # Enemy
                 if health_percent < 0.25:
-                    tag = "enemy_critical"
+                    char_tag = "enemy_critical"
+                    marker_tag = "marker_critical"
                 elif health_percent < 0.75:
-                    tag = "enemy_injured"
+                    char_tag = "enemy_injured"
+                    marker_tag = "marker_injured"
                 else:
-                    tag = "enemy"
+                    char_tag = "enemy"
+                    marker_tag = None
 
-            # Apply tag to the full combatant display (up to 2 characters: char + direction)
+            # Apply tag to the character (first char)
             try:
-                self.text_widget.tag_add(tag, f"{line}.{col}", f"{line}.{col + 2}")
+                self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{col + 1}")
+            except tk.TclError:
+                pass
+            
+            # Apply tag to direction and any health markers
+            # Direction is at position col+1, health markers start at col+2
+            try:
+                # Apply char_tag to direction as well (positions col+1 and potentially col+2)
+                display_text = self.combatants_data[name].get("display_text", "")
+                display_len = len(display_text)
+                
+                if display_len > 1:
+                    # Color the direction char with the same tag
+                    self.text_widget.tag_add(char_tag, f"{line}.{col + 1}", f"{line}.{col + 2}")
+                
+                # If there are health markers, color them separately
+                if marker_tag and display_len > 2:
+                    self.text_widget.tag_add(marker_tag, f"{line}.{col + 2}", f"{line}.{col + display_len}")
             except tk.TclError:
                 pass
 
@@ -552,6 +583,35 @@ class CombatBattlefieldWindow:
                 "health_percent": max(0.0, min(1.0, health_percent)),
                 "facing_value": facing_value,
             }
+            
+            # Pre-calculate display text for use in color tagging
+            # Build the display string (char + direction + health markers)
+            if is_alive:
+                if is_player:
+                    char = self.PLAYER_CHAR
+                elif is_ally:
+                    char = self.ALLY_CHAR
+                else:
+                    char = self.ENEMY_CHAR
+            else:
+                if is_player:
+                    char = self.PLAYER_CHAR.lower()
+                elif is_ally:
+                    char = self.ALLY_CHAR.lower()
+                else:
+                    char = self.ENEMY_CHAR.lower()
+            
+            direction_char = self._get_direction_char(facing_value)
+            display_text = char + direction_char
+            
+            # Add health markers if injured/critical
+            if is_alive and health_percent < 0.75:
+                if health_percent < 0.25:
+                    display_text += "!!"
+                else:
+                    display_text += "!"
+            
+            self.combatants_data[name]["display_text"] = display_text
             
             # Track movement history
             if name not in self.movement_history:

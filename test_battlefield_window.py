@@ -121,7 +121,7 @@ for beat in range(1, 6):
     player_x, player_y = 25 + beat, 35
     enemy_x, enemy_y = 40 - beat, 20
     distance = int(((player_x - enemy_x) ** 2 + (player_y - enemy_y) ** 2) ** 0.5)
-    log_status(f"Distance Player↔Enemy1: {distance} units", "INFO")
+    log_status(f"Distance Player<->Enemy1: {distance} units", "INFO")
     print()
     
     time.sleep(1)
