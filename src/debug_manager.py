@@ -312,6 +312,34 @@ class DebugManager:
         self.log_command('list_stats', args=[target_name])
         return info
     
+    def display_ai_debug_info(self, npc: Any, decision: str, details: Dict[str, Any] = None) -> None:
+        """Display AI decision debug information during combat.
+        
+        Args:
+            npc: NPC object making decision
+            decision: Description of decision made (e.g., "Selected BullCharge")
+            details: Optional dict with additional details (e.g., {"fatigue_cost": 5})
+        """
+        if not self.is_debug_mode_enabled() or not self.should_debug_ai_decisions():
+            return
+        
+        # Build debug output
+        npc_name = getattr(npc, 'name', 'Unknown NPC')
+        output = f"[AI DEBUG] {npc_name}: {decision}"
+        
+        # Add details if provided
+        if details:
+            for key, value in details.items():
+                output += f" | {key}={value}"
+        
+        # Log and potentially print (can be extended for logging to file)
+        self.log_command('display_ai_debug_info', args=[npc_name, decision])
+        
+        # Optionally print to console if verbose debugging enabled
+        if self.is_debug_mode_enabled():
+            from neotermcolor import cprint
+            cprint(output, "magenta")
+    
     def execute_command(self, command_name: str, args: List[str] = None) -> str:
         """Execute a registered debug command.
         

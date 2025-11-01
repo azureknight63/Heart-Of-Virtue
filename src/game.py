@@ -108,7 +108,10 @@ _\\|//__( | )______)_/
         starting_map_name = "default"
         
         # Load configuration using ConfigManager
-        config_mgr = ConfigManager('config_dev.ini')
+        # Support environment variable CONFIG_FILE to override default config file
+        import os
+        config_file = os.getenv('CONFIG_FILE', 'config_dev.ini')
+        config_mgr = ConfigManager(config_file)
         config = config_mgr.load()
         
         testing_mode = config.testmode
