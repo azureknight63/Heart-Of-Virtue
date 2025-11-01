@@ -611,8 +611,18 @@ class Withdraw(Move):
         new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
         user.combat_position = new_pos
         
-        # Turn to face the threat they're retreating from (defensive)
-        user.combat_position.facing = positions.turn_toward(user.combat_position, nearest_threat.combat_position)
+        # Face the direction of retreat (toward where we're retreating, away from threat)
+        # Calculate retreat direction by facing away from threat
+        direction_away_x = new_pos.x - nearest_threat.combat_position.x
+        direction_away_y = new_pos.y - nearest_threat.combat_position.y
+        
+        # Create a target point in the retreat direction to calculate facing
+        retreat_target = positions.CombatPosition(
+            x=min(50, max(0, new_pos.x + direction_away_x)),
+            y=min(50, max(0, new_pos.y + direction_away_y)),
+            facing=user.combat_position.facing
+        )
+        user.combat_position.facing = positions.turn_toward(new_pos, retreat_target)
         
         if user.name == "Jean":
             color = "green"
