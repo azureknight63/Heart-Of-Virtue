@@ -221,18 +221,24 @@ class Move:  # master class for all moves
         has_weapon = False
         enemy_near = False
         allowed_subtypes = subtypes
-        if self.user.eq_weapon:
+        
+        # Special case for Unarmed: don't require an actual weapon equipped
+        if "Unarmed" in allowed_subtypes:
+            has_weapon = True  # Unarmed is always available
+        elif self.user.eq_weapon:
             if len(subtypes) > 0:
                 if self.user.eq_weapon.subtype in allowed_subtypes:
                     has_weapon = True
             else:
                 has_weapon = True
-            range_min = self.mvrange[0]
-            range_max = self.mvrange[1]
-            for enemy, distance in self.user.combat_proximity.items():
-                if range_min <= distance <= range_max:
-                    enemy_near = True
-                    break
+        
+        # Check if enemy is in range
+        range_min = self.mvrange[0]
+        range_max = self.mvrange[1]
+        for enemy, distance in self.user.combat_proximity.items():
+            if range_min <= distance <= range_max:
+                enemy_near = True
+                break
 
         if has_weapon and enemy_near:
             viability = True
@@ -302,6 +308,12 @@ class Move:  # master class for all moves
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         if self.viable():
             hit_chance = (98 - self.target.finesse) + self.user.finesse
             if hit_chance < 5:  # Minimum value for hit chance
@@ -988,6 +1000,12 @@ class PowerStrike(Move):
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
@@ -1025,7 +1043,7 @@ class Jab(Move):
         self.power = 0
         self.target = user
         mvrange = (0, 5)
-        if not hasattr(user, "eq_weapon"):
+        if not hasattr(user, "eq_weapon") or user.eq_weapon is None:
             self.weapon = items.Fists()
         else:
             self.weapon = user.eq_weapon
@@ -1042,9 +1060,11 @@ class Jab(Move):
         return self.standard_viability_attack("Unarmed")
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
-        power = (self.user.eq_weapon.damage +
-                 (self.user.strength * self.user.eq_weapon.str_mod) +
-                 (self.user.finesse * self.user.eq_weapon.fin_mod)) / 2
+        # Use self.weapon which is already set to Fists() if unarmed
+        weapon = self.weapon if self.weapon else items.Fists()
+        power = (weapon.damage +
+                 (self.user.strength * weapon.str_mod) +
+                 (self.user.finesse * weapon.fin_mod)) / 2
         prep = 0
         execute = 1
         recoil = 0
@@ -1069,6 +1089,12 @@ class Jab(Move):
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
@@ -1311,6 +1337,12 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         if hasattr(self, "animations"):
             if self.animations["e"] != "None":
                 animate(self.animations["e"], self.stage_announce[1])
@@ -1407,7 +1439,7 @@ class UseItem(Move):
         player.combat_exp["Basic"] += 1
 
 
-class Slash(Move):  # Slashing-type attack using the equipped weapon; available only to Daggers, Swords, and Stars.
+class Slash(Move):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, and Axes.
     def __init__(self, player):
         description = "Slash at your enemy with your equipped weapon. Slightly stronger than a standard attack."
         prep = 1
@@ -1432,7 +1464,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         viability = False
         has_weapon = False
         enemy_near = False
-        allowed_subtypes = ["Dagger", "Sword", "Stars"]
+        allowed_subtypes = ["Dagger", "Sword", "Stars", "Axe"]
         if self.user.eq_weapon:
             if self.user.eq_weapon.subtype in allowed_subtypes:
                 has_weapon = True
@@ -1448,6 +1480,13 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         return viability
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
+        # Guard against no weapon equipped
+        if not self.user.eq_weapon:
+            self.power = 0
+            self.stage_beat = [1, 1, 1, 0]
+            self.fatigue_cost = 10
+            return
+        
         power = (self.user.eq_weapon.damage + 5) + \
                 (self.user.strength * self.user.eq_weapon.str_mod) + \
                 (self.user.finesse * self.user.eq_weapon.fin_mod)
@@ -1481,6 +1520,12 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         if self.viable():
             hit_chance = (98 - self.target.finesse) + self.user.finesse
             if hit_chance < 5:  # Minimum value for hit chance
@@ -1773,6 +1818,12 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
     def execute(self, player):
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         range_min = self.mvrange[0]
         effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
         range_max = effective_range
@@ -1903,6 +1954,12 @@ class NpcAttack(Move):  # basic attack function, NPCs only
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
@@ -2043,6 +2100,12 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
@@ -2136,6 +2199,12 @@ class VenomClaw(Move):  # Poisonous attack
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
@@ -2231,6 +2300,12 @@ class SpiderBite(Move):  # Poisonous attack
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
@@ -2324,6 +2399,12 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
     def execute(self, npc):
         self.refresh_announcements(npc)
         print(self.stage_announce[1])
+        
+        # Face the target when attacking
+        if (hasattr(self.user, 'combat_position') and self.user.combat_position is not None and
+            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
+            self.user.combat_position.facing = positions.turn_toward(self.user.combat_position, self.target.combat_position)
+        
         self.prep_colors()
         glance = False
         if self.viable():
