@@ -134,7 +134,7 @@ class CombatBattlefieldWindow:
             width=54,  # Initial width (will be dynamic based on viewport)
             height=27,  # Height set for roughly square appearance (2:1 char aspect)
             bg=self.COLOR_BACKGROUND,
-            fg=self.COLOR_TEXT,  # Default to white so tags work properly
+            fg=self.COLOR_GRID,  # Default to grid color so breadcrumbs inherit properly
             font=("Courier New", 10),  # Slightly larger font
             wrap=tk.NONE,
             relief=tk.FLAT,
@@ -159,8 +159,8 @@ class CombatBattlefieldWindow:
         self.text_widget.tag_config("dead", foreground=self.COLOR_DEAD, font=("Courier New", 10))
         
         # Health marker tags - used for the ! and !! indicators
-        self.text_widget.tag_config("marker_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("marker_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
+        # self.text_widget.tag_config("marker_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
+        # self.text_widget.tag_config("marker_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
         
         self.text_widget.tag_config("breadcrumb", foreground=self.COLOR_BREADCRUMB)
         self.text_widget.tag_config("border", foreground=self.COLOR_GRID, font=("Courier New", 10, "bold"))
@@ -252,6 +252,49 @@ class CombatBattlefieldWindow:
             return "!"
         return ""
 
+    def _get_line_points(self, start_pos: Any, end_pos: Any) -> List[Tuple[int, int]]:
+        """
+        Get all integer grid points between two positions using Bresenham's line algorithm.
+        Includes both start and end points.
+        
+        Args:
+            start_pos: Starting position object with x, y attributes
+            end_pos: Ending position object with x, y attributes
+            
+        Returns:
+            List of (x, y) coordinate tuples along the line
+        """
+        x0 = int(start_pos.x)
+        y0 = int(start_pos.y)
+        x1 = int(end_pos.x)
+        y1 = int(end_pos.y)
+        
+        points = []
+        
+        # Bresenham's line algorithm
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+        
+        x, y = x0, y0
+        while True:
+            points.append((x, y))
+            
+            if x == x1 and y == y1:
+                break
+            
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+        
+        return points
+
     def _update_viewport(self) -> None:
         """Calculate viewport bounds to show all combatants with margin, shrinking the visible area."""
         if not self.combatants_data:
@@ -303,6 +346,31 @@ class CombatBattlefieldWindow:
         self.viewport_x_max = min(self.GRID_WIDTH - 1, max_x + self.margin)
         self.viewport_y_min = max(0, min_y - self.margin)
         self.viewport_y_max = min(self.GRID_HEIGHT - 1, max_y + self.margin)
+        
+        # If we're clamped at a boundary, expand in the opposite direction to maintain view size
+        # This ensures we always have margin space visible even at edges
+        viewport_width = self.viewport_x_max - self.viewport_x_min
+        viewport_height = self.viewport_y_max - self.viewport_y_min
+        
+        # If left edge is at boundary, expand right
+        if self.viewport_x_min == 0 and max_x + self.margin < self.GRID_WIDTH - 1:
+            desired_width = (max_x + self.margin + 1) - (min_x - self.margin)
+            self.viewport_x_max = min(self.GRID_WIDTH - 1, self.viewport_x_min + desired_width + self.margin)
+        
+        # If right edge is at boundary, expand left
+        if self.viewport_x_max == self.GRID_WIDTH - 1 and min_x - self.margin >= 0:
+            desired_width = (max_x + self.margin + 1) - (min_x - self.margin)
+            self.viewport_x_min = max(0, self.viewport_x_max - desired_width - self.margin)
+        
+        # If top edge is at boundary, expand down
+        if self.viewport_y_min == 0 and max_y + self.margin < self.GRID_HEIGHT - 1:
+            desired_height = (max_y + self.margin + 1) - (min_y - self.margin)
+            self.viewport_y_max = min(self.GRID_HEIGHT - 1, self.viewport_y_min + desired_height + self.margin)
+        
+        # If bottom edge is at boundary, expand up
+        if self.viewport_y_max == self.GRID_HEIGHT - 1 and min_y - self.margin >= 0:
+            desired_height = (max_y + self.margin + 1) - (min_y - self.margin)
+            self.viewport_y_min = max(0, self.viewport_y_max - desired_height - self.margin)
 
     def render_grid(self) -> str:
         """
@@ -322,28 +390,42 @@ class CombatBattlefieldWindow:
         # Initialize grid with empty spaces
         grid = [[" " for _ in range(visible_width)] for _ in range(visible_height)]
         
+        # Track movement direction for each cell to enable diagonal padding
+        # (x, y) -> direction tuple (dx, dy) indicating overall movement direction
+        grid_directions: Dict[Tuple[int, int], Tuple[int, int]] = {}
+        
         # Track combatant positions for overlay (to avoid breadcrumb overwrites)
         combatant_overlay: Dict[Tuple[int, int], str] = {}
         combatant_positions: set = set()  # Track current combatant positions to avoid breadcrumb collision
 
         # Draw breadcrumb trails first (so they appear under combatants)
-        # Breadcrumbs show the path the unit took - excluding their current position
+        # Breadcrumbs show the complete path including intermediate points between history items
         for name, history in self.movement_history.items():
-            # Only show breadcrumbs for OLD positions (skip the current/last position)
-            for i, pos in enumerate(history):
-                # Skip the most recent position (that's where the combatant is now)
-                if i == len(history) - 1:
-                    continue
+            history_list = list(history)  # Convert deque to list for easier indexing
+            
+            # Draw breadcrumbs between consecutive history points
+            for i in range(len(history_list) - 1):
+                start_pos = history_list[i]
+                end_pos = history_list[i + 1]
                 
-                x = int(pos.x)
-                y = int(pos.y)
+                # Calculate overall movement direction for this segment
+                dx = 1 if int(end_pos.x) > int(start_pos.x) else (-1 if int(end_pos.x) < int(start_pos.x) else 0)
+                dy = 1 if int(end_pos.y) > int(start_pos.y) else (-1 if int(end_pos.y) < int(start_pos.y) else 0)
                 
-                # Check if position is in viewport
-                if self.viewport_x_min <= x <= self.viewport_x_max and self.viewport_y_min <= y <= self.viewport_y_max:
-                    grid_x = x - self.viewport_x_min
-                    grid_y = y - self.viewport_y_min
-                    # Mark this as a breadcrumb trail position
-                    grid[grid_y][grid_x] = self.BREADCRUMB_CHAR
+                # Get all points along the line between these two positions
+                line_points = self._get_line_points(start_pos, end_pos)
+                
+                # Place breadcrumbs on ALL points including start/end (we're showing the complete path)
+                for x, y in line_points:
+                    # Check if position is in viewport
+                    if self.viewport_x_min <= x <= self.viewport_x_max and self.viewport_y_min <= y <= self.viewport_y_max:
+                        grid_x = x - self.viewport_x_min
+                        grid_y = y - self.viewport_y_min
+                        # Mark this as a breadcrumb trail position (don't overwrite existing breadcrumbs)
+                        if grid[grid_y][grid_x] == " ":
+                            grid[grid_y][grid_x] = self.BREADCRUMB_CHAR
+                            # Store the movement direction for this breadcrumb
+                            grid_directions[(grid_x, grid_y)] = (dx, dy)
 
         # Build combatant overlay and track their current positions
         for name, data in self.combatants_data.items():
@@ -401,16 +483,37 @@ class CombatBattlefieldWindow:
                 grid[grid_y][grid_x] = display
 
         # Ensure consistent 2-character cell width for proper alignment
-        # - Combatants (char + direction): 2 chars normally
-        # - Combatants with health markers (char + direction + !/!!): 3-4 chars, will overflow naturally
-        # - Breadcrumbs (·): Pad to "· "
-        # - Empty spaces: Pad to "  " (two spaces)
+        # - Combatants (char + direction): 2 chars normally (placed in first char, direction in second)
+        # - Combatants with health markers: 3-4 chars, will overflow naturally
+        # - Breadcrumbs (·): Pad with character based on movement direction
+        #   For horizontal movement: "··" (both cells filled)
+        #   For vertical movement: "·" + " " (padding space empty, breadcrumb on next row)
+        #   For diagonal movement: "·" + "·" (breadcrumb in diagonal padding cell to show smooth diagonal line)
         for y in range(len(grid)):
             for x in range(len(grid[y])):
                 cell = grid[y][x]
                 if len(cell) == 1:
-                    # All single-char cells get padded with space (breadcrumbs, empty)
-                    grid[y][x] = cell + " "
+                    # Single-char cells need padding
+                    if cell == self.BREADCRUMB_CHAR:
+                        # Get movement direction for this breadcrumb if available
+                        direction = grid_directions.get((x, y), (0, 0))
+                        dx, dy = direction
+                        
+                        if dx != 0 and dy == 0:
+                            # Horizontal movement: fill both cells with breadcrumb
+                            grid[y][x] = cell + self.BREADCRUMB_CHAR
+                        elif dx == 0 and dy != 0:
+                            # Vertical movement: breadcrumb stays single char, padding is space
+                            grid[y][x] = cell + " "
+                        elif dx != 0 and dy != 0:
+                            # Diagonal movement: breadcrumb in padding cell for smooth diagonal line
+                            grid[y][x] = cell + self.BREADCRUMB_CHAR
+                        else:
+                            # No direction info: default to double breadcrumb
+                            grid[y][x] = cell + self.BREADCRUMB_CHAR
+                    else:
+                        # Empty spaces get padded with space
+                        grid[y][x] = cell + " "
                 # Keep cells with 2+ chars as-is (combatants with/without health markers)
 
         # Convert grid to string with borders
@@ -443,11 +546,12 @@ class CombatBattlefieldWindow:
             grid_text = self.render_grid()
             self.text_widget.insert(1.0, grid_text)
 
-            # Apply color tags to grid elements
-            self._apply_grid_tags()
-            
-            # Apply color tags based on combatant status
+            # Apply color tags FIRST to combatants (so they have highest priority)
             self._apply_color_tags()
+            
+            # Then apply color tags to grid elements (borders, breadcrumbs)
+            # These will NOT override combatant tags since they're lower priority
+            self._apply_grid_tags()
 
             # Update info label - count only alive combatants
             if self.info_label:
@@ -471,15 +575,18 @@ class CombatBattlefieldWindow:
 
         try:
             # Tag all borders (# characters) and breadcrumbs (· characters)
+            # IMPORTANT: Only tag the single character, not the padding that follows
             content = self.text_widget.get(1.0, tk.END)
             
-            # Find and tag borders
+            # Find and tag borders and breadcrumbs
             for line_num, line in enumerate(content.split('\n'), 1):
                 for col_num, char in enumerate(line, 1):
                     if char == self.BORDER_CHAR:
-                        self.text_widget.tag_add("border", f"{line_num}.{col_num}", f"{line_num}.{col_num + 1}")
+                        # Tag only this single character
+                        self.text_widget.tag_add("border", f"{line_num}.{col_num - 1}", f"{line_num}.{col_num}")
                     elif char == self.BREADCRUMB_CHAR:
-                        self.text_widget.tag_add("breadcrumb", f"{line_num}.{col_num}", f"{line_num}.{col_num + 1}")
+                        # Tag only this single character (not the padding that follows)
+                        self.text_widget.tag_add("breadcrumb", f"{line_num}.{col_num - 1}", f"{line_num}.{col_num}")
         except tk.TclError:
             pass
 
@@ -489,14 +596,16 @@ class CombatBattlefieldWindow:
             return
 
         # Map combatant names to their tag colors
-        char_to_tag = {}
+        # This approach searches for each combatant by their unique display string
+        combatant_tags: Dict[str, str] = {}
         
-        # Build mapping of character -> tag for all combatants
+        # Build mapping of display string -> tag for all combatants
         for name, data in self.combatants_data.items():
             is_alive: bool = data.get("is_alive", True)
             is_player: bool = data.get("is_player", False)
             is_ally: bool = data.get("is_ally", False)
             health_percent: float = data.get("health_percent", 1.0)
+            display_text: str = data.get("display_text", "")
 
             # Determine tag to apply based on type and health status
             if not is_alive:
@@ -522,47 +631,33 @@ class CombatBattlefieldWindow:
                     char_tag = "enemy_injured"
                 else:
                     char_tag = "enemy"
-
-            # Map the combatant's character to its tag
-            if is_alive:
-                if is_player:
-                    char = self.PLAYER_CHAR
-                elif is_ally:
-                    char = self.ALLY_CHAR
-                else:
-                    char = self.ENEMY_CHAR
-            else:
-                if is_player:
-                    char = self.PLAYER_CHAR.lower()
-                elif is_ally:
-                    char = self.ALLY_CHAR.lower()
-                else:
-                    char = self.ENEMY_CHAR.lower()
             
-            char_to_tag[char] = char_tag
+            # Store tag using display string as key (each combatant's display is unique)
+            if display_text:
+                combatant_tags[display_text] = char_tag
         
-        # Search for each character and apply its tag
-        for char, char_tag in char_to_tag.items():
+        # Apply color tags by searching for display strings
+        for display_text, char_tag in combatant_tags.items():
             try:
                 pos = "1.0"
                 while True:
-                    # Find next occurrence of the character
-                    pos = self.text_widget.search(char, pos, tk.END)
+                    # Find next occurrence of this display string (e.g., "E↓")
+                    pos = self.text_widget.search(display_text, pos, tk.END)
                     if not pos:
                         break
                     
-                    # Parse the position
+                    # Calculate end position (display_text is 2 characters)
                     line_col = pos.split('.')
                     line = line_col[0]
                     col = int(line_col[1])
+                    end_col = col + len(display_text)
                     
-                    # Apply tag to both character and direction arrow (2 characters total)
-                    end_col = col + 2
+                    # Apply the tag
                     self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{end_col}")
                     
-                    # Move past this character for next search
+                    # Move past this occurrence
                     pos = f"{line}.{end_col}"
-            except (tk.TclError, ValueError):
+            except (tk.TclError, ValueError, IndexError):
                 pass
 
     def set_combatant(
@@ -657,8 +752,14 @@ class CombatBattlefieldWindow:
             allies: List of allied NPCs
             enemies: List of enemy NPCs
         """
+        # Build a set of all currently alive combatant names to track
+        alive_names = set()
+        
         # Update player
         if hasattr(player, "combat_position") and player.combat_position is not None:
+            player_name = player.name if hasattr(player, "name") else "Player"
+            alive_names.add(player_name)
+            
             health_pct = 1.0
             if hasattr(player, "current_health") and hasattr(player, "maxhealth"):
                 health_pct = player.current_health / max(1, player.maxhealth)
@@ -676,7 +777,7 @@ class CombatBattlefieldWindow:
                         facing_val = facing
             
             self.set_combatant(
-                player.name if hasattr(player, "name") else "Player",
+                player_name,
                 player.combat_position,
                 is_alive=player.is_alive if hasattr(player, "is_alive") else True,
                 is_player=True,
@@ -688,6 +789,9 @@ class CombatBattlefieldWindow:
         # Update allies
         for ally in allies:
             if hasattr(ally, "combat_position") and ally.combat_position is not None:
+                ally_name = ally.name if hasattr(ally, "name") else f"Ally_{id(ally)}"
+                alive_names.add(ally_name)
+                
                 health_pct = 1.0
                 if hasattr(ally, "current_health") and hasattr(ally, "maxhealth"):
                     health_pct = ally.current_health / max(1, ally.maxhealth)
@@ -705,7 +809,7 @@ class CombatBattlefieldWindow:
                             facing_val = facing
                 
                 self.set_combatant(
-                    ally.name if hasattr(ally, "name") else f"Ally_{id(ally)}",
+                    ally_name,
                     ally.combat_position,
                     is_alive=ally.is_alive if hasattr(ally, "is_alive") else True,
                     is_player=False,
@@ -717,6 +821,9 @@ class CombatBattlefieldWindow:
         # Update enemies
         for enemy in enemies:
             if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
+                enemy_name = enemy.name if hasattr(enemy, "name") else f"Enemy_{id(enemy)}"
+                alive_names.add(enemy_name)
+                
                 health_pct = 1.0
                 if hasattr(enemy, "current_health") and hasattr(enemy, "maxhealth"):
                     health_pct = enemy.current_health / max(1, enemy.maxhealth)
@@ -734,7 +841,7 @@ class CombatBattlefieldWindow:
                             facing_val = facing
                 
                 self.set_combatant(
-                    enemy.name if hasattr(enemy, "name") else f"Enemy_{id(enemy)}",
+                    enemy_name,
                     enemy.combat_position,
                     is_alive=enemy.is_alive if hasattr(enemy, "is_alive") else True,
                     is_player=False,
@@ -742,3 +849,15 @@ class CombatBattlefieldWindow:
                     health_percent=health_pct,
                     facing_value=facing_val
                 )
+        
+        # Remove combatants that are no longer in any list
+        # This cleans up dead enemies that were removed from combat_list
+        to_remove = []
+        for name in self.combatants_data.keys():
+            if name not in alive_names:
+                to_remove.append(name)
+        
+        for name in to_remove:
+            del self.combatants_data[name]
+            if name in self.movement_history:
+                del self.movement_history[name]
