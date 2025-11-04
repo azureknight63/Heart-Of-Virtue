@@ -181,6 +181,34 @@ class Clean(State):
 # todo Add a Dirty state that can be compounded
 
 
+class Disoriented(State):
+    """Target is disoriented, reducing defensive capabilities and accuracy.
+    
+    Disoriented combatants struggle to maintain their defensive positioning,
+    suffering reduced finesse and protection until the status expires.
+    """
+    def __init__(self, target):
+        duration = random.randint(8, 15)
+        super().__init__(name="Disoriented", target=target, beats_max=duration, compounding=False,
+                         combat=True, world=False, statustype="disoriented", persistent=False)
+        self.sub_finesse = int(target.finesse * 0.3)  # Reduce finesse by 30%
+        self.sub_protection = int(target.protection * 0.25)  # Reduce protection by 25%
+
+    def on_application(self, target):
+        cprint("{} is disoriented and struggling to maintain balance!".format(target.name), "yellow")
+        # Apply stat reductions
+        target.finesse = max(0, target.finesse - self.sub_finesse)
+        target.protection = max(0, target.protection - self.sub_protection)
+        functions.refresh_stat_bonuses(target)
+
+    def on_removal(self, target):
+        cprint("{} regains their bearings!".format(target.name), "green")
+        # Restore stat reductions
+        target.finesse = min(target.finesse + self.sub_finesse, getattr(target, 'base_finesse', target.finesse + self.sub_finesse))
+        target.protection = min(target.protection + self.sub_protection, getattr(target, 'base_protection', target.protection + self.sub_protection))
+        functions.refresh_stat_bonuses(target)
+
+
 class Hawkeye(State):
     def __init__(self, target):  # increases the target's accuracy with a ranged weapon for a short duration
         super().__init__(name="Hawkeye", target=target, beats_max=30)
