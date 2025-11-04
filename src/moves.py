@@ -2819,3 +2819,181 @@ class KnockbackStunSpin(Move):
         
         # Deduct fatigue
         user.fatigue -= self.fatigue_cost
+# This file contains the QuickSwap move to be added to src/moves.py
+
+class QuickSwap(Move):
+    """HV-1 Tier 2: Swap positions with a nearby ally for tactical repositioning.
+    
+    Allows coordinated repositioning during combat by exchanging places with an ally.
+    Useful for protecting vulnerable teammates or rearranging formation mid-combat.
+    """
+    
+    def __init__(self, user):
+        description = "Swap positions with a nearby ally for tactical advantage."
+        prep = 0
+        execute = 2
+        recoil = 0
+        cooldown = 2
+        fatigue_cost = 10
+        target = user  # Will be changed to selected ally during combat
+        
+        super().__init__(
+            name="Quick Swap",
+            description=description,
+            xp_gain=10,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(1, 4),  # Must be within 1-4 squares
+            stage_announce=[
+                "",
+                "",
+                "",
+                ""
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=target,
+            user=user
+        )
+        self.evaluate()
+    
+    def viable(self):
+        """Check if there are nearby allies to swap with."""
+        nearby_allies = self._get_nearby_allies()
+        return len(nearby_allies) > 0
+    
+    def _get_nearby_allies(self):
+        """Find all allies within swapping range (1-4 squares)."""
+        nearby = []
+        
+        # Check coordinate-based system first
+        if hasattr(self.user, 'combat_position') and self.user.combat_position is not None:
+            for ally in self.user.combat_list_allies:
+                if ally is self.user or not ally.is_alive():
+                    continue
+                
+                if (hasattr(ally, 'combat_position') and ally.combat_position is not None):
+                    distance = positions.distance_from_coords(
+                        self.user.combat_position,
+                        ally.combat_position
+                    )
+                    if self.mvrange[0] <= distance <= self.mvrange[1]:
+                        nearby.append(ally)
+        
+        # Fallback to distance-based system
+        else:
+            for ally in self.user.combat_list_allies:
+                if ally is self.user or not ally.is_alive():
+                    continue
+                
+                if ally in self.user.combat_proximity:
+                    distance = self.user.combat_proximity[ally]
+                    if self.mvrange[0] <= distance <= self.mvrange[1]:
+                        nearby.append(ally)
+        
+        return nearby
+    
+    def evaluate(self):
+        """Adjust move attributes based on game state."""
+        pass
+    
+    def prep(self, user):
+        """Prep stage - show available allies."""
+        nearby_allies = self._get_nearby_allies()
+        
+        if not nearby_allies:
+            cprint("No nearby allies to swap with!", "red")
+            return
+        
+        print("\nAvailable allies to swap with:")
+        for i, ally in enumerate(nearby_allies, 1):
+            if hasattr(self.user, 'combat_position') and hasattr(ally, 'combat_position'):
+                distance = positions.distance_from_coords(self.user.combat_position, ally.combat_position)
+            else:
+                distance = self.user.combat_proximity.get(ally, 0)
+            print(f"  {i}. {ally.name} ({distance} ft away)")
+    
+    def execute(self, user):
+        """Execute the position swap with selected ally."""
+        nearby_allies = self._get_nearby_allies()
+        
+        if not nearby_allies:
+            cprint(f"{user.name} couldn't find an ally to swap with!", "red")
+            return
+        
+        # For single ally, use that one; for multiple, first viable
+        target_ally = nearby_allies[0]
+        
+        try:
+            # Swap using coordinate system if available
+            if (hasattr(user, 'combat_position') and user.combat_position is not None and
+                hasattr(target_ally, 'combat_position') and target_ally.combat_position is not None):
+                self._execute_coordinate_based(user, target_ally)
+            else:
+                self._execute_legacy(user, target_ally)
+        except Exception as e:
+            cprint(f"Error during swap: {e}", "red")
+    
+    def _execute_coordinate_based(self, user, ally):
+        """Execute swap using 2D coordinate system."""
+        cprint(f"{user.name} and {ally.name} swap positions!", "cyan")
+        
+        # Swap coordinates
+        temp_x, temp_y = user.combat_position.x, user.combat_position.y
+        temp_facing = user.combat_position.facing
+        
+        user.combat_position.x = ally.combat_position.x
+        user.combat_position.y = ally.combat_position.y
+        user.combat_position.facing = ally.combat_position.facing
+        
+        ally.combat_position.x = temp_x
+        ally.combat_position.y = temp_y
+        ally.combat_position.facing = temp_facing
+        
+        # Recalculate all distances for backward compatibility
+        if hasattr(user, 'combat_proximity'):
+            for combatant in list(user.combat_proximity.keys()):
+                if hasattr(combatant, 'combat_position') and combatant.combat_position is not None:
+                    distance = positions.distance_from_coords(
+                        user.combat_position,
+                        combatant.combat_position
+                    )
+                    user.combat_proximity[combatant] = distance
+                    
+                    # Sync bidirectional
+                    if hasattr(combatant, 'combat_proximity') and user in combatant.combat_proximity:
+                        combatant.combat_proximity[user] = distance
+        
+        if hasattr(ally, 'combat_proximity'):
+            for combatant in list(ally.combat_proximity.keys()):
+                if hasattr(combatant, 'combat_position') and combatant.combat_position is not None:
+                    distance = positions.distance_from_coords(
+                        ally.combat_position,
+                        combatant.combat_position
+                    )
+                    ally.combat_proximity[combatant] = distance
+                    
+                    # Sync bidirectional
+                    if hasattr(combatant, 'combat_proximity') and ally in combatant.combat_proximity:
+                        combatant.combat_proximity[ally] = distance
+    
+    def _execute_legacy(self, user, ally):
+        """Execute swap using distance-based system."""
+        cprint(f"{user.name} and {ally.name} swap positions!", "cyan")
+        
+        # Swap distances with all enemies
+        temp_proximity = dict(user.combat_proximity)
+        user.combat_proximity = dict(ally.combat_proximity)
+        ally.combat_proximity = temp_proximity
+        
+        # Ensure bidirectional consistency
+        for enemy in user.combat_proximity:
+            if hasattr(enemy, 'combat_proximity') and user in enemy.combat_proximity:
+                enemy.combat_proximity[user] = user.combat_proximity[enemy]
+        
+        for enemy in ally.combat_proximity:
+            if hasattr(enemy, 'combat_proximity') and ally in enemy.combat_proximity:
+                enemy.combat_proximity[ally] = ally.combat_proximity[enemy]
+
+

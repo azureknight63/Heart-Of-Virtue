@@ -21,20 +21,23 @@ class Skilltree:
             "Dagger": {
                 moves.Slash(user): 15,  # 150
                 moves.QuietMovement(user): 350,
-                moves.FeintAndPivot(user): 600  # HV-1: Attack and reposition behind target (specialized for dual-position attacks)
+                moves.FeintAndPivot(user): 600,  # HV-1: Attack and reposition behind target (specialized for dual-position attacks)
+                moves.QuickSwap(user): 450  # HV-1 Tier 2: Swap with ally (precision timing)
             },
             "Bow": {
                 # moves.Hawkeye(user): 100,  # Focus on surroundings;
                 # increases base accuracy for a duration (adds a status)
                 moves.TacticalPositioning(user): 400,
                 moves.TacticalRetreat(user): 550,  # HV-1: Move away while maintaining ranged angle (core ranged tactic)
-                moves.FlankingManeuver(user): 700  # HV-1: Move to the side of the target to gain advantage (advanced ranged tactic)
+                moves.FlankingManeuver(user): 700,  # HV-1: Move to the side of the target to gain advantage (advanced ranged tactic)
+                moves.QuickSwap(user): 500  # HV-1 Tier 2: Swap with ally (tactical coordination)
             },
             "Unarmed": {
                 moves.Jab(user): 100,  # quick unarmed attack that causes little damage but has a
                 # very low fatigue cost and zero cooldown
                 moves.WhirlAttack(user): 700,  # HV-1: Spin strike hitting nearby enemies (powerful unarmed technique)
-                moves.BullCharge(user): 500  # HV-1: Charge with momentum (aggressive unarmed style)
+                moves.BullCharge(user): 500,  # HV-1: Charge with momentum (aggressive unarmed style)
+                moves.QuickSwap(user): 400  # HV-1 Tier 2: Swap with ally (team-based fighting)
                 # moves.Kick(user): 150  # quick leg attack; more damaging than a jab with a higher
                 # fatigue cost and small cooldown
                 # moves.Haymaker(user): 250  # strong unarmed attack that causes significant damage but has
@@ -70,13 +73,15 @@ class Skilltree:
                 moves.Parry(user): 100,
                 moves.BullCharge(user): 400,  # HV-1: Charge with momentum (weapon-appropriate)
                 moves.WhirlAttack(user): 650,  # HV-1: Spin strike hitting nearby enemies
-                moves.KnockbackStunSpin(user): 750  # HV-1: Attack with knockback and rotation
+                moves.KnockbackStunSpin(user): 750,  # HV-1: Attack with knockback and rotation
+                moves.QuickSwap(user): 520  # HV-1 Tier 2: Swap with ally (defensive formation)
             },
             "Bludgeon": {
                 moves.Parry(user): 100,
                 moves.PowerStrike(user): 1,
                 moves.BullCharge(user): 350,  # HV-1: Charge with momentum (heavy weapon style)
                 moves.KnockbackStunSpin(user): 700,  # HV-1: Knockback-heavy positioning move
-                moves.WhirlAttack(user): 600  # HV-1: Spin strike with heavy impact
+                moves.WhirlAttack(user): 600,  # HV-1: Spin strike with heavy impact
+                moves.QuickSwap(user): 550  # HV-1 Tier 2: Swap with ally (heavy tank coordination)
             }
         }
