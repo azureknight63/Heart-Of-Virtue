@@ -176,6 +176,8 @@ class ConfigManager:
         # Parse startposition as tuple
         try:
             pos_str = section.get('startposition', fallback='0, 0')
+            # Remove parentheses if present
+            pos_str = pos_str.strip('() ')
             x, y = map(int, pos_str.split(','))
             self.config.startposition = (x, y)
         except (ValueError, AttributeError):
