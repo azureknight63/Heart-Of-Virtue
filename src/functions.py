@@ -1149,3 +1149,36 @@ def advise_player_actions(player: "Player", room: "MapTile" = None):
         chunk = '|'.join(actions_split[i:i + chunk_size])
         print(chunk)
     print("\nFor a list of additional commands, enter 'c'.\n")
+
+
+def learn_all_skills_from_skilltree(player: "Player"):
+    """
+    Learn all skills from the skill tree for the player.
+    This is useful for testing and development when learn_all_skills config is enabled.
+    """
+    from skilltree import Skilltree  # type: ignore
+    
+    skilltree = Skilltree(player)
+    learned_count = 0
+    
+    # Iterate through all skill categories
+    for category, skills_dict in skilltree.subtypes.items():
+        for skill_move in skills_dict.keys():
+            # skill_move is already an instantiated move object from skilltree
+            # Check if player already knows a move with this name
+            already_known = False
+            for known_move in player.known_moves:
+                if known_move.name == skill_move.name:
+                    already_known = True
+                    break
+            
+            # Add the skill if not already known
+            if not already_known:
+                player.known_moves.append(skill_move)
+                learned_count += 1
+    
+    if learned_count > 0:
+        cprint(f"[Config] Learned {learned_count} skills from skill tree.", "cyan")
+    
+    return learned_count
+

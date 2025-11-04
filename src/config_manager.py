@@ -50,6 +50,7 @@ class GameConfig:
     autosave_enabled: bool = False
     allow_quicksave: bool = True
     auto_load_latest: bool = False
+    learn_all_skills: bool = False
     
     # === [game] section: Display ===
     show_combat_distance: bool = True
@@ -219,6 +220,7 @@ class ConfigManager:
         self.config.autosave_enabled = section.getboolean('autosave_enabled', fallback=False)
         self.config.allow_quicksave = section.getboolean('allow_quicksave', fallback=True)
         self.config.auto_load_latest = section.getboolean('auto_load_latest', fallback=False)
+        self.config.learn_all_skills = section.getboolean('learn_all_skills', fallback=False)
         
         # Display
         self.config.show_combat_distance = section.getboolean('show_combat_distance', fallback=True)
