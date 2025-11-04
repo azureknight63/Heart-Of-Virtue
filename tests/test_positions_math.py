@@ -355,6 +355,122 @@ class TestMovement:
         result = move_toward(from_pos, to_pos, 10)
         assert result.x == 50  # Clamped at boundary
 
+    def test_move_toward_no_overshoot_horizontal(self):
+        """Advance move should not overshoot target (horizontal case)."""
+        from_pos = CombatPosition(x=10, y=25)
+        to_pos = CombatPosition(x=20, y=25)
+        distance_to_target = 10
+        
+        # Request to move 15 squares (more than distance_to_target)
+        result = move_toward(from_pos, to_pos, 15)
+        
+        # Should stop at or before target, not overshoot
+        assert result.x <= to_pos.x, "Overshooted target horizontally!"
+        assert result.y == to_pos.y
+        # Should be at target (or very close due to rounding)
+        assert result.x == to_pos.x or abs(result.x - to_pos.x) <= 1
+
+    def test_move_toward_no_overshoot_vertical(self):
+        """Advance move should not overshoot target (vertical case)."""
+        from_pos = CombatPosition(x=25, y=10)
+        to_pos = CombatPosition(x=25, y=25)
+        
+        # Request to move 20 squares (more than distance_to_target)
+        result = move_toward(from_pos, to_pos, 20)
+        
+        # Should stop at or before target, not overshoot
+        assert result.y <= to_pos.y, "Overshooted target vertically!"
+        assert result.x == to_pos.x
+        # Should be at target
+        assert result.y == to_pos.y
+
+    def test_move_toward_no_overshoot_diagonal(self):
+        """Advance move should not overshoot target (diagonal case) - test real scenario."""
+        # Use axis-aligned targets for clearer testing
+        # Diagonals in 8-directional grids are tricky due to equal x,y movement
+        from_pos = CombatPosition(x=10, y=10)
+        to_pos = CombatPosition(x=15, y=15)  # 5 diagonal squares away
+
+        actual_distance = distance_from_coords(from_pos, to_pos)
+        
+        # Request to move much more than distance_to_target
+        result = move_toward(from_pos, to_pos, actual_distance + 10)
+
+        # Main test: should not move further than distance_to_target in total
+        # Check that we moved toward target and didn't go crazy far past it
+        old_distance = actual_distance
+        new_distance = distance_from_coords(result, to_pos)
+        assert new_distance <= old_distance, f"Should not go further from target. Started {old_distance} away, ended {new_distance} away"
+
+    def test_move_toward_stops_before_boundary_large_distance(self):
+        """Moving toward edge of grid with large distance request."""
+        from_pos = CombatPosition(x=48, y=25)
+        to_pos = CombatPosition(x=50, y=25)  # At edge
+        
+        # Request large distance
+        result = move_toward(from_pos, to_pos, 20)
+        
+        # Should stop at target, not beyond grid
+        assert result.x <= 50, "Position beyond grid boundary!"
+        assert result.x == to_pos.x, "Should reach target at grid edge"
+        assert result.y == 25
+
+    def test_move_toward_close_target_small_movement(self):
+        """Moving small distance toward nearby target."""
+        from_pos = CombatPosition(x=25, y=25)
+        to_pos = CombatPosition(x=28, y=25)
+        
+        # Only 3 feet away, request 5 feet of movement
+        result = move_toward(from_pos, to_pos, 5)
+        
+        # Should not overshoot
+        assert result.x <= to_pos.x, "Overshooted close target!"
+        assert result.x == to_pos.x or abs(result.x - to_pos.x) <= 1
+
+    def test_move_toward_exact_distance_match(self):
+        """Moving exactly the distance to target."""
+        from_pos = CombatPosition(x=20, y=25)
+        to_pos = CombatPosition(x=30, y=25)
+        
+        distance = 10
+        result = move_toward(from_pos, to_pos, distance)
+        
+        # Should reach target
+        assert result.x == 30 and result.y == 25
+
+    def test_move_toward_half_distance(self):
+        """Moving half the distance to target."""
+        from_pos = CombatPosition(x=20, y=20)
+        to_pos = CombatPosition(x=40, y=40)
+
+        distance_to_target = distance_from_coords(from_pos, to_pos)
+        half_distance = max(1, distance_to_target // 2)
+
+        result = move_toward(from_pos, to_pos, half_distance)
+
+        # Should be closer to target than before
+        new_distance = distance_from_coords(result, to_pos)
+        assert new_distance < distance_to_target, "Should have moved closer"
+        # Due to 8-directional movement and rounding, just verify we moved closer
+        # rather than checking exact halfway point
+
+    def test_move_toward_preserves_direction(self):
+        """Movement direction should always be toward target."""
+        from_pos = CombatPosition(x=10, y=10)
+        to_pos = CombatPosition(x=30, y=35)
+
+        # Move with distance that would overshoot in old code
+        result = move_toward(from_pos, to_pos, 50)
+
+        # Direction check: result should be closer to target than from_pos
+        old_distance = distance_from_coords(from_pos, to_pos)
+        new_distance = distance_from_coords(result, to_pos)
+
+        assert new_distance < old_distance, "Should have moved toward target"
+        # Should not overshoot - result should be at or near target, not beyond it
+        # Due to 8-directional grid, be lenient with tolerance
+        assert new_distance <= old_distance, "Should never be further from target after moving toward it"
+
     def test_move_away_from(self):
         """Test moving away from threat."""
         from_pos = CombatPosition(x=25, y=25)

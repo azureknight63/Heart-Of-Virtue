@@ -153,6 +153,9 @@ _\\|//__( | )______)_/
                     item.isequipped = True
                     item.interactions.append("unequip")
                     item.interactions.remove("equip")
+            # Learn all skills if configured
+            if config.learn_all_skills:
+                functions.learn_all_skills_from_skilltree(player)
         if not testing_mode:
             intro()
         player.refresh_merchants()

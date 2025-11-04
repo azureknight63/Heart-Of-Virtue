@@ -320,18 +320,24 @@ def move_toward(
         distance: How many grid squares to move (each ≈ 1 foot)
     
     Returns:
-        New CombatPosition after movement
+        New CombatPosition after movement (stops at or before target)
     """
     if current.x == target.x and current.y == target.y:
         return current.copy()  # Already at target
+    
+    # Calculate distance to target
+    distance_to_target = distance_from_coords(current, target)
+    
+    # If we would overshoot, only move close enough to reach the target
+    actual_distance = min(distance, distance_to_target)
     
     # Calculate direction (normalized to -1, 0, or 1)
     dx = 0 if current.x == target.x else (1 if target.x > current.x else -1)
     dy = 0 if current.y == target.y else (1 if target.y > current.y else -1)
     
-    # Move in that direction
-    new_x = current.x + (dx * distance)
-    new_y = current.y + (dy * distance)
+    # Move in that direction by the actual distance (capped at distance_to_target)
+    new_x = current.x + (dx * actual_distance)
+    new_y = current.y + (dy * actual_distance)
     
     # Clamp to grid bounds
     new_x = max(0, min(50, new_x))
