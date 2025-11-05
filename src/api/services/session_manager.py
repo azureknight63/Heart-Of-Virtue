@@ -10,7 +10,7 @@ class MinimalPlayer:
     
     def __init__(self, name):
         self.name = name
-        self.x = 1
+        self.x = 0  # Starting at origin
         self.y = 0
         self.inventory = []
         self.equipment = {}

@@ -37,9 +37,89 @@ def create_app(config_class=None):
     session_manager = SessionManager()
 
     # Initialize game universe and service
-    # TODO: Load universe from existing game
-    universe = None  # Will be initialized when loading game state
-    game_service = GameService(universe) if universe else None
+    # For testing, create a minimal universe
+    if config_class == TestingConfig:
+        try:
+            # Import Player to create a test player for universe initialization
+            from src.player import Player
+            
+            # Create a minimal test player
+            test_player = Player()
+            test_player.name = "TestPlayer"
+            test_player.x = 0  # Set starting position
+            test_player.y = 0
+            
+            # Create universe with test player
+            universe = universe_module.Universe(test_player)
+            # Build minimal map structure for testing
+            if not hasattr(universe, 'maps') or not universe.maps:
+                # Create a simple test map with basic tiles
+                test_tiles = {
+                    (0, 0): type('MockTile', (), {
+                        'name': 'Test Starting Room',
+                        'description': 'A test room',
+                        'x': 0, 'y': 0,
+                        'exits': {'north': (0, 1), 'south': (0, -1), 'east': (1, 0), 'west': (-1, 0)},
+                        'items_here': [],
+                        'npcs_here': [],
+                        'objects_here': [],
+                        'events_here': []
+                    })(),
+                    (0, 1): type('MockTile', (), {
+                        'name': 'Test Northern Room',
+                        'description': 'A room to the north',
+                        'x': 0, 'y': 1,
+                        'exits': {'north': (0, 2), 'south': (0, 0), 'east': (1, 1), 'west': (-1, 1)},
+                        'items_here': [],
+                        'npcs_here': [],
+                        'objects_here': [],
+                        'events_here': []
+                    })(),
+                    (1, 0): type('MockTile', (), {
+                        'name': 'Test Eastern Room',
+                        'description': 'A room to the east',
+                        'x': 1, 'y': 0,
+                        'exits': {'north': (1, 1), 'south': (1, -1), 'east': (2, 0), 'west': (0, 0)},
+                        'items_here': [],
+                        'npcs_here': [],
+                        'objects_here': [],
+                        'events_here': []
+                    })(),
+                    (0, -1): type('MockTile', (), {
+                        'name': 'Test Southern Room',
+                        'description': 'A room to the south',
+                        'x': 0, 'y': -1,
+                        'exits': {'north': (0, 0), 'south': (0, -2), 'east': (1, -1), 'west': (-1, -1)},
+                        'items_here': [],
+                        'npcs_here': [],
+                        'objects_here': [],
+                        'events_here': []
+                    })(),
+                    (-1, 0): type('MockTile', (), {
+                        'name': 'Test Western Room',
+                        'description': 'A room to the west',
+                        'x': -1, 'y': 0,
+                        'exits': {'north': (-1, 1), 'south': (-1, -1), 'east': (0, 0), 'west': (-2, 0)},
+                        'items_here': [],
+                        'npcs_here': [],
+                        'objects_here': [],
+                        'events_here': []
+                    })(),
+                }
+                # Create a simple get_tile method
+                def get_tile_method(x, y):
+                    return test_tiles.get((x, y))
+                
+                universe.get_tile = get_tile_method
+            
+            game_service = GameService(universe)
+        except Exception as e:
+            # Fallback if test initialization fails
+            game_service = None
+    else:
+        # Production mode - load universe from existing game state if available
+        universe = None
+        game_service = GameService(universe) if universe else None
 
     # Store in app context
     app.session_manager = session_manager

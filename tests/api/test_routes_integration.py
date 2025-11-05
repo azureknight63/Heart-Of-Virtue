@@ -193,6 +193,111 @@ class TestWorldRoutes:
 
         assert response.status_code == 400
 
+    def test_get_current_room_success(self, client, session_id):
+        """Test getting current room successfully."""
+        response = client.get(
+            "/world/",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert "room" in data
+        room = data["room"]
+        assert "x" in room
+        assert "y" in room
+        assert "name" in room
+        assert "description" in room
+        assert "exits" in room or isinstance(room.get("exits"), dict)
+
+    def test_move_player_north_success(self, client, session_id):
+        """Test moving player north successfully."""
+        response = client.post(
+            "/world/move",
+            data=json.dumps({"direction": "north"}),
+            content_type="application/json",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert "new_position" in data
+        assert "room" in data
+        assert "events_triggered" in data
+
+    def test_move_player_invalid_direction(self, client, session_id):
+        """Test moving in an invalid direction."""
+        response = client.post(
+            "/world/move",
+            data=json.dumps({"direction": "northeast"}),
+            content_type="application/json",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert "error" in data
+
+    def test_move_player_case_insensitive(self, client, session_id):
+        """Test that direction is case-insensitive."""
+        response = client.post(
+            "/world/move",
+            data=json.dumps({"direction": "NORTH"}),
+            content_type="application/json",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+
+    def test_get_tile_success(self, client, session_id):
+        """Test getting tile data successfully."""
+        response = client.get(
+            "/world/tile?x=0&y=0",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert "tile" in data
+        tile = data["tile"]
+        assert tile["x"] == 0
+        assert tile["y"] == 0
+        assert "name" in tile
+        assert "description" in tile
+        assert "items" in tile
+        assert "npcs" in tile
+        assert isinstance(tile["items"], list)
+        assert isinstance(tile["npcs"], list)
+
+    def test_get_tile_invalid_coordinates(self, client, session_id):
+        """Test getting tile with non-integer coordinates."""
+        response = client.get(
+            "/world/tile?x=abc&y=def",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+
+    def test_get_tile_out_of_bounds(self, client, session_id):
+        """Test getting tile outside map bounds."""
+        response = client.get(
+            "/world/tile?x=9999&y=9999",
+            headers={"Authorization": f"Bearer {session_id}"},
+        )
+
+        assert response.status_code == 404
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert "error" in data
+
 
 class TestPlayerRoutes:
     """Test player status endpoints."""
