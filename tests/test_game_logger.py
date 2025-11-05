@@ -229,9 +229,9 @@ def test_game_logger_uses_config_log_file(tmp_path):
 
 
 def test_game_logger_defaults_to_combat_testing_log():
-    """Test that logger defaults to combat_testing_phase4.log."""
+    """Test that logger defaults to combat.log."""
     player = Player()
     
     logger = GameLogger(player, log_file=None)
     # Should use default
-    assert "combat_testing_phase4.log" in logger._get_log_file_path() or logger._get_log_file_path() == "combat_testing_phase4.log"
+    assert "combat.log" in logger._get_log_file_path() or logger._get_log_file_path() == "combat.log"
