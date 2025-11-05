@@ -46,58 +46,69 @@ def create_app(config_class=None):
     app.game_service = game_service
     app.socketio = socketio
 
-    # Register blueprints (will be created in routes/)
-    # from src.api.routes import auth_bp, world_bp, inventory_bp, combat_bp, player_bp, saves_bp
-    # app.register_blueprint(auth_bp)
-    # app.register_blueprint(world_bp)
-    # app.register_blueprint(inventory_bp)
-    # app.register_blueprint(combat_bp)
-    # app.register_blueprint(player_bp)
-    # app.register_blueprint(saves_bp)
+    # Register blueprints
+    from src.api.routes import (
+        auth_bp,
+        world_bp,
+        inventory_bp,
+        equipment_bp,
+        combat_bp,
+        player_bp,
+        saves_bp,
+    )
 
-    # Register error handlers
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(world_bp)
+    app.register_blueprint(inventory_bp)
+    app.register_blueprint(equipment_bp)
+    app.register_blueprint(combat_bp)
+    app.register_blueprint(player_bp)
+    app.register_blueprint(saves_bp)
+
+    # Register error handlers from dedicated module
+    from src.api.handlers.error_handler import register_error_handlers
+
     register_error_handlers(app)
 
     # Health check endpoint
     @app.route("/health", methods=["GET"])
     def health():
-        return {
-            "status": "healthy",
-            "sessions": app.session_manager.get_active_session_count(),
-        }
+        from flask import jsonify
+
+        return jsonify(
+            {
+                "status": "healthy",
+                "sessions": app.session_manager.get_active_session_count(),
+            }
+        )
 
     # API info endpoint
     @app.route("/api/info", methods=["GET"])
     def api_info():
-        return {
-            "version": "1.0.0",
-            "name": "Heart of Virtue API",
-            "phase": "Phase 1",
-            "description": "Flask-based REST API for Heart of Virtue game engine",
-        }
+        from flask import jsonify
+
+        return jsonify(
+            {
+                "version": "1.0.0",
+                "name": "Heart of Virtue API",
+                "phase": "Phase 1",
+                "description": "Flask-based REST API for Heart of Virtue game engine",
+            }
+        )
+
+    # OpenAPI schema endpoint
+    @app.route("/api/openapi.json", methods=["GET"])
+    def openapi_schema():
+        from flask import jsonify
+        from src.api.schemas.openapi import generate_openapi_schema
+
+        return jsonify(generate_openapi_schema())
+
+    # Swagger UI endpoint
+    @app.route("/api/docs", methods=["GET"])
+    def swagger_ui():
+        from src.api.schemas.openapi import generate_swagger_ui_html
+
+        return generate_swagger_ui_html()
 
     return app, socketio
-
-
-def register_error_handlers(app):
-    """Register global error handlers.
-
-    Args:
-        app: Flask application instance
-    """
-
-    @app.errorhandler(400)
-    def bad_request(error):
-        return {"error": "Bad request", "message": str(error)}, 400
-
-    @app.errorhandler(401)
-    def unauthorized(error):
-        return {"error": "Unauthorized", "message": "Invalid session"}, 401
-
-    @app.errorhandler(404)
-    def not_found(error):
-        return {"error": "Not found", "message": "Endpoint not found"}, 404
-
-    @app.errorhandler(500)
-    def internal_error(error):
-        return {"error": "Internal server error", "message": str(error)}, 500

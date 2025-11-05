@@ -40,9 +40,12 @@ src/api/
 - [x] Flask project structure with app factory
 - [x] GameService wrapper class skeleton
 - [x] SessionManager (in-memory sessions)
-- [ ] Basic route blueprints
-- [ ] Unit tests for GameService & SessionManager
-- [ ] OpenAPI/Swagger configuration
+- [x] All route blueprints (auth, world, player, inventory, equipment, combat, saves)
+- [x] Error handling middleware
+- [x] Request validation helpers
+- [x] Unit tests for GameService & SessionManager (27 tests)
+- [x] OpenAPI/Swagger configuration
+- [ ] Install dependencies & full integration testing
 - [ ] CI/CD ready
 
 ### Files Created
@@ -54,8 +57,21 @@ src/api/
 | `src/api/config.py` | Configuration classes | ✅ |
 | `src/api/services/session_manager.py` | Session management | ✅ |
 | `src/api/services/game_service.py` | Game logic wrapper | ✅ |
-| `tests/api/test_session_manager.py` | SessionManager tests | ✅ |
-| `tests/api/test_game_service.py` | GameService tests | ✅ |
+| `src/api/services/validators.py` | Input validation | ✅ |
+| `src/api/handlers/error_handler.py` | Global error handlers | ✅ |
+| `src/api/routes/auth.py` | Auth endpoints | ✅ |
+| `src/api/routes/world.py` | World navigation | ✅ |
+| `src/api/routes/player.py` | Player status | ✅ |
+| `src/api/routes/inventory.py` | Inventory management | ✅ |
+| `src/api/routes/equipment.py` | Equipment system | ✅ |
+| `src/api/routes/combat.py` | Combat endpoints | ✅ |
+| `src/api/routes/saves.py` | Save management | ✅ |
+| `src/api/schemas/openapi.py` | OpenAPI schema generator | ✅ |
+| `tests/api/test_session_manager.py` | SessionManager tests (12) | ✅ |
+| `tests/api/test_game_service.py` | GameService tests (15) | ✅ |
+| `tests/api/test_routes_integration.py` | Integration tests (27) | ✅ |
+| `tests/api/test_validators.py` | Validator tests (28) | ✅ |
+| `tests/api/test_error_handlers.py` | Error handler tests (9) | ✅ |
 | `requirements-api.txt` | Python dependencies | ✅ |
 
 ### Installation
@@ -67,81 +83,185 @@ src/api/
 # Install API dependencies
 pip install -r requirements-api.txt
 
-# Run tests
+# Run all API tests
 pytest tests/api/ -v --cov=src/api
+
+# Run specific test file
+pytest tests/api/test_validators.py -v
 ```
 
-### API Endpoints (Phase 1 - Planned)
+### API Endpoints (Phase 1 - Complete)
 
-**Health Check**
+**Health Check & Documentation**
 ```
-GET /health
-GET /api/info
-```
-
-**Authentication** (Phase 2)
-```
-POST /auth/login
-POST /auth/logout
+GET /health                     # Server health status
+GET /api/info                   # API information
+GET /api/openapi.json           # OpenAPI 3.0 schema
+GET /api/docs                   # Swagger UI
 ```
 
-**World Navigation** (Phase 2)
+**Authentication** (3 endpoints)
 ```
-GET /world                      # Current room
-POST /world/move                # Move in direction
-GET /world/tile?x=0&y=0        # Tile info
-```
-
-**Inventory** (Phase 3)
-```
-GET /inventory
-POST /inventory/take
-POST /inventory/drop
-POST /inventory/examine
+POST /auth/login                # Create session
+POST /auth/logout               # End session
+GET /auth/validate              # Validate token
 ```
 
-**Equipment** (Phase 3)
+**World Navigation** (3 endpoints)
 ```
-GET /equipment
-POST /equipment/equip
-POST /equipment/unequip
-```
-
-**Combat** (Phase 4)
-```
-POST /combat/start
-POST /combat/move
-GET /combat/status
-WebSocket /socket.io            # Real-time updates
+GET /world/                     # Current room info
+POST /world/move                # Move in direction (north/south/east/west)
+GET /world/tile?x=0&y=0        # Get tile at coordinates
 ```
 
-**Player** (Phase 2)
+**Player** (2 endpoints)
 ```
-GET /player/status
-GET /player/stats
+GET /player/status              # Health, level, experience
+GET /player/stats               # Attributes (STR, DEX, VIT, etc.)
 ```
 
-**Saves** (Phase 5)
+**Inventory** (3 endpoints)
 ```
-GET /saves
-POST /saves
-POST /saves/:id/load
-DELETE /saves/:id
+GET /inventory/                 # List items and weight
+POST /inventory/take            # Pick up item
+POST /inventory/drop            # Drop item
+```
+
+**Equipment** (3 endpoints)
+```
+GET /equipment/                 # Current equipment by slot
+POST /equipment/equip           # Equip item (recalc stats)
+POST /equipment/unequip         # Remove equipment
+```
+
+**Combat** (3 endpoints)
+```
+POST /combat/start              # Initiate combat
+POST /combat/move               # Execute action (attack/defend/cast/item/flee)
+GET /combat/status              # Battle state
+```
+
+**Saves** (4 endpoints)
+```
+GET /saves/                     # List all saves
+POST /saves/                    # Create new save
+POST /saves/<id>/load           # Load save
+DELETE /saves/<id>              # Delete save
+```
+
+## Usage Examples
+
+### 1. Login & Create Session
+
+```bash
+curl -X POST http://localhost:5000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"character_name": "Jean Claire", "slot": 0}'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "session_id": "abc123def456",
+    "expires_at": "2025-01-15T10:30:00",
+    "player": {
+      "name": "Jean Claire",
+      "level": 1,
+      "experience": 0,
+      "health": 100,
+      "max_health": 100
+    }
+  }
+}
+```
+
+### 2. Move Player
+
+```bash
+curl -X POST http://localhost:5000/world/move \
+  -H "Authorization: Bearer abc123def456" \
+  -H "Content-Type: application/json" \
+  -d '{"direction": "north"}'
+```
+
+### 3. Get Inventory
+
+```bash
+curl -X GET http://localhost:5000/inventory/ \
+  -H "Authorization: Bearer abc123def456"
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {"name": "Shortsword", "type": "weapon", "weight": 5},
+      {"name": "Leather Armor", "type": "armor", "weight": 10}
+    ],
+    "total_weight": 15,
+    "max_weight": 100
+  }
+}
+```
+
+### 4. Equip Item
+
+```bash
+curl -X POST http://localhost:5000/equipment/equip \
+  -H "Authorization: Bearer abc123def456" \
+  -H "Content-Type: application/json" \
+  -d '{"item_index": 0}'
+```
+
+### 5. Start Combat
+
+```bash
+curl -X POST http://localhost:5000/combat/start \
+  -H "Authorization: Bearer abc123def456" \
+  -H "Content-Type: application/json" \
+  -d '{"enemy_id": "cave_bat_1"}'
+```
+
+### 6. Create Save
+
+```bash
+curl -X POST http://localhost:5000/saves/ \
+  -H "Authorization: Bearer abc123def456" \
+  -H "Content-Type: application/json" \
+  -d '{"save_name": "After Boss Fight"}'
+```
+
+## API Documentation
+
+### Swagger UI
+Once the server is running, access interactive API documentation at:
+```
+http://localhost:5000/api/docs
+```
+
+### OpenAPI Schema
+Download the complete OpenAPI 3.0 schema at:
+```
+http://localhost:5000/api/openapi.json
 ```
 
 ## Running the API Server
 
 ```bash
-# Development mode
-python -m src.api.app
+# Development mode (with auto-reload)
+python run_api.py
 
-# Or with Flask CLI
+# Or manually with Flask CLI
 export FLASK_APP=src/api/app.py
 export FLASK_ENV=development
 flask run
 
 # With SocketIO support (for real-time combat)
-python -m src.api.socketio_server
+python run_api.py --socketio
 ```
 
 Server will start at `http://localhost:5000`
@@ -149,17 +269,26 @@ Server will start at `http://localhost:5000`
 ## Testing
 
 ```bash
-# All tests
+# All API tests
 pytest tests/api/ -v
 
 # With coverage report
 pytest tests/api/ --cov=src/api --cov-report=term-missing
 
 # Specific test file
-pytest tests/api/test_session_manager.py -v
+pytest tests/api/test_validators.py -v
 
 # Specific test
-pytest tests/api/test_session_manager.py::TestSessionManager::test_create_session -v
+pytest tests/api/test_validators.py::test_validate_direction_valid -v
+
+# Run validator tests only
+pytest tests/api/test_validators.py -v
+
+# Run error handler tests only
+pytest tests/api/test_error_handlers.py -v
+
+# Run all integration tests
+pytest tests/api/test_routes_integration.py -v
 ```
 
 ## Architecture Notes
@@ -188,7 +317,26 @@ All endpoints return JSON with structure:
 }
 ```
 
+Global error handlers manage all HTTP errors:
+- **400**: Bad Request (validation errors)
+- **401**: Unauthorized (invalid session)
+- **403**: Forbidden (insufficient permissions)
+- **404**: Not Found (missing resource)
+- **422**: Unprocessable Entity (semantic error)
+- **429**: Too Many Requests (rate limit)
+- **500**: Internal Server Error (unexpected exception)
+
+### Input Validation
+All request data is validated using helper functions in `services/validators.py`:
+- `validate_required_fields()` - Check required fields present
+- `validate_direction()` - Cardinal directions only
+- `validate_coordinates()` - X/Y bounds checking
+- `validate_item_slot()` - Equipment slot validation
+- `validate_combat_action()` - Legal combat actions
+- And more...
+
 ## Next Steps (Phase 2+)
+
 
 1. **Database Integration**: Replace in-memory sessions with PostgreSQL
 2. **Authentication**: Add JWT/OAuth support
