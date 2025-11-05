@@ -335,9 +335,19 @@ def combat(player):
                                     player.current_move.target = target
                         else:
                             player.current_move.target = player
-                        player.current_move.cast()
-                        # Display the player's action to the UI
-                        print(colored("Jean uses " + player.current_move.name + "!", "cyan", attrs=['bold']))
+                        
+                        # Special handling for Turn move - prompt for direction selection
+                        if player.current_move.name == "Turn":
+                            if hasattr(player.current_move, '_prompt_direction_selection'):
+                                player.current_move._prompt_direction_selection()
+                                # If no direction was selected, cancel the move
+                                if player.current_move.target_direction is None:
+                                    player.current_move = None
+                        
+                        if player.current_move:
+                            player.current_move.cast()
+                            # Display the player's action to the UI
+                            print(colored("Jean uses " + player.current_move.name + "!", "cyan", attrs=['bold']))
                     elif player.fatigue < move.fatigue_cost:
                         cprint("Jean will need to rest a bit before he can do that.", "red")
                     elif move.current_stage == 3:
