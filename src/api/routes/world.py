@@ -9,14 +9,15 @@ def get_session_and_player(request):
     """Extract session and player from request.
 
     Returns:
-        Tuple of (session_manager, session, player) or error response
+        Tuple of (session_manager, session, player, None) on success
+        or (None, None, None, (jsonify_response, status_code)) on error
     """
     from flask import current_app
 
     # Extract session ID from Authorization header
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None, None, jsonify({"error": "Missing authorization"}), 401
+        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
 
     session_id = auth_header[7:]
     session_manager = current_app.session_manager
@@ -24,11 +25,11 @@ def get_session_and_player(request):
     # Get session and player
     session = session_manager.get_session(session_id)
     if not session:
-        return None, None, jsonify({"error": "Invalid or expired session"}), 401
+        return None, None, None, (jsonify({"error": "Invalid or expired session"}), 401)
 
     player = session_manager.get_player(session_id)
     if not player:
-        return None, None, jsonify({"error": "Player not found"}), 404
+        return None, None, None, (jsonify({"error": "Player not found"}), 404)
 
     return session_manager, session, player, None
 
@@ -57,7 +58,7 @@ def get_current_room():
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
-            return error
+            return error[0], error[1]
 
         game_service = None
         from flask import current_app
@@ -114,7 +115,7 @@ def move_player():
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
-            return error
+            return error[0], error[1]
 
         data = request.get_json()
         if not data or "direction" not in data:
@@ -194,7 +195,7 @@ def get_tile():
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
-            return error
+            return error[0], error[1]
 
         # Get query parameters
         x_str = request.args.get("x")

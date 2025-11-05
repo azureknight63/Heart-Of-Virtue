@@ -11,7 +11,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from api.services.session_manager import SessionManager, Session
+from src.api.services.session_manager import SessionManager, Session  # type: ignore
 
 
 class TestSession:

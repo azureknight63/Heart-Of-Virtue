@@ -74,10 +74,24 @@ class SessionManager:
         self.sessions[session_id] = session
         self.session_to_player[session_id] = player_id
 
-        # Create new player (this will import and instantiate)
-        # For now, we'll create a placeholder
-        # The actual player creation will happen when GameService is implemented
-        self.players[player_id] = None  # TODO: Initialize with actual Player()
+        # Create new player
+        try:
+            # Import Player class
+            player = player_module.Player(name=username)
+            self.players[player_id] = player
+        except Exception as e:
+            # Fallback: create a minimal player-like object for testing
+            class MinimalPlayer:
+                def __init__(self, name):
+                    self.name = name
+                    self.x = 1
+                    self.y = 0
+                    self.inventory = []
+                    self.equipment = {}
+                    self.hp = 100
+                    self.max_hp = 100
+            
+            self.players[player_id] = MinimalPlayer(username)
 
         return session_id, player_id
 

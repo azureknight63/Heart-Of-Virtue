@@ -11,9 +11,9 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from api.app import create_app
-from api.config import TestingConfig
-from api.services import SessionManager
+from src.api.app import create_app  # type: ignore
+from src.api.config import TestingConfig  # type: ignore
+from src.api.services import SessionManager  # type: ignore
 
 
 @pytest.fixture

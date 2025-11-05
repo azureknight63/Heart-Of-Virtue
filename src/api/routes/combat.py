@@ -11,18 +11,18 @@ def get_session_and_player(request):
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None, None, jsonify({"error": "Missing authorization"}), 401
+        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
 
     session_id = auth_header[7:]
     session_manager = current_app.session_manager
     session = session_manager.get_session(session_id)
 
     if not session:
-        return None, None, jsonify({"error": "Invalid or expired session"}), 401
+        return None, None, None, (jsonify({"error": "Invalid or expired session"}), 401)
 
     player = session_manager.get_player(session_id)
     if not player:
-        return None, None, jsonify({"error": "Player not found"}), 404
+        return None, None, None, (jsonify({"error": "Player not found"}), 404)
 
     return session_manager, session, player, None
 
@@ -51,7 +51,7 @@ def start_combat():
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
-            return error
+            return error[0], error[1]
 
         data = request.get_json()
         if not data or "enemy_id" not in data:

@@ -10,7 +10,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from api.services.game_service import GameService
+from src.api.services.game_service import GameService  # type: ignore
 
 
 class MockTile:
