@@ -1,0 +1,22 @@
+# Heart of Virtue API - Dependencies for Phase 1
+
+# Flask and extensions
+Flask==2.3.3
+Flask-CORS==4.0.0
+Flask-SocketIO==5.3.4
+
+# Real-time communication
+python-socketio==5.9.0
+python-engineio==4.7.1
+
+# Development and testing
+pytest==7.4.0
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# Code quality
+black==23.9.1
+flake8==6.0.0
+
+# Additional utilities
+python-dotenv==1.0.0
