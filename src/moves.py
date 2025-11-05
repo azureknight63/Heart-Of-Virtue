@@ -2478,6 +2478,125 @@ class Turn(Move):
         """Adjusts move attributes based on current game state."""
         pass
 
+    def cast(self):
+        """Override cast to initialize the move stages."""
+        # Call parent cast to initialize stages and announce
+        super().cast()
+    
+    def _prompt_direction_selection(self):
+        """Display menu for player to select a direction or face a combatant."""
+        print("\n" + colored("=" * 50, "magenta"))
+        print(colored("Which direction would you like to face?", "cyan"))
+        print(colored("=" * 50, "magenta"))
+        
+        # Create list of options
+        options = []
+        
+        # Add 8 cardinal directions
+        for direction in positions.Direction:
+            options.append({
+                'label': f"{direction.name}",
+                'direction': direction,
+                'target': None
+            })
+        
+        # Add available combatants (both enemies and allies to turn toward)
+        # Get all combatants from proximity list
+        if hasattr(self.user, 'combat_proximity'):
+            combatants = []
+            # Add enemies
+            for combatant, distance in self.user.combat_proximity.items():
+                if combatant.is_alive:
+                    combatants.append((combatant, distance, "enemy" if not getattr(combatant, 'friend', False) else "ally"))
+            
+            # Sort by distance
+            combatants.sort(key=lambda x: x[1])
+            
+            # Add them to options
+            for combatant, distance, ctype in combatants:
+                options.append({
+                    'label': f"Face {combatant.name} ({distance}ft, {ctype})",
+                    'direction': None,
+                    'target': combatant
+                })
+        
+        # Display options
+        for idx, option in enumerate(options):
+            print(colored(f"{idx}: {option['label']}", "yellow"))
+        print(colored("x: Cancel", "red"))
+        
+        # Get selection
+        selection = input(colored("Selection: ", "cyan"))
+        
+        if selection.lower() == 'x':
+            cprint("Turn cancelled.", "yellow")
+            self.target_direction = None
+            return
+        
+        if not functions.is_input_integer(selection):
+            cprint("Invalid selection.", "red")
+            self.target_direction = None
+            return
+        
+        selection = int(selection)
+        
+        if selection < 0 or selection >= len(options):
+            cprint("Invalid selection.", "red")
+            self.target_direction = None
+            return
+        
+        selected_option = options[selection]
+        
+        # If a direction was selected
+        if selected_option['direction'] is not None:
+            self.target_direction = selected_option['direction']
+            cprint(f"You chose to face {self.target_direction.name}.", "green")
+        # If a combatant was selected, calculate direction toward them
+        elif selected_option['target'] is not None:
+            target = selected_option['target']
+            self.target_direction = self._calculate_direction_to_target(target)
+            cprint(f"You chose to face toward {target.name}.", "green")
+        
+    def _calculate_direction_to_target(self, target):
+        """Calculate the direction from user to target."""
+        if not (hasattr(self.user, 'combat_position') and 
+                hasattr(target, 'combat_position') and
+                self.user.combat_position is not None and 
+                target.combat_position is not None):
+            # Fallback to North if positions not available
+            return positions.Direction.N
+        
+        user_pos = self.user.combat_position
+        target_pos = target.combat_position
+        
+        # Calculate angle from user to target
+        dx = target_pos.x - user_pos.x
+        dy = target_pos.y - user_pos.y
+        
+        # Handle zero distance
+        if dx == 0 and dy == 0:
+            return user_pos.facing  # Stay facing current direction
+        
+        # Calculate angle in degrees (0-360)
+        # In our coordinate system: N=0°, E=90°, S=180°, W=270°
+        angle = math.atan2(dx, -dy) * 180 / math.pi  # -dy because y increases downward
+        if angle < 0:
+            angle += 360
+        
+        # Find closest direction
+        best_direction = positions.Direction.N
+        best_diff = 360
+        
+        for direction in positions.Direction:
+            diff = abs(direction.value - angle)
+            if diff > 180:
+                diff = 360 - diff
+            if diff < best_diff:
+                best_diff = diff
+                best_direction = direction
+        
+        return best_direction
+
     def prep(self, user):
         """Prep stage - announce the turn."""
         if self.target_direction:
