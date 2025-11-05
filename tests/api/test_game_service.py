@@ -177,6 +177,80 @@ class TestGameService:
         assert "combatants" in result
         assert "log" in result
 
+    def test_trigger_tile_events_empty(self):
+        """Test triggering events when no events exist."""
+        tile = self.universe.get_tile(0, 0)
+        result = self.service.trigger_tile_events(self.player, tile)
+
+        assert result == []
+
+    def test_trigger_tile_events_with_events(self):
+        """Test triggering events on a tile with events."""
+        tile = self.universe.get_tile(0, 0)
+        
+        # Create a mock event
+        class MockEvent:
+            def __init__(self):
+                self.description = "Test event description"
+                self.processed = False
+            
+            def process(self):
+                self.processed = True
+        
+        event = MockEvent()
+        tile.events_here.append(event)
+        
+        result = self.service.trigger_tile_events(self.player, tile)
+        
+        assert len(result) == 1
+        assert result[0]["type"] == "MockEvent"
+        assert result[0]["description"] == "Test event description"
+        assert event.processed is True
+
+    def test_get_tile_enhanced(self):
+        """Test getting enhanced tile data with NPCs and items."""
+        tile = self.universe.get_tile(0, 0)
+        
+        # Add mock item
+        class MockItem:
+            def __init__(self):
+                self.name = "Test Item"
+                self.description = "A test item"
+                self.quantity = 1
+        
+        # Add mock NPC
+        class MockNPC:
+            def __init__(self):
+                self.name = "Test NPC"
+                self.level = 5
+                self.health = 50
+                self.max_health = 100
+                self.is_hostile = False
+        
+        # Add mock object
+        class MockObject:
+            def __init__(self):
+                self.name = "Test Object"
+                self.description = "A test object"
+                self.is_passable = True
+        
+        tile.items_here.append(MockItem())
+        tile.npcs_here.append(MockNPC())
+        tile.objects_here = [MockObject()]
+        
+        result = self.service.get_tile(0, 0)
+        
+        assert result["name"] == "Starting Room"
+        assert len(result["items"]) == 1
+        assert result["items"][0]["name"] == "Test Item"
+        assert result["items"][0]["quantity"] == 1
+        assert len(result["npcs"]) == 1
+        assert result["npcs"][0]["name"] == "Test NPC"
+        assert result["npcs"][0]["level"] == 5
+        assert len(result["objects"]) == 1
+        assert result["objects"][0]["name"] == "Test Object"
+        assert "exits" in result
+
     def test_save_game(self):
         """Test saving a game."""
         save_id = self.service.save_game(self.player, "Test Save")
