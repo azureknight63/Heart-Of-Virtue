@@ -11,6 +11,7 @@ import combat  # type: ignore
 import skilltree  # type: ignore
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
+import positions  # type: ignore
 
 
 def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
@@ -212,8 +213,8 @@ class Player:
         self.victory = False
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are
             # viable (moves will check their own conditions)
-            moves.Check(self), moves.Wait(self), moves.Rest(self),
-            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self)
+            moves.Check(self), moves.Wait(self), moves.Rest(self), moves.Turn(self),
+            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self),
         ]
         self.current_move = None
         self.heat = 1.0
@@ -227,6 +228,7 @@ class Player:
         # there looking pretty
         self.combat_proximity = {}  # dict for unit proximity: {unit: distance}; Range for most melee weapons is 5,
         # ranged is 20. Distance is in feet (for reference)
+        self.combat_position = None  # CombatPosition object; None outside combat. Source of truth for positioning
         self.default_proximity = 50
         self.savestat = None
         self.saveuniv = None
@@ -235,6 +237,11 @@ class Player:
         self.main_menu = False  # escape switch to get to the main menu; setting to True jumps out of the play loop
         self.time_elapsed = 0  # total seconds of gameplay
         self.skip_dialog = False  # if True, skips sequence dialogue and prints (typically handled in ini file)
+        self.testing_mode = False  # test mode flag from config
+        self.use_colour = True  # whether to use colored terminal output
+        self.enable_animations = True  # whether to enable visual animations
+        self.animation_speed = 1.0  # animation speed multiplier
+        self.game_config = None  # full GameConfig object for access to all settings
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"

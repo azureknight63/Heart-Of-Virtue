@@ -3,6 +3,12 @@ import time
 import random
 
 from functions import refresh_stat_bonuses, is_input_integer, await_input
+import positions
+from display_config import CombatDisplayConfig
+from game_logger import GameLogger
+from debug_manager import DebugManager
+from coordinate_config import CoordinateSystemConfig
+from combat_battlefield import CombatBattlefieldWindow
 
 
 def combat(player):
@@ -11,6 +17,26 @@ def combat(player):
     :attr player.combat_list: A list of enemies to engage in this combat loop.
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
+    # Initialize config systems
+    display_config = CombatDisplayConfig(player)
+    game_logger = GameLogger(player)
+    debug_manager = DebugManager(player)
+    coordinate_config = CoordinateSystemConfig(player)
+    
+    # Initialize battlefield window
+    battlefield_window = CombatBattlefieldWindow(title="Combat Battlefield")
+    battlefield_window.create_window()
+    
+    # Store in player for access throughout combat
+    player.combat_display_config = display_config
+    player.combat_game_logger = game_logger
+    player.combat_debug_manager = debug_manager
+    player.combat_coordinate_config = coordinate_config
+    
+    # Set player reference on all combatants for config access
+    for npc in player.combat_list + player.combat_list_allies:
+        npc.player_ref = player
+    
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
         npc.cycle_states()
         if npc.combat_delay > 0:
@@ -30,6 +56,15 @@ def combat(player):
                 if (npc.current_move is not None and hasattr(npc.current_move, "cast") and
                         callable(getattr(npc.current_move, "cast"))):
                     npc.current_move.cast()
+                    # Log the move execution
+                    if npc.current_move:
+                        game_logger.log_combat_move(npc.name, npc.current_move.name)
+                        if debug_manager.should_debug_ai_decisions():
+                            debug_manager.display_ai_debug_info(
+                                npc, 
+                                f"Used {npc.current_move.name}", 
+                                {}
+                            )
         get_moves = npc.known_moves[:]
         if (npc.current_move is not None) and (npc.current_move not in get_moves):  # this will handle dynamically
             # added moves (as a result from a state or low fatigue)
@@ -41,7 +76,21 @@ def combat(player):
         """
         Loops over all enemies in the combat list and updates their distances. If the enemy isn't in a proximity list,
         then it gets added.
+        
+        Now also recalculates combat_proximity dicts from coordinate positions for the new coordinate system.
         """
+        # Calculate proximity from coordinates for units with combat_position set
+        all_combatants = player.combat_list_allies + player.combat_list
+        for unit in all_combatants:
+            if hasattr(unit, 'combat_position') and unit.combat_position is not None:
+                unit.combat_proximity = positions.recalculate_proximity_dict(unit, all_combatants)
+                # Log coordinate-based distance calculations
+                for other_unit in all_combatants:
+                    if other_unit != unit and other_unit in unit.combat_proximity:
+                        distance = unit.combat_proximity[other_unit]
+                        game_logger.log_distance_calculation(unit.name, other_unit.name, distance)
+        
+        # Original proximity synchronization logic for backward compatibility
         for each_ally in player.combat_list_allies:
             remove_these = []
             for each_enemy in each_ally.combat_proximity:  # Remove any dead enemies
@@ -97,6 +146,30 @@ def combat(player):
     for enemy in player.combat_list:
         check_for_dead_enemy(enemy, True)
 
+    # Initialize combat positions using coordinate system
+    # Determine scenario type based on combat situation
+    scenario_type = "standard"
+    if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
+        scenario_type = "pincer"  # Ambush scenario
+    elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+        scenario_type = "boss_arena"  # Single vs single
+    
+    try:
+        positions.initialize_combat_positions(
+            allies=player.combat_list_allies,
+            enemies=player.combat_list,
+            scenario_type=scenario_type
+        )
+    except Exception as e:
+        # Graceful fallback: if initialization fails, continue with old system
+        cprint(f"[Warning] Position initialization failed: {e}", "yellow")
+        # Ensure old proximity system is initialized
+        for ally in player.combat_list_allies:
+            for enemy in player.combat_list:
+                if enemy not in ally.combat_proximity:
+                    each_distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
+                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = each_distance
+
     # Reset all moves for all combatants
     for ally in player.combat_list_allies:
         ally.in_combat = True
@@ -107,6 +180,11 @@ def combat(player):
         for move in enemy.known_moves:
             move.current_stage = 0
             move.beats_left = 0
+
+    # Initial display of battlefield before any moves are selected
+    battlefield_window.set_beat(beat)
+    battlefield_window.update_all_combatants(player, player.combat_list_allies, player.combat_list)
+    battlefield_window.update_display()
 
     while True:  # combat will loop until there are no aggro enemies or the player is dead
         #  Check for combat events and execute them once, if possible
@@ -195,6 +273,8 @@ def combat(player):
                     if player.fatigue >= move.fatigue_cost and move.current_stage == 0:
                         player.current_move = move
                         player.current_move.user = player
+                        # Log the player's move selection
+                        game_logger.log_combat_move(player.name if hasattr(player, 'name') else "Player", player.current_move.name)
                         if player.current_move.targeted:
                             target = None
                             acceptable_targets = []
@@ -260,7 +340,19 @@ def combat(player):
                                     player.current_move.target = target
                         else:
                             player.current_move.target = player
-                        player.current_move.cast()
+                        
+                        # Special handling for Turn move - prompt for direction selection
+                        if player.current_move.name == "Turn":
+                            if hasattr(player.current_move, '_prompt_direction_selection'):
+                                player.current_move._prompt_direction_selection()
+                                # If no direction was selected, cancel the move
+                                if player.current_move.target_direction is None:
+                                    player.current_move = None
+                        
+                        if player.current_move:
+                            player.current_move.cast()
+                            # Display the player's action to the UI
+                            print(colored("Jean uses " + player.current_move.name + "!", "cyan", attrs=['bold']))
                     elif player.fatigue < move.fatigue_cost:
                         cprint("Jean will need to rest a bit before he can do that.", "red")
                     elif move.current_stage == 3:
@@ -293,6 +385,11 @@ def combat(player):
 
         player.cycle_states()
 
+        # Update battlefield window display
+        battlefield_window.set_beat(beat)
+        battlefield_window.update_all_combatants(player, player.combat_list_allies, player.combat_list)
+        battlefield_window.update_display()
+
         time.sleep(0.5)
         beat += 1
         # print("### CURRENT BEAT: "+str(beat))
@@ -301,6 +398,10 @@ def combat(player):
     for status in player.states:
         if not status.persistent:
             player.states.remove(status)
+    
+    # Close battlefield window
+    battlefield_window.close()
+    
     await_input()
     player.in_combat = False
     player.current_move = None
