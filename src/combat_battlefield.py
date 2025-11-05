@@ -557,8 +557,7 @@ class CombatBattlefieldWindow:
             if self.info_label:
                 alive_count = sum(1 for data in self.combatants_data.values() if data.get("is_alive", True))
                 self.info_label.config(
-                    text=f"Beat: {self.beat_number} | Combatants: {alive_count} | "
-                         f"Trails: {len(self.movement_history)}"
+                    text=f"Beat: {self.beat_number} | Combatants: {alive_count}"
                 )
 
             self.text_widget.config(state=tk.DISABLED)
