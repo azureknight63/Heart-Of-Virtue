@@ -18,7 +18,8 @@ class GameLogger:
         
         Args:
             player: Player object with game_config
-            log_file: Override log file path (defaults to config or combat_testing_phase4.log)
+                def __init__(self, log_file: Override log file path (defaults to config or combat.log)
+            log_file: Override log file path (defaults to config or combat.log)
         """
         self.player = player
         self.log_file = log_file
@@ -41,7 +42,7 @@ class GameLogger:
                 return config_file
         
         # Default
-        return "combat_testing_phase4.log"
+        return "combat.log"
     
     def _ensure_log_file_ready(self) -> None:
         """Ensure log file exists and is writable."""

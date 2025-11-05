@@ -64,7 +64,7 @@ class GameConfig:
     log_distance_calculations: bool = True
     log_angle_calculations: bool = True
     log_npc_decisions: bool = True
-    log_file: str = "combat_testing_phase4.log"
+    log_file: str = "combat.log"
     
     # === [game] section: Scenarios ===
     test_scenario: str = "standard"
@@ -234,7 +234,7 @@ class ConfigManager:
         self.config.log_distance_calculations = section.getboolean('log_distance_calculations', fallback=True)
         self.config.log_angle_calculations = section.getboolean('log_angle_calculations', fallback=True)
         self.config.log_npc_decisions = section.getboolean('log_npc_decisions', fallback=True)
-        self.config.log_file = section.get('log_file', fallback='combat_testing_phase4.log')
+        self.config.log_file = section.get('log_file', fallback='combat.log')
         
         # Scenarios
         self.config.test_scenario = section.get('test_scenario', fallback='standard')
