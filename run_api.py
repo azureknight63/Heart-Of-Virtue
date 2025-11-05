@@ -4,9 +4,11 @@ import os
 import sys
 from pathlib import Path
 
-# Add src to path
+# Add src to path for proper module imports
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
