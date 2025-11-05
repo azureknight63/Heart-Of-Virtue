@@ -61,10 +61,11 @@ class InventorySerializer:
         items = []
         total_weight = 0.0
 
-        if hasattr(player, "inventory_list"):
-            for idx, item in enumerate(player.inventory_list):
-                items.append(InventoryItemSerializer.serialize(item, idx))
-                total_weight += getattr(item, "weight", 0.0)
+        # Handle both inventory_list (real Player) and inventory (MinimalPlayer)
+        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        for idx, item in enumerate(inventory_list):
+            items.append(InventoryItemSerializer.serialize(item, idx))
+            total_weight += getattr(item, "weight", 0.0)
 
         return {
             "total_weight": round(total_weight, 2),
@@ -146,9 +147,10 @@ class EquipmentSerializer:
             "crit_chance": 0,
         }
 
-        # Get equipped items from player
-        if hasattr(player, "equipped"):
-            for slot_name, item in player.equipped.items():
+        # Get equipped items from player (handle both equipped and equipment attributes)
+        equipment_dict = getattr(player, "equipped", None) or getattr(player, "equipment", {})
+        if equipment_dict:
+            for slot_name, item in equipment_dict.items():
                 equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)
 
                 # Accumulate bonuses
@@ -157,22 +159,24 @@ class EquipmentSerializer:
                         if stat in total_bonuses:
                             total_bonuses[stat] += bonus
 
-        # Count unequipped equippable items
+        # Count unequipped equippable items (handle both inventory_list and inventory)
         unequipped_equippable = 0
-        if hasattr(player, "inventory_list"):
-            for item in player.inventory_list:
-                if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
-                    unequipped_equippable += 1
+        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        for item in inventory_list:
+            if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
+                unequipped_equippable += 1
+
+        # Calculate equipment value
+        equipment_value = 0
+        for item in equipment_dict.values() if equipment_dict else []:
+            if item:
+                equipment_value += getattr(item, "value", 0)
 
         return {
             "equipped": equipped,
             "unequipped_equippable_count": unequipped_equippable,
             "total_stat_bonuses": total_bonuses,
-            "equipment_value": sum(
-                getattr(item, "value", 0)
-                for item in player.equipped.values()
-                if item
-            ),
+            "equipment_value": equipment_value,
         }
 
 

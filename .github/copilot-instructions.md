@@ -1,5 +1,32 @@
 # Heart of Virtue - AI Coding Agent Instructions
 
+## ⚠️ CRITICAL: PowerShell Compatibility Requirement
+
+**All terminal commands MUST be compatible with PowerShell (pwsh.exe).** This is the user's default shell on Windows.
+
+### PowerShell-Compatible Commands:
+- Use `Select-Object` instead of `head`/`tail`
+- Use `Select-String` instead of `grep`
+- Use `Get-Content` instead of `cat`
+- Use `;` for command chaining instead of `&&` or `||`
+- Use `$null` for null checks
+- Avoid `&`, `&&`, `||` operators without proper escaping
+
+### Examples:
+```pwsh
+# ✅ CORRECT - PowerShell compatible
+python -m pytest tests/test_file.py; Write-Host "Done"
+Get-Content file.txt | Select-Object -Last 10
+Select-String -Pattern "error" file.txt
+command1; command2; command3
+
+# ❌ AVOID - Not PowerShell compatible
+python -m pytest tests/test_file.py && echo "Done"
+tail -10 file.txt
+grep "error" file.txt
+command1 && command2 || command3
+```
+
 ## Project Overview
 A text-based RPG following Jean Claire through a tile-based world with turn-based combat, inventory management, and NPC interactions (some of which may involve LLM-based behavior). Built with Python 3.13, heavy use of `neotermcolor` for colored terminal output, and `asciimatics` for visual effects.
 
