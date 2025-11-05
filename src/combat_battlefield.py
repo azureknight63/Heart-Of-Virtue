@@ -789,6 +789,9 @@ class CombatBattlefieldWindow:
         for ally in allies:
             if hasattr(ally, "combat_position") and ally.combat_position is not None:
                 ally_name = ally.name if hasattr(ally, "name") else f"Ally_{id(ally)}"
+                # Skip if this is the player (already added above)
+                if ally_name == player_name:
+                    continue
                 alive_names.add(ally_name)
                 
                 health_pct = 1.0
