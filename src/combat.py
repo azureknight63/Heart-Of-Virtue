@@ -181,6 +181,11 @@ def combat(player):
             move.current_stage = 0
             move.beats_left = 0
 
+    # Initial display of battlefield before any moves are selected
+    battlefield_window.set_beat(beat)
+    battlefield_window.update_all_combatants(player, player.combat_list_allies, player.combat_list)
+    battlefield_window.update_display()
+
     while True:  # combat will loop until there are no aggro enemies or the player is dead
         #  Check for combat events and execute them once, if possible
         synchronize_distances()
