@@ -212,3 +212,85 @@ def validate_range(
         return True, None
     except (ValueError, TypeError):
         return False, f"{field_name} must be a valid number"
+
+
+def validate_item_index(item_index: Any, max_items: int) -> Tuple[bool, Optional[str]]:
+    """Validate inventory item index.
+
+    Args:
+        item_index: Item index from request
+        max_items: Total items in inventory
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        idx = int(item_index)
+        if idx < 0 or idx >= max_items:
+            return False, f"Invalid item index {idx}. Inventory has {max_items} items"
+        return True, None
+    except (ValueError, TypeError):
+        return False, "Item index must be a valid integer"
+
+
+def validate_equipment_slot(slot_name: str) -> Tuple[bool, Optional[str]]:
+    """Validate equipment slot name.
+
+    Args:
+        slot_name: Equipment slot name
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    valid_slots = [
+        "head", "chest", "legs", "hands", "feet", "back", "ring1", "ring2"
+    ]
+    if slot_name not in valid_slots:
+        return (
+            False,
+            f"Invalid slot '{slot_name}'. Must be one of: {', '.join(valid_slots)}"
+        )
+    return True, None
+
+
+def validate_weight_limit(
+    current_weight: float, item_weight: float, limit: float
+) -> Tuple[bool, Optional[str]]:
+    """Validate that adding item won't exceed weight limit.
+
+    Args:
+        current_weight: Current inventory weight
+        item_weight: Weight of item to add
+        limit: Weight limit
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    total = current_weight + item_weight
+    if total > limit:
+        return (
+            False,
+            f"Weight limit exceeded: {total:.1f} > {limit:.1f}"
+        )
+    return True, None
+
+
+def validate_currency_amount(amount: Any, available: int) -> Tuple[bool, Optional[str]]:
+    """Validate currency amount.
+
+    Args:
+        amount: Amount to validate
+        available: Available currency
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        amt = int(amount)
+        if amt <= 0:
+            return False, "Amount must be positive"
+        if amt > available:
+            return False, f"Insufficient funds: need {amt}, have {available}"
+        return True, None
+    except (ValueError, TypeError):
+        return False, "Amount must be a valid integer"

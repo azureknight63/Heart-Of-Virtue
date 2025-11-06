@@ -37,8 +37,8 @@ def create_app(config_class=None):
     session_manager = SessionManager()
 
     # Initialize game universe and service
-    # For testing, create a minimal universe
-    if config_class == TestingConfig:
+    # For testing and development, create a minimal universe
+    if config_class in (TestingConfig, DevelopmentConfig) or config_class is None:
         try:
             # Import Player to create a test player for universe initialization
             from src.player import Player

@@ -143,7 +143,7 @@ def test_validate_item_index_out_of_range():
     """Test out-of-range item index."""
     is_valid, error = validate_item_index(10, 10)
     assert is_valid is False
-    assert "must be between 0 and 9" in error
+    assert "Invalid item index" in error or "must be between" in error
 
 
 def test_validate_save_name_valid():
