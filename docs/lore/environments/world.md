@@ -1,6 +1,6 @@
 # The World of Aurelion
 ## Geography
-Aurelion is a vast and diverse world, characterized by its unique geological formations and rich ecosystems. The landscape is dominated by towering stone citadels, expansive warrens, and shifting sand dunes that create a dynamic environment. The central region, known as the Verdette Plains, is a lush area filled with vibrant flora and fauna, while the outskirts are marked by arid deserts and rocky terrains.
+Aurelion is a vast and diverse world, characterized by its unique geological formations and rich ecosystems. The landscape is dominated by towering stone citadels, expansive warrens, and shifting sand dunes that create a dynamic environment. The central region, known as the Resolute Plains, is a lush area filled with vibrant flora and fauna, while the outskirts are marked by arid deserts and rocky terrains.
 
 ## Inhabitants
 The world is home to various intelligent species, each with their own cultures and societies. The Golemites, a race of stone-like beings, are the primary inhabitants of the underground citadels. They are known for their strength, resilience, and deep connection to the earth. Other species include the Sandwalkers, nomadic tribes that traverse the shifting sands, and the Verdant Folk, who dwell in the lush regions of Aurelion.
