@@ -11,8 +11,6 @@ if str(SRC_DIR) not in sys.path:
 
 import json
 import pytest
-from src.api.app import create_app
-from src.api.config import TestingConfig
 
 
 class MockEvent:
@@ -47,19 +45,6 @@ class MockTileWithEvent:
             "east": (x + 1, y),
             "west": (x - 1, y),
         }
-
-
-@pytest.fixture
-def app():
-    """Create Flask app for testing."""
-    app, socketio = create_app(TestingConfig)
-    return app
-
-
-@pytest.fixture
-def client(app):
-    """Create Flask test client."""
-    return app.test_client()
 
 
 @pytest.fixture
