@@ -38,7 +38,11 @@ def create_app(config_class=None):
 
     # Initialize game universe and service
     # For testing and development, create a minimal universe
-    if config_class in (TestingConfig, DevelopmentConfig) or config_class is None:
+    # Check by class name to avoid import namespace issues
+    config_class_name = config_class.__name__
+    is_dev_or_test = config_class_name in ('DevelopmentConfig', 'TestingConfig')
+    
+    if is_dev_or_test:
         try:
             # Import Player to create a test player for universe initialization
             from src.player import Player
