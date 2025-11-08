@@ -33,13 +33,43 @@ class MockTile:
 
 
 class MockUniverse:
-    """Mock universe for testing."""
+    """Mock universe for testing with testing-map layout."""
 
     def __init__(self):
+        # Layout from testing-map.json:
+        # (2, 2): exits=['south', 'east', 'southeast']
+        # (2, 3): exits=['north', 'east', 'northeast']
+        # (3, 2): exits=['south', 'west', 'southeast', 'southwest']
+        # (3, 3): exits=['northwest', 'north', 'west', 'east']
         self.tiles = {
-            (0, 0): MockTile("Starting Room", 0, 0),
-            (0, 1): MockTile("Northern Room", 0, 1),
-            (1, 0): MockTile("Eastern Room", 1, 0),
+            (2, 2): MockTile("Test Room A", 2, 2),
+            (2, 3): MockTile("Test Room B", 2, 3),
+            (3, 2): MockTile("Test Room C", 3, 2),
+            (3, 3): MockTile("Test Room D", 3, 3),
+            (1, 3): MockTile("Test Room E", 1, 3),  # North of (2, 3)
+        }
+        # Update exits to match actual map structure
+        self.tiles[(2, 2)].exits = {
+            "south": (2, 3),
+            "east": (3, 2),
+            "southeast": (3, 3),
+        }
+        self.tiles[(2, 3)].exits = {
+            "north": (2, 2),
+            "east": (3, 3),
+            "northeast": (3, 2),
+        }
+        self.tiles[(3, 2)].exits = {
+            "south": (3, 3),
+            "west": (2, 2),
+            "southeast": (3, 3),
+            "southwest": (2, 3),
+        }
+        self.tiles[(3, 3)].exits = {
+            "northwest": (2, 2),
+            "north": (2, 3),
+            "west": (2, 3),
+            "east": (3, 3),  # Self-loop for testing
         }
 
     def get_tile(self, x, y):
@@ -76,28 +106,30 @@ class TestGameService:
         """Set up test fixtures."""
         self.universe = MockUniverse()
         self.service = GameService(self.universe)
-        self.player = MockPlayer()
+        # Position player at (2, 3) which has north and east exits
+        self.player = MockPlayer(x=2, y=3)
 
     def test_get_current_room(self):
         """Test getting current room data."""
         result = self.service.get_current_room(self.player)
 
-        assert result["x"] == 0
-        assert result["y"] == 0
-        assert result["name"] == "Starting Room"
+        assert result["x"] == 2
+        assert result["y"] == 3
+        assert result["name"] == "Test Room B"
         assert "description" in result
         assert "exits" in result
         assert len(result["exits"]) > 0
 
     def test_move_player_valid(self):
         """Test moving player in valid direction."""
+        # Player starts at (2, 3). Valid directions: north, east, northeast
         result = self.service.move_player(self.player, "north")
 
         assert result["success"] is True
-        assert result["new_position"]["x"] == 0
-        assert result["new_position"]["y"] == 1
-        assert self.player.x == 0
-        assert self.player.y == 1
+        assert result["new_position"]["x"] == 2
+        assert result["new_position"]["y"] == 2
+        assert self.player.x == 2
+        assert self.player.y == 2
 
     def test_move_player_invalid_direction(self):
         """Test moving in invalid direction."""
@@ -116,11 +148,11 @@ class TestGameService:
 
     def test_get_tile(self):
         """Test getting tile data."""
-        result = self.service.get_tile(0, 0)
+        result = self.service.get_tile(2, 3)
 
-        assert result["x"] == 0
-        assert result["y"] == 0
-        assert result["name"] == "Starting Room"
+        assert result["x"] == 2
+        assert result["y"] == 3
+        assert result["name"] == "Test Room B"
         assert "items" in result
         assert "npcs" in result
 
@@ -179,14 +211,14 @@ class TestGameService:
 
     def test_trigger_tile_events_empty(self):
         """Test triggering events when no events exist."""
-        tile = self.universe.get_tile(0, 0)
+        tile = self.universe.get_tile(2, 3)
         result = self.service.trigger_tile_events(self.player, tile)
 
         assert result == []
 
     def test_trigger_tile_events_with_events(self):
         """Test triggering events on a tile with events."""
-        tile = self.universe.get_tile(0, 0)
+        tile = self.universe.get_tile(2, 3)
         
         # Create a mock event
         class MockEvent:
@@ -209,7 +241,7 @@ class TestGameService:
 
     def test_get_tile_enhanced(self):
         """Test getting enhanced tile data with NPCs and items."""
-        tile = self.universe.get_tile(0, 0)
+        tile = self.universe.get_tile(2, 3)
         
         # Add mock item
         class MockItem:
@@ -238,9 +270,9 @@ class TestGameService:
         tile.npcs_here.append(MockNPC())
         tile.objects_here = [MockObject()]
         
-        result = self.service.get_tile(0, 0)
+        result = self.service.get_tile(2, 3)
         
-        assert result["name"] == "Starting Room"
+        assert result["name"] == "Test Room B"
         assert len(result["items"]) == 1
         assert result["items"][0]["name"] == "Test Item"
         assert result["items"][0]["quantity"] == 1

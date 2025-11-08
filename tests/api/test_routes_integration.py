@@ -212,10 +212,10 @@ class TestWorldRoutes:
         assert "exits" in room or isinstance(room.get("exits"), dict)
 
     def test_move_player_north_success(self, client, session_id):
-        """Test moving player north successfully."""
+        """Test moving player east successfully (valid from (1,1))."""
         response = client.post(
             "/world/move",
-            data=json.dumps({"direction": "north"}),
+            data=json.dumps({"direction": "east"}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -231,7 +231,7 @@ class TestWorldRoutes:
         """Test moving in an invalid direction."""
         response = client.post(
             "/world/move",
-            data=json.dumps({"direction": "northeast"}),
+            data=json.dumps({"direction": "north"}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -245,7 +245,7 @@ class TestWorldRoutes:
         """Test that direction is case-insensitive."""
         response = client.post(
             "/world/move",
-            data=json.dumps({"direction": "NORTH"}),
+            data=json.dumps({"direction": "EAST"}),
             content_type="application/json",
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -257,7 +257,7 @@ class TestWorldRoutes:
     def test_get_tile_success(self, client, session_id):
         """Test getting tile data successfully."""
         response = client.get(
-            "/world/tile?x=0&y=0",
+            "/world/tile?x=1&y=1",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -266,8 +266,8 @@ class TestWorldRoutes:
         assert data["success"] is True
         assert "tile" in data
         tile = data["tile"]
-        assert tile["x"] == 0
-        assert tile["y"] == 0
+        assert tile["x"] == 1
+        assert tile["y"] == 1
         assert "name" in tile
         assert "description" in tile
         assert "items" in tile

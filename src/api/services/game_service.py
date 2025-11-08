@@ -24,6 +24,47 @@ class GameService:
     # World Navigation Methods
     # ========================
 
+    def _calculate_exits(self, tile: Any, x: int, y: int) -> Dict[str, Dict[str, int]]:
+        """Calculate available exits from a tile by checking adjacent tiles.
+        
+        Args:
+            tile: The MapTile instance
+            x: Current x coordinate
+            y: Current y coordinate
+            
+        Returns:
+            Dictionary mapping direction -> {x, y} coordinates
+        """
+        # Direction vectors and names
+        directions = {
+            "north": (0, -1),
+            "south": (0, 1),
+            "east": (1, 0),
+            "west": (-1, 0),
+            "northeast": (1, -1),
+            "northwest": (-1, -1),
+            "southeast": (1, 1),
+            "southwest": (-1, 1),
+        }
+        
+        exits = {}
+        
+        # Get blocked exits from tile
+        blocked = getattr(tile, "block_exit", [])
+        
+        # Check each direction
+        for direction, (dx, dy) in directions.items():
+            if direction in blocked:
+                continue
+                
+            new_x, new_y = x + dx, y + dy
+            adjacent_tile = self.universe.get_tile(new_x, new_y)
+            
+            if adjacent_tile:
+                exits[direction] = {"x": new_x, "y": new_y}
+        
+        return exits
+
     def get_current_room(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get current room/tile data.
 
@@ -37,12 +78,15 @@ class GameService:
         if not tile:
             return {"error": "Invalid player position"}
 
+        # Calculate exits dynamically by checking adjacent tiles
+        exits_data = self._calculate_exits(tile, player.x, player.y)
+
         return {
             "x": player.x,
             "y": player.y,
-            "name": tile.name if hasattr(tile, "name") else "Unknown",
-            "description": tile.description if hasattr(tile, "description") else "",
-            "exits": list(tile.exits.keys()) if hasattr(tile, "exits") else [],
+            "name": getattr(tile, "name", "Unknown"),
+            "description": getattr(tile, "description", ""),
+            "exits": exits_data,
         }
 
     def move_player(self, player: "player_module.Player", direction: str) -> Dict[str, Any]:
@@ -50,27 +94,31 @@ class GameService:
 
         Args:
             player: The Player instance
-            direction: Direction to move (north, south, east, west)
+            direction: Direction to move (north, south, east, west, northeast, northwest, southeast, southwest)
 
         Returns:
             Dictionary with result of movement
         """
-        valid_directions = ["north", "south", "east", "west"]
+        valid_directions = ["north", "south", "east", "west", "northeast", "northwest", "southeast", "southwest"]
         direction_lower = direction.lower()
         if direction_lower not in valid_directions:
             return {"error": f"Invalid direction: {direction}"}
 
         tile = self.universe.get_tile(player.x, player.y)
-        if not tile or not hasattr(tile, "exits"):
+        if not tile:
             return {"error": "Cannot move from this location"}
 
-        if direction_lower not in tile.exits:
+        # Calculate available exits
+        available_exits = self._calculate_exits(tile, player.x, player.y)
+        
+        if direction_lower not in available_exits:
             return {"error": f"Cannot go {direction_lower} from here"}
 
-        # Get new coordinates
-        new_x, new_y = tile.exits[direction_lower]
+        # Get new coordinates from exits
+        exit_data = available_exits[direction_lower]
+        new_x, new_y = exit_data["x"], exit_data["y"]
         
-        # Validate new tile exists
+        # Validate new tile exists (should always exist after exits calculation, but be safe)
         new_tile = self.universe.get_tile(new_x, new_y)
         if not new_tile:
             return {"error": f"Cannot move {direction_lower} - blocked or out of bounds"}
