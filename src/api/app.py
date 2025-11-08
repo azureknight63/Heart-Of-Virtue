@@ -33,14 +33,14 @@ def create_app(config_class=None):
         async_mode="threading",
     )
 
-    # Initialize session manager
-    session_manager = SessionManager()
-
-    # Initialize game universe and service
+    # Initialize game universe and service first
     # For testing and development, load real game universe
     # Check by class name to avoid import namespace issues
     config_class_name = config_class.__name__
     is_dev_or_test = config_class_name in ('DevelopmentConfig', 'TestingConfig')
+    
+    universe = None
+    game_service = None
     
     if is_dev_or_test:
         try:
@@ -50,14 +50,20 @@ def create_app(config_class=None):
             # Create a test player
             test_player = Player()
             test_player.name = "TestPlayer"
-            test_player.x = 0  # Set starting position
-            test_player.y = 0
             
             # Create universe with test player
             universe = universe_module.Universe(test_player)
             
             # Build universe with real maps from JSON files
             universe.build(test_player)
+            
+            # Set player to starting position (first tile of first map)
+            if universe.maps and len(universe.maps) > 0:
+                map_data = universe.maps[0]
+                tiles = [k for k in map_data if isinstance(k, tuple)]
+                if tiles:
+                    start_pos = tiles[0]
+                    test_player.x, test_player.y = start_pos
             
             # Create a get_tile wrapper for accessing tiles from the universe.maps structure
             def get_tile_from_maps(x, y):
@@ -87,9 +93,13 @@ def create_app(config_class=None):
         universe = None
         game_service = GameService(universe) if universe else None
 
+    # Initialize session manager (now with universe reference if available)
+    session_manager = SessionManager(universe=universe)
+
     # Store in app context
     app.session_manager = session_manager
     app.game_service = game_service
+    app.socketio = socketio
     app.socketio = socketio
 
     # Register blueprints

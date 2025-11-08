@@ -65,11 +65,16 @@ class Session:
 class SessionManager:
     """Manages player sessions (in-memory for Phase 1)."""
 
-    def __init__(self):
-        """Initialize session manager."""
+    def __init__(self, universe=None):
+        """Initialize session manager.
+        
+        Args:
+            universe: Optional Universe instance for player positioning
+        """
         self.sessions: Dict[str, Session] = {}
         self.players: Dict[str, object] = {}  # Stores Player or MinimalPlayer objects
         self.session_to_player: Dict[str, str] = {}
+        self.universe = universe  # Reference to universe for getting starting positions
 
     def create_session(self, username: str) -> Tuple[str, str]:
         """Create a new player session.
@@ -94,10 +99,28 @@ class SessionManager:
             # This will fail during testing/API initialization due to game engine dependencies
             # So we use MinimalPlayer as fallback
             player = MinimalPlayer(username)
+            
+            # If universe is available, position player at starting location
+            if self.universe and hasattr(self.universe, 'maps') and self.universe.maps:
+                first_map = self.universe.maps[0]
+                tiles = [k for k in first_map if isinstance(k, tuple)]
+                if tiles:
+                    start_pos = tiles[0]
+                    player.x, player.y = start_pos
+            
             self.players[player_id] = player
         except Exception:
             # Fallback to minimal player
             player = MinimalPlayer(username)
+            
+            # If universe is available, position player at starting location
+            if self.universe and hasattr(self.universe, 'maps') and self.universe.maps:
+                first_map = self.universe.maps[0]
+                tiles = [k for k in first_map if isinstance(k, tuple)]
+                if tiles:
+                    start_pos = tiles[0]
+                    player.x, player.y = start_pos
+            
             self.players[player_id] = player
 
         return session_id, player_id
