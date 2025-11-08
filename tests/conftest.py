@@ -63,6 +63,8 @@ def pytest_collection_modifyitems(config, items):
         "test_map_generator_additional.py",
         "test_map_generator_more.py",
         "verify_colors.py",
+        "test_battlefield_colors.py",
+        "test_battlefield_window.py",
     }
     
     for item in items:
