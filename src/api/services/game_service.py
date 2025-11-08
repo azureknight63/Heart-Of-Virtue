@@ -3,6 +3,10 @@
 from typing import Dict, Any, Optional, List
 import src.universe as universe_module
 import src.player as player_module
+from src.api.serializers.item_serializer import ItemSerializer
+from src.api.serializers.npc_serializer import NPCSerializer
+from src.api.serializers.object_serializer import ObjectSerializer
+from src.api.serializers.event_serializer import EventSerializer
 
 
 class GameService:
@@ -158,12 +162,10 @@ class GameService:
         if not hasattr(tile, "events_here"):
             return events_triggered
 
+        # Serialize all events on the tile
         for event in tile.events_here:
-            event_data = {
-                "event_id": str(id(event)),
-                "type": type(event).__name__,
-                "description": getattr(event, "description", ""),
-            }
+            # Serialize the event using EventSerializer
+            event_data = EventSerializer.serialize(event)
             events_triggered.append(event_data)
             
             # Try to trigger the event if it has a process method
@@ -190,45 +192,11 @@ class GameService:
         if not tile:
             return {"error": "Tile not found"}
 
-        # Serialize items with key properties
-        items_data = []
-        for i, item in enumerate(getattr(tile, "items_here", [])):
-            item_obj = {
-                "id": str(i),
-                "name": getattr(item, "name", type(item).__name__),
-                "type": type(item).__name__,
-                "description": getattr(item, "description", ""),
-            }
-            # Add quantity if available (for stackable items)
-            if hasattr(item, "quantity"):
-                item_obj["quantity"] = item.quantity
-            items_data.append(item_obj)
-
-        # Serialize NPCs with basic stats
-        npcs_data = []
-        for i, npc in enumerate(getattr(tile, "npcs_here", [])):
-            npc_obj = {
-                "id": str(i),
-                "name": getattr(npc, "name", "Unknown"),
-                "type": type(npc).__name__,
-                "level": getattr(npc, "level", 1),
-                "health": getattr(npc, "health", 0),
-                "max_health": getattr(npc, "max_health", 0),
-                "is_hostile": getattr(npc, "is_hostile", False),
-            }
-            npcs_data.append(npc_obj)
-
-        # Serialize objects on tile
-        objects_data = []
-        for i, obj in enumerate(getattr(tile, "objects_here", [])):
-            obj_data = {
-                "id": str(i),
-                "name": getattr(obj, "name", type(obj).__name__),
-                "type": type(obj).__name__,
-                "description": getattr(obj, "description", ""),
-                "is_passable": getattr(obj, "is_passable", True),
-            }
-            objects_data.append(obj_data)
+        # Use serializers for consistent formatting
+        items_data = ItemSerializer.serialize_list(getattr(tile, "items_here", []))
+        npcs_data = NPCSerializer.serialize_list(getattr(tile, "npcs_here", []))
+        objects_data = ObjectSerializer.serialize_list(getattr(tile, "objects_here", []))
+        events_data = EventSerializer.serialize_list(getattr(tile, "events_here", []))
 
         # Get exits/connections
         exits_data = {}
@@ -244,6 +212,7 @@ class GameService:
             "items": items_data,
             "npcs": npcs_data,
             "objects": objects_data,
+            "events": events_data,
             "exits": exits_data,
             "is_passable": getattr(tile, "is_passable", True),
         }
