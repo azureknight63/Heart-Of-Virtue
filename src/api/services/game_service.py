@@ -7,6 +7,12 @@ from src.api.serializers.item_serializer import ItemSerializer
 from src.api.serializers.npc_serializer import NPCSerializer
 from src.api.serializers.object_serializer import ObjectSerializer
 from src.api.serializers.event_serializer import EventSerializer
+from src.api.serializers.inventory import (
+    InventorySerializer,
+    EquipmentSerializer,
+    ItemDetailSerializer,
+    ItemComparisonSerializer,
+)
 
 
 class GameService:
@@ -228,22 +234,9 @@ class GameService:
             player: The Player instance
 
         Returns:
-            Dictionary with inventory data
+            Dictionary with full inventory data using InventorySerializer
         """
-        items = getattr(player, "inventory", [])
-        return {
-            "items": [
-                {
-                    "id": str(i),
-                    "name": getattr(item, "name", "Unknown"),
-                    "type": type(item).__name__,
-                }
-                for i, item in enumerate(items)
-            ],
-            "count": len(items),
-            "weight": getattr(player, "weight", 0),
-            "max_weight": getattr(player, "max_carrying_capacity", 500),
-        }
+        return InventorySerializer.serialize(player)
 
     def take_item(
         self, player: "player_module.Player", item_id: str
@@ -301,45 +294,124 @@ class GameService:
             player: The Player instance
 
         Returns:
-            Dictionary with equipped items
+            Dictionary with equipped items and stats using EquipmentSerializer
         """
-        # TODO: Parse equipment from player state
-        return {
-            "head": None,
-            "body": None,
-            "hands": None,
-            "feet": None,
-            "back": None,
-            "neck": None,
-        }
+        return EquipmentSerializer.serialize(player)
 
     def equip_item(
-        self, player: "player_module.Player", item_id: str
+        self, player: "player_module.Player", item_index: int
     ) -> Dict[str, Any]:
-        """Equip an item.
+        """Equip an item from inventory by index.
 
         Args:
             player: The Player instance
-            item_id: ID of item to equip
+            item_index: Index of item in inventory to equip
 
         Returns:
-            Result of action with stat changes
+            Result of action with equipment changes
         """
-        # TODO: Implement equipment logic
-        return {"success": True, "item_id": item_id, "stat_changes": {}}
+        inventory = getattr(player, "inventory", [])
+        
+        # Validate index
+        if not isinstance(item_index, int) or item_index < 0 or item_index >= len(inventory):
+            return {"success": False, "error": f"Invalid item index: {item_index}"}
+        
+        item = inventory[item_index]
+        
+        # Check if item can be equipped
+        if not hasattr(item, "isequipped"):
+            return {"success": False, "error": f"Item '{getattr(item, 'name', 'Unknown')}' cannot be equipped"}
+        
+        try:
+            # Mark as equipped
+            item.isequipped = True
+            
+            # Update player's equipment based on item type
+            item_type = type(item).__name__
+            
+            if item_type == "Weapon":
+                player.eq_weapon = item
+                player.weapon = item
+            elif item_type == "Shield":
+                player.shield = item
+            elif item_type == "Armor" or item_type == "Helm" or item_type == "Boots" or item_type == "Gloves":
+                # Find appropriate slot
+                if hasattr(item, "type_s"):
+                    slot_name = item.type_s.lower()
+                    if hasattr(player, slot_name):
+                        setattr(player, slot_name, item)
+            
+            # Refresh stat bonuses after equipment change
+            if hasattr(player, "refresh_stat_bonuses"):
+                player.refresh_stat_bonuses()
+            
+            return {
+                "success": True,
+                "item_name": getattr(item, "name", "Unknown"),
+                "item_type": item_type,
+                "equipment": EquipmentSerializer.serialize(player),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def unequip_item(self, player: "player_module.Player", slot: str) -> Dict[str, Any]:
         """Unequip item from slot.
 
         Args:
             player: The Player instance
-            slot: Equipment slot (head, body, etc.)
+            slot: Equipment slot name (weapon, shield, head, body, etc.)
 
         Returns:
             Result of action
         """
-        # TODO: Implement unequip logic
-        return {"success": True, "slot": slot}
+        # Map slot names to player attributes
+        slot_mapping = {
+            "weapon": "eq_weapon",
+            "shield": "shield",
+            "head": "head",
+            "body": "body",
+            "legs": "legs",
+            "feet": "feet",
+            "hands": "hands",
+            "accessory_1": "accessory_1",
+            "accessory_2": "accessory_2",
+        }
+        
+        if slot not in slot_mapping:
+            return {"success": False, "error": f"Unknown slot: {slot}"}
+        
+        attr_name = slot_mapping[slot]
+        item = getattr(player, attr_name, None)
+        
+        if not item:
+            return {"success": False, "error": f"No item equipped in slot: {slot}"}
+        
+        try:
+            # Mark as unequipped
+            if hasattr(item, "isequipped"):
+                item.isequipped = False
+            
+            # Clear the slot
+            if slot == "weapon":
+                # Equip fists if no weapon
+                if hasattr(player, "fists"):
+                    player.eq_weapon = player.fists
+                    player.weapon = player.fists
+            else:
+                setattr(player, attr_name, None)
+            
+            # Refresh stat bonuses after equipment change
+            if hasattr(player, "refresh_stat_bonuses"):
+                player.refresh_stat_bonuses()
+            
+            return {
+                "success": True,
+                "item_name": getattr(item, "name", "Unknown"),
+                "slot": slot,
+                "equipment": EquipmentSerializer.serialize(player),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     # ========================
     # Combat Methods

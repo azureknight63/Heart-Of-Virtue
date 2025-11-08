@@ -96,7 +96,7 @@ class TestGameServiceInventory:
 
         assert result is not None
         assert "error" not in result
-        assert result["count"] == 0
+        assert result["item_count"] == 0
 
     def test_get_inventory_with_items(self, game_service, mock_player, mock_item):
         """Test getting inventory with items."""
@@ -105,7 +105,7 @@ class TestGameServiceInventory:
         result = game_service.get_inventory(mock_player)
 
         assert result is not None
-        assert result["count"] == 2
+        assert result["item_count"] == 2
 
     # ========== get_equipment tests ==========
 
@@ -115,8 +115,8 @@ class TestGameServiceInventory:
 
         assert result is not None
         assert "error" not in result
-        assert "head" in result
-        assert result["head"] is None
+        assert "equipped" in result
+        assert isinstance(result["equipped"], dict)
 
     def test_get_equipment_with_item(self, game_service, mock_player, mock_item):
         """Test getting equipment with equipped item."""
@@ -125,7 +125,7 @@ class TestGameServiceInventory:
         result = game_service.get_equipment(mock_player)
 
         assert result is not None
-        assert "head" in result
+        assert "equipped" in result
 
     # ========== examine_item tests ==========
 
@@ -242,14 +242,14 @@ class TestGameServiceInventory:
         """Test complete inventory workflow."""
         # Get initial inventory
         inventory = game_service.get_inventory(mock_player)
-        assert inventory["count"] == 0
+        assert inventory["item_count"] == 0
 
         # Add item
         mock_player.inventory.append(mock_item)
 
         # Get updated inventory
         inventory = game_service.get_inventory(mock_player)
-        assert inventory["count"] == 1
+        assert inventory["item_count"] == 1
 
         # Examine item
         item_data = game_service.examine_item(mock_player, 0)

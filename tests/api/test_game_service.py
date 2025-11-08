@@ -167,19 +167,18 @@ class TestGameService:
         result = self.service.get_inventory(self.player)
 
         assert "items" in result
-        assert "count" in result
-        assert "weight" in result
-        assert "max_weight" in result
-        assert result["count"] == 0
+        assert "item_count" in result
+        assert "weight_percentage" in result
+        assert "total_weight" in result
+        assert result["item_count"] == 0
 
     def test_get_equipment(self):
         """Test getting player equipment."""
         result = self.service.get_equipment(self.player)
 
-        assert "head" in result
-        assert "body" in result
-        assert "hands" in result
-        assert "feet" in result
+        assert "equipped" in result
+        assert "total_stat_bonuses" in result
+        assert isinstance(result["equipped"], dict)
 
     def test_get_player_status(self):
         """Test getting player status."""
