@@ -37,7 +37,7 @@ def create_app(config_class=None):
     session_manager = SessionManager()
 
     # Initialize game universe and service
-    # For testing and development, create a minimal universe
+    # For testing and development, load real game universe
     # Check by class name to avoid import namespace issues
     config_class_name = config_class.__name__
     is_dev_or_test = config_class_name in ('DevelopmentConfig', 'TestingConfig')
@@ -47,7 +47,7 @@ def create_app(config_class=None):
             # Import Player to create a test player for universe initialization
             from src.player import Player
             
-            # Create a minimal test player
+            # Create a test player
             test_player = Player()
             test_player.name = "TestPlayer"
             test_player.x = 0  # Set starting position
@@ -55,70 +55,32 @@ def create_app(config_class=None):
             
             # Create universe with test player
             universe = universe_module.Universe(test_player)
-            # Build minimal map structure for testing
-            if not hasattr(universe, 'maps') or not universe.maps:
-                # Create a simple test map with basic tiles
-                test_tiles = {
-                    (0, 0): type('MockTile', (), {
-                        'name': 'Test Starting Room',
-                        'description': 'A test room',
-                        'x': 0, 'y': 0,
-                        'exits': {'north': (0, 1), 'south': (0, -1), 'east': (1, 0), 'west': (-1, 0)},
-                        'items_here': [],
-                        'npcs_here': [],
-                        'objects_here': [],
-                        'events_here': []
-                    })(),
-                    (0, 1): type('MockTile', (), {
-                        'name': 'Test Northern Room',
-                        'description': 'A room to the north',
-                        'x': 0, 'y': 1,
-                        'exits': {'north': (0, 2), 'south': (0, 0), 'east': (1, 1), 'west': (-1, 1)},
-                        'items_here': [],
-                        'npcs_here': [],
-                        'objects_here': [],
-                        'events_here': []
-                    })(),
-                    (1, 0): type('MockTile', (), {
-                        'name': 'Test Eastern Room',
-                        'description': 'A room to the east',
-                        'x': 1, 'y': 0,
-                        'exits': {'north': (1, 1), 'south': (1, -1), 'east': (2, 0), 'west': (0, 0)},
-                        'items_here': [],
-                        'npcs_here': [],
-                        'objects_here': [],
-                        'events_here': []
-                    })(),
-                    (0, -1): type('MockTile', (), {
-                        'name': 'Test Southern Room',
-                        'description': 'A room to the south',
-                        'x': 0, 'y': -1,
-                        'exits': {'north': (0, 0), 'south': (0, -2), 'east': (1, -1), 'west': (-1, -1)},
-                        'items_here': [],
-                        'npcs_here': [],
-                        'objects_here': [],
-                        'events_here': []
-                    })(),
-                    (-1, 0): type('MockTile', (), {
-                        'name': 'Test Western Room',
-                        'description': 'A room to the west',
-                        'x': -1, 'y': 0,
-                        'exits': {'north': (-1, 1), 'south': (-1, -1), 'east': (0, 0), 'west': (-2, 0)},
-                        'items_here': [],
-                        'npcs_here': [],
-                        'objects_here': [],
-                        'events_here': []
-                    })(),
-                }
-                # Create a simple get_tile method
-                def get_tile_method(x, y):
-                    return test_tiles.get((x, y))
+            
+            # Build universe with real maps from JSON files
+            universe.build(test_player)
+            
+            # Create a get_tile wrapper for accessing tiles from the universe.maps structure
+            def get_tile_from_maps(x, y):
+                """Retrieve a tile from the loaded maps by coordinates."""
+                if not hasattr(universe, 'maps') or not universe.maps:
+                    return None
                 
-                universe.get_tile = get_tile_method
+                # Maps is a list of dictionaries, each dict has 'name' and tile coordinate keys
+                for map_dict in universe.maps:
+                    if (x, y) in map_dict:
+                        return map_dict[(x, y)]
+                
+                return None
+            
+            # Add get_tile method to universe for API layer
+            universe.get_tile = get_tile_from_maps
             
             game_service = GameService(universe)
         except Exception as e:
-            # Fallback if test initialization fails
+            # Fallback if universe initialization fails
+            import traceback
+            print(f"Warning: Universe initialization failed: {e}")
+            traceback.print_exc()
             game_service = None
     else:
         # Production mode - load universe from existing game state if available
