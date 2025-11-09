@@ -11,6 +11,12 @@ from src.api.serializers.combat import (
     MoveSerializer,
     StateEffectSerializer,
 )
+from src.api.serializers.npc_ai import (
+    NPCAIStateSerializer,
+    DialogueStateSerializer,
+    QuestStateSerializer,
+    NPCBehaviorProfileSerializer,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -23,4 +29,8 @@ __all__ = [
     "CombatantSerializer",
     "MoveSerializer",
     "StateEffectSerializer",
+    "NPCAIStateSerializer",
+    "DialogueStateSerializer",
+    "QuestStateSerializer",
+    "NPCBehaviorProfileSerializer",
 ]

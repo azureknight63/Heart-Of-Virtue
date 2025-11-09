@@ -294,3 +294,21 @@ def validate_currency_amount(amount: Any, available: int) -> Tuple[bool, Optiona
         return True, None
     except (ValueError, TypeError):
         return False, "Amount must be a valid integer"
+
+
+def validate_npc_id(npc_id: str) -> Tuple[bool, Optional[str]]:
+    """Validate NPC identifier.
+
+    Args:
+        npc_id: NPC identifier to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not npc_id or len(npc_id) == 0:
+        return False, "NPC ID cannot be empty"
+    if not isinstance(npc_id, str):
+        return False, "NPC ID must be a string"
+    if len(npc_id) > 100:
+        return False, "NPC ID must be 100 characters or less"
+    return True, None

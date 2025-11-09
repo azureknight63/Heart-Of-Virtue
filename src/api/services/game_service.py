@@ -19,6 +19,12 @@ from src.api.serializers.combat import (
     MoveSerializer,
     StateEffectSerializer,
 )
+from src.api.serializers.npc_ai import (
+    NPCAIStateSerializer,
+    DialogueStateSerializer,
+    QuestStateSerializer,
+    NPCBehaviorProfileSerializer,
+)
 
 
 class GameService:
@@ -860,3 +866,243 @@ class GameService:
         player.combat_list_allies = []
 
         return result
+
+    # =====================
+    # NPC Methods (Phase 5)
+    # =====================
+
+    def get_npc_state(self, player: "player_module.Player", npc_id: str) -> Dict[str, Any]:
+        """Get current state of an NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+
+        Returns:
+            Dictionary with NPC state
+        """
+        # Find NPC in current tile
+        current_tile = self.universe.get_tile(player.x, player.y)
+        if not current_tile:
+            return {"success": False, "error": "Not on a valid tile"}
+
+        for npc in getattr(current_tile, "npcs_here", []):
+            if getattr(npc, "name", "") == npc_id:
+                return {
+                    "success": True,
+                    "npc": NPCAIStateSerializer.serialize_npc_ai_state(npc),
+                }
+
+        return {"success": False, "error": f"NPC '{npc_id}' not found"}
+
+    def get_npc_dialogue(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Get dialogue options from an NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+
+        Returns:
+            Dictionary with dialogue state
+        """
+        # Find NPC in current tile
+        current_tile = self.universe.get_tile(player.x, player.y)
+        if not current_tile:
+            return {"success": False, "error": "Not on a valid tile"}
+
+        for npc in getattr(current_tile, "npcs_here", []):
+            if getattr(npc, "name", "") == npc_id:
+                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
+                    npc, current_node="start"
+                )
+                return {"success": True, "dialogue": dialogue_state}
+
+        return {"success": False, "error": f"NPC '{npc_id}' not found"}
+
+    def select_dialogue_option(
+        self, player: "player_module.Player", npc_id: str, option_id: int
+    ) -> Dict[str, Any]:
+        """Select a dialogue option from an NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+            option_id: Selected option index
+
+        Returns:
+            Dictionary with next dialogue state
+        """
+        # Find NPC in current tile
+        current_tile = self.universe.get_tile(player.x, player.y)
+        if not current_tile:
+            return {"success": False, "error": "Not on a valid tile"}
+
+        for npc in getattr(current_tile, "npcs_here", []):
+            if getattr(npc, "name", "") == npc_id:
+                # Update conversation history
+                if not hasattr(npc, "conversation_history"):
+                    npc.conversation_history = []
+
+                # Mark dialogue interaction
+                npc.last_interaction_time = str(__import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                ))
+
+                # Return next dialogue node (stub implementation)
+                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
+                    npc, current_node="option_response"
+                )
+                return {"success": True, "dialogue": dialogue_state}
+
+        return {"success": False, "error": f"NPC '{npc_id}' not found"}
+
+    def get_npc_behavior_profile(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Get NPC behavior profile.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+
+        Returns:
+            Dictionary with NPC behavior profile
+        """
+        # Find NPC in current tile
+        current_tile = self.universe.get_tile(player.x, player.y)
+        if not current_tile:
+            return {"success": False, "error": "Not on a valid tile"}
+
+        for npc in getattr(current_tile, "npcs_here", []):
+            if getattr(npc, "name", "") == npc_id:
+                profile = NPCBehaviorProfileSerializer.serialize_behavior_profile(npc)
+                return {"success": True, "profile": profile}
+
+        return {"success": False, "error": f"NPC '{npc_id}' not found"}
+
+    def get_active_quests(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get list of active quests.
+
+        Args:
+            player: Player object
+
+        Returns:
+            Dictionary with active quests
+        """
+        quests = QuestStateSerializer.serialize_active_quests(player)
+        return {
+            "success": True,
+            "quests": quests,
+            "count": len(quests),
+        }
+
+    def start_quest(
+        self, player: "player_module.Player", quest_id: str
+    ) -> Dict[str, Any]:
+        """Start a quest.
+
+        Args:
+            player: Player object
+            quest_id: Quest identifier
+
+        Returns:
+            Dictionary with quest details
+        """
+        # Find quest in player's available quests
+        available_quests = getattr(player, "available_quests", [])
+
+        for quest in available_quests:
+            if quest.get("id") == quest_id:
+                # Move to active quests
+                if not hasattr(player, "active_quests"):
+                    player.active_quests = []
+
+                player.active_quests.append(quest)
+                available_quests.remove(quest)
+
+                return {
+                    "success": True,
+                    "message": f"Started quest: {quest.get('title', quest_id)}",
+                    "quest": QuestStateSerializer.serialize_quest(quest),
+                }
+
+        return {"success": False, "error": f"Quest '{quest_id}' not found"}
+
+    def update_quest_progress(
+        self,
+        player: "player_module.Player",
+        quest_id: str,
+        objective_id: str,
+    ) -> Dict[str, Any]:
+        """Update progress on a quest objective.
+
+        Args:
+            player: Player object
+            quest_id: Quest identifier
+            objective_id: Objective identifier
+
+        Returns:
+            Dictionary with updated quest progress
+        """
+        # Find active quest
+        active_quests = getattr(player, "active_quests", [])
+
+        for quest in active_quests:
+            if quest.get("id") == quest_id:
+                # Mark objective complete
+                for objective in quest.get("objectives", []):
+                    if objective.get("id") == objective_id:
+                        objective["completed"] = True
+
+                # Update progress
+                completed = sum(
+                    1 for obj in quest.get("objectives", [])
+                    if obj.get("completed", False)
+                )
+                total = len(quest.get("objectives", []))
+                quest["progress"] = int((completed / total * 100)) if total > 0 else 0
+
+                return {
+                    "success": True,
+                    "message": "Objective completed",
+                    "quest": QuestStateSerializer.serialize_quest_progress(quest),
+                }
+
+        return {"success": False, "error": f"Quest '{quest_id}' not found or not active"}
+
+    def get_quest_status(
+        self, player: "player_module.Player", quest_id: str
+    ) -> Dict[str, Any]:
+        """Get status of a specific quest.
+
+        Args:
+            player: Player object
+            quest_id: Quest identifier
+
+        Returns:
+            Dictionary with quest status
+        """
+        # Check active quests
+        active_quests = getattr(player, "active_quests", [])
+        for quest in active_quests:
+            if quest.get("id") == quest_id:
+                return {
+                    "success": True,
+                    "status": "active",
+                    "quest": QuestStateSerializer.serialize_quest_progress(quest),
+                }
+
+        # Check completed quests
+        completed_quests = getattr(player, "completed_quests", [])
+        for quest in completed_quests:
+            if quest.get("id") == quest_id:
+                return {
+                    "success": True,
+                    "status": "completed",
+                    "quest": QuestStateSerializer.serialize_quest(quest),
+                }
+
+        return {"success": False, "error": f"Quest '{quest_id}' not found"}
+
