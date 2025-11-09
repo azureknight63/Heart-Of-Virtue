@@ -1106,3 +1106,332 @@ class GameService:
 
         return {"success": False, "error": f"Quest '{quest_id}' not found"}
 
+    # ========================
+    # Quest Reward Methods (Phase 3)
+    # ========================
+
+    def get_quest_rewards(self, player: "player_module.Player", quest_id: str) -> Dict[str, Any]:
+        """Get rewards for a specific quest.
+
+        Args:
+            player: Player object
+            quest_id: Quest identifier
+
+        Returns:
+            Dictionary with quest reward details
+        """
+        from src.api.serializers.quest_rewards import QuestRewardSerializer
+
+        # Find quest in completed or available quests
+        quest = None
+
+        # Check active quests first
+        active_quests = getattr(player, "active_quests", [])
+        for q in active_quests:
+            if q.get("id") == quest_id:
+                quest = q
+                break
+
+        # Check completed quests
+        if not quest:
+            completed_quests = getattr(player, "completed_quests", [])
+            for q in completed_quests:
+                if q.get("id") == quest_id:
+                    quest = q
+                    break
+
+        if not quest:
+            return {"success": False, "error": f"Quest '{quest_id}' not found"}
+
+        rewards_data = QuestRewardSerializer.serialize_quest_rewards(quest)
+
+        return {"success": True, "rewards": rewards_data}
+
+    def complete_quest(
+        self,
+        player: "player_module.Player",
+        quest_id: str,
+        difficulty: str = "normal",
+        no_deaths: bool = True,
+        bonus_objectives_completed: bool = False,
+    ) -> Dict[str, Any]:
+        """Complete a quest and distribute rewards.
+
+        Args:
+            player: Player object
+            quest_id: Quest to complete
+            difficulty: Quest difficulty (easy, normal, hard, nightmare)
+            no_deaths: Whether quest was completed without deaths
+            bonus_objectives_completed: Whether all bonus objectives completed
+
+        Returns:
+            Dictionary with completion details and rewards distributed
+        """
+        from src.api.serializers.quest_rewards import (
+            RewardConditionValidator,
+            RewardDistributionSerializer,
+            LevelingProgressSerializer,
+        )
+
+        # Find and remove quest from active quests
+        active_quests = getattr(player, "active_quests", [])
+        quest = None
+
+        for i, q in enumerate(active_quests):
+            if q.get("id") == quest_id:
+                quest = active_quests.pop(i)
+                break
+
+        if not quest:
+            return {"success": False, "error": f"Quest '{quest_id}' not active"}
+
+        # Apply conditions to calculate final rewards
+        base_rewards, conditions_met = RewardConditionValidator.check_reward_conditions(
+            player, quest
+        )
+
+        # Add condition modifiers
+        reward_modifier = 1.0
+
+        # Difficulty multiplier
+        difficulty_multipliers = {
+            "easy": 0.5,
+            "normal": 1.0,
+            "hard": 1.5,
+            "nightmare": 2.0,
+        }
+        reward_modifier *= difficulty_multipliers.get(difficulty, 1.0)
+
+        # No-deaths bonus
+        if no_deaths:
+            reward_modifier *= 1.2
+
+        # Bonus objectives bonus
+        if bonus_objectives_completed:
+            reward_modifier *= 1.25
+
+        # Calculate final rewards
+        final_rewards = {
+            "gold": int(base_rewards.get("gold", 0) * reward_modifier),
+            "experience": int(base_rewards.get("experience", 0) * reward_modifier),
+            "items": base_rewards.get("items", []),
+            "reputation": base_rewards.get("reputation", {}),
+        }
+
+        # Distribute rewards to player
+        old_level = getattr(player, "level", 1)
+        old_gold = getattr(player, "gold", 0)
+        old_xp = getattr(player, "experience", 0)
+
+        # Award gold
+        player.gold = old_gold + final_rewards["gold"]
+
+        # Award experience and check for level up
+        player.experience = old_xp + final_rewards["experience"]
+        new_level = old_level
+        level_up = False
+
+        # Simple leveling: 100 XP per level
+        while player.experience >= new_level * 100:
+            new_level += 1
+            level_up = True
+
+        if level_up:
+            player.level = new_level
+
+        # Award items (simplified - just add to inventory if space)
+        inventory = getattr(player, "inventory", [])
+        for item in final_rewards["items"]:
+            if len(inventory) < getattr(player, "max_inventory", 20):
+                inventory.append(item)
+
+        # Award reputation (simplified - just track)
+        if not hasattr(player, "reputation"):
+            player.reputation = {}
+
+        for npc_id, rep_change in final_rewards["reputation"].items():
+            if npc_id not in player.reputation:
+                player.reputation[npc_id] = 0
+            player.reputation[npc_id] += rep_change
+
+        # Move quest to completed
+        completed_quests = getattr(player, "completed_quests", [])
+        if not completed_quests:
+            player.completed_quests = []
+        player.completed_quests.append(quest)
+
+        # Serialize results
+        distribution_result = RewardDistributionSerializer.serialize_distributed_rewards(
+            player, quest_id, final_rewards
+        )
+
+        # Add level up info if applicable
+        if level_up:
+            level_up_info = LevelingProgressSerializer.serialize_level_up(
+                player, old_level, new_level, final_rewards["experience"]
+            )
+            distribution_result["level_up"] = level_up_info
+
+        # Add conditions info
+        distribution_result["conditions_applied"] = conditions_met
+
+        return {"success": True, "quest_completion": distribution_result}
+
+    def award_gold(self, player: "player_module.Player", amount: int) -> Dict[str, Any]:
+        """Award gold to player.
+
+        Args:
+            player: Player object
+            amount: Gold amount to award
+
+        Returns:
+            Dictionary with gold update info
+        """
+        from src.api.serializers.quest_rewards import RewardDistributionSerializer
+
+        old_gold = getattr(player, "gold", 0)
+        player.gold = old_gold + amount
+
+        result = RewardDistributionSerializer.serialize_gold_gain(player, amount)
+
+        return {"success": True, "gold_update": result}
+
+    def award_experience(
+        self, player: "player_module.Player", amount: int
+    ) -> Dict[str, Any]:
+        """Award experience to player.
+
+        Args:
+            player: Player object
+            amount: Experience amount to award
+
+        Returns:
+            Dictionary with experience update and level up info if applicable
+        """
+        from src.api.serializers.quest_rewards import (
+            RewardDistributionSerializer,
+            LevelingProgressSerializer,
+        )
+
+        old_level = getattr(player, "level", 1)
+        old_xp = getattr(player, "experience", 0)
+
+        player.experience = old_xp + amount
+        new_level = old_level
+        level_up = False
+
+        # Simple leveling: 100 XP per level
+        while player.experience >= new_level * 100:
+            new_level += 1
+            level_up = True
+
+        if level_up:
+            player.level = new_level
+
+        result = RewardDistributionSerializer.serialize_xp_gain(
+            player, amount, level_up=level_up, old_level=old_level
+        )
+
+        if level_up:
+            level_up_info = LevelingProgressSerializer.serialize_level_up(
+                player, old_level, new_level, amount
+            )
+            result["level_up"] = level_up_info
+
+        return {"success": True, "experience_update": result}
+
+    def award_item(
+        self,
+        player: "player_module.Player",
+        item_id: str,
+        item_name: str,
+        quantity: int = 1,
+    ) -> Dict[str, Any]:
+        """Award item to player inventory.
+
+        Args:
+            player: Player object
+            item_id: Item identifier
+            item_name: Item name
+            quantity: Quantity to award
+
+        Returns:
+            Dictionary with item award info
+        """
+        from src.api.serializers.quest_rewards import RewardDistributionSerializer
+
+        inventory = getattr(player, "inventory", [])
+        max_inventory = getattr(player, "max_inventory", 20)
+
+        if len(inventory) >= max_inventory:
+            return {
+                "success": False,
+                "error": "Inventory full",
+                "item_id": item_id,
+            }
+
+        # Add item to inventory (simplified)
+        item = {
+            "id": item_id,
+            "name": item_name,
+            "quantity": quantity,
+        }
+        inventory.append(item)
+
+        result = RewardDistributionSerializer.serialize_item_reward(
+            item_id, item_name, quantity
+        )
+
+        return {"success": True, "item_award": result}
+
+    def award_reputation(
+        self,
+        player: "player_module.Player",
+        npc_id: str,
+        npc_name: str,
+        amount: int,
+    ) -> Dict[str, Any]:
+        """Award reputation with an NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+            npc_name: NPC name
+            amount: Reputation change amount
+
+        Returns:
+            Dictionary with reputation update info
+        """
+        from src.api.serializers.quest_rewards import RewardDistributionSerializer
+
+        if not hasattr(player, "reputation"):
+            player.reputation = {}
+
+        old_rep = player.reputation.get(npc_id, 0)
+        player.reputation[npc_id] = old_rep + amount
+
+        result = RewardDistributionSerializer.serialize_reputation_gain(
+            npc_id, npc_name, amount
+        )
+
+        return {"success": True, "reputation_update": result}
+
+    def get_player_progression(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get player progression stats.
+
+        Args:
+            player: Player object
+
+        Returns:
+            Dictionary with progression data
+        """
+        from src.api.serializers.quest_rewards import LevelingProgressSerializer
+
+        quests_completed = len(getattr(player, "completed_quests", []))
+
+        result = LevelingProgressSerializer.serialize_progression(
+            player, quests_completed
+        )
+
+        return {"success": True, "progression": result}
+

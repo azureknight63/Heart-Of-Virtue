@@ -8,6 +8,7 @@ from .combat import combat_bp
 from .player import player_bp
 from .saves import saves_bp
 from .npc import npc_bp
+from .quest_rewards import quest_rewards_bp
 
 __all__ = [
     "auth_bp",
@@ -18,4 +19,5 @@ __all__ = [
     "player_bp",
     "saves_bp",
     "npc_bp",
+    "quest_rewards_bp",
 ]

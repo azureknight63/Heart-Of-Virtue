@@ -17,6 +17,12 @@ from src.api.serializers.npc_ai import (
     QuestStateSerializer,
     NPCBehaviorProfileSerializer,
 )
+from src.api.serializers.quest_rewards import (
+    QuestRewardSerializer,
+    RewardDistributionSerializer,
+    RewardConditionValidator,
+    LevelingProgressSerializer,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -33,4 +39,8 @@ __all__ = [
     "DialogueStateSerializer",
     "QuestStateSerializer",
     "NPCBehaviorProfileSerializer",
+    "QuestRewardSerializer",
+    "RewardDistributionSerializer",
+    "RewardConditionValidator",
+    "LevelingProgressSerializer",
 ]
