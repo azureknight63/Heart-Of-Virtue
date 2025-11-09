@@ -423,72 +423,6 @@ class GameService:
     # Combat Methods
     # ========================
 
-    def start_combat(
-        self, player: "player_module.Player", enemy_id: str
-    ) -> Dict[str, Any]:
-        """Initiate combat with an enemy.
-
-        Args:
-            player: The Player instance
-            enemy_id: ID of enemy to fight
-
-        Returns:
-            Dictionary with combat initialization data
-        """
-        # TODO: Initialize combat session
-        return {
-            "combat_active": True,
-            "combat_id": enemy_id,
-            "combatants": [],
-            "turn_order": [],
-        }
-
-    def execute_move(
-        self,
-        player: "player_module.Player",
-        move_type: str,
-        move_id: str,
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute a move during combat.
-
-        Args:
-            player: The Player instance
-            move_type: Type of move (attack, defend, cast, item)
-            move_id: ID of the move
-            target_id: ID of target (if applicable)
-
-        Returns:
-            Result of move execution
-        """
-        # TODO: Implement move execution
-        return {"success": True, "move_type": move_type, "result": "Move queued"}
-
-    def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get current combat status.
-
-        Args:
-            player: The Player instance
-
-        Returns:
-            Dictionary with combat state
-        """
-        in_combat = getattr(player, "in_combat", False)
-        
-        if not in_combat:
-            return {
-                "combat_active": False,
-                "combatants": [],
-                "log": []
-            }
-        
-        enemies = getattr(player, "combat_list", [])
-        return {
-            "combat_active": True,
-            "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
-            "log": []
-        }
-
     # ========================
     # Player Status Methods
     # ========================
@@ -592,16 +526,41 @@ class GameService:
     # Combat Methods
     # ========================
 
-    def start_combat(self, player: "player_module.Player", enemy: Any) -> Dict[str, Any]:
+    def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
         """Start combat between player and enemy.
 
         Args:
             player: Player object
-            enemy: Enemy NPC object
+            enemy_id: ID of enemy to find and fight (NPC name or identifier)
 
         Returns:
             Dictionary with combat state
         """
+        # Look up enemy in current tile or universe
+        current_tile = self.get_current_room(player)
+        if isinstance(current_tile, dict) and "error" in current_tile:
+            return {"error": f"Cannot find player location: {current_tile['error']}"}
+
+        # Get the actual tile object
+        player_x = getattr(player, "x", 1)
+        player_y = getattr(player, "y", 1)
+        tile = self.universe.get_tile(player_x, player_y)
+
+        if not tile:
+            return {"error": "Player tile not found"}
+
+        # Search for enemy NPC on the tile
+        enemy = None
+        for npc in getattr(tile, "npcs_here", []):
+            if getattr(npc, "name", "").lower() == enemy_id.lower() or str(
+                getattr(npc, "id", "")
+            ) == enemy_id:
+                enemy = npc
+                break
+
+        if not enemy:
+            return {"error": f"Enemy '{enemy_id}' not found on this tile"}
+
         # Initialize combat system
         if not hasattr(player, "combat_list"):
             player.combat_list = []
@@ -615,6 +574,31 @@ class GameService:
         return CombatStateSerializer.serialize_combat_state(
             player, [enemy], current_turn_index=0, round_number=1
         )
+
+    def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get current combat status.
+
+        Args:
+            player: Player object
+
+        Returns:
+            Dictionary with combat state
+        """
+        in_combat = getattr(player, "in_combat", False)
+        
+        if not in_combat:
+            return {
+                "combat_active": False,
+                "combatants": [],
+                "log": []
+            }
+        
+        enemies = getattr(player, "combat_list", [])
+        return {
+            "combat_active": True,
+            "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
+            "log": []
+        }
 
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get current combat state.
@@ -667,14 +651,15 @@ class GameService:
         }
 
     def execute_move(
-        self, player: "player_module.Player", move_name: str, target_id: Optional[str] = None
+        self, player: "player_module.Player", move_type: str, move_id: str, target_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Execute a combat move.
 
         Args:
             player: Player object
-            move_name: Name of move to execute
-            target_id: ID of target (default: first enemy)
+            move_type: Type of action (attack, defend, cast, item)
+            move_id: ID/name of the specific move or ability
+            target_id: ID of target (optional, defaults to first enemy)
 
         Returns:
             Dictionary with action result
@@ -686,16 +671,77 @@ class GameService:
         if not enemies:
             return {"error": "No enemies in combat"}
 
-        # TODO: Implement actual move execution
-        # For now, return stub data
+        # Route move based on type
+        if move_type == "attack":
+            return self._execute_attack(player, enemies, target_id)
+        elif move_type == "defend":
+            return self.defend(player)
+        elif move_type == "cast":
+            return self._execute_spell(player, enemies, move_id, target_id)
+        elif move_type == "item":
+            # move_id should be item index
+            try:
+                item_index = int(move_id)
+                return self.use_item_in_combat(player, item_index, target_id)
+            except ValueError:
+                return {"error": "Invalid item index"}
+        else:
+            return {"error": f"Unknown move type: {move_type}"}
+
+    def _execute_attack(self, player: "player_module.Player", enemies: List[Any], target_id: Optional[str] = None) -> Dict[str, Any]:
+        """Execute a basic attack.
+        
+        Args:
+            player: Player object
+            enemies: List of enemy NPCs
+            target_id: ID of target (defaults to first)
+            
+        Returns:
+            Dictionary with attack result
+        """
+        target = enemies[0] if not target_id else next((e for e in enemies if str(getattr(e, "id", "")) == target_id), enemies[0])
+        
+        # Simple damage calculation
+        damage = getattr(player, "damage", 10) + 5  # Base damage + random
+        target.health = max(0, getattr(target, "health", 1) - damage)
+        
         return {
             "success": True,
             "action": "attack",
-            "damage_dealt": 15,
-            "target": getattr(enemies[0], "name", "Enemy"),
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
+            "damage_dealt": damage,
+            "target": getattr(target, "name", "Enemy"),
+            "target_health": getattr(target, "health", 0),
+            "target_defeated": getattr(target, "health", 1) <= 0,
+            "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
+        }
+
+    def _execute_spell(self, player: "player_module.Player", enemies: List[Any], spell_name: str, target_id: Optional[str] = None) -> Dict[str, Any]:
+        """Execute a spell/ability.
+        
+        Args:
+            player: Player object
+            enemies: List of enemy NPCs
+            spell_name: Name of spell
+            target_id: ID of target
+            
+        Returns:
+            Dictionary with spell result
+        """
+        # TODO: Implement actual spell lookup and effects
+        target = enemies[0] if not target_id else next((e for e in enemies if str(getattr(e, "id", "")) == target_id), enemies[0])
+        
+        damage = 20  # Spell default damage
+        target.health = max(0, getattr(target, "health", 1) - damage)
+        
+        return {
+            "success": True,
+            "action": "cast",
+            "spell": spell_name,
+            "damage_dealt": damage,
+            "target": getattr(target, "name", "Enemy"),
+            "target_health": getattr(target, "health", 0),
+            "target_defeated": getattr(target, "health", 1) <= 0,
+            "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
         }
 
     def defend(self, player: "player_module.Player") -> Dict[str, Any]:

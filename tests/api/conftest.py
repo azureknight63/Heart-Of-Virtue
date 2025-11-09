@@ -9,6 +9,45 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+# Set up module shims for game engine (same as tests/conftest.py)
+import src.functions as _functions  # noqa: F401
+sys.modules.setdefault('functions', _functions)
+
+# Set up core module shims in order
+_core_order = [
+    'animations',
+    'genericng',
+    'enchant_tables',
+    'states',
+    'items',
+    'objects',
+    'loot_tables',
+    'actions',
+    'tiles',
+    'universe',
+    'positions',
+    'moves',
+    'npc',
+    'skilltree',
+    'switch',
+    'player'
+]
+for _name in _core_order:
+    if _name in sys.modules:
+        continue
+    try:
+        sys.modules[_name] = __import__(f'src.{_name}', fromlist=['*'])
+    except Exception:
+        pass
+
+# Optional shims
+for _mod in ("combat", "skilltree", "events", "shop_conditions"):
+    if _mod not in sys.modules:
+        try:
+            sys.modules[_mod] = __import__(f"src.{_mod}", fromlist=['*'])
+        except Exception:
+            pass
+
 import pytest
 
 try:
