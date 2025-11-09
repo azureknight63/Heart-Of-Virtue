@@ -13,6 +13,7 @@ from .validators import (
     validate_string_field,
     validate_positive_integer,
     validate_range,
+    validate_npc_id,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "validate_string_field",
     "validate_positive_integer",
     "validate_range",
+    "validate_npc_id",
 ]
