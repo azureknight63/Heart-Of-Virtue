@@ -84,8 +84,8 @@ class CombatStateSerializer:
         """
         return {
             "status": "victory" if victory else "defeat",
-            "player_hp": player.health,
-            "enemies_defeated": sum(1 for e in enemies if e.health <= 0),
+            "player_hp": player.hp,
+            "enemies_defeated": sum(1 for e in enemies if e.hp <= 0),
             "total_enemies": len(enemies),
             "experience_gained": (
                 CombatStateSerializer._calculate_experience(enemies)

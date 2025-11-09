@@ -9,11 +9,12 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-# Set up module shims for game engine (same as tests/conftest.py)
-import src.functions as _functions  # noqa: F401
-sys.modules.setdefault('functions', _functions)
+# CRITICAL: Set up module shims for game engine BEFORE importing anything else
+# This prevents "No module named 'functions'" when universe.py does 'import functions'
+import src.functions as functions  # noqa: F401
+sys.modules['functions'] = functions
 
-# Set up core module shims in order
+# Set up other core module shims (only after functions is available)
 _core_order = [
     'animations',
     'genericng',
@@ -24,6 +25,8 @@ _core_order = [
     'loot_tables',
     'actions',
     'tiles',
+    'scenario_config',
+    'coordinate_config',
     'universe',
     'positions',
     'moves',
@@ -36,12 +39,14 @@ for _name in _core_order:
     if _name in sys.modules:
         continue
     try:
-        sys.modules[_name] = __import__(f'src.{_name}', fromlist=['*'])
-    except Exception:
+        _mod = __import__(f'src.{_name}', fromlist=['*'])
+        sys.modules[_name] = _mod
+    except Exception as e:
+        # Silently skip modules that fail to import
         pass
 
-# Optional shims
-for _mod in ("combat", "skilltree", "events", "shop_conditions"):
+# Optional shims (for modules that may not exist)
+for _mod in ("combat", "events", "shop_conditions"):
     if _mod not in sys.modules:
         try:
             sys.modules[_mod] = __import__(f"src.{_mod}", fromlist=['*'])
@@ -54,8 +59,11 @@ try:
     from src.api.app import create_app  # type: ignore
     from src.api.config import TestingConfig  # type: ignore
     FLASK_AVAILABLE = True
-except ImportError:
+except (ImportError, ModuleNotFoundError) as e:
     FLASK_AVAILABLE = False
+    print(f"WARNING: Failed to import Flask API: {e}")
+    import traceback
+    traceback.print_exc()
 
 
 @pytest.fixture(scope="session")
@@ -78,7 +86,8 @@ def client(app):
 def authenticated_session(app):
     """Create authenticated session with player (function-scoped)."""
     session_manager = app.session_manager
-    session_id, player = session_manager.create_session("testplayer")
+    session_id, username = session_manager.create_session("testplayer")
+    player = session_manager.get_player(session_id)
     return session_id, player, session_manager
 
 

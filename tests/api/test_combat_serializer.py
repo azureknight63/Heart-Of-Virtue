@@ -106,13 +106,13 @@ class TestCombatStateSerializer:
 
         class MockPlayer:
             name = "Jean"
-            health = 50
-            max_health = 100
+            hp = 50
+            maxhp = 100
 
         class MockEnemy:
             name = "Goblin"
-            health = 0
-            max_health = 30
+            hp = 0
+            maxhp = 30
             level = 5
             exp_reward = 100
 
@@ -131,13 +131,13 @@ class TestCombatStateSerializer:
 
         class MockPlayer:
             name = "Jean"
-            health = 0
-            max_health = 100
+            hp = 0
+            maxhp = 100
 
         class MockEnemy:
             name = "Goblin"
-            health = 10
-            max_health = 30
+            hp = 10
+            maxhp = 30
 
         player = MockPlayer()
         enemies = [MockEnemy()]

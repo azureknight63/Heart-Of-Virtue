@@ -129,7 +129,8 @@ class TestGameServiceCombatMethods:
 
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, username = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         result = game_service.start_combat(player, "nonexistent_enemy")
 
@@ -215,7 +216,8 @@ class TestGameServiceCombatMethods:
         """Test ending combat with victory."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, username = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         # Manually set up combat
         player.in_combat = True
@@ -230,7 +232,8 @@ class TestGameServiceCombatMethods:
         """Test ending combat with defeat."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, username = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         # Manually set up combat
         player.in_combat = True
@@ -247,7 +250,8 @@ class TestGameServiceCombatMethods:
 
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, username = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         # Manually start combat for testing
         player.in_combat = True
@@ -264,7 +268,8 @@ class TestGameServiceCombatMethods:
         """Test combat state has expected structure."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, username = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         # Manually start combat
         player.in_combat = True
