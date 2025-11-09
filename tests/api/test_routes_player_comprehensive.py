@@ -10,29 +10,6 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from src.api.app import create_app  # type: ignore
-from src.api.config import TestingConfig  # type: ignore
-
-
-@pytest.fixture
-def app():
-    """Create Flask app for testing."""
-    app, socketio = create_app(TestingConfig)
-    return app
-
-
-@pytest.fixture
-def client(app):
-    """Create Flask test client."""
-    return app.test_client()
-
-
-@pytest.fixture
-def authenticated_session(app):
-    """Create authenticated session with player."""
-    session_manager = app.session_manager
-    session_id, player = session_manager.create_session("testplayer")
-    return session_id, player, session_manager
 
 
 class TestPlayerStatusRoute:

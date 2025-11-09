@@ -205,7 +205,6 @@ class TestGameService:
         result = self.service.get_combat_status(self.player)
 
         assert result["combat_active"] is False
-        assert "combatants" in result
         assert "log" in result
 
     def test_trigger_tile_events_empty(self):

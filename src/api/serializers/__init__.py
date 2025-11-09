@@ -5,6 +5,12 @@ from src.api.serializers.npc_serializer import NPCSerializer
 from src.api.serializers.object_serializer import ObjectSerializer
 from src.api.serializers.event_serializer import EventSerializer
 from src.api.serializers.world import TileSerializer, WorldSerializer
+from src.api.serializers.combat import (
+    CombatStateSerializer,
+    CombatantSerializer,
+    MoveSerializer,
+    StateEffectSerializer,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -13,4 +19,8 @@ __all__ = [
     "EventSerializer",
     "TileSerializer",
     "WorldSerializer",
+    "CombatStateSerializer",
+    "CombatantSerializer",
+    "MoveSerializer",
+    "StateEffectSerializer",
 ]
