@@ -1435,3 +1435,165 @@ class GameService:
 
         return {"success": True, "progression": result}
 
+    # ========================
+    # Reputation Methods (Stage 2)
+    # ========================
+
+    def get_player_reputation(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get player's complete reputation state.
+
+        Args:
+            player: Player object
+
+        Returns:
+            All reputation data for all NPCs
+        """
+        from src.api.serializers.reputation import PlayerReputationSerializer
+
+        result = PlayerReputationSerializer.serialize_all_reputation(player)
+        return {"success": True, "reputation": result}
+
+    def get_npc_relationship(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Get relationship with a specific NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+
+        Returns:
+            Relationship data for the NPC
+        """
+        from src.api.serializers.reputation import (
+            NPCRelationshipSerializer,
+            RelationshipFlagSerializer,
+        )
+
+        reputation = getattr(player, "reputation", {}).get(npc_id, 0)
+        npc_name = NPCRelationshipSerializer._get_npc_name(npc_id)
+
+        relationship = NPCRelationshipSerializer.serialize_relationship(
+            npc_id, npc_name, reputation
+        )
+
+        flags = RelationshipFlagSerializer.get_flags(player, npc_id)
+
+        return {
+            "success": True,
+            "relationship": relationship,
+            "flags": flags,
+        }
+
+    def update_reputation(
+        self,
+        player: "player_module.Player",
+        npc_id: str,
+        amount: int,
+        reason: str = "unknown",
+    ) -> Dict[str, Any]:
+        """Update player's reputation with an NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+            amount: Reputation change amount (-100 to +100)
+            reason: Reason for reputation change
+
+        Returns:
+            Reputation change result
+        """
+        from src.api.serializers.reputation import (
+            NPCRelationshipSerializer,
+            PlayerReputationSerializer,
+        )
+
+        if not hasattr(player, "reputation"):
+            player.reputation = {}
+
+        npc_name = NPCRelationshipSerializer._get_npc_name(npc_id)
+        old_rep = player.reputation.get(npc_id, 0)
+
+        # Clamp reputation to -100 to +100
+        new_rep = max(-100, min(100, old_rep + amount))
+
+        player.reputation[npc_id] = new_rep
+
+        result = PlayerReputationSerializer.serialize_reputation_change(
+            npc_id, npc_name, old_rep, new_rep, reason
+        )
+
+        return {"success": True, "reputation_change": result}
+
+    def set_relationship_flag(
+        self, player: "player_module.Player", npc_id: str, flag_name: str, value: bool
+    ) -> Dict[str, Any]:
+        """Set a relationship flag for an NPC.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+            flag_name: Flag name (romance, betrayed, alliance, etc.)
+            value: Flag value
+
+        Returns:
+            Flag update result
+        """
+        from src.api.serializers.reputation import RelationshipFlagSerializer
+
+        result = RelationshipFlagSerializer.set_flag(player, npc_id, flag_name, value)
+
+        return {"success": result.get("success", True), "flag_update": result}
+
+    def check_dialogue_available(
+        self, player: "player_module.Player", npc_id: str, dialogue_node: str
+    ) -> Dict[str, Any]:
+        """Check if a dialogue node is available based on reputation.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+            dialogue_node: Dialogue node identifier
+
+        Returns:
+            Availability status and reason if locked
+        """
+        from src.api.serializers.reputation import ReputationThresholdValidator
+
+        available, reason = ReputationThresholdValidator.check_dialogue_available(
+            player, npc_id, dialogue_node
+        )
+
+        return {
+            "success": True,
+            "dialogue_node": dialogue_node,
+            "available": available,
+            "locked_reason": reason,
+        }
+
+    def check_quest_available(
+        self, player: "player_module.Player", npc_id: str, quest_type: str
+    ) -> Dict[str, Any]:
+        """Check if a quest is available based on reputation.
+
+        Args:
+            player: Player object
+            npc_id: NPC identifier
+            quest_type: Type of quest
+
+        Returns:
+            Availability status and reason if locked
+        """
+        from src.api.serializers.reputation import ReputationThresholdValidator
+
+        available, reason = ReputationThresholdValidator.check_quest_available(
+            player, npc_id, quest_type
+        )
+
+        return {
+            "success": True,
+            "quest_type": quest_type,
+            "available": available,
+            "locked_reason": reason,
+        }
+

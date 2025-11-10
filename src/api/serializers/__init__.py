@@ -23,6 +23,12 @@ from src.api.serializers.quest_rewards import (
     RewardConditionValidator,
     LevelingProgressSerializer,
 )
+from src.api.serializers.reputation import (
+    NPCRelationshipSerializer,
+    PlayerReputationSerializer,
+    RelationshipFlagSerializer,
+    ReputationThresholdValidator,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -43,4 +49,8 @@ __all__ = [
     "RewardDistributionSerializer",
     "RewardConditionValidator",
     "LevelingProgressSerializer",
+    "NPCRelationshipSerializer",
+    "PlayerReputationSerializer",
+    "RelationshipFlagSerializer",
+    "ReputationThresholdValidator",
 ]
