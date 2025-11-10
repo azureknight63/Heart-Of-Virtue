@@ -10,6 +10,7 @@ from .saves import saves_bp
 from .npc import npc_bp
 from .quest_rewards import quest_rewards_bp
 from .reputation import reputation_bp
+from .quest_chains import quest_chains_bp
 
 __all__ = [
     "auth_bp",
@@ -22,4 +23,5 @@ __all__ = [
     "npc_bp",
     "quest_rewards_bp",
     "reputation_bp",
+    "quest_chains_bp",
 ]

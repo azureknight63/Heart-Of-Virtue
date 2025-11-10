@@ -29,6 +29,13 @@ from src.api.serializers.reputation import (
     RelationshipFlagSerializer,
     ReputationThresholdValidator,
 )
+from src.api.serializers.quest_chains import (
+    QuestChainSerializer,
+    ChainDependencySerializer,
+    ChainProgressionSerializer,
+    ChainRewardSerializer,
+    ChainBranchSerializer,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -53,4 +60,9 @@ __all__ = [
     "PlayerReputationSerializer",
     "RelationshipFlagSerializer",
     "ReputationThresholdValidator",
+    "QuestChainSerializer",
+    "ChainDependencySerializer",
+    "ChainProgressionSerializer",
+    "ChainRewardSerializer",
+    "ChainBranchSerializer",
 ]

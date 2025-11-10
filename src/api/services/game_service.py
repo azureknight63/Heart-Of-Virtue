@@ -1597,3 +1597,119 @@ class GameService:
             "locked_reason": reason,
         }
 
+    # ========================
+    # Quest Chain Methods (Stage 3)
+    # ========================
+
+    def get_chain_progress(
+        self, player: "player_module.Player", chain_id: str
+    ) -> Dict[str, Any]:
+        """Get player's progress in a quest chain.
+
+        Args:
+            player: Player object
+            chain_id: Chain identifier
+
+        Returns:
+            Chain progress data
+        """
+        from src.api.serializers.quest_chains import ChainProgressionSerializer
+
+        result = ChainProgressionSerializer.get_chain_progress(player, chain_id)
+
+        return {"success": True, "progress": result}
+
+    def advance_chain_stage(
+        self,
+        player: "player_module.Player",
+        chain_id: str,
+        current_stage: int,
+        next_stage: int,
+    ) -> Dict[str, Any]:
+        """Advance player to next stage in a chain.
+
+        Args:
+            player: Player object
+            chain_id: Chain identifier
+            current_stage: Current stage index
+            next_stage: Next stage index
+
+        Returns:
+            Updated progression
+        """
+        from src.api.serializers.quest_chains import ChainProgressionSerializer
+
+        result = ChainProgressionSerializer.advance_to_next_stage(
+            player, chain_id, current_stage, next_stage
+        )
+
+        return {"success": result.get("success", True), "advancement": result}
+
+    def complete_chain(
+        self, player: "player_module.Player", chain_id: str
+    ) -> Dict[str, Any]:
+        """Mark a chain as completed.
+
+        Args:
+            player: Player object
+            chain_id: Chain identifier
+
+        Returns:
+            Completion result
+        """
+        from src.api.serializers.quest_chains import ChainProgressionSerializer
+
+        result = ChainProgressionSerializer.complete_chain(player, chain_id)
+
+        return {"success": result.get("success", True), "completion": result}
+
+    def get_all_chains_progress(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
+        """Get player's progress across all chains.
+
+        Args:
+            player: Player object
+
+        Returns:
+            All chains progress
+        """
+        from src.api.serializers.quest_chains import ChainProgressionSerializer
+
+        result = ChainProgressionSerializer.serialize_all_chains_progress(player)
+
+        return {"success": True, "all_chains": result}
+
+    def check_chain_prerequisites(
+        self,
+        player: "player_module.Player",
+        chain_id: str,
+        prerequisites: List[str],
+    ) -> Dict[str, Any]:
+        """Check if a chain's prerequisites are met.
+
+        Args:
+            player: Player object
+            chain_id: Chain identifier
+            prerequisites: List of required completed chains
+
+        Returns:
+            Prerequisite check result
+        """
+        from src.api.serializers.quest_chains import ChainDependencySerializer
+
+        if not hasattr(player, "completed_chains"):
+            player.completed_chains = {}
+
+        is_valid, error = ChainDependencySerializer.validate_chain_dependencies(
+            chain_id, prerequisites, player.completed_chains
+        )
+
+        return {
+            "success": True,
+            "chain_id": chain_id,
+            "prerequisites_met": is_valid,
+            "error_reason": error,
+        }
+
+

@@ -114,6 +114,7 @@ def create_app(config_class=None):
         npc_bp,
         quest_rewards_bp,
         reputation_bp,
+        quest_chains_bp,
     )
 
     app.register_blueprint(auth_bp)
@@ -126,6 +127,7 @@ def create_app(config_class=None):
     app.register_blueprint(npc_bp)
     app.register_blueprint(quest_rewards_bp)
     app.register_blueprint(reputation_bp)
+    app.register_blueprint(quest_chains_bp)
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers
