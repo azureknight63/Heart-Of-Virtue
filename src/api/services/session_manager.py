@@ -18,6 +18,7 @@ class MinimalPlayer:
         self.max_hp = 100
         self.level = 1
         self.exp = 0
+        self.story = {}  # Empty story dict for API operations
 
 
 class Session:

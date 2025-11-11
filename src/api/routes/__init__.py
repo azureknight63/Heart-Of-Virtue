@@ -11,6 +11,7 @@ from .npc import npc_bp
 from .quest_rewards import quest_rewards_bp
 from .reputation import reputation_bp
 from .quest_chains import quest_chains_bp
+from .npc_availability import npc_availability_bp
 
 __all__ = [
     "auth_bp",
@@ -24,4 +25,5 @@ __all__ = [
     "quest_rewards_bp",
     "reputation_bp",
     "quest_chains_bp",
+    "npc_availability_bp",
 ]

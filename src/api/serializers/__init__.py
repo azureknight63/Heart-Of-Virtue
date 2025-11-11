@@ -36,6 +36,14 @@ from src.api.serializers.quest_chains import (
     ChainRewardSerializer,
     ChainBranchSerializer,
 )
+from src.api.serializers.npc_availability import (
+    NPCLocationSerializer,
+    NPCAvailabilitySerializer,
+    LocationNPCSerializer,
+    NPCTimelineSerializer,
+    NPCEventTriggerSerializer,
+    NPCStatusSerializer,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -65,4 +73,10 @@ __all__ = [
     "ChainProgressionSerializer",
     "ChainRewardSerializer",
     "ChainBranchSerializer",
+    "NPCLocationSerializer",
+    "NPCAvailabilitySerializer",
+    "LocationNPCSerializer",
+    "NPCTimelineSerializer",
+    "NPCEventTriggerSerializer",
+    "NPCStatusSerializer",
 ]

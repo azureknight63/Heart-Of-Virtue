@@ -25,6 +25,14 @@ from src.api.serializers.npc_ai import (
     QuestStateSerializer,
     NPCBehaviorProfileSerializer,
 )
+from src.api.serializers.npc_availability import (
+    NPCLocationSerializer,
+    NPCAvailabilitySerializer,
+    LocationNPCSerializer,
+    NPCTimelineSerializer,
+    NPCEventTriggerSerializer,
+    NPCStatusSerializer,
+)
 
 
 class GameService:
@@ -1711,5 +1719,175 @@ class GameService:
             "prerequisites_met": is_valid,
             "error_reason": error,
         }
+
+    # ========================
+    # NPC Availability Methods
+    # ========================
+
+    def get_npc_status(self, player: Any, npc_id: str) -> Dict[str, Any]:
+        """
+        Get current status and availability of an NPC.
+
+        Args:
+            player: The player object
+            npc_id: ID of the NPC to check
+
+        Returns:
+            Dict with NPC status including availability and location
+        """
+        # Get NPC data - for now, mock structure
+        # In full implementation, would load from NPC database/config
+        npc_data = {
+            "npc_id": npc_id,
+            "name": f"NPC_{npc_id}",
+            "description": "An NPC",
+            "availability_conditions": {
+                "story_gates": [],
+                "min_ticks_after_gate": 0,
+            },
+            "locations": [],
+            "triggers": [],
+        }
+
+        status = NPCStatusSerializer.serialize(
+            npc_data,
+            self.universe.game_tick,
+            player.story,
+        )
+
+        return {
+            "success": True,
+            "data": status,
+        }
+
+    def get_npcs_at_location(self, player: Any, location_id: str) -> Dict[str, Any]:
+        """
+        Get all NPCs currently at a specific location.
+
+        Args:
+            player: The player object
+            location_id: ID of the location to check
+
+        Returns:
+            Dict with list of NPCs at that location
+        """
+        # For now, mock empty list
+        # In full implementation, would load all NPCs and check their locations
+        all_npcs = []
+
+        location_npcs = LocationNPCSerializer.serialize(
+            location_id,
+            location_id,  # location_name
+            all_npcs,
+            self.universe.game_tick,
+            player.story,
+        )
+
+        return {
+            "success": True,
+            "data": location_npcs,
+        }
+
+    def check_npc_availability(self, player: Any, npc_id: str,
+                               reason: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Check if an NPC is available for interaction.
+
+        Args:
+            player: The player object
+            npc_id: ID of the NPC to check
+            reason: Optional reason for availability check (for logging)
+
+        Returns:
+            Dict with availability status and reasons if unavailable
+        """
+        # Get NPC data
+        npc_data = {
+            "npc_id": npc_id,
+            "name": f"NPC_{npc_id}",
+            "description": "An NPC",
+            "availability_conditions": {
+                "story_gates": [],
+                "min_ticks_after_gate": 0,
+            },
+            "locations": [],
+            "triggers": [],
+        }
+
+        is_available, availability_reason = NPCAvailabilitySerializer.is_available(
+            npc_data,
+            self.universe.game_tick,
+            player.story,
+        )
+
+        availability_info = NPCAvailabilitySerializer.serialize(
+            npc_data,
+            self.universe.game_tick,
+            player.story,
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "npc_id": npc_id,
+                "available": is_available,
+                "reason": availability_reason.value,
+                "details": availability_info,
+            },
+        }
+
+    def update_npc_location(self, player: Any, npc_id: str,
+                           new_location_id: str) -> Dict[str, Any]:
+        """
+        Update an NPC's location (used for quest events/progression).
+
+        Args:
+            player: The player object
+            npc_id: ID of the NPC to move
+            new_location_id: ID of the new location
+
+        Returns:
+            Dict with update status
+        """
+        # For now, simple mock response
+        # In full implementation, would validate and update NPC location data
+        return {
+            "success": True,
+            "data": {
+                "npc_id": npc_id,
+                "moved_to": new_location_id,
+                "game_tick": self.universe.game_tick,
+            },
+        }
+
+    def get_npc_timeline(self, player: Any, npc_id: str) -> Dict[str, Any]:
+        """
+        Get the location progression timeline for an NPC.
+
+        Shows where NPCs appear as the story progresses.
+
+        Args:
+            player: The player object
+            npc_id: ID of the NPC
+
+        Returns:
+            Dict with NPC's location timeline
+        """
+        # Get NPC data
+        npc_data = {
+            "npc_id": npc_id,
+            "name": f"NPC_{npc_id}",
+            "description": "An NPC",
+            "locations": [],
+            "triggers": [],
+        }
+
+        timeline = NPCTimelineSerializer.serialize(npc_data)
+
+        return {
+            "success": True,
+            "data": timeline,
+        }
+
 
 
