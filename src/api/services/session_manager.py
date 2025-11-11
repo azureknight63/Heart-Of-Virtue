@@ -19,6 +19,9 @@ class MinimalPlayer:
         self.level = 1
         self.exp = 0
         self.story = {}  # Empty story dict for API operations
+        self.reputation = {}  # Empty reputation dict for API operations
+        self.completed_dialogues = []  # Track completed dialogues
+        self.dialogue_contexts = {}  # Store active dialogue contexts
 
 
 class Session:

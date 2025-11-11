@@ -116,6 +116,7 @@ def create_app(config_class=None):
         reputation_bp,
         quest_chains_bp,
         npc_availability_bp,
+        dialogue_context_bp,
     )
 
     app.register_blueprint(auth_bp)
@@ -130,6 +131,7 @@ def create_app(config_class=None):
     app.register_blueprint(reputation_bp)
     app.register_blueprint(quest_chains_bp)
     app.register_blueprint(npc_availability_bp)
+    app.register_blueprint(dialogue_context_bp)
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers

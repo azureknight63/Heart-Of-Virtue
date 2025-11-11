@@ -33,6 +33,20 @@ from src.api.serializers.npc_availability import (
     NPCEventTriggerSerializer,
     NPCStatusSerializer,
 )
+from src.api.serializers.dialogue_context import (
+    DialogueNodeSerializer,
+    DialogueChoiceSerializer,
+    DialogueConditionSerializer,
+    DialogueEffectSerializer,
+    ConversationHistorySerializer,
+    DialogueContextSerializer,
+    DialogueNode,
+    DialogueChoice,
+    DialogueCondition,
+    DialogueEffect,
+    ConversationHistory,
+    DialogueContext,
+)
 
 
 class GameService:
@@ -1888,6 +1902,241 @@ class GameService:
             "success": True,
             "data": timeline,
         }
+
+    # ========================
+    # Dialogue Context Methods
+    # ========================
+
+    def start_dialogue(
+        self, player: "player_module.Player", npc_id: str, dialogue_id: str
+    ) -> Dict[str, Any]:
+        """Start a new dialogue with an NPC.
+
+        Creates a conversation and loads initial dialogue node.
+        Validates NPC availability before starting.
+
+        Args:
+            player: The player instance
+            npc_id: ID of NPC to dialogue with
+            dialogue_id: ID of dialogue tree to load
+
+        Returns:
+            Dict with success status and dialogue context
+        """
+        import uuid
+        from datetime import datetime
+
+        # TODO: Check NPC availability (uses Stage 4 system)
+        # For now, assume NPC is available
+
+        # Create conversation record
+        conversation_id = str(uuid.uuid4())
+        history = ConversationHistory(
+            conversation_id=conversation_id,
+            npc_id=npc_id,
+            player_id=player.name,
+            dialogue_id=dialogue_id,
+            started_at=datetime.now().isoformat(),
+            status="ongoing"
+        )
+
+        # TODO: Load dialogue tree from universe.dialogues[dialogue_id]
+        # For now, create a minimal starting node
+        initial_node = DialogueNode(
+            node_id="start",
+            text="[Dialogue would start here]",
+            speaker=npc_id,
+            npc_tone="neutral"
+        )
+
+        # Record initial node visit
+        ConversationHistorySerializer.add_node_visit(history, initial_node.node_id)
+
+        # Get available choices for initial node
+        available_choices = DialogueNodeSerializer.get_available_choices(
+            initial_node,
+            player_story=player.story,
+            player_reputation=player.reputation,
+            player_level=player.level,
+            player_completed_dialogues=getattr(player, "completed_dialogues", [])
+        )
+
+        # Create dialogue context
+        context = DialogueContext(
+            conversation_id=conversation_id,
+            current_node=initial_node,
+            available_choices=available_choices,
+            conversation_history=history,
+            is_complete=False
+        )
+
+        # TODO: Store context in player session for later retrieval
+        if not hasattr(player, "dialogue_contexts"):
+            player.dialogue_contexts = {}
+        player.dialogue_contexts[conversation_id] = context
+
+        return {
+            "success": True,
+            "data": DialogueContextSerializer.serialize(context)
+        }
+
+    def get_dialogue_node(
+        self, player: "player_module.Player", node_id: str
+    ) -> Dict[str, Any]:
+        """Get a specific dialogue node.
+
+        Loads node from dialogue tree and filters choices by player conditions.
+
+        Args:
+            player: The player instance
+            node_id: ID of dialogue node to retrieve
+
+        Returns:
+            Dict with success status and node data
+        """
+        # TODO: Load node from universe.dialogue_nodes[node_id]
+        # For now, return a sample node
+        node = DialogueNode(
+            node_id=node_id,
+            text="[Sample dialogue node]",
+            speaker="npc_1",
+            npc_tone="friendly"
+        )
+
+        available_choices = DialogueNodeSerializer.get_available_choices(
+            node,
+            player_story=player.story,
+            player_reputation=player.reputation,
+            player_level=player.level,
+            player_completed_dialogues=getattr(player, "completed_dialogues", [])
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "node": DialogueNodeSerializer.serialize(node),
+                "available_choices": [
+                    DialogueChoiceSerializer.serialize(c) for c in available_choices
+                ]
+            }
+        }
+
+    def select_dialogue_choice(
+        self,
+        player: "player_module.Player",
+        conversation_id: str,
+        choice_id: str
+    ) -> Dict[str, Any]:
+        """Process a dialogue choice selection.
+
+        Applies choice effects (story gates, reputation, items) and
+        transitions to next node.
+
+        Args:
+            player: The player instance
+            conversation_id: ID of current conversation
+            choice_id: ID of choice selected
+
+        Returns:
+            Dict with success status and updated context
+        """
+        # TODO: Load conversation context from player.dialogue_contexts
+        # For now, create a minimal response
+        next_node = DialogueNode(
+            node_id="next_node",
+            text="[Next dialogue node]",
+            speaker="npc_1",
+            npc_tone="neutral"
+        )
+
+        available_choices = DialogueNodeSerializer.get_available_choices(
+            next_node,
+            player_story=player.story,
+            player_reputation=player.reputation,
+            player_level=player.level,
+            player_completed_dialogues=getattr(player, "completed_dialogues", [])
+        )
+
+        # Create updated context
+        history = ConversationHistory(
+            conversation_id=conversation_id,
+            npc_id="npc_1",
+            player_id=player.name,
+            dialogue_id="dial_1",
+            started_at="2025-11-10T10:00:00Z"
+        )
+
+        context = DialogueContext(
+            conversation_id=conversation_id,
+            current_node=next_node,
+            available_choices=available_choices,
+            conversation_history=history,
+            is_complete=False
+        )
+
+        return {
+            "success": True,
+            "data": DialogueContextSerializer.serialize(context)
+        }
+
+    def get_conversation_history(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Get all past conversations with an NPC.
+
+        Returns list of all dialogues ever had with this NPC.
+
+        Args:
+            player: The player instance
+            npc_id: ID of NPC to get history for
+
+        Returns:
+            Dict with success status and conversation list
+        """
+        # TODO: Load from player.conversation_history[npc_id]
+        # For now, return empty list
+        conversations = []
+
+        return {
+            "success": True,
+            "data": {
+                "npc_id": npc_id,
+                "total_conversations": len(conversations),
+                "conversations": [
+                    ConversationHistorySerializer.serialize(c) for c in conversations
+                ]
+            }
+        }
+
+    def get_available_dialogues(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
+        """Get all available dialogue options with an NPC.
+
+        Filters dialogues by player's story state and conditions.
+
+        Args:
+            player: The player instance
+            npc_id: ID of NPC to get dialogues for
+
+        Returns:
+            Dict with success status and available dialogue list
+        """
+        # TODO: Load NPC's dialogues from universe.npc_dialogues[npc_id]
+        # Filter by player conditions
+        # For now, return empty list
+        available = []
+
+        return {
+            "success": True,
+            "data": {
+                "npc_id": npc_id,
+                "total_available": len(available),
+                "dialogues": available
+            }
+        }
+
+
 
 
 

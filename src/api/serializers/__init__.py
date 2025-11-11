@@ -44,6 +44,14 @@ from src.api.serializers.npc_availability import (
     NPCEventTriggerSerializer,
     NPCStatusSerializer,
 )
+from src.api.serializers.dialogue_context import (
+    DialogueNodeSerializer,
+    DialogueChoiceSerializer,
+    DialogueConditionSerializer,
+    DialogueEffectSerializer,
+    ConversationHistorySerializer,
+    DialogueContextSerializer,
+)
 
 __all__ = [
     "ItemSerializer",
@@ -79,4 +87,10 @@ __all__ = [
     "NPCTimelineSerializer",
     "NPCEventTriggerSerializer",
     "NPCStatusSerializer",
+    "DialogueNodeSerializer",
+    "DialogueChoiceSerializer",
+    "DialogueConditionSerializer",
+    "DialogueEffectSerializer",
+    "ConversationHistorySerializer",
+    "DialogueContextSerializer",
 ]
