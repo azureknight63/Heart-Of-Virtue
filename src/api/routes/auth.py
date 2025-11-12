@@ -6,71 +6,86 @@ from src.api.services import SessionManager
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
-@auth_bp.route("/login", methods=["POST"])
-def login():
-    """Create a new player session.
+@auth_bp.route("/register", methods=["POST"])
+def register():
+    """Create a new player account and session.
 
     Request body:
         {
-            "username": "str"
+            "username": "str",
+            "password": "str"
         }
 
     Returns:
         {
             "success": bool,
-            "session_id": "str",
-            "player_id": "str",
-            "expires_at": "ISO 8601 timestamp"
+            "data": {
+                "session_id": "str",
+                "username": "str",
+                "message": "str"
+            }
         }
     """
     try:
         data = request.get_json()
 
-        if not data or "username" not in data:
+        if not data or "username" not in data or "password" not in data:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "error": "Missing username",
+                        "error": "validation_error",
+                        "message": "Missing username or password",
                     }
                 ),
                 400,
             )
 
         username = data["username"].strip()
+        password = data["password"]
 
         if not username or len(username) < 2:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "error": "Username must be at least 2 characters",
+                        "error": "validation_error",
+                        "message": "Username must be at least 2 characters",
+                    }
+                ),
+                400,
+            )
+
+        if not password or len(password) < 3:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "validation_error",
+                        "message": "Password must be at least 3 characters",
                     }
                 ),
                 400,
             )
 
         # Get session manager from app context
-        session_manager = None
-        if hasattr(request, "app"):
-            session_manager = request.app.session_manager
-        else:
-            from flask import current_app
+        from flask import current_app
 
-            session_manager = current_app.session_manager
+        session_manager = current_app.session_manager
 
         if not session_manager:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "error": "Session manager not initialized",
+                        "error": "server_error",
+                        "message": "Session manager not initialized",
                     }
                 ),
                 500,
             )
 
-        # Create session
+        # Create session (in a real app, would store password hash, check for duplicates, etc)
         session_id, player_id = session_manager.create_session(username)
         session = session_manager.get_session(session_id)
 
@@ -78,10 +93,11 @@ def login():
             jsonify(
                 {
                     "success": True,
-                    "session_id": session_id,
-                    "player_id": player_id,
-                    "expires_at": session.expires_at.isoformat(),
-                    "message": f"Welcome, {username}!",
+                    "data": {
+                        "session_id": session_id,
+                        "username": username,
+                        "message": f"Account created successfully. Welcome, {username}!",
+                    }
                 }
             ),
             201,
@@ -92,7 +108,118 @@ def login():
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "server_error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@auth_bp.route("/login", methods=["POST"])
+def login():
+    """Create a new player session (or login existing player).
+
+    Request body:
+        {
+            "username": "str",
+            "password": "str"
+        }
+
+    Returns:
+        {
+            "success": bool,
+            "data": {
+                "session_id": "str",
+                "username": "str",
+                "message": "str"
+            }
+        }
+    """
+    try:
+        data = request.get_json()
+
+        if not data or "username" not in data or "password" not in data:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "validation_error",
+                        "message": "Missing username or password",
+                    }
+                ),
+                400,
+            )
+
+        username = data["username"].strip()
+        password = data["password"]
+
+        if not username or len(username) < 2:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "validation_error",
+                        "message": "Username must be at least 2 characters",
+                    }
+                ),
+                400,
+            )
+
+        if not password:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "validation_error",
+                        "message": "Password is required",
+                    }
+                ),
+                400,
+            )
+
+        # Get session manager from app context
+        from flask import current_app
+
+        session_manager = current_app.session_manager
+
+        if not session_manager:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "server_error",
+                        "message": "Session manager not initialized",
+                    }
+                ),
+                500,
+            )
+
+        # Create session (in a real app, would validate password hash)
+        session_id, player_id = session_manager.create_session(username)
+        session = session_manager.get_session(session_id)
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "data": {
+                        "session_id": session_id,
+                        "username": username,
+                        "message": f"Welcome back, {username}!",
+                    }
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "server_error",
+                    "message": str(e),
                 }
             ),
             500,

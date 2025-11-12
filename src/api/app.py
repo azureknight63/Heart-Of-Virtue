@@ -119,19 +119,19 @@ def create_app(config_class=None):
         dialogue_context_bp,
     )
 
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(world_bp)
-    app.register_blueprint(inventory_bp)
-    app.register_blueprint(equipment_bp)
-    app.register_blueprint(combat_bp)
-    app.register_blueprint(player_bp)
-    app.register_blueprint(saves_bp)
-    app.register_blueprint(npc_bp)
-    app.register_blueprint(quest_rewards_bp)
-    app.register_blueprint(reputation_bp)
-    app.register_blueprint(quest_chains_bp)
-    app.register_blueprint(npc_availability_bp)
-    app.register_blueprint(dialogue_context_bp)
+    app.register_blueprint(auth_bp, url_prefix="/api")
+    app.register_blueprint(world_bp, url_prefix="/api")
+    app.register_blueprint(inventory_bp, url_prefix="/api")
+    app.register_blueprint(equipment_bp, url_prefix="/api")
+    app.register_blueprint(combat_bp, url_prefix="/api")
+    app.register_blueprint(player_bp, url_prefix="/api")
+    app.register_blueprint(saves_bp, url_prefix="/api")
+    app.register_blueprint(npc_bp, url_prefix="/api")
+    app.register_blueprint(quest_rewards_bp, url_prefix="/api")
+    app.register_blueprint(reputation_bp, url_prefix="/api")
+    app.register_blueprint(quest_chains_bp, url_prefix="/api")
+    app.register_blueprint(npc_availability_bp, url_prefix="/api")
+    app.register_blueprint(dialogue_context_bp, url_prefix="/api")
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers
