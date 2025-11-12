@@ -16,6 +16,7 @@ export const useAuth = () => {
       const response = await apiEndpoints.auth.login(username, password)
       const { session_id } = response.data.data
       localStorage.setItem('authToken', session_id)
+      localStorage.setItem('username', username)
       setIsAuthenticated(true)
       return response.data
     } catch (error) {
@@ -29,6 +30,7 @@ export const useAuth = () => {
       await apiEndpoints.auth.logout()
     } finally {
       localStorage.removeItem('authToken')
+      localStorage.removeItem('username')
       setIsAuthenticated(false)
       // Force reload to clear state and redirect to login
       window.location.href = '/login'
@@ -40,6 +42,7 @@ export const useAuth = () => {
       const response = await apiEndpoints.auth.register(username, password)
       const { session_id } = response.data.data
       localStorage.setItem('authToken', session_id)
+      localStorage.setItem('username', username)
       setIsAuthenticated(true)
       return response.data
     } catch (error) {

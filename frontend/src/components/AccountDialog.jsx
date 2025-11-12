@@ -2,6 +2,7 @@ import { useAuth } from '../hooks/useApi'
 
 export default function AccountDialog({ player, onClose }) {
   const { logout } = useAuth()
+  const username = localStorage.getItem('username') || 'Unknown'
 
   const handleLogout = async () => {
     await logout()
@@ -68,7 +69,7 @@ export default function AccountDialog({ player, onClose }) {
                 borderRadius: '4px',
               }}
             >
-              {player?.name || 'Unknown'}
+              {username}
             </div>
           </div>
 
