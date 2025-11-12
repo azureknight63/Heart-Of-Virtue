@@ -1,5 +1,6 @@
 import { useWorld } from '../hooks/useApi'
 import MapGrid from './MapGrid'
+import MovementStar from './MovementStar'
 
 export default function WorldMap() {
   const { location, moveToLocation, loading, error } = useWorld()
@@ -28,35 +29,42 @@ export default function WorldMap() {
       flexDirection: 'column',
       gap: '16px'
     }}>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <MapGrid location={location} onMove={moveToLocation} />
+      {/* Header with Location Info and Movement Star */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: '16px',
+        minHeight: '240px'
+      }}>
+        {/* Location Info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: '#ffaa00', marginBottom: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+            📍 {location.name || 'Unknown Location'}
+          </div>
+          
+          <div style={{ color: '#00ccff', marginBottom: '8px', fontSize: '12px' }}>
+            Position: ({location.x}, {location.y})
+          </div>
+
+          <div style={{ color: '#888', fontSize: '12px', lineHeight: '1.6' }}>
+            {location.description || 'You see nothing particular.'}
+          </div>
+        </div>
+
+        {/* Movement Star - Top Right */}
+        <div style={{ flexShrink: 0 }}>
+          <MovementStar 
+            exits={location.exits || []} 
+            onMove={moveToLocation}
+            loading={loading}
+          />
+        </div>
       </div>
 
-      <div style={{
-        borderTop: '1px solid #333',
-        paddingTop: '12px',
-        maxHeight: '25%',
-        overflowY: 'auto'
-      }}>
-        <div style={{ color: '#ffaa00', marginBottom: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-          📍 {location.name || 'Unknown Location'}
-        </div>
-        
-        <div style={{ color: '#00ccff', marginBottom: '8px', fontSize: '12px' }}>
-          Position: ({location.x}, {location.y})
-        </div>
-
-        <div style={{ color: '#888', marginBottom: '8px', fontSize: '12px', lineHeight: '1.6' }}>
-          {location.description || 'You see nothing particular.'}
-        </div>
-
-        {location.exits && location.exits.length > 0 && (
-          <div>
-            <div style={{ color: '#00ff88', marginBottom: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-              Available Exits: {location.exits.join(', ')}
-            </div>
-          </div>
-        )}
+      {/* Map Grid */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <MapGrid location={location} onMove={moveToLocation} />
       </div>
     </div>
   )

@@ -202,12 +202,11 @@ def create_app(config_class=None):
         from flask import jsonify
         routes = []
         for rule in app.url_map.iter_rules():
-            if 'auth' in str(rule) or 'register' in str(rule):
-                routes.append({
-                    'endpoint': rule.endpoint,
-                    'methods': list(rule.methods),
-                    'rule': str(rule),
-                })
-        return jsonify({'routes': routes})
+            routes.append({
+                'endpoint': rule.endpoint,
+                'methods': sorted(list(rule.methods - {'HEAD', 'OPTIONS'})),
+                'rule': str(rule),
+            })
+        return jsonify({'routes': sorted(routes, key=lambda x: x['rule'])})
 
     return app, socketio
