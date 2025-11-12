@@ -63,7 +63,8 @@ export const usePlayer = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.player.getStatus()
-      setPlayer(response.data.status)
+      // /api/status returns { success, combat_active, combatants, log }
+      setPlayer(response.data)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -123,7 +124,12 @@ export const useWorld = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.world.getCurrentLocation()
-      setLocation(response.data.room)
+      // Convert exits object to array
+      const room = response.data.room
+      if (room.exits && typeof room.exits === 'object') {
+        room.exits = Object.keys(room.exits)
+      }
+      setLocation(room)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -135,7 +141,12 @@ export const useWorld = () => {
   const move = async (direction) => {
     try {
       const response = await apiEndpoints.world.move(direction)
-      setLocation(response.data.room)
+      // Convert exits object to array
+      const room = response.data.room
+      if (room.exits && typeof room.exits === 'object') {
+        room.exits = Object.keys(room.exits)
+      }
+      setLocation(room)
       return response.data
     } catch (err) {
       setError(err.message)
@@ -147,5 +158,5 @@ export const useWorld = () => {
     fetchLocation()
   }, [])
 
-  return { location, loading, error, move, refetch: fetchLocation }
+  return { location, loading, error, moveToLocation: move, refetch: fetchLocation }
 }
