@@ -30,6 +30,8 @@ export const useAuth = () => {
     } finally {
       localStorage.removeItem('authToken')
       setIsAuthenticated(false)
+      // Force reload to clear state and redirect to login
+      window.location.href = '/login'
     }
   }
 

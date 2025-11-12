@@ -14,9 +14,10 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <LoginPage />} />
-        <Route path="/" element={isAuthenticated ? <GamePage /> : <Navigate to="/login" />} />
-        <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} />} />
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/game" /> : <LoginPage />} />
+        <Route path="/game" element={isAuthenticated ? <GamePage /> : <Navigate to="/login" />} />
+        <Route path="/" element={<Navigate to={isAuthenticated ? '/game' : '/login'} />} />
+        <Route path="*" element={<Navigate to={isAuthenticated ? '/game' : '/login'} />} />
       </Routes>
     </BrowserRouter>
   )
