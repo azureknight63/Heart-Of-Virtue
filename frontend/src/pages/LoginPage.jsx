@@ -22,7 +22,8 @@ export default function LoginPage() {
       } else {
         await login(username, password)
       }
-      navigate('/game')
+      // Token is now in localStorage, navigate and page will reload state
+      window.location.href = '/game'
     } catch (err) {
       setError(err.response?.data?.message || 'Authentication failed. Please try again.')
     } finally {
