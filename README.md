@@ -78,14 +78,73 @@ print(adapter.generate_plain("The mynx notices a dangling thread on the player's
 ### Changing Models Later
 For OpenRouter, just set `MYNX_LLM_MODEL` to any model ID they expose (e.g. `anthropic/claude-3.5-sonnet` if you have access). The rest of the adapter flow remains the same.
 
+## Web UI Frontend
+
+A modern React + Vite web UI is available for playing the game in your browser, featuring:
+
+- **Retro Terminal Aesthetic**: Lime green, cyan, and orange colors on dark background
+- **Dual-Panel Layout**: Narrative box + player controls (left), Battlefield or World Map (right)
+- **Real-Time Updates**: Combat grid, HP bars, inventory management
+- **Responsive Design**: Works on desktop and tablets
+- **Full API Integration**: Connects to the Flask backend API
+
+### Quick Start (Web UI)
+
+**Terminal 1 - Backend API:**
+```powershell
+.venv\Scripts\Activate.ps1
+python run_api.py
+# Runs on http://localhost:5000
+```
+
+**Terminal 2 - Frontend Dev Server:**
+```powershell
+cd frontend
+npm install
+npm run dev
+# Runs on http://localhost:3000
+```
+
+Then open your browser to **http://localhost:3000** and log in!
+
+### Frontend Documentation
+
+See `frontend/README.md` for:
+- Architecture and project structure
+- Component guide
+- API integration examples
+- Styling and customization
+- Deployment instructions
+- WebSocket setup for real-time updates
+
+See `UI_SETUP_COMPLETE.md` for the complete setup guide.
+
 ## Development
-Run tests:
+
+### Running Tests (Backend)
 ```
 pytest -q
 ```
-Generate a coverage report:
+
+### Coverage Report (Backend)
 ```
 pytest --cov=src --cov=ai --cov-report=term-missing
+```
+
+### Running the Terminal Game (CLI)
+```
+python src/game.py
+```
+
+### Running the Web API
+```
+python run_api.py
+```
+
+### Developing the Web UI
+```
+cd frontend
+npm run dev
 ```
 
 ## Contributing
