@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 import json
+from datetime import datetime, timedelta
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_DIR = ROOT / "src"
@@ -48,7 +49,7 @@ class TestListSavesRoute:
         session_id, _ = session_manager.create_session("testplayer")
         session = session_manager.get_session(session_id)
         if session:
-            session.expires_at = 0
+            session.expires_at = datetime.now() - timedelta(hours=1)
 
         response = client.get(
             "/saves/",
@@ -200,7 +201,7 @@ class TestDeleteSaveRoute:
         session_id, _ = session_manager.create_session("testplayer")
         session = session_manager.get_session(session_id)
         if session:
-            session.expires_at = 0
+            session.expires_at = datetime.now() - timedelta(hours=1)
 
         response = client.delete(
             "/saves/test_save_id",

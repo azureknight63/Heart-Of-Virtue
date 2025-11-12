@@ -21,7 +21,7 @@ except ImportError:
     FLASK_AVAILABLE = False
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def app():
     """Create Flask app for testing."""
     if not FLASK_AVAILABLE:

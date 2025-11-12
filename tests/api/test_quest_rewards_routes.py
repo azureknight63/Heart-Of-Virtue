@@ -35,7 +35,7 @@ class MockTile:
         self.block_exit = []
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def app():
     """Create Flask app for testing."""
     if not FLASK_AVAILABLE:

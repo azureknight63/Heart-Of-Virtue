@@ -2,7 +2,7 @@
 
 ## ⚠️ CRITICAL: PowerShell Compatibility Requirement
 
-**All terminal commands MUST be compatible with PowerShell (pwsh.exe).** This is the user's default shell on Windows.
+**All terminal commands MUST be compatible with PowerShell (pwsh.exe).** This is the user's default shell on Windows. Refer to powershell-compatibility.instructions.md for detailed guidelines.
 
 ### PowerShell-Compatible Commands:
 - Use `Select-Object` instead of `head`/`tail`

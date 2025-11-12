@@ -22,7 +22,7 @@ from src.api.app import create_app
 from src.api.config import TestingConfig
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def app():
     """Create Flask app for testing."""
     app, socketio = create_app(TestingConfig)
