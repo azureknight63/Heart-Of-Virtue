@@ -17,7 +17,7 @@ export const player = {
 
 // World endpoints
 export const world = {
-  getCurrentLocation: () => apiClient.get('/world/location'),
+  getCurrentLocation: () => apiClient.get('/world'),
   move: (direction) => apiClient.post('/world/move', { direction }),
   getExits: () => apiClient.get('/world/exits'),
 }

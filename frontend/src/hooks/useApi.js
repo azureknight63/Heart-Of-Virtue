@@ -63,7 +63,7 @@ export const usePlayer = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.player.getStatus()
-      setPlayer(response.data.data)
+      setPlayer(response.data.status)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -123,7 +123,7 @@ export const useWorld = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.world.getCurrentLocation()
-      setLocation(response.data.data)
+      setLocation(response.data.room)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -135,7 +135,7 @@ export const useWorld = () => {
   const move = async (direction) => {
     try {
       const response = await apiEndpoints.world.move(direction)
-      setLocation(response.data.data)
+      setLocation(response.data.room)
       return response.data
     } catch (err) {
       setError(err.message)
