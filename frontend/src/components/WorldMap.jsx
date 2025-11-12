@@ -1,116 +1,62 @@
-export default function WorldMap({ location }) {
-  if (!location) {
+import { useWorld } from '../hooks/useApi'
+import MapGrid from './MapGrid'
+
+export default function WorldMap() {
+  const { location, moveToLocation, loading, error } = useWorld()
+
+  if (error) {
     return (
-      <div style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(0,0,0,0.3)',
-        borderRadius: '4px',
-        border: '1px solid #333'
-      }}>
-        <p style={{ color: '#00ccff', fontSize: '14px' }}>Loading map...</p>
+      <div style={{ color: '#ff6666', padding: '16px' }}>
+        <p>Error loading location: {error}</p>
+      </div>
+    )
+  }
+
+  if (loading || !location) {
+    return (
+      <div style={{ color: '#00ccff', padding: '16px' }}>
+        <p>Loading location...</p>
       </div>
     )
   }
 
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      display: 'flex',
+    <div style={{ 
+      padding: '16px', 
+      height: '100%', 
+      display: 'flex', 
       flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(0,0,0,0.3)',
-      borderRadius: '4px',
-      border: '1px solid #333',
-      padding: '16px',
-      color: '#00ff88',
-      fontFamily: 'monospace',
+      gap: '16px'
     }}>
-      <h2 style={{
-        fontSize: '18px',
-        fontWeight: 'bold',
-        marginBottom: '12px',
-        color: '#00ff88',
-      }}>
-        Current Location
-      </h2>
-
-      <div style={{
-        backgroundColor: 'rgba(0, 100, 50, 0.2)',
-        border: '2px solid #00ff88',
-        borderRadius: '4px',
-        padding: '16px',
-        marginBottom: '16px',
-        maxWidth: '100%',
-      }}>
-        <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: '#00ccff', fontSize: '12px' }}>Position:</span>
-          <div style={{ color: '#00ff88', fontSize: '14px' }}>({location.x}, {location.y})</div>
-        </div>
-
-        <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: '#00ccff', fontSize: '12px' }}>Location:</span>
-          <div style={{ color: '#ffaa00', fontSize: '14px', fontWeight: 'bold' }}>
-            {location.name || 'Unknown Territory'}
-          </div>
-        </div>
-
-        {location.description && (
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#00ccff', fontSize: '12px' }}>Description:</span>
-            <p style={{
-              color: '#00ddaa',
-              fontSize: '12px',
-              margin: '4px 0 0 0',
-              lineHeight: '1.4',
-              fontStyle: 'italic'
-            }}>
-              {location.description}
-            </p>
-          </div>
-        )}
-
-        {location.exits && location.exits.length > 0 && (
-          <div>
-            <span style={{ color: '#00ccff', fontSize: '12px' }}>Exits:</span>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '8px',
-              marginTop: '8px',
-              fontSize: '12px',
-              color: '#00ff88',
-            }}>
-              {location.exits.map((exit) => (
-                <div key={exit} style={{
-                  padding: '6px',
-                  border: '1px solid #00ff88',
-                  borderRadius: '3px',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  backgroundColor: 'rgba(0, 255, 136, 0.1)',
-                }}>
-                  ➜ {exit.charAt(0).toUpperCase() + exit.slice(1)}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <MapGrid location={location} onMove={moveToLocation} />
       </div>
 
       <div style={{
-        fontSize: '11px',
-        color: '#666',
-        textAlign: 'center',
-        marginTop: 'auto',
+        borderTop: '1px solid #333',
+        paddingTop: '12px',
+        maxHeight: '25%',
+        overflowY: 'auto'
       }}>
-        <p>Detailed map coming soon...</p>
+        <div style={{ color: '#ffaa00', marginBottom: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+          📍 {location.name || 'Unknown Location'}
+        </div>
+        
+        <div style={{ color: '#00ccff', marginBottom: '8px', fontSize: '12px' }}>
+          Position: ({location.x}, {location.y})
+        </div>
+
+        <div style={{ color: '#888', marginBottom: '8px', fontSize: '12px', lineHeight: '1.6' }}>
+          {location.description || 'You see nothing particular.'}
+        </div>
+
+        {location.exits && location.exits.length > 0 && (
+          <div>
+            <div style={{ color: '#00ff88', marginBottom: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+              Available Exits: {location.exits.join(', ')}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
