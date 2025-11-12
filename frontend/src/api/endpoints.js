@@ -9,10 +9,10 @@ export const auth = {
 
 // Player endpoints
 export const player = {
-  getStatus: () => apiClient.get('/player/status'),
-  getInventory: () => apiClient.get('/player/inventory'),
-  getEquipment: () => apiClient.get('/player/equipment'),
-  getStats: () => apiClient.get('/player/stats'),
+  getStatus: () => apiClient.get('/status'),
+  getInventory: () => apiClient.get('/inventory'),
+  getEquipment: () => apiClient.get('/equipment'),
+  getStats: () => apiClient.get('/stats'),
 }
 
 // World endpoints
@@ -24,31 +24,30 @@ export const world = {
 
 // Combat endpoints
 export const combat = {
-  startCombat: () => apiClient.post('/combat/start'),
-  endCombat: () => apiClient.post('/combat/end'),
-  getStatus: () => apiClient.get('/combat/status'),
-  performAction: (action, target) => apiClient.post('/combat/action', { action, target }),
+  startCombat: () => apiClient.post('/start'),
+  getStatus: () => apiClient.get('/status'),
+  performAction: (action, target) => apiClient.post('/move', { move: action, target }),
 }
 
 // Inventory endpoints
 export const inventory = {
-  useItem: (itemId) => apiClient.post('/inventory/use', { item_id: itemId }),
-  dropItem: (itemId) => apiClient.post('/inventory/drop', { item_id: itemId }),
-  pickupItem: (itemId) => apiClient.post('/inventory/pickup', { item_id: itemId }),
+  useItem: (itemId) => apiClient.post('/use', { item_id: itemId }),
+  dropItem: (itemId) => apiClient.post('/drop', { item_id: itemId }),
+  pickupItem: (itemId) => apiClient.post('/take', { item_id: itemId }),
 }
 
 // Equipment endpoints
 export const equipment = {
-  equipItem: (itemId, slot) => apiClient.post('/equipment/equip', { item_id: itemId, slot }),
-  unequipItem: (slot) => apiClient.post('/equipment/unequip', { slot }),
+  equipItem: (itemId, slot) => apiClient.post('/equip', { item_id: itemId, slot }),
+  unequipItem: (slot) => apiClient.post('/unequip', { slot }),
 }
 
 // Save/Load endpoints
 export const saves = {
-  save: (saveName) => apiClient.post('/saves/save', { save_name: saveName }),
-  load: (saveId) => apiClient.post('/saves/load', { save_id: saveId }),
-  list: () => apiClient.get('/saves/list'),
-  delete: (saveId) => apiClient.delete(`/saves/delete/${saveId}`),
+  save: (saveName) => apiClient.post('/', { save_name: saveName }),
+  load: (saveId) => apiClient.post(`/${saveId}/load`),
+  list: () => apiClient.get('/'),
+  delete: (saveId) => apiClient.delete(`/${saveId}`),
 }
 
 export default {
