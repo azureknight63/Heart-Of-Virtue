@@ -2,15 +2,54 @@ import { useState } from 'react'
 import PlayerStatus from './PlayerStatus'
 import Inventory from './Inventory'
 import ActionButtons from './ActionButtons'
+import AccountDialog from './AccountDialog'
 
 export default function LeftPanel({ player, location, mode, onMove, onRefetch }) {
   const [showInventory, setShowInventory] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
 
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg overflow-hidden retro-glow">
       {/* Header */}
-      <div className="bg-lime-glow text-black px-3 py-2.5 font-bold text-center text-sm border-b-2 border-lime">
-        Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}
+      <div style={{
+        backgroundColor: '#00ff88',
+        color: '#000000',
+        padding: '10px 15px',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        fontSize: '14px',
+        borderBottom: '2px solid #00ff88',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        boxShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+      }}>
+        <span>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
+        <button
+          onClick={() => setShowAccount(true)}
+          style={{
+            padding: '4px 12px',
+            backgroundColor: '#00cc66',
+            color: '#000000',
+            border: '1px solid #000000',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            fontFamily: 'monospace',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.backgroundColor = '#00ff88'
+            e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.8)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.backgroundColor = '#00cc66'
+            e.target.style.boxShadow = 'none'
+          }}
+        >
+          Account
+        </button>
       </div>
 
       {/* Content */}
@@ -55,6 +94,14 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         onMove={onMove}
         onInventory={() => setShowInventory(!showInventory)}
       />
+
+      {/* Account Dialog */}
+      {showAccount && (
+        <AccountDialog
+          player={player}
+          onClose={() => setShowAccount(false)}
+        />
+      )}
     </div>
   )
 }

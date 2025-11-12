@@ -22,7 +22,7 @@ export default function LoginPage() {
       } else {
         await login(username, password)
       }
-      navigate('/')
+      navigate('/game')
     } catch (err) {
       setError(err.response?.data?.message || 'Authentication failed. Please try again.')
     } finally {
