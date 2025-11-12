@@ -1,28 +1,116 @@
 export default function WorldMap({ location }) {
+  if (!location) {
+    return (
+      <div style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        borderRadius: '4px',
+        border: '1px solid #333'
+      }}>
+        <p style={{ color: '#00ccff', fontSize: '14px' }}>Loading map...</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[rgba(0,0,0,0.3)] rounded border border-[#333]">
-      <div className="text-center space-y-4">
-        <h2 className="text-lime text-xl font-bold">World Map</h2>
-        <p className="text-cyan text-sm">{location?.name || 'Unknown Territory'}</p>
+    <div style={{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.3)',
+      borderRadius: '4px',
+      border: '1px solid #333',
+      padding: '16px',
+      color: '#00ff88',
+      fontFamily: 'monospace',
+    }}>
+      <h2 style={{
+        fontSize: '18px',
+        fontWeight: 'bold',
+        marginBottom: '12px',
+        color: '#00ff88',
+      }}>
+        Current Location
+      </h2>
 
-        {/* Simple ASCII map representation */}
-        <div className="text-lime font-mono text-xs space-y-1 inline-block">
-          <div>? · · ? · · · · · ?</div>
-          <div>· · ● · · · · · · ·</div>
-          <div>? · · · · · · · · ·</div>
-          <div>· · · · · ● · · ? ·</div>
-          <div>· · ● · · · · · · ·</div>
-          <div>? · · · · · X · · ?</div>
-          <div>· · · · · ● · · · ·</div>
-          <div>· · · · · · · · · ·</div>
+      <div style={{
+        backgroundColor: 'rgba(0, 100, 50, 0.2)',
+        border: '2px solid #00ff88',
+        borderRadius: '4px',
+        padding: '16px',
+        marginBottom: '16px',
+        maxWidth: '100%',
+      }}>
+        <div style={{ marginBottom: '8px' }}>
+          <span style={{ color: '#00ccff', fontSize: '12px' }}>Position:</span>
+          <div style={{ color: '#00ff88', fontSize: '14px' }}>({location.x}, {location.y})</div>
         </div>
 
-        <div className="text-xs text-gray-400 mt-4 space-y-0.5">
-          <p><span className="text-orange">X</span> = Your Position</p>
-          <p><span className="text-lime">●</span> = Visited</p>
-          <p><span className="text-[#ffaa00]">?</span> = Discovered</p>
-          <p><span className="text-gray-500">·</span> = Unexplored</p>
+        <div style={{ marginBottom: '8px' }}>
+          <span style={{ color: '#00ccff', fontSize: '12px' }}>Location:</span>
+          <div style={{ color: '#ffaa00', fontSize: '14px', fontWeight: 'bold' }}>
+            {location.name || 'Unknown Territory'}
+          </div>
         </div>
+
+        {location.description && (
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ color: '#00ccff', fontSize: '12px' }}>Description:</span>
+            <p style={{
+              color: '#00ddaa',
+              fontSize: '12px',
+              margin: '4px 0 0 0',
+              lineHeight: '1.4',
+              fontStyle: 'italic'
+            }}>
+              {location.description}
+            </p>
+          </div>
+        )}
+
+        {location.exits && location.exits.length > 0 && (
+          <div>
+            <span style={{ color: '#00ccff', fontSize: '12px' }}>Exits:</span>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '8px',
+              marginTop: '8px',
+              fontSize: '12px',
+              color: '#00ff88',
+            }}>
+              {location.exits.map((exit) => (
+                <div key={exit} style={{
+                  padding: '6px',
+                  border: '1px solid #00ff88',
+                  borderRadius: '3px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                }}>
+                  ➜ {exit.charAt(0).toUpperCase() + exit.slice(1)}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        fontSize: '11px',
+        color: '#666',
+        textAlign: 'center',
+        marginTop: 'auto',
+      }}>
+        <p>Detailed map coming soon...</p>
       </div>
     </div>
   )
