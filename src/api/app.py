@@ -23,8 +23,12 @@ def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # Initialize CORS
-    CORS(app, origins=app.config["CORS_ORIGINS"])
+    # Initialize CORS - with explicit support for all methods
+    CORS(app, 
+         origins=app.config["CORS_ORIGINS"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+         allow_headers=["Content-Type", "Authorization"],
+         supports_credentials=True)
 
     # Initialize SocketIO for real-time updates
     socketio = SocketIO(
@@ -138,6 +142,19 @@ def create_app(config_class=None):
 
     register_error_handlers(app)
 
+    # Global before_request handler for CORS preflight
+    @app.before_request
+    def handle_preflight():
+        """Handle CORS preflight OPTIONS requests globally."""
+        from flask import make_response, request
+        if request.method == "OPTIONS":
+            response = make_response()
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "http://localhost:3000")
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Max-Age"] = "3600"
+            return response, 200
+
     # Health check endpoint
     @app.route("/health", methods=["GET"])
     def health():
@@ -178,5 +195,19 @@ def create_app(config_class=None):
         from src.api.schemas.openapi import generate_swagger_ui_html
 
         return generate_swagger_ui_html()
+
+    # Debug: List all routes
+    @app.route("/api/debug/routes", methods=["GET"])
+    def list_routes():
+        from flask import jsonify
+        routes = []
+        for rule in app.url_map.iter_rules():
+            if 'auth' in str(rule) or 'register' in str(rule):
+                routes.append({
+                    'endpoint': rule.endpoint,
+                    'methods': list(rule.methods),
+                    'rule': str(rule),
+                })
+        return jsonify({'routes': routes})
 
     return app, socketio

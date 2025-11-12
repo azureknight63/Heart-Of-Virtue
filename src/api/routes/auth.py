@@ -3,10 +3,10 @@
 from flask import Blueprint, request, jsonify
 from src.api.services import SessionManager
 
-auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+auth_bp = Blueprint("auth", __name__)
 
 
-@auth_bp.route("/register", methods=["POST"])
+@auth_bp.route("/auth/register", methods=["POST"])
 def register():
     """Create a new player account and session.
 
@@ -116,7 +116,7 @@ def register():
         )
 
 
-@auth_bp.route("/login", methods=["POST"])
+@auth_bp.route("/auth/login", methods=["POST"])
 def login():
     """Create a new player session (or login existing player).
 
@@ -226,7 +226,7 @@ def login():
         )
 
 
-@auth_bp.route("/logout", methods=["POST"])
+@auth_bp.route("/auth/logout", methods=["POST"])
 def logout():
     """End a player session.
 
@@ -298,7 +298,7 @@ def logout():
         )
 
 
-@auth_bp.route("/validate", methods=["GET"])
+@auth_bp.route("/auth/validate", methods=["GET"])
 def validate_session():
     """Validate a session ID.
 

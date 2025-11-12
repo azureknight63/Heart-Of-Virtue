@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-world_bp = Blueprint("world", __name__, url_prefix="/world")
+world_bp = Blueprint("world", __name__)
 
 
 def get_session_and_player(request):
@@ -34,7 +34,7 @@ def get_session_and_player(request):
     return session_manager, session, player, None
 
 
-@world_bp.route("/", methods=["GET"])
+@world_bp.route("/world", methods=["GET"])
 def get_current_room():
     """Get current room data.
 
@@ -92,7 +92,7 @@ def get_current_room():
         )
 
 
-@world_bp.route("/move", methods=["POST"])
+@world_bp.route("/world/move", methods=["POST"])
 def move_player():
     """Move player in a direction.
 
@@ -168,7 +168,7 @@ def move_player():
         )
 
 
-@world_bp.route("/tile", methods=["GET"])
+@world_bp.route("/world/tile", methods=["GET"])
 def get_tile():
     """Get tile data at specific coordinates.
 
