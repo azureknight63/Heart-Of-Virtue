@@ -68,14 +68,22 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         )}
 
         {/* Hero Panel - Character Head with Surrounding Buttons */}
-        <HeroPanel
-          onAttributeClick={() => setShowAttributes(!showAttributes)}
-          onStatusClick={() => setShowStatus(!showStatus)}
-          onSkillsClick={() => setShowSkills(!showSkills)}
-          onInventoryClick={() => setShowInventory(!showInventory)}
-          onActionsClick={() => {}}
-          onInteractClick={() => {}}
-        />
+        {/* Wrapper with smooth scale animation */}
+        <div style={{
+          transform: showStatus || showInventory ? 'scale(1)' : 'scale(2)',
+          transformOrigin: 'top center',
+          transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          overflow: 'visible',
+        }}>
+          <HeroPanel
+            onAttributeClick={() => setShowAttributes(!showAttributes)}
+            onStatusClick={() => setShowStatus(!showStatus)}
+            onSkillsClick={() => setShowSkills(!showSkills)}
+            onInventoryClick={() => setShowInventory(!showInventory)}
+            onActionsClick={() => {}}
+            onInteractClick={() => {}}
+          />
+        </div>
 
         {/* Player Status - Hidden for now, shown when Status clicked */}
         {showStatus && player && <PlayerStatus player={player} />}
