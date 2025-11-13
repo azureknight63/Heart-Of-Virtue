@@ -89,7 +89,10 @@ class SessionManager:
     
     def _load_starting_position_from_config(self):
         """Load starting position from config file specified in .env."""
+        import sys
         config_file = os.environ.get("CONFIG_FILE")
+        
+        print(f"[SessionManager] CONFIG_FILE env var: {config_file}", flush=True)
         
         if config_file:
             try:
@@ -97,24 +100,38 @@ class SessionManager:
                 config_file = config_file.strip("'\"")
                 config_path = Path(config_file)
                 
+                print(f"[SessionManager] Initial config path: {config_path}", flush=True)
+                
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (parent of parent of parent of this file)
                     project_root = Path(__file__).resolve().parent.parent.parent
                     config_path = project_root / config_file
+                    print(f"[SessionManager] Resolved to: {config_path}", flush=True)
+                
+                print(f"[SessionManager] Config path exists: {config_path.exists()}", flush=True)
                 
                 if config_path.exists():
                     parser = configparser.ConfigParser()
                     parser.read(config_path)
                     
+                    print(f"[SessionManager] Config sections: {parser.sections()}", flush=True)
+                    
                     if parser.has_option("game", "startposition"):
                         pos_str = parser.get("game", "startposition")
+                        print(f"[SessionManager] Raw position string: '{pos_str}'", flush=True)
                         coords = [int(x.strip()) for x in pos_str.split(",")]
                         if len(coords) == 2:
                             self.start_x, self.start_y = coords
-                            print(f"[SessionManager] Loaded starting position from config: ({self.start_x}, {self.start_y})")
+                            print(f"[SessionManager] ✓ Loaded starting position from config: ({self.start_x}, {self.start_y})", flush=True)
+                    else:
+                        print(f"[SessionManager] No startposition option in [game] section", flush=True)
             except Exception as e:
-                print(f"[SessionManager] Warning: Could not load start position from config: {e}")
+                import traceback
+                print(f"[SessionManager] ✗ Error loading config: {e}", flush=True)
+                traceback.print_exc()
+        else:
+            print(f"[SessionManager] CONFIG_FILE environment variable not set", flush=True)
 
     def create_session(self, username: str) -> Tuple[str, str]:
         """Create a new player session.
