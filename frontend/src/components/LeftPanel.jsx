@@ -3,10 +3,14 @@ import PlayerStatus from './PlayerStatus'
 import Inventory from './Inventory'
 import ActionButtons from './ActionButtons'
 import AccountDialog from './AccountDialog'
+import HeroPanel from './HeroPanel'
 
 export default function LeftPanel({ player, location, mode, onMove, onRefetch }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
+  const [showAttributes, setShowAttributes] = useState(false)
+  const [showStatus, setShowStatus] = useState(false)
+  const [showSkills, setShowSkills] = useState(false)
 
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg overflow-hidden retro-glow">
@@ -64,8 +68,18 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
           </div>
         )}
 
-        {/* Player Status */}
-        {player && <PlayerStatus player={player} />}
+        {/* Hero Panel - Character Head with Surrounding Buttons */}
+        <HeroPanel
+          onAttributeClick={() => setShowAttributes(!showAttributes)}
+          onStatusClick={() => setShowStatus(!showStatus)}
+          onSkillsClick={() => setShowSkills(!showSkills)}
+          onInventoryClick={() => setShowInventory(!showInventory)}
+          onActionsClick={() => {}}
+          onInteractClick={() => {}}
+        />
+
+        {/* Player Status - Hidden for now, shown when Status clicked */}
+        {showStatus && player && <PlayerStatus player={player} />}
 
         {/* Inventory Preview */}
         {player && !showInventory && (
