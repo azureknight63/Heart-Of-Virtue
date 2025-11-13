@@ -104,9 +104,10 @@ class SessionManager:
                 
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
-                    # Get project root (parent of parent of parent of this file)
-                    project_root = Path(__file__).resolve().parent.parent.parent
+                    # Get project root (4 levels up from this file: src/api/services/session_manager.py)
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent
                     config_path = project_root / config_file
+                    print(f"[SessionManager] Project root: {project_root}", flush=True)
                     print(f"[SessionManager] Resolved to: {config_path}", flush=True)
                 
                 print(f"[SessionManager] Config path exists: {config_path.exists()}", flush=True)
