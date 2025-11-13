@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import PlayerStatus from './PlayerStatus'
 import Inventory from './Inventory'
-import ActionButtons from './ActionButtons'
 import AccountDialog from './AccountDialog'
 import HeroPanel from './HeroPanel'
 
@@ -100,14 +99,6 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
           <Inventory items={player.inventory} onClose={() => setShowInventory(false)} />
         )}
       </div>
-
-      {/* Action Buttons */}
-      <ActionButtons
-        mode={mode}
-        location={location}
-        onMove={onMove}
-        onInventory={() => setShowInventory(!showInventory)}
-      />
 
       {/* Account Dialog */}
       {showAccount && (
