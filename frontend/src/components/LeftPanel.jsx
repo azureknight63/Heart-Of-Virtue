@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import PlayerStatus from './PlayerStatus'
-import Inventory from './Inventory'
+import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
 import HeroPanel from './HeroPanel'
 
@@ -80,23 +80,9 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         {/* Player Status - Hidden for now, shown when Status clicked */}
         {showStatus && player && <PlayerStatus player={player} />}
 
-        {/* Inventory Preview */}
-        {player && !showInventory && (
-          <div className="bg-[rgba(50,20,0,0.2)] border border-[#cc8800] rounded px-2 py-1.5">
-            <div className="text-[#ffaa00] font-bold text-xs mb-1">📦 Inventory ({player.inventory?.length || 0})</div>
-            <div className="text-[#ffcc00] text-xs max-h-20 overflow-y-auto">
-              {player.inventory?.slice(0, 3).map((item, idx) => (
-                <div key={idx}>{item.name}</div>
-              ))}
-              {player.inventory?.length > 3 && (
-                <div className="text-[#ffaa00] italic">... and {player.inventory.length - 3} more</div>
-              )}
-            </div>
-          </div>
-        )}
-
+        {/* Inventory Dialog in Bottom Half */}
         {showInventory && player && (
-          <Inventory items={player.inventory} onClose={() => setShowInventory(false)} />
+          <InventoryDialog items={player.inventory} player={player} onClose={() => setShowInventory(false)} />
         )}
       </div>
 
