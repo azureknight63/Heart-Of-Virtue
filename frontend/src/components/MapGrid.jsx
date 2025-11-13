@@ -4,7 +4,7 @@ import MovementStar from './MovementStar'
 export default function MapGrid({ location, onMove, exits, loading }) {
   const [exploredTiles, setExploredTiles] = useState(new Set())
   const GRID_SIZE = 13 // Odd number centers player
-  const TILE_SIZE = 45
+  const TILE_SIZE = 40
 
   // Add current location to explored when it changes
   useEffect(() => {
@@ -99,11 +99,11 @@ export default function MapGrid({ location, onMove, exits, loading }) {
       padding: '16px',
       boxShadow: '0 0 20px rgba(255, 102, 0, 0.3)',
     }}>
-      {/* Movement Star - Top Right Corner */}
+      {/* Movement Star - Left of Top Left Corner */}
       <div style={{
         position: 'absolute',
-        top: '16px',
-        right: '16px',
+        top: '4px',
+        left: '-30px',
         zIndex: 10
       }}>
         <MovementStar 
