@@ -3,6 +3,7 @@ import { useState } from 'react'
 export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsClick, onInventoryClick, onActionsClick, onInteractClick }) {
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
+  const [focusedBar, setFocusedBar] = useState(null)
 
   // Mock values - replace with actual player stats
   const hp = { current: 70, max: 100 }
@@ -67,6 +68,8 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
         <div
           onMouseEnter={() => setHoveredBar('hp')}
           onMouseLeave={() => setHoveredBar(null)}
+          onClick={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
+          onTouchStart={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
           style={{
             position: 'absolute',
             left: '-75px',
@@ -94,7 +97,7 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
           }} />
           
           {/* HP Tooltip */}
-          {hoveredBar === 'hp' && (
+          {(hoveredBar === 'hp' || focusedBar === 'hp') && (
             <div style={{
               position: 'absolute',
               left: '-65px',
@@ -121,6 +124,8 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
         <div
           onMouseEnter={() => setHoveredBar('fatigue')}
           onMouseLeave={() => setHoveredBar(null)}
+          onClick={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
+          onTouchStart={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
           style={{
             position: 'absolute',
             right: '-75px',
@@ -148,7 +153,7 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
           }} />
           
           {/* Fatigue Tooltip */}
-          {hoveredBar === 'fatigue' && (
+          {(hoveredBar === 'fatigue' || focusedBar === 'fatigue') && (
             <div style={{
               position: 'absolute',
               right: '-75px',
