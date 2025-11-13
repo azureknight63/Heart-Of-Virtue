@@ -4,7 +4,7 @@ import MovementStar from './MovementStar'
 export default function MapGrid({ location, onMove, exits, loading }) {
   const [exploredTiles, setExploredTiles] = useState(new Set())
   const GRID_SIZE = 13 // Odd number centers player
-  const TILE_SIZE = 30
+  const TILE_SIZE = 45
 
   // Add current location to explored when it changes
   useEffect(() => {
@@ -120,7 +120,7 @@ export default function MapGrid({ location, onMove, exits, loading }) {
         marginBottom: '12px',
         fontFamily: 'monospace',
       }}>
-        ⛰️ World Map
+        ⛰️ {location.name || 'World Map'}
       </div>
 
       {/* Grid */}
