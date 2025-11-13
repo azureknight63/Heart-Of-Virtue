@@ -1,9 +1,5 @@
-export default function ActionButtons({ mode, location, onMove, onInventory }) {
+export default function ActionButtons({ mode, location, onInventory }) {
   const explorationActions = [
-    { label: '↑ North', action: () => onMove('north') },
-    { label: '→ East', action: () => onMove('east') },
-    { label: '↓ South', action: () => onMove('south') },
-    { label: '← West', action: () => onMove('west') },
     { label: 'Take', action: () => {} },
     { label: 'Examine', action: () => {} },
     { label: 'Inventory', action: onInventory },
