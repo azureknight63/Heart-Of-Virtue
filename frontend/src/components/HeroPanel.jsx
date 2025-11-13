@@ -35,6 +35,7 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        overflow: 'visible',
       }}>
         {/* Hero Silhouette */}
         <div style={{
@@ -100,19 +101,19 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
           {(hoveredBar === 'hp' || focusedBar === 'hp') && (
             <div style={{
               position: 'absolute',
-              left: '-65px',
-              top: '50%',
-              transform: 'translateY(-50%)',
+              left: '50%',
+              bottom: '-35px',
+              transform: 'translateX(-50%)',
               backgroundColor: '#1a1a1a',
-              border: '2px solid #ff4444',
-              borderRadius: '4px',
-              padding: '6px 8px',
+              border: '1.5px solid #ff4444',
+              borderRadius: '3px',
+              padding: '4px 6px',
               color: '#ff4444',
-              fontSize: '11px',
+              fontSize: '8px',
               fontWeight: 'bold',
               fontFamily: 'monospace',
               whiteSpace: 'nowrap',
-              boxShadow: '0 0 10px rgba(255, 68, 68, 0.6)',
+              boxShadow: '0 0 8px rgba(255, 68, 68, 0.6)',
               zIndex: 20,
             }}>
               HP<br />{hp.current}/{hp.max}
@@ -156,19 +157,19 @@ export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsCli
           {(hoveredBar === 'fatigue' || focusedBar === 'fatigue') && (
             <div style={{
               position: 'absolute',
-              right: '-75px',
-              top: '50%',
-              transform: 'translateY(-50%)',
+              right: '50%',
+              bottom: '-35px',
+              transform: 'translateX(50%)',
               backgroundColor: '#1a1a1a',
-              border: '2px solid #ffaa00',
-              borderRadius: '4px',
-              padding: '6px 8px',
+              border: '1.5px solid #ffaa00',
+              borderRadius: '3px',
+              padding: '4px 6px',
               color: '#ffaa00',
-              fontSize: '11px',
+              fontSize: '8px',
               fontWeight: 'bold',
               fontFamily: 'monospace',
               whiteSpace: 'nowrap',
-              boxShadow: '0 0 10px rgba(255, 170, 0, 0.6)',
+              boxShadow: '0 0 8px rgba(255, 170, 0, 0.6)',
               zIndex: 20,
             }}>
               Fatigue<br />{fatigue.current}/{fatigue.max}
