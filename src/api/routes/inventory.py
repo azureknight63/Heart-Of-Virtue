@@ -24,7 +24,7 @@ from src.api.serializers.inventory import (
 )
 
 # Create blueprint
-inventory_bp = Blueprint("inventory", __name__, url_prefix="/inventory")
+inventory_bp = Blueprint("inventory", __name__)
 
 
 def get_session_and_player():
@@ -47,7 +47,7 @@ def get_session_and_player():
     return session, player, None, None
 
 
-@inventory_bp.route("/", methods=["GET"])
+@inventory_bp.route("/inventory", methods=["GET"])
 def get_inventory():
     """Get player inventory.
 
@@ -68,7 +68,7 @@ def get_inventory():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/examine", methods=["GET"])
+@inventory_bp.route("/inventory/examine", methods=["GET"])
 def examine_item():
     """Examine specific item in inventory.
 
@@ -109,7 +109,7 @@ def examine_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/take", methods=["POST"])
+@inventory_bp.route("/inventory/take", methods=["POST"])
 def take_item():
     """Take item from current tile into inventory.
 
@@ -156,7 +156,7 @@ def take_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/drop", methods=["POST"])
+@inventory_bp.route("/inventory/drop", methods=["POST"])
 def drop_item():
     """Drop item from inventory onto current tile.
 
@@ -220,7 +220,7 @@ def get_equipment():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/equip", methods=["POST"])
+@inventory_bp.route("/inventory/equip", methods=["POST"])
 def equip_item():
     """Equip an item from inventory.
 
@@ -272,7 +272,7 @@ def equip_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/unequip", methods=["POST"])
+@inventory_bp.route("/inventory/unequip", methods=["POST"])
 def unequip_item():
     """Unequip an item from a slot.
 
@@ -329,7 +329,7 @@ def unequip_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/compare", methods=["GET"])
+@inventory_bp.route("/inventory/compare", methods=["GET"])
 def compare_items():
     """Compare two items.
 
@@ -382,7 +382,7 @@ def compare_items():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/stats", methods=["GET"])
+@inventory_bp.route("/inventory/stats", methods=["GET"])
 def get_stats():
     """Get player stats with equipment bonuses.
 
@@ -419,7 +419,7 @@ def get_stats():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/currency", methods=["GET"])
+@inventory_bp.route("/inventory/currency", methods=["GET"])
 def get_currency():
     """Get player currency information.
 
