@@ -4,6 +4,10 @@ import os
 import sys
 from pathlib import Path
 
+# Load .env file first
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add src to path for proper module imports
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"

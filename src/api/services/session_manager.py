@@ -1,7 +1,10 @@
 """Session management for player persistence."""
 
+import os
 import uuid
+import configparser
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, Dict, Tuple
 
 
@@ -79,6 +82,39 @@ class SessionManager:
         self.players: Dict[str, object] = {}  # Stores Player or MinimalPlayer objects
         self.session_to_player: Dict[str, str] = {}
         self.universe = universe  # Reference to universe for getting starting positions
+        
+        # Load starting position from config file
+        self.start_x, self.start_y = 1, 1  # defaults
+        self._load_starting_position_from_config()
+    
+    def _load_starting_position_from_config(self):
+        """Load starting position from config file specified in .env."""
+        config_file = os.environ.get("CONFIG_FILE")
+        
+        if config_file:
+            try:
+                # Remove quotes if present (from .env file)
+                config_file = config_file.strip("'\"")
+                config_path = Path(config_file)
+                
+                # If relative path, make it relative to project root
+                if not config_path.is_absolute():
+                    # Get project root (parent of parent of parent of this file)
+                    project_root = Path(__file__).resolve().parent.parent.parent
+                    config_path = project_root / config_file
+                
+                if config_path.exists():
+                    parser = configparser.ConfigParser()
+                    parser.read(config_path)
+                    
+                    if parser.has_option("game", "startposition"):
+                        pos_str = parser.get("game", "startposition")
+                        coords = [int(x.strip()) for x in pos_str.split(",")]
+                        if len(coords) == 2:
+                            self.start_x, self.start_y = coords
+                            print(f"[SessionManager] Loaded starting position from config: ({self.start_x}, {self.start_y})")
+            except Exception as e:
+                print(f"[SessionManager] Warning: Could not load start position from config: {e}")
 
     def create_session(self, username: str) -> Tuple[str, str]:
         """Create a new player session.
@@ -104,26 +140,16 @@ class SessionManager:
             # So we use MinimalPlayer as fallback
             player = MinimalPlayer(username)
             
-            # If universe is available, position player at starting location
-            if self.universe and hasattr(self.universe, 'maps') and self.universe.maps:
-                first_map = self.universe.maps[0]
-                tiles = [k for k in first_map if isinstance(k, tuple)]
-                if tiles:
-                    start_pos = tiles[0]
-                    player.x, player.y = start_pos
+            # Set starting position from config
+            player.x, player.y = self.start_x, self.start_y
             
             self.players[player_id] = player
         except Exception:
             # Fallback to minimal player
             player = MinimalPlayer(username)
             
-            # If universe is available, position player at starting location
-            if self.universe and hasattr(self.universe, 'maps') and self.universe.maps:
-                first_map = self.universe.maps[0]
-                tiles = [k for k in first_map if isinstance(k, tuple)]
-                if tiles:
-                    start_pos = tiles[0]
-                    player.x, player.y = start_pos
+            # Set starting position from config
+            player.x, player.y = self.start_x, self.start_y
             
             self.players[player_id] = player
 

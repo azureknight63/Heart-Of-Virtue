@@ -1,5 +1,8 @@
 """Flask application factory and initialization."""
 
+import os
+import configparser
+from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -37,6 +40,32 @@ def create_app(config_class=None):
         async_mode="threading",
     )
 
+    # Load starting position from config file
+    start_x, start_y = 2, 2  # defaults
+    config_file = os.environ.get("CONFIG_FILE")
+    
+    if config_file:
+        try:
+            # Remove quotes if present (from .env file)
+            config_file = config_file.strip("'\"")
+            config_path = Path(config_file)
+            
+            # If relative path, make it relative to project root
+            if not config_path.is_absolute():
+                config_path = Path(__file__).resolve().parent.parent.parent / config_file
+            
+            if config_path.exists():
+                parser = configparser.ConfigParser()
+                parser.read(config_path)
+                
+                if parser.has_option("game", "startposition"):
+                    pos_str = parser.get("game", "startposition")
+                    coords = [int(x.strip()) for x in pos_str.split(",")]
+                    if len(coords) == 2:
+                        start_x, start_y = coords
+        except Exception as e:
+            print(f"Warning: Could not load start position from config: {e}")
+
     # Initialize game universe and service first
     # For testing and development, load real game universe
     # Check by class name to avoid import namespace issues
@@ -61,13 +90,8 @@ def create_app(config_class=None):
             # Build universe with real maps from JSON files
             universe.build(test_player)
             
-            # Set player to starting position (first tile of first map)
-            if universe.maps and len(universe.maps) > 0:
-                map_data = universe.maps[0]
-                tiles = [k for k in map_data if isinstance(k, tuple)]
-                if tiles:
-                    start_pos = tiles[0]
-                    test_player.x, test_player.y = start_pos
+            # Set player to starting position from config
+            test_player.x, test_player.y = start_x, start_y
             
             # Create a get_tile wrapper for accessing tiles from the universe.maps structure
             def get_tile_from_maps(x, y):
