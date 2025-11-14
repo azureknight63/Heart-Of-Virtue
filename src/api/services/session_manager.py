@@ -207,7 +207,7 @@ class SessionManager:
         """Create item instances from config item types.
         
         Returns:
-            List of item dictionaries
+            List of item instances
         """
         items = []
         
@@ -229,28 +229,7 @@ class SessionManager:
                         item_class = getattr(items_module, item_type)
                         # Create instance of the item
                         item_instance = item_class()
-                        
-                        # Convert to dict for MinimalPlayer compatibility
-                        item_dict = {
-                            "name": item_instance.name if hasattr(item_instance, 'name') else item_type,
-                            "__class__": item_type,
-                            "weight": item_instance.weight if hasattr(item_instance, 'weight') else 1.0,
-                            "description": item_instance.description if hasattr(item_instance, 'description') else "",
-                        }
-                        
-                        # Add type-specific attributes
-                        if hasattr(item_instance, 'maintype'):
-                            item_dict["maintype"] = item_instance.maintype
-                        if hasattr(item_instance, 'subtype'):
-                            item_dict["subtype"] = item_instance.subtype
-                        if hasattr(item_instance, 'value'):
-                            item_dict["value"] = item_instance.value
-                        if hasattr(item_instance, 'rarity'):
-                            item_dict["rarity"] = item_instance.rarity
-                        if hasattr(item_instance, 'quantity'):
-                            item_dict["quantity"] = item_instance.quantity
-                        
-                        items.append(item_dict)
+                        items.append(item_instance)
                         print(f"[SessionManager] ✓ Created starting item: {item_type}", flush=True)
                     else:
                         print(f"[SessionManager] ✗ Item class not found: {item_type}", flush=True)
