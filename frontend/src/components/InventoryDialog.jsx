@@ -30,6 +30,9 @@ export default function InventoryDialog({ player, onClose }) {
       special: [],
     }
 
+    // Track stackable items by name to merge quantities
+    const stackedItems = {}
+
     player.inventory?.forEach((item) => {
       // Skip gold items - they're handled separately
       if (item.type === 'Gold' || item.maintype === 'Currency') {
@@ -39,22 +42,37 @@ export default function InventoryDialog({ player, onClose }) {
       // Use maintype first, then subtype, then type (class name)
       const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
       
+      // Check if item is stackable (consumables and some special items)
+      const isStackable = categoryType.includes('consumable') || categoryType.includes('arrow') || categoryType.includes('scroll')
+      
+      // For stackable items, merge quantities
+      if (isStackable && stackedItems[item.name]) {
+        stackedItems[item.name].quantity = (stackedItems[item.name].quantity || 1) + (item.quantity || 1)
+        return
+      }
+
+      // Mark item with its current quantity
+      const itemToAdd = { ...item, quantity: item.quantity || 1 }
+      if (isStackable) {
+        stackedItems[item.name] = itemToAdd
+      }
+      
       if (categoryType.includes('weapon')) {
-        categories.weapons.push(item)
+        categories.weapons.push(itemToAdd)
       } else if (categoryType.includes('armor')) {
-        categories.armor.push(item)
+        categories.armor.push(itemToAdd)
       } else if (categoryType.includes('boot')) {
-        categories.boots.push(item)
+        categories.boots.push(itemToAdd)
       } else if (categoryType.includes('helm') || categoryType.includes('head')) {
-        categories.helms.push(item)
+        categories.helms.push(itemToAdd)
       } else if (categoryType.includes('glove') || categoryType.includes('hand')) {
-        categories.gloves.push(item)
+        categories.gloves.push(itemToAdd)
       } else if (categoryType.includes('accessory') || categoryType.includes('ring') || categoryType.includes('amulet')) {
-        categories.accessories.push(item)
+        categories.accessories.push(itemToAdd)
       } else if (categoryType.includes('consumable') || categoryType.includes('potion') || categoryType.includes('scroll')) {
-        categories.consumables.push(item)
+        categories.consumables.push(itemToAdd)
       } else {
-        categories.special.push(item)
+        categories.special.push(itemToAdd)
       }
     })
 
