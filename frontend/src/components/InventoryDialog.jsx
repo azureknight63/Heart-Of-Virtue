@@ -114,7 +114,7 @@ export default function InventoryDialog({ player, onClose }) {
       padding: '12px',
       display: 'flex',
       flexDirection: 'column',
-      height: '100%',
+      maxHeight: '100%',
       gap: '8px',
     }}>
       {/* Header with Gold and Weight Info */}
@@ -125,6 +125,7 @@ export default function InventoryDialog({ player, onClose }) {
         marginBottom: '8px',
         paddingBottom: '8px',
         borderBottom: '1px solid #cc8800',
+        flexShrink: 0,
       }}>
         <div style={{
           color: '#ffaa00',
@@ -190,6 +191,7 @@ export default function InventoryDialog({ player, onClose }) {
         backgroundColor: 'rgba(30, 15, 0, 0.5)',
         borderRadius: '4px',
         border: '1px solid #663300',
+        flexShrink: 0,
       }}>
         {INVENTORY_TABS.map((tab) => (
           <button
@@ -230,6 +232,7 @@ export default function InventoryDialog({ player, onClose }) {
       {/* Items as Tags/Badges */}
       <div style={{
         flex: 1,
+        minHeight: 0,
         overflowY: 'auto',
         backgroundColor: 'rgba(30, 15, 0, 0.4)',
         border: '1px solid #664400',
