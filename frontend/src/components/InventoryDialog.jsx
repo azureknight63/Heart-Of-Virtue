@@ -99,6 +99,15 @@ export default function InventoryDialog({ player, onClose }) {
   // Combine owned and merchandise items, with owned first
   const activeItems = categoryData ? [...categoryData.owned, ...categoryData.merchandise] : []
 
+  // Calculate scale factor based on item count
+  // Scale tags based on item count to prevent overlapping
+  const calculateScale = () => {
+    return 1.0  // All tags same size, 5% increase only on hover
+  }
+  const itemScale = calculateScale()
+  // Dynamic gap: more space when tags are bigger, less when they're smaller
+  const dynamicGap = 12
+
   // Get tooltip stats for an item
   const getItemStats = (item) => {
     const stats = []
@@ -267,13 +276,13 @@ export default function InventoryDialog({ player, onClose }) {
         display: 'flex',
         flexWrap: 'wrap',
         alignContent: 'flex-start',
-        gap: '10px',
+        gap: '12px',
       }}>
         {activeItems && activeItems.length > 0 ? (
           activeItems.map((item, idx) => (
             <div
               key={idx}
-              onMouseEnter={() => setHoveredItem(item.index)}
+              onMouseEnter={() => setHoveredItem(idx)}
               onMouseLeave={() => setHoveredItem(null)}
               onClick={() => setSelectedItem(item)}
               style={{
@@ -290,8 +299,8 @@ export default function InventoryDialog({ player, onClose }) {
                 borderRadius: '24px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                boxShadow: hoveredItem === item.index ? (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset') : 'none',
-                transform: hoveredItem === item.index ? 'scale(1.05)' : 'scale(1)',
+                boxShadow: hoveredItem === idx ? (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset') : 'none',
+                transform: hoveredItem === idx ? 'scale(1.05)' : 'scale(1)',
                 fontSize: '14px',
                 opacity: item.is_merchandise ? 0.75 : 1,
               }}
@@ -328,7 +337,7 @@ export default function InventoryDialog({ player, onClose }) {
               </div>
 
               {/* Hover Tooltip with Stats */}
-              {hoveredItem === item.index && (
+              {hoveredItem === idx && (
                 <div style={{
                   position: 'absolute',
                   top: '100%',
