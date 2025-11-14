@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { apiClient } from '../api/apiClient'
+import apiClient from '../api/client'
 
 export default function ItemDetailDialog({ item, player, onClose, onBack }) {
   const [isLoading, setIsLoading] = useState(false)
