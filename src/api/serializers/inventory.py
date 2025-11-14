@@ -30,11 +30,16 @@ class InventoryItemSerializer:
         Returns:
             Dictionary with item data suitable for JSON
         """
-        return {
+        # Determine item category
+        item_type = item.__class__.__name__
+        maintype = getattr(item, "maintype", "")
+        
+        # Build base item data
+        item_data = {
             "index": index,
             "name": getattr(item, "name", "Unknown Item"),
-            "type": item.__class__.__name__,
-            "maintype": getattr(item, "maintype", ""),
+            "type": item_type,
+            "maintype": maintype,
             "subtype": getattr(item, "subtype", ""),
             "quantity": getattr(item, "quantity", 1),
             "rarity": getattr(item, "rarity", "common"),
@@ -47,6 +52,19 @@ class InventoryItemSerializer:
             "is_merchandise": getattr(item, "merchandise", False),
             "description": getattr(item, "description", ""),
         }
+        
+        # Add weapon-specific stats
+        if item_type == "Weapon" or maintype == "Weapon":
+            item_data["damage"] = getattr(item, "damage", 0)
+            item_data["str_mod"] = getattr(item, "str_mod", 0)
+            item_data["fin_mod"] = getattr(item, "fin_mod", 0)
+        
+        # Add armor-specific stats (Armor, Boots, Helm, Gloves, Accessory)
+        if item_type in ["Armor", "Boots", "Helm", "Gloves", "Accessory"] or \
+           maintype in ["Armor", "Boots", "Helm", "Gloves", "Accessory"]:
+            item_data["protection"] = getattr(item, "protection", 0)
+        
+        return item_data
 
 
 class InventorySerializer:

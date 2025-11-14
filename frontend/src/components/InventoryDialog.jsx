@@ -114,12 +114,14 @@ export default function InventoryDialog({ player, onClose }) {
     if (item.weight > 0) stats.push(`${item.weight.toFixed(1)}w`)
     if (item.value > 0) stats.push(`${item.value}g`)
     
-    // Try to get power/protection info from maintype
+    // Get damage for weapons
     const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
     if (categoryType.includes('weapon')) {
-      stats.push('⚔️')
-    } else if (categoryType.includes('armor') || categoryType.includes('protection')) {
-      stats.push('🛡️')
+      if (item.damage) stats.push(`⚔️ ${item.damage}`)
+    } else if (categoryType.includes('armor') || categoryType.includes('protection') || 
+               categoryType.includes('boot') || categoryType.includes('helm') || 
+               categoryType.includes('glove') || categoryType.includes('accessory')) {
+      if (item.protection) stats.push(`🛡️ ${item.protection}`)
     } else if (categoryType.includes('consumable')) {
       stats.push('💊')
     }
