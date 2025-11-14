@@ -16,6 +16,109 @@ export default function InventoryDialog({ player, onClose }) {
   const [activeTab, setActiveTab] = useState('weapons')
   const [selectedItem, setSelectedItem] = useState(null)
   const [hoveredItem, setHoveredItem] = useState(null)
+  // Sort state: 'off', 'desc', 'asc'
+  const [sortStates, setSortStates] = useState({
+    value: 'desc',  // Default sort
+    weight: 'off',
+    damage: 'off',
+    protection: 'off',
+    rarity: 'off',
+    subtype: 'off',
+  })
+
+  // Toggle sort state: off -> desc -> asc -> off
+  const toggleSort = (sortType) => {
+    setSortStates((prev) => {
+      const newStates = { ...prev }
+      // Turn off all other sorts when clicking a new one
+      Object.keys(newStates).forEach((key) => {
+        if (key !== sortType) newStates[key] = 'off'
+      })
+      // Cycle current sort: off -> desc -> asc -> off
+      if (prev[sortType] === 'off') {
+        newStates[sortType] = 'desc'
+      } else if (prev[sortType] === 'desc') {
+        newStates[sortType] = 'asc'
+      } else {
+        newStates[sortType] = 'off'
+      }
+      return newStates
+    })
+  }
+
+  // Get active sort (only one should be active at a time)
+  const getActiveSort = () => {
+    for (const [key, state] of Object.entries(sortStates)) {
+      if (state !== 'off') return { key, state }
+    }
+    return null
+  }
+
+  // Sorting function
+  const sortItems = (items) => {
+    const activeSort = getActiveSort()
+    if (!activeSort) return items
+
+    const sorted = [...items]
+    const { key: sortBy, state: sortDesc } = activeSort
+    const isDesc = sortDesc === 'desc'
+
+    sorted.sort((a, b) => {
+      let aVal, bVal
+      switch (sortBy) {
+        case 'value':
+          aVal = a.value || 0
+          bVal = b.value || 0
+          break
+        case 'weight':
+          aVal = a.weight || 0
+          bVal = b.weight || 0
+          break
+        case 'damage':
+          aVal = a.damage || 0
+          bVal = b.damage || 0
+          break
+        case 'protection':
+          aVal = a.protection || 0
+          bVal = b.protection || 0
+          break
+        case 'rarity':
+          aVal = a.rarity || 'common'
+          bVal = b.rarity || 'common'
+          return isDesc ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal)
+        case 'subtype':
+          aVal = a.subtype || ''
+          bVal = b.subtype || ''
+          return isDesc ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal)
+        default:
+          return 0
+      }
+      return isDesc ? bVal - aVal : aVal - bVal
+    })
+    return sorted
+  }
+
+  // Detect which properties are available in this category
+  const getAvailableProperties = (items) => {
+    const available = {
+      value: true,    // Always available
+      weight: false,
+      damage: false,
+      protection: false,
+      rarity: false,
+      subtype: false,
+    }
+
+    items.forEach((item) => {
+      if (item.weight && item.weight > 0) available.weight = true
+      if (item.damage && item.damage > 0) available.damage = true
+      if (item.protection && item.protection > 0) available.protection = true
+      if (item.rarity) available.rarity = true
+      if (item.subtype) available.subtype = true
+    })
+
+    return available
+  }
 
   // Categorize items by maintype or fallback to class name
   const categorizeItems = () => {
@@ -96,8 +199,9 @@ export default function InventoryDialog({ player, onClose }) {
 
   const categories = categorizeItems()
   const categoryData = categories[activeTab]
-  // Combine owned and merchandise items, with owned first
-  const activeItems = categoryData ? [...categoryData.owned, ...categoryData.merchandise] : []
+  // Combine owned and merchandise items, with owned first, then sort
+  const unsortedItems = categoryData ? [...categoryData.owned, ...categoryData.merchandise] : []
+  const activeItems = sortItems(unsortedItems)
 
   // Calculate scale factor based on item count
   // Scale tags based on item count to prevent overlapping
@@ -107,6 +211,67 @@ export default function InventoryDialog({ player, onClose }) {
   const itemScale = calculateScale()
   // Dynamic gap: more space when tags are bigger, less when they're smaller
   const dynamicGap = 12
+
+  // Map subtypes to symbols
+  const getSubtypeSymbol = (subtype) => {
+    if (!subtype) return ''
+    const subtypeLower = subtype.toLowerCase()
+    
+    const symbolMap = {
+      // Weapons
+      'unarmed': '✊',
+      'bludgeon': '🔨',
+      'dagger': '🔪',
+      'sword': '⚔️',
+      'axe': '🪓',
+      'pick': '⛏️',
+      'scythe': '💀',
+      'spear': '🔱',
+      'bow': '🏹',
+      'crossbow': '🏹',
+      'polearm': '🔱',
+      // Armor
+      'light armor': '👕',
+      'medium armor': '👔',
+      'heavy armor': '🛡️',
+      // Boots
+      'light boots': '👟',
+      'medium boots': '👞',
+      'heavy boots': '🥾',
+      // Helms
+      'helm': '⛑️',
+      'light helm': '⛑️',
+      'heavy helm': '⛑️',
+      'circlet': '👑',
+      'crown': '👑',
+      // Gloves
+      'light gloves': '🧤',
+      'medium gloves': '🧤',
+      'heavy gloves': '🧤',
+      // Accessories
+      'ring': '💍',
+      'necklace': '📿',
+      'bracelet': '⌚',
+      'charm': '✨',
+      // Special
+      'key': '🔑',
+      'commodity': '📦',
+      'relic': '✨',
+      'gem': '💎',
+      'crystal': '💎',
+      'book': '📖',
+      // Consumables
+      'potion': '🧪',
+      'arrow': '🏹',
+    }
+    
+    for (const [key, symbol] of Object.entries(symbolMap)) {
+      if (subtypeLower.includes(key)) {
+        return symbol
+      }
+    }
+    return ''
+  }
 
   // Get tooltip stats for an item
   const getItemStats = (item) => {
@@ -220,52 +385,149 @@ export default function InventoryDialog({ player, onClose }) {
         display: 'flex',
         gap: '8px',
         justifyContent: 'space-around',
-        marginBottom: '8px',
-        padding: '8px',
+        padding: '4px',
         backgroundColor: 'rgba(30, 15, 0, 0.5)',
         borderRadius: '4px',
         border: '1px solid #663300',
         flexShrink: 0,
+        marginBottom: '-4px',
       }}>
-        {INVENTORY_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            title={tab.title}
-            style={{
-              flex: 1,
-              padding: '12px 8px',
-              fontSize: '24px',
-              backgroundColor: activeTab === tab.key ? 'rgba(200, 100, 0, 0.6)' : 'rgba(100, 50, 0, 0.3)',
-              border: activeTab === tab.key ? '2px solid #ffcc00' : '1px solid #664400',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onMouseEnter={(e) => {
-              if (activeTab !== tab.key) {
-                e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.5)'
-                e.target.style.borderColor = '#ffaa00'
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== tab.key) {
-                e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.3)'
-                e.target.style.borderColor = '#664400'
-              }
-            }}
-          >
-            {tab.icon}
-          </button>
-        ))}
+        {INVENTORY_TABS.map((tab) => {
+          const tabData = categories[tab.key]
+          const itemCount = tabData ? (tabData.owned.length + tabData.merchandise.length) : 0
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              title={tab.title}
+              style={{
+                flex: 1,
+                padding: '8px 4px',
+                fontSize: '24px',
+                backgroundColor: activeTab === tab.key ? 'rgba(200, 100, 0, 0.6)' : 'rgba(100, 50, 0, 0.3)',
+                border: activeTab === tab.key ? '2px solid #ffcc00' : '1px solid #664400',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '2px',
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== tab.key) {
+                  e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.5)'
+                  e.target.style.borderColor = '#ffaa00'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== tab.key) {
+                  e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.3)'
+                  e.target.style.borderColor = '#664400'
+                }
+              }}
+            >
+              {tab.icon}
+              <span style={{
+                fontSize: '9px',
+                fontFamily: 'monospace',
+                color: '#ffaa00',
+                fontWeight: 'bold',
+              }}>
+                {itemCount}
+              </span>
+            </button>
+          )
+        })}
       </div>
+
+      {/* Sorting Panel */}
+      {(() => {
+        const unsortedItems = categoryData ? [...categoryData.owned, ...categoryData.merchandise] : []
+        const availableProps = getAvailableProperties(unsortedItems)
+        const sortConfig = [
+          { key: 'value', icon: '💰', tooltip: 'Sort by Value' },
+          { key: 'weight', icon: '⚖️', tooltip: 'Sort by Weight' },
+          { key: 'damage', icon: '⚔️', tooltip: 'Sort by Damage' },
+          { key: 'protection', icon: '🛡️', tooltip: 'Sort by Protection' },
+          { key: 'rarity', icon: '✨', tooltip: 'Sort by Rarity' },
+          { key: 'subtype', icon: '📦', tooltip: 'Sort by Subtype' },
+        ]
+
+        return (
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            padding: '4px',
+            backgroundColor: 'rgba(30, 15, 0, 0.5)',
+            borderRadius: '4px',
+            border: '1px solid #663300',
+            flexShrink: 0,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '-4px',
+          }}>
+            {sortConfig.map((config) => {
+              if (!availableProps[config.key]) return null
+              const state = sortStates[config.key]
+              const isActive = state !== 'off'
+              const arrow = state === 'desc' ? '↓' : state === 'asc' ? '↑' : ''
+
+              return (
+                <button
+                  key={config.key}
+                  onClick={() => toggleSort(config.key)}
+                  title={config.tooltip}
+                  style={{
+                    padding: '0px 2px',
+                    backgroundColor: isActive
+                      ? state === 'desc'
+                        ? 'rgba(200, 100, 0, 0.8)'
+                        : 'rgba(100, 150, 100, 0.8)'
+                      : 'rgba(50, 25, 0, 0.6)',
+                    color: isActive ? '#ffff00' : '#ccaa88',
+                    border: isActive
+                      ? state === 'desc'
+                        ? '1px solid #ffaa00'
+                        : '1px solid #00ff88'
+                      : '1px solid #664400',
+                    borderRadius: '3px',
+                    cursor: 'pointer',
+                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    minWidth: '36px',
+                    justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (isActive) {
+                      e.target.style.boxShadow = state === 'desc'
+                        ? '0 0 8px rgba(255, 170, 0, 0.6)'
+                        : '0 0 8px rgba(0, 255, 136, 0.6)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.boxShadow = 'none'
+                  }}
+                >
+                  {arrow && <span>{arrow}</span>}
+                  <span>{config.icon}</span>
+                </button>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Items as Tags/Badges */}
       <div style={{
-        flex: '0 0 250px',
+        flex: '0 0 200px',
         minHeight: 0,
         overflowY: 'auto',
         backgroundColor: 'rgba(30, 15, 0, 0.4)',
@@ -325,6 +587,9 @@ export default function InventoryDialog({ player, onClose }) {
                 }
               }}
               >
+                <span style={{ marginRight: '4px' }}>
+                  {getSubtypeSymbol(item.subtype)}
+                </span>
                 {item.name}
                 {item.is_merchandise && (
                   <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '13px' }}>
