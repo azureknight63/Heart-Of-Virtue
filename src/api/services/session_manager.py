@@ -15,7 +15,7 @@ class MinimalPlayer:
         self.name = name
         self.x = 0  # Starting at origin
         self.y = 0
-        self.inventory = []
+        self.inventory = self._create_starting_inventory()
         self.equipment = {}
         self.hp = 100
         self.max_hp = 100
@@ -25,6 +25,41 @@ class MinimalPlayer:
         self.reputation = {}  # Empty reputation dict for API operations
         self.completed_dialogues = []  # Track completed dialogues
         self.dialogue_contexts = {}  # Store active dialogue contexts
+    
+    def _create_starting_inventory(self):
+        """Create starting items for new players."""
+        return [
+            {
+                "name": "Wooden Sword",
+                "__class__": "Weapon",
+                "weight": 2.0,
+                "description": "A basic wooden practice sword.",
+                "base_damage": 5,
+                "damage_type": "piercing",
+            },
+            {
+                "name": "Leather Armor",
+                "__class__": "Armor",
+                "weight": 5.0,
+                "description": "Simple leather protection.",
+                "defense": 2,
+            },
+            {
+                "name": "Health Potion",
+                "__class__": "Consumable",
+                "weight": 0.5,
+                "description": "Restores 50 HP when used.",
+                "restoration": 50,
+                "type": "health",
+            },
+            {
+                "name": "Gold Coins",
+                "__class__": "Gold",
+                "weight": 0.1,
+                "amount": 50,
+                "description": "50 gold coins.",
+            },
+        ]
 
 
 class Session:
@@ -153,16 +188,24 @@ class SessionManager:
 
         # Create new player
         try:
-            # Try to import and create actual Player object
-            # This will fail during testing/API initialization due to game engine dependencies
-            # So we use MinimalPlayer as fallback
-            player = MinimalPlayer(username)
+            # Try to get player from universe if available
+            if self.universe and hasattr(self.universe, 'player'):
+                player = self.universe.player
+                # Update player name to match username
+                if hasattr(player, 'name'):
+                    player.name = username
+            else:
+                # Try to import and create actual Player object
+                # This will fail during testing/API initialization due to game engine dependencies
+                # So we use MinimalPlayer as fallback
+                player = MinimalPlayer(username)
             
             # Set starting position from config
             player.x, player.y = self.start_x, self.start_y
             
             self.players[player_id] = player
-        except Exception:
+        except Exception as e:
+            print(f"[SessionManager] Error creating player: {e}", flush=True)
             # Fallback to minimal player
             player = MinimalPlayer(username)
             
