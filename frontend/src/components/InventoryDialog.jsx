@@ -20,14 +20,14 @@ export default function InventoryDialog({ player, onClose }) {
   // Categorize items by maintype or fallback to class name
   const categorizeItems = () => {
     const categories = {
-      weapons: [],
-      armor: [],
-      boots: [],
-      helms: [],
-      gloves: [],
-      accessories: [],
-      consumables: [],
-      special: [],
+      weapons: { owned: [], merchandise: [] },
+      armor: { owned: [], merchandise: [] },
+      boots: { owned: [], merchandise: [] },
+      helms: { owned: [], merchandise: [] },
+      gloves: { owned: [], merchandise: [] },
+      accessories: { owned: [], merchandise: [] },
+      consumables: { owned: [], merchandise: [] },
+      special: { owned: [], merchandise: [] },
     }
 
     // Track stackable items by name to merge quantities
@@ -57,22 +57,25 @@ export default function InventoryDialog({ player, onClose }) {
         stackedItems[item.name] = itemToAdd
       }
       
+      // Determine destination: owned or merchandise
+      const destination = item.is_merchandise ? 'merchandise' : 'owned'
+      
       if (categoryType.includes('weapon')) {
-        categories.weapons.push(itemToAdd)
+        categories.weapons[destination].push(itemToAdd)
       } else if (categoryType.includes('armor')) {
-        categories.armor.push(itemToAdd)
+        categories.armor[destination].push(itemToAdd)
       } else if (categoryType.includes('boot')) {
-        categories.boots.push(itemToAdd)
+        categories.boots[destination].push(itemToAdd)
       } else if (categoryType.includes('helm') || categoryType.includes('head')) {
-        categories.helms.push(itemToAdd)
+        categories.helms[destination].push(itemToAdd)
       } else if (categoryType.includes('glove') || categoryType.includes('hand')) {
-        categories.gloves.push(itemToAdd)
+        categories.gloves[destination].push(itemToAdd)
       } else if (categoryType.includes('accessory') || categoryType.includes('ring') || categoryType.includes('amulet')) {
-        categories.accessories.push(itemToAdd)
+        categories.accessories[destination].push(itemToAdd)
       } else if (categoryType.includes('consumable') || categoryType.includes('potion') || categoryType.includes('scroll')) {
-        categories.consumables.push(itemToAdd)
+        categories.consumables[destination].push(itemToAdd)
       } else {
-        categories.special.push(itemToAdd)
+        categories.special[destination].push(itemToAdd)
       }
     })
 
@@ -92,7 +95,9 @@ export default function InventoryDialog({ player, onClose }) {
   const maxWeight = 100 // Mock value - should come from player stats
 
   const categories = categorizeItems()
-  const activeItems = categories[activeTab]
+  const categoryData = categories[activeTab]
+  // Combine owned and merchandise items, with owned first
+  const activeItems = categoryData ? [...categoryData.owned, ...categoryData.merchandise] : []
 
   // Get tooltip stats for an item
   const getItemStats = (item) => {
@@ -280,25 +285,41 @@ export default function InventoryDialog({ player, onClose }) {
               <div style={{
                 display: 'inline-block',
                 padding: '12px 17px',
-                backgroundColor: 'rgba(100, 50, 0, 0.6)',
-                border: '2px solid #ffaa00',
+                backgroundColor: item.is_merchandise ? 'rgba(100, 80, 50, 0.6)' : 'rgba(100, 50, 0, 0.6)',
+                border: item.is_merchandise ? '2px solid #cc9944' : '2px solid #ffaa00',
                 borderRadius: '24px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                boxShadow: hoveredItem === item.index ? '0 0 12px rgba(255, 170, 0, 0.8) inset' : 'none',
+                boxShadow: hoveredItem === item.index ? (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset') : 'none',
                 transform: hoveredItem === item.index ? 'scale(1.05)' : 'scale(1)',
                 fontSize: '14px',
+                opacity: item.is_merchandise ? 0.75 : 1,
               }}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
-                e.target.style.borderColor = '#ffff00'
+                if (item.is_merchandise) {
+                  e.target.style.backgroundColor = 'rgba(150, 120, 70, 0.8)'
+                  e.target.style.borderColor = '#ddaa66'
+                } else {
+                  e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
+                  e.target.style.borderColor = '#ffff00'
+                }
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
-                e.target.style.borderColor = '#ffaa00'
+                if (item.is_merchandise) {
+                  e.target.style.backgroundColor = 'rgba(100, 80, 50, 0.6)'
+                  e.target.style.borderColor = '#cc9944'
+                } else {
+                  e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
+                  e.target.style.borderColor = '#ffaa00'
+                }
               }}
               >
                 {item.name}
+                {item.is_merchandise && (
+                  <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '11px' }}>
+                    [UNSOLD]
+                  </span>
+                )}
                 {item.quantity > 1 && (
                   <span style={{ marginLeft: '4px', color: '#ff6600', fontWeight: 'bold' }}>
                     ×{item.quantity}

@@ -44,6 +44,7 @@ class InventoryItemSerializer:
             "can_use": "use" in getattr(item, "interactions", []),
             "can_drop": "drop" in getattr(item, "interactions", []),
             "is_equipped": getattr(item, "equipped_state", False),
+            "is_merchandise": getattr(item, "merchandise", False),
             "description": getattr(item, "description", ""),
         }
 

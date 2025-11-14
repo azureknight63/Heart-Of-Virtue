@@ -251,6 +251,25 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
           )}
         </div>
 
+        {/* Merchandise Callout */}
+        {item.is_merchandise && (
+          <div style={{
+            marginTop: '8px',
+            padding: '8px 10px',
+            backgroundColor: 'rgba(150, 120, 70, 0.4)',
+            border: '1px solid #cc9944',
+            borderRadius: '4px',
+            color: '#ddaa66',
+            fontWeight: 'bold',
+            fontSize: '10px',
+            textAlign: 'center',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+          }}>
+            ⚠️ MERCHANDISE - NOT OWNED
+          </div>
+        )}
+
         {/* Description Section */}
         {item.description && (
           <div style={{
