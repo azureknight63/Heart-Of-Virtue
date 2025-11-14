@@ -283,10 +283,10 @@ export default function InventoryDialog({ player, onClose }) {
               {hoveredItem === item.index && (
                 <div style={{
                   position: 'absolute',
-                  bottom: '100%',
+                  top: '100%',
                   left: '50%',
                   transform: 'translateX(-50%)',
-                  marginBottom: '4px',
+                  marginTop: '4px',
                   backgroundColor: '#1a1a1a',
                   border: '2px solid #ffaa00',
                   borderRadius: '4px',

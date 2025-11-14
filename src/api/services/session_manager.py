@@ -26,7 +26,7 @@ class MinimalPlayer:
         self.completed_dialogues = []  # Track completed dialogues
         self.dialogue_contexts = {}  # Store active dialogue contexts
     
-    def _create_starting_inventory(self):
+    def _create_starting_items(self):
         """Create starting items for new players."""
         return [
             {
@@ -120,7 +120,9 @@ class SessionManager:
         
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
+        self.starting_item_types = []  # List of item class names to spawn
         self._load_starting_position_from_config()
+        self._load_starting_items_from_config()
     
     def _load_starting_position_from_config(self):
         """Load starting position from config file specified in .env."""
@@ -169,6 +171,96 @@ class SessionManager:
         else:
             print(f"[SessionManager] CONFIG_FILE environment variable not set", flush=True)
 
+    def _load_starting_items_from_config(self):
+        """Load starting item types from config file specified in .env."""
+        config_file = os.environ.get("CONFIG_FILE")
+        
+        if config_file:
+            try:
+                # Remove quotes if present (from .env file)
+                config_file = config_file.strip("'\"")
+                config_path = Path(config_file)
+                
+                # If relative path, make it relative to project root
+                if not config_path.is_absolute():
+                    # Get project root (4 levels up from this file)
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent
+                    config_path = project_root / config_file
+                
+                if config_path.exists():
+                    parser = configparser.ConfigParser()
+                    parser.read(config_path)
+                    
+                    if parser.has_option("game", "starting_items"):
+                        items_str = parser.get("game", "starting_items")
+                        # Parse comma-separated list of item types
+                        self.starting_item_types = [item.strip() for item in items_str.split(",")]
+                        print(f"[SessionManager] ✓ Loaded starting items from config: {self.starting_item_types}", flush=True)
+                    else:
+                        print(f"[SessionManager] No starting_items option in [game] section", flush=True)
+            except Exception as e:
+                import traceback
+                print(f"[SessionManager] ✗ Error loading starting_items config: {e}", flush=True)
+                traceback.print_exc()
+
+    def _create_items_from_config(self):
+        """Create item instances from config item types.
+        
+        Returns:
+            List of item dictionaries
+        """
+        items = []
+        
+        if not self.starting_item_types:
+            return items
+        
+        try:
+            # Try to import items module
+            try:
+                import items as items_module
+            except ImportError:
+                # Try alternate import path
+                from src import items as items_module
+            
+            for item_type in self.starting_item_types:
+                try:
+                    # Get the class from items module
+                    if hasattr(items_module, item_type):
+                        item_class = getattr(items_module, item_type)
+                        # Create instance of the item
+                        item_instance = item_class()
+                        
+                        # Convert to dict for MinimalPlayer compatibility
+                        item_dict = {
+                            "name": item_instance.name if hasattr(item_instance, 'name') else item_type,
+                            "__class__": item_type,
+                            "weight": item_instance.weight if hasattr(item_instance, 'weight') else 1.0,
+                            "description": item_instance.description if hasattr(item_instance, 'description') else "",
+                        }
+                        
+                        # Add type-specific attributes
+                        if hasattr(item_instance, 'maintype'):
+                            item_dict["maintype"] = item_instance.maintype
+                        if hasattr(item_instance, 'subtype'):
+                            item_dict["subtype"] = item_instance.subtype
+                        if hasattr(item_instance, 'value'):
+                            item_dict["value"] = item_instance.value
+                        if hasattr(item_instance, 'rarity'):
+                            item_dict["rarity"] = item_instance.rarity
+                        if hasattr(item_instance, 'quantity'):
+                            item_dict["quantity"] = item_instance.quantity
+                        
+                        items.append(item_dict)
+                        print(f"[SessionManager] ✓ Created starting item: {item_type}", flush=True)
+                    else:
+                        print(f"[SessionManager] ✗ Item class not found: {item_type}", flush=True)
+                except Exception as e:
+                    print(f"[SessionManager] ✗ Error creating item {item_type}: {e}", flush=True)
+        except Exception as e:
+            print(f"[SessionManager] ✗ Error importing items module: {e}", flush=True)
+        
+        return items
+
     def create_session(self, username: str) -> Tuple[str, str]:
         """Create a new player session.
 
@@ -203,6 +295,14 @@ class SessionManager:
             # Set starting position from config
             player.x, player.y = self.start_x, self.start_y
             
+            # Add starting items from config if available
+            config_items = self._create_items_from_config()
+            if config_items:
+                # If player already has inventory, extend it
+                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
+                    player.inventory.extend(config_items)
+                    print(f"[SessionManager] ✓ Added {len(config_items)} starting items to player inventory", flush=True)
+            
             self.players[player_id] = player
         except Exception as e:
             print(f"[SessionManager] Error creating player: {e}", flush=True)
@@ -211,6 +311,13 @@ class SessionManager:
             
             # Set starting position from config
             player.x, player.y = self.start_x, self.start_y
+            
+            # Add starting items from config if available
+            config_items = self._create_items_from_config()
+            if config_items:
+                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
+                    player.inventory.extend(config_items)
+                    print(f"[SessionManager] ✓ Added {len(config_items)} starting items to player inventory", flush=True)
             
             self.players[player_id] = player
 

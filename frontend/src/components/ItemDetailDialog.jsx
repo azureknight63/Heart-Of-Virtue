@@ -140,8 +140,15 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
       }}>
         <div style={{ marginBottom: '8px' }}>
           <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Type:</span> {' '}
-          <span style={{ color: '#ffee99' }}>{item.type}</span>
+          <span style={{ color: '#ffee99' }}>{item.maintype || item.type}</span>
         </div>
+        
+        {item.subtype && (
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Subtype:</span> {' '}
+            <span style={{ color: '#ffee99' }}>{item.subtype}</span>
+          </div>
+        )}
         
         {item.rarity && (
           <div style={{ marginBottom: '8px' }}>
