@@ -13,11 +13,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
       const response = await apiClient.post('/inventory/equip', {
         item_index: item.index,
       })
-      if (response.success) {
+      const data = response.data || response
+      if (data.success) {
         setActionMessage('✓ Item equipped!')
         setTimeout(() => onBack(), 800)
       } else {
-        setActionMessage('✗ ' + (response.error || 'Failed to equip'))
+        setActionMessage('✗ ' + (data.error || 'Failed to equip'))
       }
     } catch (err) {
       setActionMessage('✗ Error: ' + err.message)
@@ -32,11 +33,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
       const response = await apiClient.post('/inventory/use', {
         item_index: item.index,
       })
-      if (response.success) {
+      const data = response.data || response
+      if (data.success) {
         setActionMessage('✓ Item used!')
         setTimeout(() => onBack(), 800)
       } else {
-        setActionMessage('✗ ' + (response.error || 'Cannot use this item'))
+        setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }
     } catch (err) {
       setActionMessage('✗ Error: ' + err.message)
@@ -53,11 +55,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
       const response = await apiClient.post('/inventory/drop', {
         item_index: item.index,
       })
-      if (response.success) {
+      const data = response.data || response
+      if (data.success) {
         setActionMessage('✓ Item dropped!')
         setTimeout(() => onBack(), 800)
       } else {
-        setActionMessage('✗ ' + (response.error || 'Failed to drop'))
+        setActionMessage('✗ ' + (data.error || 'Failed to drop'))
       }
     } catch (err) {
       setActionMessage('✗ Error: ' + err.message)

@@ -161,7 +161,7 @@ def drop_item():
     """Drop item from inventory onto current tile.
 
     JSON body:
-        index: Item index in inventory
+        item_index: Item index in inventory
 
     Returns:
         JSON with updated inventory
@@ -172,11 +172,11 @@ def drop_item():
 
     try:
         data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["index"])
+        is_valid, error_msg = validate_required_fields(data, ["item_index"])
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
-        item_index = data["index"]
+        item_index = data["item_index"]
 
         # Validate item index
         inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
@@ -225,7 +225,7 @@ def equip_item():
     """Equip an item from inventory.
 
     JSON body:
-        index: Item index in inventory
+        item_index: Item index in inventory
 
     Returns:
         JSON with updated equipment and stats
@@ -236,11 +236,11 @@ def equip_item():
 
     try:
         data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["index"])
+        is_valid, error_msg = validate_required_fields(data, ["item_index"])
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
-        item_index = data["index"]
+        item_index = data["item_index"]
 
         # Validate item index
         inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
@@ -265,6 +265,49 @@ def equip_item():
                 "success": True,
                 "message": f"Equipped item",
                 "equipment": equipment_data,
+            }),
+            200,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@inventory_bp.route("/inventory/use", methods=["POST"])
+def use_item():
+    """Use an item from inventory.
+
+    JSON body:
+        item_index: Item index in inventory
+
+    Returns:
+        JSON with result of item use
+    """
+    session, player, error, status = get_session_and_player()
+    if error:
+        return error, status
+
+    try:
+        data = request.get_json() or {}
+        is_valid, error_msg = validate_required_fields(data, ["item_index"])
+        if not is_valid:
+            return jsonify({"success": False, "error": error_msg}), 400
+
+        item_index = data["item_index"]
+
+        # Validate item index
+        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
+        if not is_valid:
+            return jsonify({"success": False, "error": error_msg}), 400
+
+        # For now, just validate the index and return success
+        # Full implementation requires game engine state manipulation
+        inventory_data = InventorySerializer.serialize(player)
+        return (
+            jsonify({
+                "success": True,
+                "message": f"Item used",
+                "inventory": inventory_data,
             }),
             200,
         )

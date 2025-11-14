@@ -226,7 +226,7 @@ export default function InventoryDialog({ player, onClose }) {
       'axe': '🪓',
       'pick': '⛏️',
       'scythe': '💀',
-      'spear': '🔱',
+      'spear': '↗',
       'bow': '🏹',
       'crossbow': '🏹',
       'polearm': '🔱',
@@ -239,19 +239,20 @@ export default function InventoryDialog({ player, onClose }) {
       'medium boots': '👞',
       'heavy boots': '🥾',
       // Helms
+      'light helm': '👒',
+      'medium helm': '⛑️',
+      'heavy helm': '🪖',
       'helm': '⛑️',
-      'light helm': '⛑️',
-      'heavy helm': '⛑️',
       'circlet': '👑',
       'crown': '👑',
       // Gloves
-      'light gloves': '🧤',
+      'light gloves': '✋',
       'medium gloves': '🧤',
-      'heavy gloves': '🧤',
+      'heavy gloves': '🤜',
       // Accessories
       'ring': '💍',
       'necklace': '📿',
-      'bracelet': '⌚',
+      'bracelet': '🔗',
       'charm': '✨',
       // Special
       'key': '🔑',
@@ -271,6 +272,21 @@ export default function InventoryDialog({ player, onClose }) {
       }
     }
     return ''
+  }
+
+  // Check if an item is equipped
+  const isItemEquipped = (item) => {
+    if (!player?.equipment) return false
+    const equipped = player.equipment.equipped || {}
+    
+    // Check all equipment slots for this item
+    for (const slot in equipped) {
+      const equippedItem = equipped[slot]
+      if (equippedItem && equippedItem.name === item.name) {
+        return true
+      }
+    }
+    return false
   }
 
   // Get tooltip stats for an item
@@ -297,7 +313,7 @@ export default function InventoryDialog({ player, onClose }) {
   if (selectedItem) {
     return (
       <ItemDetailDialog 
-        item={selectedItem} 
+        item={{...selectedItem, is_equipped: isItemEquipped(selectedItem)}}
         player={player}
         onClose={() => setSelectedItem(null)}
         onBack={() => setSelectedItem(null)}
@@ -543,7 +559,9 @@ export default function InventoryDialog({ player, onClose }) {
         gap: '12px',
       }}>
         {activeItems && activeItems.length > 0 ? (
-          activeItems.map((item, idx) => (
+          activeItems.map((item, idx) => {
+            const equipped = isItemEquipped(item)
+            return (
             <div
               key={idx}
               onMouseEnter={() => setHoveredItem(idx)}
@@ -558,18 +576,21 @@ export default function InventoryDialog({ player, onClose }) {
               <div style={{
                 display: 'inline-block',
                 padding: '14px 20px',
-                backgroundColor: item.is_merchandise ? 'rgba(100, 80, 50, 0.6)' : 'rgba(100, 50, 0, 0.6)',
-                border: item.is_merchandise ? '2px solid #cc9944' : '2px solid #ffaa00',
+                backgroundColor: equipped ? 'rgba(50, 150, 50, 0.6)' : (item.is_merchandise ? 'rgba(100, 80, 50, 0.6)' : 'rgba(100, 50, 0, 0.6)'),
+                border: equipped ? '2px solid #00ff00' : (item.is_merchandise ? '2px solid #cc9944' : '2px solid #ffaa00'),
                 borderRadius: '24px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                boxShadow: hoveredItem === idx ? (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset') : 'none',
+                boxShadow: hoveredItem === idx ? (equipped ? '0 0 12px rgba(0, 255, 0, 0.8) inset' : (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset')) : 'none',
                 transform: hoveredItem === idx ? 'scale(1.05)' : 'scale(1)',
                 fontSize: '16px',
                 opacity: item.is_merchandise ? 0.75 : 1,
               }}
               onMouseEnter={(e) => {
-                if (item.is_merchandise) {
+                if (equipped) {
+                  e.target.style.backgroundColor = 'rgba(100, 200, 100, 0.8)'
+                  e.target.style.borderColor = '#00ff88'
+                } else if (item.is_merchandise) {
                   e.target.style.backgroundColor = 'rgba(150, 120, 70, 0.8)'
                   e.target.style.borderColor = '#ddaa66'
                 } else {
@@ -578,7 +599,10 @@ export default function InventoryDialog({ player, onClose }) {
                 }
               }}
               onMouseLeave={(e) => {
-                if (item.is_merchandise) {
+                if (equipped) {
+                  e.target.style.backgroundColor = 'rgba(50, 150, 50, 0.6)'
+                  e.target.style.borderColor = '#00ff00'
+                } else if (item.is_merchandise) {
                   e.target.style.backgroundColor = 'rgba(100, 80, 50, 0.6)'
                   e.target.style.borderColor = '#cc9944'
                 } else {
@@ -587,10 +611,18 @@ export default function InventoryDialog({ player, onClose }) {
                 }
               }}
               >
-                <span style={{ marginRight: '4px' }}>
+                <span style={{ 
+                  marginRight: '4px',
+                  color: item.subtype && item.subtype.toLowerCase().includes('spear') ? '#8B6914' : 'inherit'
+                }}>
                   {getSubtypeSymbol(item.subtype)}
                 </span>
                 {item.name}
+                {equipped && (
+                  <span style={{ marginLeft: '4px', color: '#00ff00', fontWeight: 'bold', fontSize: '13px' }}>
+                    [EQUIPPED]
+                  </span>
+                )}
                 {item.is_merchandise && (
                   <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '13px' }}>
                     [UNSOLD]
@@ -626,7 +658,8 @@ export default function InventoryDialog({ player, onClose }) {
                 </div>
               )}
             </div>
-          ))
+            )
+          })
         ) : (
           <div style={{ color: '#ff6600', fontStyle: 'italic' }}>
             No items in this category...
