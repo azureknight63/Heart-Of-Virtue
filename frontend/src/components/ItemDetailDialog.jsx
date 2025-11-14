@@ -342,7 +342,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
           </button>
         )}
 
-        {item.can_use && (
+        {item.can_use && !item.is_merchandise && (
           <button
             onClick={handleUse}
             disabled={isLoading}
