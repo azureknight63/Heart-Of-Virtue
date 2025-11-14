@@ -162,7 +162,7 @@ export default function InventoryDialog({ player, onClose }) {
         <div style={{
           color: '#ffaa00',
           fontWeight: 'bold',
-          fontSize: '13px',
+          fontSize: '16px',
           fontFamily: 'monospace',
         }}>
           📦 INVENTORY
@@ -170,7 +170,7 @@ export default function InventoryDialog({ player, onClose }) {
         <div style={{
           display: 'flex',
           gap: '16px',
-          fontSize: '11px',
+          fontSize: '13px',
           fontFamily: 'monospace',
           alignItems: 'center',
         }}>
@@ -195,7 +195,7 @@ export default function InventoryDialog({ player, onClose }) {
             border: '1px solid #ff6600',
             borderRadius: '3px',
             cursor: 'pointer',
-            fontSize: '11px',
+            fontSize: '13px',
             fontFamily: 'monospace',
             fontWeight: 'bold',
             transition: 'all 0.2s',
@@ -271,7 +271,7 @@ export default function InventoryDialog({ player, onClose }) {
         borderRadius: '3px',
         padding: '12px',
         color: '#ffcc00',
-        fontSize: '11px',
+        fontSize: '13px',
         fontFamily: 'monospace',
         display: 'flex',
         flexWrap: 'wrap',
@@ -293,7 +293,7 @@ export default function InventoryDialog({ player, onClose }) {
               {/* Item Tag */}
               <div style={{
                 display: 'inline-block',
-                padding: '12px 17px',
+                padding: '14px 20px',
                 backgroundColor: item.is_merchandise ? 'rgba(100, 80, 50, 0.6)' : 'rgba(100, 50, 0, 0.6)',
                 border: item.is_merchandise ? '2px solid #cc9944' : '2px solid #ffaa00',
                 borderRadius: '24px',
@@ -301,7 +301,7 @@ export default function InventoryDialog({ player, onClose }) {
                 transition: 'all 0.2s',
                 boxShadow: hoveredItem === idx ? (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset') : 'none',
                 transform: hoveredItem === idx ? 'scale(1.05)' : 'scale(1)',
-                fontSize: '14px',
+                fontSize: '16px',
                 opacity: item.is_merchandise ? 0.75 : 1,
               }}
               onMouseEnter={(e) => {
@@ -325,7 +325,7 @@ export default function InventoryDialog({ player, onClose }) {
               >
                 {item.name}
                 {item.is_merchandise && (
-                  <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '11px' }}>
+                  <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '13px' }}>
                     [UNSOLD]
                   </span>
                 )}
@@ -350,7 +350,7 @@ export default function InventoryDialog({ player, onClose }) {
                   padding: '6px 10px',
                   whiteSpace: 'nowrap',
                   zIndex: 100,
-                  fontSize: '10px',
+                  fontSize: '12px',
                   color: '#ffcc00',
                   boxShadow: '0 0 12px rgba(255, 170, 0, 0.6)',
                   pointerEvents: 'none',

@@ -92,7 +92,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
         <div style={{
           color: '#ffff00',
           fontWeight: 'bold',
-          fontSize: '14px',
+          fontSize: '20px',
           fontFamily: 'monospace',
         }}>
           {item.name}
@@ -106,7 +106,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
             border: '1px solid #ff6600',
             borderRadius: '3px',
             cursor: 'pointer',
-            fontSize: '11px',
+            fontSize: '15px',
             fontFamily: 'monospace',
             fontWeight: 'bold',
             transition: 'all 0.2s',
@@ -133,7 +133,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
         padding: '12px',
         overflowY: 'auto',
         color: '#ffcc00',
-        fontSize: '11px',
+        fontSize: '15px',
         fontFamily: 'monospace',
         lineHeight: '1.6',
         display: 'flex',
@@ -158,8 +158,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
             flexDirection: 'column',
             justifyContent: 'center',
           }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Type</div>
-            <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.maintype || item.type}</div>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Type</div>
+            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.maintype || item.type}</div>
           </div>
 
           {/* Subtype Property */}
@@ -172,8 +172,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               flexDirection: 'column',
               justifyContent: 'center',
             }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Subtype</div>
-              <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.subtype}</div>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Subtype</div>
+              <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.subtype}</div>
             </div>
           )}
 
@@ -186,8 +186,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
             flexDirection: 'column',
             justifyContent: 'center',
           }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Weight</div>
-            <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.weight?.toFixed(2) || 0}w</div>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Weight</div>
+            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.weight?.toFixed(2) || 0}w</div>
           </div>
 
           {/* Value Property */}
@@ -199,8 +199,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
             flexDirection: 'column',
             justifyContent: 'center',
           }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Value</div>
-            <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.value || 0}g</div>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Value</div>
+            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.value || 0}g</div>
           </div>
 
           {/* Rarity Property */}
@@ -213,8 +213,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               flexDirection: 'column',
               justifyContent: 'center',
             }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Rarity</div>
-              <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.rarity}</div>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Rarity</div>
+              <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.rarity}</div>
             </div>
           )}
 
@@ -228,8 +228,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               flexDirection: 'column',
               justifyContent: 'center',
             }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Qty</div>
-              <div style={{ color: '#ffee99', fontSize: '10px' }}>×{item.quantity}</div>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Qty</div>
+              <div style={{ color: '#ffee99', fontSize: '14px' }}>×{item.quantity}</div>
             </div>
           )}
 
@@ -244,7 +244,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               justifyContent: 'center',
               gridColumn: '1 / -1',
             }}>
-              <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '10px' }}>
+              <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '14px' }}>
                 ✓ Equipped
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
             borderRadius: '4px',
             color: '#ddaa66',
             fontWeight: 'bold',
-            fontSize: '10px',
+            fontSize: '14px',
             textAlign: 'center',
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
@@ -273,10 +273,14 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
         {/* Description Section */}
         {item.description && (
           <div style={{
-            paddingTop: '8px',
+            paddingTop: '12px',
+            paddingBottom: '8px',
             borderTop: '1px solid #664400',
+            borderBottom: '1px solid #664400',
             color: '#ffee99',
             fontStyle: 'italic',
+            fontSize: '14px',
+            lineHeight: '1.5',
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
           }}>
@@ -293,7 +297,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
           border: '1px solid #ffaa00',
           borderRadius: '3px',
           color: actionMessage.startsWith('✓') ? '#00ff88' : '#ff6666',
-          fontSize: '11px',
+          fontSize: '15px',
           fontFamily: 'monospace',
           textAlign: 'center',
         }}>
@@ -319,7 +323,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               border: '1px solid ' + (item.is_equipped ? '#663300' : '#00ff88'),
               borderRadius: '3px',
               cursor: item.is_equipped ? 'default' : 'pointer',
-              fontSize: '11px',
+              fontSize: '15px',
               fontFamily: 'monospace',
               fontWeight: 'bold',
               transition: 'all 0.2s',
@@ -354,7 +358,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               border: '1px solid #ffaa00',
               borderRadius: '3px',
               cursor: 'pointer',
-              fontSize: '11px',
+              fontSize: '15px',
               fontFamily: 'monospace',
               fontWeight: 'bold',
               transition: 'all 0.2s',
@@ -387,7 +391,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               border: '1px solid #ff6666',
               borderRadius: '3px',
               cursor: 'pointer',
-              fontSize: '11px',
+              fontSize: '15px',
               fontFamily: 'monospace',
               fontWeight: 'bold',
               transition: 'all 0.2s',
