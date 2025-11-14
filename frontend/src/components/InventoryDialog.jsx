@@ -263,13 +263,13 @@ export default function InventoryDialog({ player, onClose }) {
 
       {/* Items as Tags/Badges */}
       <div style={{
-        flex: 1,
+        flex: '0 0 250px',
         minHeight: 0,
         overflowY: 'auto',
         backgroundColor: 'rgba(30, 15, 0, 0.4)',
         border: '1px solid #664400',
         borderRadius: '3px',
-        padding: '12px',
+        padding: '12px 12px 80px 12px',
         color: '#ffcc00',
         fontSize: '13px',
         fontFamily: 'monospace',
