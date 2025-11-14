@@ -12,7 +12,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
   const [showSkills, setShowSkills] = useState(false)
 
   return (
-    <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg overflow-hidden retro-glow">
+    <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible' }}>
       {/* Header */}
       <div style={{
         backgroundColor: '#00ff88',
@@ -26,6 +26,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         justifyContent: 'space-between',
         alignItems: 'center',
         boxShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+        flexShrink: 0,
       }}>
         <span>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
         <button
@@ -56,7 +57,15 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-3.5">
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '14px',
+        overflow: 'clip',
+      }}>
         {/* Narrative Box */}
         {location && (
           <div className="bg-[rgba(0,100,50,0.2)] border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif">
@@ -74,6 +83,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
           transformOrigin: 'top center',
           transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
+          zIndex: 50,
         }}>
           <HeroPanel
             onAttributeClick={() => setShowAttributes(!showAttributes)}

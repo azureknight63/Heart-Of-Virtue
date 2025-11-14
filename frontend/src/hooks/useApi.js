@@ -62,12 +62,29 @@ export const usePlayer = () => {
   const fetchPlayer = async () => {
     try {
       setLoading(true)
-      const response = await apiEndpoints.player.getStatus()
-      // /api/status returns { success, combat_active, combatants, log }
-      setPlayer(response.data)
+      const statusResponse = await apiEndpoints.player.getStatus()
+      const inventoryResponse = await apiEndpoints.player.getInventory()
+      
+      // Combine status and inventory data
+      const playerData = {
+        ...statusResponse.data.status,
+        inventory: inventoryResponse.data.inventory?.items || [],
+      }
+      
+      setPlayer(playerData)
       setError(null)
     } catch (err) {
       setError(err.message)
+      // Still set a player object so the UI doesn't break completely
+      setPlayer({
+        name: 'Unknown',
+        level: 1,
+        exp: 0,
+        hp: 0,
+        max_hp: 0,
+        state: 'normal',
+        inventory: [],
+      })
     } finally {
       setLoading(false)
     }

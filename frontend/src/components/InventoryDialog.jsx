@@ -1,18 +1,21 @@
 import { useState } from 'react'
+import ItemDetailDialog from './ItemDetailDialog'
 
 const INVENTORY_TABS = [
-  { key: 'weapons', label: 'Weapons' },
-  { key: 'armor', label: 'Armor' },
-  { key: 'boots', label: 'Boots' },
-  { key: 'helms', label: 'Helms' },
-  { key: 'gloves', label: 'Gloves' },
-  { key: 'accessories', label: 'Accessories' },
-  { key: 'consumables', label: 'Consumables' },
-  { key: 'special', label: 'Special' },
+  { key: 'weapons', label: '⚔️', icon: '⚔️', title: 'Weapons' },
+  { key: 'armor', label: '🛡️', icon: '🛡️', title: 'Armor' },
+  { key: 'boots', label: '👢', icon: '👢', title: 'Boots' },
+  { key: 'helms', label: '👑', icon: '👑', title: 'Helms' },
+  { key: 'gloves', label: '🧤', icon: '🧤', title: 'Gloves' },
+  { key: 'accessories', label: '💍', icon: '💍', title: 'Accessories' },
+  { key: 'consumables', label: '🧪', icon: '🧪', title: 'Consumables' },
+  { key: 'special', label: '✨', icon: '✨', title: 'Special' },
 ]
 
 export default function InventoryDialog({ player, onClose }) {
   const [activeTab, setActiveTab] = useState('weapons')
+  const [selectedItem, setSelectedItem] = useState(null)
+  const [hoveredItem, setHoveredItem] = useState(null)
 
   // Categorize items by maintype or fallback to class name
   const categorizeItems = () => {
@@ -28,12 +31,17 @@ export default function InventoryDialog({ player, onClose }) {
     }
 
     player.inventory?.forEach((item) => {
+      // Skip gold items - they're handled separately
+      if (item.type === 'Gold' || item.maintype === 'Currency') {
+        return
+      }
+      
       // Use maintype first, then subtype, then type (class name)
       const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
       
       if (categoryType.includes('weapon')) {
         categories.weapons.push(item)
-      } else if (categoryType.includes('armor') || categoryType.includes('armor')) {
+      } else if (categoryType.includes('armor')) {
         categories.armor.push(item)
       } else if (categoryType.includes('boot')) {
         categories.boots.push(item)
@@ -53,12 +61,50 @@ export default function InventoryDialog({ player, onClose }) {
     return categories
   }
 
+  // Calculate gold amount
+  const goldAmount = player.inventory?.reduce((sum, item) => {
+    if (item.type === 'Gold' || item.maintype === 'Currency') {
+      return sum + (item.quantity || item.value || 0)
+    }
+    return sum
+  }, 0) || 0
+
+  // Calculate weight (use actual weight from items)
+  const currentWeight = player.inventory?.reduce((sum, item) => sum + (item.weight || 0), 0) || 0
+  const maxWeight = 100 // Mock value - should come from player stats
+
   const categories = categorizeItems()
   const activeItems = categories[activeTab]
 
-  // Calculate weight (mock - would come from player data)
-  const currentWeight = player.inventory?.reduce((sum, item) => sum + (item.weight || 1), 0) || 0
-  const maxWeight = 100 // Mock value - should come from player stats
+  // Get tooltip stats for an item
+  const getItemStats = (item) => {
+    const stats = []
+    if (item.weight > 0) stats.push(`${item.weight.toFixed(1)}w`)
+    if (item.value > 0) stats.push(`${item.value}g`)
+    
+    // Try to get power/protection info from maintype
+    const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
+    if (categoryType.includes('weapon')) {
+      stats.push('⚔️')
+    } else if (categoryType.includes('armor') || categoryType.includes('protection')) {
+      stats.push('🛡️')
+    } else if (categoryType.includes('consumable')) {
+      stats.push('💊')
+    }
+    
+    return stats.join(' • ')
+  }
+
+  if (selectedItem) {
+    return (
+      <ItemDetailDialog 
+        item={selectedItem} 
+        player={player}
+        onClose={() => setSelectedItem(null)}
+        onBack={() => setSelectedItem(null)}
+      />
+    )
+  }
 
   return (
     <div style={{
@@ -71,7 +117,7 @@ export default function InventoryDialog({ player, onClose }) {
       height: '100%',
       gap: '8px',
     }}>
-      {/* Header with Weight Info */}
+      {/* Header with Gold and Weight Info */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -83,108 +129,180 @@ export default function InventoryDialog({ player, onClose }) {
         <div style={{
           color: '#ffaa00',
           fontWeight: 'bold',
-          fontSize: '12px',
+          fontSize: '13px',
           fontFamily: 'monospace',
         }}>
           📦 INVENTORY
         </div>
         <div style={{
-          color: '#ffcc00',
+          display: 'flex',
+          gap: '16px',
           fontSize: '11px',
           fontFamily: 'monospace',
         }}>
-          Weight: {currentWeight}/{maxWeight}
+          <div style={{ color: '#ffdd00' }}>
+            💰 Gold: {goldAmount}
+          </div>
+          <div style={{ color: '#ffcc00' }}>
+            Weight: {currentWeight.toFixed(1)}/{maxWeight}
+          </div>
         </div>
         <button
           onClick={onClose}
           style={{
-            backgroundColor: 'transparent',
-            border: 'none',
-            color: '#ff6600',
+            padding: '4px 8px',
+            backgroundColor: '#cc4400',
+            color: '#ffff00',
+            border: '1px solid #ff6600',
+            borderRadius: '3px',
             cursor: 'pointer',
-            fontSize: '14px',
-            padding: '0',
-            transition: 'color 0.2s',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            fontWeight: 'bold',
+            transition: 'all 0.2s',
           }}
-          onMouseEnter={(e) => e.target.style.color = '#ff8844'}
-          onMouseLeave={(e) => e.target.style.color = '#ff6600'}
+          onMouseEnter={(e) => {
+            e.target.style.backgroundColor = '#ff6600'
+            e.target.style.boxShadow = '0 0 8px rgba(255, 102, 0, 0.8)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.backgroundColor = '#cc4400'
+            e.target.style.boxShadow = 'none'
+          }}
         >
-          ✕
+          Close
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* Tab Icons - Larger */}
       <div style={{
         display: 'flex',
-        gap: '4px',
-        flexWrap: 'wrap',
+        gap: '8px',
+        justifyContent: 'space-around',
         marginBottom: '8px',
+        padding: '8px',
+        backgroundColor: 'rgba(30, 15, 0, 0.5)',
+        borderRadius: '4px',
+        border: '1px solid #663300',
       }}>
         {INVENTORY_TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
+            title={tab.title}
             style={{
-              padding: '4px 8px',
-              fontSize: '10px',
-              fontWeight: 'bold',
-              fontFamily: 'monospace',
-              backgroundColor: activeTab === tab.key ? '#cc8800' : 'rgba(100, 50, 0, 0.3)',
-              color: activeTab === tab.key ? '#000000' : '#ffaa00',
-              border: `1px solid ${activeTab === tab.key ? '#ffaa00' : '#664400'}`,
-              borderRadius: '3px',
+              flex: 1,
+              padding: '12px 8px',
+              fontSize: '24px',
+              backgroundColor: activeTab === tab.key ? 'rgba(200, 100, 0, 0.6)' : 'rgba(100, 50, 0, 0.3)',
+              border: activeTab === tab.key ? '2px solid #ffcc00' : '1px solid #664400',
+              borderRadius: '4px',
               cursor: 'pointer',
               transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
             onMouseEnter={(e) => {
               if (activeTab !== tab.key) {
                 e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.5)'
-                e.target.style.color = '#ffcc00'
+                e.target.style.borderColor = '#ffaa00'
               }
             }}
             onMouseLeave={(e) => {
               if (activeTab !== tab.key) {
                 e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.3)'
-                e.target.style.color = '#ffaa00'
+                e.target.style.borderColor = '#664400'
               }
             }}
           >
-            {tab.label}
+            {tab.icon}
           </button>
         ))}
       </div>
 
-      {/* Items List */}
+      {/* Items as Tags/Badges */}
       <div style={{
         flex: 1,
-        overflow: 'y-auto',
+        overflowY: 'auto',
         backgroundColor: 'rgba(30, 15, 0, 0.4)',
         border: '1px solid #664400',
         borderRadius: '3px',
-        padding: '8px',
+        padding: '12px',
         color: '#ffcc00',
         fontSize: '11px',
         fontFamily: 'monospace',
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignContent: 'flex-start',
+        gap: '8px',
       }}>
         {activeItems && activeItems.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {activeItems.map((item, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  paddingBottom: '4px',
-                  borderBottom: idx < activeItems.length - 1 ? '1px solid #333' : 'none',
-                }}
+          activeItems.map((item, idx) => (
+            <div
+              key={idx}
+              onMouseEnter={() => setHoveredItem(item.index)}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={() => setSelectedItem(item)}
+              style={{
+                position: 'relative',
+                display: 'inline-block',
+              }}
+            >
+              {/* Item Tag */}
+              <div style={{
+                display: 'inline-block',
+                padding: '10px 14px',
+                backgroundColor: 'rgba(100, 50, 0, 0.6)',
+                border: '2px solid #ffaa00',
+                borderRadius: '20px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: hoveredItem === item.index ? '0 0 12px rgba(255, 170, 0, 0.8) inset' : 'none',
+                transform: hoveredItem === item.index ? 'scale(1.05)' : 'scale(1)',
+                fontSize: '12px',
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
+                e.target.style.borderColor = '#ffff00'
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
+                e.target.style.borderColor = '#ffaa00'
+              }}
               >
-                <span style={{ color: '#ffcc00' }}>{item.name}</span>
+                {item.name}
                 {item.quantity > 1 && (
-                  <span style={{ color: '#ffaa00' }}>x{item.quantity}</span>
+                  <span style={{ marginLeft: '4px', color: '#ff6600', fontWeight: 'bold' }}>
+                    ×{item.quantity}
+                  </span>
                 )}
               </div>
-            ))}
-          </div>
+
+              {/* Hover Tooltip with Stats */}
+              {hoveredItem === item.index && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  marginBottom: '4px',
+                  backgroundColor: '#1a1a1a',
+                  border: '2px solid #ffaa00',
+                  borderRadius: '4px',
+                  padding: '6px 10px',
+                  whiteSpace: 'nowrap',
+                  zIndex: 100,
+                  fontSize: '10px',
+                  color: '#ffcc00',
+                  boxShadow: '0 0 12px rgba(255, 170, 0, 0.6)',
+                  pointerEvents: 'none',
+                }}>
+                  {getItemStats(item)}
+                </div>
+              )}
+            </div>
+          ))
         ) : (
           <div style={{ color: '#ff6600', fontStyle: 'italic' }}>
             No items in this category...
