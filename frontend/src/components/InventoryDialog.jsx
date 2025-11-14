@@ -28,21 +28,27 @@ export default function InventoryDialog({ player, onClose }) {
     }
 
     player.inventory?.forEach((item) => {
-      if (item.type === 'Weapon' || item.__class__ === 'Weapon') {
+      // Log for debugging
+      console.log('Item:', item)
+      
+      const itemType = item.type || item.__class__ || ''
+      const itemTypeLower = itemType.toLowerCase()
+      
+      if (itemTypeLower.includes('weapon')) {
         categories.weapons.push(item)
-      } else if (item.type === 'Armor' || item.__class__ === 'Armor') {
+      } else if (itemTypeLower.includes('armor')) {
         categories.armor.push(item)
-      } else if (item.type === 'Boots' || item.__class__ === 'Boots') {
+      } else if (itemTypeLower.includes('boot')) {
         categories.boots.push(item)
-      } else if (item.type === 'Helm' || item.__class__ === 'Helm') {
+      } else if (itemTypeLower.includes('helm')) {
         categories.helms.push(item)
-      } else if (item.type === 'Gloves' || item.__class__ === 'Gloves') {
+      } else if (itemTypeLower.includes('glove')) {
         categories.gloves.push(item)
-      } else if (item.type === 'Accessory' || item.__class__ === 'Accessory') {
+      } else if (itemTypeLower.includes('accessory')) {
         categories.accessories.push(item)
-      } else if (item.type === 'Consumable' || item.__class__ === 'Consumable') {
+      } else if (itemTypeLower.includes('consumable')) {
         categories.consumables.push(item)
-      } else if (item.type === 'Special' || item.__class__ === 'Special' || item.type === 'Commodity') {
+      } else {
         categories.special.push(item)
       }
     })
