@@ -139,10 +139,16 @@ export default function InventoryDialog({ player, onClose }) {
           gap: '16px',
           fontSize: '11px',
           fontFamily: 'monospace',
+          alignItems: 'center',
         }}>
           <div style={{ color: '#ffdd00' }}>
             💰 Gold: {goldAmount}
           </div>
+          <div style={{
+            width: '1px',
+            height: '16px',
+            backgroundColor: 'rgba(255, 170, 0, 0.3)',
+          }}></div>
           <div style={{ color: '#ffcc00' }}>
             Weight: {currentWeight.toFixed(1)}/{maxWeight}
           </div>

@@ -136,55 +136,125 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
         fontSize: '11px',
         fontFamily: 'monospace',
         lineHeight: '1.6',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
       }}>
-        <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Type:</span> {' '}
-          <span style={{ color: '#ffee99' }}>{item.maintype || item.type}</span>
+        {/* Properties Grid - Inline */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
+          gap: '1px',
+          backgroundColor: '#664400',
+          padding: '1px',
+          borderRadius: '3px',
+        }}>
+          {/* Type Property */}
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            padding: '6px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Type</div>
+            <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.maintype || item.type}</div>
+          </div>
+
+          {/* Subtype Property */}
+          {item.subtype && (
+            <div style={{
+              backgroundColor: 'rgba(30, 15, 0, 0.6)',
+              padding: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Subtype</div>
+              <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.subtype}</div>
+            </div>
+          )}
+
+          {/* Weight Property */}
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            padding: '6px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Weight</div>
+            <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.weight?.toFixed(2) || 0}w</div>
+          </div>
+
+          {/* Value Property */}
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            padding: '6px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Value</div>
+            <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.value || 0}g</div>
+          </div>
+
+          {/* Rarity Property */}
+          {item.rarity && (
+            <div style={{
+              backgroundColor: 'rgba(30, 15, 0, 0.6)',
+              padding: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Rarity</div>
+              <div style={{ color: '#ffee99', fontSize: '10px' }}>{item.rarity}</div>
+            </div>
+          )}
+
+          {/* Quantity Property */}
+          {item.quantity > 1 && (
+            <div style={{
+              backgroundColor: 'rgba(30, 15, 0, 0.6)',
+              padding: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px', marginBottom: '3px' }}>Qty</div>
+              <div style={{ color: '#ffee99', fontSize: '10px' }}>×{item.quantity}</div>
+            </div>
+          )}
+
+          {/* Equipped Status */}
+          {item.is_equipped && (
+            <div style={{
+              backgroundColor: 'rgba(0, 50, 0, 0.6)',
+              padding: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              gridColumn: '1 / -1',
+            }}>
+              <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '10px' }}>
+                ✓ Equipped
+              </div>
+            </div>
+          )}
         </div>
-        
-        {item.subtype && (
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Subtype:</span> {' '}
-            <span style={{ color: '#ffee99' }}>{item.subtype}</span>
-          </div>
-        )}
-        
-        {item.rarity && (
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Rarity:</span> {' '}
-            <span style={{ color: '#ffee99' }}>{item.rarity}</span>
-          </div>
-        )}
 
-        <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Weight:</span> {' '}
-          <span style={{ color: '#ffee99' }}>{item.weight?.toFixed(2) || 0}w</span>
-        </div>
-
-        <div style={{ marginBottom: '8px' }}>
-          <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Value:</span> {' '}
-          <span style={{ color: '#ffee99' }}>{item.value || 0}g</span>
-        </div>
-
-        {item.quantity > 1 && (
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>Quantity:</span> {' '}
-            <span style={{ color: '#ffee99' }}>×{item.quantity}</span>
-          </div>
-        )}
-
-        {item.is_equipped && (
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ color: '#00ff88', fontWeight: 'bold' }}>
-              ✓ Currently Equipped
-            </span>
-          </div>
-        )}
-
+        {/* Description Section */}
         {item.description && (
           <div style={{
-            marginTop: '12px',
-            paddingTop: '12px',
+            paddingTop: '8px',
             borderTop: '1px solid #664400',
             color: '#ffee99',
             fontStyle: 'italic',
