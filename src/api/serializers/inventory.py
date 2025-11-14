@@ -34,6 +34,8 @@ class InventoryItemSerializer:
             "index": index,
             "name": getattr(item, "name", "Unknown Item"),
             "type": item.__class__.__name__,
+            "maintype": getattr(item, "maintype", ""),
+            "subtype": getattr(item, "subtype", ""),
             "quantity": getattr(item, "quantity", 1),
             "rarity": getattr(item, "rarity", "common"),
             "weight": getattr(item, "weight", 0.0),

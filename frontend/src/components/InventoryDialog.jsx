@@ -14,7 +14,7 @@ const INVENTORY_TABS = [
 export default function InventoryDialog({ player, onClose }) {
   const [activeTab, setActiveTab] = useState('weapons')
 
-  // Categorize items by type
+  // Categorize items by maintype or fallback to class name
   const categorizeItems = () => {
     const categories = {
       weapons: [],
@@ -28,25 +28,22 @@ export default function InventoryDialog({ player, onClose }) {
     }
 
     player.inventory?.forEach((item) => {
-      // Log for debugging
-      console.log('Item:', item)
+      // Use maintype first, then subtype, then type (class name)
+      const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
       
-      const itemType = item.type || item.__class__ || ''
-      const itemTypeLower = itemType.toLowerCase()
-      
-      if (itemTypeLower.includes('weapon')) {
+      if (categoryType.includes('weapon')) {
         categories.weapons.push(item)
-      } else if (itemTypeLower.includes('armor')) {
+      } else if (categoryType.includes('armor') || categoryType.includes('armor')) {
         categories.armor.push(item)
-      } else if (itemTypeLower.includes('boot')) {
+      } else if (categoryType.includes('boot')) {
         categories.boots.push(item)
-      } else if (itemTypeLower.includes('helm')) {
+      } else if (categoryType.includes('helm') || categoryType.includes('head')) {
         categories.helms.push(item)
-      } else if (itemTypeLower.includes('glove')) {
+      } else if (categoryType.includes('glove') || categoryType.includes('hand')) {
         categories.gloves.push(item)
-      } else if (itemTypeLower.includes('accessory')) {
+      } else if (categoryType.includes('accessory') || categoryType.includes('ring') || categoryType.includes('amulet')) {
         categories.accessories.push(item)
-      } else if (itemTypeLower.includes('consumable')) {
+      } else if (categoryType.includes('consumable') || categoryType.includes('potion') || categoryType.includes('scroll')) {
         categories.consumables.push(item)
       } else {
         categories.special.push(item)
