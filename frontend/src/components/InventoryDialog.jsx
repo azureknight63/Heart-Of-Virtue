@@ -244,7 +244,7 @@ export default function InventoryDialog({ player, onClose }) {
         display: 'flex',
         flexWrap: 'wrap',
         alignContent: 'flex-start',
-        gap: '8px',
+        gap: '10px',
       }}>
         {activeItems && activeItems.length > 0 ? (
           activeItems.map((item, idx) => (
@@ -261,15 +261,15 @@ export default function InventoryDialog({ player, onClose }) {
               {/* Item Tag */}
               <div style={{
                 display: 'inline-block',
-                padding: '10px 14px',
+                padding: '12px 17px',
                 backgroundColor: 'rgba(100, 50, 0, 0.6)',
                 border: '2px solid #ffaa00',
-                borderRadius: '20px',
+                borderRadius: '24px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 boxShadow: hoveredItem === item.index ? '0 0 12px rgba(255, 170, 0, 0.8) inset' : 'none',
                 transform: hoveredItem === item.index ? 'scale(1.05)' : 'scale(1)',
-                fontSize: '12px',
+                fontSize: '14px',
               }}
               onMouseEnter={(e) => {
                 e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
