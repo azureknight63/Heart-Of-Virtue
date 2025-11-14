@@ -468,8 +468,11 @@ class GameService:
             "name": getattr(player, "name", "Unknown"),
             "level": getattr(player, "level", 1),
             "exp": getattr(player, "exp", 0),
+            "max_exp": getattr(player, "exp_to_level", 100),
             "hp": getattr(player, "current_hp", 0),
             "max_hp": getattr(player, "max_hp", 0),
+            "fatigue": getattr(player, "fatigue", 0),
+            "max_fatigue": getattr(player, "max_fatigue", 0),
             "state": "normal",  # TODO: Get actual status effects
         }
 
