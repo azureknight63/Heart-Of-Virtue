@@ -41,6 +41,8 @@ class InventoryItemSerializer:
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
             "can_equip": hasattr(item, "equip"),
+            "can_use": "use" in getattr(item, "interactions", []),
+            "can_drop": "drop" in getattr(item, "interactions", []),
             "is_equipped": getattr(item, "equipped_state", False),
             "description": getattr(item, "description", ""),
         }

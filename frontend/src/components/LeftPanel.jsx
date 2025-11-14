@@ -86,6 +86,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
           zIndex: 50,
         }}>
           <HeroPanel
+            player={player}
             onAttributeClick={() => setShowAttributes(!showAttributes)}
             onStatusClick={() => setShowStatus(!showStatus)}
             onSkillsClick={() => setShowSkills(!showSkills)}

@@ -1,13 +1,19 @@
 import { useState } from 'react'
 
-export default function HeroPanel({ onAttributeClick, onStatusClick, onSkillsClick, onInventoryClick, onActionsClick, onInteractClick }) {
+export default function HeroPanel({ player, onAttributeClick, onStatusClick, onSkillsClick, onInventoryClick, onActionsClick, onInteractClick }) {
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
   const [focusedBar, setFocusedBar] = useState(null)
 
-  // Mock values - replace with actual player stats
-  const hp = { current: 70, max: 100 }
-  const fatigue = { current: 55, max: 100 }
+  // Get player stats or use defaults
+  const hp = {
+    current: player?.hp || 70,
+    max: player?.max_hp || 100,
+  }
+  const fatigue = {
+    current: player?.fatigue || 55,
+    max: player?.max_fatigue || 100,
+  }
 
   const buttons = [
     { key: 'attributes', label: 'ATTRIBUTES', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onAttributeClick },

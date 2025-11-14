@@ -68,7 +68,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
 
   const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
   const isWeapon = categoryType.includes('weapon')
-  const isConsumable = categoryType.includes('consumable') || categoryType.includes('potion')
 
   return (
     <div style={{
@@ -254,7 +253,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
           </button>
         )}
 
-        {isConsumable && (
+        {item.can_use && (
           <button
             onClick={handleUse}
             disabled={isLoading}
@@ -287,36 +286,38 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
           </button>
         )}
 
-        <button
-          onClick={handleDrop}
-          disabled={isLoading}
-          style={{
-            flex: 1,
-            padding: '10px',
-            backgroundColor: '#663333',
-            color: '#ff8888',
-            border: '1px solid #ff6666',
-            borderRadius: '3px',
-            cursor: 'pointer',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
-            transition: 'all 0.2s',
-            opacity: isLoading ? 0.6 : 1,
-          }}
-          onMouseEnter={(e) => {
-            if (!isLoading) {
-              e.target.style.backgroundColor = '#994444'
-              e.target.style.boxShadow = '0 0 8px rgba(255, 102, 102, 0.6)'
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#663333'
-            e.target.style.boxShadow = 'none'
-          }}
-        >
-          🗑️ Drop
-        </button>
+        {item.can_drop && (
+          <button
+            onClick={handleDrop}
+            disabled={isLoading}
+            style={{
+              flex: 1,
+              padding: '10px',
+              backgroundColor: '#663333',
+              color: '#ff8888',
+              border: '1px solid #ff6666',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              fontWeight: 'bold',
+              transition: 'all 0.2s',
+              opacity: isLoading ? 0.6 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading) {
+                e.target.style.backgroundColor = '#994444'
+                e.target.style.boxShadow = '0 0 8px rgba(255, 102, 102, 0.6)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#663333'
+              e.target.style.boxShadow = 'none'
+            }}
+          >
+            🗑️ Drop
+          </button>
+        )}
       </div>
     </div>
   )
