@@ -64,11 +64,13 @@ export const usePlayer = () => {
       setLoading(true)
       const statusResponse = await apiEndpoints.player.getStatus()
       const inventoryResponse = await apiEndpoints.player.getInventory()
+      const statsResponse = await apiEndpoints.player.getStats()
       
-      // Combine status and inventory data
+      // Combine status, inventory, and stats data
       const playerData = {
         ...statusResponse.data.status,
         inventory: inventoryResponse.data.inventory?.items || [],
+        ...statsResponse.data.stats,
       }
       
       setPlayer(playerData)
@@ -84,6 +86,28 @@ export const usePlayer = () => {
         max_hp: 0,
         state: 'normal',
         inventory: [],
+        strength: 10,
+        strength_base: 10,
+        finesse: 10,
+        finesse_base: 10,
+        speed: 10,
+        speed_base: 10,
+        endurance: 10,
+        endurance_base: 10,
+        charisma: 10,
+        charisma_base: 10,
+        intelligence: 10,
+        intelligence_base: 10,
+        faith: 10,
+        faith_base: 10,
+        fatigue: 100,
+        max_fatigue: 100,
+        weight_current: 0,
+        carrying_capacity: 100,
+        protection: 0,
+        resistance: {},
+        status_resistance: {},
+        states: [],
       })
     } finally {
       setLoading(false)
