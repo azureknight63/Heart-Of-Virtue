@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import apiClient from '../api/client'
 
-export default function ItemDetailDialog({ item, player, onClose, onBack }) {
+export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
+  const [showDropConfirm, setShowDropConfirm] = useState(false)
 
   const handleEquip = async () => {
     if (!item.can_equip) return
@@ -11,11 +12,16 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
     setIsLoading(true)
     try {
       const response = await apiClient.post('/inventory/equip', {
-        item_index: item.index,
+        item_id: item.id,
       })
       const data = response.data || response
       if (data.success) {
-        setActionMessage('✓ Item equipped!')
+        const isNowEquipped = !item.is_equipped
+        setActionMessage(isNowEquipped ? '✓ Item equipped!' : '✗ Item unequipped!')
+        // Update item's equipped state locally
+        if (onItemUpdated) {
+          onItemUpdated(item.id, { is_equipped: isNowEquipped })
+        }
         setTimeout(() => onBack(), 800)
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to equip'))
@@ -31,11 +37,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
     setIsLoading(true)
     try {
       const response = await apiClient.post('/inventory/use', {
-        item_index: item.index,
+        item_id: item.id,
       })
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item used!')
+        // For consumables, remove from inventory
+        if (onItemRemoved) onItemRemoved(item.id)
         setTimeout(() => onBack(), 800)
       } else {
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
@@ -48,17 +56,17 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
   }
 
   const handleDrop = async () => {
-    if (!window.confirm('Drop this item?')) return
-    
     setIsLoading(true)
     try {
       const response = await apiClient.post('/inventory/drop', {
-        item_index: item.index,
+        item_id: item.id,
       })
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item dropped!')
-        setTimeout(() => onBack(), 800)
+        // Call onItemRemoved to update inventory client-side
+        if (onItemRemoved) onItemRemoved(item.id)
+        setTimeout(() => onBack(), 500)
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to drop'))
       }
@@ -66,6 +74,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
       setActionMessage('✗ Error: ' + err.message)
     } finally {
       setIsLoading(false)
+      setShowDropConfirm(false)
     }
   }
 
@@ -321,11 +330,11 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
             style={{
               flex: 1,
               padding: '10px',
-              backgroundColor: item.is_equipped ? '#664400' : '#006633',
-              color: item.is_equipped ? '#999999' : '#00ff88',
-              border: '1px solid ' + (item.is_equipped ? '#663300' : '#00ff88'),
+              backgroundColor: item.is_equipped ? '#004400' : '#006633',
+              color: '#00ff88',
+              border: '1px solid #00ff88',
               borderRadius: '3px',
-              cursor: item.is_equipped ? 'default' : 'pointer',
+              cursor: 'pointer',
               fontSize: '15px',
               fontFamily: 'monospace',
               fontWeight: 'bold',
@@ -333,19 +342,17 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
               opacity: isLoading ? 0.6 : 1,
             }}
             onMouseEnter={(e) => {
-              if (!item.is_equipped && !isLoading) {
-                e.target.style.backgroundColor = '#009944'
+              if (!isLoading) {
+                e.target.style.backgroundColor = item.is_equipped ? '#006633' : '#009944'
                 e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.6)'
               }
             }}
             onMouseLeave={(e) => {
-              if (!item.is_equipped) {
-                e.target.style.backgroundColor = '#006633'
-                e.target.style.boxShadow = 'none'
-              }
+              e.target.style.backgroundColor = item.is_equipped ? '#004400' : '#006633'
+              e.target.style.boxShadow = 'none'
             }}
           >
-            {item.is_equipped ? '✓ Equipped' : '⚔️ Equip'}
+            {item.is_equipped ? '✗ Unequip' : '⚔️ Equip'}
           </button>
         )}
 
@@ -384,7 +391,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
 
         {item.can_drop && (
           <button
-            onClick={handleDrop}
+            onClick={() => setShowDropConfirm(true)}
             disabled={isLoading}
             style={{
               flex: 1,
@@ -415,6 +422,121 @@ export default function ItemDetailDialog({ item, player, onClose, onBack }) {
           </button>
         )}
       </div>
+
+      {/* Drop Confirmation Dialog */}
+      {showDropConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: 'rgba(50, 20, 0, 0.95)',
+            border: '2px solid #ffaa00',
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '400px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            color: '#ffcc00',
+            fontFamily: 'monospace',
+          }}>
+            {/* Title */}
+            <div style={{
+              fontSize: '18px',
+              fontWeight: 'bold',
+              color: '#ffff00',
+              borderBottom: '1px solid #ffaa00',
+              paddingBottom: '12px',
+            }}>
+              Drop Item?
+            </div>
+
+            {/* Message */}
+            <div style={{
+              fontSize: '14px',
+              color: '#ffcc88',
+              lineHeight: '1.5',
+            }}>
+              Are you sure you want to drop <strong>{item.name}</strong>? It will be left on the ground at your current location.
+            </div>
+
+            {/* Buttons */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+            }}>
+              <button
+                onClick={() => setShowDropConfirm(false)}
+                disabled={isLoading}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#444444',
+                  color: '#cccccc',
+                  border: '1px solid #666666',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s',
+                  opacity: isLoading ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.target.style.backgroundColor = '#666666'
+                    e.target.style.boxShadow = '0 0 8px rgba(100, 100, 100, 0.6)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = '#444444'
+                  e.target.style.boxShadow = 'none'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDrop}
+                disabled={isLoading}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#994444',
+                  color: '#ff8888',
+                  border: '1px solid #ff6666',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s',
+                  opacity: isLoading ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.target.style.backgroundColor = '#cc5555'
+                    e.target.style.boxShadow = '0 0 8px rgba(255, 102, 102, 0.6)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = '#994444'
+                  e.target.style.boxShadow = 'none'
+                }}
+              >
+                {isLoading ? '...' : '🗑️ Drop'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

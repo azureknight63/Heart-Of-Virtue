@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 
 const INVENTORY_TABS = [
@@ -12,10 +12,16 @@ const INVENTORY_TABS = [
   { key: 'special', label: '✨', icon: '✨', title: 'Special' },
 ]
 
-export default function InventoryDialog({ player, onClose }) {
+export default function InventoryDialog({ player, onClose, onRefetch }) {
   const [activeTab, setActiveTab] = useState('weapons')
   const [selectedItem, setSelectedItem] = useState(null)
   const [hoveredItem, setHoveredItem] = useState(null)
+  const [localInventory, setLocalInventory] = useState(player.inventory || [])
+  
+  // Update local inventory when player changes
+  useEffect(() => {
+    setLocalInventory(player.inventory || [])
+  }, [player.inventory])
   // Sort state: 'off', 'desc', 'asc'
   const [sortStates, setSortStates] = useState({
     value: 'desc',  // Default sort
@@ -136,7 +142,7 @@ export default function InventoryDialog({ player, onClose }) {
     // Track stackable items by name to merge quantities
     const stackedItems = {}
 
-    player.inventory?.forEach((item) => {
+    localInventory?.forEach((item, originalIndex) => {
       // Skip gold items - they're handled separately
       if (item.type === 'Gold' || item.maintype === 'Currency') {
         return
@@ -154,7 +160,7 @@ export default function InventoryDialog({ player, onClose }) {
         return
       }
 
-      // Mark item with its current quantity
+      // Mark item with its current quantity and original index
       const itemToAdd = { ...item, quantity: item.quantity || 1 }
       if (isStackable) {
         stackedItems[item.name] = itemToAdd
@@ -186,7 +192,7 @@ export default function InventoryDialog({ player, onClose }) {
   }
 
   // Calculate gold amount
-  const goldAmount = player.inventory?.reduce((sum, item) => {
+  const goldAmount = localInventory?.reduce((sum, item) => {
     if (item.type === 'Gold' || item.maintype === 'Currency') {
       return sum + (item.quantity || item.value || 0)
     }
@@ -194,7 +200,7 @@ export default function InventoryDialog({ player, onClose }) {
   }, 0) || 0
 
   // Calculate weight (use actual weight from items)
-  const currentWeight = player.inventory?.reduce((sum, item) => sum + (item.weight || 0), 0) || 0
+  const currentWeight = localInventory?.reduce((sum, item) => sum + (item.weight || 0), 0) || 0
   const maxWeight = 100 // Mock value - should come from player stats
 
   const categories = categorizeItems()
@@ -202,6 +208,18 @@ export default function InventoryDialog({ player, onClose }) {
   // Combine owned and merchandise items, with owned first, then sort
   const unsortedItems = categoryData ? [...categoryData.owned, ...categoryData.merchandise] : []
   const activeItems = sortItems(unsortedItems)
+
+  // Handle item removal when dropped
+  const handleItemRemoved = (itemId) => {
+    setLocalInventory(prev => prev.filter(item => item.id !== itemId))
+  }
+
+  // Handle item updates (equip state change, etc.)
+  const handleItemUpdated = (itemId, updates) => {
+    setLocalInventory(prev => prev.map(item => 
+      item.id === itemId ? { ...item, ...updates } : item
+    ))
+  }
 
   // Calculate scale factor based on item count
   // Scale tags based on item count to prevent overlapping
@@ -313,10 +331,13 @@ export default function InventoryDialog({ player, onClose }) {
   if (selectedItem) {
     return (
       <ItemDetailDialog 
-        item={{...selectedItem, is_equipped: isItemEquipped(selectedItem)}}
+        item={selectedItem}
         player={player}
         onClose={() => setSelectedItem(null)}
         onBack={() => setSelectedItem(null)}
+        onRefetch={onRefetch}
+        onItemRemoved={handleItemRemoved}
+        onItemUpdated={handleItemUpdated}
       />
     )
   }
@@ -560,7 +581,7 @@ export default function InventoryDialog({ player, onClose }) {
       }}>
         {activeItems && activeItems.length > 0 ? (
           activeItems.map((item, idx) => {
-            const equipped = isItemEquipped(item)
+            const equipped = item.is_equipped || isItemEquipped(item)
             return (
             <div
               key={idx}
