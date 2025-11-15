@@ -488,15 +488,32 @@ class GameService:
         stats = {}
         stat_names = [
             "strength",
-            "dexterity",
-            "vitality",
-            "intelligence",
-            "wisdom",
+            "finesse",
             "speed",
+            "endurance",
+            "charisma",
+            "intelligence",
+            "faith",
         ]
 
         for stat_name in stat_names:
-            stats[stat_name] = getattr(player, stat_name, 0)
+            current = getattr(player, stat_name, 10)
+            base = getattr(player, stat_name + "_base", 10)
+            stats[stat_name] = current
+            stats[stat_name + "_base"] = base
+
+        # Add other status data
+        stats["hp"] = getattr(player, "hp", 0)
+        stats["max_hp"] = getattr(player, "max_hp", 0)
+        stats["fatigue"] = getattr(player, "fatigue", 0)
+        stats["max_fatigue"] = getattr(player, "max_fatigue", 0)
+        stats["weight_current"] = getattr(player, "weight_current", 0)
+        stats["carrying_capacity"] = getattr(player, "carrying_capacity", 100)
+        stats["protection"] = getattr(player, "protection", 0)
+        stats["resistance"] = getattr(player, "resistance", {})
+        stats["status_resistance"] = getattr(player, "status_resistance", {})
+        stats["states"] = [{"name": state.name, "steps_left": state.steps_left} 
+                          for state in getattr(player, "states", [])]
 
         return stats
 
