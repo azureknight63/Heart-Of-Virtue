@@ -47,6 +47,36 @@ def get_session_and_player():
     return session, player, None, None
 
 
+def get_item_and_index(player, item_id=None, item_index=None):
+    """
+    Find item by ID or index.
+    
+    Args:
+        player: Player object
+        item_id: String ID of the item (Python id())
+        item_index: Numeric index in inventory
+        
+    Returns:
+        Tuple of (item, index) or (None, None) if not found
+    """
+    inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+    
+    # Try finding by ID first
+    if item_id:
+        for idx, item in enumerate(inventory_list):
+            if str(id(item)) == item_id:
+                return item, idx
+        return None, None
+    
+    # Fall back to index
+    if item_index is not None:
+        if 0 <= item_index < len(inventory_list):
+            return inventory_list[item_index], item_index
+        return None, None
+    
+    return None, None
+
+
 @inventory_bp.route("/inventory", methods=["GET"])
 def get_inventory():
     """Get player inventory.
@@ -161,7 +191,8 @@ def drop_item():
     """Drop item from inventory onto current tile.
 
     JSON body:
-        item_index: Item index in inventory
+        item_id: Unique ID of the item (preferred)
+        item_index: Item index in inventory (fallback)
 
     Returns:
         JSON with updated inventory
@@ -172,20 +203,35 @@ def drop_item():
 
     try:
         data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["item_index"])
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
+        
+        # Get item ID or index from request
+        item_id = data.get("item_id")
+        item_index = data.get("item_index")
+        
+        if not item_id and item_index is None:
+            return jsonify({"success": False, "error": "Missing item_id or item_index"}), 400
 
-        item_index = data["item_index"]
+        # Find the item
+        item_to_drop, actual_index = get_item_and_index(player, item_id, item_index)
+        if item_to_drop is None:
+            return jsonify({"success": False, "error": "Item not found in inventory"}), 400
 
-        # Validate item index
+        # Get player's current position
+        player_x = getattr(player, "x", 0)
+        player_y = getattr(player, "y", 0)
+
+        # Get the tile at player's current position
+        tile = current_app.game_service.universe.get_tile(player_x, player_y)
+        if not tile:
+            return jsonify({"success": False, "error": "Current tile not found"}), 400
+
+        # Remove item from inventory and add to tile
         inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
-        is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
+        inventory_list.pop(actual_index)
+        items_here = getattr(tile, "items_here", [])
+        items_here.append(item_to_drop)
 
-        # For now, just validate the index and return success
-        # Full implementation requires game engine state manipulation
+        # Return updated inventory
         inventory_data = InventorySerializer.serialize(player)
         return (
             jsonify({
@@ -225,7 +271,8 @@ def equip_item():
     """Equip an item from inventory.
 
     JSON body:
-        item_index: Item index in inventory
+        item_id: Unique ID of the item (preferred)
+        item_index: Item index in inventory (fallback)
 
     Returns:
         JSON with updated equipment and stats
@@ -236,35 +283,93 @@ def equip_item():
 
     try:
         data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["item_index"])
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
+        
+        # Get item ID or index from request
+        item_id = data.get("item_id")
+        item_index = data.get("item_index")
+        
+        if not item_id and item_index is None:
+            return jsonify({"success": False, "error": "Missing item_id or item_index"}), 400
 
-        item_index = data["item_index"]
-
-        # Validate item index
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
-        is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
-
-        item = inventory_list[item_index]
+        # Find the item
+        item, actual_index = get_item_and_index(player, item_id, item_index)
+        if item is None:
+            return jsonify({"success": False, "error": "Item not found in inventory"}), 400
 
         # Check if equippable
-        if not hasattr(item, "equip"):
+        if not hasattr(item, "isequipped"):
             return (
                 jsonify({"success": False, "error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}),
                 400,
             )
 
-        # For now, just validate and return success
-        # Full implementation requires game engine state manipulation
+        # Check if already equipped
+        if getattr(item, "isequipped", False):
+            # Unequip it
+            item.isequipped = False
+            if hasattr(item, "on_unequip"):
+                item.on_unequip(player)
+            message = f"{item.name} unequipped"
+        else:
+            # Check if merchandise - can't equip until purchased
+            if getattr(item, "merchandise", False):
+                return (
+                    jsonify({"success": False, "error": f"You must purchase {item.name} before equipping it"}),
+                    400,
+                )
+            
+            # Unequip other items of same maintype if needed
+            inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+            maintype = getattr(item, "maintype", None)
+            if maintype:
+                for other_item in inventory_list:
+                    if other_item != item and getattr(other_item, "isequipped", False):
+                        other_maintype = getattr(other_item, "maintype", None)
+                        # For accessories, only replace same subtype (except multiple jewelry)
+                        if maintype == "Accessory" and other_maintype == "Accessory":
+                            other_subtype = getattr(other_item, "subtype", None)
+                            item_subtype = getattr(item, "subtype", None)
+                            if item_subtype == other_subtype:
+                                # Check if it's a type that allows multiples (Ring, Bracelet, Earring)
+                                if item_subtype in ["Ring", "Bracelet", "Earring"]:
+                                    # Don't auto-unequip for these; let player manage multiples
+                                    continue
+                                # For single-slot accessories, replace
+                                other_item.isequipped = False
+                                if hasattr(other_item, "on_unequip"):
+                                    other_item.on_unequip(player)
+                        elif maintype == other_maintype:
+                            # For non-accessories, replace the old one
+                            other_item.isequipped = False
+                            if hasattr(other_item, "on_unequip"):
+                                other_item.on_unequip(player)
+            
+            # Equip the item
+            item.isequipped = True
+            if hasattr(item, "on_equip"):
+                item.on_equip(player)
+            
+            # Update weapon reference if applicable
+            if maintype == "Weapon":
+                player.eq_weapon = item
+            
+            # Refresh stat bonuses
+            from src import functions
+            functions.refresh_stat_bonuses(player)
+            
+            message = f"{item.name} equipped"
+
+        # Get updated equipment data
+        from src.api.serializers.inventory import EquipmentSerializer
         equipment_data = EquipmentSerializer.serialize(player)
+        inventory_data = InventorySerializer.serialize(player)
+        
         return (
             jsonify({
                 "success": True,
-                "message": f"Equipped item",
+                "message": message,
                 "equipment": equipment_data,
+                "inventory": inventory_data,
             }),
             200,
         )
@@ -277,7 +382,8 @@ def use_item():
     """Use an item from inventory.
 
     JSON body:
-        item_index: Item index in inventory
+        item_id: Unique ID of the item (preferred)
+        item_index: Item index in inventory (fallback)
 
     Returns:
         JSON with result of item use
@@ -288,25 +394,51 @@ def use_item():
 
     try:
         data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["item_index"])
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
+        
+        # Get item ID or index from request
+        item_id = data.get("item_id")
+        item_index = data.get("item_index")
+        
+        if not item_id and item_index is None:
+            return jsonify({"success": False, "error": "Missing item_id or item_index"}), 400
 
-        item_index = data["item_index"]
+        # Find the item
+        item, actual_index = get_item_and_index(player, item_id, item_index)
+        if item is None:
+            return jsonify({"success": False, "error": "Item not found in inventory"}), 400
 
-        # Validate item index
+        # Check if merchandise - can't use until purchased
+        if getattr(item, "merchandise", False):
+            return (
+                jsonify({"success": False, "error": f"You must purchase {item.name} before using it"}),
+                400,
+            )
+
+        # Check if item is usable
+        if not hasattr(item, "use"):
+            return (
+                jsonify({"success": False, "error": f"{getattr(item, 'name', 'Item')} cannot be used"}),
+                400,
+            )
+
+        # Call the item's use method
+        item.use(player)
+        
+        # Remove the item if it's consumable
+        from src import items as items_module
         inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
-        is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
+        if isinstance(item, items_module.Consumable):
+            inventory_list.pop(actual_index)
+            message = f"{item.name} consumed"
+        else:
+            message = f"{item.name} used"
 
-        # For now, just validate the index and return success
-        # Full implementation requires game engine state manipulation
+        # Get updated inventory
         inventory_data = InventorySerializer.serialize(player)
         return (
             jsonify({
                 "success": True,
-                "message": f"Item used",
+                "message": message,
                 "inventory": inventory_data,
             }),
             200,
