@@ -36,6 +36,7 @@ class InventoryItemSerializer:
         
         # Build base item data
         item_data = {
+            "id": str(id(item)),  # Unique identifier for this item object
             "index": index,
             "name": getattr(item, "name", "Unknown Item"),
             "type": item_type,
@@ -48,7 +49,7 @@ class InventoryItemSerializer:
             "can_equip": hasattr(item, "equip"),
             "can_use": "use" in getattr(item, "interactions", []),
             "can_drop": "drop" in getattr(item, "interactions", []),
-            "is_equipped": getattr(item, "equipped_state", False),
+            "is_equipped": getattr(item, "isequipped", False),
             "is_merchandise": getattr(item, "merchandise", False),
             "description": getattr(item, "description", ""),
         }
