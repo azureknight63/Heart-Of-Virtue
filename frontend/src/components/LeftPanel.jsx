@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import PlayerStatus from './PlayerStatus'
+import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
+import StatsPanel from './StatsPanel'
+import SkillsPanel from './SkillsPanel'
 import HeroPanel from './HeroPanel'
 
 export default function LeftPanel({ player, location, mode, onMove, onRefetch }) {
@@ -79,7 +81,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         {/* Hero Panel - Character Head with Surrounding Buttons */}
         {/* Wrapper with smooth scale animation */}
         <div style={{
-          transform: showStatus || showInventory ? 'scale(1)' : 'scale(2)',
+          transform: showStatus || showInventory || showAttributes ? 'scale(1)' : 'scale(2)',
           transformOrigin: 'top center',
           transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
@@ -97,11 +99,21 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         </div>
 
         {/* Player Status - Hidden for now, shown when Status clicked */}
-        {showStatus && player && <PlayerStatus player={player} />}
+        {showStatus && player && <PartyPanel player={player} onClose={() => setShowStatus(false)} />}
+
+        {/* Stats/Attributes Panel */}
+        {showAttributes && player && (
+          <StatsPanel player={player} onClose={() => setShowAttributes(false)} />
+        )}
 
         {/* Inventory Dialog in Bottom Half */}
         {showInventory && player && (
-          <InventoryDialog items={player.inventory} player={player} onClose={() => setShowInventory(false)} />
+          <InventoryDialog items={player.inventory} player={player} onClose={() => setShowInventory(false)} onRefetch={onRefetch} />
+        )}
+
+        {/* Skills Panel */}
+        {showSkills && player && (
+          <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
         )}
       </div>
 
