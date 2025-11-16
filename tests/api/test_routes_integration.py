@@ -194,6 +194,13 @@ class TestWorldRoutes:
         assert "name" in room
         assert "description" in room
         assert "exits" in room or isinstance(room.get("exits"), dict)
+        # Verify room contents are returned
+        assert "items" in room
+        assert "npcs" in room
+        assert "objects" in room
+        assert isinstance(room["items"], list)
+        assert isinstance(room["npcs"], list)
+        assert isinstance(room["objects"], list)
 
     def test_move_player_north_success(self, client, session_id):
         """Test moving player east successfully (valid from (1,1))."""

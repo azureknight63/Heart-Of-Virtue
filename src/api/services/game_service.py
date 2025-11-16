@@ -116,7 +116,7 @@ class GameService:
             player: The Player instance
 
         Returns:
-            Dictionary with room data (position, description, exits, etc.)
+            Dictionary with room data (position, description, exits, items, npcs, objects)
         """
         tile = self.universe.get_tile(player.x, player.y)
         if not tile:
@@ -125,12 +125,48 @@ class GameService:
         # Calculate exits dynamically by checking adjacent tiles
         exits_data = self._calculate_exits(tile, player.x, player.y)
 
+        # Serialize items in room
+        items_data = []
+        if hasattr(tile, "items_here"):
+            for item in tile.items_here:
+                items_data.append({
+                    "name": getattr(item, "name", "Unknown Item"),
+                    "quantity": getattr(item, "quantity", 1),
+                })
+
+        # Serialize NPCs in room
+        npcs_data = []
+        if hasattr(tile, "npcs_here"):
+            for npc in tile.npcs_here:
+                npcs_data.append({
+                    "name": getattr(npc, "name", "Unknown NPC"),
+                    "level": getattr(npc, "level", 1),
+                    "hp": getattr(npc, "hp", 0),
+                    "max_hp": getattr(npc, "max_hp", 10),
+                })
+
+        # Serialize objects in room
+        objects_data = []
+        if hasattr(tile, "objects_here"):
+            for obj in tile.objects_here:
+                # Count items inside container objects if applicable
+                item_count = 0
+                if hasattr(obj, "items_here"):
+                    item_count = len(obj.items_here)
+                objects_data.append({
+                    "name": getattr(obj, "name", "Unknown Object"),
+                    "item_count": item_count,
+                })
+
         return {
             "x": player.x,
             "y": player.y,
             "name": getattr(tile, "name", "Unknown"),
             "description": getattr(tile, "description", ""),
             "exits": exits_data,
+            "items": items_data,
+            "npcs": npcs_data,
+            "objects": objects_data,
         }
 
     def move_player(self, player: "player_module.Player", direction: str) -> Dict[str, Any]:
