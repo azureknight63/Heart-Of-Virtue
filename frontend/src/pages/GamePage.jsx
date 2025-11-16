@@ -5,14 +5,22 @@ import RightPanel from '../components/RightPanel'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
-  const { location, loading: worldLoading, move } = useWorld()
+  const { location, loading: worldLoading, moveToLocation } = useWorld()
   const { combat, inCombat, fetchCombatStatus } = useCombat()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
+  const [exploredTiles, setExploredTiles] = useState(new Set())
+
+  // Track explored tiles when location changes
+  useEffect(() => {
+    if (location) {
+      setExploredTiles(prev => new Set([...prev, `${location.x},${location.y}`]))
+    }
+  }, [location])
 
   // Wrapper for move that also refetches player data
   const handleMove = async (direction) => {
     try {
-      const result = await move(direction)
+      const result = await moveToLocation(direction)
       // Refetch player data after movement
       await refetchPlayer()
       return result
@@ -46,7 +54,7 @@ export default function GamePage() {
         player={player}
         location={location}
         mode={mode}
-        onMove={move}
+        onMove={handleMove}
         onRefetch={refetchPlayer}
       />
 
@@ -57,6 +65,7 @@ export default function GamePage() {
         location={location}
         onMoveToLocation={handleMove}
         onModeChange={setMode}
+        exploredTiles={exploredTiles}
       />
     </div>
   )
