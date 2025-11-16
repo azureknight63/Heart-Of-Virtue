@@ -1,17 +1,9 @@
 import { useState, useEffect } from 'react'
 import MovementStar from './MovementStar'
 
-export default function MapGrid({ location, onMove, exits, loading }) {
-  const [exploredTiles, setExploredTiles] = useState(new Set())
+export default function MapGrid({ location, onMove, exits, loading, exploredTiles }) {
   const GRID_SIZE = 13 // Odd number centers player
   const TILE_SIZE = 40
-
-  // Add current location to explored when it changes
-  useEffect(() => {
-    if (location) {
-      setExploredTiles(prev => new Set([...prev, `${location.x},${location.y}`]))
-    }
-  }, [location])
 
   if (!location) {
     return (
@@ -37,7 +29,7 @@ export default function MapGrid({ location, onMove, exits, loading }) {
   const getTileContent = (x, y) => {
     const tileKey = `${x},${y}`
     const isPlayerHere = x === location.x && y === location.y
-    const isExplored = exploredTiles.has(tileKey)
+    const isExplored = exploredTiles && exploredTiles.has(tileKey)
 
     let bgColor = '#1a1a2e'
     let symbol = '.'

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Battlefield from './Battlefield'
 import WorldMap from './WorldMap'
 
-export default function RightPanel({ mode, combat, location, onMoveToLocation }) {
+export default function RightPanel({ mode, combat, location, onMoveToLocation, exploredTiles }) {
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-orange rounded-lg overflow-hidden retro-glow">
       {/* Header */}
@@ -15,7 +15,7 @@ export default function RightPanel({ mode, combat, location, onMoveToLocation })
         {mode === 'combat' ? (
           <Battlefield combat={combat} />
         ) : (
-          <WorldMap location={location} onMoveToLocation={onMoveToLocation} />
+          <WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={exploredTiles} />
         )}
       </div>
     </div>

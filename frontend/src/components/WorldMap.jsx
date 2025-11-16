@@ -1,6 +1,6 @@
 import MapGrid from './MapGrid'
 
-export default function WorldMap({ location, onMoveToLocation }) {
+export default function WorldMap({ location, onMoveToLocation, exploredTiles }) {
   if (!location) {
     return (
       <div style={{ color: '#00ccff', padding: '16px' }}>
@@ -22,6 +22,7 @@ export default function WorldMap({ location, onMoveToLocation }) {
         onMove={onMoveToLocation}
         exits={location.exits || []}
         loading={false}
+        exploredTiles={exploredTiles}
       />
     </div>
   )
