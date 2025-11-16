@@ -4,6 +4,7 @@ import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
+import RoomContents from './RoomContents'
 import HeroPanel from './HeroPanel'
 
 export default function LeftPanel({ player, location, mode, onMove, onRefetch }) {
@@ -76,6 +77,11 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
               <p className="text-xs text-[#00ddaa]">{location.long_description}</p>
             )}
           </div>
+        )}
+
+        {/* Room Contents - Items, NPCs, Objects */}
+        {mode === 'exploration' && location && (
+          <RoomContents location={location} />
         )}
 
         {/* Hero Panel - Character Head with Surrounding Buttons */}

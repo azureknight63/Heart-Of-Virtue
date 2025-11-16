@@ -45,8 +45,25 @@ export default function MapGrid({ location, onMove, exits, loading }) {
 
     if (isPlayerHere) {
       bgColor = '#00ff88'
-      symbol = '©'
       textColor = '#000000'
+      
+      // Show indicators for items, NPCs, objects on current location
+      const items = location.items || []
+      const npcs = location.npcs || []
+      const objects = location.objects || []
+      
+      if ((items.length > 0 ? 1 : 0) + (npcs.length > 0 ? 1 : 0) + (objects.length > 0 ? 1 : 0) >= 2) {
+        // Multiple types present
+        symbol = '✦'
+      } else if (npcs.length > 0) {
+        symbol = '◉'
+      } else if (objects.length > 0) {
+        symbol = '◾'
+      } else if (items.length > 0) {
+        symbol = '◆'
+      } else {
+        symbol = '©'
+      }
     } else if (isExplored) {
       bgColor = 'rgba(0, 255, 136, 0.2)'
       symbol = '●'
@@ -201,7 +218,7 @@ export default function MapGrid({ location, onMove, exits, loading }) {
         fontFamily: 'monospace',
         textAlign: 'center',
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr 1fr',
+        gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr',
         gap: '8px',
       }}>
         <div>
@@ -211,7 +228,13 @@ export default function MapGrid({ location, onMove, exits, loading }) {
           <span style={{ color: '#00ff88', fontWeight: 'bold' }}>●</span> = Visited
         </div>
         <div>
-          <span style={{ color: '#666', fontWeight: 'bold' }}>·</span> = Unknown
+          <span style={{ color: '#00ddaa', fontWeight: 'bold' }}>◆</span> = Items
+        </div>
+        <div>
+          <span style={{ color: '#ff9999', fontWeight: 'bold' }}>◉</span> = NPCs
+        </div>
+        <div>
+          <span style={{ color: '#ffcc88', fontWeight: 'bold' }}>◾</span> = Objects
         </div>
       </div>
 
