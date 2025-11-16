@@ -9,6 +9,19 @@ export default function GamePage() {
   const { combat, inCombat, fetchCombatStatus } = useCombat()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
 
+  // Wrapper for move that also refetches player data
+  const handleMove = async (direction) => {
+    try {
+      const result = await move(direction)
+      // Refetch player data after movement
+      await refetchPlayer()
+      return result
+    } catch (err) {
+      console.error('Movement failed:', err)
+      throw err
+    }
+  }
+
   useEffect(() => {
     if (inCombat) {
       setMode('combat')
@@ -42,6 +55,7 @@ export default function GamePage() {
         mode={mode}
         combat={combat}
         location={location}
+        onMoveToLocation={handleMove}
         onModeChange={setMode}
       />
     </div>
