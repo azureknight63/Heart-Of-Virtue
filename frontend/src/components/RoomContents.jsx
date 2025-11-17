@@ -1,6 +1,7 @@
 /**
- * RoomContents - Display items, NPCs, and objects in current room
- * Shows what's available to interact with at the player's current location
+ * RoomContents - Display integrated room description with contents
+ * Displays room contents descriptions inline with the main room description,
+ * matching the terminal game's narrative format
  */
 
 export default function RoomContents({ location }) {
@@ -10,185 +11,96 @@ export default function RoomContents({ location }) {
   const npcs = location.npcs || []
   const objects = location.objects || []
 
-  const hasAnyContent = items.length > 0 || npcs.length > 0 || objects.length > 0
+  // Build content descriptions array
+  const contentDescriptions = []
 
-  if (!hasAnyContent) {
-    return (
-      <div style={{
-        backgroundColor: 'rgba(50, 20, 0, 0.2)',
-        border: '1px solid #664400',
-        borderRadius: '4px',
-        padding: '8px',
-        color: '#999999',
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        textAlign: 'center',
-      }}>
-        This location is empty...
-      </div>
-    )
-  }
+  // Add NPCs with idle messages
+  npcs.forEach(npc => {
+    if (npc.idle_message) {
+      contentDescriptions.push({
+        type: 'npc',
+        text: npc.idle_message,
+        name: npc.name,
+      })
+    }
+  })
+
+  // Add items with announce messages
+  items.forEach(item => {
+    if (item.announce) {
+      contentDescriptions.push({
+        type: 'item',
+        text: item.announce,
+        name: item.name,
+      })
+    }
+  })
+
+  // Add objects with idle messages
+  objects.forEach(obj => {
+    if (obj.idle_message) {
+      contentDescriptions.push({
+        type: 'object',
+        text: obj.idle_message,
+        name: obj.name,
+      })
+    }
+  })
+
+  // Build combined description
+  const roomDescriptionText = location.description
+  const hasContentDescriptions = contentDescriptions.length > 0
 
   return (
-    <div style={{
-      backgroundColor: 'rgba(50, 20, 0, 0.3)',
-      border: '2px solid #ffaa00',
-      borderRadius: '6px',
-      padding: '8px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-    }}>
-      {/* Items Section */}
-      {items.length > 0 && (
-        <div style={{
-          backgroundColor: 'rgba(30, 15, 0, 0.3)',
-          border: '1px solid #664400',
-          borderRadius: '4px',
-          padding: '6px',
-        }}>
-          <div style={{
-            color: '#ffff00',
-            fontWeight: 'bold',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            marginBottom: '4px',
-          }}>
-            📦 Items ({items.length})
-          </div>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '3px',
-          }}>
-            {items.map((item, idx) => (
-              <div
-                key={idx}
-                style={{
-                  backgroundColor: 'rgba(0, 30, 50, 0.3)',
-                  border: '1px solid #334466',
-                  borderRadius: '3px',
-                  padding: '4px 6px',
-                  fontSize: '10px',
-                  fontFamily: 'monospace',
-                  color: '#00ddaa',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span>{item.name || 'Unknown Item'}</span>
-                {item.quantity && item.quantity > 1 && (
-                  <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>×{item.quantity}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+    <div className="bg-[rgba(0,100,50,0.2)] border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif">
+      {/* Room narrative and content all together */}
+      
+      {/* Combined narrative: room description + content descriptions */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+      }}>
+        {/* Main room description */}
+        <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>{roomDescriptionText}</p>
 
-      {/* NPCs Section */}
-      {npcs.length > 0 && (
-        <div style={{
-          backgroundColor: 'rgba(30, 15, 0, 0.3)',
-          border: '1px solid #664400',
-          borderRadius: '4px',
-          padding: '6px',
-        }}>
-          <div style={{
-            color: '#ffff00',
-            fontWeight: 'bold',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            marginBottom: '4px',
-          }}>
-            👤 NPCs ({npcs.length})
-          </div>
+        {/* Content descriptions immediately following */}
+        {hasContentDescriptions && (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: '3px',
+            gap: '6px',
           }}>
-            {npcs.map((npc, idx) => (
+            {contentDescriptions.map((content, idx) => (
               <div
                 key={idx}
                 style={{
-                  backgroundColor: 'rgba(30, 0, 0, 0.3)',
-                  border: '1px solid #663333',
-                  borderRadius: '3px',
-                  padding: '4px 6px',
-                  fontSize: '10px',
-                  fontFamily: 'monospace',
+                  color: content.type === 'npc' ? '#ff9999' :
+                         content.type === 'item' ? '#00ddaa' :
+                         '#ffcc88',
+                  fontFamily: 'serif',
+                  fontStyle: 'italic',
+                  fontSize: '16px',
+                  lineHeight: '1.5',
                 }}
               >
-                <div style={{ color: '#ff9999', fontWeight: 'bold' }}>
-                  {npc.name || 'Unknown NPC'}
-                </div>
-                {npc.level && (
-                  <div style={{ color: '#ffaa00', fontSize: '9px' }}>
-                    Lvl {npc.level}
-                    {npc.hp !== undefined && npc.max_hp && (
-                      <span style={{ color: '#ff6666', marginLeft: '4px' }}>
-                        ❤️ {npc.hp}/{npc.max_hp}
-                      </span>
-                    )}
-                  </div>
-                )}
+                {content.text}
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Objects Section */}
-      {objects.length > 0 && (
-        <div style={{
-          backgroundColor: 'rgba(30, 15, 0, 0.3)',
-          border: '1px solid #664400',
-          borderRadius: '4px',
-          padding: '6px',
-        }}>
+        {/* Empty state */}
+        {!hasContentDescriptions && (
           <div style={{
-            color: '#ffff00',
-            fontWeight: 'bold',
-            fontSize: '11px',
-            fontFamily: 'monospace',
-            marginBottom: '4px',
+            color: '#666666',
+            fontSize: '16px',
+            fontStyle: 'italic',
           }}>
-            🔨 Objects ({objects.length})
+            (Nothing else here...)
           </div>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '3px',
-          }}>
-            {objects.map((obj, idx) => (
-              <div
-                key={idx}
-                style={{
-                  backgroundColor: 'rgba(50, 30, 0, 0.3)',
-                  border: '1px solid #664400',
-                  borderRadius: '3px',
-                  padding: '4px 6px',
-                  fontSize: '10px',
-                  fontFamily: 'monospace',
-                  color: '#ffcc88',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span>{obj.name || 'Unknown Object'}</span>
-                {obj.item_count && obj.item_count > 0 && (
-                  <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '9px' }}>
-                    {obj.item_count} items
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

@@ -71,16 +71,6 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         gap: '14px',
         overflow: 'clip',
       }}>
-        {/* Narrative Box */}
-        {location && (
-          <div className="bg-[rgba(0,100,50,0.2)] border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif">
-            <strong className="text-cyan text-base block mb-1">{location.description || 'Unknown Location'}</strong>
-            {location.long_description && (
-              <p className="text-xs text-[#00ddaa]">{location.long_description}</p>
-            )}
-          </div>
-        )}
-
         {/* Room Contents - Items, NPCs, Objects */}
         {mode === 'exploration' && location && (
           <RoomContents location={location} />
