@@ -201,6 +201,20 @@ class TestWorldRoutes:
         assert isinstance(room["items"], list)
         assert isinstance(room["npcs"], list)
         assert isinstance(room["objects"], list)
+        # Verify items have announce field
+        for item in room["items"]:
+            assert "name" in item
+            assert "quantity" in item
+            assert "announce" in item
+        # Verify NPCs have idle_message field
+        for npc in room["npcs"]:
+            assert "name" in npc
+            assert "level" in npc
+            assert "idle_message" in npc
+        # Verify objects have idle_message field
+        for obj in room["objects"]:
+            assert "name" in obj
+            assert "idle_message" in obj
 
     def test_move_player_north_success(self, client, session_id):
         """Test moving player east successfully (valid from (1,1))."""

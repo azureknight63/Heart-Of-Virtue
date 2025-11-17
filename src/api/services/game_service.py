@@ -132,6 +132,7 @@ class GameService:
                 items_data.append({
                     "name": getattr(item, "name", "Unknown Item"),
                     "quantity": getattr(item, "quantity", 1),
+                    "announce": getattr(item, "announce", ""),
                 })
 
         # Serialize NPCs in room
@@ -143,6 +144,7 @@ class GameService:
                     "level": getattr(npc, "level", 1),
                     "hp": getattr(npc, "hp", 0),
                     "max_hp": getattr(npc, "max_hp", 10),
+                    "idle_message": getattr(npc, "idle_message", ""),
                 })
 
         # Serialize objects in room
@@ -156,6 +158,7 @@ class GameService:
                 objects_data.append({
                     "name": getattr(obj, "name", "Unknown Object"),
                     "item_count": item_count,
+                    "idle_message": getattr(obj, "idle_message", ""),
                 })
 
         return {
