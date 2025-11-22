@@ -6,6 +6,7 @@ import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
 import RoomContents from './RoomContents'
 import ActionsPanel from './ActionsPanel'
+import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
 
 export default function LeftPanel({ player, location, mode, onMove, onRefetch }) {
@@ -15,6 +16,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
   const [showStatus, setShowStatus] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
   const [showActions, setShowActions] = useState(false)
+  const [showInteract, setShowInteract] = useState(false)
 
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible' }}>
@@ -79,7 +81,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         {/* Hero Panel - Character Head with Surrounding Buttons */}
         {/* Wrapper with smooth scale animation */}
         <div style={{
-          transform: showStatus || showInventory || showAttributes || showActions || showSkills ? 'scale(1)' : 'scale(2)',
+          transform: showStatus || showInventory || showAttributes || showActions || showSkills || showInteract ? 'scale(1)' : 'scale(2)',
           transformOrigin: 'top center',
           transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
@@ -92,7 +94,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
             onSkillsClick={() => setShowSkills(!showSkills)}
             onInventoryClick={() => setShowInventory(!showInventory)}
             onActionsClick={() => setShowActions(!showActions)}
-            onInteractClick={() => {}}
+            onInteractClick={() => setShowInteract(!showInteract)}
           />
         </div>
 
@@ -116,11 +118,19 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
 
         {/* Actions Panel */}
         {showActions && location && mode === 'exploration' && (
-          <ActionsPanel 
-            player={player} 
-            location={location} 
+          <ActionsPanel
+            player={player}
+            location={location}
             onClose={() => setShowActions(false)}
             onMove={onMove}
+          />
+        )}
+
+        {/* Interact Panel */}
+        {showInteract && location && mode === 'exploration' && (
+          <InteractPanel
+            location={location}
+            onClose={() => setShowInteract(false)}
           />
         )}
       </div>
