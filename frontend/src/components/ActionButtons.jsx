@@ -25,12 +25,12 @@ export default function ActionButtons({ mode, location, onInventory }) {
         <button
           key={idx}
           onClick={action.action}
-          className="btn btn-secondary text-xs py-1.5 font-bold hover:bg-lime hover:text-black"
+          className="btn btn-secondary text-sm py-2.5 px-3 font-bold hover:bg-lime hover:text-black"
         >
           {action.label}
         </button>
       ))}
-      <button className={`btn btn-primary text-xs py-1.5 font-bold ${mode === 'combat' ? 'col-span-3' : 'col-span-2'}`}>
+      <button className={`btn btn-primary text-sm py-2.5 px-3 font-bold ${mode === 'combat' ? 'col-span-3' : 'col-span-2'}`}>
         Save Game
       </button>
     </div>
