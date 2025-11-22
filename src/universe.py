@@ -37,6 +37,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.scenario_config = None  # ScenarioConfig for combat scenario management
         self.coordinate_config = None  # CoordinateSystemConfig for grid positioning
 
+    def get_tile(self, x, y):
+        """Get tile at coordinates from the current player's map."""
+        if self.player and self.player.map:
+            return tile_exists(self.player.map, x, y)
+        return None
+
     def build(self, player):  # builds all the maps as they are, then loads them into self.maps
         # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
         self.player = player

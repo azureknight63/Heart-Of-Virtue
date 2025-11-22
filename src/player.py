@@ -1376,6 +1376,11 @@ he lets out a barely audible whisper:""", "red")
                         break
 
     def search(self):
+        """
+        Searches the current room for hidden NPCs, items, and objects.
+        Reveals any hidden entities if the player's search ability exceeds their hide factor.
+        Prints discovery messages for found entities, or a message if nothing is found.
+        """
         print("Jean searches around the area...")
         search_ability = int(((self.finesse * 2) + (self.intelligence * 3) + self.faith) * random.uniform(0.5, 1.5))
         time.sleep(5)
@@ -1402,14 +1407,23 @@ he lets out a barely audible whisper:""", "red")
             print("...but he couldn't find anything of interest.")
 
     def menu(self):
+        """
+        Opens the main menu for the player to save, load, or exit the game.
+        Executes an autosave before opening the menu.
+        """
         functions.autosave(self)
         self.main_menu = True
 
     def save(self):
+        """
+        Opens the save menu for the player to save his progress.
+        """
         functions.save_select(self)
 
     def stack_inv_items(self):
-        # Alias call to functions.stack_inv_items to keep player code cleaner
+        """
+        Alias call to functions.stack_inv_items to keep player code cleaner
+        """
         stack_inv_items(self)
 
     def commands(self):

@@ -89,9 +89,20 @@ class MapTile:
             ]
         else:
             default_moves = [
+                actions.ListCommands(),
+                actions.ViewInventory(),
+                actions.SkillMenu(),
+                actions.Look(),
+                actions.View(),
+                actions.Equip(),
+                actions.Take(),
+                actions.Use(),
                 actions.Search(),
                 actions.Menu(),
-                actions.Save()
+                actions.Save(),
+                actions.ViewMap(),
+                actions.Attack(),
+                actions.ViewStatus()
             ]
 
         debug_moves = [  # these are the moves available to the player if debugging is enabled
@@ -108,7 +119,7 @@ class MapTile:
             moves.append(move)
 
         # Only include debug commands if APP_ENV is "dev"
-        if self.universe.test_mode:
+        if self.universe.testing_mode:
             for move in debug_moves:
                 # noinspection PyTypeChecker
                 moves.append(move)
