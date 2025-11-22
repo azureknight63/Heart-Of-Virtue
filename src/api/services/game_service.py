@@ -339,23 +339,29 @@ class GameService:
         f = io.StringIO()
         try:
             # We need to patch await_input to prevent blocking, and time.sleep to prevent delays
+            # Also patch cprint to capture colored output
+            def mock_cprint(text, *args, **kwargs):
+                f.write(str(text) + '\n')
+            
             with contextlib.redirect_stdout(f), \
+                 contextlib.redirect_stderr(f), \
                  patch('src.functions.await_input', return_value=None), \
-                 patch('time.sleep', return_value=None):
+                 patch('time.sleep', return_value=None), \
+                 patch('neotermcolor.cprint', mock_cprint):
                 
                 method = getattr(target, action)
                 # Check signature to see if we need to pass player
                 sig = inspect.signature(method)
-                if len(sig.parameters) > 0:
-                    # Check if it looks like it wants player (or just has args)
-                    # Most game methods are (self, player) or (self)
-                    try:
-                        method(player)
-                    except TypeError:
-                        # Fallback for methods that might take other args or no args if signature check failed
-                        method()
-                else:
+                # Most object methods are (self) only, not (self, player)
+                # Try calling without args first
+                try:
                     method()
+                except TypeError as e:
+                    # If that fails, try with player
+                    if len(sig.parameters) > 0:
+                        method(player)
+                    else:
+                        raise
                     
         except Exception as e:
             return {"success": False, "message": f"Error executing action: {str(e)}"}
