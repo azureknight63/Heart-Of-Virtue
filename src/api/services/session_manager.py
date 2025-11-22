@@ -13,8 +13,8 @@ class MinimalPlayer:
     
     def __init__(self, name):
         self.name = name
-        self.x = 0  # Starting at origin
-        self.y = 0
+        self.location_x = 0  # Starting at origin
+        self.location_y = 0
         self.inventory = self._create_starting_inventory()
         self.equipment = {}
         self.hp = 100
@@ -272,7 +272,7 @@ class SessionManager:
                 player = MinimalPlayer(username)
             
             # Set starting position from config
-            player.x, player.y = self.start_x, self.start_y
+            player.location_x, player.location_y = self.start_x, self.start_y
             
             # Add starting items from config if available
             config_items = self._create_items_from_config()
@@ -289,7 +289,7 @@ class SessionManager:
             player = MinimalPlayer(username)
             
             # Set starting position from config
-            player.x, player.y = self.start_x, self.start_y
+            player.location_x, player.location_y = self.start_x, self.start_y
             
             # Add starting items from config if available
             config_items = self._create_items_from_config()

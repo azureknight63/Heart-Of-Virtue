@@ -247,6 +247,135 @@ def get_tile():
             return jsonify({"success": False, "error": tile["error"]}), 404
 
         return jsonify({"success": True, "tile": tile}), 200
+    
+    except Exception as e:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Internal server error",
+                        "message": str(e),
+                    }
+                ),
+                500,
+            )
+
+@world_bp.route("/world/commands", methods=["GET"])
+def get_available_commands():
+    """Get available commands/actions for player in current room.
+
+    Authorization: Required (Bearer token)
+
+    Returns:
+        {
+            "success": bool,
+            "commands": [
+                {
+                    "name": str (action name),
+                    "hotkey": list (keyboard shortcuts)
+                }
+            ],
+            "count": int (number of available commands)
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        from flask import current_app
+
+        game_service = current_app.game_service
+
+        if not game_service or not game_service.universe:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Game service not initialized",
+                    }
+                ),
+                500,
+            )
+
+        commands_data = game_service.get_available_commands(player)
+
+        return jsonify({"success": True, **commands_data}), 200
+    
+    except Exception as e:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Internal server error",
+                        "message": str(e),
+                    }
+                ),
+                500,
+            )
+
+
+@world_bp.route("/world/interact", methods=["POST"])
+def interact_with_target():
+    """Interact with an object or NPC.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Request body:
+        {
+            "target_id": "...",
+            "action": "..."
+        }
+
+    Returns:
+        {
+            "success": bool,
+            "message": str,
+            "target_name": str,
+            "action": str
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        data = request.get_json()
+        if not data or "target_id" not in data or "action" not in data:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Missing target_id or action",
+                    }
+                ),
+                400,
+            )
+
+        target_id = data["target_id"]
+        action = data["action"]
+
+        from flask import current_app
+        game_service = current_app.game_service
+
+        if not game_service or not game_service.universe:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Game service not initialized",
+                    }
+                ),
+                500,
+            )
+
+        result = game_service.interact_with_target(player, target_id, action)
+
+        if not result["success"]:
+            return jsonify(result), 400
+
+        return jsonify(result), 200
 
     except Exception as e:
         return (

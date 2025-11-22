@@ -118,12 +118,12 @@ class GameService:
         Returns:
             Dictionary with room data (position, description, exits, items, npcs, objects)
         """
-        tile = self.universe.get_tile(player.x, player.y)
+        tile = self.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Invalid player position"}
 
         # Calculate exits dynamically by checking adjacent tiles
-        exits_data = self._calculate_exits(tile, player.x, player.y)
+        exits_data = self._calculate_exits(tile, player.location_x, player.location_y)
 
         # Serialize items in room
         items_data = []
@@ -138,32 +138,16 @@ class GameService:
         # Serialize NPCs in room
         npcs_data = []
         if hasattr(tile, "npcs_here"):
-            for npc in tile.npcs_here:
-                npcs_data.append({
-                    "name": getattr(npc, "name", "Unknown NPC"),
-                    "level": getattr(npc, "level", 1),
-                    "hp": getattr(npc, "hp", 0),
-                    "max_hp": getattr(npc, "max_hp", 10),
-                    "idle_message": getattr(npc, "idle_message", ""),
-                })
+            npcs_data = NPCSerializer.serialize_list(tile.npcs_here)
 
         # Serialize objects in room
         objects_data = []
         if hasattr(tile, "objects_here"):
-            for obj in tile.objects_here:
-                # Count items inside container objects if applicable
-                item_count = 0
-                if hasattr(obj, "items_here"):
-                    item_count = len(obj.items_here)
-                objects_data.append({
-                    "name": getattr(obj, "name", "Unknown Object"),
-                    "item_count": item_count,
-                    "idle_message": getattr(obj, "idle_message", ""),
-                })
+            objects_data = ObjectSerializer.serialize_list(tile.objects_here)
 
         return {
-            "x": player.x,
-            "y": player.y,
+            "x": player.location_x,
+            "y": player.location_y,
             "name": getattr(tile, "name", "Unknown"),
             "description": getattr(tile, "description", ""),
             "exits": exits_data,
@@ -187,12 +171,12 @@ class GameService:
         if direction_lower not in valid_directions:
             return {"error": f"Invalid direction: {direction}"}
 
-        tile = self.universe.get_tile(player.x, player.y)
+        tile = self.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Cannot move from this location"}
 
         # Calculate available exits
-        available_exits = self._calculate_exits(tile, player.x, player.y)
+        available_exits = self._calculate_exits(tile, player.location_x, player.location_y)
         
         if direction_lower not in available_exits:
             return {"error": f"Cannot go {direction_lower} from here"}
@@ -211,8 +195,8 @@ class GameService:
             return {"error": f"Cannot move {direction_lower} - path is blocked"}
 
         # Update player position
-        player.x = new_x
-        player.y = new_y
+        player.location_x = new_x
+        player.location_y = new_y
 
         # Trigger tile entry events
         events_triggered = self.trigger_tile_events(player, new_tile)
@@ -294,6 +278,99 @@ class GameService:
             "events": events_data,
             "exits": exits_data,
             "is_passable": getattr(tile, "is_passable", True),
+        }
+
+    # ========================
+    # Interaction Methods
+    # ========================
+
+    def interact_with_target(self, player: "player_module.Player", target_id: str, action: str) -> Dict[str, Any]:
+        """Interact with an object or NPC.
+
+        Args:
+            player: The Player instance
+            target_id: ID of the target object/NPC
+            action: The action keyword to execute
+
+        Returns:
+            Dictionary with interaction result and output text
+        """
+        import contextlib
+        import io
+        import src.functions as functions
+        from unittest.mock import patch
+        import inspect
+        import re
+
+        # Find target
+        tile = self.universe.get_tile(player.location_x, player.location_y)
+        target = None
+        
+        # Check NPCs
+        if hasattr(tile, "npcs_here"):
+            for npc in tile.npcs_here:
+                if str(id(npc)) == target_id:
+                    target = npc
+                    break
+        
+        # Check Objects
+        if not target and hasattr(tile, "objects_here"):
+            for obj in tile.objects_here:
+                if str(id(obj)) == target_id:
+                    target = obj
+                    break
+                    
+        if not target:
+            return {"success": False, "message": "Target not found."}
+
+        # Validate action
+        # Check keywords first, then check if method exists
+        is_valid = False
+        if hasattr(target, "keywords") and action in target.keywords:
+            is_valid = True
+        elif hasattr(target, action):
+            # Allow calling method if it exists, even if not in keywords (fallback)
+            is_valid = True
+            
+        if not is_valid:
+            return {"success": False, "message": f"Cannot {action} this target."}
+
+        # Execute action and capture output
+        f = io.StringIO()
+        try:
+            # We need to patch await_input to prevent blocking, and time.sleep to prevent delays
+            with contextlib.redirect_stdout(f), \
+                 patch('src.functions.await_input', return_value=None), \
+                 patch('time.sleep', return_value=None):
+                
+                method = getattr(target, action)
+                # Check signature to see if we need to pass player
+                sig = inspect.signature(method)
+                if len(sig.parameters) > 0:
+                    # Check if it looks like it wants player (or just has args)
+                    # Most game methods are (self, player) or (self)
+                    try:
+                        method(player)
+                    except TypeError:
+                        # Fallback for methods that might take other args or no args if signature check failed
+                        method()
+                else:
+                    method()
+                    
+        except Exception as e:
+            return {"success": False, "message": f"Error executing action: {str(e)}"}
+
+        output = f.getvalue()
+        
+        # Clean up output (remove ANSI codes)
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        clean_output = ansi_escape.sub('', output)
+
+        return {
+            "success": True, 
+            "message": clean_output,
+            "target_name": getattr(target, "name", "Unknown"),
+            "action": action
         }
 
     # ========================
@@ -555,6 +632,36 @@ class GameService:
                           for state in getattr(player, "states", [])]
 
         return stats
+
+    def get_available_commands(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get available commands/actions for the player in current room.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with available commands
+        """
+        import logging
+        commands = []
+        
+        # Get the current tile and its available actions
+        current_tile = self.universe.get_tile(player.location_x, player.location_y)
+        if current_tile and hasattr(current_tile, "available_actions"):
+            try:
+                available_actions = current_tile.available_actions(callerIsApi=True)
+                for action in available_actions:
+                    commands.append({
+                        "name": getattr(action, "name", "Unknown"),
+                        "hotkey": getattr(action, "hotkey", []),
+                    })
+            except Exception as e:
+                logging.error(f"Error getting available actions: {e}")
+
+        return {
+            "commands": commands,
+            "count": len(commands),
+        }
 
     # ========================
     # Save/Load Methods

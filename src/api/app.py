@@ -91,7 +91,7 @@ def create_app(config_class=None):
             universe.build(test_player)
             
             # Set player to starting position from config
-            test_player.x, test_player.y = start_x, start_y
+            test_player.location_x, test_player.location_y = start_x, start_y
             
             # Create a get_tile wrapper for accessing tiles from the universe.maps structure
             def get_tile_from_maps(x, y):

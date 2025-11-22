@@ -19,7 +19,7 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
 
     # CORS settings
-    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"]
 
     # API settings
     JSON_SORT_KEYS = False
