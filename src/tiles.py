@@ -1,6 +1,7 @@
 """Describes the tiles in the world space."""
 __author__ = 'Alex Egbert'
 
+import os
 import random
 import importlib
 
@@ -64,25 +65,34 @@ class MapTile:
                 tile.discovered = True
         return moves
 
-    def available_actions(self) -> list[actions.Action]:
+    def available_actions(self, callerIsApi = False) -> list[actions.Action]:
         """Returns all the available actions in this room."""
-        moves = self.adjacent_moves()  # first, add the available directions in the current room
-        default_moves = [  # these are the default moves available to the player
-            actions.ListCommands(),
-            actions.ViewInventory(),
-            actions.SkillMenu(),
-            actions.Look(),
-            actions.View(),
-            actions.Equip(),
-            actions.Take(),
-            actions.Use(),
-            actions.Search(),
-            actions.Menu(),
-            actions.Save(),
-            actions.ViewMap(),
-            actions.Attack(),
-            actions.ViewStatus()
-        ]
+        moves = []
+
+        if not callerIsApi:
+            moves = self.adjacent_moves()  # first, add the available directions in the current room
+            default_moves = [  # these are the default moves available to the player
+                actions.ListCommands(),
+                actions.ViewInventory(),
+                actions.SkillMenu(),
+                actions.Look(),
+                actions.View(),
+                actions.Equip(),
+                actions.Take(),
+                actions.Use(),
+                actions.Search(),
+                actions.Menu(),
+                actions.Save(),
+                actions.ViewMap(),
+                actions.Attack(),
+                actions.ViewStatus()
+            ]
+        else:
+            default_moves = [
+                actions.Search(),
+                actions.Menu(),
+                actions.Save()
+            ]
 
         debug_moves = [  # these are the moves available to the player if debugging is enabled
             actions.Teleport(),
@@ -97,9 +107,11 @@ class MapTile:
         for move in default_moves:
             moves.append(move)
 
-        for move in debug_moves:
-            # noinspection PyTypeChecker
-            moves.append(move)
+        # Only include debug commands if APP_ENV is "dev"
+        if self.universe.test_mode:
+            for move in debug_moves:
+                # noinspection PyTypeChecker
+                moves.append(move)
 
         return moves
 
