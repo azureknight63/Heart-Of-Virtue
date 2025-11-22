@@ -1,153 +1,149 @@
-# 📚 Heart of Virtue - Complete Documentation Index
+# 📚 Heart of Virtue - Documentation Index
 
-## 🎯 Choose Your Starting Point
+## 🎯 Quick Start
 
-### 👤 For Everyone - Start Here
-**Read**: `QUICK_START_CARD.md`
-- 2-minute overview
-- Installation steps
-- Quick troubleshooting
-- 1 page
-
-### 👨‍💼 For Project Managers
-**Read**: `WEB_UI_SETUP_FINAL_SUMMARY.md`
-- What was accomplished
-- Project statistics
-- Features and status
-- Next phases
-- 3 pages
+### 👤 New to the Project?
+**Read**: `START_HERE.md` → `README.md`
+- Project overview and setup
+- Installation instructions
+- Quick start guide
 
 ### 👨‍💻 For Developers
-**Read**: `UI_SETUP_COMPLETE.md` → `frontend/README.md`
-- Complete setup guide
-- Architecture overview
+**Read**: `README.md` → `frontend/README.md`
 - Development workflow
+- Architecture overview
 - Component structure
-- 5 pages total
+- API integration
 
-### 🔧 For DevOps/Deployment
-**Read**: `BACKEND_API_INTEGRATION.md` → `FRONTEND_SETUP_CHECKLIST.md`
-- API requirements
-- Environment setup
-- Deployment options
-- Testing checklist
-- 4 pages total
+### 🔧 For API Development
+**Read**: `API_DOCUMENTATION.md`
+- Complete API reference
+- Endpoint documentation
+- Request/response formats
+- Authentication flow
 
 ---
 
-## 📖 Full Documentation Library
+## 📖 Active Documentation
 
-### Core Setup Guides
+### Essential Guides
 
-1. **QUICK_START_CARD.md** (1 page)
+1. **README.md**
+   - Main project documentation
+   - Installation and setup
+   - Running the game (CLI and Web UI)
+   - Development instructions
+
+2. **START_HERE.md**
+   - Quick orientation guide
+   - Project structure overview
+   - Getting started steps
+
+3. **QUICK_START_CARD.md**
    - TL;DR version
    - Copy-paste commands
-   - Quick fixes
-   - ⏱️ 2 minutes to read
+   - Quick troubleshooting
 
-2. **UI_SETUP_COMPLETE.md** (5 pages)
-   - Full walkthrough
-   - Feature breakdown
-   - Development tips
-   - Architecture diagrams
-   - ⏱️ 15 minutes to read
+### Technical Documentation
 
-3. **WEB_UI_SETUP_FINAL_SUMMARY.md** (6 pages)
-   - Executive summary
-   - What was delivered
-   - Key achievements
-   - Next phases
-   - ⏱️ 10 minutes to read
+4. **API_DOCUMENTATION.md**
+   - Complete API reference
+   - All endpoints documented
+   - Authentication details
+   - Error handling
 
-### Detailed Reference
+5. **ARCHITECTURE_DIAGRAM.md**
+   - System architecture
+   - Component relationships
+   - Data flow diagrams
 
-4. **frontend/README.md** (8 pages)
-   - Frontend architecture
-   - Component guide
-   - API integration
-   - Styling system
-   - Deployment info
-   - ⏱️ 20 minutes to read
-
-5. **BACKEND_API_INTEGRATION.md** (5 pages)
-   - API requirements
-   - Response formats
-   - Authentication flow
+6. **BACKEND_API_INTEGRATION.md**
+   - API integration guide
    - Testing procedures
    - Troubleshooting
-   - ⏱️ 15 minutes to read
 
-### Reference Documents
+7. **DEVELOPMENT_PLAN.md**
+   - Development roadmap
+   - Feature planning
+   - Technical decisions
 
-6. **FRONTEND_SETUP_CHECKLIST.md** (4 pages)
-   - Feature checklist
-   - Installation steps
-   - Performance notes
-   - Common issues
-   - ⏱️ 10 minutes to read
+### Frontend Documentation
 
-7. **FRONTEND_FILES_MANIFEST.md** (3 pages)
-   - Complete file listing
-   - Directory tree
-   - File descriptions
-   - Statistics
-   - ⏱️ 8 minutes to read
+8. **frontend/README.md**
+   - Frontend architecture
+   - Component guide
+   - Styling system
+   - Development workflow
+   - Deployment instructions
+
+9. **FRONTEND_DOCUMENTATION.md**
+   - Detailed frontend guide
+   - Component reference
+   - State management
+
+10. **FRONTEND_SETUP_CHECKLIST.md**
+    - Setup verification
+    - Feature checklist
+    - Common issues
+
+11. **FRONTEND_FILES_MANIFEST.md**
+    - Complete file listing
+    - Directory structure
+    - File descriptions
+
+12. **UI_SETUP_COMPLETE.md**
+    - UI setup walkthrough
+    - Configuration guide
+    - Testing procedures
 
 ---
 
-## 🗂️ File Organization
+## 🗂️ Project Structure
 
 ```
 Heart-Of-Virtue/
 │
-├── 📄 README.md (updated)
-│   └─ Main project info with frontend section
+├── 📄 README.md (main documentation)
+├── 📄 START_HERE.md (orientation guide)
+├── 📄 QUICK_START_CARD.md (quick reference)
 │
-├── 📂 frontend/ ← NEW
-│   ├── 📄 README.md
-│   │   └─ Frontend developer guide
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   ├── .env
-│   │
-│   └── 📂 src/
-│       ├── 📂 api/
-│       │   ├── client.js
-│       │   └── endpoints.js
-│       ├── 📂 components/
-│       │   ├── ActionButtons.jsx
-│       │   ├── Battlefield.jsx
-│       │   ├── BattlefieldGrid.jsx
-│       │   ├── CombatLog.jsx
-│       │   ├── Inventory.jsx
-│       │   ├── LeftPanel.jsx
-│       │   ├── LoadingScreen.jsx
-│       │   ├── PlayerStatus.jsx
-│       │   ├── RightPanel.jsx
-│       │   └── WorldMap.jsx
-│       ├── 📂 hooks/
-│       │   └── useApi.js
-│       ├── 📂 pages/
-│       │   ├── GamePage.jsx
-│       │   └── LoginPage.jsx
-│       ├── 📂 styles/
-│       │   └── index.css
-│       ├── App.jsx
-│       └── main.jsx
-│
-├── 📚 Documentation (NEW)
-│   ├── QUICK_START_CARD.md
-│   ├── UI_SETUP_COMPLETE.md
-│   ├── WEB_UI_SETUP_FINAL_SUMMARY.md
-│   ├── WEB_UI_COMPLETE_SUMMARY.md
-│   ├── FRONTEND_SETUP_CHECKLIST.md
+├── 📚 Core Documentation
+│   ├── API_DOCUMENTATION.md
+│   ├── ARCHITECTURE_DIAGRAM.md
 │   ├── BACKEND_API_INTEGRATION.md
-│   ├── FRONTEND_FILES_MANIFEST.md
+│   ├── DEVELOPMENT_PLAN.md
 │   └── DOCUMENTATION_INDEX.md (this file)
 │
-└── 📂 src/ (existing game engine)
-    └── [game files unchanged]
+├── 📚 Frontend Documentation
+│   ├── FRONTEND_DOCUMENTATION.md
+│   ├── FRONTEND_SETUP_CHECKLIST.md
+│   ├── FRONTEND_FILES_MANIFEST.md
+│   └── UI_SETUP_COMPLETE.md
+│
+├── 📂 frontend/ (React + Vite web UI)
+│   ├── 📄 README.md (frontend developer guide)
+│   ├── src/
+│   │   ├── components/ (React components)
+│   │   ├── api/ (API client)
+│   │   ├── hooks/ (custom hooks)
+│   │   ├── pages/ (page components)
+│   │   └── styles/ (CSS)
+│   └── [config files]
+│
+├── 📂 src/ (Python game engine)
+│   ├── game.py (CLI entry point)
+│   ├── api/ (Flask API)
+│   ├── actions.py
+│   ├── player.py
+│   ├── tiles.py
+│   └── [game modules]
+│
+├── 📂 docs/ (additional documentation)
+│   ├── archive/ (completed milestones & phases)
+│   ├── development/ (development guides)
+│   └── lore/ (game lore documents)
+│
+└── 📂 tests/ (test suite)
 ```
 
 ---
@@ -155,19 +151,20 @@ Heart-Of-Virtue/
 ## 🎯 Navigation Guide
 
 ### "I want to start development NOW"
-1. Read: `QUICK_START_CARD.md`
-2. Run: Installation commands
-3. Read: `frontend/README.md` for coding guide
+1. Read: `START_HERE.md`
+2. Read: `README.md`
+3. Run: Installation commands
+4. Read: `frontend/README.md` for frontend development
 
 ### "I need to understand the architecture"
-1. Read: `WEB_UI_COMPLETE_SUMMARY.md`
-2. Read: `UI_SETUP_COMPLETE.md`
+1. Read: `ARCHITECTURE_DIAGRAM.md`
+2. Read: `DEVELOPMENT_PLAN.md`
 3. Read: `frontend/README.md` - Architecture section
 
-### "I need to fix the API"
-1. Read: `BACKEND_API_INTEGRATION.md`
-2. Check: Response format examples
-3. Test: Via cURL or Postman
+### "I need to work with the API"
+1. Read: `API_DOCUMENTATION.md`
+2. Read: `BACKEND_API_INTEGRATION.md`
+3. Check: `src/api/` for implementation
 
 ### "I need to deploy this"
 1. Read: `FRONTEND_SETUP_CHECKLIST.md`
@@ -182,52 +179,53 @@ Heart-Of-Virtue/
 
 ---
 
-## 📊 Document Matrix
+## 📊 Document Reference
 
-| Document | Audience | Length | Time |
-|----------|----------|--------|------|
-| QUICK_START_CARD | Everyone | 1 pg | 2 min |
-| UI_SETUP_COMPLETE | Developers | 5 pgs | 15 min |
-| WEB_UI_SETUP_FINAL_SUMMARY | Managers | 6 pgs | 10 min |
-| WEB_UI_COMPLETE_SUMMARY | Teams | 7 pgs | 20 min |
-| frontend/README.md | Developers | 8 pgs | 20 min |
-| BACKEND_API_INTEGRATION.md | API Developers | 5 pgs | 15 min |
-| FRONTEND_SETUP_CHECKLIST.md | QA/DevOps | 4 pgs | 10 min |
-| FRONTEND_FILES_MANIFEST.md | Architects | 3 pgs | 8 min |
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| README.md | Main project documentation | Everyone |
+| START_HERE.md | Quick orientation | New contributors |
+| QUICK_START_CARD.md | Quick reference | Developers |
+| API_DOCUMENTATION.md | Complete API reference | API developers |
+| ARCHITECTURE_DIAGRAM.md | System architecture | Architects |
+| DEVELOPMENT_PLAN.md | Development roadmap | Team leads |
+| frontend/README.md | Frontend guide | Frontend developers |
+| FRONTEND_DOCUMENTATION.md | Detailed frontend docs | Frontend developers |
 
 ---
 
 ## 🔍 Search by Topic
 
 ### Installation & Setup
+- START_HERE.md - Getting started
+- README.md - Installation instructions
 - QUICK_START_CARD.md - Quick commands
-- UI_SETUP_COMPLETE.md - Full setup
-- FRONTEND_SETUP_CHECKLIST.md - Checklist
 
 ### Development
-- frontend/README.md - Main guide
-- BACKEND_API_INTEGRATION.md - API guide
-- Component code in `src/components/`
+- frontend/README.md - Frontend development
+- API_DOCUMENTATION.md - API development
+- DEVELOPMENT_PLAN.md - Planning
 
 ### Architecture & Design
-- WEB_UI_COMPLETE_SUMMARY.md - Overview
-- WEB_UI_SETUP_FINAL_SUMMARY.md - Design
-- frontend/README.md - Architecture section
+- ARCHITECTURE_DIAGRAM.md - System design
+- BACKEND_API_INTEGRATION.md - API architecture
+- frontend/README.md - Frontend architecture
 
 ### API Integration
-- BACKEND_API_INTEGRATION.md - Contract
-- frontend/src/api/endpoints.js - Code reference
-- frontend/src/hooks/useApi.js - Hook reference
+- API_DOCUMENTATION.md - API reference
+- BACKEND_API_INTEGRATION.md - Integration guide
+- frontend/src/api/ - Client implementation
 
 ### Troubleshooting
 - QUICK_START_CARD.md - Common issues
-- frontend/README.md - Detailed troubleshooting
+- frontend/README.md - Frontend troubleshooting
 - BACKEND_API_INTEGRATION.md - API issues
 
-### File Reference
-- FRONTEND_FILES_MANIFEST.md - File listing
-- frontend/src - Component folder
-- frontend/ - Config files
+---
+
+## 📋 Archive
+
+Completed milestones, phase documentation, and historical records are stored in `docs/archive/`. These documents are kept for reference but are no longer actively maintained.
 
 ---
 
@@ -237,10 +235,9 @@ Heart-Of-Virtue/
 ```
 ✅ frontend/package.json
 ✅ frontend/src/App.jsx
-✅ frontend/src/components/ (13 files)
-✅ frontend/src/api/ (2 files)
-✅ frontend/src/hooks/ (1 file)
-✅ QUICK_START_CARD.md
+✅ frontend/src/components/ (multiple files)
+✅ src/api/app.py
+✅ README.md
 ```
 
 **Dependencies Installed?**
@@ -252,111 +249,16 @@ npm ls react      # Should show: react@18.x
 **Backend Running?**
 ```powershell
 curl http://localhost:5000/api/health
-# Should return: {"status": "ok"} or similar
 ```
 
 **Frontend Running?**
 ```powershell
+cd frontend
 npm run dev
 # Should show: Local: http://localhost:3000/
 ```
 
 ---
 
-## 📞 Support Resources
-
-### For Each Issue Type
-
-**Frontend won't start?**
-→ QUICK_START_CARD.md → Troubleshooting
-→ frontend/README.md → Browser Support
-
-**Backend integration failing?**
-→ BACKEND_API_INTEGRATION.md → Testing
-→ BACKEND_API_INTEGRATION.md → Debugging
-
-**Don't know where to start?**
-→ QUICK_START_CARD.md (1 page, 2 min)
-→ Then UI_SETUP_COMPLETE.md (5 pages, 15 min)
-
-**Need detailed API info?**
-→ BACKEND_API_INTEGRATION.md
-→ frontend/src/api/endpoints.js
-
----
-
-## 🚀 Recommended Reading Order
-
-**If you have 5 minutes:**
-1. QUICK_START_CARD.md
-
-**If you have 20 minutes:**
-1. QUICK_START_CARD.md
-2. WEB_UI_SETUP_FINAL_SUMMARY.md
-
-**If you have 1 hour:**
-1. QUICK_START_CARD.md
-2. UI_SETUP_COMPLETE.md
-3. frontend/README.md (sections: Overview, Architecture, Features)
-
-**If you're developing:**
-1. QUICK_START_CARD.md
-2. frontend/README.md
-3. Component code in `src/components/`
-
-**If you're deploying:**
-1. QUICK_START_CARD.md
-2. FRONTEND_SETUP_CHECKLIST.md
-3. frontend/README.md (sections: Build, Deployment)
-
----
-
-## 🎓 Learning Path
-
-### Beginner Path (New to React)
-1. QUICK_START_CARD.md - Overview
-2. UI_SETUP_COMPLETE.md - Concepts
-3. frontend/src/App.jsx - Main entry
-4. frontend/src/components/LoginPage.jsx - Simple component
-5. frontend/README.md - Deep dive
-
-### Intermediate Path (React experienced)
-1. QUICK_START_CARD.md - Quick reference
-2. frontend/README.md - Architecture
-3. frontend/src/hooks/useApi.js - Custom hooks
-4. BACKEND_API_INTEGRATION.md - API contract
-
-### Advanced Path (Full stack)
-1. WEB_UI_COMPLETE_SUMMARY.md - System overview
-2. BACKEND_API_INTEGRATION.md - API design
-3. frontend/src/api/ - Client implementation
-4. Deployment section in frontend/README.md
-
----
-
-## 📋 Checklist Before Starting
-
-- [ ] Installed Node.js 18+
-- [ ] Python venv activated
-- [ ] Backend API running on :5000
-- [ ] Read QUICK_START_CARD.md
-- [ ] `cd frontend; npm install` completed
-- [ ] `npm run dev` successfully started
-- [ ] Browser opens to http://localhost:3000
-- [ ] Can see login page
-- [ ] Can login successfully
-
----
-
-## 🎊 You're All Set!
-
-All documentation has been created and organized. Choose your starting point above and begin!
-
-**Fastest path:** `QUICK_START_CARD.md` (2 minutes)
-**Most comprehensive:** `UI_SETUP_COMPLETE.md` (15 minutes)
-**For non-technical:** `WEB_UI_SETUP_FINAL_SUMMARY.md` (10 minutes)
-
----
-
-**Last Updated**: November 11, 2025
-**Status**: ✅ Complete and ready to use
+**Last Updated**: November 22, 2025
+**Status**: ✅ Active and maintained
