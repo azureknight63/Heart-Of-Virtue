@@ -65,7 +65,7 @@ class MapTile:
                 tile.discovered = True
         return moves
 
-    def available_actions(self, callerIsApi = False) -> list[actions.Action]:
+    def available_actions(self, callerIsApi = False, player=None) -> list[actions.Action]:
         """Returns all the available actions in this room."""
         moves = []
 
@@ -118,8 +118,16 @@ class MapTile:
         for move in default_moves:
             moves.append(move)
 
-        # Only include debug commands if APP_ENV is "dev"
-        if self.universe.testing_mode:
+        # Check if debug mode is enabled via player's game_config
+        debug_enabled = False
+        if player and hasattr(player, 'game_config') and hasattr(player.game_config, 'debug_mode'):
+            debug_enabled = player.game_config.debug_mode
+        elif self.universe.testing_mode:
+            # Fallback to universe.testing_mode for backward compatibility
+            debug_enabled = True
+
+        # Only include debug commands if debug mode is enabled
+        if debug_enabled:
             for move in debug_moves:
                 # noinspection PyTypeChecker
                 moves.append(move)

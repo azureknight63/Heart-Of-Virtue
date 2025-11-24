@@ -137,8 +137,9 @@ _\\|//__( | )______)_/
             print(f"\n\n###\nTest Mode: {testing_mode}")
             print(f"Start Map: {starting_map_name}")
             print(f"Start Position: {startposition}\n###\n\n")
-            player.skill_exp['Basic'] = 9999
-            player.skill_exp['Unarmed'] = 9999
+            if config.starting_exp > 0:
+                for category in player.skilltree.subtypes.keys():
+                    player.skill_exp[category] = config.starting_exp
 
         player.map = starting_map
         player.location_x, player.location_y = startposition

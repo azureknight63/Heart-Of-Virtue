@@ -339,15 +339,23 @@ class GameService:
         f = io.StringIO()
         try:
             # We need to patch await_input to prevent blocking, and time.sleep to prevent delays
-            # Also patch cprint to capture colored output
+            # Also patch cprint and print_slow to capture colored output
             def mock_cprint(text, *args, **kwargs):
                 f.write(str(text) + '\n')
             
+            def mock_print_slow(text, speed="slow"):
+                # Just write the text directly without character-by-character delays
+                f.write(str(text) + '\n')
+            
+            # Patch at multiple levels since different modules import differently
             with contextlib.redirect_stdout(f), \
                  contextlib.redirect_stderr(f), \
-                 patch('src.functions.await_input', return_value=None), \
+                 patch('functions.await_input', return_value=None), \
+                 patch('functions.print_slow', mock_print_slow), \
                  patch('time.sleep', return_value=None), \
-                 patch('neotermcolor.cprint', mock_cprint):
+                 patch('neotermcolor.cprint', mock_cprint), \
+                 patch('src.functions.await_input', return_value=None), \
+                 patch('src.functions.print_slow', mock_print_slow):
                 
                 method = getattr(target, action)
                 # Check signature to see if we need to pass player
@@ -655,11 +663,12 @@ class GameService:
         current_tile = self.universe.get_tile(player.location_x, player.location_y)
         if current_tile and hasattr(current_tile, "available_actions"):
             try:
-                available_actions = current_tile.available_actions(callerIsApi=True)
+                available_actions = current_tile.available_actions(callerIsApi=True, player=player)
                 for action in available_actions:
                     commands.append({
                         "name": getattr(action, "name", "Unknown"),
                         "hotkey": getattr(action, "hotkey", []),
+                        "debug": getattr(action, "debug", False),
                     })
             except Exception as e:
                 logging.error(f"Error getting available actions: {e}")

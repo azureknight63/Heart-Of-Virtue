@@ -161,7 +161,7 @@ class WallInscription(Object):
     def read(self):
         if self.text:
             cprint(f"{self.player.name} begins reading...", color="cyan")
-            functions.print_slow(self.description, speed="fast")
+            functions.print_slow(self.text, speed="fast")
             functions.await_input()
         else:
             print(self.description)

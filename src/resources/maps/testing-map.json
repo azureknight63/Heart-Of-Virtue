@@ -1317,5 +1317,262 @@
         ],
         "npcs": [],
         "objects": []
+    },
+    "(4, 2)": {
+        "id": "tile_4_2",
+        "title": "Combat Testing Area",
+        "description": "A dark cavern with dripping water. Strange sounds echo from the shadows.",
+        "exits": [
+            "west",
+            "south"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Slime",
+                "__module__": "npc",
+                "props": {
+                    "name": "Slime Alpha",
+                    "description": "Goop that moves. Gross.",
+                    "maxhp": 10,
+                    "hp": 10,
+                    "damage": 20,
+                    "aggro": true,
+                    "exp_award": 1,
+                    "awareness": 12,
+                    "idle_message": " is glopping about.",
+                    "alert_message": "burbles angrily at Jean!",
+                    "friend": false
+                }
+            },
+            {
+                "__class__": "CaveBat",
+                "__module__": "npc",
+                "props": {
+                    "name": "Cave Bat Swooper",
+                    "description": "A small, leathery-winged mammal that nests in caverns and ambushes from above.",
+                    "maxhp": 8,
+                    "hp": 8,
+                    "damage": 18,
+                    "aggro": true,
+                    "exp_award": 4,
+                    "awareness": 14,
+                    "speed": 40,
+                    "idle_message": " is hanging from the ceiling.",
+                    "alert_message": "screeches and dives!",
+                    "friend": false
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Ancient words carved into the stone wall.",
+                    "text": "Beware the shadows that lurk in darkness.\\nOnly the brave shall pass this threshold.\\nSeek the light, and you shall find salvation.",
+                    "hidden": false,
+                    "keywords": [
+                        "read"
+                    ]
+                }
+            }
+        ],
+        "block_exit": [],
+        "symbol": "E"
+    },
+    "(1, 3)": {
+        "id": "tile_1_3",
+        "title": "Healing Grotto",
+        "description": "A peaceful grotto with a bubbling spring. The air feels fresh and rejuvenating.",
+        "exits": [
+            "north",
+            "east"
+        ],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 3,
+                    "name": "Restorative",
+                    "value": 100,
+                    "power": 60
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "HealingSpring",
+                "__module__": "objects",
+                "props": {
+                    "name": "HealingSpring",
+                    "description": "A burbling spring with fresh smelling water. It is clean and very inviting.",
+                    "idle_message": "There is a small spring bubbling here.",
+                    "keywords": [
+                        "drink",
+                        "clean",
+                        "wash"
+                    ],
+                    "hidden": false
+                }
+            }
+        ],
+        "block_exit": [],
+        "symbol": "H"
+    },
+    "(1, 2)": {
+        "id": "tile_1_2",
+        "title": "Sacred Shrine",
+        "description": "A quiet chamber with a beautiful shrine. Candles flicker softly.",
+        "exits": [
+            "south",
+            "east"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Shrine",
+                "__module__": "objects",
+                "props": {
+                    "name": "Shrine",
+                    "description": "A beautiful shrine depicting a variety of saints praying to God.",
+                    "idle_message": "There is an ornate shrine here.",
+                    "keywords": [
+                        "pray"
+                    ],
+                    "hidden": false
+                }
+            },
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "name": "Offering Box",
+                    "nickname": "box",
+                    "description": "A wooden box for offerings and donations.",
+                    "idle_message": "An offering box sits near the shrine.",
+                    "locked": false,
+                    "start_open": false,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 25,
+                                "name": "Gold",
+                                "value": 25
+                            }
+                        }
+                    ],
+                    "keywords": [
+                        "open",
+                        "loot",
+                        "check"
+                    ],
+                    "hidden": false
+                }
+            }
+        ],
+        "block_exit": [],
+        "symbol": "S"
+    },
+    "(4, 4)": {
+        "id": "tile_4_4",
+        "title": "Spider's Lair",
+        "description": "Thick webbing covers the walls and ceiling. The floor is littered with bones.",
+        "exits": [
+            "north",
+            "west"
+        ],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Antidote",
+                "__module__": "items",
+                "props": {
+                    "weight": 0.25,
+                    "maintype": "Consumable",
+                    "subtype": "Potion",
+                    "count": 2,
+                    "name": "Antidote",
+                    "value": 175,
+                    "power": 15
+                }
+            }
+        ],
+        "npcs": [
+            {
+                "__class__": "GiantSpider",
+                "__module__": "npc",
+                "props": {
+                    "name": "Giant Spider Queen",
+                    "description": "A humongous spider, covered in black, wiry hairs. It skitters about, looking for its next victim to devour.",
+                    "maxhp": 110,
+                    "hp": 110,
+                    "damage": 22,
+                    "aggro": true,
+                    "exp_award": 120,
+                    "awareness": 30,
+                    "endurance": 10,
+                    "idle_message": " is weaving a web.",
+                    "alert_message": "hisses menacingly!",
+                    "friend": false
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "name": "Webbed Chest",
+                    "nickname": "chest",
+                    "description": "A chest covered in sticky webbing.",
+                    "idle_message": "A chest wrapped in webbing sits in the corner.",
+                    "locked": false,
+                    "start_open": false,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 150,
+                                "name": "Gold",
+                                "value": 150
+                            }
+                        },
+                        {
+                            "__class__": "Shortsword",
+                            "__module__": "items",
+                            "props": {
+                                "damage": 15,
+                                "name": "Shortsword",
+                                "value": 75,
+                                "maintype": "Weapon",
+                                "subtype": "Sword"
+                            }
+                        }
+                    ],
+                    "keywords": [
+                        "open",
+                        "loot",
+                        "check"
+                    ],
+                    "hidden": false
+                }
+            }
+        ],
+        "block_exit": [],
+        "symbol": "W"
     }
 }

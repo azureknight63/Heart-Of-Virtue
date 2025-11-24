@@ -156,6 +156,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Apply remaining props as attributes
             for k, v in props.items():
                 try:
+                    # Skip setting player or tile if they're null - let runtime set these
+                    if k in ('player', 'tile') and v is None:
+                        continue
                     if (
                         k == 'inventory'
                         and hasattr(inst, 'inventory')

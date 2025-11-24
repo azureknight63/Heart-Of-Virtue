@@ -195,6 +195,26 @@ class Item:
         functions.refresh_stat_bonuses(player)
         player.refresh_protection_rating()
 
+    def take(self, player: 'Player') -> None:
+        """Take the item from the ground."""
+        # Check weight limit if applicable (simple check for now)
+        if hasattr(player, "carrying_capacity") and hasattr(player, "weight_current"):
+            if player.weight_current + getattr(self, "weight", 0) > player.carrying_capacity:
+                cprint("It's too heavy to carry!", "red")
+                return
+
+        # Add to inventory
+        player.inventory.append(self)
+        
+        # Remove from room
+        if self in player.current_room.items_here:
+            player.current_room.items_here.remove(self)
+            
+        cprint(f"You pick up the {self.name}.", "green")
+        
+        # Stack items if possible
+        player.stack_duplicate_items()
+
     def equip(self, player: 'Player') -> None:
         player.equip_item(phrase="{}".format(self.name))
 
