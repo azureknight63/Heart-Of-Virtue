@@ -173,15 +173,15 @@ export default function ActionsPanel({ player, location, onClose }) {
         }}>
           {commands.map((command, idx) => {
             // Determine colors based on command type
-            const isDebug = command.color === 'silver'
+            const isDebug = command.debug === true
             const bgColor = isDebug ? 'rgba(80, 80, 90, 0.3)' : 'rgba(100, 50, 0, 0.3)'
             const borderColor = isDebug ? '#a9a9a9' : '#ff9933'
             const textColor = isDebug ? '#c0c0c0' : '#ffcc88'
             const hoverBgColor = isDebug ? 'rgba(120, 120, 130, 0.5)' : 'rgba(150, 80, 0, 0.5)'
-            const hoverShadow = isDebug 
+            const hoverShadow = isDebug
               ? '0 0 8px rgba(192, 192, 192, 0.4) inset'
               : '0 0 8px rgba(255, 153, 51, 0.4) inset'
-            
+
             return (
               <div key={idx} style={{ position: 'relative', display: 'inline-block' }}>
                 <button
@@ -212,7 +212,7 @@ export default function ActionsPanel({ player, location, onClose }) {
                 >
                   {command.name}
                 </button>
-                
+
                 {/* Tooltip */}
                 {hoveredCommand === idx && (
                   <div style={{

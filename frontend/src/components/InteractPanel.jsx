@@ -11,9 +11,10 @@ export default function InteractPanel({ location, onClose }) {
         if (location) {
             const npcs = (location.npcs || []).map(n => ({ ...n, type: 'npc' }))
             const objects = (location.objects || []).map(o => ({ ...o, type: 'object' }))
+            const items = (location.items || []).map(i => ({ ...i, type: 'item' }))
 
             // Filter out hidden entities if the API sends them
-            const allTargets = [...npcs, ...objects].filter(t => !t.hidden)
+            const allTargets = [...npcs, ...objects, ...items].filter(t => !t.hidden)
             setTargets(allTargets)
         }
     }, [location])
@@ -55,6 +56,7 @@ export default function InteractPanel({ location, onClose }) {
 
     const handleBack = () => {
         setSelectedTarget(null)
+        setInteractionOutput(null)
         setError(null)
     }
 
@@ -63,227 +65,59 @@ export default function InteractPanel({ location, onClose }) {
     }
 
     return (
-        <div style={{
-            backgroundColor: 'rgba(50, 20, 0, 0.3)',
-            border: '2px solid #ffaa00',
-            borderRadius: '6px',
-            padding: '8px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-            position: 'relative', // For absolute positioning of popup if needed, though fixed might be better
-            minHeight: '200px',
-        }}>
-            {/* Header */}
-            <div style={{
+        <div
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
                 display: 'flex',
-                justifyContent: 'space-between',
                 alignItems: 'center',
-                borderBottom: '2px solid #ffaa00',
-                paddingBottom: '4px',
-                marginBottom: '2px',
-            }}>
-                <div style={{
-                    color: '#ffff00',
-                    fontWeight: 'bold',
-                    fontSize: '13px',
-                    fontFamily: 'monospace',
-                }}>
-                    👋 INTERACT
-                </div>
-                <button
-                    onClick={onClose}
-                    style={{
-                        padding: '2px 6px',
-                        backgroundColor: '#cc4400',
-                        color: '#ffff00',
-                        border: '1px solid #ff6600',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                        fontSize: '10px',
-                        fontFamily: 'monospace',
-                        fontWeight: 'bold',
-                    }}
-                >
-                    ✕
-                </button>
-            </div>
-
-            {/* Error State */}
-            {error && (
-                <div style={{
-                    color: '#ff6666',
-                    fontSize: '10px',
-                    fontFamily: 'monospace',
-                    padding: '8px',
-                    backgroundColor: 'rgba(100, 0, 0, 0.2)',
-                    borderRadius: '3px',
-                }}>
-                    {error}
-                </div>
-            )}
-
-            {/* Content Area */}
-            {!selectedTarget ? (
-                // Target List
-                <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                    overflowY: 'auto',
-                    maxHeight: '300px',
-                }}>
-                    {targets.length === 0 ? (
-                        <div style={{
-                            color: '#666666',
-                            fontSize: '11px',
-                            fontStyle: 'italic',
-                            textAlign: 'center',
-                            padding: '8px',
-                        }}>
-                            Nothing to interact with here.
-                        </div>
-                    ) : (
-                        targets.map((target, idx) => (
-                            <button
-                                key={idx}
-                                onClick={() => handleTargetClick(target)}
-                                style={{
-                                    padding: '8px',
-                                    backgroundColor: 'rgba(100, 50, 0, 0.3)',
-                                    border: '1px solid #ff9933',
-                                    borderRadius: '3px',
-                                    color: '#ffcc88',
-                                    fontFamily: 'monospace',
-                                    fontSize: '12px',
-                                    cursor: 'pointer',
-                                    textAlign: 'left',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(150, 80, 0, 0.5)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(100, 50, 0, 0.3)'}
-                            >
-                                <span>{target.name}</span>
-                                <span style={{ fontSize: '10px', color: '#aa8855' }}>
-                                    {target.type === 'npc' ? 'NPC' : 'OBJ'}
-                                </span>
-                            </button>
-                        ))
-                    )}
-                </div>
-            ) : (
-                // Action Selection
-                <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '8px',
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        borderBottom: '1px solid #664400',
-                        paddingBottom: '4px',
-                    }}>
-                        <button
-                            onClick={handleBack}
-                            style={{
-                                padding: '2px 6px',
-                                backgroundColor: 'transparent',
-                                color: '#ffcc88',
-                                border: '1px solid #ff9933',
-                                borderRadius: '3px',
-                                cursor: 'pointer',
-                                fontSize: '10px',
-                                fontFamily: 'monospace',
-                            }}
-                        >
-                            ← Back
-                        </button>
-                        <span style={{
-                            color: '#ffff00',
-                            fontWeight: 'bold',
-                            fontSize: '12px',
-                            fontFamily: 'monospace',
-                        }}>
-                            {selectedTarget.name}
-                        </span>
-                    </div>
-
-                    <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '4px',
-                    }}>
-                        {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
-                            selectedTarget.keywords.map((keyword, idx) => (
-                                <button
-                                    key={idx}
-                                    onClick={() => handleActionClick(keyword)}
-                                    disabled={loading}
-                                    style={{
-                                        padding: '8px 14px',
-                                        backgroundColor: 'rgba(100, 50, 0, 0.3)',
-                                        border: '1px solid #ff9933',
-                                        borderRadius: '3px',
-                                        color: '#ffcc88',
-                                        fontFamily: 'monospace',
-                                        fontSize: '12px',
-                                        cursor: loading ? 'wait' : 'pointer',
-                                        textTransform: 'uppercase',
-                                        opacity: loading ? 0.7 : 1,
-                                    }}
-                                    onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = 'rgba(150, 80, 0, 0.5)')}
-                                    onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.3)')}
-                                >
-                                    {keyword}
-                                </button>
-                            ))
-                        ) : (
-                            <div style={{ color: '#999', fontSize: '11px', fontStyle: 'italic' }}>
-                                No obvious actions.
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Output Popup Dialog */}
-            {interactionOutput && (
-                <div style={{
-                    position: 'fixed',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
+                justifyContent: 'center',
+                zIndex: 1000,
+            }}
+            onClick={onClose}
+        >
+            <div
+                style={{
                     backgroundColor: 'rgba(20, 10, 5, 0.95)',
                     border: '2px solid #ffaa00',
                     borderRadius: '8px',
                     padding: '16px',
-                    zIndex: 2000,
-                    maxWidth: '80vw',
+                    width: '90%',
+                    maxWidth: '500px',
                     maxHeight: '80vh',
-                    overflowY: 'auto',
-                    boxShadow: '0 0 20px rgba(0, 0, 0, 0.8)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '12px',
+                    boxShadow: '0 0 20px rgba(255, 170, 0, 0.4)',
+                    overflowY: 'auto',
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: '2px solid #ffaa00',
+                    paddingBottom: '8px',
+                    marginBottom: '4px',
                 }}>
                     <div style={{
-                        color: '#ffcc88',
+                        color: '#ffff00',
+                        fontWeight: 'bold',
+                        fontSize: '16px',
                         fontFamily: 'monospace',
-                        fontSize: '14px',
-                        lineHeight: '1.5',
-                        whiteSpace: 'pre-wrap', // Preserve newlines
                     }}>
-                        {interactionOutput}
+                        👋 INTERACT
                     </div>
                     <button
-                        onClick={closeOutput}
+                        onClick={onClose}
                         style={{
-                            alignSelf: 'center',
-                            padding: '8px 24px',
+                            padding: '4px 8px',
                             backgroundColor: '#cc4400',
                             color: '#ffff00',
                             border: '1px solid #ff6600',
@@ -292,31 +126,251 @@ export default function InteractPanel({ location, onClose }) {
                             fontSize: '12px',
                             fontFamily: 'monospace',
                             fontWeight: 'bold',
-                            marginTop: '8px',
                         }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = '#ff6600'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = '#cc4400'}
                     >
                         Close
                     </button>
                 </div>
-            )}
 
-            {/* Backdrop for popup */}
-            {interactionOutput && (
-                <div
-                    onClick={closeOutput}
-                    style={{
-                        position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                        zIndex: 1999,
-                    }}
-                />
-            )}
+                {/* Error State */}
+                {error && (
+                    <div style={{
+                        color: '#ff6666',
+                        fontSize: '12px',
+                        fontFamily: 'monospace',
+                        padding: '8px',
+                        backgroundColor: 'rgba(100, 0, 0, 0.2)',
+                        borderRadius: '4px',
+                        border: '1px solid #ff6666',
+                    }}>
+                        {error}
+                    </div>
+                )}
+
+                {/* Content Area */}
+                {!selectedTarget ? (
+                    // Target List
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        overflowY: 'auto',
+                        minHeight: '200px',
+                    }}>
+                        {targets.length === 0 ? (
+                            <div style={{
+                                color: '#888',
+                                fontSize: '14px',
+                                fontStyle: 'italic',
+                                textAlign: 'center',
+                                padding: '20px',
+                            }}>
+                                Nothing to interact with here.
+                            </div>
+                        ) : (
+                            targets.map((target, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => handleTargetClick(target)}
+                                    style={{
+                                        padding: '12px',
+                                        backgroundColor: 'rgba(100, 50, 0, 0.3)',
+                                        border: '1px solid #ff9933',
+                                        borderRadius: '4px',
+                                        color: '#ffcc88',
+                                        fontFamily: 'monospace',
+                                        fontSize: '14px',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        transition: 'all 0.2s',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'rgba(150, 80, 0, 0.5)'
+                                        e.currentTarget.style.borderColor = '#ffff00'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'rgba(100, 50, 0, 0.3)'
+                                        e.currentTarget.style.borderColor = '#ff9933'
+                                    }}
+                                >
+                                    <span style={{ fontWeight: 'bold' }}>{target.name}</span>
+                                    <span style={{
+                                        fontSize: '10px',
+                                        color: target.type === 'npc' ? '#00ff88' : (target.type === 'item' ? '#00ccff' : '#ffaa00'),
+                                        border: `1px solid ${target.type === 'npc' ? '#00ff88' : (target.type === 'item' ? '#00ccff' : '#ffaa00')}`,
+                                        padding: '2px 4px',
+                                        borderRadius: '3px',
+                                    }}>
+                                        {target.type === 'npc' ? 'NPC' : (target.type === 'item' ? 'ITEM' : 'OBJ')}
+                                    </span>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                ) : (
+                    // Action Selection & Output
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            borderBottom: '1px solid #664400',
+                            paddingBottom: '8px',
+                        }}>
+                            <button
+                                onClick={handleBack}
+                                style={{
+                                    padding: '4px 8px',
+                                    backgroundColor: 'transparent',
+                                    color: '#ffcc88',
+                                    border: '1px solid #ff9933',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontFamily: 'monospace',
+                                }}
+                            >
+                                ← Back
+                            </button>
+                            <span style={{
+                                color: '#ffff00',
+                                fontWeight: 'bold',
+                                fontSize: '14px',
+                                fontFamily: 'monospace',
+                            }}>
+                                {selectedTarget.name}
+                            </span>
+                        </div>
+
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                        }}>
+                            {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
+                                selectedTarget.keywords.map((keyword, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => handleActionClick(keyword)}
+                                        disabled={loading}
+                                        style={{
+                                            padding: '10px 16px',
+                                            backgroundColor: 'rgba(100, 50, 0, 0.3)',
+                                            border: '1px solid #ff9933',
+                                            borderRadius: '4px',
+                                            color: '#ffcc88',
+                                            fontFamily: 'monospace',
+                                            fontSize: '13px',
+                                            cursor: loading ? 'wait' : 'pointer',
+                                            textTransform: 'uppercase',
+                                            fontWeight: 'bold',
+                                            opacity: loading ? 0.7 : 1,
+                                            flex: '1 0 auto',
+                                            textAlign: 'center',
+                                        }}
+                                        onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = 'rgba(150, 80, 0, 0.5)')}
+                                        onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.3)')}
+                                    >
+                                        {keyword}
+                                    </button>
+                                ))
+                            ) : (
+                                <div style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}>
+                                    No obvious actions available.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Interaction Output Area - Inline */}
+                        {interactionOutput && (
+                            <TypewriterOutput text={interactionOutput} />
+                        )}
+                    </div>
+                )}
+            </div>
+            <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            `}</style>
+        </div>
+    )
+}
+
+// Sub-component for the typewriter effect
+function TypewriterOutput({ text }) {
+    const [displayedText, setDisplayedText] = useState('')
+    const [isComplete, setIsComplete] = useState(false)
+
+    useEffect(() => {
+        setDisplayedText('')
+        setIsComplete(false)
+
+        if (!text) return
+
+        const words = text.split(' ')
+        let currentIndex = 0
+
+        const intervalId = setInterval(() => {
+            if (currentIndex >= words.length) {
+                setIsComplete(true)
+                clearInterval(intervalId)
+                return
+            }
+
+            // Add next word
+            setDisplayedText(prev => {
+                const nextWord = words[currentIndex]
+                return prev ? `${prev} ${nextWord}` : nextWord
+            })
+
+            currentIndex++
+        }, 50) // Adjust speed here (ms per word)
+
+        return () => clearInterval(intervalId)
+    }, [text])
+
+    const finishImmediately = () => {
+        if (!isComplete) {
+            setDisplayedText(text)
+            setIsComplete(true)
+        }
+    }
+
+    return (
+        <div
+            onClick={finishImmediately}
+            style={{
+                marginTop: '12px',
+                padding: '12px',
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                border: '1px solid #ffaa00',
+                borderRadius: '4px',
+                color: '#ffcc88',
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                lineHeight: '1.5',
+                whiteSpace: 'pre-wrap',
+                maxHeight: '300px',
+                overflowY: 'auto',
+                boxShadow: 'inset 0 0 10px rgba(0,0,0,0.8)',
+                animation: 'fadeIn 0.3s ease-in-out',
+                cursor: isComplete ? 'default' : 'pointer',
+            }}
+        >
+            {displayedText}
+            {!isComplete && <span style={{ borderRight: '2px solid #ffaa00', marginLeft: '2px', animation: 'blink 1s step-end infinite' }}>&nbsp;</span>}
+            <style>{`
+                @keyframes blink { 50% { border-color: transparent; } }
+            `}</style>
         </div>
     )
 }
