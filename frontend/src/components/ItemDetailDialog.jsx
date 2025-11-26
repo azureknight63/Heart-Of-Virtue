@@ -8,7 +8,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
 
   const handleEquip = async () => {
     if (!item.can_equip) return
-    
+
     setIsLoading(true)
     try {
       const response = await apiClient.post('/inventory/equip', {
@@ -66,6 +66,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✓ Item dropped!')
         // Call onItemRemoved to update inventory client-side
         if (onItemRemoved) onItemRemoved(item.id)
+        // Refresh room contents to show dropped item
+        if (onRefetch) onRefetch()
         setTimeout(() => onBack(), 500)
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to drop'))

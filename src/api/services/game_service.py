@@ -192,6 +192,7 @@ class GameService:
         # Update player position
         player.location_x = new_x
         player.location_y = new_y
+        player.current_room = new_tile
 
         # Trigger tile entry events
         events_triggered = self.trigger_tile_events(player, new_tile)

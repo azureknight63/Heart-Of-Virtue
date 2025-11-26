@@ -6,7 +6,7 @@ import EventDialog from '../components/EventDialog'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
-  const { location, loading: worldLoading, moveToLocation } = useWorld()
+  const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { combat, inCombat, fetchCombatStatus } = useCombat()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   // Store explored tiles as a Map: key = "x,y", value = { items, npcs, objects }
@@ -15,6 +15,14 @@ export default function GamePage() {
   // Event handling state
   const [eventQueue, setEventQueue] = useState([])
   const [currentEvent, setCurrentEvent] = useState(null)
+
+  // Combined refetch function
+  const handleRefetch = async () => {
+    await Promise.all([
+      refetchPlayer(),
+      refetchWorld()
+    ])
+  }
 
   // Track explored tiles when location changes
   useEffect(() => {
@@ -106,6 +114,7 @@ export default function GamePage() {
       fetchCombatStatus()
     } else {
       setMode('exploration')
+      handleRefetch()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inCombat])
@@ -140,7 +149,7 @@ export default function GamePage() {
         location={location}
         mode={mode}
         onMove={handleMove}
-        onRefetch={refetchPlayer}
+        onRefetch={handleRefetch}
         onEventsTriggered={handleEventsTriggered}
         onInteractionComplete={handleInteractionComplete}
       />
