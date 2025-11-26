@@ -27,13 +27,14 @@ export default function RoomContents({ location }) {
 
   // Add items with announce messages
   items.forEach(item => {
-    if (item.announce) {
-      contentDescriptions.push({
-        type: 'item',
-        text: item.announce,
-        name: item.name,
-      })
-    }
+    if (item.hidden) return
+
+    const text = item.announce || `There is a ${item.name} here.`
+    contentDescriptions.push({
+      type: 'item',
+      text: text,
+      name: item.name,
+    })
   })
 
   // Add objects with idle messages

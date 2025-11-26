@@ -628,7 +628,7 @@ class Consumable(Item):
         self.maintype = maintype
         self.subtype = subtype
         self.count = count
-        self.interactions = ["use", "drop"]
+        self.interactions = ["take", "use", "drop"]
         self.stack_key = name
         super().__init__(name, description, value, maintype, subtype,
                          discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)

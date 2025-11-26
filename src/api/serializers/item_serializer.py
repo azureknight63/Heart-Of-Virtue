@@ -68,9 +68,11 @@ class ItemSerializer:
             item_data["merchandise"] = item.merchandise
 
         # Add keywords for interaction (default to 'take' for all items)
-        # If the item has specific keywords, use those, otherwise default to ['take']
+        # If the item has specific keywords or interactions, use those, otherwise default to ['take']
         if hasattr(item, "keywords"):
             item_data["keywords"] = item.keywords
+        elif hasattr(item, "interactions"):
+            item_data["keywords"] = item.interactions
         else:
             item_data["keywords"] = ["take"]
 
