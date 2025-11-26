@@ -1,25 +1,54 @@
+import { useState, useEffect } from 'react'
+import apiEndpoints from '../api/endpoints'
+
 export default function SkillsPanel({ player, onClose }) {
-  if (!player) return null
+  const [skillsData, setSkillsData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [selectedCategory, setSelectedCategory] = useState(null)
 
-  const moves = player.known_moves || []
+  useEffect(() => {
+    fetchSkills()
+  }, [])
 
-  const getMoveInfo = (move) => {
-    if (typeof move === 'string') {
-      // If it's just a name string, display as-is
-      return { name: move, description: '', cooldown: 0 }
-    }
-    
-    // If it's an object with properties
-    return {
-      name: move.name || 'Unknown',
-      description: move.description || '',
-      cooldown: move.beats_left || 0,
-      fatigue_cost: move.fatigue_cost || 0,
-      xp_gain: move.xp_gain || 0,
+  const fetchSkills = async () => {
+    try {
+      setLoading(true)
+      const response = await apiEndpoints.player.getSkills()
+      if (response.data.success) {
+        setSkillsData(response.data.skills)
+        // Set default category if not set
+        if (!selectedCategory && response.data.skills.skill_tree) {
+          const categories = Object.keys(response.data.skills.skill_tree)
+          if (categories.length > 0) {
+            setSelectedCategory(categories[0])
+          }
+        }
+      }
+    } catch (err) {
+      setError('Failed to load skills')
+      console.error(err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (moves.length === 0) {
+  const handleLearn = async (skillName, category) => {
+    try {
+      const response = await apiEndpoints.player.learnSkill(skillName, category)
+      if (response.data.success) {
+        // Update local state with new data
+        setSkillsData(response.data.skills)
+      }
+    } catch (err) {
+      console.error('Failed to learn skill:', err)
+      alert(err.response?.data?.error || 'Failed to learn skill')
+    }
+  }
+
+  if (!player) return null
+
+  if (loading) {
     return (
       <div style={{
         backgroundColor: 'rgba(50, 20, 0, 0.4)',
@@ -27,6 +56,23 @@ export default function SkillsPanel({ player, onClose }) {
         borderRadius: '6px',
         padding: '8px',
         color: '#ffaa00',
+        fontFamily: 'monospace',
+        textAlign: 'center',
+        fontSize: '11px',
+      }}>
+        Loading skills...
+      </div>
+    )
+  }
+
+  if (error || !skillsData) {
+    return (
+      <div style={{
+        backgroundColor: 'rgba(50, 20, 0, 0.4)',
+        border: '2px solid #ffaa00',
+        borderRadius: '6px',
+        padding: '8px',
+        color: '#ff0000',
         fontFamily: 'monospace',
         textAlign: 'center',
         fontSize: '11px',
@@ -55,30 +101,28 @@ export default function SkillsPanel({ player, onClose }) {
               fontFamily: 'monospace',
               fontWeight: 'bold',
             }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = '#ff6600'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#cc4400'
-            }}
           >
             ✕
           </button>
         </div>
-        No skills learned yet
+        {error || 'No skill data available'}
       </div>
     )
   }
 
+  const { skill_tree, skill_exp } = skillsData
+  const categories = Object.keys(skill_tree || {})
+
   return (
     <div style={{
-      backgroundColor: 'rgba(50, 20, 0, 0.4)',
+      backgroundColor: 'rgba(50, 20, 0, 0.3)',
       border: '2px solid #ffaa00',
       borderRadius: '6px',
-      padding: '8px',
+      padding: '12px',
       display: 'flex',
       flexDirection: 'column',
-      gap: '6px',
+      gap: '8px',
+      maxHeight: '60vh',
     }}>
       {/* Header */}
       <div style={{
@@ -95,7 +139,7 @@ export default function SkillsPanel({ player, onClose }) {
           fontSize: '13px',
           fontFamily: 'monospace',
         }}>
-          ⚡ SKILLS ({moves.length})
+          ⚡ SKILLS
         </div>
         <button
           onClick={onClose}
@@ -121,75 +165,120 @@ export default function SkillsPanel({ player, onClose }) {
         </button>
       </div>
 
+      {/* Categories */}
+      <div style={{
+        display: 'flex',
+        gap: '4px',
+        overflowX: 'auto',
+        paddingBottom: '4px',
+        borderBottom: '1px solid #664400',
+      }}>
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: selectedCategory === cat ? '#ffaa00' : 'rgba(30, 15, 0, 0.5)',
+              color: selectedCategory === cat ? '#000000' : '#ffaa00',
+              border: '1px solid #ffaa00',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '10px',
+              fontFamily: 'monospace',
+              fontWeight: 'bold',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* EXP Display */}
+      {selectedCategory && (
+        <div style={{
+          color: '#00ff00',
+          fontSize: '11px',
+          fontFamily: 'monospace',
+          textAlign: 'right',
+          paddingRight: '4px',
+        }}>
+          EXP: {skill_exp[selectedCategory] || 0}
+        </div>
+      )}
+
       {/* Skills List */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
-        maxHeight: '300px',
         overflowY: 'auto',
+        flex: 1,
       }}>
-        {moves.map((move, idx) => {
-          const info = getMoveInfo(move)
-          return (
-            <div key={idx} style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.3)',
-              border: '1px solid #664400',
-              borderRadius: '3px',
-              padding: '4px 6px',
-              fontSize: '10px',
-              fontFamily: 'monospace',
+        {selectedCategory && skill_tree[selectedCategory]?.map((skill, idx) => (
+          <div key={idx} style={{
+            backgroundColor: skill.is_known ? 'rgba(0, 50, 0, 0.3)' : 'rgba(30, 15, 0, 0.3)',
+            border: skill.is_known ? '1px solid #00ff00' : '1px solid #664400',
+            borderRadius: '3px',
+            padding: '6px',
+            fontSize: '10px',
+            fontFamily: 'monospace',
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '4px',
             }}>
-              {/* Skill Name */}
               <div style={{
-                color: '#ffff00',
+                color: skill.is_known ? '#00ff00' : '#ffff00',
                 fontWeight: 'bold',
-                fontSize: '10px',
-                marginBottom: '2px',
               }}>
-                {info.name}
+                {skill.name} {skill.is_known && '(LEARNED)'}
               </div>
-
-              {/* Description */}
-              {info.description && (
-                <div style={{
-                  color: '#00ddaa',
-                  fontSize: '9px',
-                  marginBottom: '2px',
-                  lineHeight: '1.3',
-                  fontStyle: 'italic',
-                }}>
-                  {info.description.substring(0, 100)}{info.description.length > 100 ? '...' : ''}
-                </div>
+              {!skill.is_known && (
+                <button
+                  onClick={() => handleLearn(skill.name, selectedCategory)}
+                  disabled={!skill.can_learn}
+                  style={{
+                    padding: '2px 6px',
+                    backgroundColor: skill.can_learn ? '#00cc66' : '#333333',
+                    color: skill.can_learn ? '#000000' : '#666666',
+                    border: 'none',
+                    borderRadius: '3px',
+                    cursor: skill.can_learn ? 'pointer' : 'not-allowed',
+                    fontSize: '9px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  LEARN ({skill.required_exp} XP)
+                </button>
               )}
-
-              {/* Stats Grid */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'auto 1fr auto 1fr',
-                gap: '4px',
-                fontSize: '9px',
-                alignItems: 'center',
-              }}>
-                {info.fatigue_cost > 0 && (
-                  <>
-                    <span style={{ color: '#ffaa00' }}>Fatigue:</span>
-                    <span style={{ color: '#ffff00' }}>{info.fatigue_cost}</span>
-                  </>
-                )}
-                {info.cooldown > 0 && (
-                  <>
-                    <span style={{ color: '#ffaa00' }}>CD:</span>
-                    <span style={{ color: '#ff9999' }}>{info.cooldown}</span>
-                  </>
-                )}
-                {!info.fatigue_cost && !info.cooldown && (
-                  <span style={{ color: '#aaaaaa' }}>Basic Action</span>
-                )}
-              </div>
             </div>
-          )
-        })}
+
+            <div style={{
+              color: '#cccccc',
+              fontSize: '9px',
+              fontStyle: 'italic',
+              marginBottom: '2px',
+            }}>
+              {skill.description}
+            </div>
+
+            {!skill.is_known && !skill.can_learn && (
+              <div style={{ color: '#ff4444', fontSize: '9px' }}>
+                Requires {skill.required_exp} XP
+              </div>
+            )}
+          </div>
+        ))}
+
+        {selectedCategory && (!skill_tree[selectedCategory] || skill_tree[selectedCategory].length === 0) && (
+          <div style={{ color: '#888888', textAlign: 'center', padding: '10px' }}>
+            No skills in this category.
+          </div>
+        )}
       </div>
     </div>
   )
