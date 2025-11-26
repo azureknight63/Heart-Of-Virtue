@@ -1,6 +1,59 @@
 import { useState, useEffect } from 'react'
 import MovementStar from './MovementStar'
 
+// Component to render small icons around the perimeter of a tile
+function TileIcons({ tileData }) {
+  if (!tileData) return null
+
+  const hasItems = tileData.items && tileData.items.length > 0
+  const hasNPCs = tileData.npcs && tileData.npcs.length > 0
+  const hasObjects = tileData.objects && tileData.objects.length > 0
+
+  const iconStyle = {
+    position: 'absolute',
+    fontSize: '10px',
+    fontWeight: 'bold',
+    textShadow: '0 0 2px rgba(0,0,0,0.8)',
+    pointerEvents: 'none',
+    zIndex: 1
+  }
+
+  return (
+    <>
+      {hasItems && (
+        <div style={{
+          ...iconStyle,
+          top: '2px',
+          left: '2px',
+          color: '#00ddaa'
+        }}>
+          ◆
+        </div>
+      )}
+      {hasNPCs && (
+        <div style={{
+          ...iconStyle,
+          top: '2px',
+          right: '2px',
+          color: '#ff9999'
+        }}>
+          ◉
+        </div>
+      )}
+      {hasObjects && (
+        <div style={{
+          ...iconStyle,
+          bottom: '2px',
+          left: '2px',
+          color: '#ffcc88'
+        }}>
+          ◾
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function MapGrid({ location, onMove, exits, loading, exploredTiles }) {
   const GRID_SIZE = 13 // Odd number centers player
   const TILE_SIZE = 40
@@ -30,6 +83,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
     const tileKey = `${x},${y}`
     const isPlayerHere = x === location.x && y === location.y
     const isExplored = exploredTiles && exploredTiles.has(tileKey)
+    const tileData = isExplored ? exploredTiles.get(tileKey) : null
 
     let bgColor = '#1a1a2e'
     let symbol = '.'
@@ -38,12 +92,12 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
     if (isPlayerHere) {
       bgColor = '#00ff88'
       textColor = '#000000'
-      
+
       // Show indicators for items, NPCs, objects on current location
       const items = location.items || []
       const npcs = location.npcs || []
       const objects = location.objects || []
-      
+
       if ((items.length > 0 ? 1 : 0) + (npcs.length > 0 ? 1 : 0) + (objects.length > 0 ? 1 : 0) >= 2) {
         // Multiple types present
         symbol = '✦'
@@ -62,7 +116,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
       textColor = '#00ff88'
     }
 
-    return { bgColor, symbol, textColor }
+    return { bgColor, symbol, textColor, tileData }
   }
 
   const handleTileClick = (x, y) => {
@@ -85,7 +139,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
     }
 
     const direction = directionMap[`${dx},${dy}`]
-    
+
     // Check if this direction is in available exits
     if (direction && location.exits && location.exits.includes(direction)) {
       onMove(direction)
@@ -115,8 +169,8 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
         left: '-30px',
         zIndex: 10
       }}>
-        <MovementStar 
-          exits={exits || []} 
+        <MovementStar
+          exits={exits || []}
           onMove={onMove}
           loading={loading}
         />
@@ -146,7 +200,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
           Array.from({ length: GRID_SIZE }).map((_, col) => {
             const x = startX + col
             const y = startY + row
-            const { bgColor, symbol, textColor } = getTileContent(x, y)
+            const { bgColor, symbol, textColor, tileData } = getTileContent(x, y)
             const isPlayerHere = x === location.x && y === location.y
             const canMove = location.exits && location.exits.length > 0
             const dx = x - location.x
@@ -169,6 +223,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
                 key={`${x},${y}`}
                 onClick={() => handleTileClick(x, y)}
                 style={{
+                  position: 'relative',
                   width: `${TILE_SIZE}px`,
                   height: `${TILE_SIZE}px`,
                   backgroundColor: bgColor,
@@ -195,6 +250,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
                 }}
                 title={isPlayerHere ? 'Your Position' : isValidMove ? `Move ${direction}` : `(${x}, ${y})`}
               >
+                {!isPlayerHere && <TileIcons tileData={tileData} />}
                 {symbol}
               </div>
             )
