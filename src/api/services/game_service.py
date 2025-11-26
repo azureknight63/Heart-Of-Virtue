@@ -341,6 +341,81 @@ class GameService:
             "is_passable": getattr(tile, "is_passable", True),
         }
 
+    def search(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Search the current room for hidden entities.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with search results
+        """
+        import random
+        
+        tile = self.universe.get_tile(player.location_x, player.location_y)
+        if not tile:
+            return {"success": False, "message": "Invalid location"}
+
+        # Calculate search ability
+        # Formula: (Finesse * 2 + Intelligence * 3 + Faith) * random(0.5, 1.5)
+        finesse = getattr(player, "finesse", 10)
+        intelligence = getattr(player, "intelligence", 10)
+        faith = getattr(player, "faith", 10)
+        
+        search_ability = int(((finesse * 2) + (intelligence * 3) + faith) * random.uniform(0.5, 1.5))
+        
+        found_items = []
+        messages = []
+        something_found = False
+
+        # Check NPCs
+        if hasattr(tile, "npcs_here"):
+            for npc in tile.npcs_here:
+                if getattr(npc, "hidden", False):
+                    hide_factor = getattr(npc, "hide_factor", 0)
+                    if search_ability > hide_factor:
+                        npc.hidden = False
+                        discovery_msg = getattr(npc, "discovery_message", f"a hidden {getattr(npc, 'name', 'NPC')}")
+                        messages.append(f"Jean uncovered {discovery_msg}")
+                        something_found = True
+                        found_items.append({"type": "npc", "name": getattr(npc, "name", "Unknown"), "id": str(id(npc))})
+
+        # Check Items
+        if hasattr(tile, "items_here"):
+            for item in tile.items_here:
+                if getattr(item, "hidden", False):
+                    hide_factor = getattr(item, "hide_factor", 0)
+                    if search_ability > hide_factor:
+                        item.hidden = False
+                        discovery_msg = getattr(item, "discovery_message", f"a hidden {getattr(item, 'name', 'Item')}")
+                        messages.append(f"Jean found {discovery_msg}")
+                        something_found = True
+                        found_items.append({"type": "item", "name": getattr(item, "name", "Unknown"), "id": str(id(item))})
+
+        # Check Objects
+        if hasattr(tile, "objects_here"):
+            for obj in tile.objects_here:
+                if getattr(obj, "hidden", False):
+                    hide_factor = getattr(obj, "hide_factor", 0)
+                    if search_ability > hide_factor:
+                        obj.hidden = False
+                        discovery_msg = getattr(obj, "discovery_message", f"a hidden {getattr(obj, 'name', 'Object')}")
+                        messages.append(f"Jean found {discovery_msg}")
+                        something_found = True
+                        found_items.append({"type": "object", "name": getattr(obj, "name", "Unknown"), "id": str(id(obj))})
+
+        if not something_found:
+            messages.append("Jean searches around the area... but couldn't find anything of interest.")
+        else:
+            messages.insert(0, "Jean searches around the area...")
+
+        return {
+            "success": True,
+            "messages": messages,
+            "found": found_items,
+            "room": self.get_current_room(player)  # Return updated room data
+        }
+
     # ========================
     # Interaction Methods
     # ========================
@@ -365,6 +440,8 @@ class GameService:
 
         # Find target
         tile = self.universe.get_tile(player.location_x, player.location_y)
+        # Ensure player knows where they are for interactions that modify the room (like taking items)
+        player.current_room = tile
         target = None
         
         # Check NPCs
@@ -425,16 +502,14 @@ class GameService:
                 method = getattr(target, action)
                 # Check signature to see if we need to pass player
                 sig = inspect.signature(method)
-                # Most object methods are (self) only, not (self, player)
-                # Try calling without args first
-                try:
+                # Get parameter names excluding 'self'
+                param_names = [p for p in sig.parameters.keys() if p != 'self']
+                
+                # If there are parameters beyond 'self', pass player
+                if len(param_names) > 0:
+                    method(player)
+                else:
                     method()
-                except TypeError as e:
-                    # If that fails, try with player
-                    if len(sig.parameters) > 0:
-                        method(player)
-                    else:
-                        raise
                     
         except Exception as e:
             return {"success": False, "message": f"Error executing action: {str(e)}"}

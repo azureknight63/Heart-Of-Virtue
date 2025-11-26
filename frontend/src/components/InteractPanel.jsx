@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export default function InteractPanel({ location, onClose, onEventsTriggered }) {
+export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete }) {
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(null)
     const [interactionOutput, setInteractionOutput] = useState(null)
@@ -68,6 +68,11 @@ export default function InteractPanel({ location, onClose, onEventsTriggered }) 
                 } catch (eventsErr) {
                     console.error('Failed to trigger events:', eventsErr)
                     // Don't show error to user, events are optional
+                }
+
+                // Notify parent that interaction completed (for combat status check)
+                if (onInteractionComplete) {
+                    onInteractionComplete()
                 }
             } else {
                 setError(data.error || 'Interaction failed')

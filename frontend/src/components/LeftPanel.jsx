@@ -9,7 +9,7 @@ import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
 
-export default function LeftPanel({ player, location, mode, onMove, onRefetch, onEventsTriggered }) {
+export default function LeftPanel({ player, location, mode, onMove, onRefetch, onEventsTriggered, onInteractionComplete }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAttributes, setShowAttributes] = useState(false)
@@ -123,13 +123,13 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch, o
           <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
         )}
 
-        {/* Actions Panel */}
         {showActions && location && mode === 'exploration' && (
           <ActionsPanel
             player={player}
             location={location}
             onClose={() => setShowActions(false)}
             onMove={onMove}
+            onRefetch={onRefetch}
           />
         )}
 
@@ -139,6 +139,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch, o
             location={location}
             onClose={() => setShowInteract(false)}
             onEventsTriggered={onEventsTriggered}
+            onInteractionComplete={onInteractionComplete}
           />
         )}
       </div>

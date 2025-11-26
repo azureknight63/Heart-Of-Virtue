@@ -107,14 +107,16 @@ export default function GamePage() {
     } else {
       setMode('exploration')
     }
-  }, [inCombat, fetchCombatStatus])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inCombat])
 
-  // Check combat status on initial load
+  // Check combat status on initial load only
   useEffect(() => {
     if (!playerLoading && !worldLoading) {
       fetchCombatStatus()
     }
-  }, [playerLoading, worldLoading, fetchCombatStatus])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerLoading, worldLoading])
 
   if (playerLoading || worldLoading) {
     return (
@@ -122,6 +124,12 @@ export default function GamePage() {
         <p className="text-lime animate-pulse-glow">Loading your adventure...</p>
       </div>
     )
+  }
+
+  // Handle interaction completion (check for combat)
+  const handleInteractionComplete = () => {
+    // Check combat status after interaction completes
+    fetchCombatStatus()
   }
 
   return (
@@ -134,6 +142,7 @@ export default function GamePage() {
         onMove={handleMove}
         onRefetch={refetchPlayer}
         onEventsTriggered={handleEventsTriggered}
+        onInteractionComplete={handleInteractionComplete}
       />
 
       {/* Right Panel - Battlefield/Map */}

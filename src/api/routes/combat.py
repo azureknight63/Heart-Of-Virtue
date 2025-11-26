@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-combat_bp = Blueprint("combat", __name__, url_prefix="/combat")
+combat_bp = Blueprint("combat", __name__)
 
 
 def get_session_and_player(request):
