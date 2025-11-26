@@ -9,7 +9,7 @@ import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
 
-export default function LeftPanel({ player, location, mode, onMove, onRefetch }) {
+export default function LeftPanel({ player, location, mode, onMove, onRefetch, onEventsTriggered }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAttributes, setShowAttributes] = useState(false)
@@ -89,10 +89,17 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
         }}>
           <HeroPanel
             player={player}
+            inCombat={mode === 'combat'}
             onAttributeClick={() => setShowAttributes(!showAttributes)}
             onStatusClick={() => setShowStatus(!showStatus)}
-            onSkillsClick={() => setShowSkills(!showSkills)}
-            onInventoryClick={() => setShowInventory(!showInventory)}
+            onSkillsClick={() => {
+              if (!showSkills) setShowInventory(false)
+              setShowSkills(!showSkills)
+            }}
+            onInventoryClick={() => {
+              if (!showInventory) setShowSkills(false)
+              setShowInventory(!showInventory)
+            }}
             onActionsClick={() => setShowActions(!showActions)}
             onInteractClick={() => setShowInteract(!showInteract)}
           />
@@ -131,6 +138,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch })
           <InteractPanel
             location={location}
             onClose={() => setShowInteract(false)}
+            onEventsTriggered={onEventsTriggered}
           />
         )}
       </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function HeroPanel({ player, onAttributeClick, onStatusClick, onSkillsClick, onInventoryClick, onActionsClick, onInteractClick }) {
+export default function HeroPanel({ player, inCombat, onAttributeClick, onStatusClick, onSkillsClick, onInventoryClick, onActionsClick, onInteractClick }) {
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
   const [focusedBar, setFocusedBar] = useState(null)
@@ -14,6 +14,17 @@ export default function HeroPanel({ player, onAttributeClick, onStatusClick, onS
     current: player?.fatigue || 55,
     max: player?.max_fatigue || 100,
   }
+
+  // Calculate heart rate based on HP and Combat status
+  // Base: 60 BPM
+  // Combat: +40 BPM
+  // Low HP: Up to +60 BPM (Exploration) or +80 BPM (Combat)
+  const hpPercent = Math.max(0, Math.min(1, hp.current / hp.max))
+  const baseBpm = 60
+  const combatBonus = inCombat ? 40 : 0
+  const stressBonus = (1 - hpPercent) * (inCombat ? 80 : 60)
+  const bpm = baseBpm + combatBonus + stressBonus
+  const animationDuration = `${60 / bpm}s`
 
   const buttons = [
     { key: 'attributes', label: 'ATTRIBUTES', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onAttributeClick },
@@ -44,32 +55,31 @@ export default function HeroPanel({ player, onAttributeClick, onStatusClick, onS
         overflow: 'visible',
       }}>
         {/* Hero Silhouette */}
-        <div style={{
-          width: '60px',
-          height: '70px',
-          backgroundColor: '#1a1a1a',
-          borderRadius: '50% 50% 45% 45%',
-          border: '2px solid #00ff88',
-          boxShadow: '0 0 15px rgba(0, 255, 136, 0.5), inset 0 0 10px rgba(0, 0, 0, 0.8)',
-          position: 'absolute',
-          zIndex: 10,
-        }} />
-
-        {/* Hero Shoulders */}
-        <div style={{
-          width: '90px',
-          height: '45px',
-          backgroundColor: '#1a1a1a',
-          borderRadius: '30px 30px 0 0',
-          border: '2px solid #00ff88',
-          borderBottom: 'none',
-          boxShadow: '0 0 15px rgba(0, 255, 136, 0.5), inset 0 0 10px rgba(0, 0, 0, 0.8)',
-          position: 'absolute',
-          top: '120px',
-          zIndex: 9,
-          maskImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.01) 100%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.01) 100%)',
-        }} />
+        {/* Hero Heart Image */}
+        <img
+          src="/hero-heart.png"
+          alt="Hero Heart"
+          style={{
+            width: '140px',
+            height: '140px',
+            objectFit: 'contain',
+            filter: 'drop-shadow(0 0 10px rgba(0, 255, 136, 0.3))',
+            zIndex: 10,
+            animation: `pulse ${animationDuration} infinite ease-in-out`,
+          }}
+        />
+        <style>
+          {`
+            @keyframes pulse {
+              0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
+              10% { transform: scale(1.01); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
+              20% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
+              30% { transform: scale(1.01); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
+              50% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
+              100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
+            }
+          `}
+        </style>
 
         {/* HP Bar - Left Side Curved */}
         <div
@@ -102,7 +112,7 @@ export default function HeroPanel({ player, onAttributeClick, onStatusClick, onS
             borderRadius: '12px 0 0 12px',
             boxShadow: '0 0 8px rgba(255, 68, 68, 0.8), inset 0 0 4px rgba(255, 255, 255, 0.3)',
           }} />
-          
+
           {/* HP Tooltip */}
           {(hoveredBar === 'hp' || focusedBar === 'hp') && (
             <div style={{
@@ -158,7 +168,7 @@ export default function HeroPanel({ player, onAttributeClick, onStatusClick, onS
             borderRadius: '0 12px 12px 0',
             boxShadow: '0 0 8px rgba(255, 170, 0, 0.8), inset 0 0 4px rgba(255, 255, 255, 0.3)',
           }} />
-          
+
           {/* Fatigue Tooltip */}
           {(hoveredBar === 'fatigue' || focusedBar === 'fatigue') && (
             <div style={{
