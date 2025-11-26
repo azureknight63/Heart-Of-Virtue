@@ -65,14 +65,14 @@ export const usePlayer = () => {
       const statusResponse = await apiEndpoints.player.getStatus()
       const inventoryResponse = await apiEndpoints.player.getInventory()
       const statsResponse = await apiEndpoints.player.getStats()
-      
+
       // Combine status, inventory, and stats data
       const playerData = {
         ...statusResponse.data.status,
         inventory: inventoryResponse.data.inventory?.items || [],
         ...statsResponse.data.stats,
       }
-      
+
       setPlayer(playerData)
       setError(null)
     } catch (err) {
@@ -130,8 +130,14 @@ export const useCombat = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.combat.getStatus()
-      setCombat(response.data.data)
-      setInCombat(response.data.data.in_combat)
+      const data = response.data
+      // Flatten structure for components
+      setCombat({
+        ...data.battle_state,
+        log: data.log || [],
+        combat_active: data.combat_active
+      })
+      setInCombat(data.combat_active)
     } catch (err) {
       console.error('Combat status error:', err)
     } finally {
@@ -143,8 +149,14 @@ export const useCombat = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.combat.performAction(action, target)
-      setCombat(response.data.data)
-      return response.data
+      const data = response.data
+      // Flatten structure for components
+      setCombat({
+        ...data.battle_state,
+        log: data.log || [], // Backend might not return log on action yet
+        combat_active: true // Assume active if action performed, or check data
+      })
+      return data
     } catch (err) {
       console.error('Combat action error:', err)
       throw err
@@ -172,6 +184,12 @@ export const useWorld = () => {
       }
       setLocation(room)
       setError(null)
+
+      // Import tile cache and cache current location + prefetch adjacent
+      import('../utils/TileCache').then(({ default: tileCache }) => {
+        tileCache.set(room.x, room.y, room)
+        tileCache.prefetchAdjacent(room.x, room.y)
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -181,14 +199,76 @@ export const useWorld = () => {
 
   const move = async (direction) => {
     try {
+      // Import tile cache
+      const { default: tileCache } = await import('../utils/TileCache')
+
+      // Calculate target coordinates based on direction
+      const directionMap = {
+        'north': { dx: 0, dy: -1 },
+        'south': { dx: 0, dy: 1 },
+        'west': { dx: -1, dy: 0 },
+        'east': { dx: 1, dy: 0 },
+        'northwest': { dx: -1, dy: -1 },
+        'northeast': { dx: 1, dy: -1 },
+        'southwest': { dx: -1, dy: 1 },
+        'southeast': { dx: 1, dy: 1 },
+      }
+
+      const delta = directionMap[direction.toLowerCase()]
+      let targetX = location.x
+      let targetY = location.y
+
+      if (delta) {
+        targetX += delta.dx
+        targetY += delta.dy
+      }
+
+      // Check if target tile is in cache
+      const cachedTile = tileCache.get(targetX, targetY)
+
+      // If we have cached data, optimistically update the UI
+      if (cachedTile) {
+        // Prepare room data from cache
+        const cachedRoom = {
+          ...cachedTile,
+          exits: Array.isArray(cachedTile.exits)
+            ? cachedTile.exits
+            : (cachedTile.exits && typeof cachedTile.exits === 'object'
+              ? Object.keys(cachedTile.exits)
+              : [])
+        }
+
+        // Optimistically update location
+        setLocation(cachedRoom)
+
+        // Prefetch adjacent tiles in background
+        tileCache.prefetchAdjacent(targetX, targetY)
+      }
+
+      // Always make the actual move request to get authoritative data
       const response = await apiEndpoints.world.move(direction)
+
       // Convert exits object to array
       const room = response.data.room
       if (room.exits && typeof room.exits === 'object') {
         room.exits = Object.keys(room.exits)
       }
+
+      // Update with authoritative data from server
       setLocation(room)
-      return response.data
+
+      // Update cache with fresh data
+      tileCache.set(room.x, room.y, room)
+
+      // Prefetch adjacent tiles
+      tileCache.prefetchAdjacent(room.x, room.y)
+
+      // Return full response data including combat_started and combat_state
+      return {
+        ...response.data,
+        combat_started: response.data.combat_started || false,
+        combat_state: response.data.combat_state || null
+      }
     } catch (err) {
       setError(err.message)
       throw err
@@ -201,3 +281,4 @@ export const useWorld = () => {
 
   return { location, loading, error, moveToLocation: move, refetch: fetchLocation }
 }
+

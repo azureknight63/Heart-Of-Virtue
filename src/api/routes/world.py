@@ -260,6 +260,127 @@ def get_tile():
                 500,
             )
 
+
+@world_bp.route("/world/tiles/batch", methods=["POST"])
+def get_tiles_batch():
+    """Get multiple tiles at once (batch request).
+    
+    Headers:
+        Authorization: Bearer <session_id>
+    
+    Request body:
+        {
+            "coordinates": [
+                {"x": int, "y": int},
+                {"x": int, "y": int},
+                ...
+            ]
+        }
+    
+    Returns:
+        {
+            "success": bool,
+            "tiles": [
+                {
+                    "x": int,
+                    "y": int,
+                    "name": str,
+                    "description": str,
+                    "items": [...],
+                    "npcs": [...]
+                },
+                ...
+            ]
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        data = request.get_json()
+        if not data or "coordinates" not in data:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Missing coordinates array",
+                    }
+                ),
+                400,
+            )
+
+        coordinates = data["coordinates"]
+        if not isinstance(coordinates, list):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Coordinates must be an array",
+                    }
+                ),
+                400,
+            )
+
+        # Limit batch size to prevent abuse
+        if len(coordinates) > 20:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Maximum 20 tiles per batch request",
+                    }
+                ),
+                400,
+            )
+
+        from flask import current_app
+
+        game_service = current_app.game_service
+
+        if not game_service or not game_service.universe:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Game service not initialized",
+                    }
+                ),
+                500,
+            )
+
+        tiles = []
+        for coord in coordinates:
+            if not isinstance(coord, dict) or "x" not in coord or "y" not in coord:
+                continue
+            
+            try:
+                x = int(coord["x"])
+                y = int(coord["y"])
+                tile = game_service.get_tile(x, y)
+                
+                # Only include valid tiles (skip errors)
+                if "error" not in tile:
+                    tiles.append(tile)
+            except (ValueError, TypeError):
+                # Skip invalid coordinates
+                continue
+
+        return jsonify({"success": True, "tiles": tiles}), 200
+    
+    except Exception as e:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Internal server error",
+                        "message": str(e),
+                    }
+                ),
+                500,
+            )
+
+
 @world_bp.route("/world/commands", methods=["GET"])
 def get_available_commands():
     """Get available commands/actions for player in current room.
@@ -376,6 +497,60 @@ def interact_with_target():
             return jsonify(result), 400
 
         return jsonify(result), 200
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@world_bp.route("/world/events", methods=["POST"])
+def trigger_room_events():
+    """Trigger events in the current room.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "events": [...]
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        from flask import current_app
+        game_service = current_app.game_service
+
+        if not game_service or not game_service.universe:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Game service not initialized",
+                    }
+                ),
+                500,
+            )
+
+        # Get current tile
+        tile = game_service.universe.get_tile(player.location_x, player.location_y)
+        if not tile:
+            return jsonify({"success": False, "error": "Current tile not found"}), 404
+
+        # Trigger events on the tile
+        events_triggered = game_service.trigger_tile_events(player, tile)
+
+        return jsonify({"success": True, "events": events_triggered}), 200
 
     except Exception as e:
         return (

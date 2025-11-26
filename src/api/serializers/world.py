@@ -286,13 +286,13 @@ class WorldSerializer:
         if not tile:
             return {
                 "error": "Tile not found",
-                "x": getattr(player, "x", 0),
-                "y": getattr(player, "y", 0),
+                "x": getattr(player, "location_x", 0),
+                "y": getattr(player, "location_y", 0),
             }
 
         return {
-            "x": getattr(player, "x", 0),
-            "y": getattr(player, "y", 0),
+            "x": getattr(player, "location_x", 0),
+            "y": getattr(player, "location_y", 0),
             "tile": TileSerializer.serialize(tile),
         }
 
@@ -313,7 +313,7 @@ class WorldSerializer:
         """
         return {
             "old_position": {"x": old_position[0], "y": old_position[1]},
-            "new_position": {"x": getattr(player, "x", 0), "y": getattr(player, "y", 0)},
+            "new_position": {"x": getattr(player, "location_x", 0), "y": getattr(player, "location_y", 0)},
             "room": TileSerializer.serialize(new_tile),
             "events_triggered": events_triggered,
         }
@@ -334,8 +334,8 @@ class WorldSerializer:
         """
         return {
             "player_position": {
-                "x": getattr(player, "x", 0),
-                "y": getattr(player, "y", 0),
+                "x": getattr(player, "location_x", 0),
+                "y": getattr(player, "location_y", 0),
             },
             "current_room": TileSerializer.serialize(current_tile),
             "adjacent_rooms": {
