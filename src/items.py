@@ -212,8 +212,12 @@ class Item:
             
         cprint(f"You pick up the {self.name}.", "green")
         
-        # Stack items if possible
-        player.stack_duplicate_items()
+        # Stack items if possible (in inventory)
+        if hasattr(player, 'stack_duplicate_items'):
+            player.stack_duplicate_items()
+        # Also stack in the room if the method exists
+        if hasattr(player.current_room, 'stack_duplicate_items'):
+            player.current_room.stack_duplicate_items()
 
     def equip(self, player: 'Player') -> None:
         player.equip_item(phrase="{}".format(self.name))

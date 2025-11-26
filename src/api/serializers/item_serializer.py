@@ -67,14 +67,28 @@ class ItemSerializer:
         if hasattr(item, "merchandise"):
             item_data["merchandise"] = item.merchandise
 
-        # Add keywords for interaction (default to 'take' for all items)
-        # If the item has specific keywords or interactions, use those, otherwise default to ['take']
+        # Add keywords for interaction
+        # For items in the world, we want 'take' and potentially 'equip' for equippable items
+        keywords = []
         if hasattr(item, "keywords"):
-            item_data["keywords"] = item.keywords
+            keywords = list(item.keywords)
         elif hasattr(item, "interactions"):
-            item_data["keywords"] = item.interactions
-        else:
-            item_data["keywords"] = ["take"]
+            keywords = list(item.interactions)
+        
+        # Filter out inventory-only interactions (drop, unequip)
+        # Keep 'equip' if the item is equippable
+        inventory_only_actions = ["drop", "unequip"]
+        keywords = [k for k in keywords if k not in inventory_only_actions]
+        
+        # Ensure 'take' is available for items
+        if "take" not in keywords:
+            keywords.append("take")
+        
+        # Add 'equip' for equippable items if not already present
+        if hasattr(item, "isequipped") and "equip" not in keywords:
+            keywords.append("equip")
+            
+        item_data["keywords"] = keywords
 
         return item_data
 

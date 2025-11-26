@@ -518,7 +518,11 @@ class GameService:
         
         # Clean up output (remove ANSI codes)
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        clean_output = ansi_escape.sub('', output).strip()
+        clean_output = ansi_escape.sub('', output)
+        
+        # Remove excessive newlines and clean up whitespace
+        clean_output = re.sub(r'\n\s*\n', '\n', clean_output)  # Replace multiple newlines with single
+        clean_output = clean_output.strip()
         
         # Provide fallback message if no output was captured
         if not clean_output:
