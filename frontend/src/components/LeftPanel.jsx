@@ -71,7 +71,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch, o
         display: 'flex',
         flexDirection: 'column',
         gap: '14px',
-        overflow: 'clip',
+        overflow: 'auto',
       }}>
         {/* Room Contents - Items, NPCs, Objects */}
         {mode === 'exploration' && location && (
@@ -140,6 +140,7 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch, o
             onClose={() => setShowInteract(false)}
             onEventsTriggered={onEventsTriggered}
             onInteractionComplete={onInteractionComplete}
+            onRefetch={onRefetch}
           />
         )}
       </div>

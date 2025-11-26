@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete }) {
+export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete, onRefetch }) {
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(null)
     const [interactionOutput, setInteractionOutput] = useState(null)
@@ -16,6 +16,12 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
             // Filter out hidden entities if the API sends them
             const allTargets = [...npcs, ...objects, ...items].filter(t => !t.hidden)
             setTargets(allTargets)
+
+            // Clear selection if selected target is no longer in the room
+            if (selectedTarget && !allTargets.find(t => t.id === selectedTarget.id)) {
+                setSelectedTarget(null)
+                setInteractionOutput(null)
+            }
         }
     }, [location])
 
@@ -43,6 +49,11 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
             const data = await response.json()
             if (response.ok) {
                 setInteractionOutput(data.message)
+
+                // Refresh room data to update items/npcs/objects lists
+                if (onRefetch) {
+                    await onRefetch()
+                }
 
                 // After interaction, trigger room events
                 try {
