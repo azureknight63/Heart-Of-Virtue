@@ -89,20 +89,10 @@ class MapTile:
             ]
         else:
             default_moves = [
-                actions.ListCommands(),
-                actions.ViewInventory(),
-                actions.SkillMenu(),
                 actions.Look(),
-                actions.View(),
-                actions.Equip(),
-                actions.Take(),
-                actions.Use(),
                 actions.Search(),
                 actions.Menu(),
                 actions.Save(),
-                actions.ViewMap(),
-                actions.Attack(),
-                actions.ViewStatus()
             ]
 
         debug_moves = [  # these are the moves available to the player if debugging is enabled
