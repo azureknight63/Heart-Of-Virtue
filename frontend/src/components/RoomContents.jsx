@@ -53,7 +53,10 @@ export default function RoomContents({ location }) {
   const hasContentDescriptions = contentDescriptions.length > 0
 
   return (
-    <div className="bg-[rgba(0,100,50,0.2)] border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif">
+    <div className="bg-[rgba(0,100,50,0.2)] border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif" style={{
+      maxHeight: '30vh',
+      overflowY: 'auto',
+    }}>
       {/* Room narrative and content all together */}
 
       {/* Combined narrative: room description + content descriptions */}

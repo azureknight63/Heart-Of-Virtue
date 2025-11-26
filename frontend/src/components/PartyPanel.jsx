@@ -63,6 +63,8 @@ export default function PartyPanel({ player, onClose }) {
       display: 'flex',
       flexDirection: 'column',
       gap: '6px',
+      maxHeight: '70vh',
+      overflowY: 'auto',
     }}>
       {/* Header */}
       <div style={{
@@ -136,7 +138,7 @@ export default function PartyPanel({ player, onClose }) {
             }}>
               <span style={{ color: '#ffaa00' }}>HP:</span>
               <span style={{ color: '#ff6666' }}>{member.hp || 0}/{member.max_hp || 100}</span>
-              
+
               <span style={{ color: '#ffaa00' }}>Lvl:</span>
               <span style={{ color: '#ffff00' }}>{member.level || 1}</span>
             </div>
