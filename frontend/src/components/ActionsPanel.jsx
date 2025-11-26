@@ -19,7 +19,7 @@ const COMMAND_TOOLTIPS = {
   'Refresh Merchants': '[DEBUG] Refresh all merchant inventories',
 }
 
-export default function ActionsPanel({ player, location, onClose }) {
+export default function ActionsPanel({ player, location, onClose, onRefetch }) {
   const [commands, setCommands] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -58,11 +58,73 @@ export default function ActionsPanel({ player, location, onClose }) {
     fetchCommands()
   }, [location])
 
-  const handleAction = (command) => {
-    setActionMessage(`${command.name}...`)
-    setTimeout(() => {
-      setActionMessage('')
-    }, 1500)
+  const handleAction = async (command) => {
+    const token = localStorage.getItem('authToken')
+
+    try {
+      if (command.name === 'Search') {
+        setActionMessage('Searching...')
+        const response = await fetch('http://localhost:5000/api/world/search', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.messages && data.messages.length > 0) {
+            setActionMessage(data.messages.join(' '))
+            setTimeout(() => setActionMessage(''), 5000)
+          } else {
+            setActionMessage('Search complete.')
+            setTimeout(() => setActionMessage(''), 2000)
+          }
+          // Refresh room data to show newly discovered items
+          if (onRefetch) {
+            onRefetch()
+          }
+        } else {
+          setActionMessage('Search failed.')
+          setTimeout(() => setActionMessage(''), 2000)
+        }
+      } else if (command.name === 'Menu') {
+        setActionMessage('Opening menu...')
+        // TODO: Implement menu dialog
+        setTimeout(() => {
+          setActionMessage('Menu functionality coming soon.')
+          setTimeout(() => setActionMessage(''), 2000)
+        }, 500)
+      } else if (command.name === 'Save') {
+        setActionMessage('Saving game...')
+        const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
+        const response = await fetch('http://localhost:5000/api/saves/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: saveName }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setActionMessage(data.message || 'Game saved successfully!')
+          setTimeout(() => setActionMessage(''), 3000)
+        } else {
+          setActionMessage('Save failed.')
+          setTimeout(() => setActionMessage(''), 2000)
+        }
+      } else {
+        // Default behavior for other commands
+        setActionMessage(`${command.name}...`)
+        setTimeout(() => setActionMessage(''), 1500)
+      }
+    } catch (err) {
+      console.error('Error executing command:', err)
+      setActionMessage('Command failed.')
+      setTimeout(() => setActionMessage(''), 2000)
+    }
   }
 
   return (

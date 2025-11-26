@@ -562,3 +562,54 @@ def trigger_room_events():
             ),
             500,
         )
+
+
+@world_bp.route("/world/search", methods=["POST"])
+def search_room():
+    """Search the current room for hidden items/NPCs.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "messages": [str],
+            "found": [...],
+            "room": {...}
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        from flask import current_app
+        game_service = current_app.game_service
+
+        if not game_service or not game_service.universe:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Game service not initialized",
+                    }
+                ),
+                500,
+            )
+
+        result = game_service.search(player)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
+
