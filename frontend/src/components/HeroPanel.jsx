@@ -72,9 +72,9 @@ export default function HeroPanel({ player, inCombat, onAttributeClick, onStatus
           {`
             @keyframes pulse {
               0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
-              10% { transform: scale(1.01); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
+              10% { transform: scale(1.007); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
               20% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
-              30% { transform: scale(1.01); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
+              30% { transform: scale(1.007); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
               50% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
               100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
             }
