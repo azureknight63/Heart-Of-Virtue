@@ -2,25 +2,94 @@ import { useState, useEffect } from 'react'
 import { usePlayer, useWorld, useCombat } from '../hooks/useApi'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
+import EventDialog from '../components/EventDialog'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation } = useWorld()
   const { combat, inCombat, fetchCombatStatus } = useCombat()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
-  const [exploredTiles, setExploredTiles] = useState(new Set())
+  // Store explored tiles as a Map: key = "x,y", value = { items, npcs, objects }
+  const [exploredTiles, setExploredTiles] = useState(new Map())
+
+  // Event handling state
+  const [eventQueue, setEventQueue] = useState([])
+  const [currentEvent, setCurrentEvent] = useState(null)
 
   // Track explored tiles when location changes
   useEffect(() => {
     if (location) {
-      setExploredTiles(prev => new Set([...prev, `${location.x},${location.y}`]))
+      const tileKey = `${location.x},${location.y}`
+      setExploredTiles(prev => {
+        const newMap = new Map(prev)
+        // Store tile data with items, NPCs, and objects
+        newMap.set(tileKey, {
+          items: location.items || [],
+          npcs: location.npcs || [],
+          objects: location.objects || []
+        })
+        return newMap
+      })
     }
   }, [location])
 
-  // Wrapper for move that also refetches player data
+  // Process event queue
+  useEffect(() => {
+    if (eventQueue.length > 0 && !currentEvent) {
+      const nextEvent = eventQueue[0]
+      setCurrentEvent(nextEvent)
+      setEventQueue(prev => prev.slice(1))
+    }
+  }, [eventQueue, currentEvent])
+
+  // Handle event close
+  const handleEventClose = () => {
+    setCurrentEvent(null)
+  }
+
+  // Handle event choice (for events that require input)
+  const handleEventChoice = async (choice) => {
+    console.log('Event choice selected:', choice)
+    // TODO: Send choice to backend if needed
+    // For now, just close the event
+    setCurrentEvent(null)
+  }
+
+  // Handle events triggered from interactions
+  const handleEventsTriggered = (events) => {
+    if (events && events.length > 0) {
+      console.log('Events triggered from interaction:', events)
+      setEventQueue(prev => [...prev, ...events])
+    }
+  }
+
+  // Wrapper for move that also refetches player data and handles combat initiation
   const handleMove = async (direction) => {
     try {
       const result = await moveToLocation(direction)
+
+      // Handle events triggered by movement
+      if (result.events_triggered && result.events_triggered.length > 0) {
+        // Filter events that have output text to display
+        const eventsWithOutput = result.events_triggered.filter(
+          event => event.output_text && event.output_text.trim().length > 0
+        )
+
+        if (eventsWithOutput.length > 0) {
+          console.log('Events triggered:', eventsWithOutput)
+          setEventQueue(eventsWithOutput)
+        }
+      }
+
+      // Check if movement triggered combat
+      if (result.combat_started && result.combat_state) {
+        console.log('Combat initiated!', result.combat_state)
+        // Update combat state and switch to combat mode
+        setMode('combat')
+        // Fetch full combat status to ensure state is synchronized
+        await fetchCombatStatus()
+      }
+
       // Refetch player data after movement
       await refetchPlayer()
       return result
@@ -30,6 +99,7 @@ export default function GamePage() {
     }
   }
 
+  // Check combat status on mount and when inCombat changes
   useEffect(() => {
     if (inCombat) {
       setMode('combat')
@@ -37,7 +107,14 @@ export default function GamePage() {
     } else {
       setMode('exploration')
     }
-  }, [inCombat])
+  }, [inCombat, fetchCombatStatus])
+
+  // Check combat status on initial load
+  useEffect(() => {
+    if (!playerLoading && !worldLoading) {
+      fetchCombatStatus()
+    }
+  }, [playerLoading, worldLoading, fetchCombatStatus])
 
   if (playerLoading || worldLoading) {
     return (
@@ -56,6 +133,7 @@ export default function GamePage() {
         mode={mode}
         onMove={handleMove}
         onRefetch={refetchPlayer}
+        onEventsTriggered={handleEventsTriggered}
       />
 
       {/* Right Panel - Battlefield/Map */}
@@ -67,6 +145,15 @@ export default function GamePage() {
         onModeChange={setMode}
         exploredTiles={exploredTiles}
       />
+
+      {/* Event Dialog */}
+      {currentEvent && (
+        <EventDialog
+          event={currentEvent}
+          onClose={handleEventClose}
+          onChoice={handleEventChoice}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export default function InteractPanel({ location, onClose }) {
+export default function InteractPanel({ location, onClose, onEventsTriggered }) {
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(null)
     const [interactionOutput, setInteractionOutput] = useState(null)
@@ -43,6 +43,32 @@ export default function InteractPanel({ location, onClose }) {
             const data = await response.json()
             if (response.ok) {
                 setInteractionOutput(data.message)
+
+                // After interaction, trigger room events
+                try {
+                    const eventsResponse = await fetch('http://localhost:5000/api/world/events', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`,
+                        }
+                    })
+
+                    const eventsData = await eventsResponse.json()
+                    if (eventsResponse.ok && eventsData.events && eventsData.events.length > 0) {
+                        // Filter events with output text
+                        const eventsWithOutput = eventsData.events.filter(
+                            event => event.output_text && event.output_text.trim().length > 0
+                        )
+
+                        if (eventsWithOutput.length > 0 && onEventsTriggered) {
+                            onEventsTriggered(eventsWithOutput)
+                        }
+                    }
+                } catch (eventsErr) {
+                    console.error('Failed to trigger events:', eventsErr)
+                    // Don't show error to user, events are optional
+                }
             } else {
                 setError(data.error || 'Interaction failed')
             }
@@ -329,6 +355,7 @@ function TypewriterOutput({ text }) {
             // Add next word
             setDisplayedText(prev => {
                 const nextWord = words[currentIndex]
+                if (nextWord === undefined) return prev
                 return prev ? `${prev} ${nextWord}` : nextWord
             })
 
