@@ -89,7 +89,6 @@ class MapTile:
             ]
         else:
             default_moves = [
-                actions.Look(),
                 actions.Search(),
                 actions.Menu(),
                 actions.Save(),
