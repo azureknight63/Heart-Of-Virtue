@@ -198,8 +198,10 @@ class Item:
     def take(self, player: 'Player') -> None:
         """Take the item from the ground."""
         # Check weight limit if applicable (simple check for now)
-        if hasattr(player, "carrying_capacity") and hasattr(player, "weight_current"):
-            if player.weight_current + getattr(self, "weight", 0) > player.carrying_capacity:
+        # Check weight limit if applicable
+        capacity = getattr(player, "weight_tolerance", getattr(player, "carrying_capacity", None))
+        if capacity is not None and hasattr(player, "weight_current"):
+            if player.weight_current + getattr(self, "weight", 0) > capacity:
                 cprint("It's too heavy to carry!", "red")
                 return
 

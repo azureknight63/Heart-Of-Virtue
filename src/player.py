@@ -1046,6 +1046,15 @@ he lets out a barely audible whisper:""", "red")
         if target_item is not None:
             if hasattr(target_item, "isequipped"):
                 if target_item not in self.inventory:  # if the player equips an item from the ground or via an event,
+                    # Check weight limit before picking up
+                    capacity = getattr(self, "weight_tolerance", getattr(self, "carrying_capacity", None))
+                    if capacity is not None and hasattr(self, "weight_current"):
+                         if self.weight_current + getattr(target_item, "weight", 0) > capacity:
+                             cprint("It's too heavy to carry!", "red")
+                             # Put it back in the room since it was popped
+                             self.current_room.items_here.append(target_item)
+                             return
+                    
                     # add to inventory
                     self.inventory.append(target_item)
                 if target_item.isequipped:
