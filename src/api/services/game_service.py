@@ -128,12 +128,7 @@ class GameService:
         # Serialize items in room
         items_data = []
         if hasattr(tile, "items_here"):
-            for item in tile.items_here:
-                items_data.append({
-                    "name": getattr(item, "name", "Unknown Item"),
-                    "quantity": getattr(item, "quantity", 1),
-                    "announce": getattr(item, "announce", ""),
-                })
+            items_data = ItemSerializer.serialize_list(tile.items_here)
 
         # Serialize NPCs in room
         npcs_data = []
@@ -201,11 +196,36 @@ class GameService:
         # Trigger tile entry events
         events_triggered = self.trigger_tile_events(player, new_tile)
 
+        # Check for combat initiation
+        from src.functions import check_for_combat
+        combat_enemies = check_for_combat(player)
+        
+        combat_started = False
+        combat_state = None
+        
+        if combat_enemies:
+            # Initialize combat
+            if not hasattr(player, "combat_list"):
+                player.combat_list = []
+            if not hasattr(player, "combat_list_allies"):
+                player.combat_list_allies = [player]
+            
+            player.combat_list = combat_enemies
+            player.in_combat = True
+            combat_started = True
+            
+            # Get initial combat state
+            combat_state = CombatStateSerializer.serialize_combat_state(
+                player, combat_enemies, current_turn_index=0, round_number=1
+            )
+
         return {
             "success": True,
             "new_position": {"x": new_x, "y": new_y},
             "events_triggered": events_triggered,
             "room": self.get_current_room(player),
+            "combat_started": combat_started,
+            "combat_state": combat_state
         }
 
     def trigger_tile_events(
@@ -218,26 +238,67 @@ class GameService:
             tile: The MapTile being entered
 
         Returns:
-            List of triggered event data
+            List of triggered event data with captured output
         """
+        import contextlib
+        import io
+        import re
+        from unittest.mock import patch
+        
         events_triggered = []
         
         if not hasattr(tile, "events_here"):
             return events_triggered
 
-        # Serialize all events on the tile
+        # Call evaluate_events to trigger event conditions
+        if hasattr(tile, "evaluate_events"):
+            try:
+                tile.evaluate_events()
+            except Exception:
+                pass
+
+        # Process each event and capture output
         for event in tile.events_here:
             # Serialize the event using EventSerializer
             event_data = EventSerializer.serialize(event)
-            events_triggered.append(event_data)
             
-            # Try to trigger the event if it has a process method
-            if hasattr(event, "process"):
+            # Try to trigger the event and capture output
+            if hasattr(event, "check_conditions"):
+                f = io.StringIO()
                 try:
-                    event.process()
-                except Exception:
-                    # Silently fail on event processing errors
-                    pass
+                    # Patch functions to capture output without blocking
+                    def mock_cprint(text, *args, **kwargs):
+                        f.write(str(text) + '\n')
+                    
+                    def mock_print_slow(text, speed="slow"):
+                        f.write(str(text) + '\n')
+                    
+                    # Capture stdout/stderr and patch blocking functions
+                    with contextlib.redirect_stdout(f), \
+                         contextlib.redirect_stderr(f), \
+                         patch('functions.await_input', return_value=None), \
+                         patch('functions.print_slow', mock_print_slow), \
+                         patch('time.sleep', return_value=None), \
+                         patch('neotermcolor.cprint', mock_cprint), \
+                         patch('src.functions.await_input', return_value=None), \
+                         patch('src.functions.print_slow', mock_print_slow):
+                        
+                        event.check_conditions()
+                        
+                except Exception as e:
+                    # Log error but continue
+                    event_data["error"] = str(e)
+                
+                # Capture and clean output
+                output = f.getvalue()
+                if output:
+                    # Remove ANSI codes
+                    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                    clean_output = ansi_escape.sub('', output).strip()
+                    if clean_output:
+                        event_data["output_text"] = clean_output
+            
+            events_triggered.append(event_data)
 
         return events_triggered
 
@@ -319,12 +380,16 @@ class GameService:
                 if str(id(obj)) == target_id:
                     target = obj
                     break
+
+        # Check Items
+        if not target and hasattr(tile, "items_here"):
+            for item in tile.items_here:
+                if str(id(item)) == target_id:
+                    target = item
+                    break
                     
         if not target:
             return {"success": False, "message": "Target not found."}
-
-        # Validate action
-        # Check keywords first, then check if method exists
         is_valid = False
         if hasattr(target, "keywords") and action in target.keywords:
             is_valid = True
@@ -378,7 +443,11 @@ class GameService:
         
         # Clean up output (remove ANSI codes)
         ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        clean_output = ansi_escape.sub('', output)
+        clean_output = ansi_escape.sub('', output).strip()
+        
+        # Provide fallback message if no output was captured
+        if not clean_output:
+            clean_output = f"Action '{action}' completed successfully."
 
         return {
             "success": True, 
@@ -647,6 +716,101 @@ class GameService:
 
         return stats
 
+    def get_player_skills(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get player skills and experience.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with skills data
+        """
+        # Serialize known moves
+        known_moves = []
+        for move in getattr(player, "known_moves", []):
+            known_moves.append({
+                "name": getattr(move, "name", "Unknown"),
+                "description": getattr(move, "description", ""),
+                "fatigue_cost": getattr(move, "fatigue_cost", 0),
+                "beats_left": getattr(move, "beats_left", 0),
+                "xp_gain": getattr(move, "xp_gain", 0),
+            })
+
+        # Serialize skill tree and learnable skills
+        skill_tree = {}
+        if hasattr(player, "skilltree") and hasattr(player.skilltree, "subtypes"):
+            for category, skills in player.skilltree.subtypes.items():
+                category_skills = []
+                for skill, req_exp in skills.items():
+                    # Check if already known
+                    is_known = any(km["name"] == skill.name for km in known_moves)
+                    
+                    category_skills.append({
+                        "name": skill.name,
+                        "description": getattr(skill, "description", ""),
+                        "required_exp": req_exp,
+                        "is_known": is_known,
+                        "can_learn": player.skill_exp.get(category, 0) >= req_exp and not is_known
+                    })
+                skill_tree[category] = category_skills
+
+        return {
+            "known_moves": known_moves,
+            "skill_exp": getattr(player, "skill_exp", {}),
+            "skill_tree": skill_tree
+        }
+
+    def learn_skill(self, player: "player_module.Player", skill_name: str, category: str) -> Dict[str, Any]:
+        """Learn a skill from the skill tree.
+
+        Args:
+            player: The Player instance
+            skill_name: Name of the skill to learn
+            category: Skill category (e.g. "Basic", "Dagger")
+
+        Returns:
+            Dictionary with result
+        """
+        if not hasattr(player, "skilltree") or not hasattr(player.skilltree, "subtypes"):
+            return {"success": False, "error": "Skill tree not initialized"}
+
+        if category not in player.skilltree.subtypes:
+            return {"success": False, "error": f"Invalid category: {category}"}
+
+        # Find the skill object and requirement
+        skill_obj = None
+        req_exp = 0
+        
+        for skill, req in player.skilltree.subtypes[category].items():
+            if skill.name == skill_name:
+                skill_obj = skill
+                req_exp = req
+                break
+        
+        if not skill_obj:
+            return {"success": False, "error": f"Skill '{skill_name}' not found in category '{category}'"}
+
+        # Check if already known
+        for move in player.known_moves:
+            if move.name == skill_name:
+                return {"success": False, "error": "Skill already learned"}
+
+        # Check experience
+        current_exp = player.skill_exp.get(category, 0)
+        if current_exp < req_exp:
+            return {"success": False, "error": f"Not enough experience. Required: {req_exp}, Available: {current_exp}"}
+
+        # Learn the skill
+        player.learn_skill(skill_obj)
+        player.skill_exp[category] -= req_exp
+
+        return {
+            "success": True,
+            "message": f"Learned {skill_name}!",
+            "remaining_exp": player.skill_exp[category],
+            "skills": self.get_player_skills(player)
+        }
+
     def get_available_commands(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get available commands/actions for the player in current room.
 
@@ -751,8 +915,8 @@ class GameService:
             return {"error": f"Cannot find player location: {current_tile['error']}"}
 
         # Get the actual tile object
-        player_x = getattr(player, "x", 1)
-        player_y = getattr(player, "y", 1)
+        player_x = getattr(player, "location_x", 1)
+        player_y = getattr(player, "location_y", 1)
         tile = self.universe.get_tile(player_x, player_y)
 
         if not tile:
@@ -1085,7 +1249,7 @@ class GameService:
             Dictionary with NPC state
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.x, player.y)
+        current_tile = self.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -1111,7 +1275,7 @@ class GameService:
             Dictionary with dialogue state
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.x, player.y)
+        current_tile = self.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -1138,7 +1302,7 @@ class GameService:
             Dictionary with next dialogue state
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.x, player.y)
+        current_tile = self.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 

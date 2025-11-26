@@ -162,7 +162,7 @@ def take_item():
         item_index = data["index"]
 
         # Get current tile
-        x, y = int(player.x), int(player.y)
+        x, y = int(player.location_x), int(player.location_y)
         tile_data = current_app.game_service.get_tile(x, y)
         if not tile_data or "error" in tile_data:
             return jsonify({"success": False, "error": "Tile not found"}), 404
@@ -217,8 +217,8 @@ def drop_item():
             return jsonify({"success": False, "error": "Item not found in inventory"}), 400
 
         # Get player's current position
-        player_x = getattr(player, "x", 0)
-        player_y = getattr(player, "y", 0)
+        player_x = getattr(player, "location_x", 0)
+        player_y = getattr(player, "location_y", 0)
 
         # Get the tile at player's current position
         tile = current_app.game_service.universe.get_tile(player_x, player_y)

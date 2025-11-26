@@ -40,8 +40,10 @@ def create_app(config_class=None):
         async_mode="threading",
     )
 
-    # Load starting position from config file
+    # Load starting position and map from config file
     start_x, start_y = 2, 2  # defaults
+    starting_exp = 0
+    starting_map_name = "default"
     config_file = os.environ.get("CONFIG_FILE")
     
     if config_file:
@@ -63,8 +65,14 @@ def create_app(config_class=None):
                     coords = [int(x.strip()) for x in pos_str.split(",")]
                     if len(coords) == 2:
                         start_x, start_y = coords
+                
+                if parser.has_option("game", "starting_exp"):
+                    starting_exp = parser.getint("game", "starting_exp")
+                
+                if parser.has_option("game", "startmap"):
+                    starting_map_name = parser.get("game", "startmap")
         except Exception as e:
-            print(f"Warning: Could not load start position from config: {e}")
+            print(f"Warning: Could not load config: {e}")
 
     # Initialize game universe and service first
     # For testing and development, load real game universe
@@ -90,19 +98,34 @@ def create_app(config_class=None):
             # Build universe with real maps from JSON files
             universe.build(test_player)
             
-            # Set player to starting position from config
+            # Find the starting map by name
+            starting_map = next(
+                (map_item for map_item in universe.maps if map_item.get('name') == starting_map_name),
+                universe.starting_map_default
+            )
+            
+            # Set player to starting map and position from config
+            test_player.map = starting_map
             test_player.location_x, test_player.location_y = start_x, start_y
             
-            # Create a get_tile wrapper for accessing tiles from the universe.maps structure
+            # Apply starting exp
+            if starting_exp > 0:
+                for category in test_player.skilltree.subtypes.keys():
+                    test_player.skill_exp[category] = starting_exp
+            
+            # Create a get_tile wrapper for accessing tiles from the player's current map only
             def get_tile_from_maps(x, y):
-                """Retrieve a tile from the loaded maps by coordinates."""
-                if not hasattr(universe, 'maps') or not universe.maps:
+                """Retrieve a tile from the player's current map by coordinates."""
+                if not hasattr(universe, 'player') or not universe.player:
                     return None
                 
-                # Maps is a list of dictionaries, each dict has 'name' and tile coordinate keys
-                for map_dict in universe.maps:
-                    if (x, y) in map_dict:
-                        return map_dict[(x, y)]
+                player_map = universe.player.map
+                if not player_map:
+                    return None
+                
+                # Only search in the player's current map
+                if (x, y) in player_map:
+                    return player_map[(x, y)]
                 
                 return None
             
