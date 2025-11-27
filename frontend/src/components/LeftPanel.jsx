@@ -25,10 +25,8 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const [combatMovesCategory, setCombatMovesCategory] = useState(null)
 
   // Determine if it's player's turn
-  const isPlayerTurn = combat?.current_turn_index === 0 // Assuming 0 is always player in turn_order list, or check name
-  // Better check:
   const currentPlayerName = combat?.turn_order?.[combat?.current_turn_index]
-  const isMyTurn = currentPlayerName === 'player' || currentPlayerName === 'Jean' // Adjust based on actual turn_order format
+  const isMyTurn = currentPlayerName === 'player' || currentPlayerName === 'Jean'
 
   const handleCombatMoveClick = (category) => {
     if (showCombatMoves && combatMovesCategory === category) {
@@ -49,7 +47,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     console.log('Selected move:', move)
     // Execute move via API
     try {
-      await onCombatAction('move', { move_id: move.name, target_id: combat.enemies[0]?.id }) // Default target for now, needs targeting logic
+      await onCombatAction('move', { move_id: move.name, target_id: combat.enemies[0]?.id })
       setShowCombatMoves(false)
     } catch (err) {
       console.error('Failed to execute move:', err)
@@ -117,7 +115,6 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         )}
 
         {/* Hero Panel - Character Head with Surrounding Buttons */}
-        {/* Wrapper with smooth scale animation */}
         <div style={{
           transform: showStatus || showInventory || showAttributes || showActions || showSkills || showInteract ? 'scale(1)' : 'scale(2)',
           transformOrigin: 'top center',
@@ -144,9 +141,87 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             onManeuverClick={() => handleCombatMoveClick('Maneuver')}
             onMiscellaneousClick={() => handleCombatMoveClick('Miscellaneous')}
           />
+        </div>
+
+        {/* Combat Move Panel */}
+        {showCombatMoves && mode === 'combat' && (
+          <CombatMovePanel
+            moves={player?.known_moves || []}
+            category={combatMovesCategory}
+            onMoveClick={handleMoveSelection}
+            onClose={() => setShowCombatMoves(false)}
+          />
+        )}
+
+        {/* Combat Log - Always visible in combat, size varies by turn */}
+        {mode === 'combat' && combat?.log && (
+          <div style={{
+            flex: isMyTurn ? '0 0 150px' : '1 1 auto',
+            height: isMyTurn ? '150px' : 'auto',
+            transition: 'all 0.3s ease',
+            overflow: 'hidden',
+            minHeight: '150px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <CombatLog log={combat.log} />
+          </div>
+        )}
+
+        {/* Player Status */}
+        {showStatus && player && <PartyPanel player={player} onClose={() => setShowStatus(false)} />}
+
+        {/* Stats/Attributes Panel */}
+        {showAttributes && player && (
+          <StatsPanel player={player} onClose={() => setShowAttributes(false)} />
+        )}
+
+        {/* Inventory Dialog */}
+        {showInventory && player && (
+          <InventoryDialog
+            items={player.inventory}
+            player={player}
+            onClose={() => setShowInventory(false)}
+            onRefetch={onRefetch}
+            combatMode={mode === 'combat'}
+          />
+        )}
+
+        {/* Skills Panel */}
+        {showSkills && player && (
+          <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
+        )}
+
+        {/* Actions Panel */}
+        {showActions && location && mode === 'exploration' && (
+          <ActionsPanel
+            player={player}
+            location={location}
+            onClose={() => setShowActions(false)}
+            onMove={onMove}
+            onRefetch={onRefetch}
+          />
+        )}
+
+        {/* Interact Panel */}
+        {showInteract && location && mode === 'exploration' && (
+          <InteractPanel
+            location={location}
+            onClose={() => setShowInteract(false)}
+            onEventsTriggered={onEventsTriggered}
+            onInteractionComplete={onInteractionComplete}
+            onRefetch={onRefetch}
+          />
+        )}
+      </div>
+
+      {/* Account Dialog */}
+      {showAccount && (
+        <AccountDialog
+          player={player}
           onClose={() => setShowAccount(false)}
         />
       )}
-        </div>
-        )
+    </div>
+  )
 }
