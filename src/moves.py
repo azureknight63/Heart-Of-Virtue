@@ -1271,7 +1271,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
                                          colored("Jean strikes with his " + weapon + "!", "green"),
                                          "Jean braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player)
+                         target=None, user=player, category="Offensive")
         self.power = 0
         self.evaluate()
         self.base_damage_type = items.get_base_damage_type(player.eq_weapon)

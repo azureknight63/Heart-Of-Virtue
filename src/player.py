@@ -213,9 +213,8 @@ class Player:
         self.victory = False
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are
             # viable (moves will check their own conditions)
-            # TODO: Re-enable these moves once they are implemented
-            # moves.Check(self), moves.Wait(self), moves.Rest(self), moves.Turn(self),
-            # moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self),
+            moves.Check(self), moves.Wait(self), moves.Rest(self), moves.Turn(self),
+            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self),
         ]
         self.current_move = None
         self.heat = 1.0
