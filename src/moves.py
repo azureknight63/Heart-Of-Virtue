@@ -41,9 +41,10 @@ default_animations = {
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0, 9999), heat_gain=0, fatigue_cost=0,
-                 instant=False, verbose_targeting=False):
+                 instant=False, verbose_targeting=False, category="Miscellaneous"):
         self.name = name
         self.description = description
+        self.category = category
         self.xp_gain = xp_gain
         self.heat_gain = heat_gain
         self.current_stage = current_stage
@@ -1811,7 +1812,9 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
         # self.mvrange = (6, effective_range)
-        self.base_damage_type = items.get_base_damage_type(self.arrow)
+        # Only set base_damage_type if arrow is available
+        if hasattr(self, 'arrow') and self.arrow:
+            self.base_damage_type = items.get_base_damage_type(self.arrow)
         # self.base_range = self.user.eq_weapon.range_base
         # self.decay = self.user.eq_weapon.range_decay
 

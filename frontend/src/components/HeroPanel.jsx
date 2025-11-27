@@ -1,6 +1,18 @@
 import { useState } from 'react'
 
-export default function HeroPanel({ player, inCombat, onAttributeClick, onStatusClick, onSkillsClick, onInventoryClick, onActionsClick, onInteractClick }) {
+export default function HeroPanel({
+  player,
+  inCombat,
+  onAttributeClick,
+  onStatusClick,
+  onSkillsClick,
+  onInventoryClick,
+  onActionsClick,
+  onInteractClick,
+  onOffensiveClick,
+  onManeuverClick,
+  onMiscellaneousClick
+}) {
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
   const [focusedBar, setFocusedBar] = useState(null)
@@ -26,7 +38,7 @@ export default function HeroPanel({ player, inCombat, onAttributeClick, onStatus
   const bpm = baseBpm + combatBonus + stressBonus
   const animationDuration = `${60 / bpm}s`
 
-  const buttons = [
+  const explorationButtons = [
     { key: 'attributes', label: 'ATTRIBUTES', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onAttributeClick },
     { key: 'status', label: 'PARTY', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onStatusClick },
     { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
@@ -34,6 +46,17 @@ export default function HeroPanel({ player, inCombat, onAttributeClick, onStatus
     { key: 'actions', label: 'COMMANDS', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onActionsClick },
     { key: 'interact', label: 'INTERACT', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onInteractClick },
   ]
+
+  const combatButtons = [
+    { key: 'offensive', label: 'OFFENSIVE', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onOffensiveClick, color: '#ff4444' },
+    { key: 'maneuver', label: 'MANEUVER', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onManeuverClick, color: '#4444ff' },
+    { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
+    { key: 'skills', label: 'SKILLS', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSkillsClick },
+    { key: 'miscellaneous', label: 'MISC', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onMiscellaneousClick, color: '#aaaaaa' },
+    { key: 'interact', label: 'INTERACT', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onInteractClick },
+  ]
+
+  const buttons = inCombat ? combatButtons : explorationButtons
 
   return (
     <div style={{
@@ -194,8 +217,10 @@ export default function HeroPanel({ player, inCombat, onAttributeClick, onStatus
         </div>
 
         {/* Surrounding Buttons */}
-        {buttons.map(({ key, label, top, left, transform, onClick }) => {
+        {buttons.map(({ key, label, top, left, transform, onClick, color }) => {
           const isHovered = hoveredButton === key
+          const baseColor = color || '#00aa55'
+          const hoverColor = color || '#00ff88'
 
           return (
             <button
@@ -211,18 +236,18 @@ export default function HeroPanel({ player, inCombat, onAttributeClick, onStatus
                 width: '70px',
                 height: '40px',
                 borderRadius: '4px',
-                border: `2px solid ${isHovered ? '#00ff88' : '#00aa55'}`,
+                border: `2px solid ${isHovered ? hoverColor : baseColor}`,
                 backgroundColor: isHovered
-                  ? 'rgba(0, 255, 136, 0.3)'
-                  : 'rgba(0, 170, 85, 0.1)',
-                color: isHovered ? '#00ff88' : '#00aa55',
+                  ? `${baseColor}4D` // 30% opacity
+                  : `${baseColor}1A`, // 10% opacity
+                color: isHovered ? hoverColor : baseColor,
                 fontSize: '9px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
                 boxShadow: isHovered
-                  ? '0 0 12px rgba(0, 255, 136, 0.7)'
-                  : '0 0 6px rgba(0, 170, 85, 0.3)',
+                  ? `0 0 12px ${baseColor}B3` // 70% opacity
+                  : `0 0 6px ${baseColor}4D`, // 30% opacity
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

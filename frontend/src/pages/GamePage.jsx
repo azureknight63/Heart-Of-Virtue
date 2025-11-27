@@ -7,7 +7,7 @@ import EventDialog from '../components/EventDialog'
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
-  const { combat, inCombat, fetchCombatStatus } = useCombat()
+  const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   // Store explored tiles as a Map: key = "x,y", value = { items, npcs, objects }
   const [exploredTiles, setExploredTiles] = useState(new Map())
@@ -148,10 +148,12 @@ export default function GamePage() {
         player={player}
         location={location}
         mode={mode}
+        combat={combat}
         onMove={handleMove}
         onRefetch={handleRefetch}
         onEventsTriggered={handleEventsTriggered}
         onInteractionComplete={handleInteractionComplete}
+        onCombatAction={performAction}
       />
 
       {/* Right Panel - Battlefield/Map */}

@@ -287,6 +287,7 @@ class MoveSerializer:
             "name": getattr(move, "name", "Unknown Move"),
             "description": getattr(move, "description", ""),
             "type": getattr(move, "move_type", "physical"),
+            "category": getattr(move, "category", "Miscellaneous"),
             "damage": {
                 "base": getattr(move, "base_damage", 0),
                 "type": getattr(move, "damage_type", "physical"),

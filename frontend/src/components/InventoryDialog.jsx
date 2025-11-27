@@ -12,12 +12,12 @@ const INVENTORY_TABS = [
   { key: 'special', label: '✨', icon: '✨', title: 'Special' },
 ]
 
-export default function InventoryDialog({ player, onClose, onRefetch }) {
-  const [activeTab, setActiveTab] = useState('weapons')
+export default function InventoryDialog({ player, onClose, onRefetch, combatMode = false }) {
+  const [activeTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
   const [selectedItem, setSelectedItem] = useState(null)
   const [hoveredItem, setHoveredItem] = useState(null)
   const [localInventory, setLocalInventory] = useState(player.inventory || [])
-  
+
   // Update local inventory when player changes
   useEffect(() => {
     setLocalInventory(player.inventory || [])
@@ -147,13 +147,13 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
       if (item.type === 'Gold' || item.maintype === 'Currency') {
         return
       }
-      
+
       // Use maintype first, then subtype, then type (class name)
       const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
-      
+
       // Check if item is stackable (consumables and some special items)
       const isStackable = categoryType.includes('consumable') || categoryType.includes('arrow') || categoryType.includes('scroll')
-      
+
       // For stackable items, merge quantities
       if (isStackable && stackedItems[item.name]) {
         stackedItems[item.name].quantity = (stackedItems[item.name].quantity || 1) + (item.quantity || 1)
@@ -165,10 +165,10 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
       if (isStackable) {
         stackedItems[item.name] = itemToAdd
       }
-      
+
       // Determine destination: owned or merchandise
       const destination = item.is_merchandise ? 'merchandise' : 'owned'
-      
+
       if (categoryType.includes('weapon')) {
         categories.weapons[destination].push(itemToAdd)
       } else if (categoryType.includes('armor')) {
@@ -216,7 +216,7 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
 
   // Handle item updates (equip state change, etc.)
   const handleItemUpdated = (itemId, updates) => {
-    setLocalInventory(prev => prev.map(item => 
+    setLocalInventory(prev => prev.map(item =>
       item.id === itemId ? { ...item, ...updates } : item
     ))
   }
@@ -234,7 +234,7 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
   const getSubtypeSymbol = (subtype) => {
     if (!subtype) return ''
     const subtypeLower = subtype.toLowerCase()
-    
+
     const symbolMap = {
       // Weapons
       'unarmed': '✊',
@@ -283,7 +283,7 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
       'potion': '🧪',
       'arrow': '🏹',
     }
-    
+
     for (const [key, symbol] of Object.entries(symbolMap)) {
       if (subtypeLower.includes(key)) {
         return symbol
@@ -296,7 +296,7 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
   const isItemEquipped = (item) => {
     if (!player?.equipment) return false
     const equipped = player.equipment.equipped || {}
-    
+
     // Check all equipment slots for this item
     for (const slot in equipped) {
       const equippedItem = equipped[slot]
@@ -312,25 +312,25 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
     const stats = []
     if (item.weight > 0) stats.push(`${item.weight.toFixed(1)}w`)
     if (item.value > 0) stats.push(`${item.value}g`)
-    
+
     // Get damage for weapons
     const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
     if (categoryType.includes('weapon')) {
       if (item.damage) stats.push(`⚔️ ${item.damage}`)
-    } else if (categoryType.includes('armor') || categoryType.includes('protection') || 
-               categoryType.includes('boot') || categoryType.includes('helm') || 
-               categoryType.includes('glove') || categoryType.includes('accessory')) {
+    } else if (categoryType.includes('armor') || categoryType.includes('protection') ||
+      categoryType.includes('boot') || categoryType.includes('helm') ||
+      categoryType.includes('glove') || categoryType.includes('accessory')) {
       if (item.protection) stats.push(`🛡️ ${item.protection}`)
     } else if (categoryType.includes('consumable')) {
       stats.push('💊')
     }
-    
+
     return stats.join(' • ')
   }
 
   if (selectedItem) {
     return (
-      <ItemDetailDialog 
+      <ItemDetailDialog
         item={selectedItem}
         player={player}
         onClose={() => setSelectedItem(null)}
@@ -338,6 +338,7 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
         onRefetch={onRefetch}
         onItemRemoved={handleItemRemoved}
         onItemUpdated={handleItemUpdated}
+        combatMode={combatMode}
       />
     )
   }
@@ -429,7 +430,7 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
         flexShrink: 0,
         marginBottom: '-4px',
       }}>
-        {INVENTORY_TABS.map((tab) => {
+        {INVENTORY_TABS.filter(tab => !combatMode || tab.key === 'consumables').map((tab) => {
           const tabData = categories[tab.key]
           const itemCount = tabData ? (tabData.owned.length + tabData.merchandise.length) : 0
           return (
@@ -583,102 +584,102 @@ export default function InventoryDialog({ player, onClose, onRefetch }) {
           activeItems.map((item, idx) => {
             const equipped = item.is_equipped || isItemEquipped(item)
             return (
-            <div
-              key={idx}
-              onMouseEnter={() => setHoveredItem(idx)}
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={() => setSelectedItem(item)}
-              style={{
-                position: 'relative',
-                display: 'inline-block',
-              }}
-            >
-              {/* Item Tag */}
-              <div style={{
-                display: 'inline-block',
-                padding: '14px 20px',
-                backgroundColor: equipped ? 'rgba(50, 150, 50, 0.6)' : (item.is_merchandise ? 'rgba(100, 80, 50, 0.6)' : 'rgba(100, 50, 0, 0.6)'),
-                border: equipped ? '2px solid #00ff00' : (item.is_merchandise ? '2px solid #cc9944' : '2px solid #ffaa00'),
-                borderRadius: '24px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                boxShadow: hoveredItem === idx ? (equipped ? '0 0 12px rgba(0, 255, 0, 0.8) inset' : (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset')) : 'none',
-                transform: hoveredItem === idx ? 'scale(1.05)' : 'scale(1)',
-                fontSize: '16px',
-                opacity: item.is_merchandise ? 0.75 : 1,
-              }}
-              onMouseEnter={(e) => {
-                if (equipped) {
-                  e.target.style.backgroundColor = 'rgba(100, 200, 100, 0.8)'
-                  e.target.style.borderColor = '#00ff88'
-                } else if (item.is_merchandise) {
-                  e.target.style.backgroundColor = 'rgba(150, 120, 70, 0.8)'
-                  e.target.style.borderColor = '#ddaa66'
-                } else {
-                  e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
-                  e.target.style.borderColor = '#ffff00'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (equipped) {
-                  e.target.style.backgroundColor = 'rgba(50, 150, 50, 0.6)'
-                  e.target.style.borderColor = '#00ff00'
-                } else if (item.is_merchandise) {
-                  e.target.style.backgroundColor = 'rgba(100, 80, 50, 0.6)'
-                  e.target.style.borderColor = '#cc9944'
-                } else {
-                  e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
-                  e.target.style.borderColor = '#ffaa00'
-                }
-              }}
+              <div
+                key={idx}
+                onMouseEnter={() => setHoveredItem(idx)}
+                onMouseLeave={() => setHoveredItem(null)}
+                onClick={() => setSelectedItem(item)}
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                }}
               >
-                <span style={{ 
-                  marginRight: '4px',
-                  color: item.subtype && item.subtype.toLowerCase().includes('spear') ? '#8B6914' : 'inherit'
-                }}>
-                  {getSubtypeSymbol(item.subtype)}
-                </span>
-                {item.name}
-                {equipped && (
-                  <span style={{ marginLeft: '4px', color: '#00ff00', fontWeight: 'bold', fontSize: '13px' }}>
-                    [EQUIPPED]
+                {/* Item Tag */}
+                <div style={{
+                  display: 'inline-block',
+                  padding: '14px 20px',
+                  backgroundColor: equipped ? 'rgba(50, 150, 50, 0.6)' : (item.is_merchandise ? 'rgba(100, 80, 50, 0.6)' : 'rgba(100, 50, 0, 0.6)'),
+                  border: equipped ? '2px solid #00ff00' : (item.is_merchandise ? '2px solid #cc9944' : '2px solid #ffaa00'),
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: hoveredItem === idx ? (equipped ? '0 0 12px rgba(0, 255, 0, 0.8) inset' : (item.is_merchandise ? '0 0 12px rgba(204, 153, 68, 0.8) inset' : '0 0 12px rgba(255, 170, 0, 0.8) inset')) : 'none',
+                  transform: hoveredItem === idx ? 'scale(1.05)' : 'scale(1)',
+                  fontSize: '16px',
+                  opacity: item.is_merchandise ? 0.75 : 1,
+                }}
+                  onMouseEnter={(e) => {
+                    if (equipped) {
+                      e.target.style.backgroundColor = 'rgba(100, 200, 100, 0.8)'
+                      e.target.style.borderColor = '#00ff88'
+                    } else if (item.is_merchandise) {
+                      e.target.style.backgroundColor = 'rgba(150, 120, 70, 0.8)'
+                      e.target.style.borderColor = '#ddaa66'
+                    } else {
+                      e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
+                      e.target.style.borderColor = '#ffff00'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (equipped) {
+                      e.target.style.backgroundColor = 'rgba(50, 150, 50, 0.6)'
+                      e.target.style.borderColor = '#00ff00'
+                    } else if (item.is_merchandise) {
+                      e.target.style.backgroundColor = 'rgba(100, 80, 50, 0.6)'
+                      e.target.style.borderColor = '#cc9944'
+                    } else {
+                      e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
+                      e.target.style.borderColor = '#ffaa00'
+                    }
+                  }}
+                >
+                  <span style={{
+                    marginRight: '4px',
+                    color: item.subtype && item.subtype.toLowerCase().includes('spear') ? '#8B6914' : 'inherit'
+                  }}>
+                    {getSubtypeSymbol(item.subtype)}
                   </span>
-                )}
-                {item.is_merchandise && (
-                  <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '13px' }}>
-                    [UNSOLD]
-                  </span>
-                )}
-                {item.quantity > 1 && (
-                  <span style={{ marginLeft: '4px', color: '#ff6600', fontWeight: 'bold' }}>
-                    ×{item.quantity}
-                  </span>
+                  {item.name}
+                  {equipped && (
+                    <span style={{ marginLeft: '4px', color: '#00ff00', fontWeight: 'bold', fontSize: '13px' }}>
+                      [EQUIPPED]
+                    </span>
+                  )}
+                  {item.is_merchandise && (
+                    <span style={{ marginLeft: '4px', color: '#cc9944', fontWeight: 'bold', fontSize: '13px' }}>
+                      [UNSOLD]
+                    </span>
+                  )}
+                  {item.quantity > 1 && (
+                    <span style={{ marginLeft: '4px', color: '#ff6600', fontWeight: 'bold' }}>
+                      ×{item.quantity}
+                    </span>
+                  )}
+                </div>
+
+                {/* Hover Tooltip with Stats */}
+                {hoveredItem === idx && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    marginTop: '4px',
+                    backgroundColor: '#1a1a1a',
+                    border: '2px solid #ffaa00',
+                    borderRadius: '4px',
+                    padding: '6px 10px',
+                    whiteSpace: 'nowrap',
+                    zIndex: 100,
+                    fontSize: '12px',
+                    color: '#ffcc00',
+                    boxShadow: '0 0 12px rgba(255, 170, 0, 0.6)',
+                    pointerEvents: 'none',
+                  }}>
+                    {getItemStats(item)}
+                  </div>
                 )}
               </div>
-
-              {/* Hover Tooltip with Stats */}
-              {hoveredItem === idx && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  marginTop: '4px',
-                  backgroundColor: '#1a1a1a',
-                  border: '2px solid #ffaa00',
-                  borderRadius: '4px',
-                  padding: '6px 10px',
-                  whiteSpace: 'nowrap',
-                  zIndex: 100,
-                  fontSize: '12px',
-                  color: '#ffcc00',
-                  boxShadow: '0 0 12px rgba(255, 170, 0, 0.6)',
-                  pointerEvents: 'none',
-                }}>
-                  {getItemStats(item)}
-                </div>
-              )}
-            </div>
             )
           })
         ) : (

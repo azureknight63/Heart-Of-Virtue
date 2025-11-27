@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import apiClient from '../api/client'
 
-export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated }) {
+export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
   const [showDropConfirm, setShowDropConfirm] = useState(false)
@@ -325,7 +325,8 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         gap: '8px',
         justifyContent: 'space-between',
       }}>
-        {item.can_equip && (
+
+        {item.can_equip && !combatMode && (
           <button
             onClick={handleEquip}
             disabled={isLoading}
@@ -391,7 +392,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           </button>
         )}
 
-        {item.can_drop && (
+        {item.can_drop && !combatMode && (
           <button
             onClick={() => setShowDropConfirm(true)}
             disabled={isLoading}

@@ -8,8 +8,10 @@ import RoomContents from './RoomContents'
 import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
+import CombatMovePanel from './CombatMovePanel'
+import CombatLog from './CombatLog'
 
-export default function LeftPanel({ player, location, mode, onMove, onRefetch, onEventsTriggered, onInteractionComplete }) {
+export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAttributes, setShowAttributes] = useState(false)
@@ -17,6 +19,42 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch, o
   const [showSkills, setShowSkills] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [showInteract, setShowInteract] = useState(false)
+
+  // Combat state
+  const [showCombatMoves, setShowCombatMoves] = useState(false)
+  const [combatMovesCategory, setCombatMovesCategory] = useState(null)
+
+  // Determine if it's player's turn
+  const isPlayerTurn = combat?.current_turn_index === 0 // Assuming 0 is always player in turn_order list, or check name
+  // Better check:
+  const currentPlayerName = combat?.turn_order?.[combat?.current_turn_index]
+  const isMyTurn = currentPlayerName === 'player' || currentPlayerName === 'Jean' // Adjust based on actual turn_order format
+
+  const handleCombatMoveClick = (category) => {
+    if (showCombatMoves && combatMovesCategory === category) {
+      setShowCombatMoves(false)
+      setCombatMovesCategory(null)
+    } else {
+      setCombatMovesCategory(category)
+      setShowCombatMoves(true)
+      // Close other panels
+      setShowInventory(false)
+      setShowSkills(false)
+      setShowAttributes(false)
+      setShowStatus(false)
+    }
+  }
+
+  const handleMoveSelection = async (move) => {
+    console.log('Selected move:', move)
+    // Execute move via API
+    try {
+      await onCombatAction('move', { move_id: move.name, target_id: combat.enemies[0]?.id }) // Default target for now, needs targeting logic
+      setShowCombatMoves(false)
+    } catch (err) {
+      console.error('Failed to execute move:', err)
+    }
+  }
 
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible' }}>
@@ -102,56 +140,13 @@ export default function LeftPanel({ player, location, mode, onMove, onRefetch, o
             }}
             onActionsClick={() => setShowActions(!showActions)}
             onInteractClick={() => setShowInteract(!showInteract)}
+            onOffensiveClick={() => handleCombatMoveClick('Offensive')}
+            onManeuverClick={() => handleCombatMoveClick('Maneuver')}
+            onMiscellaneousClick={() => handleCombatMoveClick('Miscellaneous')}
           />
-        </div>
-
-        {/* Player Status - Hidden for now, shown when Status clicked */}
-        {showStatus && player && <PartyPanel player={player} onClose={() => setShowStatus(false)} />}
-
-        {/* Stats/Attributes Panel */}
-        {showAttributes && player && (
-          <StatsPanel player={player} onClose={() => setShowAttributes(false)} />
-        )}
-
-        {/* Inventory Dialog in Bottom Half */}
-        {showInventory && player && (
-          <InventoryDialog items={player.inventory} player={player} onClose={() => setShowInventory(false)} onRefetch={onRefetch} />
-        )}
-
-        {/* Skills Panel */}
-        {showSkills && player && (
-          <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
-        )}
-
-        {showActions && location && mode === 'exploration' && (
-          <ActionsPanel
-            player={player}
-            location={location}
-            onClose={() => setShowActions(false)}
-            onMove={onMove}
-            onRefetch={onRefetch}
-          />
-        )}
-
-        {/* Interact Panel */}
-        {showInteract && location && mode === 'exploration' && (
-          <InteractPanel
-            location={location}
-            onClose={() => setShowInteract(false)}
-            onEventsTriggered={onEventsTriggered}
-            onInteractionComplete={onInteractionComplete}
-            onRefetch={onRefetch}
-          />
-        )}
-      </div>
-
-      {/* Account Dialog */}
-      {showAccount && (
-        <AccountDialog
-          player={player}
           onClose={() => setShowAccount(false)}
         />
       )}
-    </div>
-  )
+        </div>
+        )
 }
