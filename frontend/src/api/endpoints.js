@@ -30,7 +30,17 @@ export const world = {
 export const combat = {
   startCombat: () => apiClient.post('/combat/start'),
   getStatus: () => apiClient.get('/combat/status'),
-  performAction: (action, target) => apiClient.post('/combat/move', { move: action, target }),
+  performAction: (moveType, params) => {
+    const payload = {
+      move_type: moveType,
+      move_id: params.move_id
+    }
+    // Only include target_id if it's defined
+    if (params.target_id !== undefined && params.target_id !== null) {
+      payload.target_id = params.target_id
+    }
+    return apiClient.post('/combat/move', payload)
+  },
 }
 
 // Inventory endpoints

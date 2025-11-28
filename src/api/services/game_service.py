@@ -810,13 +810,13 @@ class GameService:
         for move in getattr(player, "known_moves", []):
             known_moves.append({
                 "name": getattr(move, "name", "Unknown"),
+                "category": getattr(move, "category", "Miscellaneous"),
                 "description": getattr(move, "description", ""),
                 "fatigue_cost": getattr(move, "fatigue_cost", 0),
                 "beats_left": getattr(move, "beats_left", 0),
                 "xp_gain": getattr(move, "xp_gain", 0),
             })
 
-        # Serialize skill tree and learnable skills
         skill_tree = {}
         if hasattr(player, "skilltree") and hasattr(player.skilltree, "subtypes"):
             for category, skills in player.skilltree.subtypes.items():
@@ -1110,7 +1110,7 @@ class GameService:
 
         Args:
             player: Player object
-            move_type: Type of action (attack, defend, cast, item)
+            move_type: Type of action (attack, defend, cast, item, move)
             move_id: ID/name of the specific move or ability
             target_id: ID of target (optional, defaults to first enemy)
 
@@ -1124,7 +1124,104 @@ class GameService:
         if not enemies:
             return {"error": "No enemies in combat"}
 
-        # Route move based on type
+        # Handle "move" type - execute a known move by name
+        if move_type == "move":
+            # Special handling for moves that require user input in terminal
+            # These need to be handled differently in API context
+            
+            if move_id == "Check":
+                # Return battlefield information instead of blocking for input
+                battlefield_info = []
+                for enemy in enemies:
+                    distance = player.combat_proximity.get(enemy, 0)
+                    battlefield_info.append({
+                        "name": getattr(enemy, "name", "Unknown"),
+                        "distance": int(distance),
+                        "hp": getattr(enemy, "hp", 0),
+                        "max_hp": getattr(enemy, "maxhp", 0),
+                    })
+                
+                return {
+                    "success": True,
+                    "action": "check",
+                    "move_name": "Check",
+                    "message": "Checked surroundings",
+                    "battlefield_info": battlefield_info,
+                    "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
+                }
+            
+            if move_id == "Wait":
+                # For API, treat Wait as a simple pass/skip turn action
+                # In the terminal version, this prompts for duration
+                # For API, we'll just advance time by a fixed amount (e.g., 3 beats)
+                return {
+                    "success": True,
+                    "action": "wait",
+                    "move_name": "Wait",
+                    "message": "Waiting for opportunity",
+                    "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
+                }
+            
+            # Find the move in player's known_moves
+            move_obj = None
+            for move in getattr(player, "known_moves", []):
+                if getattr(move, "name", "") == move_id:
+                    move_obj = move
+                    break
+            
+            if not move_obj:
+                return {"error": f"Move '{move_id}' not found in known moves"}
+            
+            # Check if move is viable
+            if hasattr(move_obj, "viable") and not move_obj.viable():
+                return {"error": f"Move '{move_id}' is not viable right now"}
+            
+            # Check fatigue cost
+            fatigue_cost = getattr(move_obj, "fatigue_cost", 0)
+            if player.fatigue < fatigue_cost:
+                return {"error": f"Not enough fatigue. Need {fatigue_cost}, have {player.fatigue}"}
+            
+            # Set the move as current move
+            player.current_move = move_obj
+            move_obj.user = player
+            
+            # Set target if move is targeted
+            if getattr(move_obj, "targeted", False) and target_id:
+                # Find target in enemies
+                target = None
+                for enemy in enemies:
+                    if str(id(enemy)) == target_id or getattr(enemy, "id", None) == target_id:
+                        target = enemy
+                        break
+                if target:
+                    move_obj.target = target
+                else:
+                    # Default to first enemy if target not found
+                    move_obj.target = enemies[0] if enemies else player
+            else:
+                move_obj.target = player
+            
+            # Execute the move's cast method
+            if hasattr(move_obj, "cast"):
+                move_obj.cast()
+            
+            # Process the move through all stages if instant
+            if getattr(move_obj, "instant", False):
+                while move_obj.current_stage < 3 and player.current_move == move_obj:
+                    move_obj.advance(player)
+            else:
+                # Process one stage
+                move_obj.advance(player)
+            
+            return {
+                "success": True,
+                "action": "move",
+                "move_name": move_id,
+                "message": f"Executed {move_id}",
+                "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
+            }
+        
+        # Route move based on type (legacy support)
         if move_type == "attack":
             return self._execute_attack(player, enemies, target_id)
         elif move_type == "defend":

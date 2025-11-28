@@ -65,12 +65,14 @@ export const usePlayer = () => {
       const statusResponse = await apiEndpoints.player.getStatus()
       const inventoryResponse = await apiEndpoints.player.getInventory()
       const statsResponse = await apiEndpoints.player.getStats()
+      const skillsResponse = await apiEndpoints.player.getSkills()
 
-      // Combine status, inventory, and stats data
+      // Combine status, inventory, stats, and skills data
       const playerData = {
         ...statusResponse.data.status,
         inventory: inventoryResponse.data.inventory?.items || [],
         ...statsResponse.data.stats,
+        ...skillsResponse.data.skills,
       }
 
       setPlayer(playerData)
