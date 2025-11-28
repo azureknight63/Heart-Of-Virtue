@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { usePlayer, useWorld, useCombat } from '../hooks/useApi'
+import { useAudio } from '../context/AudioContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
 import EventDialog from '../components/EventDialog'
@@ -8,6 +9,7 @@ export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
+  const { playBGM, playSFX } = useAudio()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   // Store explored tiles as a Map: key = "x,y", value = { items, npcs, objects }
   const [exploredTiles, setExploredTiles] = useState(new Map())
@@ -118,6 +120,17 @@ export default function GamePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inCombat])
+
+  // Manage BGM based on mode
+  useEffect(() => {
+    if (mode === 'combat') {
+      playBGM('battle')
+      playSFX('combat_start')
+    } else {
+      // Simple logic: play adventure for now. Could be dungeon based on location type later.
+      playBGM('adventure')
+    }
+  }, [mode, playBGM, playSFX])
 
   // Check combat status on initial load only
   useEffect(() => {
