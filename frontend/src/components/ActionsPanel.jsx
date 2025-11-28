@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useAudio } from '../context/AudioContext'
 
 // Tooltip descriptions for each command
 const COMMAND_TOOLTIPS = {
@@ -25,6 +26,7 @@ export default function ActionsPanel({ player, location, onClose, onRefetch }) {
   const [error, setError] = useState(null)
   const [actionMessage, setActionMessage] = useState('')
   const [hoveredCommand, setHoveredCommand] = useState(null)
+  const { playSFX } = useAudio()
 
   // Fetch available commands from backend
   useEffect(() => {
@@ -59,6 +61,7 @@ export default function ActionsPanel({ player, location, onClose, onRefetch }) {
   }, [location])
 
   const handleAction = async (command) => {
+    playSFX('click')
     const token = localStorage.getItem('authToken')
 
     try {

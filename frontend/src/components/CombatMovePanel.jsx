@@ -1,6 +1,8 @@
 import React from 'react';
+import { useAudio } from '../context/AudioContext';
 
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
+    const { playSFX } = useAudio();
     const filteredMoves = moves.filter(move => move.category === category);
 
     return (
@@ -50,7 +52,10 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
                     filteredMoves.map((move, index) => (
                         <button
                             key={index}
-                            onClick={() => onMoveClick(move)}
+                            onClick={() => {
+                                playSFX('attack');
+                                onMoveClick(move);
+                            }}
                             style={{
                                 backgroundColor: 'rgba(255, 255, 255, 0.05)',
                                 border: '1px solid #444',
