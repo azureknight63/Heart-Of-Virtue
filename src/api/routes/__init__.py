@@ -13,6 +13,7 @@ from .reputation import reputation_bp
 from .quest_chains import quest_chains_bp
 from .npc_availability import npc_availability_bp
 from .dialogue_context import dialogue_context_bp
+from .logs import logs_bp
 
 __all__ = [
     "auth_bp",
@@ -28,4 +29,5 @@ __all__ = [
     "quest_chains_bp",
     "npc_availability_bp",
     "dialogue_context_bp",
+    "logs_bp",
 ]

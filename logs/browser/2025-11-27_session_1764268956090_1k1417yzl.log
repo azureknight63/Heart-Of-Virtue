@@ -1,0 +1,36 @@
+[2025-11-27T18:44:58.565Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:44:58.565Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/pages/GamePage.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:44:58.565Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:44:58.565Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/App.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:44:58.566Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:44:58.566Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/components/SkillsPanel.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:44:58.566Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:44:58.566Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/pages/LoginPage.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:44:58.566Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:44:58.567Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/components/AccountDialog.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:44:58.568Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/App.jsx
+[2025-11-27T18:44:58.568Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/styles/index.css
+[2025-11-27T18:44:58.568Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T18:44:58.568Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/pages/LoginPage.jsx
+[2025-11-27T18:44:58.568Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/components/AccountDialog.jsx
+[2025-11-27T18:44:58.568Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/components/SkillsPanel.jsx
+[2025-11-27T18:46:52.395Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:46:52.395Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/pages/GamePage.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:46:52.396Z] [ERROR] [http://localhost:3000/game] {}
+[2025-11-27T18:46:52.397Z] [ERROR] [http://localhost:3000/game] [hmr] Failed to reload /src/App.jsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[2025-11-27T18:46:52.404Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/App.jsx
+[2025-11-27T18:46:52.404Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/styles/index.css
+[2025-11-27T18:46:52.405Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T18:46:52.406Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/pages/LoginPage.jsx
+[2025-11-27T18:46:52.407Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/components/AccountDialog.jsx
+[2025-11-27T18:46:52.407Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/components/SkillsPanel.jsx
+[2025-11-27T18:47:05.705Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/components/HeroPanel.jsx
+[2025-11-27T18:47:05.705Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:23:41.770Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/App.jsx
+[2025-11-27T19:23:41.770Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:23:42.878Z] [ERROR] [http://localhost:3000/game] The above error occurred in the <App> component:
+
+App@http://localhost:3000/src/App.jsx?t=1764271421123:25:40
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.

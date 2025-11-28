@@ -1,0 +1,147 @@
+[2025-11-27T18:47:24.719Z] [WARN] [http://localhost:3000/game] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+[2025-11-27T18:47:24.719Z] [WARN] [http://localhost:3000/game] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+[2025-11-27T18:47:24.742Z] [DEBUG] [http://localhost:3000/game] [vite] connected.
+[2025-11-27T18:47:25.687Z] [WARN] [http://localhost:3000/login] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+[2025-11-27T18:47:25.687Z] [WARN] [http://localhost:3000/login] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+[2025-11-27T18:47:25.712Z] [DEBUG] [http://localhost:3000/login] [vite] connected.
+[2025-11-27T18:47:49.858Z] [WARN] [http://localhost:3000/game] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+[2025-11-27T18:47:49.858Z] [WARN] [http://localhost:3000/game] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+[2025-11-27T18:47:50.032Z] [DEBUG] [http://localhost:3000/game] [vite] connected.
+[2025-11-27T18:48:35.320Z] [LOG] [http://localhost:3000/game] Combat initiated! {
+  "current_turn_index": 0,
+  "enemies": [
+    {
+      "distance": {},
+      "equipment": {
+        "armor": null,
+        "resistances": {},
+        "weapon": null
+      },
+      "health": {
+        "current": 0,
+        "max": 100
+      },
+      "id": "player",
+      "level": 1,
+      "name": "Slime Alpha",
+      "stats": {
+        "accuracy": 80,
+        "armor": 0,
+        "damage": 20,
+        "evasion": 0,
+        "speed": 10
+      },
+      "status_effects": [],
+      "type": "player"
+    },
+    {
+      "distance": {},
+      "equipment": {
+        "armor": null,
+        "resistances": {},
+        "weapon": null
+      },
+      "health": {
+        "current": 0,
+        "max": 100
+      },
+      "id": "player",
+      "level": 1,
+      "name": "Cave Bat Swooper",
+      "stats": {
+        "accuracy": 80,
+        "armor": 0,
+        "damage": 18,
+        "evasion": 0,
+        "speed": 40
+      },
+      "status_effects": [],
+      "type": "player"
+    }
+  ],
+  "player": {
+    "distance": {},
+    "equipment": {
+      "armor": null,
+      "resistances": {},
+      "weapon": null
+    },
+    "health": {
+      "current": 0,
+      "max": 100
+    },
+    "id": "player",
+    "level": 1,
+    "name": "test",
+    "stats": {
+      "accuracy": 80,
+      "armor": 0,
+      "damage": 0,
+      "evasion": 0,
+      "speed": 10
+    },
+    "status_effects": [],
+    "type": "player"
+  },
+  "round": 1,
+  "status": "active",
+  "turn_order": [
+    "enemy_1",
+    "player",
+    "enemy_0"
+  ]
+}
+[2025-11-27T18:48:50.002Z] [LOG] [http://localhost:3000/game] Selected move: {
+  "beats_left": 0,
+  "category": "Miscellaneous",
+  "description": "Check your surroundings.",
+  "fatigue_cost": 0,
+  "name": "Check",
+  "xp_gain": 0
+}
+[2025-11-27T18:49:11.577Z] [LOG] [http://localhost:3000/game] Selected move: {
+  "beats_left": 0,
+  "category": "Miscellaneous",
+  "description": "Wait for the right opportunity to make your move.",
+  "fatigue_cost": 0,
+  "name": "Wait",
+  "xp_gain": 0
+}
+[2025-11-27T18:51:48.523Z] [WARN] [http://localhost:3000/game] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+[2025-11-27T18:51:48.523Z] [WARN] [http://localhost:3000/game] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+[2025-11-27T18:51:48.571Z] [DEBUG] [http://localhost:3000/game] [vite] connected.
+[2025-11-27T19:23:41.612Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/App.jsx
+[2025-11-27T19:23:41.613Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:23:41.653Z] [ERROR] [http://localhost:3000/game] The above error occurred in the <App> component:
+
+    at App (http://localhost:3000/src/App.jsx?t=1764271421123:25:40)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+[2025-11-27T19:24:00.502Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/App.jsx
+[2025-11-27T19:24:00.502Z] [DEBUG] [http://localhost:3000/game] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:24:01.848Z] [WARN] [http://localhost:3000/login] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+[2025-11-27T19:24:01.849Z] [WARN] [http://localhost:3000/login] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+[2025-11-27T19:24:01.889Z] [DEBUG] [http://localhost:3000/login] [vite] connected.
+[2025-11-27T19:24:59.688Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T19:24:59.688Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:25:08.756Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T19:25:08.757Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:25:16.697Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T19:25:16.697Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:25:30.240Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/components/ActionsPanel.jsx
+[2025-11-27T19:25:30.241Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:25:30.885Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/components/ActionsPanel.jsx
+[2025-11-27T19:25:30.886Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:26:00.686Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/components/ActionsPanel.jsx
+[2025-11-27T19:26:00.686Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:26:01.130Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T19:26:01.131Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:26:18.158Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/pages/GamePage.jsx
+[2025-11-27T19:26:18.158Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:26:35.371Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/components/CombatMovePanel.jsx
+[2025-11-27T19:26:35.372Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:26:36.167Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/components/CombatMovePanel.jsx
+[2025-11-27T19:26:36.168Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css
+[2025-11-27T19:26:53.517Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/components/CombatMovePanel.jsx
+[2025-11-27T19:26:53.518Z] [DEBUG] [http://localhost:3000/login] [vite] hot updated: /src/styles/index.css

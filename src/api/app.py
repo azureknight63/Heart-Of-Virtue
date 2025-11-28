@@ -168,6 +168,7 @@ def create_app(config_class=None):
         quest_chains_bp,
         npc_availability_bp,
         dialogue_context_bp,
+        logs_bp,
     )
 
     app.register_blueprint(auth_bp, url_prefix="/api")
@@ -183,6 +184,7 @@ def create_app(config_class=None):
     app.register_blueprint(quest_chains_bp, url_prefix="/api")
     app.register_blueprint(npc_availability_bp, url_prefix="/api")
     app.register_blueprint(dialogue_context_bp, url_prefix="/api")
+    app.register_blueprint(logs_bp, url_prefix="/api/logs")
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers

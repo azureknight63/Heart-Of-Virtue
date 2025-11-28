@@ -47,3 +47,6 @@ api_log.txt
 api_log_*.txt
 
 .gemini
+
+# Browser logs
+/logs/*.log
