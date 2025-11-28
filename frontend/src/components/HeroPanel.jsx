@@ -3,12 +3,16 @@ import { useState } from 'react'
 export default function HeroPanel({
   player,
   inCombat,
+  hasSpecialMoves,
+  hasSupernaturalMoves,
   onAttributeClick,
   onStatusClick,
   onSkillsClick,
+  onSpecialClick,
   onInventoryClick,
   onActionsClick,
   onInteractClick,
+  onSupernaturalClick,
   onOffensiveClick,
   onManeuverClick,
   onMiscellaneousClick
@@ -51,12 +55,12 @@ export default function HeroPanel({
     { key: 'offensive', label: 'OFFENSIVE', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onOffensiveClick, color: '#ff4444' },
     { key: 'maneuver', label: 'MANEUVER', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onManeuverClick, color: '#4444ff' },
     { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
-    { key: 'skills', label: 'SKILLS', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSkillsClick },
+    { key: 'special', label: 'SPECIAL', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSpecialClick, color: '#9944ff', show: hasSpecialMoves },
     { key: 'miscellaneous', label: 'MISC', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onMiscellaneousClick, color: '#aaaaaa' },
-    { key: 'interact', label: 'INTERACT', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onInteractClick },
+    { key: 'supernatural', label: 'SUPERNATURAL', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onSupernaturalClick, color: '#44ffff', show: hasSupernaturalMoves },
   ]
 
-  const buttons = inCombat ? combatButtons : explorationButtons
+  const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
 
   return (
     <div style={{
@@ -77,7 +81,6 @@ export default function HeroPanel({
         justifyContent: 'center',
         overflow: 'visible',
       }}>
-        {/* Hero Silhouette */}
         {/* Hero Heart Image */}
         <img
           src="/hero-heart.png"

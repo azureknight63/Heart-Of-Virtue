@@ -164,7 +164,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             display: 'flex',
             flexDirection: 'column'
           }}>
-            <CombatLog log={combat.log} />
+            <CombatLog log={combat.log} allowResize={false} />
           </div>
         )}
 
