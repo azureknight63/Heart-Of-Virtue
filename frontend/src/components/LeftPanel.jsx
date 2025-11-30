@@ -2,6 +2,7 @@ import { useState } from 'react'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
+import AudioControlDialog from './AudioControlDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
 import RoomContents from './RoomContents'
@@ -14,6 +15,7 @@ import CombatLog from './CombatLog'
 export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
+  const [showAudio, setShowAudio] = useState(false)
   const [showAttributes, setShowAttributes] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
@@ -72,31 +74,59 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         flexShrink: 0,
       }}>
         <span>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
-        <button
-          onClick={() => setShowAccount(true)}
-          style={{
-            padding: '4px 12px',
-            backgroundColor: '#00cc66',
-            color: '#000000',
-            border: '1px solid #000000',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            fontFamily: 'monospace',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.backgroundColor = '#00ff88'
-            e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.8)'
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#00cc66'
-            e.target.style.boxShadow = 'none'
-          }}
-        >
-          Account
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => setShowAudio(true)}
+            style={{
+              padding: '4px 8px',
+              backgroundColor: '#00cc66',
+              color: '#000000',
+              border: '1px solid #000000',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              fontFamily: 'monospace',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#00ff88'
+              e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.8)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#00cc66'
+              e.target.style.boxShadow = 'none'
+            }}
+            title="Audio Settings"
+          >
+            🔊
+          </button>
+          <button
+            onClick={() => setShowAccount(true)}
+            style={{
+              padding: '4px 12px',
+              backgroundColor: '#00cc66',
+              color: '#000000',
+              border: '1px solid #000000',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              fontFamily: 'monospace',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#00ff88'
+              e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.8)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#00cc66'
+              e.target.style.boxShadow = 'none'
+            }}
+          >
+            Account
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -116,11 +146,17 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
         {/* Hero Panel - Character Head with Surrounding Buttons */}
         <div style={{
-          transform: showStatus || showInventory || showAttributes || showActions || showSkills || showInteract ? 'scale(1)' : 'scale(2)',
+          transform: (mode === 'combat')
+            ? 'scale(1.2)'
+            : (showStatus || showInventory || showAttributes || showActions || showSkills || showInteract ? 'scale(1)' : 'scale(2)'),
           transformOrigin: 'top center',
           transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
           zIndex: 50,
+          flex: (mode === 'combat' && isMyTurn) ? '1 1 0' : '0 0 auto',
+          display: (mode === 'combat' && !isMyTurn) ? 'none' : 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}>
           <HeroPanel
             player={player}
@@ -156,11 +192,11 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         {/* Combat Log - Always visible in combat, size varies by turn */}
         {mode === 'combat' && combat?.log && (
           <div style={{
-            flex: isMyTurn ? '0 0 150px' : '1 1 auto',
-            height: isMyTurn ? '150px' : 'auto',
+            flex: '1 1 0',
+            height: 'auto',
             transition: 'all 0.3s ease',
             overflow: 'hidden',
-            minHeight: '150px',
+            minHeight: '0',
             display: 'flex',
             flexDirection: 'column'
           }}>
@@ -220,6 +256,13 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         <AccountDialog
           player={player}
           onClose={() => setShowAccount(false)}
+        />
+      )}
+
+      {/* Audio Dialog */}
+      {showAudio && (
+        <AudioControlDialog
+          onClose={() => setShowAudio(false)}
         />
       )}
     </div>

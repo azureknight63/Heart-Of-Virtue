@@ -5,8 +5,10 @@ const AudioContext = createContext();
 export const useAudio = () => useContext(AudioContext);
 
 export const AudioProvider = ({ children }) => {
-    const [volume, setVolume] = useState(0.5);
-    const [isMuted, setIsMuted] = useState(false);
+    const [musicVolume, setMusicVolume] = useState(0.5);
+    const [sfxVolume, setSfxVolume] = useState(0.5);
+    const [isMusicMuted, setIsMusicMuted] = useState(false);
+    const [isSfxMuted, setIsSfxMuted] = useState(false);
     const [currentBGM, setCurrentBGM] = useState(null);
 
     const bgmRef = useRef(new Audio());
@@ -14,8 +16,8 @@ export const AudioProvider = ({ children }) => {
 
     useEffect(() => {
         bgmRef.current.loop = true;
-        bgmRef.current.volume = isMuted ? 0 : volume;
-    }, [volume, isMuted]);
+        bgmRef.current.volume = isMusicMuted ? 0 : musicVolume;
+    }, [musicVolume, isMusicMuted]);
 
     const playBGM = (trackName) => {
         if (currentBGM === trackName) return;
@@ -35,7 +37,7 @@ export const AudioProvider = ({ children }) => {
     const playSFX = (sfxName) => {
         const path = `/assets/sounds/sfx_${sfxName}.wav`;
         const audio = new Audio(path);
-        audio.volume = isMuted ? 0 : volume;
+        audio.volume = isSfxMuted ? 0 : sfxVolume;
         audio.play().catch(e => console.warn("SFX play failed:", e));
     };
 
@@ -43,10 +45,14 @@ export const AudioProvider = ({ children }) => {
         playBGM,
         stopBGM,
         playSFX,
-        volume,
-        setVolume,
-        isMuted,
-        setIsMuted,
+        musicVolume,
+        setMusicVolume,
+        sfxVolume,
+        setSfxVolume,
+        isMusicMuted,
+        setIsMusicMuted,
+        isSfxMuted,
+        setIsSfxMuted,
         currentBGM
     };
 
