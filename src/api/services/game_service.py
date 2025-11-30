@@ -206,18 +206,14 @@ class GameService:
         
         if combat_enemies:
             # Initialize combat
-            if not hasattr(player, "combat_list"):
-                player.combat_list = []
-            if not hasattr(player, "combat_list_allies"):
-                player.combat_list_allies = [player]
-            
-            player.combat_list = combat_enemies
-            player.in_combat = True
+            self._initialize_combat(player, combat_enemies)
             combat_started = True
             
             # Get initial combat state
             combat_state = CombatStateSerializer.serialize_combat_state(
-                player, combat_enemies, current_turn_index=0, round_number=1
+                player, combat_enemies, 
+                current_turn_index=getattr(player, "combat_turn_index", 0), 
+                round_number=getattr(player, "combat_round", 1)
             )
 
         return {
@@ -979,6 +975,24 @@ class GameService:
     # Combat Methods
     # ========================
 
+    def _initialize_combat(self, player: "player_module.Player", enemies: List[Any]) -> None:
+        """Initialize combat state for player and enemies using the combat adapter.
+        
+        Args:
+            player: Player object
+            enemies: List of enemy NPCs
+        """
+        from src.api.combat_adapter import ApiCombatAdapter
+        
+        # Create or get combat adapter
+        if not hasattr(player, '_combat_adapter'):
+            player._combat_adapter = ApiCombatAdapter(player)
+        
+        # Initialize combat through the adapter
+        # This will set up all combat state, process initial NPC turns if needed,
+        # and return the initial combat state
+        player._combat_adapter.initialize_combat(enemies)
+
     def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
         """Start combat between player and enemy.
 
@@ -1015,17 +1029,11 @@ class GameService:
             return {"error": f"Enemy '{enemy_id}' not found on this tile"}
 
         # Initialize combat system
-        if not hasattr(player, "combat_list"):
-            player.combat_list = []
-        if not hasattr(player, "combat_list_allies"):
-            player.combat_list_allies = [player]
-
-        player.combat_list = [enemy]
-        player.in_combat = True
+        self._initialize_combat(player, [enemy])
 
         # Get initial state
         return CombatStateSerializer.serialize_combat_state(
-            player, [enemy], current_turn_index=0, round_number=1
+            player, [enemy], current_turn_index=player.combat_turn_index, round_number=player.combat_round
         )
 
     def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
@@ -1047,10 +1055,16 @@ class GameService:
             }
         
         enemies = getattr(player, "combat_list", [])
+        turn_index = getattr(player, "combat_turn_index", 0)
+        round_num = getattr(player, "combat_round", 1)
+        combat_log = getattr(player, "combat_log", [])
+        
         return {
             "combat_active": True,
-            "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
-            "log": []
+            "battle_state": CombatStateSerializer.serialize_combat_state(
+                player, enemies, current_turn_index=turn_index, round_number=round_num
+            ),
+            "log": combat_log
         }
 
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
@@ -1106,13 +1120,13 @@ class GameService:
     def execute_move(
         self, player: "player_module.Player", move_type: str, move_id: str, target_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Execute a combat move.
+        """Execute a combat move using the combat adapter.
 
         Args:
             player: Player object
             move_type: Type of action (attack, defend, cast, item, move)
             move_id: ID/name of the specific move or ability
-            target_id: ID of target (optional, defaults to first enemy)
+            target_id: ID of target (optional)
 
         Returns:
             Dictionary with action result
@@ -1120,121 +1134,53 @@ class GameService:
         if not getattr(player, "in_combat", False):
             return {"error": "Not in combat"}
 
-        enemies = getattr(player, "combat_list", [])
-        if not enemies:
-            return {"error": "No enemies in combat"}
-
-        # Handle "move" type - execute a known move by name
+        # Get or create combat adapter
+        if not hasattr(player, '_combat_adapter'):
+            return {"error": "Combat not properly initialized"}
+        
+        adapter = player._combat_adapter
+        
+        # Handle different move types
         if move_type == "move":
-            # Special handling for moves that require user input in terminal
-            # These need to be handled differently in API context
+            # Player is selecting a move by name
+            # Find the move index in available moves
+            viable_moves = player.refresh_moves()
+            move_index = None
             
-            if move_id == "Check":
-                # Return battlefield information instead of blocking for input
-                battlefield_info = []
-                for enemy in enemies:
-                    distance = player.combat_proximity.get(enemy, 0)
-                    battlefield_info.append({
-                        "name": getattr(enemy, "name", "Unknown"),
-                        "distance": int(distance),
-                        "hp": getattr(enemy, "hp", 0),
-                        "max_hp": getattr(enemy, "maxhp", 0),
-                    })
-                
-                return {
-                    "success": True,
-                    "action": "check",
-                    "move_name": "Check",
-                    "message": "Checked surroundings",
-                    "battlefield_info": battlefield_info,
-                    "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
-                }
-            
-            if move_id == "Wait":
-                # For API, treat Wait as a simple pass/skip turn action
-                # In the terminal version, this prompts for duration
-                # For API, we'll just advance time by a fixed amount (e.g., 3 beats)
-                return {
-                    "success": True,
-                    "action": "wait",
-                    "move_name": "Wait",
-                    "message": "Waiting for opportunity",
-                    "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
-                }
-            
-            # Find the move in player's known_moves
-            move_obj = None
-            for move in getattr(player, "known_moves", []):
+            for i, move in enumerate(viable_moves):
                 if getattr(move, "name", "") == move_id:
-                    move_obj = move
+                    move_index = i
                     break
             
-            if not move_obj:
-                return {"error": f"Move '{move_id}' not found in known moves"}
+            if move_index is None:
+                return {"error": f"Move '{move_id}' not found"}
             
-            # Check if move is viable
-            if hasattr(move_obj, "viable") and not move_obj.viable():
-                return {"error": f"Move '{move_id}' is not viable right now"}
+            # Send move selection command
+            command = {"type": "select_move", "move_index": move_index}
+            result = adapter.process_command(command)
             
-            # Check fatigue cost
-            fatigue_cost = getattr(move_obj, "fatigue_cost", 0)
-            if player.fatigue < fatigue_cost:
-                return {"error": f"Not enough fatigue. Need {fatigue_cost}, have {player.fatigue}"}
-            
-            # Set the move as current move
-            player.current_move = move_obj
-            move_obj.user = player
-            
-            # Set target if move is targeted
-            if getattr(move_obj, "targeted", False) and target_id:
-                # Find target in enemies
-                target = None
-                for enemy in enemies:
-                    if str(id(enemy)) == target_id or getattr(enemy, "id", None) == target_id:
-                        target = enemy
-                        break
-                if target:
-                    move_obj.target = target
+            # If the move requires targeting and we have a target_id, send target selection
+            if not result.get("error") and result.get("battle_state", {}).get("input_type") == "target_selection":
+                if target_id:
+                    target_command = {"type": "select_target", "target_id": target_id}
+                    result = adapter.process_command(target_command)
                 else:
-                    # Default to first enemy if target not found
-                    move_obj.target = enemies[0] if enemies else player
-            else:
-                move_obj.target = player
+                    # Auto-select first available target
+                    available_targets = result.get("battle_state", {}).get("available_options", [])
+                    if available_targets:
+                        target_command = {"type": "select_target", "target_id": available_targets[0]["id"]}
+                        result = adapter.process_command(target_command)
             
-            # Execute the move's cast method
-            if hasattr(move_obj, "cast"):
-                move_obj.cast()
-            
-            # Process the move through all stages if instant
-            if getattr(move_obj, "instant", False):
-                while move_obj.current_stage < 3 and player.current_move == move_obj:
-                    move_obj.advance(player)
-            else:
-                # Process one stage
-                move_obj.advance(player)
-            
-            return {
-                "success": True,
-                "action": "move",
-                "move_name": move_id,
-                "message": f"Executed {move_id}",
-                "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
-            }
+            return result
         
-        # Route move based on type (legacy support)
-        if move_type == "attack":
-            return self._execute_attack(player, enemies, target_id)
+        elif move_type == "attack":
+            # Basic attack - find the Attack move
+            return self.execute_move(player, "move", "Attack", target_id)
+        
         elif move_type == "defend":
-            return self.defend(player)
-        elif move_type == "cast":
-            return self._execute_spell(player, enemies, move_id, target_id)
-        elif move_type == "item":
-            # move_id should be item index
-            try:
-                item_index = int(move_id)
-                return self.use_item_in_combat(player, item_index, target_id)
-            except ValueError:
-                return {"error": "Invalid item index"}
+            # Defend - find a defensive move or use Wait
+            return self.execute_move(player, "move", "Wait", target_id)
+        
         else:
             return {"error": f"Unknown move type: {move_type}"}
 
@@ -1252,7 +1198,7 @@ class GameService:
         target = enemies[0] if not target_id else next((e for e in enemies if str(getattr(e, "id", "")) == target_id), enemies[0])
         
         # Simple damage calculation
-        damage = getattr(player, "damage", 10) + 5  # Base damage + random
+        damage = getattr(player, "damage", 10) + 5
         target.health = max(0, getattr(target, "health", 1) - damage)
         
         return {
@@ -1264,6 +1210,7 @@ class GameService:
             "target_defeated": getattr(target, "health", 1) <= 0,
             "battle_state": CombatStateSerializer.serialize_combat_state(player, enemies),
         }
+
 
     def _execute_spell(self, player: "player_module.Player", enemies: List[Any], spell_name: str, target_id: Optional[str] = None) -> Dict[str, Any]:
         """Execute a spell/ability.
@@ -1387,6 +1334,91 @@ class GameService:
                     player, enemies
                 ),
             }
+
+    def _get_turn_order(self, player: "player_module.Player", enemies: List[Any]) -> List[str]:
+        """Calculate turn order based on speed stats.
+        
+        Args:
+            player: Player object
+            enemies: List of enemy NPCs
+            
+        Returns:
+            List of combatant identifiers in turn order
+        """
+        combatants = [("player", getattr(player, "speed", 10))] + [
+            (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
+        ]
+        # Sort by speed (descending) - higher speed goes first
+        combatants.sort(key=lambda x: x[1], reverse=True)
+        return [c[0] for c in combatants]
+    
+    def _advance_turn(self, player: "player_module.Player", enemies: List[Any]) -> None:
+        """Advance to the next combatant's turn.
+        
+        Args:
+            player: Player object
+            enemies: List of enemy NPCs
+        """
+        turn_order = self._get_turn_order(player, enemies)
+        player.combat_turn_index = (player.combat_turn_index + 1) % len(turn_order)
+        
+        # If we wrapped around, increment round
+        if player.combat_turn_index == 0:
+            player.combat_round += 1
+            player.combat_log.append({
+                "round": player.combat_round,
+                "message": f"--- Round {player.combat_round} ---",
+                "type": "system"
+            })
+    
+    def _process_npc_turns(self, player: "player_module.Player", enemies: List[Any], turn_order: List[str]) -> None:
+        """Process NPC turns until it's the player's turn again.
+        
+        Args:
+            player: Player object
+            enemies: List of enemy NPCs
+            turn_order: Ordered list of combatant identifiers
+        """
+        import random
+        
+        while player.combat_turn_index < len(turn_order):
+            current_combatant = turn_order[player.combat_turn_index]
+            
+            # If it's player's turn, stop processing
+            if current_combatant == "player":
+                break
+            
+            # Process NPC turn
+            if current_combatant.startswith("enemy_"):
+                enemy_index = int(current_combatant.split("_")[1])
+                if enemy_index < len(enemies):
+                    enemy = enemies[enemy_index]
+                    
+                    # Simple AI: attack the player
+                    damage = random.randint(5, 15)
+                    player.hp = max(0, player.hp - damage)
+                    
+                    player.combat_log.append({
+                        "round": player.combat_round,
+                        "message": f"{enemy.name} attacks for {damage} damage! (Player HP: {player.hp}/{player.maxhp})",
+                        "type": "enemy_action",
+                        "actor": enemy.name,
+                        "damage": damage
+                    })
+                    
+                    # Check if player is defeated
+                    if player.hp <= 0:
+                        player.combat_log.append({
+                            "round": player.combat_round,
+                            "message": "You have been defeated!",
+                            "type": "system"
+                        })
+                        player.in_combat = False
+                        return
+            
+            # Advance to next turn
+            self._advance_turn(player, enemies)
+
 
     def end_combat(
         self, player: "player_module.Player", victory: bool
