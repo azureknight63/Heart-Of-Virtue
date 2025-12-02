@@ -730,6 +730,80 @@ class GameService:
     # Player Status Methods
     # ========================
 
+    def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
+        """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
+        # Find enemy in current room
+        tile = self.universe.get_tile(player.location_x, player.location_y)
+        enemy = None
+        if hasattr(tile, "npcs_here"):
+            for npc in tile.npcs_here:
+                if str(id(npc)) == enemy_id:
+                    enemy = npc
+                    break
+        
+        if not enemy:
+            return {"error": "Enemy not found"}
+            
+        return self._initialize_combat(player, [enemy])
+
+    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None) -> Dict[str, Any]:
+        """Execute a combat move."""
+        if not hasattr(player, "_combat_adapter"):
+            return {"error": "Combat not initialized"}
+            
+        # Map frontend move types to adapter commands
+        # For now, assume move_id is the index in the available moves list
+        try:
+            move_index = int(move_id)
+            command = {
+                "type": "select_move",
+                "move_index": move_index
+            }
+            
+            result = player._combat_adapter.process_command(command)
+            
+            # If the result indicates we need a target, and we have one, send it immediately
+            if result.get("battle_state", {}).get("input_type") == "target_selection" and target_id:
+                target_command = {
+                    "type": "select_target",
+                    "target_id": target_id
+                }
+                result = player._combat_adapter.process_command(target_command)
+                
+            return result
+            
+        except ValueError:
+            return {"error": "Invalid move ID"}
+            
+    def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get current combat status."""
+        if not hasattr(player, "_combat_adapter"):
+            return {"combat_active": False}
+            
+        return player._combat_adapter.get_combat_state()
+
+    def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get available combat moves."""
+        if not hasattr(player, "_combat_adapter"):
+            return {"moves": []}
+            
+        # Helper to serialize moves from adapter
+        moves = []
+        if hasattr(player._combat_adapter, "available_options"):
+            # If options are moves (not targets/directions)
+            if player._combat_adapter.input_type == "move_selection":
+                for i, move in enumerate(player._combat_adapter.available_options):
+                    moves.append({
+                        "id": str(i),
+                        "name": move.name,
+                        "description": move.description,
+                        "fatigue_cost": move.fatigue_cost,
+                        "category": getattr(move, "category", "Miscellaneous"),
+                        "beats_left": move.beats_left
+                    })
+        
+        return {"moves": moves}
+
     def get_player_status(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get player status (name, level, health, etc.).
 
