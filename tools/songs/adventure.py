@@ -17,15 +17,15 @@ class AdventureSong(Song):
             [(523, 0.25), (587, 0.25), (659, 0.5), (784, 0.5), (659, 0.25), (587, 0.25)],
             [(523, 0.25), (659, 0.25), (784, 0.5), (880, 0.5), (784, 0.25), (659, 0.25)],
             [(587, 0.25), (659, 0.25), (784, 0.5), (1047, 1.0)],
-            [(880, 0.25), (784, 0.25), (659, 0.25), (587, 0.5), (523, 0.5)],
+            [(880, 0.25), (784, 0.25), (659, 0.25), (587, 0.5), (523, 0.75)], # Extended last note to complete 8.0s
         ]
         
         # Fallback Melody (Rhythmic filler) - DOUBLED LENGTH with improved flow
         fallback_melody = [
-            [(523, 0.2), (392, 0.2), (523, 0.2), (659, 0.3)],
-            [(523, 0.2), (392, 0.2), (523, 0.2), (659, 0.3)],
-            [(659, 0.2), (523, 0.2), (659, 0.2), (784, 0.3)], # Variation
-            [(523, 0.2), (392, 0.2), (523, 0.3), (392, 0.2)], # Resolution back
+            [(523, 0.25), (392, 0.25), (523, 0.25), (659, 0.25)],
+            [(523, 0.25), (392, 0.25), (523, 0.25), (659, 0.25)],
+            [(784, 0.25), (523, 0.25), (659, 0.25), (784, 0.25)], # Variation
+            [(523, 0.25), (392, 0.25), (523, 0.25), (392, 0.25)], # Resolution back
         ]
         
         # Theme B: Gentle & Reflective (Lower octave, slower)
@@ -125,8 +125,11 @@ class AdventureSong(Song):
                 for f, dur in bass_b: bss += generate_tone(fr(f), d(dur), 0.3, wave_type='square')
                 
                 # Martial percussion - slow, steady march fitting somber mood
-                dur = sum(d(dur) for p in theme_b for _, dur in p)
-                perc = generate_percussion_pattern([1, 0, 0, 1, 0, 0] * int(dur), dur)
+                # "Roll, roll, tap, tap" pattern (da-da da-da DA DA)
+                dur_section = sum(d(dur) for p in theme_b for _, dur in p)
+                march_pattern = [1, 1, 1, 1, 1, 0, 1, 0] * 4 # 4 phrases in theme_b
+                
+                perc = generate_percussion_pattern(march_pattern, dur_section)
                 
                 all_sections += mix_layers([mel, chd, bss, perc])
 
