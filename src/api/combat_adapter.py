@@ -82,19 +82,6 @@ class ApiCombatAdapter:
         """
         try:
             # Import here to avoid circular dependencies
-            from src.functions import refresh_stat_bonuses
-            import src.positions as positions
-            
-            # Set up combat lists
-            if not hasattr(self.player, "combat_list"):
-                self.player.combat_list = []
-            if not hasattr(self.player, "combat_list_allies"):
-                self.player.combat_list_allies = [self.player]
-            
-            self.player.combat_list = enemies
-            self.player.in_combat = True
-            
-            # Initialize combat state
             if not hasattr(self.player, "combat_beat"):
                 self.player.combat_beat = 0
             if not hasattr(self.player, "combat_log"):

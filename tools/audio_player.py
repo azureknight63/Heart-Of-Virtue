@@ -59,10 +59,15 @@ class AudioPlayerApp:
         ttk.Label(mod_frame, text="Tempo:").pack(side=tk.LEFT)
         self.tempo_var = tk.DoubleVar(value=1.0)
         self.tempo_scale = ttk.Scale(mod_frame, from_=0.5, to=2.0, variable=self.tempo_var, orient=tk.HORIZONTAL)
+        self.tempo_scale.configure(command=lambda v: self.tempo_label.configure(text=f"{float(v):.2f}x"))
         self.tempo_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         self.tempo_label = ttk.Label(mod_frame, text="1.0x")
         self.tempo_label.pack(side=tk.LEFT)
-        self.tempo_scale.configure(command=lambda v: self.tempo_label.configure(text=f"{float(v):.2f}x"))
+        
+        # Enable keyboard control for tempo slider
+        self.tempo_scale.bind('<Button-1>', lambda e: self.tempo_scale.focus_set())
+        self.tempo_scale.bind('<Left>', lambda e: self.adjust_tempo(-0.05))
+        self.tempo_scale.bind('<Right>', lambda e: self.adjust_tempo(0.05))
         
         mod_frame2 = ttk.Frame(controls_frame)
         mod_frame2.pack(fill=tk.X, padx=5, pady=5)
@@ -70,20 +75,31 @@ class AudioPlayerApp:
         ttk.Label(mod_frame2, text="Pitch:").pack(side=tk.LEFT)
         self.pitch_var = tk.IntVar(value=0)
         self.pitch_scale = ttk.Scale(mod_frame2, from_=-12, to=12, variable=self.pitch_var, orient=tk.HORIZONTAL)
+        self.pitch_scale.configure(command=lambda v: self.pitch_label.configure(text=f"{int(float(v))} semitones"))
         self.pitch_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         self.pitch_label = ttk.Label(mod_frame2, text="0 semitones")
         self.pitch_label.pack(side=tk.LEFT)
-        self.pitch_scale.configure(command=lambda v: self.pitch_label.configure(text=f"{int(float(v))} semitones"))
+        
+        # Enable keyboard control for pitch slider
+        self.pitch_scale.bind('<Button-1>', lambda e: self.pitch_scale.focus_set())
+        self.pitch_scale.bind('<Left>', lambda e: self.adjust_pitch(-1))
+        self.pitch_scale.bind('<Right>', lambda e: self.adjust_pitch(1))
         
         # Buttons
         btn_frame = ttk.Frame(controls_frame)
         btn_frame.pack(fill=tk.X, padx=5, pady=10)
         
-        self.play_btn = ttk.Button(btn_frame, text="Render & Play", command=self.play_song)
+        self.render_btn = ttk.Button(btn_frame, text="Render", command=self.render_song)
+        self.render_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.play_btn = ttk.Button(btn_frame, text="Play", command=self.play_song, state=tk.DISABLED)
         self.play_btn.pack(side=tk.LEFT, padx=5)
         
         self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop_song)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.reset_btn = ttk.Button(btn_frame, text="Reset", command=self.reset_modifiers)
+        self.reset_btn.pack(side=tk.LEFT, padx=5)
         
         self.save_btn = ttk.Button(btn_frame, text="Save to File...", command=self.save_song)
         self.save_btn.pack(side=tk.RIGHT, padx=5)
@@ -107,6 +123,20 @@ class AudioPlayerApp:
             self.current_song = SONG_LIST[index]
             self.status_var.set(f"Selected: {self.current_song.title}")
 
+    def adjust_tempo(self, delta):
+        """Adjust tempo by delta amount (for keyboard control)"""
+        current = self.tempo_var.get()
+        new_value = max(0.5, min(2.0, current + delta))
+        self.tempo_var.set(round(new_value, 2))
+        self.tempo_label.configure(text=f"{new_value:.2f}x")
+
+    def adjust_pitch(self, delta):
+        """Adjust pitch by delta semitones (for keyboard control)"""
+        current = self.pitch_var.get()
+        new_value = max(-12, min(12, current + delta))
+        self.pitch_var.set(new_value)
+        self.pitch_label.configure(text=f"{new_value} semitones")
+
     def render_song(self):
         if not self.current_song:
             messagebox.showwarning("No Song Selected", "Please select a song from the list.")
@@ -123,6 +153,7 @@ class AudioPlayerApp:
             self.audio_data = data
             self.draw_waveform(data)
             self.status_var.set("Render complete.")
+            self.play_btn.config(state=tk.NORMAL)  # Enable Play button
             return data
         except Exception as e:
             messagebox.showerror("Render Error", str(e))
@@ -130,8 +161,8 @@ class AudioPlayerApp:
             return None
 
     def play_song(self):
-        data = self.render_song()
-        if not data:
+        if not self.audio_data:
+            messagebox.showwarning("No Audio", "Please render the song first.")
             return
         
         # Save to temp file for winsound
@@ -149,7 +180,7 @@ class AudioPlayerApp:
                 f.setnchannels(1)
                 f.setsampwidth(2)
                 f.setframerate(44100)
-                f.writeframes(data)
+                f.writeframes(self.audio_data)
             
             os.close(fd)
             
@@ -164,6 +195,20 @@ class AudioPlayerApp:
         winsound.PlaySound(None, 0)
         self.is_playing = False
         self.status_var.set("Stopped.")
+
+    def reset_modifiers(self):
+        """Reset tempo and pitch to defaults and re-render if a song was previously rendered"""
+        self.tempo_var.set(1.0)
+        self.pitch_var.set(0)
+        self.tempo_label.configure(text="1.0x")
+        self.pitch_label.configure(text="0 semitones")
+        
+        # Re-render if we have a current song and audio data exists
+        if self.current_song and self.audio_data:
+            self.render_song()
+            self.status_var.set("Reset to defaults and re-rendered.")
+        else:
+            self.status_var.set("Reset to defaults.")
 
     def save_song(self):
         if not self.audio_data:
