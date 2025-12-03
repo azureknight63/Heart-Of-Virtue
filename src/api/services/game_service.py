@@ -209,12 +209,17 @@ class GameService:
             self._initialize_combat(player, combat_enemies)
             combat_started = True
             
-            # Get initial combat state
-            combat_state = CombatStateSerializer.serialize_combat_state(
-                player, combat_enemies, 
-                current_turn_index=getattr(player, "combat_turn_index", 0), 
-                round_number=getattr(player, "combat_round", 1)
-            )
+            # Get initial combat state from the adapter
+            if hasattr(player, '_combat_adapter'):
+                adapter_state = player._combat_adapter.get_combat_state()
+                combat_state = adapter_state.get('battle_state')
+            else:
+                # Fallback to direct serialization if adapter not available
+                combat_state = CombatStateSerializer.serialize_combat_state(
+                    player, combat_enemies, 
+                    current_turn_index=getattr(player, "combat_turn_index", 0), 
+                    round_number=getattr(player, "combat_round", 1)
+                )
 
         return {
             "success": True,
@@ -748,8 +753,24 @@ class GameService:
 
     def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None) -> Dict[str, Any]:
         """Execute a combat move."""
+        # Check if player is in combat
+        if not getattr(player, 'in_combat', False):
+            return {"error": "Not in combat"}
+            
+        # Ensure adapter exists
         if not hasattr(player, "_combat_adapter"):
-            return {"error": "Combat not initialized"}
+            from src.api.combat_adapter import ApiCombatAdapter
+            player._combat_adapter = ApiCombatAdapter(player)
+            # If we had to recreate the adapter, combat state might be lost
+            if hasattr(player, 'combat_list') and player.combat_list:
+                player._combat_adapter.initialize_combat(player.combat_list)
+        
+        # Check if adapter is ready for input
+        if not player._combat_adapter.awaiting_input:
+            return {
+                "error": "Not awaiting input",
+                "details": f"awaiting_input={player._combat_adapter.awaiting_input}, input_type={player._combat_adapter.input_type}"
+            }
             
         # Map frontend move types to adapter commands
         # For now, assume move_id is the index in the available moves list
