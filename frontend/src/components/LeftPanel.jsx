@@ -27,8 +27,8 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const [combatMovesCategory, setCombatMovesCategory] = useState(null)
 
   // Determine if it's player's turn
-  const currentPlayerName = combat?.turn_order?.[combat?.current_turn_index]
-  const isMyTurn = currentPlayerName === 'player' || currentPlayerName === 'Jean'
+  // Determine if it's player's turn
+  const isMyTurn = combat?.awaiting_input || false
 
   const handleCombatMoveClick = (category) => {
     if (showCombatMoves && combatMovesCategory === category) {
