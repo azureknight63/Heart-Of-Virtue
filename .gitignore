@@ -50,3 +50,4 @@ api_log_*.txt
 
 # Browser logs
 /logs/*.log
+logs/browser/*
