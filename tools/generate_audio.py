@@ -19,7 +19,7 @@ SONG_LIST = [
     MoveSFX(),
     ErrorSFX(),
     CombatStartSFX(),
-    AttackSFX()
+    AttackSFX(),
 ]
 
 if __name__ == "__main__":
