@@ -51,3 +51,6 @@ api_log_*.txt
 # Browser logs
 /logs/*.log
 logs/browser/*
+
+# Archived audio files
+frontend/public/assets/sounds/archive
