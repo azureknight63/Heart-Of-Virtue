@@ -107,17 +107,15 @@ npm run dev
 
 Then open your browser to **http://localhost:3000** and log in!
 
-### Frontend Documentation
+### Documentation
 
-See `frontend/README.md` for:
-- Architecture and project structure
-- Component guide
-- API integration examples
-- Styling and customization
-- Deployment instructions
-- WebSocket setup for real-time updates
+See `docs/README.md` for the complete documentation index.
 
-See `UI_SETUP_COMPLETE.md` for the complete setup guide.
+Key documentation:
+- `docs/API_DOCUMENTATION.md` - Complete API reference
+- `docs/FRONTEND_DOCUMENTATION.md` - Frontend architecture and components
+- `docs/ARCHITECTURE_DIAGRAM.md` - System architecture
+- `frontend/README.md` - Frontend development guide
 
 ## Development
 
