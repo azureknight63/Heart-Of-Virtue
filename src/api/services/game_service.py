@@ -1079,6 +1079,11 @@ class GameService:
         """
         from src.api.combat_adapter import ApiCombatAdapter
         
+        # Set combat lists on player (required by adapter)
+        player.combat_list = enemies
+        player.combat_list_allies = [player]  # Player is always in allies list
+        player.in_combat = True
+        
         # Create or get combat adapter
         if not hasattr(player, '_combat_adapter'):
             player._combat_adapter = ApiCombatAdapter(player)

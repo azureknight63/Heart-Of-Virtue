@@ -104,7 +104,13 @@ class CombatStateSerializer:
             (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
         ]
         # Sort by speed (descending) - higher speed goes first
-        combatants.sort(key=lambda x: x[1], reverse=True)
+        try:
+            combatants.sort(key=lambda x: x[1], reverse=True)
+        except Exception as e:
+            print(f"DEBUG: Sort failed in _get_turn_order. Combatants: {combatants}")
+            print(f"DEBUG: Error: {e}")
+            # Fallback: don't sort
+            pass
         return [c[0] for c in combatants]
 
     @staticmethod

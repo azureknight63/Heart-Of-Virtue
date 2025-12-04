@@ -16,6 +16,7 @@ import random
 if TYPE_CHECKING:
     from player import Player
 
+import positions  # type: ignore
 from src.api.serializers.combat import CombatStateSerializer
 
 
@@ -65,10 +66,47 @@ class ApiCombatAdapter:
     def __init__(self, player: "Player"):
         self.player = player
         self.output_capture = CombatOutputCapture()
-        self.awaiting_input = False
-        self.input_type = None  # 'move_selection', 'target_selection', 'direction_selection'
-        self.pending_move = None
-        self.available_options = []
+        
+        # Initialize persistent state if missing
+        if not hasattr(self.player, "combat_adapter_state"):
+            self.player.combat_adapter_state = {
+                "awaiting_input": False,
+                "input_type": None,
+                "pending_move_index": None,
+                "available_options": []
+            }
+            
+    @property
+    def awaiting_input(self):
+        return self.player.combat_adapter_state.get("awaiting_input", False)
+    
+    @awaiting_input.setter
+    def awaiting_input(self, value):
+        self.player.combat_adapter_state["awaiting_input"] = value
+
+    @property
+    def input_type(self):
+        return self.player.combat_adapter_state.get("input_type", None)
+    
+    @input_type.setter
+    def input_type(self, value):
+        self.player.combat_adapter_state["input_type"] = value
+
+    @property
+    def pending_move_index(self):
+        return self.player.combat_adapter_state.get("pending_move_index", None)
+    
+    @pending_move_index.setter
+    def pending_move_index(self, value):
+        self.player.combat_adapter_state["pending_move_index"] = value
+
+    @property
+    def available_options(self):
+        return self.player.combat_adapter_state.get("available_options", [])
+    
+    @available_options.setter
+    def available_options(self, value):
+        self.player.combat_adapter_state["available_options"] = value
         
     def initialize_combat(self, enemies: List[Any]) -> Dict[str, Any]:
         """
@@ -141,6 +179,15 @@ class ApiCombatAdapter:
                 "message": f"Combat started! {enemy_names} appear{'s' if len(enemies) == 1 else ''}!",
                 "type": "system"
             })
+
+            # Add alert messages for enemies
+            for enemy in enemies:
+                if hasattr(enemy, "alert_message") and enemy.alert_message:
+                    self.player.combat_log.append({
+                        "round": 1,
+                        "message": f"{enemy.name} {enemy.alert_message}",
+                        "type": "system"
+                    })
             
             # Check if enemies go first
             self._process_initial_turns()
@@ -223,14 +270,14 @@ class ApiCombatAdapter:
         if selected_move.targeted:
             self.input_type = "target_selection"
             self.available_options = self._get_available_targets(selected_move)
-            self.pending_move = selected_move
+            self.pending_move_index = move_index
             return self.get_combat_state()
         
         # Check if move needs direction (Turn move)
         if selected_move.name == "Turn":
             self.input_type = "direction_selection"
             self.available_options = ["north", "south", "east", "west"]
-            self.pending_move = selected_move
+            self.pending_move_index = move_index
             return self.get_combat_state()
         
         # Non-targeted move - execute immediately
@@ -242,18 +289,38 @@ class ApiCombatAdapter:
         if self.input_type != "target_selection":
             return {"error": "Not expecting target selection"}
         
+        # Reconstruct pending move
+        if self.pending_move_index is None:
+            return {"error": "No pending move"}
+            
+        viable_moves = self.player.refresh_moves()
+        if self.pending_move_index >= len(viable_moves):
+            return {"error": "Invalid pending move index"}
+            
+        pending_move = viable_moves[self.pending_move_index]
+        pending_move.user = self.player
+        
         # Find target in available options
         target = None
-        for option in self.available_options:
-            if option.get("id") == target_id:
-                target = option.get("enemy")
+        # Look up target by ID from player's combat list (enemies) or allies
+        # We need to parse the target_id (e.g. "enemy_123456")
+        target_obj_id = target_id.replace("enemy_", "")
+        
+        all_combatants = self.player.combat_list + self.player.combat_list_allies
+        for combatant in all_combatants:
+            if str(id(combatant)) == target_obj_id:
+                target = combatant
                 break
         
         if not target:
             return {"error": "Invalid target"}
         
-        self.pending_move.target = target
-        return self._execute_move(self.pending_move)
+        pending_move.target = target
+        
+        # Clear pending move index
+        self.pending_move_index = None
+        
+        return self._execute_move(pending_move)
     
     def _handle_direction_selection(self, direction: str) -> Dict[str, Any]:
         """Handle player selecting a direction."""
@@ -263,11 +330,25 @@ class ApiCombatAdapter:
         if direction not in self.available_options:
             return {"error": "Invalid direction"}
         
-        # Set direction on the move
-        if hasattr(self.pending_move, 'target_direction'):
-            self.pending_move.target_direction = direction
+        # Reconstruct pending move
+        if self.pending_move_index is None:
+            return {"error": "No pending move"}
+            
+        viable_moves = self.player.refresh_moves()
+        if self.pending_move_index >= len(viable_moves):
+            return {"error": "Invalid pending move index"}
+            
+        pending_move = viable_moves[self.pending_move_index]
+        pending_move.user = self.player
         
-        return self._execute_move(self.pending_move)
+        # Set direction on the move
+        if hasattr(pending_move, 'target_direction'):
+            pending_move.target_direction = direction
+            
+        # Clear pending move index
+        self.pending_move_index = None
+        
+        return self._execute_move(pending_move)
     
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat."""
@@ -317,7 +398,7 @@ class ApiCombatAdapter:
         self.awaiting_input = True
         self.input_type = "move_selection"
         self.available_options = self._get_available_moves()
-        self.pending_move = None
+        self.pending_move_index = None
         
         return self.get_combat_state()
     
@@ -471,7 +552,7 @@ class ApiCombatAdapter:
                     "id": f"enemy_{id(enemy)}",
                     "name": enemy.name,
                     "distance": distance,
-                    "enemy": enemy  # Store reference for later use
+                    # REMOVED: "enemy": enemy - cannot serialize or persist object reference
                 }
                 
                 # Add hit chance if verbose targeting
