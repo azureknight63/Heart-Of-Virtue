@@ -90,7 +90,7 @@ def create_app(config_class=None):
             
             # Create a test player
             test_player = Player()
-            test_player.name = "TestPlayer"
+            test_player.name = "Jean"
             
             # Create universe with test player
             universe = universe_module.Universe(test_player)

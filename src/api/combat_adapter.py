@@ -107,7 +107,23 @@ class ApiCombatAdapter:
     @available_options.setter
     def available_options(self, value):
         self.player.combat_adapter_state["available_options"] = value
+    
+    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat"):
+        """Add a log entry with deduplication check."""
+        if not hasattr(self.player, 'combat_log'):
+            self.player.combat_log = []
         
+        # Check for duplicate
+        is_duplicate = any(
+            existing.get("message") == message and existing.get("round") == round_num
+            for existing in self.player.combat_log
+        )
+        if not is_duplicate:
+            self.player.combat_log.append({
+                "round": round_num,
+                "message": message,
+                "type": entry_type
+            })
     def initialize_combat(self, enemies: List[Any]) -> Dict[str, Any]:
         """
         Initialize combat with the given enemies.
@@ -120,10 +136,10 @@ class ApiCombatAdapter:
         """
         try:
             # Import here to avoid circular dependencies
-            if not hasattr(self.player, "combat_beat"):
-                self.player.combat_beat = 0
-            if not hasattr(self.player, "combat_log"):
-                self.player.combat_log = []
+            # Reset combat state for new combat
+            self.player.combat_beat = 0
+            self.player.combat_log = []  # Clear log for new combat
+            self.output_capture.clear()  # Clear captured output
             
             # Initialize combat_proximity if it doesn't exist
             if not hasattr(self.player, "combat_proximity"):
@@ -172,22 +188,33 @@ class ApiCombatAdapter:
                     move.current_stage = 0
                     move.beats_left = 0
             
+            # Initialize combat lists for all participants (Enemies and Allies)
+            # This ensures collision detection works correctly for everyone
+            
+            # For Player's Allies:
+            # - Their enemies are the Player's enemies
+            # - Their allies are the Player's allies
+            for ally in self.player.combat_list_allies:
+                if ally == self.player:
+                    continue
+                ally.combat_list = self.player.combat_list
+                ally.combat_list_allies = self.player.combat_list_allies
+            
+            # For Enemies:
+            # - Their enemies are the Player's allies (including Player)
+            # - Their allies are the Player's enemies (other enemies)
+            for enemy in self.player.combat_list:
+                enemy.combat_list = self.player.combat_list_allies
+                enemy.combat_list_allies = self.player.combat_list
+            
             # Add initial log entry
             enemy_names = ", ".join([getattr(e, "name", "Enemy") for e in enemies])
-            self.player.combat_log.append({
-                "round": 1,
-                "message": f"Combat started! {enemy_names} appear{'s' if len(enemies) == 1 else ''}!",
-                "type": "system"
-            })
+            self._add_log_entry(1, f"Combat started! {enemy_names} appear{'s' if len(enemies) == 1 else ''}!", "system")
 
             # Add alert messages for enemies
             for enemy in enemies:
                 if hasattr(enemy, "alert_message") and enemy.alert_message:
-                    self.player.combat_log.append({
-                        "round": 1,
-                        "message": f"{enemy.name} {enemy.alert_message}",
-                        "type": "system"
-                    })
+                    self._add_log_entry(1, f"{enemy.name} {enemy.alert_message}", "system")
             
             # Check if enemies go first
             self._process_initial_turns()
@@ -223,6 +250,9 @@ class ApiCombatAdapter:
         Returns:
             Updated combat state
         """
+        print(f"[DEBUG] process_command called: {command}")
+        print(f"[DEBUG] awaiting_input={self.awaiting_input}, input_type={self.input_type}")
+        
         if not self.awaiting_input:
             return {"error": "Not awaiting input"}
         
@@ -234,20 +264,50 @@ class ApiCombatAdapter:
             return self._handle_target_selection(command.get("target_id"))
         elif command_type == "select_direction":
             return self._handle_direction_selection(command.get("direction"))
+        elif command_type == "select_number":
+            return self._handle_number_selection(command.get("value"))
+        elif command_type == "cancel_selection":
+            return self._handle_cancel_selection()
         else:
             return {"error": f"Unknown command type: {command_type}"}
+
+    def _handle_cancel_selection(self) -> Dict[str, Any]:
+        """
+        Handle canceling the current selection (target/direction/number).
+        Reverts back to move selection.
+        """
+        if self.input_type == "move_selection":
+            # Can't cancel back further than move selection
+            return {"error": "Cannot cancel selection at this stage"}
+            
+        # Reverting to move selection
+        self.pending_move_index = None
+        self.input_type = "move_selection"
+        self.available_options = self._get_available_moves()
+        
+        # Log cancellation (optional, but good for debugging)
+        print("[DEBUG] Cancelled selection, reverted to move selection")
+        
+        return self.get_combat_state()
     
     def _handle_move_selection(self, move_index: int) -> Dict[str, Any]:
         """Handle player selecting a move."""
+        print(f"[DEBUG] _handle_move_selection: move_index={move_index}, input_type={self.input_type}")
+        
         if self.input_type != "move_selection":
             return {"error": "Not expecting move selection"}
         
-        viable_moves = self.player.refresh_moves()
+        # Use all known moves, not just viable ones
+        all_moves = self.player.known_moves
         
-        if move_index < 0 or move_index >= len(viable_moves):
+        if move_index < 0 or move_index >= len(all_moves):
             return {"error": "Invalid move index"}
         
-        selected_move = viable_moves[move_index]
+        selected_move = all_moves[move_index]
+        
+        # Check if move is viable
+        if not selected_move.viable():
+            return {"error": "Move is not currently available"}
         
         # Check if move is available
         if self.player.fatigue < selected_move.fatigue_cost:
@@ -260,17 +320,32 @@ class ApiCombatAdapter:
         self.player.current_move.user = self.player
         
         # Log move selection
-        self.player.combat_log.append({
-            "round": self.output_capture.current_round,
-            "message": f"Jean uses {selected_move.name}!",
-            "type": "player_action"
-        })
+        # Log move selection
+        self._add_log_entry(
+            self.output_capture.current_round,
+            f"Jean uses {selected_move.name}!",
+            "player_action"
+        )
         
         # Check if move needs targeting
         if selected_move.targeted:
             self.input_type = "target_selection"
             self.available_options = self._get_available_targets(selected_move)
             self.pending_move_index = move_index
+            # Keep awaiting_input True so frontend knows to send target
+            return self.get_combat_state()
+        
+        # Check if move needs duration input (e.g., Wait move)
+        if hasattr(selected_move, 'needs_duration') and selected_move.needs_duration:
+            self.input_type = "number_input"
+            self.available_options = {
+                "prompt": "How many beats do you want to wait?",
+                "min": 3,
+                "max": 10,
+                "default": 5
+            }
+            self.pending_move_index = move_index
+            # Keep awaiting_input True so frontend knows to send number
             return self.get_combat_state()
         
         # Check if move needs direction (Turn move)
@@ -278,6 +353,7 @@ class ApiCombatAdapter:
             self.input_type = "direction_selection"
             self.available_options = ["north", "south", "east", "west"]
             self.pending_move_index = move_index
+            # Keep awaiting_input True so frontend knows to send direction
             return self.get_combat_state()
         
         # Non-targeted move - execute immediately
@@ -293,11 +369,11 @@ class ApiCombatAdapter:
         if self.pending_move_index is None:
             return {"error": "No pending move"}
             
-        viable_moves = self.player.refresh_moves()
-        if self.pending_move_index >= len(viable_moves):
+        all_moves = self.player.known_moves
+        if self.pending_move_index >= len(all_moves):
             return {"error": "Invalid pending move index"}
             
-        pending_move = viable_moves[self.pending_move_index]
+        pending_move = all_moves[self.pending_move_index]
         pending_move.user = self.player
         
         # Find target in available options
@@ -334,16 +410,58 @@ class ApiCombatAdapter:
         if self.pending_move_index is None:
             return {"error": "No pending move"}
             
-        viable_moves = self.player.refresh_moves()
-        if self.pending_move_index >= len(viable_moves):
+        all_moves = self.player.known_moves
+        if self.pending_move_index >= len(all_moves):
             return {"error": "Invalid pending move index"}
             
-        pending_move = viable_moves[self.pending_move_index]
+        pending_move = all_moves[self.pending_move_index]
         pending_move.user = self.player
         
         # Set direction on the move
         if hasattr(pending_move, 'target_direction'):
-            pending_move.target_direction = direction
+            # Convert string to Direction enum
+            direction_map = {
+                "north": positions.Direction.N,
+                "south": positions.Direction.S,
+                "east": positions.Direction.E,
+                "west": positions.Direction.W
+            }
+            # Fallback to N if mapping fails (though validation above catches it)
+            enum_dir = direction_map.get(direction.lower(), positions.Direction.N)
+            pending_move.target_direction = enum_dir
+            
+        # Clear pending move index
+        self.pending_move_index = None
+        
+        return self._execute_move(pending_move)
+    
+    def _handle_number_selection(self, value: int) -> Dict[str, Any]:
+        """Handle player entering a numeric value."""
+        if self.input_type != "number_input":
+            return {"error": "Not expecting number input"}
+        
+        # Reconstruct pending move
+        if self.pending_move_index is None:
+            return {"error": "No pending move"}
+            
+        all_moves = self.player.known_moves
+        if self.pending_move_index >= len(all_moves):
+            return {"error": "Invalid pending move index"}
+            
+        pending_move = all_moves[self.pending_move_index]
+        pending_move.user = self.player
+        
+        # Validate the number is within acceptable range
+        if isinstance(self.available_options, dict):
+            min_val = self.available_options.get("min", 1)
+            max_val = self.available_options.get("max", 100)
+            
+            if value < min_val or value > max_val:
+                return {"error": f"Value must be between {min_val} and {max_val}"}
+        
+        # Set the duration on the move (for Wait move)
+        if hasattr(pending_move, 'duration'):
+            pending_move.duration = value
             
         # Clear pending move index
         self.pending_move_index = None
@@ -351,43 +469,65 @@ class ApiCombatAdapter:
         return self._execute_move(pending_move)
     
     def _execute_move(self, move) -> Dict[str, Any]:
-        """Execute a move and process the combat beat."""
+        """Execute a move and process the combat beat(s)."""
+        print(f"[DEBUG] _execute_move called for move: {move.name}")
+        print(f"[DEBUG] Current beat before execution: {self.player.combat_beat}")
+        
+        is_instant = hasattr(move, 'instant') and move.instant
+        
         # Capture output during move execution
         with self._capture_output():
             # Cast the move
             move.cast()
             
-            # Process instant moves
-            if hasattr(move, 'instant') and move.instant:
-                while move.instant:
+            # For instant moves, process all stages immediately without advancing beats
+            if is_instant:
+                while self.player.current_move == move:
                     move.advance(self.player)
                     if self.player.current_move is None:
                         break
-            
-            # Advance all player moves
-            for m in self.player.known_moves:
-                m.advance(self.player)
-            
-            # Process NPC turns
-            self._process_npc_turns()
-            
-            # Cycle states
-            self.player.cycle_states()
-            
-            # Update heat
-            self._update_heat()
-            
-            # Increment beat
-            self.player.combat_beat += 1
+            else:
+                # Loop until player is ready for input again
+                # This handles multi-beat moves like Wait
+                max_beats = 20  # Safety break
+                beats_processed = 0
+                
+                while beats_processed < max_beats:
+                    # Advance all player moves
+                    for m in self.player.known_moves:
+                        m.advance(self.player)
+                    
+                    # Process NPC turns
+                    self._process_npc_turns()
+                    
+                    # Cycle states
+                    self.player.cycle_states()
+                    
+                    # Update heat
+                    self._update_heat()
+                    
+                    # Increment beat
+                    self.player.combat_beat += 1
+                    print(f"[DEBUG] Beat incremented to: {self.player.combat_beat}")
+                    
+                    beats_processed += 1
+                    
+                    # Check if player is done with current move
+                    if self.player.current_move is None:
+                        break
+                    
+                    # Check win/loss conditions inside loop
+                    if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                        break
         
         # Check win/loss conditions
         if not self.player.is_alive():
             self.player.in_combat = False
-            self.player.combat_log.append({
-                "round": self.output_capture.current_round,
-                "message": "You have been defeated!",
-                "type": "system"
-            })
+            self._add_log_entry(
+                self.output_capture.current_round,
+                "You have been defeated!",
+                "system"
+            )
             return self.get_combat_state()
         
         if len(self.player.combat_list) == 0:
@@ -430,18 +570,35 @@ class ApiCombatAdapter:
                 self._process_npc(ally)
         
         # Process enemies
-        for enemy in self.player.combat_list[:]:  # Copy list as it may be modified
+        # Use a copy of the list because we might modify it (remove dead enemies)
+        enemies_to_process = self.player.combat_list[:]
+        
+        for enemy in enemies_to_process:
+            # If enemy is alive, process their turn
             if enemy.is_alive():
                 self._process_npc(enemy)
-                # Check if enemy died
+            
+            # Check if enemy died (was dead before or died during turn/recoil)
+            # This check must happen regardless of whether they took a turn
+            if not enemy.is_alive():
+                enemy.die()
                 if not enemy.is_alive():
-                    enemy.die()
-                    if not enemy.is_alive():
+                    # Death message is handled by enemy.die() -> print() -> captured by output capture
+                    # Explicit logging removed to avoid duplication/mismatch
+
+                    if enemy in self.player.current_room.npcs_here:
                         self.player.current_room.npcs_here.remove(enemy)
+                    
+                    if enemy in self.player.combat_list:
                         self.player.combat_list.remove(enemy)
-                        for ally in self.player.combat_list_allies:
-                            if enemy in ally.combat_proximity:
-                                del ally.combat_proximity[enemy]
+                        
+                    for ally in self.player.combat_list_allies:
+                        if enemy in ally.combat_proximity:
+                            del ally.combat_proximity[enemy]
+                            
+                    # Cleanup from player proximity as well to be safe
+                    if hasattr(self.player, 'combat_proximity') and enemy in self.player.combat_proximity:
+                         del self.player.combat_proximity[enemy]
     
     def _process_npc(self, npc):
         """Process a single NPC's turn."""
@@ -502,26 +659,31 @@ class ApiCombatAdapter:
         if exp_summary:
             victory_msg += "Gained exp: " + ", ".join(exp_summary)
         
-        self.player.combat_log.append({
-            "round": self.output_capture.current_round,
-            "message": victory_msg,
-            "type": "system"
-        })
+        self._add_log_entry(
+            self.output_capture.current_round,
+            victory_msg,
+            "system"
+        )
     
     def _get_available_moves(self) -> List[Dict[str, Any]]:
-        """Get list of available moves for the player."""
-        viable_moves = self.player.refresh_moves()
+        """Get list of all moves for the player with availability status."""
         moves = []
         
-        for i, move in enumerate(viable_moves):
+        # Get all known moves, not just viable ones
+        for i, move in enumerate(self.player.known_moves):
+            is_viable = move.viable()
+            
             move_data = {
                 "index": i,
                 "name": move.name,
+                "description": getattr(move, "description", ""),
+                "category": getattr(move, "category", "Miscellaneous"),
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
                 "reason": None
             }
             
+            # Check various conditions that might make the move unavailable
             if move.current_stage == 3:
                 if move.beats_left > 0:
                     move_data["available"] = False
@@ -532,6 +694,32 @@ class ApiCombatAdapter:
             elif self.player.fatigue < move.fatigue_cost:
                 move_data["available"] = False
                 move_data["reason"] = "Not enough fatigue"
+            elif not is_viable:
+                # Move is not viable - try to determine why
+                move_data["available"] = False
+                
+                # Check for common reasons
+                if hasattr(move, 'targeted') and move.targeted:
+                    # Check if it's a range issue
+                    if hasattr(move, 'mvrange'):
+                        range_min, range_max = move.mvrange
+                        enemies_in_range = any(
+                            range_min <= dist <= range_max 
+                            for dist in self.player.combat_proximity.values()
+                        )
+                        if not enemies_in_range:
+                            if range_max <= 5:
+                                move_data["reason"] = "Enemy out of range (too far)"
+                            else:
+                                move_data["reason"] = "No valid target in range"
+                        else:
+                            move_data["reason"] = "Cannot use this move"
+                    else:
+                        move_data["reason"] = "No valid target"
+                elif move.name == "Attack" and not getattr(self.player, 'eq_weapon', None):
+                    move_data["reason"] = "No weapon equipped"
+                else:
+                    move_data["reason"] = "Cannot use this move"
             
             moves.append(move_data)
         
@@ -546,13 +734,19 @@ class ApiCombatAdapter:
         if move.name == "Shoot Bow":
             range_max = self.player.eq_weapon.range_base + (100 / self.player.eq_weapon.range_decay)
         
-        for enemy, distance in self.player.combat_proximity.items():
-            if enemy.is_alive() and range_min <= distance <= range_max:
+        # Iterate over combat_list instead of combat_proximity to ensure we use the correct enemy instances
+        for enemy in self.player.combat_list:
+            if not enemy.is_alive():
+                continue
+                
+            # Get distance from combat_proximity
+            distance = self.player.combat_proximity.get(enemy, 0)
+            
+            if range_min <= distance <= range_max:
                 target_data = {
                     "id": f"enemy_{id(enemy)}",
                     "name": enemy.name,
                     "distance": distance,
-                    # REMOVED: "enemy": enemy - cannot serialize or persist object reference
                 }
                 
                 # Add hit chance if verbose targeting
@@ -565,9 +759,34 @@ class ApiCombatAdapter:
         targets.sort(key=lambda t: t["distance"])
         return targets
     
+    @contextlib.contextmanager
     def _capture_output(self):
-        """Context manager to capture print output."""
-        return contextlib.redirect_stdout(self.output_capture)
+        """Context manager to capture print output and sync to player log."""
+        # Redirect stdout to our capture object
+        with contextlib.redirect_stdout(self.output_capture):
+            yield
+            
+        # Sync captured entries to player log (with deduplication)
+        new_entries = self.output_capture.get_log()
+        if new_entries:
+            if not hasattr(self.player, 'combat_log'):
+                self.player.combat_log = []
+            
+            # Update round number for entries and add only non-duplicates
+            current_beat = getattr(self.player, "combat_beat", 0)
+            for entry in new_entries:
+                entry["round"] = current_beat
+                # Check if this exact message already exists in the log
+                # (Prevents duplicates from multiple sources adding the same message)
+                is_duplicate = any(
+                    existing.get("message") == entry["message"] and existing.get("round") == entry["round"]
+                    for existing in self.player.combat_log
+                )
+                if not is_duplicate:
+                    self.player.combat_log.append(entry)
+            
+            # Clear capture for next time
+            self.output_capture.clear()
     
     def get_combat_state(self) -> Dict[str, Any]:
         """
@@ -590,6 +809,12 @@ class ApiCombatAdapter:
         battle_state["awaiting_input"] = self.awaiting_input
         battle_state["input_type"] = self.input_type
         battle_state["available_options"] = self.available_options
+        
+        # Include check_data if available (from Check move)
+        if hasattr(self.player, 'combat_adapter_state') and 'check_data' in self.player.combat_adapter_state:
+            battle_state["check_data"] = self.player.combat_adapter_state['check_data']
+            # Clear check_data after including it once
+            del self.player.combat_adapter_state['check_data']
         
         return {
             "combat_active": self.player.in_combat,

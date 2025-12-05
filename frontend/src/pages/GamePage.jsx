@@ -60,6 +60,12 @@ export default function GamePage() {
   // Handle event choice (for events that require input)
   const handleEventChoice = async (choice) => {
     console.log('Event choice selected:', choice)
+
+    if (choice.next === 'combat_start') {
+      setMode('combat')
+      fetchCombatStatus()
+    }
+
     // TODO: Send choice to backend if needed
     // For now, just close the event
     setCurrentEvent(null)
@@ -94,10 +100,35 @@ export default function GamePage() {
       // Check if movement triggered combat
       if (result.combat_started && result.combat_state) {
         console.log('Combat initiated!', result.combat_state)
-        // Update combat state and switch to combat mode
-        setMode('combat')
-        // Fetch full combat status to ensure state is synchronized
-        await fetchCombatStatus()
+
+        // Check for pre-combat logs (alert messages)
+        const combatLog = result.combat_state.log || []
+        const alertMessages = combatLog.filter(entry => entry.type === 'system').map(e => e.message).join('\n\n')
+
+        if (alertMessages && alertMessages.length > 0) {
+          // Show alert dialog before switching mode
+          // We create a synthetic event for the dialog
+          const alertEvent = {
+            title: "WARNING",
+            description: alertMessages,
+            choices: [{ text: "Prepare for Battle", next: "combat_start" }]
+          }
+
+          // We need to handle the choice specifically to start combat
+          // So we'll set a special state or just push it to event queue with a callback?
+          // Easiest is to set currentEvent manually and define a custom handler for this specific event type
+          // But GamePage generic handler might handle it.
+
+          // Let's modify handleEventChoice to check for this next state
+          setCurrentEvent(alertEvent)
+
+          // We'll set a flag so we know to switch to combat after
+          // Or handle it in handleEventChoice
+        } else {
+          // Update combat state and switch to combat mode directly
+          setMode('combat')
+          await fetchCombatStatus()
+        }
       }
 
       // Refetch player data after movement

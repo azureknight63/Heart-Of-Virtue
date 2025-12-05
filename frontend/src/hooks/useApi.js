@@ -152,12 +152,13 @@ export const useCombat = () => {
       setLoading(true)
       const response = await apiEndpoints.combat.performAction(action, target)
       const data = response.data
-      // Flatten structure for components
+      // Response structure: { success, combat_active, battle_state, log }
       setCombat({
         ...data.battle_state,
-        log: data.log || [], // Backend might not return log on action yet
-        combat_active: true // Assume active if action performed, or check data
+        log: data.log || [],
+        combat_active: data.combat_active
       })
+      setInCombat(data.combat_active)
       return data
     } catch (err) {
       console.error('Combat action error:', err)

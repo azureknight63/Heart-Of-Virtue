@@ -263,13 +263,12 @@ class SessionManager:
             if self.universe and hasattr(self.universe, 'player'):
                 player = self.universe.player
                 # Update player name to match username
-                if hasattr(player, 'name'):
-                    player.name = username
+                pass  # Do not overwrite player name with username; keep canonical name 'Jean'
             else:
                 # Try to import and create actual Player object
                 # This will fail during testing/API initialization due to game engine dependencies
                 # So we use MinimalPlayer as fallback
-                player = MinimalPlayer(username)
+                player = MinimalPlayer("Jean")
             
             # Set starting position from config
             player.location_x, player.location_y = self.start_x, self.start_y
@@ -286,7 +285,7 @@ class SessionManager:
         except Exception as e:
             print(f"[SessionManager] Error creating player: {e}", flush=True)
             # Fallback to minimal player
-            player = MinimalPlayer(username)
+            player = MinimalPlayer("Jean")
             
             # Set starting position from config
             player.location_x, player.location_y = self.start_x, self.start_y

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
@@ -11,8 +12,14 @@ import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
 import CombatMovePanel from './CombatMovePanel'
 import CombatLog from './CombatLog'
+import CombatInputDialog from './CombatInputDialog'
+import CombatCheckDialog from './CombatCheckDialog'
 
 export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction }) {
+  // Don't render if player data hasn't loaded yet
+  if (!player) {
+    return null
+  }
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
@@ -25,10 +32,116 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   // Combat state
   const [showCombatMoves, setShowCombatMoves] = useState(false)
   const [combatMovesCategory, setCombatMovesCategory] = useState(null)
+  const [showInputDialog, setShowInputDialog] = useState(false)
+  const [showCheckDialog, setShowCheckDialog] = useState(false)
+  const [checkData, setCheckData] = useState(null)
 
-  // Determine if it's player's turn
-  // Determine if it's player's turn
-  const isMyTurn = combat?.awaiting_input || false
+  // Audio context
+  const { playSFX, playBGM } = useAudio()
+
+  // Log processing state
+  const [isProcessingLog, setIsProcessingLog] = useState(false)
+  const [displayedLog, setDisplayedLog] = useState([])
+
+  // Determine if it's player's turn - ONLY if not processing log
+  const isMyTurn = (combat?.awaiting_input || false) && !isProcessingLog
+
+  // Get active player data (merging combat status if in combat)
+  const activePlayer = (mode === 'combat' && combat?.battle_state?.combatants)
+    ? {
+      ...player,
+      ...combat.battle_state.combatants.find(c => c.name === 'Jean' || c.is_player === true)
+    }
+    : player
+
+  // Process new log entries to play SFX and handle delay
+  useEffect(() => {
+    if (combat?.log && combat.log.length > 0) {
+      const newEntries = combat.log.filter(entry =>
+        !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round)
+      )
+
+      if (newEntries.length > 0) {
+        setIsProcessingLog(true)
+
+        const delayPerLine = 800 // ms per line
+        let currentIndex = 0
+
+        // Function to process one line at a time
+        const processNextLine = () => {
+          if (currentIndex >= newEntries.length) {
+            // All lines processed
+            setIsProcessingLog(false)
+            return
+          }
+
+          const entry = newEntries[currentIndex]
+          const msg = entry.message.toLowerCase()
+
+          // Add this line to displayed log
+          setDisplayedLog(prev => [...prev, entry])
+
+          // Play SFX for this line
+          if (msg.includes('attacks')) playSFX('attack_swipe')
+          else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
+          else if (msg.includes('miss')) playSFX('attack_miss')
+          else if (msg.includes('parr')) playSFX('attack_parry') // parry/parried
+          else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
+          else if (msg.includes('victory')) {
+            playBGM('fanfare')
+          }
+
+          // Check for Player Wounded
+          if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
+            playSFX('low_health_warning')
+          }
+
+          currentIndex++
+
+          // Schedule next line (or finish if victory)
+          const nextDelay = msg.includes('victory') ? 2000 : delayPerLine
+          setTimeout(processNextLine, nextDelay)
+        }
+
+        // Start processing
+        processNextLine()
+      }
+    } else {
+      // If log is empty or reset
+      setDisplayedLog([])
+    }
+  }, [combat?.log])
+
+  // Check for move categories
+  const rawMoves = combat?.available_options || []
+  const availableMoves = Array.isArray(rawMoves)
+    ? rawMoves.filter(move => {
+      const name = move.name || ''
+      return name !== 'UseItem' && name !== 'Use Item'
+    })
+    : []
+
+  const isMoveSelection = availableMoves.length > 0
+  const hasSpecialMoves = isMoveSelection && availableMoves.some(move => move.category === 'Special')
+  const hasSupernaturalMoves = isMoveSelection && availableMoves.some(move => move.category === 'Supernatural')
+
+  // Show input dialog when backend requests input (target_selection, direction_selection, etc.)
+  useEffect(() => {
+    if (combat?.input_type && combat.input_type !== 'move_selection' && combat.awaiting_input && !isProcessingLog) {
+      setShowInputDialog(true)
+      setShowCombatMoves(false) // Close move panel when showing input dialog
+    } else {
+      setShowInputDialog(false)
+    }
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog])
+
+  // Show check dialog when check_data is available
+  useEffect(() => {
+    if (combat?.check_data && combat.check_data.length > 0) {
+      setCheckData(combat.check_data)
+      setShowCheckDialog(true)
+    }
+  }, [combat?.check_data])
 
   const handleCombatMoveClick = (category) => {
     if (showCombatMoves && combatMovesCategory === category) {
@@ -47,12 +160,30 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
   const handleMoveSelection = async (move) => {
     console.log('Selected move:', move)
-    // Execute move via API
+    // Execute move via API - don't send target_id, let backend request it if needed
     try {
-      await onCombatAction('move', { move_id: move.name, target_id: combat.enemies[0]?.id })
+      await onCombatAction('move', { move_id: move.name })
       setShowCombatMoves(false)
     } catch (err) {
       console.error('Failed to execute move:', err)
+    }
+  }
+
+  const handleInputSelection = async (selectedValue) => {
+    console.log('Input selected:', selectedValue)
+    try {
+      // Send the selected input based on the input type
+      const inputType = combat.input_type
+      if (inputType === 'target_selection') {
+        await onCombatAction('target', { target_id: selectedValue })
+      } else if (inputType === 'direction_selection') {
+        await onCombatAction('direction', { direction: selectedValue })
+      } else if (inputType === 'number_input') {
+        await onCombatAction('number', { value: selectedValue })
+      }
+      setShowInputDialog(false)
+    } catch (err) {
+      console.error('Failed to send input:', err)
     }
   }
 
@@ -159,8 +290,10 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
           justifyContent: 'center',
         }}>
           <HeroPanel
-            player={player}
+            player={activePlayer}
             inCombat={mode === 'combat'}
+            hasSpecialMoves={hasSpecialMoves}
+            hasSupernaturalMoves={hasSupernaturalMoves}
             onAttributeClick={() => setShowAttributes(!showAttributes)}
             onStatusClick={() => setShowStatus(!showStatus)}
             onSkillsClick={() => {
@@ -176,16 +309,31 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             onOffensiveClick={() => handleCombatMoveClick('Offensive')}
             onManeuverClick={() => handleCombatMoveClick('Maneuver')}
             onMiscellaneousClick={() => handleCombatMoveClick('Miscellaneous')}
+            onSpecialClick={() => handleCombatMoveClick('Special')}
+            onSupernaturalClick={() => handleCombatMoveClick('Supernatural')}
           />
         </div>
 
         {/* Combat Move Panel */}
         {showCombatMoves && mode === 'combat' && (
           <CombatMovePanel
-            moves={player?.known_moves || []}
+            moves={availableMoves}
             category={combatMovesCategory}
             onMoveClick={handleMoveSelection}
             onClose={() => setShowCombatMoves(false)}
+          />
+        )}
+
+        {/* Combat Input Dialog - for target selection, direction selection, etc. */}
+        {showInputDialog && mode === 'combat' && (
+          <CombatInputDialog
+            inputType={combat.input_type}
+            options={combat.available_options || []}
+            onSelect={handleInputSelection}
+            onCancel={() => {
+              setShowInputDialog(false)
+              onCombatAction('cancel', {})
+            }}
           />
         )}
 
@@ -200,7 +348,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             display: 'flex',
             flexDirection: 'column'
           }}>
-            <CombatLog log={combat.log} allowResize={false} />
+            <CombatLog log={displayedLog} allowResize={false} />
           </div>
         )}
 
@@ -263,6 +411,17 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
       {showAudio && (
         <AudioControlDialog
           onClose={() => setShowAudio(false)}
+        />
+      )}
+
+      {/* Combat Check Dialog */}
+      {showCheckDialog && checkData && (
+        <CombatCheckDialog
+          checkData={checkData}
+          onClose={() => {
+            setShowCheckDialog(false)
+            setCheckData(null)
+          }}
         />
       )}
     </div>

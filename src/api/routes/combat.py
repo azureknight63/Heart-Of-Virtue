@@ -120,26 +120,27 @@ def execute_move():
             return error
 
         data = request.get_json()
-        if not data or "move_type" not in data or "move_id" not in data:
+        if not data or "move_type" not in data:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "error": "Missing move_type or move_id",
+                        "error": "Missing move_type",
                     }
                 ),
                 400,
             )
 
         move_type = data["move_type"]
-        move_id = data["move_id"]
+        move_id = data.get("move_id", "")
         target_id = data.get("target_id")
+        direction = data.get("direction")
 
         from flask import current_app
 
         game_service = current_app.game_service
 
-        result = game_service.execute_move(player, move_type, move_id, target_id)
+        result = game_service.execute_move(player, move_type, move_id, target_id, direction)
 
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
