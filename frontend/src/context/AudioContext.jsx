@@ -4,15 +4,54 @@ const AudioContext = createContext();
 
 export const useAudio = () => useContext(AudioContext);
 
+// Helper functions for localStorage
+const loadAudioPreferences = () => {
+    try {
+        const saved = localStorage.getItem('audioPreferences');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (error) {
+        console.warn('Failed to load audio preferences:', error);
+    }
+    return {
+        musicVolume: 0.5,
+        sfxVolume: 0.5,
+        isMusicMuted: false,
+        isSfxMuted: false
+    };
+};
+
+const saveAudioPreferences = (preferences) => {
+    try {
+        localStorage.setItem('audioPreferences', JSON.stringify(preferences));
+    } catch (error) {
+        console.warn('Failed to save audio preferences:', error);
+    }
+};
+
 export const AudioProvider = ({ children }) => {
-    const [musicVolume, setMusicVolume] = useState(0.5);
-    const [sfxVolume, setSfxVolume] = useState(0.5);
-    const [isMusicMuted, setIsMusicMuted] = useState(false);
-    const [isSfxMuted, setIsSfxMuted] = useState(false);
+    // Load initial preferences from localStorage
+    const initialPrefs = loadAudioPreferences();
+
+    const [musicVolume, setMusicVolume] = useState(initialPrefs.musicVolume);
+    const [sfxVolume, setSfxVolume] = useState(initialPrefs.sfxVolume);
+    const [isMusicMuted, setIsMusicMuted] = useState(initialPrefs.isMusicMuted);
+    const [isSfxMuted, setIsSfxMuted] = useState(initialPrefs.isSfxMuted);
     const [currentBGM, setCurrentBGM] = useState(null);
 
     const bgmRef = useRef(new Audio());
     const sfxPool = useRef({});
+
+    // Save preferences whenever they change
+    useEffect(() => {
+        saveAudioPreferences({
+            musicVolume,
+            sfxVolume,
+            isMusicMuted,
+            isSfxMuted
+        });
+    }, [musicVolume, sfxVolume, isMusicMuted, isSfxMuted]);
 
     useEffect(() => {
         bgmRef.current.loop = true;
