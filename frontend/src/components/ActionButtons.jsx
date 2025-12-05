@@ -1,26 +1,24 @@
 export default function ActionButtons({ mode, location, onInventory }) {
   const explorationActions = [
-    { label: 'Take', action: () => {} },
-    { label: 'Examine', action: () => {} },
+    { label: 'Take', action: () => { } },
+    { label: 'Examine', action: () => { } },
     { label: 'Inventory', action: onInventory },
-    { label: 'Skills', action: () => {} },
+    { label: 'Skills', action: () => { } },
   ]
 
   const combatActions = [
-    { label: 'Attack', action: () => {} },
-    { label: 'Defend', action: () => {} },
-    { label: 'Skill', action: () => {} },
-    { label: 'Use Item', action: () => {} },
-    { label: 'Retreat', action: () => {} },
-    { label: 'Check', action: () => {} },
+    { label: 'Attack', action: () => { } },
+    { label: 'Defend', action: () => { } },
+    { label: 'Skill', action: () => { } },
+    { label: 'Retreat', action: () => { } },
+    { label: 'Check', action: () => { } },
   ]
 
   const actions = mode === 'combat' ? combatActions : explorationActions
 
   return (
-    <div className={`grid gap-1.5 bg-[rgba(0,0,0,0.3)] p-2.5 border-t border-[#333] ${
-      mode === 'combat' ? 'grid-cols-3' : 'grid-cols-2'
-    }`}>
+    <div className={`grid gap-1.5 bg-[rgba(0,0,0,0.3)] p-2.5 border-t border-[#333] ${mode === 'combat' ? 'grid-cols-3' : 'grid-cols-2'
+      }`}>
       {actions.map((action, idx) => (
         <button
           key={idx}

@@ -44,7 +44,7 @@ class CombatStateSerializer:
             "round": round_number,
             "current_turn_index": current_turn_index,
             "player": CombatantSerializer.serialize_combatant(player),
-            "enemies": [CombatantSerializer.serialize_combatant(e) for e in enemies],
+            "enemies": [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
             "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
         }
 
@@ -154,12 +154,13 @@ class CombatantSerializer:
     """Serialize individual combatant state (player or NPC in combat)."""
 
     @staticmethod
-    def serialize_combatant(combatant: Any) -> Dict[str, Any]:
+    def serialize_combatant(combatant: Any, reference: Any = None) -> Dict[str, Any]:
         """
         Serialize combatant information during combat.
 
         Args:
             combatant: Player or NPC object
+            reference: Reference entity (usually player) to calculate distance from
 
         Returns:
             Dict with combatant state
@@ -167,21 +168,51 @@ class CombatantSerializer:
         is_player = hasattr(combatant, "inventory")
 
         return {
-            "id": "player" if is_player else getattr(combatant, "name", "enemy"),
+            "id": "player" if is_player else f"enemy_{id(combatant)}",
             "name": getattr(combatant, "name", "Unknown"),
             "type": "player" if is_player else "npc",
             "level": getattr(combatant, "level", 1),
             "health": {
-                "current": getattr(combatant, "health", 0),
-                "max": getattr(combatant, "max_health", 100),
+                "current": getattr(combatant, "hp", getattr(combatant, "health", 0)),
+                "max": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
             },
+            "hp": getattr(combatant, "hp", getattr(combatant, "health", 0)),
+            "max_hp": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
             "status_effects": CombatantSerializer._serialize_status_effects(
                 combatant
             ),
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
-            "distance": getattr(combatant, "combat_proximity", 0),
+            "distance": CombatantSerializer._get_distance(combatant, reference),
+            "position": CombatantSerializer._serialize_position(combatant),
         }
+
+    @staticmethod
+    def _get_distance(combatant: Any, reference: Any = None) -> int:
+        """Safely get distance value."""
+        prox = getattr(combatant, "combat_proximity", 0)
+        if isinstance(prox, dict):
+            if reference and reference in prox:
+                return prox[reference]
+            # If we can't resolve the distance to the reference, return 0
+            # This handles cases where prox is a dict (new system) but we don't have the key
+            return 0
+        # Handle legacy scalar distance
+        return prox
+
+    @staticmethod
+    def _serialize_position(combatant: Any) -> Optional[Dict[str, Any]]:
+        """Serialize combat position coordinates."""
+        if not hasattr(combatant, "combat_position") or combatant.combat_position is None:
+            return None
+        
+        pos = combatant.combat_position
+        return {
+            "x": pos.x,
+            "y": pos.y,
+            "facing": pos.facing.name if hasattr(pos, "facing") and hasattr(pos.facing, "name") else "N"
+        }
+
 
     @staticmethod
     def serialize_combatant_list(combatants: List[Any]) -> List[Dict[str, Any]]:
