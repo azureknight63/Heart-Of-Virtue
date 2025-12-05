@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import CombatLog from './CombatLog'
+
 import BattlefieldGrid from './BattlefieldGrid'
 
 export default function Battlefield({ combat }) {
@@ -34,8 +34,8 @@ export default function Battlefield({ combat }) {
           <button
             onClick={() => setSelectedTab('overview')}
             className={`px-2 py-1 text-xs font-bold rounded border transition-all ${selectedTab === 'overview'
-                ? 'bg-orange text-white border-orange'
-                : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
+              ? 'bg-orange text-white border-orange'
+              : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
               }`}
           >
             Overview
@@ -43,8 +43,8 @@ export default function Battlefield({ combat }) {
           <button
             onClick={() => setSelectedTab('enemies')}
             className={`px-2 py-1 text-xs font-bold rounded border transition-all ${selectedTab === 'enemies'
-                ? 'bg-orange text-white border-orange'
-                : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
+              ? 'bg-orange text-white border-orange'
+              : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
               }`}
           >
             Enemies ({combat.enemies?.length || 0})
@@ -55,21 +55,14 @@ export default function Battlefield({ combat }) {
         {selectedTab === 'overview' && (
           <div className="flex gap-1">
             <button
-              onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-              className="px-2 py-1 text-xs font-bold rounded border border-orange text-orange hover:bg-orange hover:text-white bg-[rgba(0,0,0,0.5)]"
-              title="Zoom Out"
+              onClick={() => setZoom(zoom === 1 ? 'full' : 1)}
+              className={`px-3 py-1 text-xs font-bold rounded border transition-colors ${zoom === 'full'
+                ? 'bg-orange text-white border-orange'
+                : 'border-orange text-orange hover:bg-orange hover:text-white bg-[rgba(0,0,0,0.5)]'
+                }`}
+              title="Toggle View Mode"
             >
-              -
-            </button>
-            <span className="text-xs text-orange font-mono self-center w-8 text-center">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              onClick={() => setZoom(Math.min(2, zoom + 0.1))}
-              className="px-2 py-1 text-xs font-bold rounded border border-orange text-orange hover:bg-orange hover:text-white bg-[rgba(0,0,0,0.5)]"
-              title="Zoom In"
-            >
-              +
+              {zoom === 'full' ? 'View: Full Map' : 'View: Normal'}
             </button>
           </div>
         )}
@@ -80,10 +73,8 @@ export default function Battlefield({ combat }) {
         <BattlefieldGrid combat={combat} tab={selectedTab} zoom={zoom} />
       </div>
 
-      {/* Combat Log (Right Panel - Player Turn) */}
-      {isMyTurn && (
-        <CombatLog log={combatLog} />
-      )}
+      {/* Combat Log (Right Panel - Player Turn) - REMOVED per request */}
+
     </div>
   )
 }

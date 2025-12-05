@@ -1,3 +1,156 @@
+import React from 'react';
+
+// Helper to calculate torus path
+const describeArc = (x, y, radius, startAngle, endAngle) => {
+  const start = polarToCartesian(x, y, radius, endAngle);
+  const end = polarToCartesian(x, y, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return [
+    "M", start.x, start.y,
+    "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y
+  ].join(" ");
+}
+
+const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
+  const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+  return {
+    x: centerX + (radius * Math.cos(angleInRadians)),
+    y: centerY + (radius * Math.sin(angleInRadians))
+  };
+}
+
+const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
+  // Determine Glow Color based on prepared/current move category
+  const getGlowStyle = (move) => {
+    if (!move) return {}; // No glow
+    const cat = move.category || "Miscellaneous";
+    // red=Attack, blue=Maneuver, white=Misc, purple=Special, teal=Supernatural
+    // Also ensuring border color matches the glow
+    switch (cat) {
+      case "Attack": return { boxShadow: "0 0 15px 5px rgba(220, 38, 38, 0.6)", borderColor: "#ef4444" }; // Red
+      case "Maneuver": return { boxShadow: "0 0 15px 5px rgba(37, 99, 235, 0.6)", borderColor: "#3b82f6" }; // Blue
+      case "Special": return { boxShadow: "0 0 15px 5px rgba(147, 51, 234, 0.6)", borderColor: "#a855f7" }; // Purple
+      case "Supernatural": return { boxShadow: "0 0 15px 5px rgba(13, 148, 136, 0.6)", borderColor: "#14b8a6" }; // Teal
+      case "Miscellaneous":
+      default: return { boxShadow: "0 0 15px 5px rgba(255, 255, 255, 0.6)", borderColor: "#ffffff" }; // White
+    }
+  };
+
+  const move = entity.current_move || entity.prepared_move;
+  const glowStyle = getGlowStyle(move);
+
+  // Facing
+  // API might provide 'facing' as int (degrees) or string enum.
+  // We handle both.
+  let facing = 0;
+  if (entity.position?.facing !== undefined) {
+    if (typeof entity.position.facing === 'number') {
+      facing = entity.position.facing;
+    } else {
+      // Fallback or mapping if strings are sent
+      const map = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
+      facing = map[entity.position.facing] || 0;
+    }
+  }
+
+  // Stats for Torus
+  // Player has fatigue/maxfatigue
+  // Enemies usually utilize health.current and health.max
+  const hp = entity.hp !== undefined ? entity.hp : (entity.health?.current || 0);
+  const maxHp = entity.max_hp !== undefined ? entity.max_hp : (entity.health?.max || 100);
+
+  const fatigue = entity.fatigue || 0;
+  // Fallback for max fatigue if not present (usually 100 or on object)
+  const maxFatigue = entity.maxfatigue || entity.max_fatigue || 100;
+
+  const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
+  const fatPct = maxFatigue > 0 ? Math.min(1, Math.max(0, fatigue / maxFatigue)) : 0;
+
+  // Visual constants
+  const content = (entity.name && entity.name[0]) || '?';
+
+  // Triangle styling based on mode
+  // Normal: border-l-[6px] border-r-[6px] border-b-[8px]
+  // Full: Reduce to ~33% size
+  const triangleClass = isFullMode
+    ? "absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent border-b-yellow-400 filter drop-shadow-sm opacity-90"
+    : "absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-yellow-400 filter drop-shadow opacity-90";
+
+  return (
+    <div className="relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu bg-gray-900 border-2"
+      style={{
+        ...glowStyle,
+        // If no move prepared, default border color is handled by className or style override
+        borderColor: glowStyle.borderColor || '#4b5563'
+      }}
+    >
+      {/* Background fill for circle */}
+      <div className={`absolute inset-0 rounded-full opacity-80 ${isPlayer ? 'bg-cyan-900' : 'bg-red-900'}`}></div>
+
+      {/* Inner Torus (HP/Fatigue) */}
+      <svg className="absolute inset-0 w-full h-full p-[2px]" viewBox="0 0 100 100" style={{ transform: 'rotate(0deg)' }}>
+        {/* Left Arc for HP (Green) 
+              M 50 95 A 45 45 0 0 1 50 5  (This draws left semi-circle from bottom to top)
+          */}
+        <path
+          d="M 50 95 A 45 45 0 0 1 50 5"
+          fill="none"
+          stroke="#111827" /* Track darker */
+          strokeWidth="8"
+          strokeLinecap="butt"
+        />
+        <path
+          d="M 50 95 A 45 45 0 0 1 50 5"
+          fill="none"
+          stroke="#22c55e" /* HP Color (green-500) */
+          strokeWidth="8"
+          strokeDasharray={`${hpPct * 141.4} 141.4`}
+          strokeDashoffset="0"
+          strokeLinecap="butt"
+        />
+
+        {/* Right Arc for Fatigue (Orange/Yellow) 
+              M 50 95 A 45 45 0 0 0 50 5 (Right semi-circle)
+          */}
+        <path
+          d="M 50 95 A 45 45 0 0 0 50 5"
+          fill="none"
+          stroke="#111827"
+          strokeWidth="8"
+          strokeLinecap="butt"
+        />
+        <path
+          d="M 50 95 A 45 45 0 0 0 50 5"
+          fill="none"
+          stroke="#f59e0b" /* Fatigue Color */
+          strokeWidth="8"
+          strokeDasharray={`${fatPct * 141.4} 141.4`}
+          strokeDashoffset="0"
+          strokeLinecap="butt"
+        />
+      </svg>
+
+      {/* Facing Indicator Triangle - Orbits around border 
+          The triangle needs to be ON the border.
+          At 0 deg (North), it should be at Top (50, 0).
+          Container center is 50, 50.
+      */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ transform: `rotate(${facing}deg)` }}
+      >
+        {/* Triangle positioned at top center */}
+        <div className={triangleClass} />
+      </div>
+
+      {/* Content Label - Hide on full mode if obscured/too small */}
+      <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-xs select-none z-10 pointer-events-none">
+        {!isFullMode && content}
+      </div>
+    </div>
+  );
+};
+
 export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
   const renderGrid = () => {
     if (tab === 'enemies') {
@@ -21,64 +174,87 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
       )
     }
 
-    // Combat overview grid - zoom affects grid size
-    // Full battlefield is 10x10 (100 cells)
-    // Player is at position 45 (row 4, col 5)
-    const playerPos = 45
+    // Map constants
+    const MAP_SIZE = 51 // Coordinates 0-50
+    const VIEW_SIZE = 15 // Base view size (Normal mode)
+    const isFullMode = zoom === 'full'
 
-    // Calculate grid dimensions based on zoom
-    // zoom = 0.5 -> 20x20 grid (more cells, smaller)
-    // zoom = 1.0 -> 10x10 grid (default)
-    // zoom = 2.0 -> 5x5 grid (fewer cells, larger)
-    const baseCols = 10
-    const gridCols = Math.max(3, Math.round(baseCols / zoom))
+    // Helper to get position safely
+    const getPos = (entity) => {
+      // Handle both backend structure (entity.position) and potential missing data
+      return entity?.position || { x: 25, y: 25 }
+    }
+
+    const playerPos = getPos(combat?.player)
+
+    // Calculate Grid & Viewport
+    let gridCols, leftX, topY
+
+    if (isFullMode) {
+      // Full Map Mode: Show entire 51x51 grid
+      gridCols = MAP_SIZE
+      leftX = 0
+      topY = MAP_SIZE - 1 // Top row is Y=50
+    } else {
+      // Normal Mode: 15x15 centered on player
+      gridCols = VIEW_SIZE
+      const halfView = Math.floor(gridCols / 2)
+
+      leftX = playerPos.x - halfView
+      leftX = Math.max(0, Math.min(MAP_SIZE - gridCols, leftX))
+
+      topY = playerPos.y + halfView
+      topY = Math.min(MAP_SIZE - 1, Math.max(gridCols - 1, topY))
+    }
+
     const totalCells = gridCols * gridCols
-
-    // Calculate which cells to show (centered on player)
-    const playerRow = Math.floor(playerPos / baseCols)
-    const playerCol = playerPos % baseCols
-
-    // Calculate the top-left corner of the visible area
-    const startRow = Math.max(0, Math.min(baseCols - gridCols, playerRow - Math.floor(gridCols / 2)))
-    const startCol = Math.max(0, Math.min(baseCols - gridCols, playerCol - Math.floor(gridCols / 2)))
 
     return (
       <div
-        className="grid gap-0.5 p-2 h-full overflow-auto transition-all duration-200"
+        className="grid gap-px p-2 h-full overflow-auto transition-all duration-200 bg-gray-950"
         style={{
           gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
         }}
       >
         {Array(totalCells).fill(null).map((_, idx) => {
-          // Map visible grid index to full battlefield index
+          // Calculate screen coordinates
           const visibleRow = Math.floor(idx / gridCols)
           const visibleCol = idx % gridCols
-          const fullRow = startRow + visibleRow
-          const fullCol = startCol + visibleCol
-          const fullIdx = fullRow * baseCols + fullCol
 
-          let content = ''
-          let bgColor = 'bg-[rgba(50,50,50,0.3)]'
-          let borderColor = 'border-gray-700'
+          const worldX = leftX + visibleCol
+          const worldY = topY - visibleRow
 
-          // Placeholder logic for combatants
-          if (fullIdx === 45) {
-            content = 'J'
-            bgColor = 'bg-gradient-to-br from-lime to-cyan'
-            borderColor = 'border-lime'
-          } else if (fullIdx === 37) {
-            content = 'E'
-            bgColor = 'bg-gradient-to-br from-red-500 to-red-600'
-            borderColor = 'border-red-500'
+          let content = null;
+          let tooltip = `(${worldX}, ${worldY})`;
+          let cellClass = ""; // Transparent
+
+          // Check if Player is here
+          if (combat?.player && getPos(combat.player).x === worldX && getPos(combat.player).y === worldY) {
+            content = <CombatantMarker entity={combat.player} isPlayer={true} isFullMode={isFullMode} />;
+            tooltip = `${combat.player.name} (You)`;
           }
 
-          // Calculate font size based on zoom
-          const fontSize = zoom >= 1.5 ? 'text-base' : zoom >= 1 ? 'text-sm' : 'text-xs'
+          // Check enemies
+          const enemy = combat?.enemies?.find(e => {
+            const p = getPos(e)
+            const hp = e.hp !== undefined ? e.hp : (e.health?.current ?? 0);
+            return p.x === worldX && p.y === worldY && hp > 0
+          })
+
+          if (enemy) {
+            content = <CombatantMarker entity={enemy} isPlayer={false} isFullMode={isFullMode} />;
+            tooltip = `${enemy.name} (${enemy.id})`;
+          }
+
+          // Adjust font size / visuals for density
+          // Full mode cells are very small, likely hide text or scale marker down
+          const fontSize = isFullMode ? 'text-[0px]' : 'text-sm'
 
           return (
             <div
               key={idx}
-              className={`aspect-square ${bgColor} border ${borderColor} rounded text-white ${fontSize} font-bold flex items-center justify-center cursor-pointer hover:opacity-75 transition-opacity`}
+              title={tooltip}
+              className={`aspect-square ${cellClass} rounded flex items-center justify-center relative ${fontSize}`}
             >
               {content}
             </div>
