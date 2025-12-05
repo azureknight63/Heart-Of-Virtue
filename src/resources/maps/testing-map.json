@@ -1647,7 +1647,6 @@
                 "__class__": "Slime",
                 "__module__": "npc",
                 "props": {
-                    "name": "Slime Alpha",
                     "description": "Goop that moves. Gross.",
                     "maxhp": 10,
                     "hp": 10,
@@ -1664,7 +1663,6 @@
                 "__class__": "CaveBat",
                 "__module__": "npc",
                 "props": {
-                    "name": "Cave Bat Swooper",
                     "description": "A small, leathery-winged mammal that nests in caverns and ambushes from above.",
                     "maxhp": 8,
                     "hp": 8,

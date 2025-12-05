@@ -1154,6 +1154,11 @@ class GameService:
                 "log": []
             }
         
+        # Use the combat adapter if available to get full state including awaiting_input
+        if hasattr(player, '_combat_adapter'):
+            return player._combat_adapter.get_combat_state()
+        
+        # Fallback to direct serialization if adapter not available
         enemies = getattr(player, "combat_list", [])
         turn_index = getattr(player, "combat_turn_index", 0)
         round_num = getattr(player, "combat_round", 1)
@@ -1218,7 +1223,7 @@ class GameService:
         }
 
     def execute_move(
-        self, player: "player_module.Player", move_type: str, move_id: str, target_id: Optional[str] = None
+        self, player: "player_module.Player", move_type: str, move_id: str, target_id: Optional[str] = None, direction: Optional[str] = None
     ) -> Dict[str, Any]:
         """Execute a combat move using the combat adapter.
 
@@ -1231,11 +1236,15 @@ class GameService:
         Returns:
             Dictionary with action result
         """
+        print(f"[DEBUG] execute_move called: move_type={move_type}, move_id={move_id}, target_id={target_id}")
+        
         if not getattr(player, "in_combat", False):
+            print("[DEBUG] Not in combat")
             return {"error": "Not in combat"}
 
         # Get or create combat adapter
         if not hasattr(player, '_combat_adapter'):
+            print("[DEBUG] Combat adapter not found")
             return {"error": "Combat not properly initialized"}
         
         adapter = player._combat_adapter
@@ -1243,35 +1252,77 @@ class GameService:
         # Handle different move types
         if move_type == "move":
             # Player is selecting a move by name
-            # Find the move index in available moves
-            viable_moves = player.refresh_moves()
+            # Find the move index in ALL known moves (not just viable ones)
+            all_moves = player.known_moves
+            print(f"[DEBUG] Found {len(all_moves)} known moves")
+            for i, move in enumerate(all_moves):
+                print(f"[DEBUG]   {i}: {getattr(move, 'name', 'UNNAMED')}")
+            
             move_index = None
             
-            for i, move in enumerate(viable_moves):
+            for i, move in enumerate(all_moves):
                 if getattr(move, "name", "") == move_id:
                     move_index = i
                     break
             
             if move_index is None:
+                print(f"[DEBUG] Move '{move_id}' not found in known moves")
                 return {"error": f"Move '{move_id}' not found"}
+            
+            print(f"[DEBUG] Found move at index {move_index}")
             
             # Send move selection command
             command = {"type": "select_move", "move_index": move_index}
             result = adapter.process_command(command)
             
+            print(f"[DEBUG] Adapter result: {result.get('error', 'No error')}")
+            
             # If the move requires targeting and we have a target_id, send target selection
             if not result.get("error") and result.get("battle_state", {}).get("input_type") == "target_selection":
-                if target_id:
+                print(f"[DEBUG] Move requires targeting, target_id={target_id}")
+                # Only auto-send target if it's a valid enemy ID (not 'player')
+                if target_id and target_id != 'player':
                     target_command = {"type": "select_target", "target_id": target_id}
                     result = adapter.process_command(target_command)
-                else:
-                    # Auto-select first available target
-                    available_targets = result.get("battle_state", {}).get("available_options", [])
-                    if available_targets:
-                        target_command = {"type": "select_target", "target_id": available_targets[0]["id"]}
-                        result = adapter.process_command(target_command)
+                elif not target_id or target_id == 'player':
+                    # No valid target provided - return state so frontend can prompt for target selection
+                    # The result already contains available_options with the list of valid targets
+                    pass
             
             return result
+        
+        elif move_type == "target":
+            # Player is selecting a target for a pending move
+            if not hasattr(player, '_combat_adapter'):
+                return {"error": "Combat not properly initialized"}
+            
+            adapter = player._combat_adapter
+            command = {"type": "select_target", "target_id": target_id}
+            return adapter.process_command(command)
+        
+        elif move_type == "direction":
+            # Player is selecting a direction for a pending move
+            if not hasattr(player, '_combat_adapter'):
+                return {"error": "Combat not properly initialized"}
+            
+            adapter = player._combat_adapter
+            command = {"type": "select_direction", "direction": direction}
+            return adapter.process_command(command)
+        
+        elif move_type == "number":
+            # Player is entering a numeric value for a pending move
+            if not hasattr(player, '_combat_adapter'):
+                return {"error": "Combat not properly initialized"}
+            
+            adapter = player._combat_adapter
+            # The value should be passed in target_id for simplicity
+            try:
+                value = int(target_id) if target_id else int(move_id)
+            except (ValueError, TypeError):
+                return {"error": "Invalid numeric value"}
+            
+            command = {"type": "select_number", "value": value}
+            return adapter.process_command(command)
         
         elif move_type == "attack":
             # Basic attack - find the Attack move
@@ -1280,6 +1331,15 @@ class GameService:
         elif move_type == "defend":
             # Defend - find a defensive move or use Wait
             return self.execute_move(player, "move", "Wait", target_id)
+        
+        elif move_type == "cancel":
+            # Cancel current selection state
+            if not hasattr(player, '_combat_adapter'):
+                return {"error": "Combat not properly initialized"}
+            
+            adapter = player._combat_adapter
+            command = {"type": "cancel_selection"}
+            return adapter.process_command(command)
         
         else:
             return {"error": f"Unknown move type: {move_type}"}

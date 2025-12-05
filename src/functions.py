@@ -252,7 +252,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
             continue
         awareness = getattr(e, 'awareness', float('inf'))
         if finesse_check <= awareness:
-            print(f"{getattr(e, 'name', '')} {getattr(e, 'alert_message', '')}")
+            # Don't print here - combat adapter will handle alert messages
             enemy_combat_list.append(e)
             e.in_combat = True
             # Nearby aggro allies join
@@ -260,7 +260,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
                 if aggro_enemy is e:
                     continue
                 if getattr(aggro_enemy, 'aggro', False) and not getattr(aggro_enemy, 'friend', False):
-                    print(f"{getattr(aggro_enemy, 'name', '')}{getattr(aggro_enemy, 'alert_message', '')}")
+                    # Don't print here - combat adapter will handle alert messages
                     enemy_combat_list.append(aggro_enemy)
                     aggro_enemy.in_combat = True
             break  # stop scanning after alarm is raised

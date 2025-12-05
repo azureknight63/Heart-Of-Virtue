@@ -339,11 +339,56 @@ def move_toward(
     new_x = current.x + (dx * actual_distance)
     new_y = current.y + (dy * actual_distance)
     
+    
     # Clamp to grid bounds
     new_x = max(0, min(50, new_x))
     new_y = max(0, min(50, new_y))
     
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
+
+def move_toward_constrained(
+    current: CombatPosition,
+    target: CombatPosition,
+    distance: int,
+    occupied: List[CombatPosition]
+) -> CombatPosition:
+    """Move toward target but ensure destination is not occupied.
+    
+    If ideal destination is occupied, tries successively shorter distances.
+    
+    Args:
+        current: Starting position
+        target: Target position
+        distance: Maximum distance to move
+        occupied: List of positions occupied by other units
+    
+    Returns:
+        New valid CombatPosition
+    """
+    if not occupied:
+        return move_toward(current, target, distance)
+        
+    test_dist = distance
+    while test_dist > 0:
+        new_pos = move_toward(current, target, test_dist)
+        
+        # Check if new_pos is occupied (unless it's our current pos)
+        if new_pos.x == current.x and new_pos.y == current.y:
+            return current
+            
+        has_collision = False
+        for occ in occupied:
+            if occ.x == new_pos.x and occ.y == new_pos.y:
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return new_pos
+            
+        test_dist -= 1
+        
+    return current.copy()
 
 
 def move_away_from(

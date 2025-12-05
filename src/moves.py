@@ -137,24 +137,28 @@ class Move:  # master class for all moves
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         player = ""
-        if self.user.name == "Jean":
+        # Check if user is player generally (by name or class, assuming Player class has no friend attr)
+        is_user_player = self.user.name == "Jean" or self.user.__class__.__name__ == "Player"
+        
+        if is_user_player:
             player = self.user
+            self.usercolor = "green"
         else:
-            if not self.user.friend:
+            if not getattr(self.user, 'friend', False):
                 self.usercolor = "magenta"
             else:
                 self.usercolor = "cyan"
-        if self.target.name == "Jean":
+                
+        is_target_player = self.target.name == "Jean" or self.target.__class__.__name__ == "Player"
+        
+        if is_target_player:
             player = self.target
+            self.targetcolor = "green"
         else:
-            if not self.target.friend:
+            if not getattr(self.target, 'friend', False):
                 self.targetcolor = "magenta"
             else:
                 self.targetcolor = "cyan"
-        if self.user == player:
-            self.usercolor = "green"
-        if self.target == player:
-            self.targetcolor = "green"
 
     def parry(self):
         print(colored(self.target.name, self.targetcolor) + colored(" parried the attack from ", "red") +
@@ -434,7 +438,7 @@ class Advance(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.evaluate()
 
     def viable(self):
@@ -490,8 +494,19 @@ class Advance(Move):
         if current_distance <= 6:
             distance_moved = max(1, (performance - threshold) // 5)  # Smaller increments when close
         
-        # Move toward target
-        new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
+        # Move toward target (may overshoot slightly)
+        # Collect occupied positions
+        occupied = []
+        if hasattr(user, 'combat_list'):
+            for u in user.combat_list:
+                if hasattr(u, 'combat_position') and u.combat_position:
+                    occupied.append(u.combat_position)
+        if hasattr(user, 'combat_list_allies'):
+            for u in user.combat_list_allies:
+                if hasattr(u, 'combat_position') and u.combat_position and u != user:
+                    occupied.append(u.combat_position)
+
+        new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
         
         # Turn to face target
@@ -500,6 +515,11 @@ class Advance(Move):
         # Recalculate proximity for backward compatibility
         new_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
         distance_reduced = current_distance - new_distance
+        
+        # Update legacy proximity dictionary
+        user.combat_proximity[self.target] = int(new_distance)
+        if hasattr(self.target, 'combat_proximity'):
+            self.target.combat_proximity[user] = int(new_distance)
         
         if distance_reduced <= 0:
             if user.name == "Jean":
@@ -569,7 +589,7 @@ class Withdraw(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.evaluate()
 
     def viable(self):
@@ -728,7 +748,18 @@ class BullCharge(Move):
         current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
         
         # Move toward target (may overshoot slightly)
-        new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
+        # Collect occupied positions
+        occupied = []
+        if hasattr(user, 'combat_list'):
+            for u in user.combat_list:
+                if hasattr(u, 'combat_position') and u.combat_position:
+                    occupied.append(u.combat_position)
+        if hasattr(user, 'combat_list_allies'):
+            for u in user.combat_list_allies:
+                if hasattr(u, 'combat_position') and u.combat_position and u != user:
+                    occupied.append(u.combat_position)
+
+        new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
         
         # Face target
@@ -1145,13 +1176,113 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                          beats_left=execute, target=player, user=player, instant=True)
 
     def prep(self, user):
+        # In API mode, generate structured combatant data
+        if hasattr(user, '_combat_adapter'):
+            self._generate_api_check_data(user)
         # Check coordinate-based positioning if available
-        if hasattr(user, 'combat_position') and user.combat_position is not None:
+        elif hasattr(user, 'combat_position') and user.combat_position is not None:
             self._display_coordinate_info(user)
         else:
             # Fallback to legacy distance display
             self._display_legacy_info(user)
-        functions.await_input()
+        # Don't block for input in API mode - info is captured in combat log
+        if not hasattr(user, '_combat_adapter'):
+            functions.await_input()
+    
+    def _generate_api_check_data(self, user):
+        """Generate structured combatant data for API mode."""
+        import positions
+        
+        combatants_data = []
+        
+        # Collect all combatants (enemies and allies)
+        all_combatants = []
+        
+        # Add enemies
+        for enemy in user.combat_list:
+            if not enemy.is_alive():
+                continue
+            all_combatants.append({
+                'combatant': enemy,
+                'is_ally': False,
+                'distance': user.combat_proximity.get(enemy, 0)
+            })
+        
+        # Add allies (excluding the player)
+        for ally in user.combat_list_allies:
+            if ally != user:
+                all_combatants.append({
+                    'combatant': ally,
+                    'is_ally': True,
+                    'distance': user.combat_proximity.get(ally, 0)
+                })
+        
+        # Sort by distance (closest first)
+        all_combatants.sort(key=lambda x: x['distance'])
+        
+        # Generate data for each combatant
+        for item in all_combatants:
+            combatant = item['combatant']
+            distance = item['distance']
+            is_ally = item['is_ally']
+            
+            combatant_info = {
+                'name': combatant.name,
+                'is_ally': is_ally,
+                'distance': int(distance),
+                'facing': None,
+                'direction_from_player': None,
+                'current_move': None
+            }
+            
+            # Get facing direction if available
+            if hasattr(combatant, 'combat_position') and combatant.combat_position is not None:
+                combatant_info['facing'] = combatant.combat_position.facing.name
+                
+                # Calculate direction relative to player
+                if hasattr(user, 'combat_position') and user.combat_position is not None:
+                    # Calculate angle from player to combatant
+                    angle = positions.angle_to_target(user.combat_position, combatant.combat_position)
+                    
+                    # Convert angle to cardinal direction
+                    if 337.5 <= angle or angle < 22.5:
+                        direction = "North"
+                    elif 22.5 <= angle < 67.5:
+                        direction = "Northeast"
+                    elif 67.5 <= angle < 112.5:
+                        direction = "East"
+                    elif 112.5 <= angle < 157.5:
+                        direction = "Southeast"
+                    elif 157.5 <= angle < 202.5:
+                        direction = "South"
+                    elif 202.5 <= angle < 247.5:
+                        direction = "Southwest"
+                    elif 247.5 <= angle < 292.5:
+                        direction = "West"
+                    else:  # 292.5 <= angle < 337.5
+                        direction = "Northwest"
+                    
+                    combatant_info['direction_from_player'] = direction
+            
+            # Get current move if not idle
+            if hasattr(combatant, 'current_move') and combatant.current_move is not None:
+                move = combatant.current_move
+                if move.current_stage > 0:  # Move is active
+                    combatant_info['current_move'] = move.name
+            
+            combatants_data.append(combatant_info)
+        
+        # Store in combat adapter state for frontend retrieval
+        if hasattr(user, 'combat_adapter_state'):
+            user.combat_adapter_state['check_data'] = combatants_data
+        
+        # Also add summary to combat log
+        if hasattr(user, 'combat_log'):
+            user.combat_log.append({
+                "round": getattr(user, "combat_beat", 0),
+                "message": f"Jean checks the battlefield... {len(combatants_data)} combatant(s) detected.",
+                "type": "info"
+            })
     
     def _display_coordinate_info(self, user):
         """Display coordinate-based positioning information."""
@@ -1211,13 +1342,23 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
     
     def _display_legacy_info(self, user):
         """Display legacy distance-based information (fallback)."""
-        for enemy, distance in user.combat_proximity.items():
-            cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
-            if user.combat_list_allies:
-                for ally in user.combat_list_allies:
-                    if ally.name != "Jean":
-                        cprint("{} is {} ft from {}".format(
-                            enemy.name, int(ally.combat_proximity[enemy]), ally.name), "cyan")
+        # In API mode, add to combat log
+        if hasattr(user, '_combat_adapter') and hasattr(user, 'combat_log'):
+            for enemy, distance in user.combat_proximity.items():
+                user.combat_log.append({
+                    "round": getattr(user, "combat_beat", 0),
+                    "message": f"{enemy.name} is {int(distance)} ft from {user.name}",
+                    "type": "info"
+                })
+        else:
+            # Terminal mode - print to console
+            for enemy, distance in user.combat_proximity.items():
+                cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
+                if user.combat_list_allies:
+                    for ally in user.combat_list_allies:
+                        if ally.name != "Jean":
+                            cprint("{} is {} ft from {}".format(
+                                enemy.name, int(ally.combat_proximity[enemy]), ally.name), "cyan")
 
 
 class Wait(Move):  # player chooses how many beats he'd like to wait
@@ -1236,8 +1377,31 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
                          beats_left=execute, target=player, user=player)
+        # Flag to indicate this move needs duration input
+        self.needs_duration = True
+        self.duration = None
 
     def execute(self, player):
+        # In API mode, check if duration was provided
+        if hasattr(player, '_combat_adapter'):
+            if self.duration is None:
+                # Duration not set yet - this shouldn't happen if adapter handles it correctly
+                # Default to 5 as fallback
+                duration = 5
+            else:
+                duration = self.duration
+            
+            self.stage_beat[2] = duration - 2
+            # Add feedback to combat log
+            if hasattr(player, 'combat_log'):
+                player.combat_log.append({
+                    "round": getattr(player, "combat_beat", 0),
+                    "message": f"Jean waits for {duration} beats...",
+                    "type": "info"
+                })
+            return
+        
+        # Terminal mode - prompt for input
         duration = ''
         while not functions.is_input_integer(duration):
             duration = input("Number of beats to wait (min 3, max 10): ", )
@@ -1290,6 +1454,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         viability = False
         has_weapon = False
         enemy_near = False
+        
         if self.user.eq_weapon:
             has_weapon = True
             range_min = self.mvrange[0]
@@ -2466,7 +2631,7 @@ class Turn(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.target_direction = None  # Will be set when move is selected
         self.evaluate()
 
