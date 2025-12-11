@@ -163,7 +163,7 @@ def take_item():
 
         # Get current tile
         x, y = int(player.location_x), int(player.location_y)
-        tile_data = current_app.game_service.get_tile(x, y)
+        tile_data = current_app.game_service.get_tile(player, x, y)
         if not tile_data or "error" in tile_data:
             return jsonify({"success": False, "error": "Tile not found"}), 404
 
@@ -221,7 +221,7 @@ def drop_item():
         player_y = getattr(player, "location_y", 0)
 
         # Get the tile at player's current position
-        tile = current_app.game_service.universe.get_tile(player_x, player_y)
+        tile = player.universe.get_tile(player_x, player_y)
         if not tile:
             return jsonify({"success": False, "error": "Current tile not found"}), 400
 

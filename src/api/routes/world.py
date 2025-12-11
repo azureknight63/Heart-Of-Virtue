@@ -65,7 +65,7 @@ def get_current_room():
 
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -135,7 +135,7 @@ def move_player():
 
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -230,7 +230,7 @@ def get_tile():
 
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -241,7 +241,7 @@ def get_tile():
                 500,
             )
 
-        tile = game_service.get_tile(x, y)
+        tile = game_service.get_tile(player, x, y)
 
         if "error" in tile:
             return jsonify({"success": False, "error": tile["error"]}), 404
@@ -338,7 +338,7 @@ def get_tiles_batch():
 
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -357,7 +357,7 @@ def get_tiles_batch():
             try:
                 x = int(coord["x"])
                 y = int(coord["y"])
-                tile = game_service.get_tile(x, y)
+                tile = game_service.get_tile(player, x, y)
                 
                 # Only include valid tiles (skip errors)
                 if "error" not in tile:
@@ -408,7 +408,7 @@ def get_available_commands():
 
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -480,7 +480,7 @@ def interact_with_target():
         from flask import current_app
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -531,7 +531,7 @@ def trigger_room_events():
         from flask import current_app
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
@@ -543,7 +543,7 @@ def trigger_room_events():
             )
 
         # Get current tile
-        tile = game_service.universe.get_tile(player.location_x, player.location_y)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return jsonify({"success": False, "error": "Current tile not found"}), 404
 
@@ -587,7 +587,7 @@ def search_room():
         from flask import current_app
         game_service = current_app.game_service
 
-        if not game_service or not game_service.universe:
+        if not game_service:
             return (
                 jsonify(
                     {
