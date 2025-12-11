@@ -47,10 +47,10 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const isMyTurn = (combat?.awaiting_input || false) && !isProcessingLog
 
   // Get active player data (merging combat status if in combat)
-  const activePlayer = (mode === 'combat' && combat?.battle_state?.combatants)
+  const activePlayer = (mode === 'combat' && combat?.player)
     ? {
       ...player,
-      ...combat.battle_state.combatants.find(c => c.name === 'Jean' || c.is_player === true)
+      ...combat.player
     }
     : player
 
@@ -172,8 +172,10 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     : []
 
   const isMoveSelection = availableMoves.length > 0
-  const hasSpecialMoves = isMoveSelection && availableMoves.some(move => move.category === 'Special')
-  const hasSupernaturalMoves = isMoveSelection && availableMoves.some(move => move.category === 'Supernatural')
+  const hasSpecialMoves = isMoveSelection && availableMoves.some(move =>
+    move.category === 'Special' || move.category === 'Spiritual' || move.category === 'Supernatural'
+  )
+  const hasDefensiveMoves = isMoveSelection && availableMoves.some(move => move.category === 'Defensive')
 
   // Show input dialog when backend requests input (target_selection, direction_selection, etc.)
   useEffect(() => {
@@ -343,7 +345,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             player={activePlayer}
             inCombat={mode === 'combat'}
             hasSpecialMoves={hasSpecialMoves}
-            hasSupernaturalMoves={hasSupernaturalMoves}
+            hasDefensiveMoves={hasDefensiveMoves}
             onAttributeClick={() => setShowAttributes(!showAttributes)}
             onStatusClick={() => setShowStatus(!showStatus)}
             onSkillsClick={() => {
@@ -357,10 +359,10 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             onActionsClick={() => setShowActions(!showActions)}
             onInteractClick={() => setShowInteract(!showInteract)}
             onOffensiveClick={() => handleCombatMoveClick('Offensive')}
+            onDefensiveClick={() => handleCombatMoveClick('Defensive')}
             onManeuverClick={() => handleCombatMoveClick('Maneuver')}
             onMiscellaneousClick={() => handleCombatMoveClick('Miscellaneous')}
             onSpecialClick={() => handleCombatMoveClick('Special')}
-            onSupernaturalClick={() => handleCombatMoveClick('Supernatural')}
           />
         </div>
 
@@ -398,7 +400,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             display: 'flex',
             flexDirection: 'column'
           }}>
-            <CombatLog log={displayedLog} allowResize={false} />
+            <CombatLog log={displayedLog} allowResize={false} isMyTurn={isMyTurn} />
           </div>
         )}
 

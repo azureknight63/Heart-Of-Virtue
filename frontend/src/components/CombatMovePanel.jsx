@@ -3,7 +3,15 @@ import { useAudio } from '../context/AudioContext';
 
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
     const { playSFX } = useAudio();
-    const filteredMoves = moves.filter(move => move.category === category);
+    const filteredMoves = moves.filter(move => {
+        if (category === 'Miscellaneous') {
+            return move.category === 'Miscellaneous' || move.category === 'Utility';
+        }
+        if (category === 'Special') {
+            return move.category === 'Special' || move.category === 'Spiritual' || move.category === 'Supernatural';
+        }
+        return move.category === category;
+    });
 
     return (
         <div style={{
@@ -52,7 +60,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
                     filteredMoves.map((move, index) => {
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
-                        
+
                         return (
                             <button
                                 key={index}

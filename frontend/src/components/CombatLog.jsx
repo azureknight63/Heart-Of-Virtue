@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 
-export default function CombatLog({ log, className = '', allowResize = true }) {
+export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [height, setHeight] = useState(150)
   const [isResizing, setIsResizing] = useState(false)
@@ -34,6 +34,13 @@ export default function CombatLog({ log, className = '', allowResize = true }) {
     }
   }, [log])
 
+  // Auto-scroll to bottom when it becomes player's turn
+  useEffect(() => {
+    if (isMyTurn && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight
+    }
+  }, [isMyTurn])
+
   return (
     <div
       ref={logRef}
@@ -52,7 +59,7 @@ export default function CombatLog({ log, className = '', allowResize = true }) {
         <>
           <div
             ref={contentRef}
-            className="flex-1 overflow-y-auto p-2 text-xs space-y-1 font-mono"
+            className="flex-1 overflow-y-auto p-2 text-sm space-y-1 font-mono"
           >
             {log?.length === 0 && (
               <div className="text-gray-500 italic text-center py-2">Combat started...</div>
@@ -61,14 +68,14 @@ export default function CombatLog({ log, className = '', allowResize = true }) {
               <div
                 key={idx}
                 className={`${entry.type === 'damage'
-                    ? 'text-red-400'
-                    : entry.type === 'heal'
-                      ? 'text-green-400'
-                      : entry.type === 'ability'
-                        ? 'text-cyan-400'
-                        : entry.type === 'info'
-                          ? 'text-gray-300'
-                          : 'text-yellow-300'
+                  ? 'text-red-400'
+                  : entry.type === 'heal'
+                    ? 'text-green-400'
+                    : entry.type === 'ability'
+                      ? 'text-cyan-400'
+                      : entry.type === 'info'
+                        ? 'text-gray-300'
+                        : 'text-yellow-300'
                   }`}
               >
                 <span className="opacity-50 mr-2">[{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>

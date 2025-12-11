@@ -4,7 +4,7 @@ export default function HeroPanel({
   player,
   inCombat,
   hasSpecialMoves,
-  hasSupernaturalMoves,
+  hasDefensiveMoves,
   onAttributeClick,
   onStatusClick,
   onSkillsClick,
@@ -12,7 +12,7 @@ export default function HeroPanel({
   onInventoryClick,
   onActionsClick,
   onInteractClick,
-  onSupernaturalClick,
+  onDefensiveClick,
   onOffensiveClick,
   onManeuverClick,
   onMiscellaneousClick
@@ -57,7 +57,7 @@ export default function HeroPanel({
     { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
     { key: 'special', label: 'SPECIAL', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSpecialClick, color: '#9944ff', show: hasSpecialMoves },
     { key: 'miscellaneous', label: 'MISC', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onMiscellaneousClick, color: '#aaaaaa' },
-    { key: 'supernatural', label: 'SUPERNATURAL', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onSupernaturalClick, color: '#44ffff', show: hasSupernaturalMoves },
+    { key: 'defensive', label: 'DEFENSIVE', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onDefensiveClick, color: '#eebb00', show: hasDefensiveMoves },
   ]
 
   const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
