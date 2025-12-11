@@ -56,22 +56,22 @@ class GameService:
     and exposes clean methods for REST endpoints to call.
     """
 
-    def __init__(self, universe: "universe_module.Universe"):
+    def __init__(self):
         """Initialize GameService.
-
-        Args:
-            universe: The Universe instance containing all game state
+        
+        No longer holds stateful universe reference.
         """
-        self.universe = universe
+        pass
 
     # ========================
     # World Navigation Methods
     # ========================
 
-    def _calculate_exits(self, tile: Any, x: int, y: int) -> Dict[str, Dict[str, int]]:
+    def _calculate_exits(self, universe, tile: Any, x: int, y: int) -> Dict[str, Dict[str, int]]:
         """Calculate available exits from a tile by checking adjacent tiles.
         
         Args:
+            universe: The Universe instance
             tile: The MapTile instance
             x: Current x coordinate
             y: Current y coordinate
@@ -102,7 +102,7 @@ class GameService:
                 continue
                 
             new_x, new_y = x + dx, y + dy
-            adjacent_tile = self.universe.get_tile(new_x, new_y)
+            adjacent_tile = universe.get_tile(new_x, new_y)
             
             if adjacent_tile:
                 exits[direction] = {"x": new_x, "y": new_y}
@@ -118,12 +118,12 @@ class GameService:
         Returns:
             Dictionary with room data (position, description, exits, items, npcs, objects)
         """
-        tile = self.universe.get_tile(player.location_x, player.location_y)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Invalid player position"}
 
         # Calculate exits dynamically by checking adjacent tiles
-        exits_data = self._calculate_exits(tile, player.location_x, player.location_y)
+        exits_data = self._calculate_exits(player.universe, tile, player.location_x, player.location_y)
 
         # Serialize items in room
         items_data = []
@@ -166,12 +166,12 @@ class GameService:
         if direction_lower not in valid_directions:
             return {"error": f"Invalid direction: {direction}"}
 
-        tile = self.universe.get_tile(player.location_x, player.location_y)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Cannot move from this location"}
 
         # Calculate available exits
-        available_exits = self._calculate_exits(tile, player.location_x, player.location_y)
+        available_exits = self._calculate_exits(player.universe, tile, player.location_x, player.location_y)
         
         if direction_lower not in available_exits:
             return {"error": f"Cannot go {direction_lower} from here"}
@@ -181,7 +181,7 @@ class GameService:
         new_x, new_y = exit_data["x"], exit_data["y"]
         
         # Validate new tile exists (should always exist after exits calculation, but be safe)
-        new_tile = self.universe.get_tile(new_x, new_y)
+        new_tile = player.universe.get_tile(new_x, new_y)
         if not new_tile:
             return {"error": f"Cannot move {direction_lower} - blocked or out of bounds"}
 
@@ -252,15 +252,9 @@ class GameService:
         if not hasattr(tile, "events_here"):
             return events_triggered
 
-        # Call evaluate_events to trigger event conditions
-        if hasattr(tile, "evaluate_events"):
-            try:
-                tile.evaluate_events()
-            except Exception:
-                pass
-
         # Process each event and capture output
-        for event in tile.events_here:
+        # Iterate over a copy of the list because events might remove themselves
+        for event in list(tile.events_here):
             # Serialize the event using EventSerializer
             event_data = EventSerializer.serialize(event)
             
@@ -304,7 +298,7 @@ class GameService:
 
         return events_triggered
 
-    def get_tile(self, x: int, y: int) -> Dict[str, Any]:
+    def get_tile(self, player: "player_module.Player", x: int, y: int) -> Dict[str, Any]:
         """Get tile data at specific coordinates with full serialization.
 
         Args:
@@ -314,7 +308,7 @@ class GameService:
         Returns:
             Dictionary with tile data including NPCs, items, and objects
         """
-        tile = self.universe.get_tile(x, y)
+        tile = player.universe.get_tile(x, y)
         if not tile:
             return {"error": "Tile not found"}
 
@@ -354,7 +348,7 @@ class GameService:
         """
         import random
         
-        tile = self.universe.get_tile(player.location_x, player.location_y)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"success": False, "message": "Invalid location"}
 
@@ -441,7 +435,7 @@ class GameService:
         import re
 
         # Find target
-        tile = self.universe.get_tile(player.location_x, player.location_y)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
         # Ensure player knows where they are for interactions that modify the room (like taking items)
         player.current_room = tile
         target = None
@@ -738,7 +732,7 @@ class GameService:
     def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
         # Find enemy in current room
-        tile = self.universe.get_tile(player.location_x, player.location_y)
+        tile = player.universe.get_tile(player.location_x, player.location_y)
         enemy = None
         if hasattr(tile, "npcs_here"):
             for npc in tile.npcs_here:
@@ -995,7 +989,7 @@ class GameService:
         commands = []
         
         # Get the current tile and its available actions
-        current_tile = self.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if current_tile and hasattr(current_tile, "available_actions"):
             try:
                 available_actions = current_tile.available_actions(callerIsApi=True, player=player)
@@ -1122,7 +1116,7 @@ class GameService:
         # Get the actual tile object
         player_x = getattr(player, "location_x", 1)
         player_y = getattr(player, "location_y", 1)
-        tile = self.universe.get_tile(player_x, player_y)
+        tile = player.universe.get_tile(player_x, player_y)
 
         if not tile:
             return {"error": "Player tile not found"}
@@ -1629,7 +1623,7 @@ class GameService:
             Dictionary with NPC state
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -1655,7 +1649,7 @@ class GameService:
             Dictionary with dialogue state
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -1682,7 +1676,7 @@ class GameService:
             Dictionary with next dialogue state
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -1718,7 +1712,7 @@ class GameService:
             Dictionary with NPC behavior profile
         """
         # Find NPC in current tile
-        current_tile = self.universe.get_tile(player.x, player.y)
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 

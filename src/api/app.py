@@ -132,17 +132,17 @@ def create_app(config_class=None):
             # Add get_tile method to universe for API layer
             universe.get_tile = get_tile_from_maps
             
-            game_service = GameService(universe)
+            game_service = GameService()
         except Exception as e:
             # Fallback if universe initialization fails
             import traceback
             print(f"Warning: Universe initialization failed: {e}")
             traceback.print_exc()
-            game_service = None
+            game_service = GameService()
     else:
         # Production mode - load universe from existing game state if available
         universe = None
-        game_service = GameService(universe) if universe else None
+        game_service = GameService()
 
     # Initialize session manager (now with universe reference if available)
     session_manager = SessionManager(universe=universe)

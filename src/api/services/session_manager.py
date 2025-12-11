@@ -259,16 +259,20 @@ class SessionManager:
 
         # Create new player
         try:
-            # Try to get player from universe if available
-            if self.universe and hasattr(self.universe, 'player'):
-                player = self.universe.player
-                # Update player name to match username
-                pass  # Do not overwrite player name with username; keep canonical name 'Jean'
-            else:
-                # Try to import and create actual Player object
-                # This will fail during testing/API initialization due to game engine dependencies
-                # So we use MinimalPlayer as fallback
-                player = MinimalPlayer("Jean")
+            # Create fresh player and universe for every session to ensure isolation
+            try:
+                from src.player import Player
+                from src.universe import Universe
+                
+                # Create new player
+                player = Player()
+                
+                # Create isolated universe for this player
+                player.universe = Universe(player)
+                player.universe.build(player)
+            except (ImportError, Exception) as e:
+                 print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
+                 player = MinimalPlayer("Jean")
             
             # Set starting position from config
             player.location_x, player.location_y = self.start_x, self.start_y
