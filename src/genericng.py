@@ -86,24 +86,26 @@ vowels = [
     ('y', 2),
 ]
 
-def selection(table):
-
-    # sum the table if needed
-
+# Initialize logic moved to module level to ensure thread safety
+for table in [consonants, vowels]:
     if type(table[-1]) is not type(0):
         s = 0
         for i in range(len(table)):
             s += table[i][1]
         table.append(s)
-    else:
-        s = table[-1]
 
-    # now the selection
+def selection(table):
+    s = table[-1]
     n = random.randrange(s) + 1
     for i in range(len(table)-1):
-        n -= table[i][1]
+        item = table[i]
+        # Skip if we encounter the sum (sanity check, though logic shouldn't reach here if len is correct)
+        if type(item) is int:
+            continue
+            
+        n -= item[1]
         if n <= 0:
-            return table[i][0]
+            return item[0]
 
     # should not happen
     return ''

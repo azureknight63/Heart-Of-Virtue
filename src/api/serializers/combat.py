@@ -61,7 +61,7 @@ class CombatStateSerializer:
         """
         return {
             "name": getattr(combatant, "name", "Unknown"),
-            "type": "player" if hasattr(combatant, "inventory") else "enemy",
+            "type": "player" if combatant.__class__.__name__ == "Player" else "enemy",
             "available_actions": CombatStateSerializer._get_available_actions(
                 combatant
             ),
@@ -165,7 +165,7 @@ class CombatantSerializer:
         Returns:
             Dict with combatant state
         """
-        is_player = hasattr(combatant, "inventory")
+        is_player = combatant.__class__.__name__ == "Player"
 
         return {
             "id": "player" if is_player else f"enemy_{id(combatant)}",
@@ -178,6 +178,8 @@ class CombatantSerializer:
             },
             "hp": getattr(combatant, "hp", getattr(combatant, "health", 0)),
             "max_hp": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
+            "fatigue": getattr(combatant, "fatigue", 0),
+            "max_fatigue": getattr(combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)),
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
             "status_effects": CombatantSerializer._serialize_status_effects(
                 combatant
@@ -185,7 +187,21 @@ class CombatantSerializer:
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
             "distance": CombatantSerializer._get_distance(combatant, reference),
             "position": CombatantSerializer._serialize_position(combatant),
+            "current_move": CombatantSerializer._serialize_active_move(combatant),
         }
+
+    @staticmethod
+    def _serialize_active_move(combatant: Any) -> Optional[Dict[str, Any]]:
+        """Serialize currently active/charging move."""
+        if hasattr(combatant, "current_move") and combatant.current_move:
+            move = combatant.current_move
+            return {
+                "name": getattr(move, "name", "Unknown"),
+                "category": getattr(move, "category", "Miscellaneous"),
+                "description": getattr(move, "description", ""),
+                "current_stage": getattr(move, "current_stage", 0),
+            }
+        return None
 
     @staticmethod
     def _get_distance(combatant: Any, reference: Any = None) -> int:

@@ -21,6 +21,7 @@ loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
 
 class NPC:
+    alert_message = "appears!"
     def __init__(self, name, description, damage, aggro, exp_award,
                  inventory: list[Item]=None, maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,

@@ -66,6 +66,7 @@ class ApiCombatAdapter:
     def __init__(self, player: "Player"):
         self.player = player
         self.output_capture = CombatOutputCapture()
+        self.current_beat_state_index = 0  # Track which beat state we're currently building
         
         # Initialize persistent state if missing
         if not hasattr(self.player, "combat_adapter_state"):
@@ -107,13 +108,21 @@ class ApiCombatAdapter:
     @available_options.setter
     def available_options(self, value):
         self.player.combat_adapter_state["available_options"] = value
-    
-    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat"):
-        """Add a log entry with deduplication check."""
+
+    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat", beat_index: int = 0):
+        """Add a log entry with deduplication check.
+        
+        Args:
+            round_num: Combat round number
+            message: Log message text
+            entry_type: Type of log entry (combat, system, etc.)
+            beat_index: Index of the beat state this log entry corresponds to (for map sync)
+        """
         if not hasattr(self.player, 'combat_log'):
             self.player.combat_log = []
         
         # Check for duplicate
+        # We check both message and round to allow the same event in different rounds
         is_duplicate = any(
             existing.get("message") == message and existing.get("round") == round_num
             for existing in self.player.combat_log
@@ -122,8 +131,10 @@ class ApiCombatAdapter:
             self.player.combat_log.append({
                 "round": round_num,
                 "message": message,
-                "type": entry_type
+                "type": entry_type,
+                "beat_index": beat_index  # For syncing with beat_states array
             })
+
     def initialize_combat(self, enemies: List[Any]) -> Dict[str, Any]:
         """
         Initialize combat with the given enemies.
@@ -137,9 +148,10 @@ class ApiCombatAdapter:
         try:
             # Import here to avoid circular dependencies
             # Reset combat state for new combat
-            self.player.combat_beat = 0
+            self.player.combat_beat = 1  # Start at beat 1 for synchronization
             self.player.combat_log = []  # Clear log for new combat
             self.output_capture.clear()  # Clear captured output
+            self.current_beat_state_index = 0  # Reset beat state tracking
             
             # Initialize combat_proximity if it doesn't exist
             if not hasattr(self.player, "combat_proximity"):
@@ -207,16 +219,13 @@ class ApiCombatAdapter:
                 enemy.combat_list = self.player.combat_list_allies
                 enemy.combat_list_allies = self.player.combat_list
             
-            # Add initial log entry
-            enemy_names = ", ".join([getattr(e, "name", "Enemy") for e in enemies])
-            self._add_log_entry(1, f"Combat started! {enemy_names} appear{'s' if len(enemies) == 1 else ''}!", "system")
-
-            # Add alert messages for enemies
+            # Add initial log entry for each enemy
             for enemy in enemies:
-                if hasattr(enemy, "alert_message") and enemy.alert_message:
-                    self._add_log_entry(1, f"{enemy.name} {enemy.alert_message}", "system")
-            
-            # Check if enemies go first
+                name = getattr(enemy, "name", "Enemy")
+                alert = getattr(enemy, "alert_message", "appears!")
+                self._add_log_entry(1, f"{name} {alert}", "system")
+
+            # Process initial NPC turns (this will capture alert messages and initial actions via print statements)
             self._process_initial_turns()
             
             # Set up for player's first move selection
@@ -468,31 +477,98 @@ class ApiCombatAdapter:
         
         return self._execute_move(pending_move)
     
+    def _synchronize_distances(self):
+        """
+        Synchronize distances between combatants.
+        Updates combat_proximity based on combat_position, and handles legacy fallback.
+        Mirrors logic from combat.py.
+        """
+        player = self.player
+        
+        # Calculate proximity from coordinates for units with combat_position set
+        all_combatants = player.combat_list_allies + player.combat_list
+        for unit in all_combatants:
+            if hasattr(unit, 'combat_position') and unit.combat_position is not None:
+                unit.combat_proximity = positions.recalculate_proximity_dict(unit, all_combatants)
+        
+        # Original proximity synchronization logic for backward compatibility/fallback
+        # Logic adapted from combat.py
+        for each_ally in player.combat_list_allies:
+            remove_these = []
+            for each_enemy in each_ally.combat_proximity:
+                if not each_enemy.is_alive():
+                    remove_these.append(each_enemy)
+            for each_enemy in remove_these:
+                del each_ally.combat_proximity[each_enemy]
+                
+            for each_enemy in player.combat_list:
+                remove_these = []
+                for each_ally_in_prox in each_enemy.combat_proximity:
+                    if not each_ally.is_alive():
+                        remove_these.append(each_ally_in_prox)
+                for each_ally_that_died in remove_these:
+                    del each_enemy.combat_proximity[each_ally_that_died]
+                    
+                if each_enemy in each_ally.combat_proximity:
+                    each_enemy.combat_proximity[each_ally] = each_ally.combat_proximity[each_enemy]
+                else:
+                    # Enemy not in list (legacy/fallback), add with random distance
+                    # But ONLY if we don't have positions (which would have handled it above)
+                    if not (hasattr(each_enemy, 'combat_position') and each_enemy.combat_position is not None and
+                            hasattr(each_ally, 'combat_position') and each_ally.combat_position is not None):
+                        
+                        default = getattr(each_enemy, 'default_proximity', 20)
+                        each_distance = int(default * random.uniform(0.75, 1.25))
+                        each_ally.combat_proximity[each_enemy] = each_distance
+                        each_enemy.combat_proximity[each_ally] = each_distance
+
+        # Ensure reverse mapping for enemies
+        for each_enemy in player.combat_list:
+            for each_ally in player.combat_list_allies:
+                if each_ally not in each_enemy.combat_proximity:
+                    # If missed above, sync
+                    if each_enemy in each_ally.combat_proximity:
+                        each_enemy.combat_proximity[each_ally] = each_ally.combat_proximity[each_enemy]
+    
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat(s)."""
         print(f"[DEBUG] _execute_move called for move: {move.name}")
         print(f"[DEBUG] Current beat before execution: {self.player.combat_beat}")
         
-        is_instant = hasattr(move, 'instant') and move.instant
+        # Reset beat state index for this move execution
+        self.current_beat_state_index = 0
         
-        # Capture output during move execution
+        is_instant = hasattr(move, 'instant') and move.instant
+        beat_states = []
+        
+        # Cast the move (capture output for initial cast message)
         with self._capture_output():
-            # Cast the move
             move.cast()
             
-            # For instant moves, process all stages immediately without advancing beats
-            if is_instant:
+        # For instant moves, process all stages immediately without advancing beats
+        if is_instant:
+            with self._capture_output():
                 while self.player.current_move == move:
                     move.advance(self.player)
                     if self.player.current_move is None:
                         break
-            else:
-                # Loop until player is ready for input again
-                # This handles multi-beat moves like Wait
-                max_beats = 20  # Safety break
-                beats_processed = 0
+        else:
+            # Loop until player is ready for input again
+            # This handles multi-beat moves like Wait
+            max_beats = 20  # Safety break
+            beats_processed = 0
+            
+            while beats_processed < max_beats:
+                # Synchronize distances at start of beat (just like combat.py)
+                self._synchronize_distances()
                 
-                while beats_processed < max_beats:
+                # Set the beat state index for this beat BEFORE processing
+                # so all log messages get tagged with the correct index
+                current_beat_index = len(beat_states)
+                self.current_beat_state_index = current_beat_index
+                
+                # Capture output for THIS beat only
+                with self._capture_output():
                     # Advance all player moves
                     for m in self.player.known_moves:
                         m.advance(self.player)
@@ -509,16 +585,27 @@ class ApiCombatAdapter:
                     # Increment beat
                     self.player.combat_beat += 1
                     print(f"[DEBUG] Beat incremented to: {self.player.combat_beat}")
-                    
-                    beats_processed += 1
-                    
-                    # Check if player is done with current move
-                    if self.player.current_move is None:
-                        break
-                    
-                    # Check win/loss conditions inside loop
-                    if not self.player.is_alive() or len(self.player.combat_list) == 0:
-                        break
+                
+                # Capture state for this beat AFTER processing
+                beat_state = CombatStateSerializer.serialize_combat_state(
+                    self.player,
+                    self.player.combat_list,
+                    round_number=self.player.combat_beat
+                )
+                
+                # Add log to beat state (snapshot of log at this point)
+                beat_state["log"] = list(getattr(self.player, "combat_log", []))
+                beat_states.append(beat_state)
+                
+                beats_processed += 1
+                
+                # Check if player is done with current move
+                if self.player.current_move is None:
+                    break
+                
+                # Check win/loss conditions inside loop
+                if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                    break
         
         # Check win/loss conditions
         if not self.player.is_alive():
@@ -528,11 +615,15 @@ class ApiCombatAdapter:
                 "You have been defeated!",
                 "system"
             )
-            return self.get_combat_state()
+            result = self.get_combat_state()
+            result["beat_states"] = beat_states
+            return result
         
         if len(self.player.combat_list) == 0:
             self._handle_victory()
-            return self.get_combat_state()
+            result = self.get_combat_state()
+            result["beat_states"] = beat_states
+            return result
         
         # Set up for next move selection
         self.awaiting_input = True
@@ -540,12 +631,18 @@ class ApiCombatAdapter:
         self.available_options = self._get_available_moves()
         self.pending_move_index = None
         
-        return self.get_combat_state()
+        result = self.get_combat_state()
+        result["beat_states"] = beat_states
+        print(f"[DEBUG] Returning {len(beat_states)} beat states")
+        return result
     
     def _process_initial_turns(self):
         """Process NPC turns if they go first."""
         # Simple speed check - if any enemy is faster, they go first
         player_speed = getattr(self.player, "speed", 10)
+        
+        # Sync distances before start
+        self._synchronize_distances()
         
         for enemy in self.player.combat_list:
             enemy_speed = getattr(enemy, "speed", 5)
@@ -769,21 +866,9 @@ class ApiCombatAdapter:
         # Sync captured entries to player log (with deduplication)
         new_entries = self.output_capture.get_log()
         if new_entries:
-            if not hasattr(self.player, 'combat_log'):
-                self.player.combat_log = []
-            
-            # Update round number for entries and add only non-duplicates
             current_beat = getattr(self.player, "combat_beat", 0)
             for entry in new_entries:
-                entry["round"] = current_beat
-                # Check if this exact message already exists in the log
-                # (Prevents duplicates from multiple sources adding the same message)
-                is_duplicate = any(
-                    existing.get("message") == entry["message"] and existing.get("round") == entry["round"]
-                    for existing in self.player.combat_log
-                )
-                if not is_duplicate:
-                    self.player.combat_log.append(entry)
+                self._add_log_entry(current_beat, entry["message"], "combat", self.current_beat_state_index)
             
             # Clear capture for next time
             self.output_capture.clear()

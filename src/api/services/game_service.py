@@ -839,10 +839,10 @@ class GameService:
             "level": getattr(player, "level", 1),
             "exp": getattr(player, "exp", 0),
             "max_exp": getattr(player, "exp_to_level", 100),
-            "hp": getattr(player, "current_hp", 0),
-            "max_hp": getattr(player, "max_hp", 0),
+            "hp": getattr(player, "hp", 0),
+            "max_hp": getattr(player, "maxhp", 0),
             "fatigue": getattr(player, "fatigue", 0),
-            "max_fatigue": getattr(player, "max_fatigue", 0),
+            "max_fatigue": getattr(player, "maxfatigue", 0),
             "state": "normal",  # TODO: Get actual status effects
         }
 
@@ -874,9 +874,9 @@ class GameService:
 
         # Add other status data
         stats["hp"] = getattr(player, "hp", 0)
-        stats["max_hp"] = getattr(player, "max_hp", 0)
+        stats["max_hp"] = getattr(player, "maxhp", 0)
         stats["fatigue"] = getattr(player, "fatigue", 0)
-        stats["max_fatigue"] = getattr(player, "max_fatigue", 0)
+        stats["max_fatigue"] = getattr(player, "maxfatigue", 0)
         stats["weight_current"] = getattr(player, "weight_current", 0)
         stats["carrying_capacity"] = getattr(player, "carrying_capacity", 100)
         stats["protection"] = getattr(player, "protection", 0)
@@ -1077,6 +1077,17 @@ class GameService:
             player: Player object
             enemies: List of enemy NPCs
         """
+        # Idempotency check: If player is already in combat with these enemies, do nothing.
+        if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
+            # Check if we are fighting the same group of enemies
+            current_combatants = set(getattr(e, "name", str(e)) for e in player.combat_list)
+            new_combatants = set(getattr(e, "name", str(e)) for e in enemies)
+            
+            # If the set of enemies is the same, we assume this is a duplicate request
+            if current_combatants == new_combatants:
+                print(f"[DEBUG] Skipping duplicate combat initialization for {player.name} against {new_combatants}")
+                return
+
         from src.api.combat_adapter import ApiCombatAdapter
         
         # Set combat lists on player (required by adapter)
