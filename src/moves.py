@@ -366,7 +366,7 @@ class Dodge(Move):
                                          "{} tenses in preparation to avoid attacks.".format(user.name),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=user, user=user)
+                         target=user, user=user, category="Defensive")
         self.evaluate()
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
@@ -401,7 +401,7 @@ class Parry(Move):
                                          "{} attempts to parry the next attack.".format(user.name),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=user, user=user)
+                         target=user, user=user, category="Defensive")
         self.evaluate()
 
     def viable(self):
@@ -712,7 +712,7 @@ class BullCharge(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -1173,7 +1173,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player, instant=True)
+                         beats_left=execute, target=player, user=player, instant=True, category="Utility")
 
     def prep(self, user):
         # In API mode, generate structured combatant data
@@ -1376,7 +1376,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player)
+                         beats_left=execute, target=player, user=player, category="Utility")
         # Flag to indicate this move needs duration input
         self.needs_duration = True
         self.duration = None
@@ -1774,7 +1774,7 @@ class TacticalPositioning(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.distance = 0
         self.evaluate()
 
@@ -2808,7 +2808,7 @@ class WhirlAttack(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
         self.affected_enemies = []  # Track enemies hit
         self.evaluate()
 
@@ -3094,7 +3094,7 @@ class FeintAndPivot(Move):
         user.fatigue -= self.fatigue_cost
 
 
-class KnockbackStunSpin(Move):
+class VertigoSpin(Move):
     """Attack that rotates target's facing and applies Disoriented status.
     
     A powerful spinning attack that not only damages the target but also
@@ -3109,17 +3109,17 @@ class KnockbackStunSpin(Move):
         cooldown = 4
         fatigue_cost = 80
         target = user  # Will be set when move is selected
-        super().__init__(name="Knockback/Stun Spin", description=description, xp_gain=25, current_stage=0,
+        super().__init__(name="Vertigo Spin", description=description, xp_gain=25, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(1, 20),
                          stage_announce=["",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
-        """Knockback/Stun Spin is viable if target is nearby."""
+        """Vertigo Spin is viable if target is nearby."""
         if not hasattr(self.user, 'combat_position') or self.user.combat_position is None:
             return False
         

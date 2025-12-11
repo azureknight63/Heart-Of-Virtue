@@ -73,14 +73,14 @@ class Skilltree:
                 moves.Parry(user): 100,
                 moves.BullCharge(user): 400,  # HV-1: Charge with momentum (weapon-appropriate)
                 moves.WhirlAttack(user): 650,  # HV-1: Spin strike hitting nearby enemies
-                moves.KnockbackStunSpin(user): 750,  # HV-1: Attack with knockback and rotation
+                moves.VertigoSpin(user): 750,  # HV-1: Attack with knockback and rotation
                 moves.QuickSwap(user): 520  # HV-1 Tier 2: Swap with ally (defensive formation)
             },
             "Bludgeon": {
                 moves.Parry(user): 100,
                 moves.PowerStrike(user): 1,
                 moves.BullCharge(user): 350,  # HV-1: Charge with momentum (heavy weapon style)
-                moves.KnockbackStunSpin(user): 700,  # HV-1: Knockback-heavy positioning move
+                moves.VertigoSpin(user): 700,  # HV-1: Knockback-heavy positioning move
                 moves.WhirlAttack(user): 600,  # HV-1: Spin strike with heavy impact
                 moves.QuickSwap(user): 550  # HV-1 Tier 2: Swap with ally (heavy tank coordination)
             }

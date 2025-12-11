@@ -11,7 +11,7 @@ if str(SRC_DIR) not in sys.path:
 
 from player import Player
 from npc import NPC
-from moves import Turn, WhirlAttack, FeintAndPivot, KnockbackStunSpin
+from moves import Turn, WhirlAttack, FeintAndPivot, VertigoSpin
 from positions import CombatPosition, Direction
 from items import Shortsword, LeatherArmor
 
@@ -105,8 +105,8 @@ print(f"  New facing: {player.combat_position.facing.name}")
 assert feint.fatigue_cost == 70, "FeintAndPivot should cost 70 fatigue"
 print("  [OK] FeintAndPivot move works correctly")
 
-# Test 4: KnockbackStunSpin
-print("\n[TEST 4] KnockbackStunSpin Move")
+# Test 4: VertigoSpin
+print("\n[TEST 4] VertigoSpin Move")
 player = Player()
 player.name = "Jean"
 player.hp = 100
@@ -127,7 +127,7 @@ target.combat_position = CombatPosition(x=12, y=10, facing=Direction.W)
 target.states = []
 player.combat_proximity[target] = 5
 
-spin = KnockbackStunSpin(player)
+spin = VertigoSpin(player)
 spin.target = target
 initial_fatigue = player.fatigue
 initial_facing = target.combat_position.facing
@@ -139,8 +139,8 @@ print(f"  Target facing changed: {initial_facing.name} -> {target.combat_positio
 print(f"  Status effects applied: {len(target.states) - initial_states}")
 if target.states:
     print(f"  Status: {target.states[0].name}")
-assert spin.fatigue_cost == 80, "KnockbackStunSpin should cost 80 fatigue"
-print("  [OK] KnockbackStunSpin move works correctly")
+assert spin.fatigue_cost == 80, "VertigoSpin should cost 80 fatigue"
+print("  [OK] VertigoSpin move works correctly")
 
 print("\n" + "=" * 70)
 print(" ALL TESTS PASSED - Phase 3 moves work in combat!")
