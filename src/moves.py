@@ -1742,8 +1742,8 @@ class PommelStrike(Move):
                          fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = 0  # enter the base damage bonus of the attack
-        self.evaluate()
         self.base_damage_type = "crushing"
+        self.evaluate()
 
     def viable(self):
         viability = self.standard_viability_attack(("Axe", "Pick", "Scythe", "Spear", "Hammer", "Sword"))

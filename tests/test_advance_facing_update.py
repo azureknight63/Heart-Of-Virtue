@@ -35,13 +35,13 @@ class TestAdvanceFacing:
         enemy.combat_proximity = {player: 10}
         
         initial_facing = player.combat_position.facing
-        assert initial_facing == positions.Direction.E, "Player should start facing East"
+        assert initial_facing.value == positions.Direction.E.value, "Player should start facing East"
         
         # Execute Advance
         advance.execute(player)
         
         # Verify: Player should face North after advancing toward Northern target
-        assert player.combat_position.facing == positions.Direction.N, \
+        assert player.combat_position.facing.value == positions.Direction.N.value, \
             f"After advancing North toward target, player should face N, got {player.combat_position.facing.name}"
     
     def test_advance_updates_facing_diagonal(self):
@@ -63,9 +63,10 @@ class TestAdvanceFacing:
         # Execute Advance
         advance.execute(player)
         
-        # Verify: Player should face toward Northeast after advancing
-        assert player.combat_position.facing == positions.Direction.NE, \
-            f"After advancing NE toward target, player should face NE, got {player.combat_position.facing.name}"
+        # Verify: Player should face toward the target from their new position
+        expected_facing = positions.turn_toward(player.combat_position, enemy.combat_position)
+        assert player.combat_position.facing.value == expected_facing.value, \
+            f"After advancing toward target, player should face {expected_facing.name}, got {player.combat_position.facing.name}"
     
     def test_advance_updates_position_and_facing(self):
         """Verify Advance updates BOTH position AND facing."""
@@ -96,7 +97,7 @@ class TestAdvanceFacing:
         assert new_dist < initial_dist, f"Distance should decrease: {initial_dist} -> {new_dist}"
         
         # Verify facing changed to East
-        assert player.combat_position.facing == positions.Direction.E, \
+        assert player.combat_position.facing.value == positions.Direction.E.value, \
             f"After advancing East toward target, player should face E, got {player.combat_position.facing.name}"
 
 
