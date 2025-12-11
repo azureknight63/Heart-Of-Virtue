@@ -107,6 +107,7 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
           strokeDasharray={`${hpPct * 141.4} 141.4`}
           strokeDashoffset="0"
           strokeLinecap="butt"
+          style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }}
         />
 
         {/* Right Arc for Fatigue (Orange/Yellow) 
@@ -127,6 +128,7 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
           strokeDasharray={`${fatPct * 141.4} 141.4`}
           strokeDashoffset="0"
           strokeLinecap="butt"
+          style={{ transition: 'stroke-dasharray 0.5s ease-in-out' }}
         />
       </svg>
 
@@ -207,59 +209,74 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
       topY = Math.min(MAP_SIZE - 1, Math.max(gridCols - 1, topY))
     }
 
+    // Helper to calculate style position % for any entity
+    const getEntityStyle = (entity) => {
+      const p = getPos(entity)
+      // Check if in view
+      if (p.x < leftX || p.x >= leftX + gridCols || p.y > topY || p.y <= topY - gridCols) {
+        return null // Out of view
+      }
+
+      const col = p.x - leftX
+      const row = topY - p.y // Y is inverted (topY is highest)
+
+      return {
+        left: `${(col / gridCols) * 100}%`,
+        top: `${(row / gridCols) * 100}%`,
+        width: `${(1 / gridCols) * 100}%`,
+        height: `${(1 / gridCols) * 100}%`
+      }
+    }
+
     const totalCells = gridCols * gridCols
 
+    // Gather all entities to render
+    const entitiesToRender = []
+    if (combat?.player) {
+      const style = getEntityStyle(combat.player)
+      if (style) entitiesToRender.push({ entity: combat.player, style, isPlayer: true })
+    }
+    combat?.enemies?.forEach(enemy => {
+      if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0 > 0)) {
+        const style = getEntityStyle(enemy)
+        if (style) entitiesToRender.push({ entity: enemy, style, isPlayer: false })
+      }
+    })
+
     return (
-      <div
-        className="grid gap-px p-2 h-full overflow-auto transition-all duration-200 bg-gray-950"
-        style={{
-          gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-        }}
-      >
-        {Array(totalCells).fill(null).map((_, idx) => {
-          // Calculate screen coordinates
-          const visibleRow = Math.floor(idx / gridCols)
-          const visibleCol = idx % gridCols
+      <div className="relative w-full h-full bg-gray-950 overflow-hidden">
+        {/* Grid Background Layer */}
+        <div
+          className="absolute inset-0 grid gap-px p-2"
+          style={{
+            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))` // Explicit rows for sizing
+          }}
+        >
+          {Array(totalCells).fill(null).map((_, idx) => {
+            // Just render empty cells for the grid lines
+            return (
+              <div key={idx} className="bg-[rgba(255,255,255,0.03)] rounded-sm"></div>
+            )
+          })}
+        </div>
 
-          const worldX = leftX + visibleCol
-          const worldY = topY - visibleRow
-
-          let content = null;
-          let tooltip = `(${worldX}, ${worldY})`;
-          let cellClass = ""; // Transparent
-
-          // Check if Player is here
-          if (combat?.player && getPos(combat.player).x === worldX && getPos(combat.player).y === worldY) {
-            content = <CombatantMarker entity={combat.player} isPlayer={true} isFullMode={isFullMode} />;
-            tooltip = `${combat.player.name} (You)`;
-          }
-
-          // Check enemies
-          const enemy = combat?.enemies?.find(e => {
-            const p = getPos(e)
-            const hp = e.hp !== undefined ? e.hp : (e.health?.current ?? 0);
-            return p.x === worldX && p.y === worldY && hp > 0
-          })
-
-          if (enemy) {
-            content = <CombatantMarker entity={enemy} isPlayer={false} isFullMode={isFullMode} />;
-            tooltip = `${enemy.name} (${enemy.id})`;
-          }
-
-          // Adjust font size / visuals for density
-          // Full mode cells are very small, likely hide text or scale marker down
-          const fontSize = isFullMode ? 'text-[0px]' : 'text-sm'
-
-          return (
+        {/* Entity Layer (Overlay) */}
+        <div className="absolute inset-0 p-2 pointer-events-none">
+          {entitiesToRender.map((item, idx) => (
             <div
-              key={idx}
-              title={tooltip}
-              className={`aspect-square ${cellClass} rounded flex items-center justify-center relative ${fontSize}`}
+              key={`${item.entity.id || idx}-${item.isPlayer ? 'player' : 'enemy'}`}
+              className="absolute flex items-center justify-center transition-all duration-500 ease-in-out will-change-[top,left]"
+              style={item.style}
             >
-              {content}
+              <CombatantMarker
+                entity={item.entity}
+                isPlayer={item.isPlayer}
+                isFullMode={isFullMode}
+              />
             </div>
-          )
-        })}
+          ))}
+        </div>
       </div>
     )
   }
