@@ -15,7 +15,7 @@ import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 
-export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction }) {
+export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction, onLogProgress }) {
   // Don't render if player data hasn't loaded yet
   if (!player) {
     return null
@@ -54,9 +54,23 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     }
     : player
 
+  // Use player from combat state if available (for combat), otherwise use global player
+  const effectivePlayer = combat?.player_state
+    ? { ...player, ...combat.player_state }
+    : player
+
   // Process new log entries to play SFX and handle delay
   useEffect(() => {
+    let isMounted = true
+    let timeoutId = null
+
     if (combat?.log && combat.log.length > 0) {
+      // Filter entries that are not in displayedLog
+      // We rely on the functional update of setDisplayedLog to prevent race conditions during updates,
+      // but for the INITIAL filter of what to process, we use the current displayedLog state.
+      // This is safe because if displayedLog updates, the effect won't re-run unless combat.log changes.
+      // However, to be extra safe against double-invocation (Strict Mode), we check isMounted.
+
       const newEntries = combat.log.filter(entry =>
         !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round)
       )
@@ -69,6 +83,8 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
         // Function to process one line at a time
         const processNextLine = () => {
+          if (!isMounted) return
+
           if (currentIndex >= newEntries.length) {
             // All lines processed
             setIsProcessingLog(false)
@@ -78,8 +94,31 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
           const entry = newEntries[currentIndex]
           const msg = entry.message.toLowerCase()
 
-          // Add this line to displayed log
-          setDisplayedLog(prev => [...prev, entry])
+          console.log(`[LOG DISPLAY] Processing Entry ${currentIndex}:`, {
+            message: entry.message,
+            round: entry.round,
+            beat_index: entry.beat_index,
+            type: entry.type
+          })
+
+          // Add this line to displayed log with functional update to ensure uniqueness
+          setDisplayedLog(prev => {
+            // detailed check to avoid duplicates if effect runs multiple times
+            if (prev.some(existing => existing.message === entry.message && existing.round === entry.round)) {
+              return prev
+            }
+            return [...prev, entry]
+          })
+
+          // Notify parent of progress (for map synchronization)
+          if (onLogProgress) {
+            const beatIndex = entry.beat_index !== undefined ? entry.beat_index : 0 // Default to 0 if undefined, or we'd need access to newLog length.
+            // Better to rely on beat_index if available. If not, maybe just use current index.
+            // But wait, the previous logic used newLog.length - 1.
+            // We can't access newLog here easily without replicating the logic.
+            // However, beat_index is the source of truth for map sync.
+            onLogProgress(beatIndex)
+          }
 
           // Play SFX for this line
           if (msg.includes('attacks')) playSFX('attack_swipe')
@@ -100,15 +139,26 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
           // Schedule next line (or finish if victory)
           const nextDelay = msg.includes('victory') ? 2000 : delayPerLine
-          setTimeout(processNextLine, nextDelay)
+          if (isMounted) {
+            timeoutId = setTimeout(processNextLine, nextDelay)
+          }
         }
 
         // Start processing
         processNextLine()
       }
     } else {
-      // If log is empty or reset
-      setDisplayedLog([])
+      // If log is empty or reset (e.g. new combat)
+      // Only clear if we actually have something to clear, to avoid unnecessary renders
+      if (displayedLog.length > 0) {
+        setDisplayedLog([])
+      }
+    }
+
+    // Cleanup function to cancel processing if component unmounts or deps change
+    return () => {
+      isMounted = false
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }, [combat?.log])
 

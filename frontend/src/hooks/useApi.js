@@ -152,10 +152,11 @@ export const useCombat = () => {
       setLoading(true)
       const response = await apiEndpoints.combat.performAction(action, target)
       const data = response.data
-      // Response structure: { success, combat_active, battle_state, log }
+      // Response structure: { success, combat_active, battle_state, log, beat_states }
       setCombat({
         ...data.battle_state,
         log: data.log || [],
+        beat_states: data.beat_states || [],
         combat_active: data.combat_active
       })
       setInCombat(data.combat_active)

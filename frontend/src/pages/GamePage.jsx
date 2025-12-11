@@ -18,6 +18,31 @@ export default function GamePage() {
   const [eventQueue, setEventQueue] = useState([])
   const [currentEvent, setCurrentEvent] = useState(null)
 
+  // Combat log display progress (for map synchronization)
+  const [currentLogIndex, setCurrentLogIndex] = useState(0)
+
+  // Track if we've shown the combat start dialog for this session
+  const [combatDialogShown, setCombatDialogShown] = useState(false)
+
+  // Debug: Log combat state changes
+  useEffect(() => {
+    if (combat) {
+      console.log(`[GAME PAGE] Combat state updated:`, {
+        beat_states_count: combat.beat_states?.length || 0,
+        log_entries: combat.log?.length || 0,
+        awaiting_input: combat.awaiting_input,
+        input_type: combat.input_type
+      })
+      if (combat.beat_states && combat.beat_states.length > 0) {
+        console.log(`[GAME PAGE] Beat states summary:`, combat.beat_states.map((state, idx) => ({
+          index: idx,
+          log_count: state.log?.length || 0,
+          combatants_count: state.combatants?.length || 0
+        })))
+      }
+    }
+  }, [combat])
+
   // Combined refetch function
   const handleRefetch = async () => {
     await Promise.all([
@@ -98,37 +123,9 @@ export default function GamePage() {
       }
 
       // Check if movement triggered combat
-      if (result.combat_started && result.combat_state) {
+      if (result.combat_started) {
         console.log('Combat initiated!', result.combat_state)
-
-        // Check for pre-combat logs (alert messages)
-        const combatLog = result.combat_state.log || []
-        const alertMessages = combatLog.filter(entry => entry.type === 'system').map(e => e.message).join('\n\n')
-
-        if (alertMessages && alertMessages.length > 0) {
-          // Show alert dialog before switching mode
-          // We create a synthetic event for the dialog
-          const alertEvent = {
-            title: "WARNING",
-            description: alertMessages,
-            choices: [{ text: "Prepare for Battle", next: "combat_start" }]
-          }
-
-          // We need to handle the choice specifically to start combat
-          // So we'll set a special state or just push it to event queue with a callback?
-          // Easiest is to set currentEvent manually and define a custom handler for this specific event type
-          // But GamePage generic handler might handle it.
-
-          // Let's modify handleEventChoice to check for this next state
-          setCurrentEvent(alertEvent)
-
-          // We'll set a flag so we know to switch to combat after
-          // Or handle it in handleEventChoice
-        } else {
-          // Update combat state and switch to combat mode directly
-          setMode('combat')
-          await fetchCombatStatus()
-        }
+        await fetchCombatStatus()
       }
 
       // Refetch player data after movement
@@ -143,9 +140,33 @@ export default function GamePage() {
   // Check combat status on mount and when inCombat changes
   useEffect(() => {
     if (inCombat) {
-      setMode('combat')
-      fetchCombatStatus()
+      if (!combatDialogShown) {
+        // Show dialog if not already shown
+        const logEntries = combat?.log || []
+        const alertMessages = logEntries
+          .filter(entry => entry.type === 'system')
+          .map(e => e.message)
+          .join('\n\n')
+
+        const dialogDescription = (alertMessages && alertMessages.length > 0)
+          ? alertMessages
+          : "Enemies draw near! Prepare for combat!"
+
+        const alertEvent = {
+          name: "Enemy Encounter",
+          output_text: dialogDescription,
+          choices: [{ text: "FIGHT FOR YOUR LIFE", next: "combat_start" }]
+        }
+
+        setCurrentEvent(alertEvent)
+        setCombatDialogShown(true)
+      } else {
+        setMode('combat')
+        setCurrentLogIndex(0) // Reset log progress for new combat
+        fetchCombatStatus()
+      }
     } else {
+      setCombatDialogShown(false)
       setMode('exploration')
       handleRefetch()
     }
@@ -198,6 +219,7 @@ export default function GamePage() {
         onEventsTriggered={handleEventsTriggered}
         onInteractionComplete={handleInteractionComplete}
         onCombatAction={performAction}
+        onLogProgress={setCurrentLogIndex}
       />
 
       {/* Right Panel - Battlefield/Map */}
@@ -208,6 +230,7 @@ export default function GamePage() {
         onMoveToLocation={handleMove}
         onModeChange={setMode}
         exploredTiles={exploredTiles}
+        currentLogIndex={currentLogIndex}
       />
 
       {/* Event Dialog */}

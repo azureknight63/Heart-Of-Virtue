@@ -38,6 +38,7 @@ export default function EventDialog({ event, onClose, onChoice }) {
             // Add next word
             setDisplayedText(prev => {
                 const nextWord = words[currentIndex]
+                if (nextWord === undefined) return prev
                 return prev ? `${prev} ${nextWord}` : nextWord
             })
 
@@ -186,16 +187,18 @@ export default function EventDialog({ event, onClose, onChoice }) {
                         gap: '12px',
                         marginTop: '8px',
                     }}>
-                        <div style={{
-                            color: '#ffff00',
-                            fontWeight: 'bold',
-                            fontSize: '14px',
-                            fontFamily: 'monospace',
-                            textAlign: 'center',
-                            marginBottom: '4px',
-                        }}>
-                            Choose your response:
-                        </div>
+                        {eventChoices.length > 1 && (
+                            <div style={{
+                                color: '#ffff00',
+                                fontWeight: 'bold',
+                                fontSize: '14px',
+                                fontFamily: 'monospace',
+                                textAlign: 'center',
+                                marginBottom: '4px',
+                            }}>
+                                Choose your response:
+                            </div>
+                        )}
                         {eventChoices.map((choice, idx) => (
                             <button
                                 key={idx}
@@ -209,7 +212,7 @@ export default function EventDialog({ event, onClose, onChoice }) {
                                     fontFamily: 'monospace',
                                     fontSize: '15px',
                                     cursor: 'pointer',
-                                    textAlign: 'left',
+                                    textAlign: 'center',
                                     fontWeight: 'bold',
                                     transition: 'all 0.2s',
                                 }}
