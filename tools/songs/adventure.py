@@ -20,12 +20,12 @@ class AdventureSong(Song):
             [(880, 0.25), (784, 0.25), (659, 0.25), (587, 0.5), (523, 0.75)], # Extended last note to complete 8.0s
         ]
         
-        # Fallback Melody (Rhythmic filler) - DOUBLED LENGTH with improved flow
+        # Fallback Melody (Rhythmic filler) - Improved flow
         fallback_melody = [
-            [(523, 0.25), (392, 0.25), (523, 0.25), (659, 0.25)],
-            [(523, 0.25), (392, 0.25), (523, 0.25), (659, 0.25)],
-            [(784, 0.25), (523, 0.25), (659, 0.25), (784, 0.25)], # Variation
-            [(523, 0.25), (392, 0.25), (523, 0.25), (392, 0.25)], # Resolution back
+            [(523, 0.5), (659, 0.25), (784, 0.25)], # C-E-G
+            [(659, 0.5), (523, 0.25), (392, 0.25)], # E-C-G
+            [(440, 0.25), (523, 0.25), (659, 0.25), (523, 0.25)], # A-C-E-C
+            [(392, 0.5), (330, 0.25), (294, 0.25)], # G-E-D
         ]
         
         # Theme B: Gentle & Reflective (Lower octave, slower)
@@ -101,7 +101,7 @@ class AdventureSong(Song):
                 while current_dur < total_dur:
                     for f, dur in bass_a:
                         if current_dur >= total_dur: break
-                        bss += generate_tone(fr(f), min(d(dur), total_dur - current_dur), 0.3, wave_type='sawtooth')
+                        bss += generate_tone(fr(f), min(d(dur), total_dur - current_dur), 0.18, wave_type='triangle')
                         current_dur += d(dur)
                 
                 perc = generate_percussion_pattern([1, 0, 1, 0, 1, 0, 1, 1] * int(total_dur * 2), total_dur) # Light snare
@@ -122,7 +122,7 @@ class AdventureSong(Song):
                 for phrase in theme_b:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.45, wave_type='triangle') # Louder melody
                 for c, dur in prog_b: chd += generate_chord([fr(x) for x in c], d(dur), 0.2, wave_type='sine')
-                for f, dur in bass_b: bss += generate_tone(fr(f), d(dur), 0.3, wave_type='square')
+                for f, dur in bass_b: bss += generate_tone(fr(f), d(dur), 0.18, wave_type='triangle')
                 
                 # Martial percussion - slow, steady march fitting somber mood
                 # "Roll, roll, tap, tap" pattern (da-da da-da DA DA)
@@ -139,7 +139,7 @@ class AdventureSong(Song):
                 for phrase in theme_c:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.3, wave_type='sawtooth')
                 for c, dur in prog_c * 2: chd += generate_chord([fr(x) for x in c], d(dur), 0.25, wave_type='sawtooth')
-                for f, dur in bass_c * 2: bss += generate_tone(fr(f), d(dur), 0.4, wave_type='square')
+                for f, dur in bass_c * 2: bss += generate_tone(fr(f), d(dur), 0.22, wave_type='triangle')
                 
                 dur = sum(d(dur) for p in theme_c for _, dur in p)
                 perc = generate_percussion_pattern([1, 1, 1, 0] * 8, dur)
@@ -149,10 +149,10 @@ class AdventureSong(Song):
         for _ in range(2):
             mel, harm, chd, bss, sub = b'', b'', b'', b'', b''
             for phrase in theme_a:
-                for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.35, wave_type='square')
-                for f, dur in phrase: harm += generate_tone(fr(f*1.5), d(dur), 0.25, wave_type='square') # Fifths
+                for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.35, wave_type='triangle') # Switched to triangle for softer high end
+                for f, dur in phrase: harm += generate_tone(fr(f*1.5), d(dur), 0.2, wave_type='triangle') # Fifths, reduced vol
                 # Sub-bass for gravity
-                for f, dur in phrase: sub += generate_tone(fr(f*0.5), d(dur), 0.3, wave_type='sine') # Reduced sub volume
+                for f, dur in phrase: sub += generate_tone(fr(f*0.5), d(dur), 0.2, wave_type='sine') # Reduced sub volume
 
             # Accompaniment
             dur_theme = sum(d(dur) for p in theme_a for _, dur in p)
@@ -169,7 +169,7 @@ class AdventureSong(Song):
             while current_dur < dur_theme:
                 for f, dur in bass_a:
                     if current_dur >= dur_theme: break
-                    bss += generate_tone(fr(f), min(d(dur), dur_theme - current_dur), 0.35, wave_type='sawtooth') # Reduced bass volume
+                    bss += generate_tone(fr(f), min(d(dur), dur_theme - current_dur), 0.2, wave_type='triangle') # Reduced bass volume
                     current_dur += d(dur)
             
             # Heavier percussion (Kick/Snare/Hats)

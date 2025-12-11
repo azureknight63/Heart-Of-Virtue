@@ -6,8 +6,11 @@ import os
 
 OUTPUT_DIR = "frontend/public/assets/sounds"
 
-def generate_tone(frequency, duration, volume=0.5, sample_rate=44100, wave_type='square'):
+def generate_tone(frequency, duration, volume=0.5, sample_rate=44100, wave_type='square', attack_time=0.01, release_time=0.01):
     n_samples = int(sample_rate * duration)
+    attack_samples = int(sample_rate * attack_time)
+    release_samples = int(sample_rate * release_time)
+    
     data = []
     for i in range(n_samples):
         t = float(i) / sample_rate
@@ -21,14 +24,24 @@ def generate_tone(frequency, duration, volume=0.5, sample_rate=44100, wave_type=
             val = random.uniform(-1, 1)
         else: # sine
             val = math.sin(2 * math.pi * frequency * t)
+            
+        # Apply Envelope
+        envelope = 1.0
+        if i < attack_samples:
+            envelope = i / attack_samples
+        elif i > n_samples - release_samples:
+            envelope = (n_samples - i) / release_samples
         
-        packed_val = struct.pack('h', int(val * volume * 32767.0))
+        packed_val = struct.pack('h', int(val * volume * envelope * 32767.0))
         data.append(packed_val)
     return b''.join(data)
 
-def generate_chord(frequencies, duration, volume=0.3, sample_rate=44100, wave_type='square'):
+def generate_chord(frequencies, duration, volume=0.3, sample_rate=44100, wave_type='square', attack_time=0.01, release_time=0.01):
     """Generate a chord by mixing multiple frequencies"""
     n_samples = int(sample_rate * duration)
+    attack_samples = int(sample_rate * attack_time)
+    release_samples = int(sample_rate * release_time)
+    
     data = []
     for i in range(n_samples):
         t = float(i) / sample_rate
@@ -43,7 +56,14 @@ def generate_chord(frequencies, duration, volume=0.3, sample_rate=44100, wave_ty
             else:  # sine
                 val += math.sin(2 * math.pi * freq * t) / len(frequencies)
         
-        packed_val = struct.pack('h', int(val * volume * 32767.0))
+        # Apply Envelope
+        envelope = 1.0
+        if i < attack_samples:
+            envelope = i / attack_samples
+        elif i > n_samples - release_samples:
+            envelope = (n_samples - i) / release_samples
+            
+        packed_val = struct.pack('h', int(val * volume * envelope * 32767.0))
         data.append(packed_val)
     return b''.join(data)
 
