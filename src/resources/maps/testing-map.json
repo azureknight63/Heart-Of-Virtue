@@ -1398,7 +1398,19 @@
             "east",
             "southeast"
         ],
-        "events": [],
+        "events": [
+            {
+                "__class__": "GoldFromHeaven",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "Gold From Heaven",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "params": null
+                }
+            }
+        ],
         "items": [
             {
                 "__class__": "Gold",
