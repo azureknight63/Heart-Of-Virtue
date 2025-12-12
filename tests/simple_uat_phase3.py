@@ -37,7 +37,7 @@ print(f"  Initial fatigue: {initial_fatigue}")
 print(f"  Final fatigue: {player.fatigue}")
 print(f"  Facing changed: N -> {player.combat_position.facing.name}")
 assert player.fatigue == initial_fatigue, "Turn should cost 0 fatigue"
-assert player.combat_position.facing == Direction.E, "Turn should change facing"
+assert player.combat_position.facing.value == Direction.E.value, "Turn should change facing"
 print("  [OK] Turn move works correctly")
 
 # Test 2: WhirlAttack

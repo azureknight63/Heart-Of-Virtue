@@ -120,6 +120,7 @@ class SessionManager:
         
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
+        self.starting_map_name = "default"
         self.starting_item_types = []  # List of item class names to spawn
         self._load_starting_position_from_config()
         self._load_starting_items_from_config()
@@ -158,12 +159,20 @@ class SessionManager:
                     if parser.has_option("game", "startposition"):
                         pos_str = parser.get("game", "startposition")
                         print(f"[SessionManager] Raw position string: '{pos_str}'", flush=True)
+                        # Strip parentheses and whitespace
+                        pos_str = pos_str.strip("() ")
                         coords = [int(x.strip()) for x in pos_str.split(",")]
                         if len(coords) == 2:
                             self.start_x, self.start_y = coords
                             print(f"[SessionManager] [OK] Loaded starting position from config: ({self.start_x}, {self.start_y})", flush=True)
                     else:
                         print(f"[SessionManager] No startposition option in [game] section", flush=True)
+                    
+                    if parser.has_option("game", "startmap"):
+                        self.starting_map_name = parser.get("game", "startmap")
+                        print(f"[SessionManager] [OK] Loaded starting map from config: {self.starting_map_name}", flush=True)
+                    else:
+                        print(f"[SessionManager] No startmap option in [game] section, using default", flush=True)
             except Exception as e:
                 import traceback
                 print(f"[SessionManager] [ERROR] Error loading config: {e}", flush=True)
@@ -270,6 +279,14 @@ class SessionManager:
                 # Create isolated universe for this player
                 player.universe = Universe(player)
                 player.universe.build(player)
+                
+                # Set starting map
+                starting_map = next(
+                    (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
+                    player.universe.starting_map_default
+                )
+                player.map = starting_map
+                print(f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}", flush=True)
             except (ImportError, Exception) as e:
                  print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
                  player = MinimalPlayer("Jean")

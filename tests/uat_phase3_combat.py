@@ -129,7 +129,7 @@ def test_turn_move(player, enemies):
     turn.execute(player)
     
     cprint(f"\nResult:", "green")
-    assert player.combat_position.facing == Direction.E, "Turn should change facing"
+    assert player.combat_position.facing.value == Direction.E.value, "Turn should change facing"
     assert player.fatigue == initial_fatigue, "Turn should cost 0 fatigue"
     cprint(f"[OK] Facing changed to: {player.combat_position.facing.name}", "green")
     cprint(f"[OK] Fatigue unchanged: {player.fatigue}", "green")

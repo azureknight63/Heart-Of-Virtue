@@ -187,6 +187,17 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     }
   }, [combat?.input_type, combat?.awaiting_input, isProcessingLog])
 
+  // Show combat moves panel when awaiting move selection
+  useEffect(() => {
+    if (combat?.input_type === 'move_selection' && combat.awaiting_input && !isProcessingLog) {
+      setShowCombatMoves(true)
+      // Set default category if none selected
+      if (!combatMovesCategory) {
+        setCombatMovesCategory('Basic')
+      }
+    }
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combatMovesCategory])
+
   // Show check dialog when check_data is available
   useEffect(() => {
     if (combat?.check_data && combat.check_data.length > 0) {
@@ -212,9 +223,9 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
   const handleMoveSelection = async (move) => {
     console.log('Selected move:', move)
-    // Execute move via API - don't send target_id, let backend request it if needed
+    // Execute move via API - use move.id which is the index
     try {
-      await onCombatAction('move', { move_id: move.name })
+      await onCombatAction('move', { move_id: move.id })
       setShowCombatMoves(false)
     } catch (err) {
       console.error('Failed to execute move:', err)

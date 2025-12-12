@@ -62,6 +62,8 @@ def create_app(config_class=None):
                 
                 if parser.has_option("game", "startposition"):
                     pos_str = parser.get("game", "startposition")
+                    # Strip parentheses and whitespace
+                    pos_str = pos_str.strip("() ")
                     coords = [int(x.strip()) for x in pos_str.split(",")]
                     if len(coords) == 2:
                         start_x, start_y = coords
@@ -97,6 +99,9 @@ def create_app(config_class=None):
             
             # Build universe with real maps from JSON files
             universe.build(test_player)
+            
+            # Set universe reference on player
+            test_player.universe = universe
             
             # Find the starting map by name
             starting_map = next(

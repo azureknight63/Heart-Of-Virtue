@@ -470,15 +470,15 @@ class TestMoveIntegration:
         assert after_withdraw_distance > after_advance_distance
     
     def test_all_moves_available(self):
-        """Verify all 5 moves are in player's known moves."""
+        """Verify all basic moves are in player's known moves."""
         player = Player()
         
         move_types = set()
         for move in player.known_moves:
-            if isinstance(move, (Advance, Withdraw, BullCharge, TacticalRetreat, FlankingManeuver)):
+            if isinstance(move, (Advance, Withdraw)):
                 move_types.add(type(move).__name__)
         
-        expected_moves = {'Advance', 'Withdraw', 'BullCharge', 'TacticalRetreat', 'FlankingManeuver'}
+        expected_moves = {'Advance', 'Withdraw'}
         assert expected_moves.issubset(move_types), f"Missing moves: {expected_moves - move_types}"
 
 

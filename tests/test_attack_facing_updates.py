@@ -195,8 +195,8 @@ class TestAttackMovesFacing:
         sb.execute(enemy)
         
         # Enemy should face north (target is to the north)
-        assert enemy.combat_position.facing.value == Direction.S.value, \
-            f"Expected S, got {enemy.combat_position.facing.name}"
+        assert enemy.combat_position.facing.value == Direction.N.value, \
+            f"Expected N, got {enemy.combat_position.facing.name}"
 
     def test_bat_bite_faces_target(self, enemy, player):
         """Test that BatBite special attack faces target."""
@@ -245,10 +245,15 @@ class TestAttackMovesFacing:
         # Initialize combat_exp for bow subtype
         if hasattr(bow, 'subtype') and bow.subtype not in player.combat_exp:
             player.combat_exp[bow.subtype] = 0
+        # Mock current_room to avoid spawn_item error
+        class MockRoom:
+            def spawn_item(self, *args, **kwargs):
+                pass
+        player.current_room = MockRoom()
         
         # Setup combat positions
-        player.combat_position = CombatPosition(x=0, y=0, facing=Direction.S)
-        enemy.combat_position = CombatPosition(x=3, y=5, facing=Direction.S)
+        player.combat_position = CombatPosition(x=10, y=10, facing=Direction.S)
+        enemy.combat_position = CombatPosition(x=13, y=5, facing=Direction.S)
         
         player.combat_proximity[enemy] = 6  # SE direction at range
         enemy.combat_proximity[player] = 6

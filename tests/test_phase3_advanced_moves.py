@@ -83,7 +83,7 @@ class TestTurnMove:
         
         turn_move.execute(player)
         
-        assert player.combat_position.facing == Direction.E
+        assert player.combat_position.facing.value == Direction.E.value
     
     def test_turn_execute_deducts_fatigue(self, player, turn_move):
         """Test Turn.execute() deducts fatigue cost (zero for Turn move)"""
@@ -526,7 +526,7 @@ class TestPhase3MovesIntegration:
         turn.target_direction = Direction.E
         turn.execute(player)
         
-        assert player.combat_position.facing == Direction.E
+        assert player.combat_position.facing.value == Direction.E.value
         
         # Now whirl attack
         whirl = WhirlAttack(player)
@@ -545,7 +545,7 @@ class TestPhase3MovesIntegration:
         turn.target_direction = Direction.E
         turn.execute(player)
         
-        assert player.combat_position.facing == Direction.E
+        assert player.combat_position.facing.value == Direction.E.value
         
         # Feint and pivot
         feint = FeintAndPivot(player)
