@@ -269,6 +269,12 @@ class GameService:
                     def mock_print_slow(text, speed="slow"):
                         f.write(str(text) + '\n')
                     
+                    def mock_input(prompt=""):
+                        # Return default value for input() calls in API mode
+                        if prompt:
+                            f.write(str(prompt) + '\n')
+                        return "1"  # Default to first option for any prompts
+                    
                     # Capture stdout/stderr and patch blocking functions
                     with contextlib.redirect_stdout(f), \
                          contextlib.redirect_stderr(f), \
@@ -276,6 +282,7 @@ class GameService:
                          patch('functions.print_slow', mock_print_slow), \
                          patch('time.sleep', return_value=None), \
                          patch('neotermcolor.cprint', mock_cprint), \
+                         patch('builtins.input', mock_input), \
                          patch('src.functions.await_input', return_value=None), \
                          patch('src.functions.print_slow', mock_print_slow):
                         
@@ -731,6 +738,7 @@ class GameService:
 
     def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
+        print(f"[DEBUG] start_combat: Player ID: {id(player)}")
         # Find enemy in current room
         tile = player.universe.get_tile(player.location_x, player.location_y)
         enemy = None
@@ -743,13 +751,15 @@ class GameService:
         if not enemy:
             return {"error": "Enemy not found"}
             
-        return self._initialize_combat(player, [enemy])
+        result = self._initialize_combat(player, [enemy])
+        return result
 
-    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None) -> Dict[str, Any]:
+    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None, direction: str = None) -> Dict[str, Any]:
         """Execute a combat move."""
+
         # Check if player is in combat
-        if not getattr(player, 'in_combat', False):
-            return {"error": "Not in combat"}
+        if not player.in_combat:
+            return {"success": False, "error": "Not in combat"}
             
         # Ensure adapter exists
         if not hasattr(player, "_combat_adapter"):
@@ -759,36 +769,86 @@ class GameService:
             if hasattr(player, 'combat_list') and player.combat_list:
                 player._combat_adapter.initialize_combat(player.combat_list)
         
-        # Check if adapter is ready for input
-        if not player._combat_adapter.awaiting_input:
+        adapter = player._combat_adapter
+
+        # Check if adapter is ready for input (unless cancelling, which should always be allowed)
+        if not adapter.awaiting_input and move_type != "cancel":
             return {
                 "error": "Not awaiting input",
-                "details": f"awaiting_input={player._combat_adapter.awaiting_input}, input_type={player._combat_adapter.input_type}"
+                "details": f"awaiting_input={adapter.awaiting_input}, input_type={adapter.input_type}"
             }
             
-        # Map frontend move types to adapter commands
-        # For now, assume move_id is the index in the available moves list
-        try:
-            move_index = int(move_id)
+        # Handle different move types
+        if move_type == "move":
+            # Player is selecting a move
+            # Try to handle as index first (preferred)
+            move_index = None
+            try:
+                idx = int(move_id)
+                # Verify index is valid
+                if 0 <= idx < len(adapter.available_options):
+                    move_index = idx
+            except (ValueError, TypeError):
+                pass
+            
+            # If not index, try to find by name match (fallback)
+            if move_index is None:
+                # We need to check against available options in the adapter
+                for i, option in enumerate(adapter.available_options):
+                    # Option can be dict or object
+                    opt_name = option.get("name") if isinstance(option, dict) else getattr(option, "name", "")
+                    if opt_name == move_id:
+                        move_index = i
+                        break
+            
+            if move_index is None:
+                return {"error": f"Invalid move ID or name: {move_id}"}
+            
             command = {
                 "type": "select_move",
                 "move_index": move_index
             }
             
-            result = player._combat_adapter.process_command(command)
+            result = adapter.process_command(command)
             
-            # If the result indicates we need a target, and we have one, send it immediately
-            if result.get("battle_state", {}).get("input_type") == "target_selection" and target_id:
-                target_command = {
-                    "type": "select_target",
-                    "target_id": target_id
-                }
-                result = player._combat_adapter.process_command(target_command)
+            # Auto-handle targeting if we have a target_id and the move requires it
+            if not result.get("error") and result.get("battle_state", {}).get("input_type") == "target_selection" and target_id:
+                # Only auto-send target if it's likely a valid ID
+                if target_id and target_id != 'player':
+                    target_command = {"type": "select_target", "target_id": target_id}
+                    result = adapter.process_command(target_command)
                 
             return result
+
+        elif move_type == "target":
+            command = {"type": "select_target", "target_id": target_id}
+            return adapter.process_command(command)
+        
+        elif move_type == "direction":
+            command = {"type": "select_direction", "direction": direction}
+            return adapter.process_command(command)
+        
+        elif move_type == "number":
+            try:
+                value = int(target_id) if target_id else int(move_id)
+            except (ValueError, TypeError):
+                return {"error": "Invalid numeric value"}
             
-        except ValueError:
-            return {"error": "Invalid move ID"}
+            command = {"type": "select_number", "value": value}
+            return adapter.process_command(command)
+        
+        elif move_type == "attack":
+            return self.execute_move(player, "move", "Attack", target_id, direction)
+        
+        elif move_type == "defend":
+            return self.execute_move(player, "move", "Wait", target_id, direction)
+        
+        elif move_type == "cancel":
+            command = {"type": "cancel_selection"}
+            return adapter.process_command(command)
+            
+        else:
+            return {"error": f"Unknown move type: {move_type}"}
             
     def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get current combat status."""
@@ -808,13 +868,20 @@ class GameService:
             # If options are moves (not targets/directions)
             if player._combat_adapter.input_type == "move_selection":
                 for i, move in enumerate(player._combat_adapter.available_options):
+                    # Handle both object and dict (adapter returns dicts now)
+                    name = move.get("name") if isinstance(move, dict) else getattr(move, "name", "Unknown")
+                    description = move.get("description") if isinstance(move, dict) else getattr(move, "description", "")
+                    fatigue_cost = move.get("fatigue_cost") if isinstance(move, dict) else getattr(move, "fatigue_cost", 0)
+                    category = move.get("category") if isinstance(move, dict) else getattr(move, "category", "Miscellaneous")
+                    beats_left = move.get("beats_left") if isinstance(move, dict) else getattr(move, "beats_left", 0)
+                    
                     moves.append({
                         "id": str(i),
-                        "name": move.name,
-                        "description": move.description,
-                        "fatigue_cost": move.fatigue_cost,
-                        "category": getattr(move, "category", "Miscellaneous"),
-                        "beats_left": move.beats_left
+                        "name": name,
+                        "description": description,
+                        "fatigue_cost": fatigue_cost,
+                        "category": category,
+                        "beats_left": beats_left
                     })
         
         return {"moves": moves}
@@ -1096,258 +1163,10 @@ class GameService:
         # Initialize combat through the adapter
         # This will set up all combat state, process initial NPC turns if needed,
         # and return the initial combat state
-        player._combat_adapter.initialize_combat(enemies)
+        return player._combat_adapter.initialize_combat(enemies)
 
-    def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
-        """Start combat between player and enemy.
+    # [Legacy methods removed]
 
-        Args:
-            player: Player object
-            enemy_id: ID of enemy to find and fight (NPC name or identifier)
-
-        Returns:
-            Dictionary with combat state
-        """
-        # Look up enemy in current tile or universe
-        current_tile = self.get_current_room(player)
-        if isinstance(current_tile, dict) and "error" in current_tile:
-            return {"error": f"Cannot find player location: {current_tile['error']}"}
-
-        # Get the actual tile object
-        player_x = getattr(player, "location_x", 1)
-        player_y = getattr(player, "location_y", 1)
-        tile = player.universe.get_tile(player_x, player_y)
-
-        if not tile:
-            return {"error": "Player tile not found"}
-
-        # Search for enemy NPC on the tile
-        enemy = None
-        for npc in getattr(tile, "npcs_here", []):
-            if getattr(npc, "name", "").lower() == enemy_id.lower() or str(
-                getattr(npc, "id", "")
-            ) == enemy_id:
-                enemy = npc
-                break
-
-        if not enemy:
-            return {"error": f"Enemy '{enemy_id}' not found on this tile"}
-
-        # Initialize combat system
-        self._initialize_combat(player, [enemy])
-
-        # Get initial state
-        return CombatStateSerializer.serialize_combat_state(
-            player, [enemy], current_turn_index=player.combat_turn_index, round_number=player.combat_round
-        )
-
-    def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get current combat status.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with combat state
-        """
-        in_combat = getattr(player, "in_combat", False)
-        
-        if not in_combat:
-            return {
-                "combat_active": False,
-                "combatants": [],
-                "log": []
-            }
-        
-        # Use the combat adapter if available to get full state including awaiting_input
-        if hasattr(player, '_combat_adapter'):
-            return player._combat_adapter.get_combat_state()
-        
-        # Fallback to direct serialization if adapter not available
-        enemies = getattr(player, "combat_list", [])
-        turn_index = getattr(player, "combat_turn_index", 0)
-        round_num = getattr(player, "combat_round", 1)
-        combat_log = getattr(player, "combat_log", [])
-        
-        return {
-            "combat_active": True,
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies, current_turn_index=turn_index, round_number=round_num
-            ),
-            "log": combat_log
-        }
-
-    def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get current combat state.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with current battle state
-        """
-        if not getattr(player, "in_combat", False):
-            return {"error": "Not in combat", "in_combat": False}
-
-        enemies = getattr(player, "combat_list", [])
-        return CombatStateSerializer.serialize_combat_state(
-            player, enemies, current_turn_index=0, round_number=1
-        )
-
-    def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get available moves/actions for player in combat.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with available actions
-        """
-        if not getattr(player, "in_combat", False):
-            return {"error": "Not in combat"}
-
-        actions = ["attack", "defend", "flee"]
-
-        moves = []
-        if hasattr(player, "moves"):
-            for move in getattr(player, "moves", []):
-                moves.append(MoveSerializer.serialize_move(move))
-
-        items = []
-        if hasattr(player, "inventory"):
-            for item in getattr(player, "inventory", []):
-                if hasattr(item, "combat_usable") and getattr(item, "combat_usable"):
-                    items.append(
-                        {"name": getattr(item, "name", "Unknown"), "index": 0}
-                    )
-
-        return {
-            "actions": actions,
-            "moves": moves,
-            "items": items,
-        }
-
-    def execute_move(
-        self, player: "player_module.Player", move_type: str, move_id: str, target_id: Optional[str] = None, direction: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Execute a combat move using the combat adapter.
-
-        Args:
-            player: Player object
-            move_type: Type of action (attack, defend, cast, item, move)
-            move_id: ID/name of the specific move or ability
-            target_id: ID of target (optional)
-
-        Returns:
-            Dictionary with action result
-        """
-        print(f"[DEBUG] execute_move called: move_type={move_type}, move_id={move_id}, target_id={target_id}")
-        
-        if not getattr(player, "in_combat", False):
-            print("[DEBUG] Not in combat")
-            return {"error": "Not in combat"}
-
-        # Get or create combat adapter
-        if not hasattr(player, '_combat_adapter'):
-            print("[DEBUG] Combat adapter not found")
-            return {"error": "Combat not properly initialized"}
-        
-        adapter = player._combat_adapter
-        
-        # Handle different move types
-        if move_type == "move":
-            # Player is selecting a move by name
-            # Find the move index in ALL known moves (not just viable ones)
-            all_moves = player.known_moves
-            print(f"[DEBUG] Found {len(all_moves)} known moves")
-            for i, move in enumerate(all_moves):
-                print(f"[DEBUG]   {i}: {getattr(move, 'name', 'UNNAMED')}")
-            
-            move_index = None
-            
-            for i, move in enumerate(all_moves):
-                if getattr(move, "name", "") == move_id:
-                    move_index = i
-                    break
-            
-            if move_index is None:
-                print(f"[DEBUG] Move '{move_id}' not found in known moves")
-                return {"error": f"Move '{move_id}' not found"}
-            
-            print(f"[DEBUG] Found move at index {move_index}")
-            
-            # Send move selection command
-            command = {"type": "select_move", "move_index": move_index}
-            result = adapter.process_command(command)
-            
-            print(f"[DEBUG] Adapter result: {result.get('error', 'No error')}")
-            
-            # If the move requires targeting and we have a target_id, send target selection
-            if not result.get("error") and result.get("battle_state", {}).get("input_type") == "target_selection":
-                print(f"[DEBUG] Move requires targeting, target_id={target_id}")
-                # Only auto-send target if it's a valid enemy ID (not 'player')
-                if target_id and target_id != 'player':
-                    target_command = {"type": "select_target", "target_id": target_id}
-                    result = adapter.process_command(target_command)
-                elif not target_id or target_id == 'player':
-                    # No valid target provided - return state so frontend can prompt for target selection
-                    # The result already contains available_options with the list of valid targets
-                    pass
-            
-            return result
-        
-        elif move_type == "target":
-            # Player is selecting a target for a pending move
-            if not hasattr(player, '_combat_adapter'):
-                return {"error": "Combat not properly initialized"}
-            
-            adapter = player._combat_adapter
-            command = {"type": "select_target", "target_id": target_id}
-            return adapter.process_command(command)
-        
-        elif move_type == "direction":
-            # Player is selecting a direction for a pending move
-            if not hasattr(player, '_combat_adapter'):
-                return {"error": "Combat not properly initialized"}
-            
-            adapter = player._combat_adapter
-            command = {"type": "select_direction", "direction": direction}
-            return adapter.process_command(command)
-        
-        elif move_type == "number":
-            # Player is entering a numeric value for a pending move
-            if not hasattr(player, '_combat_adapter'):
-                return {"error": "Combat not properly initialized"}
-            
-            adapter = player._combat_adapter
-            # The value should be passed in target_id for simplicity
-            try:
-                value = int(target_id) if target_id else int(move_id)
-            except (ValueError, TypeError):
-                return {"error": "Invalid numeric value"}
-            
-            command = {"type": "select_number", "value": value}
-            return adapter.process_command(command)
-        
-        elif move_type == "attack":
-            # Basic attack - find the Attack move
-            return self.execute_move(player, "move", "Attack", target_id)
-        
-        elif move_type == "defend":
-            # Defend - find a defensive move or use Wait
-            return self.execute_move(player, "move", "Wait", target_id)
-        
-        elif move_type == "cancel":
-            # Cancel current selection state
-            if not hasattr(player, '_combat_adapter'):
-                return {"error": "Combat not properly initialized"}
-            
-            adapter = player._combat_adapter
-            command = {"type": "cancel_selection"}
-            return adapter.process_command(command)
-        
-        else:
-            return {"error": f"Unknown move type: {move_type}"}
 
     def _execute_attack(self, player: "player_module.Player", enemies: List[Any], target_id: Optional[str] = None) -> Dict[str, Any]:
         """Execute a basic attack.

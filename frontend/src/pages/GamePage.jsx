@@ -143,10 +143,19 @@ export default function GamePage() {
       if (!combatDialogShown) {
         // Show dialog if not already shown
         const logEntries = combat?.log || []
+
+        console.log('[GamePage] Checking for alert messages in log:', logEntries)
+
         const alertMessages = logEntries
           .filter(entry => entry.type === 'system')
           .map(e => e.message)
           .join('\n\n')
+
+        console.log('[GamePage] Found alert messages:', alertMessages)
+
+        // Only show dialog if we have actual logs or confirmed start
+        // If combat is null/loading, we might want to wait?
+        // But if inCombat is true, we should have data.
 
         const dialogDescription = (alertMessages && alertMessages.length > 0)
           ? alertMessages
@@ -161,17 +170,23 @@ export default function GamePage() {
         setCurrentEvent(alertEvent)
         setCombatDialogShown(true)
       } else {
+        // Dialog already shown, just ensure mode is correct
         setMode('combat')
-        setCurrentLogIndex(0) // Reset log progress for new combat
-        fetchCombatStatus()
+        // Only reset log index if we are truly starting (?)
+        // Actually this else block runs on every re-render while in combat if we verify dependencies
+        // We should be careful not to reset currentLogIndex repeatedly.
+        // Determining "start of combat" vs "continuation" is tricky here.
       }
     } else {
       setCombatDialogShown(false)
       setMode('exploration')
-      handleRefetch()
+      // Don't refetch here continuously
+      if (mode === 'combat') {
+        handleRefetch()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inCombat])
+  }, [inCombat, combat])
 
   // Manage BGM based on mode
   useEffect(() => {

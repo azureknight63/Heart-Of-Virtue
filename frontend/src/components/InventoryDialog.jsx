@@ -300,7 +300,7 @@ export default function InventoryDialog({ player, onClose, onRefetch, combatMode
     // Check all equipment slots for this item
     for (const slot in equipped) {
       const equippedItem = equipped[slot]
-      if (equippedItem && equippedItem.name === item.name) {
+      if (equippedItem && equippedItem.item_name === item.name) {
         return true
       }
     }

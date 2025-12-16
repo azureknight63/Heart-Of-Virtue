@@ -5,8 +5,10 @@
         "description": "A mossy alcove beneath a leaning cypress. Claw marks on the stone hint at small creatures living nearby.",
         "exits": [
             "south",
+            "west",
             "east",
-            "southeast"
+            "southeast",
+            "southwest"
         ],
         "events": [],
         "items": [
@@ -100,7 +102,8 @@
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
-                    "gives_exp": false
+                    "gives_exp": false,
+                    "count": 50000
                 }
             },
             {
@@ -335,11 +338,12 @@
                 "__module__": "items",
                 "props": {
                     "protection": 2,
+                    "str_req": 4,
+                    "str_mod": 0.2,
                     "weight": 5,
                     "isequipped": false,
                     "maintype": "Armor",
                     "subtype": "Light",
-                    "type_s": "Armor",
                     "name": "Leather Armor",
                     "description": "Basic leather armor.",
                     "value": 50,
@@ -358,7 +362,9 @@
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
-                    "gives_exp": true
+                    "gives_exp": true,
+                    "add_fin": 1,
+                    "type_s": "Armor"
                 }
             },
             {
@@ -366,11 +372,12 @@
                 "__module__": "items",
                 "props": {
                     "protection": 3,
+                    "str_req": 12,
+                    "str_mod": 0.8,
                     "weight": 4,
                     "isequipped": false,
                     "maintype": "Helm",
                     "subtype": "Heavy",
-                    "type_s": "Helm",
                     "name": "Iron Helm",
                     "description": "A sturdy iron helmet.",
                     "value": 75,
@@ -389,7 +396,8 @@
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
-                    "gives_exp": true
+                    "gives_exp": true,
+                    "type_s": "Helm"
                 }
             }
         ],
@@ -557,6 +565,7 @@
                     "states": [],
                     "in_combat": false,
                     "combat_proximity": {},
+                    "combat_position": null,
                     "default_proximity": 20,
                     "hidden": false,
                     "hide_factor": 0,
@@ -590,7 +599,8 @@
                         "possessive": "its",
                         "reflexive": "itself",
                         "intensive": "itself"
-                    }
+                    },
+                    "player_ref": null
                 }
             }
         ],
@@ -603,8 +613,9 @@
         "title": "Milo's Space",
         "description": "A tidy stone chamber with a standing portal etched in silver runes. The air hums faintly.",
         "exits": [
-            "south",
             "west",
+            "south",
+            "east",
             "southeast",
             "southwest"
         ],
@@ -720,7 +731,9 @@
             "northwest",
             "north",
             "west",
-            "east"
+            "east",
+            "northeast",
+            "southeast"
         ],
         "events": [],
         "items": [
@@ -746,7 +759,8 @@
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
-                    "gives_exp": false
+                    "gives_exp": false,
+                    "count": 50000
                 }
             },
             {
@@ -981,8 +995,10 @@
         "description": "A roadside stall draped in colorful cloth. The scent of herbs and tonics hangs in the air.",
         "exits": [
             "north",
+            "northeast",
             "east",
-            "northeast"
+            "west",
+            "northwest"
         ],
         "events": [],
         "items": [],
@@ -1145,6 +1161,7 @@
                     "states": [],
                     "in_combat": false,
                     "combat_proximity": {},
+                    "combat_position": null,
                     "default_proximity": 20,
                     "hidden": false,
                     "hide_factor": 0,
@@ -1185,6 +1202,7 @@
                         "reflexive": "itself",
                         "intensive": "itself"
                     },
+                    "player_ref": null,
                     "specialties": [
                         {
                             "__class_type__": "items:Consumable"
@@ -1393,12 +1411,28 @@
         "title": "tile_4_3",
         "description": "A windswept ridge with loose gravel underfoot. You can see far to the east.",
         "exits": [
-            "northwest",
-            "west",
+            "north",
+            "south",
             "east",
+            "west",
+            "northwest",
             "southeast"
         ],
         "events": [
+            {
+                "__class__": "WhisperingStatue",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "The Whispering Statue",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            },
             {
                 "__class__": "GoldFromHeaven",
                 "__module__": "story.effects",
@@ -1407,7 +1441,24 @@
                     "player": null,
                     "tile": null,
                     "repeat": false,
-                    "params": null
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            },
+            {
+                "__class__": "StMichael",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "Shrine of St Michael the Archangel",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
                 }
             }
         ],
@@ -1434,7 +1485,8 @@
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
-                    "gives_exp": false
+                    "gives_exp": false,
+                    "count": 35
                 }
             },
             {
@@ -1471,7 +1523,9 @@
             }
         ],
         "npcs": [],
-        "objects": []
+        "objects": [],
+        "block_exit": [],
+        "symbol": ""
     },
     "(5, 3)": {
         "id": "tile_5_3",
@@ -1479,7 +1533,9 @@
         "description": "A narrow pass between boulders. Scrapes on the rock suggest frequent traffic.",
         "exits": [
             "west",
-            "south"
+            "south",
+            "northwest",
+            "southwest"
         ],
         "events": [],
         "items": [
@@ -1570,7 +1626,8 @@
         "description": "A sheltered hollow beneath an overhang. It's quiet here, and footprints circle the edge.",
         "exits": [
             "northwest",
-            "north"
+            "north",
+            "west"
         ],
         "events": [],
         "items": [
@@ -1650,7 +1707,9 @@
         "description": "A dark cavern with dripping water. Strange sounds echo from the shadows.",
         "exits": [
             "west",
-            "south"
+            "southwest",
+            "south",
+            "southeast"
         ],
         "events": [],
         "items": [],
@@ -1659,33 +1718,799 @@
                 "__class__": "Slime",
                 "__module__": "npc",
                 "props": {
+                    "name": "Slime Tebisurso",
                     "description": "Goop that moves. Gross.",
-                    "maxhp": 10,
-                    "hp": 10,
-                    "damage": 20,
-                    "aggro": true,
-                    "exp_award": 1,
-                    "awareness": 12,
+                    "current_room": null,
+                    "inventory": [],
                     "idle_message": " is glopping about.",
                     "alert_message": "burbles angrily at Jean!",
-                    "friend": false
+                    "maxhp": 10,
+                    "maxhp_base": 10,
+                    "hp": 10,
+                    "damage": 20,
+                    "damage_base": 20,
+                    "protection": 0,
+                    "protection_base": 0,
+                    "speed": 10,
+                    "speed_base": 10,
+                    "finesse": 10,
+                    "finesse_base": 10,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 12,
+                    "aggro": true,
+                    "exp_award": 1,
+                    "exp_award_base": 1,
+                    "maxfatigue": 100,
+                    "maxfatigue_base": 100,
+                    "endurance": 10,
+                    "endurance_base": 10,
+                    "strength": 10,
+                    "strength_base": 10,
+                    "charisma": 10,
+                    "charisma_base": 10,
+                    "intelligence": 10,
+                    "intelligence_base": 10,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 100,
+                    "target": "<circular_ref:Slime>",
+                    "known_moves": [
+                        {
+                            "__class__": "NpcRest",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Rest",
+                                "description": "Rest for a moment to restore fatigue.",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    1,
+                                    2,
+                                    0
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "Slime Tebisurso rests for a moment.",
+                                    "\u001b[37mSlime Tebisurso is resting.\u001b[0m",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Slime>",
+                                "user": "<circular_ref:Slime>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "NpcAttack",
+                            "__module__": "moves",
+                            "props": {
+                                "power": 17.33468127885172,
+                                "name": "NPC_Attack",
+                                "description": "",
+                                "category": "Miscellaneous",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    5,
+                                    1,
+                                    5,
+                                    4
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "\u001b[31mSlime Tebisurso coils in preparation for an attack!\u001b[0m",
+                                    "\u001b[31mSlime Tebisurso lashes out at Slime Tebisurso with extreme violence!\u001b[0m",
+                                    "Slime Tebisurso recoils from the attack.",
+                                    ""
+                                ],
+                                "fatigue_cost": 50,
+                                "target": "<circular_ref:Slime>",
+                                "user": "<circular_ref:Slime>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    5
+                                ],
+                                "instant": false,
+                                "weight": 5
+                            }
+                        },
+                        {
+                            "__class__": "Advance",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Advance",
+                                "description": "Get closer to a target enemy.",
+                                "category": "Maneuver",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    4,
+                                    0,
+                                    3
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "Slime Tebisurso begins advancing...",
+                                    "",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Slime>",
+                                "user": "<circular_ref:Slime>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    1,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 4
+                            }
+                        },
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Slime Tebisurso is glopping about.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Slime>",
+                                "user": "<circular_ref:Slime>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "Dodge",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Dodge",
+                                "description": "Prepare to dodge incoming attacks.",
+                                "category": "Defensive",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    1,
+                                    1,
+                                    5,
+                                    2
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "",
+                                    "Slime Tebisurso tenses in preparation to avoid attacks.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 25,
+                                "target": "<circular_ref:Slime>",
+                                "user": "<circular_ref:Slime>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "combat_position": null,
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "something interesting.",
+                    "friend": false,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        5
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [],
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    },
+                    "player_ref": null
                 }
             },
             {
                 "__class__": "CaveBat",
                 "__module__": "npc",
                 "props": {
+                    "name": "Cave Bat Itepip",
                     "description": "A small, leathery-winged mammal that nests in caverns and ambushes from above.",
-                    "maxhp": 8,
-                    "hp": 8,
-                    "damage": 18,
-                    "aggro": true,
-                    "exp_award": 4,
-                    "awareness": 14,
-                    "speed": 40,
+                    "current_room": null,
+                    "inventory": [],
                     "idle_message": " is hanging from the ceiling.",
                     "alert_message": "screeches and dives!",
-                    "friend": false
+                    "maxhp": 8,
+                    "maxhp_base": 8,
+                    "hp": 8,
+                    "damage": 18,
+                    "damage_base": 18,
+                    "protection": 0,
+                    "protection_base": 0,
+                    "speed": 40,
+                    "speed_base": 40,
+                    "finesse": 10,
+                    "finesse_base": 10,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.1,
+                        "light": 0.8,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 14,
+                    "aggro": true,
+                    "exp_award": 4,
+                    "exp_award_base": 4,
+                    "maxfatigue": 100,
+                    "maxfatigue_base": 100,
+                    "endurance": 10,
+                    "endurance_base": 10,
+                    "strength": 10,
+                    "strength_base": 10,
+                    "charisma": 10,
+                    "charisma_base": 10,
+                    "intelligence": 10,
+                    "intelligence_base": 10,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 100,
+                    "target": "<circular_ref:CaveBat>",
+                    "known_moves": [
+                        {
+                            "__class__": "NpcRest",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Rest",
+                                "description": "Rest for a moment to restore fatigue.",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    1,
+                                    2,
+                                    0
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "Cave Bat Itepip rests for a moment.",
+                                    "\u001b[37mCave Bat Itepip is resting.\u001b[0m",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "NpcAttack",
+                            "__module__": "moves",
+                            "props": {
+                                "power": 20.394715597128002,
+                                "name": "NPC_Attack",
+                                "description": "",
+                                "category": "Miscellaneous",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    1,
+                                    1,
+                                    1,
+                                    1
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "\u001b[31mCave Bat Itepip coils in preparation for an attack!\u001b[0m",
+                                    "\u001b[31mCave Bat Itepip lashes out at Cave Bat Itepip with extreme violence!\u001b[0m",
+                                    "Cave Bat Itepip recoils from the attack.",
+                                    ""
+                                ],
+                                "fatigue_cost": 50,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    5
+                                ],
+                                "instant": false,
+                                "weight": 5
+                            }
+                        },
+                        {
+                            "__class__": "BatBite",
+                            "__module__": "moves",
+                            "props": {
+                                "power": 17.70657563096023,
+                                "name": "BatBite",
+                                "description": "A quick bite that steals a little life from the target.",
+                                "category": "Miscellaneous",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    1,
+                                    1,
+                                    1,
+                                    1
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "\u001b[31mCave Bat Itepip bares its fangs!\u001b[0m",
+                                    "\u001b[31mCave Bat Itepip bites Cave Bat Itepip with a ravenous nip!\u001b[0m",
+                                    "Cave Bat Itepip recoils from the attack.",
+                                    ""
+                                ],
+                                "fatigue_cost": 70,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    5
+                                ],
+                                "instant": false,
+                                "weight": 5
+                            }
+                        },
+                        {
+                            "__class__": "Advance",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Advance",
+                                "description": "Get closer to a target enemy.",
+                                "category": "Maneuver",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    4,
+                                    0,
+                                    3
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "Cave Bat Itepip begins advancing...",
+                                    "",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    1,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 4
+                            }
+                        },
+                        {
+                            "__class__": "Withdraw",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Withdraw",
+                                "description": "Move away from all enemies.",
+                                "category": "Maneuver",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    5,
+                                    0,
+                                    4
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "",
+                                    "",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    100
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Cave Bat Itepip is hanging from the ceiling.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "Dodge",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Dodge",
+                                "description": "Prepare to dodge incoming attacks.",
+                                "category": "Defensive",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    1,
+                                    1,
+                                    5,
+                                    2
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "",
+                                    "Cave Bat Itepip tenses in preparation to avoid attacks.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 10,
+                                "target": "<circular_ref:CaveBat>",
+                                "user": "<circular_ref:CaveBat>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 2
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "combat_position": null,
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "something interesting.",
+                    "friend": false,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        5
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [],
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    },
+                    "player_ref": null
                 }
             }
         ],
@@ -1712,8 +2537,9 @@
         "title": "Healing Grotto",
         "description": "A peaceful grotto with a bubbling spring. The air feels fresh and rejuvenating.",
         "exits": [
-            "north",
-            "east"
+            "northeast",
+            "east",
+            "north"
         ],
         "events": [],
         "items": [
@@ -1725,8 +2551,27 @@
                     "maintype": "Consumable",
                     "subtype": "Potion",
                     "count": 3,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Restorative",
                     "name": "Restorative",
+                    "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
                     "value": 100,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
                     "power": 60
                 }
             }
@@ -1757,8 +2602,9 @@
         "title": "Sacred Shrine",
         "description": "A quiet chamber with a beautiful shrine. Candles flicker softly.",
         "exits": [
-            "south",
-            "east"
+            "east",
+            "southeast",
+            "south"
         ],
         "events": [],
         "items": [],
@@ -1781,29 +2627,64 @@
                 "__class__": "Container",
                 "__module__": "objects",
                 "props": {
-                    "name": "Offering Box",
                     "nickname": "box",
-                    "description": "A wooden box for offerings and donations.",
-                    "idle_message": "An offering box sits near the shrine.",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
                     "locked": false,
-                    "start_open": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
                     "inventory": [
                         {
                             "__class__": "Gold",
                             "__module__": "items",
                             "props": {
                                 "amt": 25,
+                                "maintype": "Gold",
                                 "name": "Gold",
-                                "value": 25
+                                "description": "A small pouch containing 25 gold pieces.",
+                                "value": 25,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 25
                             }
                         }
                     ],
+                    "name": "Offering Box",
+                    "description": "A wooden box for offerings and donations.",
+                    "idle_message": "An offering box sits near the shrine.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a container!",
+                    "announce": "An offering box sits near the shrine.",
                     "keywords": [
                         "open",
                         "loot",
                         "check"
                     ],
-                    "hidden": false
+                    "events": [],
+                    "tile": null,
+                    "player": null
                 }
             }
         ],
@@ -1815,8 +2696,10 @@
         "title": "Spider's Lair",
         "description": "Thick webbing covers the walls and ceiling. The floor is littered with bones.",
         "exits": [
+            "northwest",
             "north",
-            "west"
+            "northeast",
+            "east"
         ],
         "events": [],
         "items": [
@@ -1828,8 +2711,27 @@
                     "maintype": "Consumable",
                     "subtype": "Potion",
                     "count": 2,
+                    "interactions": [
+                        "use",
+                        "drink",
+                        "drop"
+                    ],
+                    "stack_key": "Antidote",
                     "name": "Antidote",
+                    "description": "A murky green fluid of questionable chemistry.\nDrinking it restores a small amount of health and \nneutralizes harmful toxins in the bloodstream.",
                     "value": 175,
+                    "type": "Consumable",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a useful item.",
+                    "announce": "Jean notices a small glass bottle on the ground with a murky green fluid inside and a label reading, 'Antidote.'",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
                     "power": 15
                 }
             }
@@ -1841,16 +2743,438 @@
                 "props": {
                     "name": "Giant Spider Queen",
                     "description": "A humongous spider, covered in black, wiry hairs. It skitters about, looking for its next victim to devour.",
-                    "maxhp": 110,
-                    "hp": 110,
-                    "damage": 22,
-                    "aggro": true,
-                    "exp_award": 120,
-                    "awareness": 30,
-                    "endurance": 10,
+                    "current_room": null,
+                    "inventory": [],
                     "idle_message": " is weaving a web.",
                     "alert_message": "hisses menacingly!",
-                    "friend": false
+                    "maxhp": 110,
+                    "maxhp_base": 110,
+                    "hp": 110,
+                    "damage": 22,
+                    "damage_base": 22,
+                    "protection": 0,
+                    "protection_base": 0,
+                    "speed": 10,
+                    "speed_base": 10,
+                    "finesse": 10,
+                    "finesse_base": 10,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": -0.5,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0
+                    },
+                    "awareness": 30,
+                    "aggro": true,
+                    "exp_award": 120,
+                    "exp_award_base": 120,
+                    "maxfatigue": 100,
+                    "maxfatigue_base": 100,
+                    "endurance": 10,
+                    "endurance_base": 10,
+                    "strength": 10,
+                    "strength_base": 10,
+                    "charisma": 10,
+                    "charisma_base": 10,
+                    "intelligence": 10,
+                    "intelligence_base": 10,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 100,
+                    "target": "<circular_ref:GiantSpider>",
+                    "known_moves": [
+                        {
+                            "__class__": "NpcRest",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Rest",
+                                "description": "Rest for a moment to restore fatigue.",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    1,
+                                    2,
+                                    0
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "Giant Spider Suectech rests for a moment.",
+                                    "\u001b[37mGiant Spider Suectech is resting.\u001b[0m",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "NpcAttack",
+                            "__module__": "moves",
+                            "props": {
+                                "power": 25.49011913071311,
+                                "name": "NPC_Attack",
+                                "description": "",
+                                "category": "Miscellaneous",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    5,
+                                    1,
+                                    5,
+                                    4
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "\u001b[31mGiant Spider Suectech coils in preparation for an attack!\u001b[0m",
+                                    "\u001b[31mGiant Spider Suectech lashes out at Giant Spider Suectech with extreme violence!\u001b[0m",
+                                    "Giant Spider Suectech recoils from the attack.",
+                                    ""
+                                ],
+                                "fatigue_cost": 50,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    5
+                                ],
+                                "instant": false,
+                                "weight": 3
+                            }
+                        },
+                        {
+                            "__class__": "SpiderBite",
+                            "__module__": "moves",
+                            "props": {
+                                "power": 22.814602512021693,
+                                "name": "SpiderBite",
+                                "description": "",
+                                "category": "Miscellaneous",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    5,
+                                    1,
+                                    5,
+                                    4
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "\u001b[31mGiant Spider Suectech flashes its poisonous mandibles!\u001b[0m",
+                                    "\u001b[31mGiant Spider Suectech bites at Giant Spider Suectech with its poisonous mandibles!\u001b[0m",
+                                    "Giant Spider Suectech recoils from the attack.",
+                                    ""
+                                ],
+                                "fatigue_cost": 70,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    5
+                                ],
+                                "instant": false,
+                                "weight": 6
+                            }
+                        },
+                        {
+                            "__class__": "Advance",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Advance",
+                                "description": "Get closer to a target enemy.",
+                                "category": "Maneuver",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    4,
+                                    0,
+                                    3
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "Giant Spider Suectech begins advancing...",
+                                    "",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": true,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    1,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 4
+                            }
+                        },
+                        {
+                            "__class__": "Withdraw",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Withdraw",
+                                "description": "Move away from all enemies.",
+                                "category": "Maneuver",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    5,
+                                    0,
+                                    4
+                                ],
+                                "beats_left": 0,
+                                "stage_announce": [
+                                    "",
+                                    "",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    100
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Giant Spider Suectech is shuffling about.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1
+                            }
+                        },
+                        {
+                            "__class__": "Dodge",
+                            "__module__": "moves",
+                            "props": {
+                                "name": "Dodge",
+                                "description": "Prepare to dodge incoming attacks.",
+                                "category": "Defensive",
+                                "xp_gain": 1,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    1,
+                                    1,
+                                    5,
+                                    2
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "",
+                                    "Giant Spider Suectech tenses in preparation to avoid attacks.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 25,
+                                "target": "<circular_ref:GiantSpider>",
+                                "user": "<circular_ref:GiantSpider>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 2
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "combat_position": null,
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "something interesting.",
+                    "friend": false,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        5
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [],
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    },
+                    "player_ref": null
                 }
             }
         ],
@@ -1859,20 +3183,46 @@
                 "__class__": "Container",
                 "__module__": "objects",
                 "props": {
-                    "name": "Webbed Chest",
                     "nickname": "chest",
-                    "description": "A chest covered in sticky webbing.",
-                    "idle_message": "A chest wrapped in webbing sits in the corner.",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
                     "locked": false,
-                    "start_open": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
                     "inventory": [
                         {
                             "__class__": "Gold",
                             "__module__": "items",
                             "props": {
                                 "amt": 150,
+                                "maintype": "Gold",
                                 "name": "Gold",
-                                "value": 150
+                                "description": "A small pouch containing 150 gold pieces.",
+                                "value": 150,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 150
                             }
                         },
                         {
@@ -1880,19 +3230,56 @@
                             "__module__": "items",
                             "props": {
                                 "damage": 15,
-                                "name": "Shortsword",
-                                "value": 75,
+                                "str_req": 5,
+                                "fin_req": 10,
+                                "str_mod": 0.75,
+                                "fin_mod": 1.25,
+                                "weight": 2,
+                                "isequipped": false,
                                 "maintype": "Weapon",
-                                "subtype": "Sword"
+                                "subtype": "Sword",
+                                "wpnrange": [
+                                    0,
+                                    4
+                                ],
+                                "name": "Shortsword",
+                                "description": "A double-edged shortsword. A reliable companion in any fight.",
+                                "value": 75,
+                                "type": "Weapon",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a kind of weapon.",
+                                "announce": "There's a Shortsword here.",
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": true,
+                                "twohand": false
                             }
                         }
                     ],
+                    "name": "Webbed Chest",
+                    "description": "A chest covered in sticky webbing.",
+                    "idle_message": "A chest wrapped in webbing sits in the corner.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a container!",
+                    "announce": "A chest wrapped in webbing sits in the corner.",
                     "keywords": [
                         "open",
                         "loot",
                         "check"
                     ],
-                    "hidden": false
+                    "events": [],
+                    "tile": null,
+                    "player": null
                 }
             }
         ],

@@ -173,6 +173,29 @@ class EquipmentSerializer:
 
         # Get equipped items from player (handle both equipped and equipment attributes)
         equipment_dict = getattr(player, "equipped", None) or getattr(player, "equipment", {})
+        
+        # Fallback: check individual attributes if dict is empty
+        if not equipment_dict:
+            slot_mapping = {
+                "weapon": "eq_weapon",
+                "shield": "shield",
+                "head": "head",
+                "body": "body",
+                "legs": "legs",
+                "feet": "feet",
+                "hands": "hands",
+                "accessory_1": "accessory_1",
+                "accessory_2": "accessory_2",
+            }
+            equipment_dict = {}
+            for slot, attr in slot_mapping.items():
+                item = getattr(player, attr, None)
+                if item:
+                    # Only include if specifically marked as equipped, or if it's a weapon (always have a weapon)
+                    # Use isequipped flag to distinguish real equipped items from defaults if needed
+                    if getattr(item, "isequipped", False) or (slot == "weapon" and item):
+                        equipment_dict[slot] = item
+
         if equipment_dict:
             for slot_name, item in equipment_dict.items():
                 equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)

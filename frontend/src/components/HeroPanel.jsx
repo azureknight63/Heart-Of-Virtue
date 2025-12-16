@@ -23,12 +23,12 @@ export default function HeroPanel({
 
   // Get player stats or use defaults
   const hp = {
-    current: player?.hp || 70,
+    current: player?.hp || 100,
     max: player?.max_hp || 100,
   }
   const fatigue = {
-    current: player?.fatigue || 55,
-    max: player?.max_fatigue || 100,
+    current: player?.fatigue || 150,
+    max: player?.max_fatigue || 150,
   }
 
   // Calculate heart rate based on HP and Combat status

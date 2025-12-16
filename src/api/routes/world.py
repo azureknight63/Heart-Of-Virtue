@@ -35,6 +35,7 @@ def get_session_and_player(request):
 
 
 @world_bp.route("/world", methods=["GET"])
+@world_bp.route("/world/", methods=["GET"])  # Add trailing slash variant
 def get_current_room():
     """Get current room data.
 
@@ -77,10 +78,17 @@ def get_current_room():
             )
 
         room = game_service.get_current_room(player)
+        
+        # Debug: Check if room has error
+        if "error" in room:
+            return jsonify({"success": False, "error": room["error"]}), 404
 
         return jsonify({"success": True, "room": room}), 200
 
     except Exception as e:
+        import traceback
+        print(f"[ERROR] World route exception: {e}", flush=True)
+        traceback.print_exc()
         return (
             jsonify(
                 {

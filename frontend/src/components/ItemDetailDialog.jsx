@@ -5,6 +5,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
   const [showDropConfirm, setShowDropConfirm] = useState(false)
+  const [actionResult, setActionResult] = useState(null)
 
   const handleEquip = async () => {
     if (!item.can_equip) return
@@ -18,11 +19,26 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       if (data.success) {
         const isNowEquipped = !item.is_equipped
         setActionMessage(isNowEquipped ? '✓ Item equipped!' : '✗ Item unequipped!')
+
+        // Show success dialog
+        setActionResult({
+          message: isNowEquipped
+            ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+            : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+        })
+
         // Update item's equipped state locally
         if (onItemUpdated) {
           onItemUpdated(item.id, { is_equipped: isNowEquipped })
         }
-        setTimeout(() => onBack(), 800)
+
+        // Trigger global refresh to ensure state persists when closing/reopening inventory
+        if (onRefetch) {
+          onRefetch()
+        }
+
+        // We no longer auto-close/timeout here because the dialog handles it
+        // when the user clicks Ok
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to equip'))
       }
@@ -42,9 +58,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item used!')
+        // Show success dialog
+        setActionResult({
+          message: <><strong>{player?.name || 'Player'}</strong> used <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+        })
+
         // For consumables, remove from inventory
         if (onItemRemoved) onItemRemoved(item.id)
-        setTimeout(() => onBack(), 800)
       } else {
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }
@@ -64,11 +84,15 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item dropped!')
+        // Show success dialog
+        setActionResult({
+          message: <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+        })
+
         // Call onItemRemoved to update inventory client-side
         if (onItemRemoved) onItemRemoved(item.id)
         // Refresh room contents to show dropped item
         if (onRefetch) onRefetch()
-        setTimeout(() => onBack(), 500)
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to drop'))
       }
@@ -426,7 +450,90 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         )}
       </div>
 
-      {/* Drop Confirmation Dialog */}
+      {/* Generic Action Success Dialog */}
+      {actionResult && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100, // Higher than drop confirm
+        }}>
+          <div style={{
+            backgroundColor: 'rgba(30, 20, 5, 0.98)',
+            border: '2px solid #00ff00',
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            // animate fadeIn
+            animation: 'fadeIn 0.2s ease-out',
+            boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
+          }}>
+            {/* Message */}
+            <div style={{
+              fontSize: '16px',
+              textAlign: 'center',
+              lineHeight: '1.5',
+              fontWeight: 'normal',
+              color: '#00ff88',
+              fontFamily: 'monospace',
+            }}>
+              {actionResult.message}
+            </div>
+
+            {/* Button */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+            }}>
+              <button
+                onClick={() => {
+                  setActionResult(null)
+                  onBack() // Go back to inventory list
+                }}
+                style={{
+                  padding: '8px 32px',
+                  backgroundColor: '#004400',
+                  color: '#00ff00',
+                  border: '1px solid #00ff00',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s',
+                  textTransform: 'uppercase',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.backgroundColor = '#006600'
+                  e.target.style.boxShadow = '0 0 8px rgba(0, 255, 0, 0.6)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = '#004400'
+                  e.target.style.boxShadow = 'none'
+                }}
+              >
+                Ok
+              </button>
+            </div>
+          </div>
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; transform: scale(0.9); }
+              to { opacity: 1; transform: scale(1); }
+            }
+          `}</style>
+        </div>
+      )}
       {showDropConfirm && (
         <div style={{
           position: 'fixed',

@@ -771,6 +771,7 @@ class ApiCombatAdapter:
             is_viable = move.viable()
             
             move_data = {
+                "id": str(i),
                 "index": i,
                 "name": move.name,
                 "description": getattr(move, "description", ""),
