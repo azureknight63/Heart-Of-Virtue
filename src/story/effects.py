@@ -246,22 +246,15 @@ class Shrine(Event):  # Generic class for Shrine-based events
 class StMichael(Shrine):
     def __init__(self, player, tile, params=None, repeat=False, name='Shrine of St Michael the Archangel'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        # Declare input requirements for API mode
+        self.needs_input = True
+        self.input_type = "choice"
+        self.input_prompt = "Selection:"
+        # Generate weapon choices at init time
+        self._generate_weapon_choices()
 
-    def process(self):
-        print("This, particularly, is a shrine to Saint Michael the Archangel.")
-        print("There is a small statue depicting St Michael spearing a vicious dragon.")
-        print("""An inscription on the shrine reads,
-
-        Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
-        Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
-        qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
-
-        """)
-        functions.await_input()
-        print("Suddenly, Jean has the feeling of intense heat all around him. "
-              "He hears a voice echoing inside his head.")
-        time.sleep(2)
-        cprint("""CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""", "red")
+    def _generate_weapon_choices(self):
+        """Generate 3 random weapon choices for the event."""
         all_choices = [
             ("A crafty dagger.", "Dagger"),
             ("A trusty sword.", "Shortsword"),
@@ -276,19 +269,65 @@ class StMichael(Shrine):
             ("A convenient crossbow.", "Crossbow"),
             ("A sturdy pole.", "Pole"),
         ]
-        available_choices = []
+        self.available_choices = []
         for i in range(0, 3):
             choice = all_choices[random.randint(0, len(all_choices) - 1)]
-            while choice in available_choices:
+            while choice in self.available_choices:
                 choice = all_choices[random.randint(0, len(all_choices) - 1)]
-            available_choices.append(choice)
+            self.available_choices.append(choice)
+        
+        # Create input_options for API serialization
+        self.input_options = [
+            {"value": str(i), "label": choice[0]} 
+            for i, choice in enumerate(self.available_choices)
+        ]
 
-        for i, choice in enumerate(available_choices):
+    def get_input_prompt(self):
+        """Return the weapon selection prompt."""
+        return "TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST."
+
+    def get_input_options(self):
+        """Return the available weapon choices."""
+        return self.input_options
+
+    def process(self, user_input=None):
+        print("This, particularly, is a shrine to Saint Michael the Archangel.")
+        print("There is a small statue depicting St Michael spearing a vicious dragon.")
+        print("""An inscription on the shrine reads,
+
+        Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
+        Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
+        qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
+
+        """)
+        functions.await_input()
+        print("Suddenly, Jean has the feeling of intense heat all around him. "
+              "He hears a voice echoing inside his head.")
+        time.sleep(2)
+        cprint("""CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""", "red")
+        
+        for i, choice in enumerate(self.available_choices):
             print("{}: {}".format(i, choice[0]))
-        selection = input(colored("Selection: ", "cyan"))
+        
+        # Use provided input if available (from API), otherwise prompt
+        selection = user_input
+        if selection is None:
+            try:
+                selection = input(colored("Selection: ", "cyan"))
+            except (EOFError, OSError, ValueError):
+                # Default to first option if no input available
+                selection = "0"
+        
         if functions.is_input_integer(selection):
             selection = int(selection)
-        drop = self.tile.spawn_item(available_choices[selection][1], amt=1, hidden=False, hfactor=0)
+        else:
+            selection = 0  # Default to first option if invalid
+        
+        # Ensure selection is within valid range
+        if selection < 0 or selection >= len(self.available_choices):
+            selection = 0
+        
+        drop = self.tile.spawn_item(self.available_choices[selection][1], amt=1, hidden=False, hfactor=0)
         functions.add_random_enchantments(drop, 1)
         cprint("There's a brief flash of light (or was it imagined?) \nSuddenly, at the foot of the shrine, "
                "there sits a {}.".format(drop.name), "cyan")
@@ -388,12 +427,29 @@ class NPCSpawnerEvent(Event):
 class WhisperingStatue(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='The Whispering Statue'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        # Declare input requirements for API mode
+        self.needs_input = True
+        self.input_type = "choice"
+        self.input_prompt = "Your answer (1-3):"
+        self.input_options = [
+            {"value": "1", "label": "A River"},
+            {"value": "2", "label": "The Wind"},
+            {"value": "3", "label": "A Shadow"}
+        ]
 
     def check_conditions(self):
         # Always trigger if the player interacts with it
         self.pass_conditions_to_process()
 
-    def process(self):
+    def get_input_prompt(self):
+        """Return the riddle question for display."""
+        return '"I have a mouth but never speak. I have a bed but never sleep. I run but have no legs. What am I?"'
+
+    def get_input_options(self):
+        """Return the available choices for this riddle."""
+        return self.input_options
+
+    def process(self, user_input=None):
         cprint("You stand before an ancient, moss-covered statue of a hooded figure.", "cyan")
         time.sleep(1)
         cprint("Its stone eyes seem to track your movements.", "cyan")
@@ -409,12 +465,13 @@ class WhisperingStatue(Event):
         print("3. A Shadow")
         
         # Try to get input, but handle cases where input() is mocked or unavailable
-        choice = None
-        try:
-            choice = input(colored("\nYour answer (1-3): ", "white"))
-        except (EOFError, OSError, ValueError):
-            # No input available (running in API/headless mode or mocked)
-            choice = "1"
+        choice = user_input  # Use provided input if available (from API)
+        if choice is None:
+            try:
+                choice = input(colored("\nYour answer (1-3): ", "white"))
+            except (EOFError, OSError, ValueError):
+                # No input available (running in API/headless mode or mocked)
+                choice = "1"
         
         # Handle None or empty input from mocks
         if not choice:

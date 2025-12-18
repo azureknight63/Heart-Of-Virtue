@@ -80,6 +80,7 @@ class Session:
         self.created_at = created_at
         self.last_accessed = created_at
         self.expires_at = created_at + timedelta(hours=24)
+        self.data: Dict[str, Any] = {}
 
     def is_expired(self) -> bool:
         """Check if session has expired."""
@@ -101,6 +102,7 @@ class Session:
             "created_at": self.created_at.isoformat(),
             "last_accessed": self.last_accessed.isoformat(),
             "expires_at": self.expires_at.isoformat(),
+            "data": self.data,
         }
 
 

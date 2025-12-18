@@ -151,12 +151,15 @@ class GameService:
             "objects": objects_data,
         }
 
-    def move_player(self, player: "player_module.Player", direction: str) -> Dict[str, Any]:
+    def move_player(
+        self, player: "player_module.Player", direction: str, session_data: Optional[Dict] = None
+    ) -> Dict[str, Any]:
         """Move player in specified direction.
 
         Args:
             player: The Player instance
             direction: Direction to move (north, south, east, west, northeast, northwest, southeast, southwest)
+            session_data: Optional session dictionary for storing pending events
 
         Returns:
             Dictionary with result of movement
@@ -194,8 +197,8 @@ class GameService:
         player.location_y = new_y
         player.current_room = new_tile
 
-        # Trigger tile entry events
-        events_triggered = self.trigger_tile_events(player, new_tile)
+        # Trigger tile entry events with session data for pending event storage
+        events_triggered = self.trigger_tile_events(player, new_tile, session_data)
 
         # Check for combat initiation
         from src.functions import check_for_combat
@@ -231,13 +234,14 @@ class GameService:
         }
 
     def trigger_tile_events(
-        self, player: "player_module.Player", tile: Any
+        self, player: "player_module.Player", tile: Any, session_data: Optional[Dict] = None
     ) -> List[Dict[str, Any]]:
         """Trigger events on tile entry.
 
         Args:
             player: The Player instance
             tile: The MapTile being entered
+            session_data: Optional session dictionary for storing pending events
 
         Returns:
             List of triggered event data with captured output
@@ -246,6 +250,7 @@ class GameService:
         import io
         import re
         from unittest.mock import patch
+        import uuid
         
         events_triggered = []
         
@@ -255,9 +260,29 @@ class GameService:
         # Process each event and capture output
         # Iterate over a copy of the list because events might remove themselves
         for event in list(tile.events_here):
-            # Serialize the event using EventSerializer
-            event_data = EventSerializer.serialize(event)
+            # Check if event requires input using EventSerializer
+            event_data = EventSerializer.serialize_with_input(event)
             
+            # If event needs input, store it in session without processing
+            if event_data.get("needs_input"):
+                event_id = str(uuid.uuid4())
+                event_data["event_id"] = event_id
+                
+                # Store event in session for later processing
+                if session_data is not None:
+                    if "pending_events" not in session_data:
+                        session_data["pending_events"] = {}
+                    session_data["pending_events"][event_id] = {
+                        "event": event,
+                        "tile_x": tile.x,
+                        "tile_y": tile.y,
+                        "event_data": event_data
+                    }
+                
+                events_triggered.append(event_data)
+                continue
+            
+            # For non-input events, process normally
             # Try to trigger the event and capture output
             if hasattr(event, "check_conditions"):
                 f = io.StringIO()
@@ -304,6 +329,85 @@ class GameService:
             events_triggered.append(event_data)
 
         return events_triggered
+
+    def process_event_input(
+        self,
+        player: "player_module.Player",
+        event_id: str,
+        user_input: str,
+        session_data: Dict
+    ) -> Dict[str, Any]:
+        """Process a pending event with user input.
+
+        Args:
+            player: The Player instance
+            event_id: The UUID of the pending event
+            user_input: The user's input (sanitized by caller)
+            session_data: Session dictionary containing pending events
+
+        Returns:
+            Dictionary with event result and output
+        """
+        import contextlib
+        import io
+        import re
+        from unittest.mock import patch
+
+        # Validate event exists
+        if "pending_events" not in session_data:
+            return {"success": False, "error": "No pending events in session"}
+        
+        if event_id not in session_data["pending_events"]:
+            return {"success": False, "error": f"Event {event_id} not found"}
+        
+        pending = session_data["pending_events"][event_id]
+        event = pending["event"]
+        
+        # Process the event with user input
+        f = io.StringIO()
+        result = {"success": True, "event_id": event_id}
+        
+        try:
+            # Patch functions to capture output without blocking
+            def mock_cprint(text, *args, **kwargs):
+                f.write(str(text) + '\n')
+            
+            def mock_print_slow(text, speed="slow"):
+                f.write(str(text) + '\n')
+            
+            # Capture stdout/stderr and patch blocking functions
+            with contextlib.redirect_stdout(f), \
+                 contextlib.redirect_stderr(f), \
+                 patch('functions.await_input', return_value=None), \
+                 patch('functions.print_slow', mock_print_slow), \
+                 patch('time.sleep', return_value=None), \
+                 patch('neotermcolor.cprint', mock_cprint), \
+                 patch('src.functions.await_input', return_value=None), \
+                 patch('src.functions.print_slow', mock_print_slow):
+                
+                # Call process() with user_input parameter
+                if hasattr(event, 'process'):
+                    event.process(user_input=user_input)
+                elif hasattr(event, 'check_conditions'):
+                    event.check_conditions()
+                    
+        except Exception as e:
+            result["success"] = False
+            result["error"] = str(e)
+        
+        # Capture and clean output
+        output = f.getvalue()
+        if output:
+            # Remove ANSI codes
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            clean_output = ansi_escape.sub('', output).strip()
+            if clean_output:
+                result["output_text"] = clean_output
+        
+        # Remove from pending events
+        del session_data["pending_events"][event_id]
+        
+        return result
 
     def get_tile(self, player: "player_module.Player", x: int, y: int) -> Dict[str, Any]:
         """Get tile data at specific coordinates with full serialization.

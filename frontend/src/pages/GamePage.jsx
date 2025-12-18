@@ -82,7 +82,57 @@ export default function GamePage() {
     setCurrentEvent(null)
   }
 
-  // Handle event choice (for events that require input)
+  // Handle event input submission
+  const handleEventInput = async (eventId, userInput) => {
+    console.log('Event input submitted:', { eventId, userInput })
+
+    try {
+      const response = await fetch('/api/world/events/input', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('sessionId')}`
+        },
+        body: JSON.stringify({
+          event_id: eventId,
+          user_input: userInput
+        })
+      })
+
+      const data = await response.json()
+
+      if (!data.success) {
+        console.error('Event input failed:', data.error)
+        alert(`Error: ${data.error}`)
+        return
+      }
+
+      console.log('Event processed successfully:', data)
+
+      // Close current event
+      setCurrentEvent(null)
+
+      // If there's output text from processing, show it in a new event
+      if (data.output_text && data.output_text.trim().length > 0) {
+        const resultEvent = {
+          name: 'Event Result',
+          output_text: data.output_text,
+          needs_input: false
+        }
+        setCurrentEvent(resultEvent)
+      }
+
+      // Refetch player and world state after event processing
+      await refetchPlayer()
+      await refetchWorld()
+
+    } catch (err) {
+      console.error('Error submitting event input:', err)
+      alert('Failed to submit input. Please try again.')
+    }
+  }
+
+  // Handle event choice (for legacy events or combat transitions)
   const handleEventChoice = async (choice) => {
     console.log('Event choice selected:', choice)
 
@@ -91,8 +141,7 @@ export default function GamePage() {
       fetchCombatStatus()
     }
 
-    // TODO: Send choice to backend if needed
-    // For now, just close the event
+    // Close the event
     setCurrentEvent(null)
   }
 
@@ -253,7 +302,7 @@ export default function GamePage() {
         <EventDialog
           event={currentEvent}
           onClose={handleEventClose}
-          onChoice={handleEventChoice}
+          onSubmitInput={handleEventInput}
         />
       )}
     </div>

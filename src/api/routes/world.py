@@ -154,17 +154,104 @@ def move_player():
                 500,
             )
 
-        result = game_service.move_player(player, direction)
+        result = game_service.move_player(player, direction, session.data)
 
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
 
-        # Save session after movement
+        # Save session after movement (includes pending events)
         session_manager.save_session(session.session_id)
 
         return jsonify({"success": True, **result}), 200
 
     except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@world_bp.route("/world/events/input", methods=["POST"])
+def submit_event_input():
+    """Submit user input for a pending event.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Request body:
+        {
+            "event_id": str (UUID),
+            "user_input": str
+        }
+
+    Returns:
+        {
+            "success": bool,
+            "output_text": str (optional),
+            "error": str (optional)
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        data = request.get_json()
+        if not data or "event_id" not in data or "user_input" not in data:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Missing event_id or user_input",
+                    }
+                ),
+                400,
+            )
+
+        event_id = data["event_id"]
+        user_input = data["user_input"]
+
+        # Sanitize user input
+        from src.api.utils.input_sanitizer import sanitize_event_input
+        sanitized_input, validation_error = sanitize_event_input(user_input, session.data, event_id)
+        
+        if validation_error:
+            return jsonify({"success": False, "error": validation_error}), 400
+
+        from flask import current_app
+        game_service = current_app.game_service
+
+        if not game_service:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Game service not initialized",
+                    }
+                ),
+                500,
+            )
+
+        # Process the event with user input
+        result = game_service.process_event_input(player, event_id, sanitized_input, session.data)
+
+        # Save session after processing event
+        session_manager.save_session(session.session_id)
+
+        if not result.get("success"):
+            return jsonify(result), 400
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Event input route exception: {e}", flush=True)
+        traceback.print_exc()
         return (
             jsonify(
                 {
