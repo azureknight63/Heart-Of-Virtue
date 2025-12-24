@@ -27,11 +27,14 @@ class ItemSerializer:
             "description": getattr(item, "description", ""),
             "value": getattr(item, "value", 0),
             "weight": getattr(item, "weight", 0.0),
+            "count": 1,
         }
 
         # Add quantity for stackable items
         if hasattr(item, "quantity"):
-            item_data["quantity"] = item.quantity
+            item_data["count"] = item.quantity
+        elif hasattr(item, "count"):
+            item_data["count"] = item.count
         
         # Add subtype for categorization
         if hasattr(item, "subtype"):

@@ -541,7 +541,8 @@ def interact_with_target():
     Request body:
         {
             "target_id": "...",
-            "action": "..."
+            "action": "...",
+            "quantity": int (optional)
         }
 
     Returns:
@@ -571,6 +572,7 @@ def interact_with_target():
 
         target_id = data["target_id"]
         action = data["action"]
+        quantity = data.get("quantity")
 
         from flask import current_app
         game_service = current_app.game_service
@@ -586,7 +588,7 @@ def interact_with_target():
                 500,
             )
 
-        result = game_service.interact_with_target(player, target_id, action)
+        result = game_service.interact_with_target(player, target_id, action, quantity=quantity)
 
         if not result["success"]:
             return jsonify(result), 400

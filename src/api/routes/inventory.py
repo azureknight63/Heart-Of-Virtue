@@ -230,6 +230,9 @@ def drop_item():
         inventory_list.pop(actual_index)
         items_here = getattr(tile, "items_here", [])
         items_here.append(item_to_drop)
+        # Update item description if it's stackable
+        if hasattr(item_to_drop, 'stack_grammar'):
+            item_to_drop.stack_grammar()
 
         # Return updated inventory
         inventory_data = InventorySerializer.serialize(player)

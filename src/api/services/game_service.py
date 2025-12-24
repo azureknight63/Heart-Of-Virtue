@@ -527,13 +527,14 @@ class GameService:
     # Interaction Methods
     # ========================
 
-    def interact_with_target(self, player: "player_module.Player", target_id: str, action: str) -> Dict[str, Any]:
+    def interact_with_target(self, player: "player_module.Player", target_id: str, action: str, quantity: Optional[int] = None) -> Dict[str, Any]:
         """Interact with an object or NPC.
 
         Args:
             player: The Player instance
             target_id: ID of the target object/NPC
             action: The action keyword to execute
+            quantity: Optional quantity for stacked items
 
         Returns:
             Dictionary with interaction result and output text
@@ -595,16 +596,23 @@ class GameService:
             def mock_print_slow(text, speed="slow"):
                 # Just write the text directly without character-by-character delays
                 f.write(str(text) + '\n')
+
+            def mock_input(prompt=""):
+                # Return empty string to prevent blocking if something calls input() directly
+                return ""
             
             # Patch at multiple levels since different modules import differently
             with contextlib.redirect_stdout(f), \
                  contextlib.redirect_stderr(f), \
+                 patch('builtins.input', mock_input), \
                  patch('functions.await_input', return_value=None), \
                  patch('functions.print_slow', mock_print_slow), \
                  patch('time.sleep', return_value=None), \
                  patch('neotermcolor.cprint', mock_cprint), \
                  patch('src.functions.await_input', return_value=None), \
-                 patch('src.functions.print_slow', mock_print_slow):
+                 patch('src.functions.print_slow', mock_print_slow), \
+                 patch('src.items.cprint', mock_cprint), \
+                 patch('items.cprint', mock_cprint):
                 
                 method = getattr(target, action)
                 # Check signature to see if we need to pass player
@@ -614,7 +622,11 @@ class GameService:
                 
                 # If there are parameters beyond 'self', pass player
                 if len(param_names) > 0:
-                    method(player)
+                    # If the method accepts quantity, pass it
+                    if 'quantity' in param_names:
+                        method(player, quantity=quantity)
+                    else:
+                        method(player)
                 else:
                     method()
                     
