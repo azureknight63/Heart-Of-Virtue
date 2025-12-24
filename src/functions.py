@@ -393,6 +393,13 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
             except Exception:
                 pass
 
+    # Refresh protection rating if applicable
+    if hasattr(target, "refresh_protection_rating"):
+        try:
+            target.refresh_protection_rating()
+        except Exception:
+            pass
+
 
 def check_parry(target):
     states = getattr(target, "states", []) or []
