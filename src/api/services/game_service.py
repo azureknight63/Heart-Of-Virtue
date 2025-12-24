@@ -840,7 +840,7 @@ class GameService:
     # Player Status Methods
     # ========================
 
-    def start_combat(self, player: "player_module.Player", enemy_id: str) -> Dict[str, Any]:
+    def start_combat(self, player: "player_module.Player", enemy_id: str, session_id: str = None) -> Dict[str, Any]:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
         print(f"[DEBUG] start_combat: Player ID: {id(player)}")
         # Find enemy in current room
@@ -855,10 +855,10 @@ class GameService:
         if not enemy:
             return {"error": "Enemy not found"}
             
-        result = self._initialize_combat(player, [enemy])
+        result = self._initialize_combat(player, [enemy], session_id=session_id)
         return result
 
-    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None, direction: str = None) -> Dict[str, Any]:
+    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None, direction: str = None, session_id: str = None) -> Dict[str, Any]:
         """Execute a combat move."""
 
         # Check if player is in combat
@@ -868,12 +868,15 @@ class GameService:
         # Ensure adapter exists
         if not hasattr(player, "_combat_adapter"):
             from src.api.combat_adapter import ApiCombatAdapter
-            player._combat_adapter = ApiCombatAdapter(player)
+            player._combat_adapter = ApiCombatAdapter(player, session_id=session_id)
             # If we had to recreate the adapter, combat state might be lost
             if hasattr(player, 'combat_list') and player.combat_list:
                 player._combat_adapter.initialize_combat(player.combat_list)
         
         adapter = player._combat_adapter
+        # Update session_id if it changed or was missing
+        if session_id:
+            adapter.session_id = session_id
 
         # Check if adapter is ready for input (unless cancelling, which should always be allowed)
         if not adapter.awaiting_input and move_type != "cancel":
@@ -1235,7 +1238,7 @@ class GameService:
     # Combat Methods
     # ========================
 
-    def _initialize_combat(self, player: "player_module.Player", enemies: List[Any]) -> None:
+    def _initialize_combat(self, player: "player_module.Player", enemies: List[Any], session_id: str = None) -> Dict[str, Any]:
         """Initialize combat state for player and enemies using the combat adapter.
         
         Args:
@@ -1261,8 +1264,11 @@ class GameService:
         player.in_combat = True
         
         # Create or get combat adapter
+        from src.api.combat_adapter import ApiCombatAdapter
         if not hasattr(player, '_combat_adapter'):
-            player._combat_adapter = ApiCombatAdapter(player)
+            player._combat_adapter = ApiCombatAdapter(player, session_id=session_id)
+        elif session_id:
+            player._combat_adapter.session_id = session_id
         
         # Initialize combat through the adapter
         # This will set up all combat state, process initial NPC turns if needed,

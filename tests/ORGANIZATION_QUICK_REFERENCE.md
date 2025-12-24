@@ -137,3 +137,4 @@ pytest --collect-only -q
 
 **Last Updated:** 2025-11-01  
 **Total Tests:** 947 test cases organized across 12 categories
+

@@ -232,3 +232,4 @@ npm run preview  # Preview production build locally
 **Date**: November 11, 2025
 **Framework**: React 18 + Vite 5 + Tailwind CSS
 **API Integration**: Axios with Bearer token auth
+

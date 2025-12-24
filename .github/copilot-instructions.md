@@ -176,7 +176,7 @@ Client (Web/Mobile) → Flask API (17 endpoints) → GameService Wrapper → Gam
 pip install -r requirements-api.txt
 
 # Start development server
-python run_api.py
+python tools/run_api.py
 
 # Access Swagger UI (interactive docs)
 open http://localhost:5000/api/docs

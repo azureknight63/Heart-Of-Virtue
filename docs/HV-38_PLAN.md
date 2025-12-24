@@ -143,3 +143,4 @@ GET /world/tile?x=1&y=2
 ---
 
 **Next Step**: Expand GameService with movement and tile methods
+

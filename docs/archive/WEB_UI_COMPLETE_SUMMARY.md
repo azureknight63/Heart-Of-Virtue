@@ -104,7 +104,7 @@ frontend/
 **Terminal 1 - Backend:**
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 ```
 
 **Terminal 2 - Frontend:**
@@ -273,7 +273,7 @@ Backend: Return game state (player, location, combat, etc.)
 ### During Development
 ```powershell
 # Terminal 1: Start backend
-python run_api.py
+python tools/run_api.py
 
 # Terminal 2: Start frontend with hot reload
 npm run dev
@@ -360,7 +360,7 @@ Heart-Of-Virtue/
 - Change port in `vite.config.js` → `server.port`
 
 **"Cannot connect to backend"**
-- Verify `python run_api.py` is running on :5000
+- Verify `python tools/run_api.py` is running on :5000
 - Check `frontend/.env` API URL
 
 **"Styles not loading"**
@@ -396,9 +396,10 @@ Heart-Of-Virtue/
 
 Next steps:
 1. Run `npm install` in `frontend/` folder
-2. Start backend: `python run_api.py`
+2. Start backend: `python tools/run_api.py`
 3. Start frontend: `npm run dev`
 4. Open http://localhost:3000
 5. Begin developing!
 
 For detailed guides, see `UI_SETUP_COMPLETE.md`
+

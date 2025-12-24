@@ -405,3 +405,4 @@ GET /api/npc/<npc_id>/dialogue/cache
 ---
 
 Phase 3 Extended Plan ready for implementation ✅
+

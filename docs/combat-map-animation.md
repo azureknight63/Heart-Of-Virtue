@@ -127,3 +127,4 @@ Frontend (React)
 ### Frontend
 - `frontend/src/components/Battlefield.jsx`: Beat animation controller
 - `frontend/src/components/BattlefieldGrid.jsx`: Smooth positioning and transitions
+

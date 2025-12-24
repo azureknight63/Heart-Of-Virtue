@@ -175,3 +175,4 @@ Complete rewrite with the following features:
 6. `frontend/src/components/EventDialog.jsx` - Complete rewrite for input system
 7. `frontend/src/pages/GamePage.jsx` - Updated event handling flow
 8. `requirements.txt` - Added bleach dependency
+

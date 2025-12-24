@@ -138,3 +138,4 @@ Possible future improvements:
 - Multiple text sections/chapters
 - Page numbers in save/load system
 - Illustration support on certain pages
+

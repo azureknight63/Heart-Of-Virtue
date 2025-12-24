@@ -208,3 +208,4 @@ Stage 5 Components (same as Stages 1-4):
 - [ ] NPC availability integration complete
 - [ ] OpenAPI schema updated
 - [ ] Swagger UI reflects new endpoints
+

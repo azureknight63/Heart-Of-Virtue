@@ -42,7 +42,7 @@ npm install
 **Terminal 1 - Backend API:**
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 # Runs on http://localhost:5000
 ```
 
@@ -315,3 +315,4 @@ For issues or questions:
 **Frontend Setup:** ✅ Complete
 **Status:** Ready for development
 **Next Milestone:** WebSocket integration for real-time combat
+

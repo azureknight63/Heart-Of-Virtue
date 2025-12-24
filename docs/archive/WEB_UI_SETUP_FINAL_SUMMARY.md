@@ -57,7 +57,7 @@ A production-ready React + Vite web UI has been successfully created for Heart o
 ### Step 1: Backend (Already Running)
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 # Output: Running on http://127.0.0.1:5000
 ```
 
@@ -319,7 +319,7 @@ Navigate to **http://localhost:3000** and log in!
 ```powershell
 # Backend
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 
 # Frontend - Development
 cd .\frontend
@@ -341,7 +341,7 @@ npm cache clean --force
 
 ### Immediate Next Steps
 1. ✅ Run `npm install` in frontend folder
-2. ✅ Start backend with `python run_api.py`
+2. ✅ Start backend with `python tools/run_api.py`
 3. ✅ Start frontend with `npm run dev`
 4. ✅ Open http://localhost:3000
 5. ✅ Test login and gameplay
@@ -405,3 +405,4 @@ The UI is **fully functional** and ready for:
 **🎮 Welcome to Heart of Virtue on the Web! 🎮**
 
 *Documentation: See QUICK_START_CARD.md for the fastest path to playing!*
+

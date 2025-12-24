@@ -198,3 +198,4 @@ Mock objects now use `hp`/`maxhp` instead of `health`/`max_health`.
 **All Tests:** ✅ PASSING  
 **Ready for:** Production merge
 
+

@@ -839,7 +839,7 @@ const apiUrl = import.meta.env.VITE_API_URL
 1. **Start backend:**
    ```powershell
    .venv\Scripts\Activate.ps1
-   python run_api.py
+   python tools/run_api.py
    ```
 
 2. **Start frontend (separate terminal):**
@@ -1170,3 +1170,4 @@ Before deploying:
 
 **Last Updated:** November 2025
 **Status:** Production Ready ✅
+

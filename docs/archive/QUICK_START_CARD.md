@@ -7,7 +7,7 @@
 **Terminal A - Backend:**
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 ```
 
 **Terminal B - Frontend:**
@@ -179,7 +179,7 @@ Deploy `dist/` folder to web server
 → Reinstall: `rm node_modules; npm install`
 
 **Backend won't connect?**
-→ Verify running: `python run_api.py` shows no errors
+→ Verify running: `python tools/run_api.py` shows no errors
 → Check port: Should be 5000
 → Test API: `curl http://localhost:5000/api/health`
 
@@ -209,3 +209,4 @@ Deploy `dist/` folder to web server
 ---
 
 **Next Step:** Run the installation commands above!
+

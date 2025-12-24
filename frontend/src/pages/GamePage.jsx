@@ -148,8 +148,15 @@ export default function GamePage() {
   // Handle events triggered from interactions
   const handleEventsTriggered = (events) => {
     if (events && events.length > 0) {
-      console.log('Events triggered from interaction:', events)
-      setEventQueue(prev => [...prev, ...events])
+      // Filter events that have output text or need input to display
+      const displayableEvents = events.filter(
+        event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
+      )
+
+      if (displayableEvents.length > 0) {
+        console.log('Events triggered from interaction:', displayableEvents)
+        setEventQueue(prev => [...prev, ...displayableEvents])
+      }
     }
   }
 
@@ -160,14 +167,14 @@ export default function GamePage() {
 
       // Handle events triggered by movement
       if (result.events_triggered && result.events_triggered.length > 0) {
-        // Filter events that have output text to display
-        const eventsWithOutput = result.events_triggered.filter(
-          event => event.output_text && event.output_text.trim().length > 0
+        // Filter events that have output text or need input to display
+        const displayableEvents = result.events_triggered.filter(
+          event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
         )
 
-        if (eventsWithOutput.length > 0) {
-          console.log('Events triggered:', eventsWithOutput)
-          setEventQueue(eventsWithOutput)
+        if (displayableEvents.length > 0) {
+          console.log('Events triggered:', displayableEvents)
+          setEventQueue(displayableEvents)
         }
       }
 

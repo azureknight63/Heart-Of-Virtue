@@ -93,7 +93,7 @@ A modern React + Vite web UI is available for playing the game in your browser, 
 **Terminal 1 - Backend API:**
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 # Runs on http://localhost:5000
 ```
 
@@ -136,7 +136,7 @@ python src/game.py
 
 ### Running the Web API
 ```
-python run_api.py
+python tools/run_api.py
 ```
 
 ### Developing the Web UI
@@ -170,3 +170,4 @@ adapter = MynxLLMAdapter()
 print(adapter.debug_status())
 ```
 If `available` is False, the `reason` field will indicate the issue (missing key, connection error, etc.).
+

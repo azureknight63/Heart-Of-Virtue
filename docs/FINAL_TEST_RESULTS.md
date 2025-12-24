@@ -174,7 +174,7 @@ pytest tests/api/test_routes_integration.py::TestAuthRoutes -v
 
 ### Start API Server
 ```bash
-python run_api.py
+python tools/run_api.py
 # Server runs on http://localhost:5000
 
 # Access interactive docs at:
@@ -207,3 +207,4 @@ curl http://localhost:5000/api/info
 ---
 
 **Milestone 1 Status**: ✅ COMPLETE
+

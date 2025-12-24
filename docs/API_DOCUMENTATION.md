@@ -32,7 +32,7 @@ Complete reference for the Flask REST API layer that powers the Heart of Virtue 
 .venv\Scripts\Activate.ps1
 
 # Start server (development)
-python run_api.py
+python tools/run_api.py
 
 # Output:
 # WARNING in app.run() is not recommended for production...
@@ -903,7 +903,7 @@ All error responses (4xx/5xx status codes) follow this format:
 .venv\Scripts\Activate.ps1
 
 # Start with hot reload
-python run_api.py
+python tools/run_api.py
 
 # Server starts on http://127.0.0.1:5000
 ```
@@ -926,7 +926,7 @@ FLASK_DEBUG=1
 # Typically: gunicorn or similar WSGI server
 
 # For testing:
-python run_api.py  # Do NOT use in production
+python tools/run_api.py  # Do NOT use in production
 ```
 
 ---
@@ -1068,7 +1068,7 @@ curl -i http://localhost:5000/api/player/status \
 ```powershell
 # Terminal 1 - Check if running
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 
 # Terminal 2 - Test endpoint
 curl http://localhost:5000/api
@@ -1104,3 +1104,4 @@ Before deploying, verify:
 
 **Last Updated:** November 2025
 **Status:** Production Ready ✅
+

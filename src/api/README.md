@@ -253,7 +253,7 @@ http://localhost:5000/api/openapi.json
 
 ```bash
 # Development mode (with auto-reload)
-python run_api.py
+python tools/run_api.py
 
 # Or manually with Flask CLI
 export FLASK_APP=src/api/app.py
@@ -261,7 +261,7 @@ export FLASK_ENV=development
 flask run
 
 # With SocketIO support (for real-time combat)
-python run_api.py --socketio
+python tools/run_api.py --socketio
 ```
 
 Server will start at `http://localhost:5000`
@@ -386,3 +386,4 @@ flake8 src/api tests/api --max-line-length=100 --ignore=E501
 **Document**: API Foundation README  
 **Created**: November 5, 2025  
 **Status**: Phase 1 In Progress
+

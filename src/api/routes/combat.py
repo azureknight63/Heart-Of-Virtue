@@ -71,7 +71,7 @@ def start_combat():
 
         game_service = current_app.game_service
 
-        result = game_service.start_combat(player, enemy_id)
+        result = game_service.start_combat(player, enemy_id, session_id=session.session_id)
 
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
@@ -140,7 +140,7 @@ def execute_move():
 
         game_service = current_app.game_service
 
-        result = game_service.execute_move(player, move_type, move_id, target_id, direction)
+        result = game_service.execute_move(player, move_type, move_id, target_id, direction, session_id=session.session_id)
 
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
@@ -190,6 +190,37 @@ def get_combat_status():
         status = game_service.get_combat_status(player)
 
         return jsonify({"success": True, **status}), 200
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
+@combat_bp.route("/log", methods=["GET"])
+def get_combat_log():
+    """Get full combat log.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "log": [...]
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error
+
+        log = getattr(player, "combat_log", [])
+        return jsonify({"success": True, "log": log}), 200
 
     except Exception as e:
         return (

@@ -69,7 +69,7 @@ npm install
 ### Step 2: Start the Backend
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 ```
 **Listen for**: "Running on http://127.0.0.1:5000"
 
@@ -208,3 +208,4 @@ const fetchQuests = async () => {
 
 **Status**: ✅ Frontend setup complete and ready for development!
 **Last Updated**: November 11, 2025
+

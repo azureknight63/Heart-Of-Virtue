@@ -122,3 +122,4 @@ pytest tests/api/ -q
 - Dynamic exit calculation is performance-optimized (checks 8 adjacent tiles)
 - Respects game engine architecture (no modifications to core Player/MapTile classes)
 - Tests provide clear verification of real map constraints
+

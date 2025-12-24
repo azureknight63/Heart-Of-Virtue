@@ -255,3 +255,4 @@ After initial implementation, discovered and fixed:
 - Result: All 22 serializer tests passing ✅
 
 See `COMBAT_TESTS_FIXED.md` for detailed investigation and fixes.
+

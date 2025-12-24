@@ -63,8 +63,9 @@ class ApiCombatAdapter:
     player commands without blocking for input.
     """
     
-    def __init__(self, player: "Player"):
+    def __init__(self, player: "Player", session_id: str = None):
         self.player = player
+        self.session_id = session_id
         self.output_capture = CombatOutputCapture()
         self.current_beat_state_index = 0  # Track which beat state we're currently building
         
@@ -128,12 +129,23 @@ class ApiCombatAdapter:
             for existing in self.player.combat_log
         )
         if not is_duplicate:
-            self.player.combat_log.append({
+            entry = {
                 "round": round_num,
                 "message": message,
                 "type": entry_type,
                 "beat_index": beat_index  # For syncing with beat_states array
-            })
+            }
+            self.player.combat_log.append(entry)
+            
+            # Emit socket event if session is known
+            if self.session_id:
+                try:
+                    from flask import current_app
+                    if hasattr(current_app, 'socketio'):
+                        room = f"combat_{self.session_id}"
+                        current_app.socketio.emit('combat:log', entry, room=room)
+                except Exception as e:
+                    print(f"[SOCKET ERROR] Failed to emit log: {e}")
 
     def initialize_combat(self, enemies: List[Any]) -> Dict[str, Any]:
         """
@@ -233,7 +245,30 @@ class ApiCombatAdapter:
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
             
-            return self.get_combat_state()
+            result = self.get_combat_state()
+            
+            # Emit combat started event
+            if self.session_id:
+                print(f"[DEBUG] Emitting combat:started for session {self.session_id}")
+                try:
+                    from flask import current_app
+                    from src.api.serializers.combat import CombatStateSerializer
+                    serialized_state = CombatStateSerializer.serialize(result)
+                    if hasattr(current_app, 'socketio'):
+                        current_app.socketio.emit(
+                            'combat:started', 
+                            {'battle_state': serialized_state}, 
+                            room=f"combat_{self.session_id}"
+                        )
+                        print(f"[DEBUG] Successfully emitted combat:started to room combat_{self.session_id}")
+                except Exception as e:
+                    print(f"[DEBUG] Error emitting combat:started: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("[DEBUG] No session_id in ApiCombatAdapter, skipping combat:started emission")
+                
+            return result
         
         except Exception as e:
             import traceback
@@ -607,6 +642,25 @@ class ApiCombatAdapter:
                 if not self.player.is_alive() or len(self.player.combat_list) == 0:
                     break
         
+        # Move execution finished
+        result = self.get_combat_state()
+        
+        # Emit final state update
+        if self.session_id:
+            try:
+                from flask import current_app
+                if hasattr(current_app, 'socketio'):
+                    room = f"combat_{self.session_id}"
+                    current_app.socketio.emit('combat:update', result, room=room)
+                    
+                    # If awaiting input, also emit turn notification
+                    if self.awaiting_input:
+                        current_app.socketio.emit('combat:turn', {
+                            'input_type': self.input_type,
+                            'available_options_count': len(self.available_options)
+                        }, room=room)
+            except: pass
+            
         # Check win/loss conditions
         if not self.player.is_alive():
             self.player.in_combat = False

@@ -236,3 +236,4 @@ From codebase analysis:
 - Player combat accessed via `player.combat()` method
 - Moves have cooldowns, damage types, resistances
 - Status effects have repeating damage, conditions, duration
+

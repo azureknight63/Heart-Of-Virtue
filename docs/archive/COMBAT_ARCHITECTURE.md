@@ -100,3 +100,4 @@ Frontend                Backend
 3. Refactor `combat()` to support step-based execution
 4. Update API routes to use new adapter
 5. Test combat flow end-to-end
+

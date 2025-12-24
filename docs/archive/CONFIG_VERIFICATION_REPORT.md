@@ -105,7 +105,7 @@
 .venv\Scripts\Activate.ps1
 
 # Start API
-python run_api.py
+python tools/run_api.py
 
 # Expected output:
 # ============================================================
@@ -331,7 +331,7 @@ curl -X POST http://localhost:5000/api/auth/login `
 2. **Start Backend:**
    ```powershell
    .venv\Scripts\Activate.ps1
-   python run_api.py
+   python tools/run_api.py
    ```
 
 3. **Start Frontend (new terminal):**
@@ -350,3 +350,4 @@ curl -X POST http://localhost:5000/api/auth/login `
 **✅ Configuration Status**: READY FOR TESTING
 **Last Verified**: November 11, 2025
 **Time to First Test**: < 5 minutes
+

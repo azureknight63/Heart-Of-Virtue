@@ -131,7 +131,7 @@ VITE_WS_URL=ws://localhost:5000
 ## 🧪 Testing the Backend
 
 ### Via Browser (Frontend)
-1. Start backend: `python run_api.py`
+1. Start backend: `python tools/run_api.py`
 2. Start frontend: `cd frontend; npm run dev`
 3. Open http://localhost:3000
 4. Test login flow
@@ -214,7 +214,7 @@ curl -X GET http://localhost:5000/api/player/status `
 ### Terminal 1 - Backend
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 # Output: WARNING in app.run() is not recommended ...
 #         Running on http://127.0.0.1:5000
 ```
@@ -291,7 +291,7 @@ Access-Control-Allow-Credentials: true
 
 ## 📞 If Issues Arise
 
-1. Check backend is running: `python run_api.py` should show no errors
+1. Check backend is running: `python tools/run_api.py` should show no errors
 2. Test endpoint directly with curl (see Testing section)
 3. Check browser console for error messages
 4. Check server logs for stack traces
@@ -303,3 +303,4 @@ Access-Control-Allow-Credentials: true
 **Backend Status**: Ready to support frontend
 **Frontend Status**: Ready to consume API
 **Integration Status**: Ready to test together!
+

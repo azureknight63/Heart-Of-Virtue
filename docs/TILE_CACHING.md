@@ -137,3 +137,4 @@ To test the caching system:
 2. **Verify prefetching**: After visiting a tile, check Network tab for batch requests to `/world/tiles/batch`
 3. **Test optimistic updates**: Movement to adjacent tiles should feel instant
 4. **Monitor cache size**: Use `tileCache.getStats()` to ensure cache isn't growing unbounded
+

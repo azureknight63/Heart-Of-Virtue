@@ -65,6 +65,10 @@ def pytest_collection_modifyitems(config, items):
         "verify_colors.py",
         "test_battlefield_colors.py",
         "test_battlefield_window.py",
+        "test_coloring_fix.py",
+        "test_player_debug.py",
+        "test_player_render.py",
+        "test_viewport_boundaries.py",
     }
     
     for item in items:

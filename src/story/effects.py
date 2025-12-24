@@ -430,12 +430,13 @@ class WhisperingStatue(Event):
         # Declare input requirements for API mode
         self.needs_input = True
         self.input_type = "choice"
-        self.input_prompt = "Your answer (1-3):"
+        self.input_prompt = "I have a mouth but never speak. I have a bed but never sleep. I run but have no legs. What am I?"
         self.input_options = [
             {"value": "1", "label": "A River"},
             {"value": "2", "label": "The Wind"},
             {"value": "3", "label": "A Shadow"}
         ]
+        self.description = "You stand before an ancient, moss-covered statue of a hooded figure. Its stone eyes seem to track your movements. Suddenly, a raspy voice emanates from the stone..."
 
     def check_conditions(self):
         # Always trigger if the player interacts with it
@@ -450,30 +451,18 @@ class WhisperingStatue(Event):
         return self.input_options
 
     def process(self, user_input=None):
-        cprint("You stand before an ancient, moss-covered statue of a hooded figure.", "cyan")
-        time.sleep(1)
-        cprint("Its stone eyes seem to track your movements.", "cyan")
-        time.sleep(1)
-        cprint("Suddenly, a raspy voice emanates from the stone...", "magenta")
-        time.sleep(1.5)
-        
-        cprint('"I have a mouth but never speak. I have a bed but never sleep. I run but have no legs. What am I?"', "yellow")
-        
-        print("\nPossible answers:")
-        print("1. A River")
-        print("2. The Wind")
-        print("3. A Shadow")
-        
         # Try to get input, but handle cases where input() is mocked or unavailable
         choice = user_input  # Use provided input if available (from API)
         if choice is None:
+            # If no input provided, we might be in a CLI session
+            # Print the riddle first if not already shown via description
+            cprint(self.description, "cyan")
+            cprint(self.input_prompt, "yellow")
             try:
                 choice = input(colored("\nYour answer (1-3): ", "white"))
             except (EOFError, OSError, ValueError):
-                # No input available (running in API/headless mode or mocked)
                 choice = "1"
         
-        # Handle None or empty input from mocks
         if not choice:
             choice = "1"
         

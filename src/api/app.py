@@ -34,11 +34,8 @@ def create_app(config_class=None):
          supports_credentials=True)
 
     # Initialize SocketIO for real-time updates
-    socketio = SocketIO(
-        app,
-        cors_allowed_origins=app.config["SOCKETIO_CORS_ALLOWED_ORIGINS"],
-        async_mode="threading",
-    )
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True)
+    app.socketio = socketio
 
     # Load starting position and map from config file
     start_x, start_y = 2, 2  # defaults
@@ -195,6 +192,10 @@ def create_app(config_class=None):
     from src.api.handlers.error_handler import register_error_handlers
 
     register_error_handlers(app)
+
+    # Register WebSocket handlers
+    from src.api.sockets import register_socket_handlers
+    register_socket_handlers(socketio)
 
     # Global before_request handler for CORS preflight
     @app.before_request

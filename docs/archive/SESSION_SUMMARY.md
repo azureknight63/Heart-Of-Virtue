@@ -214,7 +214,7 @@ pytest tests/api/test_validators.py -v
 ### For Running the Server
 ```bash
 # Start development server
-python run_api.py
+python tools/run_api.py
 
 # Access Swagger UI
 open http://localhost:5000/api/docs
@@ -260,3 +260,4 @@ Milestone 1 successfully established a production-ready REST API foundation with
 **Last Commit**: b706856 (Milestone 1 completion documentation)  
 **Jira Story**: HV-37  
 **Jira Epic**: HV-36 (Phase 1: Backend API Extraction)
+

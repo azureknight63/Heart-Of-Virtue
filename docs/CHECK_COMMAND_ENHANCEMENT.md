@@ -118,3 +118,4 @@ Potential improvements:
 - Add visual battlefield map representation
 - Include special status effects or buffs/debuffs
 - Add filtering options (allies only, enemies only, etc.)
+

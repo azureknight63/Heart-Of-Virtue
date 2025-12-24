@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Add src to path for proper module imports
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = ROOT / "src"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

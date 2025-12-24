@@ -1,7 +1,8 @@
 import json
 import os
+from pathlib import Path
 
-file_path = r"c:\Users\azure\PycharmProjects\Heart-Of-Virtue\src\resources\maps\testing-map.json"
+file_path = str(Path(__file__).resolve().parent.parent / "src" / "resources" / "maps" / "testing-map.json")
 
 new_items_json = """
 [

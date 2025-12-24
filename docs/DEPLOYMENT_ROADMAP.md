@@ -484,3 +484,4 @@ volumes:
 **Database:**
 - PostgreSQL: https://www.postgresql.org/docs
 - Alembic (migrations): https://alembic.sqlalchemy.org
+

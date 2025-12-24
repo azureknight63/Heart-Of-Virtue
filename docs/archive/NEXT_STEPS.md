@@ -324,4 +324,5 @@ Users won't have:
 
 You can literally start building the React app right now and have something playable in 2 weeks.
 
-**Want to get started?** Pick React, start the API locally (`python run_api.py`), and build the frontend. That's it.
+**Want to get started?** Pick React, start the API locally (`python tools/run_api.py`), and build the frontend. That's it.
+

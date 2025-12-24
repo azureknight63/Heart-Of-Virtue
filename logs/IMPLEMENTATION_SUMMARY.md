@@ -75,3 +75,4 @@ The frontend is now fully set up to print browser logs to a file.
 - Add compression for older log files
 - Create a web UI to view logs
 - Add search/filter capabilities
+

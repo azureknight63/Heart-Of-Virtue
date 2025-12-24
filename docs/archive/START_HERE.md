@@ -25,7 +25,7 @@
 ### Command 1: Start Backend
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 ```
 
 ### Command 2: Install Frontend
@@ -312,7 +312,7 @@ cat .\frontend\.env
 1️⃣ **Terminal 1:**
 ```powershell
 .venv\Scripts\Activate.ps1
-python run_api.py
+python tools/run_api.py
 ```
 
 2️⃣ **Terminal 2:**
@@ -345,3 +345,4 @@ Play: Start exploring!
 **Time to Enjoy:** 🎮 Immediately!
 
 **Welcome to Heart of Virtue Web!** 🎉
+

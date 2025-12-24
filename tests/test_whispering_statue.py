@@ -8,6 +8,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from story.effects import WhisperingStatue
+import functions
 
 class TestWhisperingStatue(unittest.TestCase):
     def setUp(self):
@@ -15,11 +16,12 @@ class TestWhisperingStatue(unittest.TestCase):
         self.tile = MagicMock()
         self.event = WhisperingStatue(self.player, self.tile)
         
+    @patch('functions.await_input')
     @patch('story.effects.cprint')
     @patch('story.effects.input')
     @patch('story.effects.time.sleep')
     @patch('builtins.print')
-    def test_correct_answer(self, mock_print, mock_sleep, mock_input, mock_cprint):
+    def test_correct_answer(self, mock_print, mock_sleep, mock_input, mock_cprint, mock_await):
         # Setup input for correct answer ("1")
         mock_input.return_value = "1"
         
@@ -36,11 +38,12 @@ class TestWhisperingStatue(unittest.TestCase):
         # Verify failure outcome did NOT happen
         self.tile.spawn_npc.assert_not_called()
 
+    @patch('functions.await_input')
     @patch('story.effects.cprint')
     @patch('story.effects.input')
     @patch('story.effects.time.sleep')
     @patch('builtins.print')
-    def test_incorrect_answer(self, mock_print, mock_sleep, mock_input, mock_cprint):
+    def test_incorrect_answer(self, mock_print, mock_sleep, mock_input, mock_cprint, mock_await):
         # Setup input for incorrect answer ("2")
         mock_input.return_value = "2"
         

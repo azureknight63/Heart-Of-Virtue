@@ -144,3 +144,4 @@ pytest tests/api/ -q --durations=15
 ```
 
 Commit: `M2-6a: Optimize test performance by consolidating Flask app fixtures`
+

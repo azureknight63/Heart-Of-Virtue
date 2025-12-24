@@ -199,3 +199,4 @@ To disable browser logging, comment out the logger initialization in `frontend/s
 - Automated cleanup runs silently and doesn't affect log writing operations
 - Manual cleanup can be triggered via the API with custom retention settings
 
+

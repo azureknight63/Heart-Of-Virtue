@@ -92,3 +92,4 @@ Once working, this integration provides:
 1. `src/api/combat_adapter.py` - NEW
 2. `src/api/services/game_service.py` - MODIFIED
 3. `COMBAT_ARCHITECTURE.md` - NEW (documentation)
+

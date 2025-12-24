@@ -1432,34 +1432,6 @@
                     "params": null,
                     "referenceobj": null
                 }
-            },
-            {
-                "__class__": "GoldFromHeaven",
-                "__module__": "story.effects",
-                "props": {
-                    "name": "Gold From Heaven",
-                    "player": null,
-                    "tile": null,
-                    "repeat": false,
-                    "thread": null,
-                    "has_run": false,
-                    "params": null,
-                    "referenceobj": null
-                }
-            },
-            {
-                "__class__": "StMichael",
-                "__module__": "story.effects",
-                "props": {
-                    "name": "Shrine of St Michael the Archangel",
-                    "player": null,
-                    "tile": null,
-                    "repeat": false,
-                    "thread": null,
-                    "has_run": false,
-                    "params": null,
-                    "referenceobj": null
-                }
             }
         ],
         "items": [

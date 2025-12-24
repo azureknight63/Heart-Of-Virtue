@@ -239,3 +239,4 @@ tests/api/test_npc_routes_integration.py (NEW - 300+ lines)
 **Base:** phase-1/backend-api  
 **Status:** Ready to begin  
 **Start Date:** November 8, 2025
+
