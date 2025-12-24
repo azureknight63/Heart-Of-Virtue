@@ -90,6 +90,7 @@ class Move:  # master class for all moves
         self.beats_left = self.stage_beat[0]
 
     def advance(self, user):
+        self.user = user  # Ensure user is always current
         self.evaluate()
         if user.current_move == self or self.current_stage == 3:  # only advance the move if it's the player's
             # current move or if it's in cooldown
@@ -227,6 +228,10 @@ class Move:  # master class for all moves
         enemy_near = False
         allowed_subtypes = subtypes
         
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         # Special case for Unarmed: don't require an actual weapon equipped
         if "Unarmed" in allowed_subtypes:
             has_weapon = True  # Unarmed is always available
@@ -300,7 +305,7 @@ class Move:  # master class for all moves
             )
 
             weapon_name = self.user.eq_weapon.name
-            self.stage_announce[1] = colored(f"Jean strikes with his {weapon_name}!", "green")
+            self.stage_announce[1] = colored(f"{self.user.name} strikes with his {weapon_name}!", "green")
             self.stage_beat = [prep, execute, recoil, cooldown]
             self.fatigue_cost = fatigue_cost
             self.mvrange = mvrange
@@ -443,6 +448,10 @@ class Advance(Move):
 
     def viable(self):
         """Advance is only viable if there are enemies beyond striking distance OR current target is at a good distance"""
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         # If a specific target is set
         if self.target and self.target in self.user.combat_proximity:
             target_distance = self.user.combat_proximity[self.target]
@@ -594,6 +603,10 @@ class Withdraw(Move):
 
     def viable(self):
         viability = False
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if distance < self.mvrange[1]:
                 viability = True
@@ -717,6 +730,10 @@ class BullCharge(Move):
 
     def viable(self):
         """Viable if target exists and isn't too close"""
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if not self.target or self.target not in self.user.combat_proximity:
             return False
         distance = self.user.combat_proximity[self.target]
@@ -801,6 +818,9 @@ class TacticalRetreat(Move):
 
     def viable(self):
         """Always viable if in combat with enemies"""
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
         return len(self.user.combat_proximity) > 0
 
     def evaluate(self):
@@ -872,6 +892,10 @@ class FlankingManeuver(Move):
 
     def viable(self):
         """Viable if target is in range"""
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if not self.target or self.target not in self.user.combat_proximity:
             return False
         distance = self.user.combat_proximity[self.target]
@@ -983,6 +1007,11 @@ class PowerStrike(Move):
             return False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -1431,9 +1460,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         mvrange = (0, 5)
         super().__init__(name="Attack", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean winds up for a strike...",
-                                         colored("Jean strikes with his " + weapon + "!", "green"),
-                                         "Jean braces himself as his weapon recoils.",
+                         stage_announce=[f"{player.name} winds up for a strike...",
+                                         colored(f"{player.name} strikes with his " + weapon + "!", "green"),
+                                         f"{player.name} braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player, category="Offensive")
         self.power = 0
@@ -1455,6 +1484,10 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         has_weapon = False
         enemy_near = False
         
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.user.eq_weapon:
             has_weapon = True
             range_min = self.mvrange[0]
@@ -1492,7 +1525,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         mvrange = self.user.eq_weapon.wpnrange
 
         weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored("Jean strikes with his " + weapon_name + "!", "green")
+        self.stage_announce[1] = colored(f"{self.user.name} strikes with his " + weapon_name + "!", "green")
         self.power = power
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
@@ -1568,7 +1601,7 @@ class Rest(Move):  # standard rest to restore fatigue.
         if recovery_amt > player.maxfatigue - player.fatigue:
             recovery_amt = player.maxfatigue - player.fatigue
         player.fatigue += recovery_amt
-        cprint("You recovered {} FP!".format(recovery_amt), "green")
+        cprint("{} recovered {} FP!".format(player.name, recovery_amt), "green")
         player.combat_exp["Basic"] += 2
 
 
@@ -1583,9 +1616,9 @@ class UseItem(Move):
         super().__init__(name="Use Item", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=["Jean opens his bag.",
+                         stage_announce=[f"{player.name} opens his bag.",
                                          "",
-                                         "Jean closes his bag.",
+                                         f"{player.name} closes his bag.",
                                          ""], fatigue_cost=fatigue_cost,
                          beats_left=execute, target=player, user=player)
 
@@ -1617,9 +1650,9 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         mvrange = (0, 5)
         super().__init__(name="Slash", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean winds up for a strike...",
-                                         colored("Jean slashes with his " + weapon + "!", "green"),
-                                         "Jean braces himself as his weapon recoils.",
+                         stage_announce=[f"{player.name} winds up for a strike...",
+                                         colored(f"{player.name} slashes with his " + weapon + "!", "green"),
+                                         f"{player.name} braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = 0
@@ -1631,6 +1664,11 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         has_weapon = False
         enemy_near = False
         allowed_subtypes = ["Dagger", "Sword", "Stars", "Axe"]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.user.eq_weapon:
             if self.user.eq_weapon.subtype in allowed_subtypes:
                 has_weapon = True
@@ -1676,7 +1714,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         mvrange = self.user.eq_weapon.wpnrange
 
         weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored("Jean strikes with his " + weapon_name + "!", "green")
+        self.stage_announce[1] = colored(f"{self.user.name} strikes with his " + weapon_name + "!", "green")
         self.power = power
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
@@ -1735,10 +1773,10 @@ class PommelStrike(Move):
         mvrange = (0, 5)
         super().__init__(name="Pommel Strike", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean quickly turns his weapon...",
-                                         colored("Jean quickly strikes with the pommel of his {}!".format(weapon),
+                         stage_announce=[f"{player.name} quickly turns his weapon...",
+                                         colored(f"{player.name} quickly strikes with the pommel of his {{}}!".format(weapon),
                                                  "green"),
-                                         "Jean braces himself from the recoil of his attack.", ""],
+                                         f"{player.name} braces himself from the recoil of his attack.", ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = 0  # enter the base damage bonus of the attack
@@ -1849,8 +1887,8 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         mvrange = (6, 50)
         super().__init__(name="Shoot Bow", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean reaches into his quiver.",
-                                         colored("Jean lets his arrow fly!", "green"),
+                         stage_announce=[f"{player.name} reaches into his quiver.",
+                                         colored(f"{player.name} lets his arrow fly!", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player, verbose_targeting=True)
@@ -1865,9 +1903,18 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
 
     def calculate_hit_chance(self, enemy):  # estimate the hit chance for enemy and return as a string (ex "48%")
         hit_chance = 2
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return hit_chance
+            
         range_min = self.mvrange[0]
         effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
         range_max = effective_range
+        
+        if enemy not in self.user.combat_proximity:
+            return hit_chance
+            
         target_distance = self.user.combat_proximity[enemy]
         close_range_distraction = 0  # all enemies will be checked;
         # if any are closer than the weapon's min range, accuracy is halved
@@ -1893,6 +1940,11 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         has_bow = False
         enemy_in_range = False
         has_arrows = False
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.user.eq_weapon.subtype == "Bow":
             has_bow = True
 
@@ -1945,7 +1997,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                     arrow_selection = None
         else:
             self.arrow = arrowtypes[0]
-        print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
+        print("{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower()))
         self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
         self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
         self.base_damage_type = items.get_base_damage_type(
@@ -2082,6 +2134,9 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2090,6 +2145,21 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         return viability
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
+        if isinstance(self.user, str):
+            # Log the error but try to recover if possible
+            import traceback
+            print(f"### ERROR: self.user is a string: '{self.user}' in {self.name}.evaluate()")
+            # If we're lucky, the caller might đã set a valid user on us recently, 
+            # or we might have to just return and hope for the best.
+            # However, since we just updated advance() to set self.user, 
+            # this case should now be much rarer.
+            return
+
+        # Double check that self.user is an object with a damage attribute
+        if not hasattr(self.user, 'damage'):
+             print(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
+             return
+
         power = (self.user.damage * random.uniform(0.8, 1.2))
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -2228,6 +2298,11 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2324,6 +2399,8 @@ class VenomClaw(Move):  # Poisonous attack
         self.evaluate()
 
     def viable(self):
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
@@ -2428,6 +2505,11 @@ class SpiderBite(Move):  # Poisonous attack
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2528,6 +2610,11 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2718,12 +2805,12 @@ class Turn(Move):
         # If a direction was selected
         if selected_option['direction'] is not None:
             self.target_direction = selected_option['direction']
-            cprint(f"You chose to face {self.target_direction.name}.", "green")
+            cprint(f"{self.user.name} chose to face {self.target_direction.name}.", "green")
         # If a combatant was selected, calculate direction toward them
         elif selected_option['target'] is not None:
             target = selected_option['target']
             self.target_direction = self._calculate_direction_to_target(target)
-            cprint(f"You chose to face toward {target.name}.", "green")
+            cprint(f"{self.user.name} chose to face toward {target.name}.", "green")
         
     def _calculate_direction_to_target(self, target):
         """Calculate the direction from user to target."""
@@ -3235,6 +3322,10 @@ class QuickSwap(Move):
         """Find all allies within swapping range (1-4 squares)."""
         nearby = []
         
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return nearby
+            
         # Check coordinate-based system first
         if hasattr(self.user, 'combat_position') and self.user.combat_position is not None:
             for ally in self.user.combat_list_allies:
