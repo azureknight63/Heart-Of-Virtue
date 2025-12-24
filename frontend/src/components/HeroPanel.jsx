@@ -90,7 +90,7 @@ export default function HeroPanel({
             height: '140px',
             objectFit: 'contain',
             filter: 'drop-shadow(0 0 10px rgba(0, 255, 136, 0.3))',
-            zIndex: 10,
+            zIndex: 1,
             animation: `pulse ${animationDuration} infinite ease-in-out`,
           }}
         />

@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAudio } from '../context/AudioContext'
+import apiEndpoints from '../api/endpoints'
 
 // Tooltip descriptions for each command
 const COMMAND_TOOLTIPS = {
@@ -33,16 +34,10 @@ export default function ActionsPanel({ player, location, onClose, onRefetch }) {
     const fetchCommands = async () => {
       try {
         setLoading(true)
-        const token = localStorage.getItem('authToken')
-        const response = await fetch('http://localhost:5000/api/world/commands', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        })
+        const response = await apiEndpoints.world.getCommands()
 
-        if (response.ok) {
-          const data = await response.json()
-          setCommands(data.commands || [])
+        if (response.data) {
+          setCommands(response.data.commands || [])
           setError(null)
         } else {
           setError('Failed to load commands')
@@ -62,20 +57,14 @@ export default function ActionsPanel({ player, location, onClose, onRefetch }) {
 
   const handleAction = async (command) => {
     playSFX('click')
-    const token = localStorage.getItem('authToken')
 
     try {
       if (command.name === 'Search') {
         setActionMessage('Searching...')
-        const response = await fetch('http://localhost:5000/api/world/search', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        })
+        const response = await apiEndpoints.world.search()
 
-        if (response.ok) {
-          const data = await response.json()
+        if (response.data) {
+          const data = response.data
           if (data.messages && data.messages.length > 0) {
             setActionMessage(data.messages.join(' '))
             setTimeout(() => setActionMessage(''), 5000)
@@ -101,17 +90,10 @@ export default function ActionsPanel({ player, location, onClose, onRefetch }) {
       } else if (command.name === 'Save') {
         setActionMessage('Saving game...')
         const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
-        const response = await fetch('http://localhost:5000/api/saves/', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ name: saveName }),
-        })
+        const response = await apiEndpoints.saves.save(saveName)
 
-        if (response.ok) {
-          const data = await response.json()
+        if (response.data) {
+          const data = response.data
           setActionMessage(data.message || 'Game saved successfully!')
           setTimeout(() => setActionMessage(''), 3000)
         } else {

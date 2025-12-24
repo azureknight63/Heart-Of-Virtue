@@ -24,6 +24,10 @@ export const world = {
   getExits: () => apiClient.get('/world/exits'),
   getTile: (x, y) => apiClient.get(`/world/tile?x=${x}&y=${y}`),
   getTilesBatch: (coordinates) => apiClient.post('/world/tiles/batch', { coordinates }),
+  interact: (targetId, action, quantity) => apiClient.post('/world/interact', { target_id: targetId, action, quantity }),
+  getEvents: () => apiClient.post('/world/events'),
+  getCommands: () => apiClient.get('/world/commands'),
+  search: () => apiClient.post('/world/search'),
 }
 
 // Combat endpoints
@@ -82,10 +86,10 @@ export const equipment = {
 
 // Save/Load endpoints
 export const saves = {
-  save: (saveName) => apiClient.post('/', { save_name: saveName }),
-  load: (saveId) => apiClient.post(`/${saveId}/load`),
-  list: () => apiClient.get('/'),
-  delete: (saveId) => apiClient.delete(`/${saveId}`),
+  save: (saveName) => apiClient.post('/saves/', { name: saveName }),
+  load: (saveId) => apiClient.post(`/saves/${saveId}/load`),
+  list: () => apiClient.get('/saves/'),
+  delete: (saveId) => apiClient.delete(`/saves/${saveId}`),
 }
 
 export default {

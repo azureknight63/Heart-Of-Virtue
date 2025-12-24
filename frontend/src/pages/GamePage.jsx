@@ -91,7 +91,7 @@ export default function GamePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('sessionId')}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
           event_id: eventId,
@@ -263,7 +263,7 @@ export default function GamePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerLoading, worldLoading])
 
-  if (playerLoading || worldLoading) {
+  if ((playerLoading && !player) || (worldLoading && !location)) {
     return (
       <div className="w-screen h-screen bg-dark-900 flex items-center justify-center">
         <p className="text-lime animate-pulse-glow">Loading your adventure...</p>

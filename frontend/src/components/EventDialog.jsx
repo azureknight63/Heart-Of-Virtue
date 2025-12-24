@@ -37,10 +37,10 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
         if (!eventText) return
 
         const words = eventText.split(' ')
-        let currentIndex = 0
+        let wordsAdded = 0
 
         const intervalId = setInterval(() => {
-            if (currentIndex >= words.length) {
+            if (wordsAdded >= words.length) {
                 setIsComplete(true)
                 // Show input after text is complete if event requires input
                 if (needsInput) {
@@ -50,14 +50,14 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                 return
             }
 
-            // Add next word
+            // Capture the word to add in this tick's closure
+            const wordToAdd = words[wordsAdded]
+
             setDisplayedText(prev => {
-                const nextWord = words[currentIndex]
-                if (nextWord === undefined) return prev
-                return prev ? `${prev} ${nextWord}` : nextWord
+                return prev ? `${prev} ${wordToAdd}` : wordToAdd
             })
 
-            currentIndex++
+            wordsAdded++
         }, 50) // Adjust speed here (ms per word)
 
         return () => clearInterval(intervalId)
