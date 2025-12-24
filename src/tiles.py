@@ -295,7 +295,7 @@ class MapTile:
                     if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
                         master_item.count += duplicate_item.count
                         remove_duplicates.append(duplicate_item)
-                if master_item.count > 1:
+                if hasattr(master_item, "stack_grammar"):
                     master_item.stack_grammar()
                 for duplicate in remove_duplicates:
                     self.items_here.remove(duplicate)

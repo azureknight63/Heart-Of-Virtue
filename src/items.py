@@ -124,7 +124,7 @@ class Item:
     def on_equip(self, player: 'Player') -> None:
         # Prevent equipping merchandise items until purchased
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             # Ensure the item is not marked as equipped on the player
             try:
                 if hasattr(self, 'isequipped'):
@@ -155,11 +155,15 @@ class Item:
     def on_unequip(self, player: 'Player') -> None:
         pass
 
-    def drop(self, player: 'Player') -> None:
+    def drop(self, player: 'Player', quantity: Optional[int] = None) -> None:
         if hasattr(self, "count"):
             if getattr(self, "count") > 1:
                 while True:
-                    drop_count = input("How many would you like to drop? (Carrying {}) ".format(getattr(self, "count")))
+                    if quantity is not None:
+                        drop_count = str(quantity)
+                    else:
+                        drop_count = input("How many would you like to drop? (Carrying {}) ".format(getattr(self, "count")))
+                    
                     if functions.is_input_integer(drop_count):
                         if 0 <= int(drop_count) <= getattr(self, "count"):
                             if int(drop_count) > 0:
@@ -168,6 +172,8 @@ class Item:
                                     self.count -= 1  # type: ignore[attr-defined]
                                     itemtype = self.__class__.__name__
                                     player.current_room.spawn_item(item_type=itemtype)
+                                if hasattr(self, "stack_grammar"):
+                                    self.stack_grammar()
                                 player.current_room.stack_duplicate_items()
                             else:
                                 print("Jean changed his mind.")
@@ -176,6 +182,10 @@ class Item:
                             cprint("Invalid amount!", "red")
                     else:
                         cprint("Invalid amount!", "red")
+                    
+                    # If quantity was provided but invalid, don't loop (prevent infinite loop in API)
+                    if quantity is not None:
+                        break
             else:
                 cprint("Jean dropped {}.".format(self.name), "cyan")
                 player.current_room.items_here.append(self)
@@ -195,10 +205,67 @@ class Item:
         functions.refresh_stat_bonuses(player)
         player.refresh_protection_rating()
 
-    def take(self, player: 'Player') -> None:
+    def take(self, player: 'Player', quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
-        # Check weight limit if applicable (simple check for now)
-        # Check weight limit if applicable
+        if hasattr(self, "count") and getattr(self, "count") > 1:
+            while True:
+                if quantity is not None:
+                    take_count_str = str(quantity)
+                else:
+                    take_count_str = input("How many would you like to take? (Available {}) ".format(getattr(self, "count")))
+                
+                if functions.is_input_integer(take_count_str):
+                    take_count = int(take_count_str)
+                    if 0 <= take_count <= getattr(self, "count"):
+                        if take_count > 0:
+                            # Check weight limit
+                            capacity = getattr(player, "weight_tolerance", getattr(player, "carrying_capacity", None))
+                            if capacity is not None and hasattr(player, "weight_current"):
+                                if player.weight_current + (getattr(self, "weight", 0) * take_count) > capacity:
+                                    cprint("It's too heavy to carry all that!", "red")
+                                    if quantity is not None: break
+                                    continue
+
+                            if take_count == getattr(self, "count"):
+                                # Take all
+                                player.inventory.append(self)
+                                if self in player.current_room.items_here:
+                                    player.current_room.items_here.remove(self)
+                                cprint(f"{player.name} picks up {take_count} x {self.name}.", "green")
+                            else:
+                                # Take some
+                                self.count -= take_count
+                                if hasattr(self, "stack_grammar"):
+                                    self.stack_grammar()
+                                # Create a new item for inventory
+                                import importlib
+                                items_mod = importlib.import_module('items')
+                                item_cls = getattr(items_mod, self.__class__.__name__)
+                                new_item = item_cls()
+                                if hasattr(new_item, 'count'):
+                                    new_item.count = take_count
+                                # Update the new item's description based on count
+                                if hasattr(new_item, 'stack_grammar'):
+                                    new_item.stack_grammar()
+                                player.inventory.append(new_item)
+                                cprint(f"{player.name} picks up {take_count} x {self.name}.", "green")
+                            
+                            functions.stack_inv_items(player)
+                            if hasattr(player.current_room, 'stack_duplicate_items'):
+                                player.current_room.stack_duplicate_items()
+                        else:
+                            print("Jean changed his mind.")
+                        break
+                    else:
+                        cprint("Invalid amount!", "red")
+                else:
+                    cprint("Invalid amount!", "red")
+                
+                if quantity is not None:
+                    break
+            return
+
+        # Original logic for non-stacked or single items
         capacity = getattr(player, "weight_tolerance", getattr(player, "carrying_capacity", None))
         if capacity is not None and hasattr(player, "weight_current"):
             if player.weight_current + getattr(self, "weight", 0) > capacity:
@@ -212,7 +279,7 @@ class Item:
         if self in player.current_room.items_here:
             player.current_room.items_here.remove(self)
             
-        cprint(f"You pick up the {self.name}.", "green")
+        cprint(f"{player.name} picks up the {self.name}.", "green")
         
         # Stack items if possible (in inventory)
         if hasattr(player, 'stack_duplicate_items'):
@@ -1338,7 +1405,7 @@ class Restorative(Consumable):
     def use(self, player: 'Player') -> None:
         # Prevent using merchandise items until purchased
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
         if player.hp < player.maxhp:
             print(
@@ -1357,7 +1424,11 @@ class Restorative(Consumable):
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            print("Jean is already at full health. He places the Restorative back into his bag.")
+            # Check if item is in inventory or on the ground
+            if self in player.inventory:
+                print("Jean is already at full health. He places the Restorative back into his bag.")
+            else:
+                print("Jean is already at full health. He sets the Restorative back down.")
 
 
 class Draught(Consumable):
@@ -1391,7 +1462,7 @@ class Draught(Consumable):
 
     def use(self, player: 'Player') -> None:
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
         if player.hp < player.maxhp:
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
@@ -1408,7 +1479,11 @@ class Draught(Consumable):
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            print("Jean is already fully rested. He places the {} back into his bag.".format(self.name))
+            # Check if item is in inventory or on the ground
+            if self in player.inventory:
+                print("Jean is already fully rested. He places the {} back into his bag.".format(self.name))
+            else:
+                print("Jean is already fully rested. He sets the {} back down.".format(self.name))
 
 
 class Antidote(Consumable):
@@ -1445,7 +1520,7 @@ class Antidote(Consumable):
 
     def use(self, player: 'Player') -> None:
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
         poisons: List[Any] = []
         for state in player.states:
@@ -1474,7 +1549,11 @@ class Antidote(Consumable):
                 player.inventory.remove(self)
             return
         else:
-            print("Jean is not beset by poison. He places the Antidote back into his bag.")
+            # Check if item is in inventory or on the ground
+            if self in player.inventory:
+                print("Jean is not beset by poison. He places the Antidote back into his bag.")
+            else:
+                print("Jean is not beset by poison. He sets the Antidote back down.")
 
 # ---------------------------------------------------------------------------
 # Arrows

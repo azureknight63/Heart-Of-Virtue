@@ -631,6 +631,9 @@ maintenant et à l'heure de notre mort. Amen.""",
                 try:
                     self.inventory.remove(item)
                     current_tile.items_here.append(item)
+                    # Update item description if it's stackable
+                    if hasattr(item, 'stack_grammar'):
+                        item.stack_grammar()
                 except ValueError:
                     continue
                 msg = random.choice(phrases).format(item=getattr(item, 'name', str(item)))
@@ -1237,10 +1240,10 @@ he lets out a barely audible whisper:""", "red")
                         if i == int(inventory_selection):
                             # Prevent using merchandise items until purchased
                             if getattr(item, 'merchandise', False):
-                                cprint("You must purchase {} before using or equipping it.".format(item.name), "red")
+                                cprint("{} must purchase {} before using or equipping it.".format(self.name, item.name), "red")
                                 break
                             if "use" in item.interactions and hasattr(item, "use"):
-                                print("Jean used {}!".format(item.name))
+                                print("{} used {}!".format(self.name, item.name))
                                 item.use(self)
                             elif "prefer" in item.interactions and hasattr(item, "prefer"):
                                 item.prefer(self)
@@ -1292,7 +1295,7 @@ he lets out a barely audible whisper:""", "red")
             # Restore previous position if move failed
             self.prev_location_x = self.location_x
             self.prev_location_y = self.location_y
-            cprint("You cannot go that way.", "red")
+            cprint("{} cannot go that way.".format(self.name), "red")
             time.sleep(1)
         else:
             print(tile.intro_text())

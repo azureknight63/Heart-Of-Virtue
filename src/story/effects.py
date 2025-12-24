@@ -436,7 +436,7 @@ class WhisperingStatue(Event):
             {"value": "2", "label": "The Wind"},
             {"value": "3", "label": "A Shadow"}
         ]
-        self.description = "You stand before an ancient, moss-covered statue of a hooded figure. Its stone eyes seem to track your movements. Suddenly, a raspy voice emanates from the stone..."
+        self.description = f"{player.name} stands before an ancient, moss-covered statue of a hooded figure. Its stone eyes seem to track {player.name}'s movements. Suddenly, a raspy voice emanates from the stone..."
 
     def check_conditions(self):
         # Always trigger if the player interacts with it
@@ -475,14 +475,14 @@ class WhisperingStatue(Event):
             cprint("A hidden compartment opens at the statue's base!", "green")
             
             # Reward
-            cprint("You found a Sapphire Gem!", "green", attrs=['bold'])
+            cprint(f"{self.player.name} found a Sapphire Gem!", "green", attrs=['bold'])
             self.tile.spawn_item('Gold', amt=500)
             
         else:
             cprint("\nThe statue's eyes flare with an angry red light.", "red")
             time.sleep(1)
             cprint('"Foolishness invites destruction," the voice hisses.', "red", attrs=['bold'])
-            cprint("The ground beneath you trembles!", "red")
+            cprint(f"The ground beneath {self.player.name} trembles!", "red")
             
             # Punishment - Spawn a low level enemy
             cprint("A Slime oozes out from cracks in the earth!", "red")
