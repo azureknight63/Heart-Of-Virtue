@@ -321,7 +321,9 @@ class Gold(Item):
         pass  # cannot drop gold
 
     def stack_grammar(self):
-        pass  # gold does not need special grammar handling
+        self.amt = self.count
+        self.description = "A small pouch containing {} gold pieces.".format(str(self.amt))
+        self.value = self.amt
 
 
 class Weapon(Item):
@@ -1417,7 +1419,6 @@ class Restorative(Consumable):
             if amount > missing_hp:
                 amount = missing_hp
             player.hp += amount
-            time.sleep(2)
             cprint("Jean recovered {} HP!".format(amount), "green")
             self.count -= 1
             self.stack_grammar()
@@ -1464,7 +1465,7 @@ class Draught(Consumable):
         if getattr(self, 'merchandise', False):
             cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
-        if player.hp < player.maxhp:
+        if player.fatigue < player.maxfatigue:
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                   "to have lifted off of his shoulders for the time being.".format(self.name))
             amount: int = int((self.power * random.uniform(0.8, 1.2)))
@@ -1472,7 +1473,6 @@ class Draught(Consumable):
             if amount > missing_fatigue:
                 amount = missing_fatigue
             player.fatigue += amount
-            time.sleep(2)
             cprint("Jean recovered {} fatigue!".format(amount), "green")
             self.count -= 1
             self.stack_grammar()
@@ -1538,7 +1538,6 @@ class Antidote(Consumable):
                 if amount > missing_hp:
                     amount = missing_hp
                 player.hp += amount
-                time.sleep(2)
                 cprint("Jean recovered {} HP!".format(amount), "green")
             for poison in poisons:
                 poison.on_removal(poison.target)
