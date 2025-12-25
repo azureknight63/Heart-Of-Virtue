@@ -5,6 +5,7 @@ import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
 import EventDialog from '../components/EventDialog'
 import VictoryDialog from '../components/VictoryDialog'
+import DefeatDialog from '../components/DefeatDialog'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
@@ -28,6 +29,7 @@ export default function GamePage() {
   // Victory dialog state
   const [lastEndStateId, setLastEndStateId] = useState(null)
   const [showVictoryDialog, setShowVictoryDialog] = useState(false)
+  const [showDefeatDialog, setShowDefeatDialog] = useState(false)
   const [endState, setEndState] = useState(null)
   const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
 
@@ -248,15 +250,19 @@ export default function GamePage() {
       }
     } else {
       setCombatDialogShown(false)
-      // If combat ended with a victory summary, keep combat mode until the victory dialog is completed
+      // If combat ended with a victory/defeat summary, keep combat mode until the dialog is completed
       const maybeEnd = combat?.end_state
-      if (maybeEnd && maybeEnd.status === 'victory') {
+      if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
         // Only show once per end_state id
         if (maybeEnd.id && maybeEnd.id !== lastEndStateId) {
           // Wait until the combat log finishes processing so death/destroy lines are visible first
           if (!isCombatLogProcessing) {
-            setShowVictoryDialog(true)
+            if (maybeEnd.status === 'victory') {
+              setShowVictoryDialog(true)
+            } else {
+              setShowDefeatDialog(true)
+            }
             setLastEndStateId(maybeEnd.id)
           }
         }
@@ -275,10 +281,14 @@ export default function GamePage() {
   // If combat ended and we were waiting for log processing to finish, open victory dialog now
   useEffect(() => {
     const maybeEnd = combat?.end_state
-    if (!inCombat && maybeEnd && maybeEnd.status === 'victory') {
+    if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
       setEndState(maybeEnd)
       if (!isCombatLogProcessing && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
-        setShowVictoryDialog(true)
+        if (maybeEnd.status === 'victory') {
+          setShowVictoryDialog(true)
+        } else {
+          setShowDefeatDialog(true)
+        }
         setLastEndStateId(maybeEnd.id)
       }
     }
@@ -369,6 +379,19 @@ export default function GamePage() {
           }}
           onClose={async () => {
             setShowVictoryDialog(false)
+            setEndState(null)
+            setMode('exploration')
+            await handleRefetch()
+            await fetchCombatStatus()
+          }}
+        />
+      )}
+
+      {showDefeatDialog && endState && endState.status === 'defeat' && (
+        <DefeatDialog
+          endState={endState}
+          onLoadedSave={async () => {
+            setShowDefeatDialog(false)
             setEndState(null)
             setMode('exploration')
             await handleRefetch()
