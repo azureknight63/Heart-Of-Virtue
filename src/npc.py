@@ -237,6 +237,17 @@ class NPC:
                 if quantity > 0:
                     self.current_room.spawn_item(item.__class__.__name__, amt=quantity, hidden=1,
                                                  hfactor=random.randint(20, 60))
+                    # In API combat mode, record drops for victory summary
+                    if hasattr(self, "player_ref") and self.player_ref and hasattr(self.player_ref, "_combat_adapter"):
+                        if not hasattr(self.player_ref, "combat_drops"):
+                            self.player_ref.combat_drops = []
+                        item_name = getattr(item, "name", item.__class__.__name__)
+                        self.player_ref.combat_drops.append({
+                            "name": item_name,
+                            "quantity": int(quantity),
+                            "source": getattr(self, "name", "Unknown"),
+                            "kind": "inventory",
+                        })
             self.inventory = []
 
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
@@ -275,6 +286,17 @@ class NPC:
                 else:
                     drop = self.current_room.spawn_item(item, dropcount)
                 cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount), 'cyan', attrs=['bold'])
+                # In API combat mode, record drops for victory summary
+                if hasattr(self, "player_ref") and self.player_ref and hasattr(self.player_ref, "_combat_adapter"):
+                    if not hasattr(self.player_ref, "combat_drops"):
+                        self.player_ref.combat_drops = []
+                    drop_name = getattr(drop, "name", str(drop))
+                    self.player_ref.combat_drops.append({
+                        "name": drop_name,
+                        "quantity": int(dropcount),
+                        "source": getattr(self, "name", "Unknown"),
+                        "kind": "loot",
+                    })
                 break  # only one item in the loot table will drop
 
     def get_equipped_items(self):

@@ -9,6 +9,7 @@ without blocking for user input.
 import io
 import sys
 import contextlib
+import uuid
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from unittest.mock import patch
 import random
@@ -162,6 +163,9 @@ class ApiCombatAdapter:
             # Reset combat state for new combat
             self.player.combat_beat = 1  # Start at beat 1 for synchronization
             self.player.combat_log = []  # Clear log for new combat
+            # Clear any prior end-of-combat summary/drops from previous encounters
+            self.player.combat_end_summary = None
+            self.player.combat_drops = []
             self.output_capture.clear()  # Clear captured output
             self.current_beat_state_index = 0  # Reset beat state tracking
             
@@ -208,6 +212,11 @@ class ApiCombatAdapter:
                     move.beats_left = 0
             
             for enemy in self.player.combat_list:
+                # Provide a back-reference for API-mode drop/loot tracking
+                try:
+                    enemy.player_ref = self.player
+                except Exception:
+                    pass
                 for move in enemy.known_moves:
                     move.current_stage = 0
                     move.beats_left = 0
@@ -669,6 +678,24 @@ class ApiCombatAdapter:
                 "You have been defeated!",
                 "system"
             )
+
+            # Set end-of-combat summary for defeat so frontend can show a game-over dialog
+            try:
+                import uuid
+                self.player.combat_end_summary = {
+                    "id": str(uuid.uuid4()),
+                    "status": "defeat",
+                    "message": "You have been defeated.",
+                    "game_over": True,
+                }
+            except Exception:
+                self.player.combat_end_summary = {
+                    "id": "defeat",
+                    "status": "defeat",
+                    "message": "You have been defeated.",
+                    "game_over": True,
+                }
+
             result = self.get_combat_state()
             result["beat_states"] = beat_states
             return result
@@ -800,10 +827,16 @@ class ApiCombatAdapter:
         
         # Calculate exp
         exp_summary = []
+        exp_gained: Dict[str, int] = {}
+        level_ups: List[Dict[str, Any]] = []
         for subtype, value in self.player.combat_exp.items():
             if value > 0:
-                exp_summary.append(f"{subtype}: {int(value)}")
-                self.player.gain_exp(int(value), exp_type=subtype)
+                gained = int(value)
+                exp_gained[subtype] = gained
+                exp_summary.append(f"{subtype}: {gained}")
+                maybe_events = self.player.gain_exp(gained, exp_type=subtype)
+                if isinstance(maybe_events, list) and maybe_events:
+                    level_ups.extend(maybe_events)
                 self.player.combat_exp[subtype] = 0
         
         victory_msg = "Victory! "
@@ -815,6 +848,41 @@ class ApiCombatAdapter:
             victory_msg,
             "system"
         )
+
+        # Aggregate combat drops collected during the encounter (API mode)
+        drops_raw = getattr(self.player, "combat_drops", []) or []
+        drops_by_name: Dict[str, int] = {}
+        for d in drops_raw:
+            name = (d or {}).get("name")
+            qty = int((d or {}).get("quantity", 1) or 1)
+            if not name:
+                continue
+            drops_by_name[name] = drops_by_name.get(name, 0) + max(0, qty)
+
+        items_dropped = [
+            {"name": name, "quantity": qty}
+            for name, qty in sorted(drops_by_name.items(), key=lambda kv: kv[0].lower())
+            if qty > 0
+        ]
+
+        # Capture a structured end-of-combat summary for the frontend
+        self.player.combat_end_summary = {
+            "id": str(uuid.uuid4()),
+            "status": "victory",
+            "message": "Victory!",
+            "exp_gained": exp_gained,
+            "items_dropped": items_dropped,
+            "level_ups": level_ups,
+            "attribute_points_available": int(getattr(self.player, "pending_attribute_points", 0) or 0),
+            "attributes": {
+                "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
+                "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
+                "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
+                "endurance_base": int(getattr(self.player, "endurance_base", 0) or 0),
+                "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
+                "intelligence_base": int(getattr(self.player, "intelligence_base", 0) or 0),
+            },
+        }
     
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
@@ -940,7 +1008,7 @@ class ApiCombatAdapter:
             self.player,
             self.player.combat_list,
             current_turn_index=0,  # Not used in API version
-            round_number=self.output_capture.current_round
+            round_number=getattr(self.player, "combat_beat", 0)
         )
         
         # Add API-specific fields
@@ -955,9 +1023,15 @@ class ApiCombatAdapter:
             battle_state["check_data"] = self.player.combat_adapter_state['check_data']
             # Clear check_data after including it once
             del self.player.combat_adapter_state['check_data']
-        
-        return {
+
+        result: Dict[str, Any] = {
             "combat_active": self.player.in_combat,
             "battle_state": battle_state,
-            "log": self.player.combat_log
+            "log": self.player.combat_log,
         }
+
+        # Include end-of-combat summary (victory/defeat) if present
+        if not self.player.in_combat and getattr(self.player, "combat_end_summary", None):
+            result["end_state"] = self.player.combat_end_summary
+
+        return result

@@ -211,6 +211,8 @@ class Player:
         self.prev_location_x, self.prev_location_y = (0, 0)  # Track previous position for map display
         self.current_room = None
         self.victory = False
+        # API-safe leveling/attribute spending
+        self.pending_attribute_points = 0
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are
             # viable (moves will check their own conditions)
             moves.Check(self), moves.Wait(self), moves.Rest(self), moves.Turn(self),
@@ -442,6 +444,9 @@ maintenant et à l'heure de notre mort. Amen.""",
             for item in remove_existing_gold_objects:
                 self.inventory.remove(item)
             gold_objects[0].amt = amt
+            gold_objects[0].count = amt
+            if hasattr(gold_objects[0], 'stack_grammar') and callable(gold_objects[0].stack_grammar):
+                gold_objects[0].stack_grammar()
             self.inventory.append(gold_objects[0])
 
     def combat_idle(self):
@@ -507,8 +512,61 @@ maintenant et à l'heure de notre mort. Amen.""",
 
         if self.level < 100:
             self.exp += amt
+
+        # In API mode (frontend), do not prompt for input during level-up.
+        if hasattr(self, '_combat_adapter'):
+            events = []
+            while self.exp >= self.exp_to_level:
+                events.append(self._level_up_api())
+            return events
+
         while self.exp >= self.exp_to_level:
             self.level_up()
+
+        return None
+
+    def _level_up_api(self):
+        """API-safe level up that mirrors terminal behavior without blocking for input.
+
+        Returns a dict describing the level-up event for frontend display.
+        """
+        old_level = int(getattr(self, 'level', 1) or 1)
+
+        # Level up bookkeeping (match terminal behavior)
+        self.level += 1
+        self.exp -= self.exp_to_level
+        self.exp_to_level = self.level * (150 - self.intelligence)
+
+        # Apply random bonus increases to base stats
+        bonuses = {}
+        attributes = [
+            ("strength_base", "Strength"),
+            ("finesse_base", "Finesse"),
+            ("speed_base", "Speed"),
+            ("endurance_base", "Endurance"),
+            ("charisma_base", "Charisma"),
+            ("intelligence_base", "Intelligence"),
+        ]
+
+        for attr, _label in attributes:
+            bonus = random.randint(0, 2)
+            if bonus:
+                setattr(self, attr, getattr(self, attr) + bonus)
+                bonuses[attr] = bonus
+
+        # Award attribute points to distribute (same range as terminal mode)
+        points = random.randint(6, 9)
+        if not hasattr(self, 'pending_attribute_points'):
+            self.pending_attribute_points = 0
+        self.pending_attribute_points += points
+
+        return {
+            "level_up": True,
+            "old_level": old_level,
+            "new_level": int(self.level),
+            "points_awarded": int(points),
+            "bonuses": bonuses,
+        }
 
     def learn_skill(self, skill):
         success = True
