@@ -58,13 +58,16 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item used!')
-        // Show success dialog
+        // Show success dialog with the actual message from the backend
         setActionResult({
-          message: <><strong>{player?.name || 'Player'}</strong> used <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+          message: <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>{data.message}</div>
         })
 
         // For consumables, remove from inventory
         if (onItemRemoved) onItemRemoved(item.id)
+
+        // Refresh player state to show healing/buffs
+        if (onRefetch) onRefetch()
       } else {
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }

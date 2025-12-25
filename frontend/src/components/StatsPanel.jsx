@@ -55,7 +55,10 @@ export default function StatsPanel({ player, onClose }) {
     fatigue: 'Energy for special abilities and actions. Regenerates over time or with rest.',
     protection: 'Reduces incoming physical damage. Provided by armor and defensive buffs.',
     level: 'Your current character level. Gain experience to level up and become stronger.',
-    weight: 'Current carried weight vs. maximum capacity. Exceeding capacity slows movement.'
+    weight: 'Current carried weight vs. maximum capacity. Exceeding capacity slows movement.',
+    attack: 'Estimated damage range for a basic attack against a neutral target.',
+    accuracy: 'Base chance to hit an enemy before their evasion is considered.',
+    evasion: 'Chance to avoid incoming attacks. Subtracts from the attacker\'s accuracy.'
   }
 
   return (
@@ -235,6 +238,93 @@ export default function StatsPanel({ player, onClose }) {
           <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '12px' }}>Level:</span>
           <span style={{ color: '#ffff00', fontSize: '14px', fontWeight: 'bold' }}>
             {player.level || 1}
+          </span>
+        </div>
+
+        {/* Attack Damage */}
+        <div
+          title={coreStatTooltips.attack}
+          style={{
+            backgroundColor: 'rgba(80, 40, 20, 0.4)',
+            border: '1px solid #886644',
+            borderRadius: '4px',
+            padding: '8px 10px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'help',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(100, 60, 30, 0.6)'
+            e.currentTarget.style.borderColor = '#aa8866'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(80, 40, 20, 0.4)'
+            e.currentTarget.style.borderColor = '#886644'
+          }}
+        >
+          <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '12px' }}>Attack:</span>
+          <span style={{ color: '#ffcc66', fontSize: '14px', fontWeight: 'bold' }}>
+            {player.attack_damage_min || 0}-{player.attack_damage_max || 0}
+          </span>
+        </div>
+
+        {/* Accuracy */}
+        <div
+          title={coreStatTooltips.accuracy}
+          style={{
+            backgroundColor: 'rgba(20, 80, 60, 0.4)',
+            border: '1px solid #448866',
+            borderRadius: '4px',
+            padding: '8px 10px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'help',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(30, 100, 80, 0.6)'
+            e.currentTarget.style.borderColor = '#66aa88'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(20, 80, 60, 0.4)'
+            e.currentTarget.style.borderColor = '#448866'
+          }}
+        >
+          <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '12px' }}>Accuracy:</span>
+          <span style={{ color: '#66ffcc', fontSize: '14px', fontWeight: 'bold' }}>
+            {player.hit_accuracy || 0}%
+          </span>
+        </div>
+
+        {/* Evasion */}
+        <div
+          title={coreStatTooltips.evasion}
+          style={{
+            backgroundColor: 'rgba(60, 60, 60, 0.4)',
+            border: '1px solid #888888',
+            borderRadius: '4px',
+            padding: '8px 10px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'help',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(80, 80, 80, 0.6)'
+            e.currentTarget.style.borderColor = '#aaaaaa'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(60, 60, 60, 0.4)'
+            e.currentTarget.style.borderColor = '#888888'
+          }}
+        >
+          <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '12px' }}>Evasion:</span>
+          <span style={{ color: '#cccccc', fontSize: '14px', fontWeight: 'bold' }}>
+            {player.evasion_chance || 0}%
           </span>
         </div>
 
