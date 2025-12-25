@@ -1208,12 +1208,14 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
         # In API mode, generate structured combatant data
         if hasattr(user, '_combat_adapter'):
             self._generate_api_check_data(user)
+        
         # Check coordinate-based positioning if available
-        elif hasattr(user, 'combat_position') and user.combat_position is not None:
+        if hasattr(user, 'combat_position') and user.combat_position is not None:
             self._display_coordinate_info(user)
         else:
             # Fallback to legacy distance display
             self._display_legacy_info(user)
+        
         # Don't block for input in API mode - info is captured in combat log
         if not hasattr(user, '_combat_adapter'):
             functions.await_input()
