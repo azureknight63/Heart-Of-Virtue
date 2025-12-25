@@ -254,3 +254,91 @@ def learn_skill():
             ),
             500,
         )
+
+
+@player_bp.route("/level-up/allocate", methods=["POST"])
+def allocate_level_up_points():
+    """Allocate pending attribute points (API mode).
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Body:
+        {
+            "attribute": "strength_base|finesse_base|speed_base|endurance_base|charisma_base|intelligence_base",
+            "amount": int
+        }
+
+    Returns:
+        {
+            "success": bool,
+            "remaining_points": int,
+            "stats": {...}
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        data = request.get_json() or {}
+        attribute = data.get("attribute")
+        amount = data.get("amount")
+
+        allowed = {
+            "strength_base",
+            "finesse_base",
+            "speed_base",
+            "endurance_base",
+            "charisma_base",
+            "intelligence_base",
+        }
+
+        if attribute not in allowed:
+            return jsonify({"success": False, "error": "Invalid attribute"}), 400
+
+        try:
+            amount_int = int(amount)
+        except Exception:
+            return jsonify({"success": False, "error": "Invalid amount"}), 400
+
+        if amount_int <= 0:
+            return jsonify({"success": False, "error": "Amount must be positive"}), 400
+
+        remaining = int(getattr(player, "pending_attribute_points", 0) or 0)
+        if amount_int > remaining:
+            return jsonify({"success": False, "error": "Not enough points"}), 400
+
+        # Apply allocation
+        setattr(player, attribute, int(getattr(player, attribute, 0) or 0) + amount_int)
+        player.pending_attribute_points = remaining - amount_int
+
+        # Refresh derived stats if available
+        try:
+            from src.functions import refresh_stat_bonuses
+            refresh_stat_bonuses(player)
+        except Exception:
+            pass
+
+        from flask import current_app
+        game_service = current_app.game_service
+        stats = game_service.get_player_stats(player) if game_service else {}
+
+        session_manager.save_session(session.session_id)
+
+        return jsonify({
+            "success": True,
+            "remaining_points": int(player.pending_attribute_points),
+            "stats": stats,
+        }), 200
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )

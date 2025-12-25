@@ -773,8 +773,8 @@ class GameService:
                         setattr(player, slot_name, item)
             
             # Refresh stat bonuses after equipment change
-            if hasattr(player, "refresh_stat_bonuses"):
-                player.refresh_stat_bonuses()
+            from src import functions
+            functions.refresh_stat_bonuses(player)
             
             return {
                 "success": True,
@@ -832,8 +832,8 @@ class GameService:
                 setattr(player, attr_name, None)
             
             # Refresh stat bonuses after equipment change
-            if hasattr(player, "refresh_stat_bonuses"):
-                player.refresh_stat_bonuses()
+            from src import functions
+            functions.refresh_stat_bonuses(player)
             
             return {
                 "success": True,
@@ -1060,6 +1060,29 @@ class GameService:
         stats["weight_current"] = getattr(player, "weight_current", 0)
         stats["carrying_capacity"] = getattr(player, "carrying_capacity", 100)
         stats["protection"] = getattr(player, "protection", 0)
+        
+        # Calculate combat stats
+        weapon = getattr(player, "eq_weapon", None)
+        if weapon:
+            power = getattr(weapon, "damage", 0) + \
+                    (getattr(player, "strength", 10) * getattr(weapon, "str_mod", 0)) + \
+                    (getattr(player, "finesse", 10) * getattr(weapon, "fin_mod", 0))
+            
+            # Apply heat if available (default to 1.0)
+            heat = getattr(player, "heat", 1.0)
+            
+            stats["attack_damage_min"] = int(power * heat * 0.8)
+            stats["attack_damage_max"] = int(power * heat * 1.2)
+        else:
+            stats["attack_damage_min"] = 0
+            stats["attack_damage_max"] = 0
+
+        # Accuracy and Evasion
+        # Base hit chance formula: (98 - target.finesse) + user.finesse
+        # We'll show accuracy as (98 + player.finesse) and evasion as player.finesse
+        stats["hit_accuracy"] = 98 + getattr(player, "finesse", 10)
+        stats["evasion_chance"] = getattr(player, "finesse", 10)
+
         stats["resistance"] = getattr(player, "resistance", {})
         stats["status_resistance"] = getattr(player, "status_resistance", {})
         stats["states"] = [{"name": state.name, "steps_left": state.steps_left} 
