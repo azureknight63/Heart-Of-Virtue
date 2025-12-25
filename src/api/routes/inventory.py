@@ -8,6 +8,10 @@ Provides endpoints for:
 """
 
 from flask import Blueprint, current_app, jsonify, request
+import contextlib
+import io
+import re
+from unittest.mock import patch
 
 from src.api.services.validators import (
     validate_currency_amount,
@@ -424,26 +428,74 @@ def use_item():
                 400,
             )
 
-        # Call the item's use method
-        item.use(player)
+        # Capture output from item use
+        f = io.StringIO()
         
-        # Remove the item if it's consumable
-        from src import items as items_module
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
-        if isinstance(item, items_module.Consumable):
-            inventory_list.pop(actual_index)
-            message = f"{item.name} consumed"
-        else:
-            message = f"{item.name} used"
+        def mock_cprint(text, *args, **kwargs):
+            f.write(str(text) + '\n')
+            
+        def mock_print_slow(text, speed="slow"):
+            f.write(str(text) + '\n')
+
+        with contextlib.redirect_stdout(f), \
+             patch('neotermcolor.cprint', mock_cprint), \
+             patch('src.functions.print_slow', mock_print_slow), \
+             patch('functions.print_slow', mock_print_slow), \
+             patch('time.sleep', return_value=None):
+            # Call the item's use method
+            item.use(player)
+        
+        output = f.getvalue()
+        # Clean up output (remove ANSI codes)
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        clean_output = ansi_escape.sub('', output).strip()
+        
+        if not clean_output:
+            clean_output = f"{item.name} used"
+
+        # If in combat, add to combat log
+        if getattr(player, "in_combat", False):
+            if hasattr(player, "_combat_adapter"):
+                adapter = player._combat_adapter
+                current_beat = getattr(player, "combat_beat", 0)
+                # Split by lines and add each as a log entry
+                for line in clean_output.split('\n'):
+                    if line.strip():
+                        adapter._add_log_entry(current_beat, line.strip(), "combat")
+            else:
+                # Fallback if adapter not initialized
+                if not hasattr(player, 'combat_log'):
+                    player.combat_log = []
+                for line in clean_output.split('\n'):
+                    if line.strip():
+                        player.combat_log.append({
+                            "round": getattr(player, "combat_beat", 0),
+                            "message": line.strip(),
+                            "type": "combat"
+                        })
 
         # Get updated inventory
         inventory_data = InventorySerializer.serialize(player)
+        
+        # Prepare response
+        response_data = {
+            "success": True,
+            "message": clean_output,
+            "inventory": inventory_data,
+        }
+        
+        # If in combat, also return updated combat state
+        if getattr(player, "in_combat", False):
+            from src.api.serializers.combat import CombatStateSerializer
+            combat_state = CombatStateSerializer.serialize_combat_state(
+                player,
+                getattr(player, "combat_list", []),
+                round_number=getattr(player, "combat_beat", 0)
+            )
+            response_data["combat_state"] = combat_state
+
         return (
-            jsonify({
-                "success": True,
-                "message": message,
-                "inventory": inventory_data,
-            }),
+            jsonify(response_data),
             200,
         )
     except Exception as e:
