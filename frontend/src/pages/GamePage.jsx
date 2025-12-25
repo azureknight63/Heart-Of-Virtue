@@ -4,6 +4,7 @@ import { useAudio } from '../context/AudioContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
 import EventDialog from '../components/EventDialog'
+import VictoryDialog from '../components/VictoryDialog'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
@@ -23,6 +24,12 @@ export default function GamePage() {
 
   // Track if we've shown the combat start dialog for this session
   const [combatDialogShown, setCombatDialogShown] = useState(false)
+
+  // Victory dialog state
+  const [lastEndStateId, setLastEndStateId] = useState(null)
+  const [showVictoryDialog, setShowVictoryDialog] = useState(false)
+  const [endState, setEndState] = useState(null)
+  const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
 
   // Debug: Log combat state changes
   useEffect(() => {
@@ -45,10 +52,16 @@ export default function GamePage() {
 
   // Combined refetch function
   const handleRefetch = async () => {
-    await Promise.all([
+    const promises = [
       refetchPlayer(),
       refetchWorld()
-    ])
+    ]
+    
+    if (inCombat) {
+      promises.push(fetchCombatStatus())
+    }
+    
+    await Promise.all(promises)
   }
 
   // Track explored tiles when location changes
@@ -235,14 +248,41 @@ export default function GamePage() {
       }
     } else {
       setCombatDialogShown(false)
-      setMode('exploration')
-      // Don't refetch here continuously
-      if (mode === 'combat') {
-        handleRefetch()
+      // If combat ended with a victory summary, keep combat mode until the victory dialog is completed
+      const maybeEnd = combat?.end_state
+      if (maybeEnd && maybeEnd.status === 'victory') {
+        setEndState(maybeEnd)
+        // Only show once per end_state id
+        if (maybeEnd.id && maybeEnd.id !== lastEndStateId) {
+          // Wait until the combat log finishes processing so death/destroy lines are visible first
+          if (!isCombatLogProcessing) {
+            setShowVictoryDialog(true)
+            setLastEndStateId(maybeEnd.id)
+          }
+        }
+        setMode('combat')
+      } else {
+        setMode('exploration')
+        // Don't refetch here continuously
+        if (mode === 'combat') {
+          handleRefetch()
+        }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inCombat, combat])
+
+  // If combat ended and we were waiting for log processing to finish, open victory dialog now
+  useEffect(() => {
+    const maybeEnd = combat?.end_state
+    if (!inCombat && maybeEnd && maybeEnd.status === 'victory') {
+      setEndState(maybeEnd)
+      if (!isCombatLogProcessing && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
+        setShowVictoryDialog(true)
+        setLastEndStateId(maybeEnd.id)
+      }
+    }
+  }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId])
 
   // Manage BGM based on mode
   useEffect(() => {
@@ -291,6 +331,7 @@ export default function GamePage() {
         onInteractionComplete={handleInteractionComplete}
         onCombatAction={performAction}
         onLogProgress={setCurrentLogIndex}
+        onLogProcessingChange={setIsCombatLogProcessing}
       />
 
       {/* Right Panel - Battlefield/Map */}
@@ -310,6 +351,29 @@ export default function GamePage() {
           event={currentEvent}
           onClose={handleEventClose}
           onSubmitInput={handleEventInput}
+        />
+      )}
+
+      {showVictoryDialog && endState && (
+        <VictoryDialog
+          endState={endState}
+          onAllocatePoints={async (attribute, amount) => {
+            // usePlayer hook doesn't expose allocate here, but the player state will refresh via refetchPlayer
+            const { default: apiEndpoints } = await import('../api/endpoints')
+            const result = await apiEndpoints.player.allocateLevelUpPoints(attribute, amount)
+
+            // Refresh player + combat state so the dialog updates remaining points
+            await refetchPlayer()
+            await fetchCombatStatus()
+            return result.data
+          }}
+          onClose={async () => {
+            setShowVictoryDialog(false)
+            setEndState(null)
+            setMode('exploration')
+            await handleRefetch()
+            await fetchCombatStatus()
+          }}
         />
       )}
     </div>
