@@ -120,7 +120,14 @@ export const usePlayer = () => {
     fetchPlayer()
   }, [])
 
-  return { player, loading, error, refetch: fetchPlayer }
+  const allocateLevelUpPoints = async (attribute, amount) => {
+    const response = await apiEndpoints.player.allocateLevelUpPoints(attribute, amount)
+    // Refresh full player payload after allocation so UI stays consistent
+    await fetchPlayer()
+    return response.data
+  }
+
+  return { player, loading, error, refetch: fetchPlayer, allocateLevelUpPoints }
 }
 
 export const useCombat = () => {
@@ -137,6 +144,7 @@ export const useCombat = () => {
       setCombat({
         ...data.battle_state,
         log: data.log || [],
+        end_state: data.end_state || null,
         combat_active: data.combat_active
       })
       setInCombat(data.combat_active)
@@ -157,6 +165,7 @@ export const useCombat = () => {
         ...data.battle_state,
         log: data.log || [],
         beat_states: data.beat_states || [],
+        end_state: data.end_state || null,
         combat_active: data.combat_active
       })
       setInCombat(data.combat_active)

@@ -15,6 +15,7 @@ export const player = {
   getStats: () => apiClient.get('/stats'),
   getSkills: () => apiClient.get('/skills'),
   learnSkill: (skillName, category) => apiClient.post('/skills/learn', { skill_name: skillName, category }),
+  allocateLevelUpPoints: (attribute, amount) => apiClient.post('/level-up/allocate', { attribute, amount }),
 }
 
 // World endpoints
