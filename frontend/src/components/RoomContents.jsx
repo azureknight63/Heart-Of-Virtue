@@ -4,12 +4,66 @@
  * matching the terminal game's narrative format
  */
 
-export default function RoomContents({ location }) {
+export default function RoomContents({ location, onInteract }) {
   if (!location) return null
 
-  const items = location.items || []
-  const npcs = location.npcs || []
-  const objects = location.objects || []
+  const items = (location.items || []).map(i => ({ ...i, type: 'item' }))
+  const npcs = (location.npcs || []).map(n => ({ ...n, type: 'npc' }))
+  const objects = (location.objects || []).map(o => ({ ...o, type: 'object' }))
+
+  const allEntities = [...npcs, ...items, ...objects].filter(e => !e.hidden)
+
+  // Helper to render text with clickable entity names
+  const renderTextWithLinks = (text, preferredEntity = null) => {
+    if (!text) return null
+
+    // Sort entities by name length descending to avoid partial matches
+    const sortedEntities = [...allEntities].sort((a, b) => b.name.length - a.name.length)
+
+    // Create a regex that matches any of the entity names
+    const names = sortedEntities.map(e => e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    if (names.length === 0) return text
+
+    const regex = new RegExp(`(${names.join('|')})`, 'gi')
+    const parts = text.split(regex)
+
+    return parts.map((part, i) => {
+      // Find the entity for this part. If it matches the preferredEntity's name, use that specific one.
+      let entity = null
+      if (preferredEntity && preferredEntity.name.toLowerCase() === part.toLowerCase()) {
+        entity = preferredEntity
+      } else {
+        entity = sortedEntities.find(e => e.name.toLowerCase() === part.toLowerCase())
+      }
+
+      if (entity) {
+        const description = entity.description || `Interact with ${entity.name}`
+        const truncatedDesc = description.length > 150 
+          ? `${description.substring(0, 147)}...` 
+          : description
+
+        return (
+          <span
+            key={i}
+            onClick={() => onInteract && onInteract(entity)}
+            style={{
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              fontWeight: 'bold',
+              // Use specific colors for different types
+              color: entity.type === 'npc' ? '#ff9999' :
+                entity.type === 'item' ? '#00ddaa' :
+                  '#ffcc88'
+            }}
+            title={truncatedDesc}
+          >
+            {part}
+          </span>
+        )
+      }
+      return part
+    })
+  }
 
   // Build content descriptions array
   const contentDescriptions = []
@@ -21,6 +75,7 @@ export default function RoomContents({ location }) {
         type: 'npc',
         text: npc.idle_message,
         name: npc.name,
+        entity: npc,
       })
     }
   })
@@ -34,6 +89,7 @@ export default function RoomContents({ location }) {
       type: 'item',
       text: text,
       name: item.name,
+      entity: item,
     })
   })
 
@@ -44,6 +100,7 @@ export default function RoomContents({ location }) {
         type: 'object',
         text: obj.idle_message,
         name: obj.name,
+        entity: obj,
       })
     }
   })
@@ -66,7 +123,9 @@ export default function RoomContents({ location }) {
         gap: '10px',
       }}>
         {/* Main room description */}
-        <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>{roomDescriptionText}</p>
+        <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
+          {renderTextWithLinks(roomDescriptionText)}
+        </p>
 
         {/* Content descriptions immediately following */}
         {hasContentDescriptions && (
@@ -88,7 +147,10 @@ export default function RoomContents({ location }) {
                   lineHeight: '1.5',
                 }}
               >
-                {content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text}
+                {renderTextWithLinks(
+                  content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text,
+                  content.entity
+                )}
               </div>
             ))}
           </div>

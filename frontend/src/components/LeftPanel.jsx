@@ -15,7 +15,7 @@ import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 
-export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction, onLogProgress }) {
+export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction, onLogProgress, onLogProcessingChange }) {
   // Don't render if player data hasn't loaded yet
   if (!player) {
     return null
@@ -28,6 +28,25 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const [showSkills, setShowSkills] = useState(false)
   const [showActions, setShowActions] = useState(false)
   const [showInteract, setShowInteract] = useState(false)
+  const [interactTarget, setInteractTarget] = useState(null)
+
+  const handleOpenInteract = (target = null) => {
+    // If clicking the main interact button while panel is open, close it
+    if (target === null && showInteract) {
+      setShowInteract(false)
+      setInteractTarget(null)
+      return
+    }
+
+    setInteractTarget(target)
+    setShowInteract(true)
+    // Close other panels
+    setShowInventory(false)
+    setShowSkills(false)
+    setShowActions(false)
+    setShowAttributes(false)
+    setShowStatus(false)
+  }
 
   // Combat state
   const [showCombatMoves, setShowCombatMoves] = useState(false)
@@ -42,6 +61,13 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   // Log processing state
   const [isProcessingLog, setIsProcessingLog] = useState(false)
   const [displayedLog, setDisplayedLog] = useState([])
+
+  // Notify parent about log processing state (used to sequence victory dialog after final log lines)
+  useEffect(() => {
+    if (onLogProcessingChange) {
+      onLogProcessingChange(isProcessingLog)
+    }
+  }, [isProcessingLog, onLogProcessingChange])
 
   // Determine if it's player's turn - ONLY if not processing log
   const isMyTurn = (combat?.awaiting_input || false) && !isProcessingLog
@@ -191,12 +217,22 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   useEffect(() => {
     if (combat?.input_type === 'move_selection' && combat.awaiting_input && !isProcessingLog) {
       setShowCombatMoves(true)
-      // Set default category if none selected
-      if (!combatMovesCategory) {
-        setCombatMovesCategory('Basic')
+      // Set default category if none selected (or if it was 'Basic' which is now removed)
+      if (!combatMovesCategory || combatMovesCategory === 'Basic') {
+        setCombatMovesCategory('Offensive')
       }
+      // Close other panels when move selection starts
+      setShowInventory(false)
+      setShowSkills(false)
+      setShowAttributes(false)
+      setShowStatus(false)
+      setShowActions(false)
+    } else if (mode === 'combat') {
+      // If we're in combat but not in move selection (e.g. processing log or enemy turn),
+      // ensure the move panel is closed.
+      setShowCombatMoves(false)
     }
-  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combatMovesCategory])
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combatMovesCategory, mode])
 
   // Show check dialog when check_data is available
   useEffect(() => {
@@ -218,6 +254,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
       setShowSkills(false)
       setShowAttributes(false)
       setShowStatus(false)
+      setShowActions(false)
     }
   }
 
@@ -227,6 +264,14 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     try {
       await onCombatAction('move', { move_id: move.id })
       setShowCombatMoves(false)
+      setCombatMovesCategory(null)
+      // Close all other potential dialogs
+      setShowInventory(false)
+      setShowSkills(false)
+      setShowAttributes(false)
+      setShowStatus(false)
+      setShowActions(false)
+      setShowCheckDialog(false)
     } catch (err) {
       console.error('Failed to execute move:', err)
     }
@@ -245,6 +290,11 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         await onCombatAction('number', { value: selectedValue })
       }
       setShowInputDialog(false)
+      // Also ensure move panel is closed
+      setShowCombatMoves(false)
+      setCombatMovesCategory(null)
+      setShowActions(false)
+      setShowCheckDialog(false)
     } catch (err) {
       console.error('Failed to send input:', err)
     }
@@ -335,7 +385,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
       }}>
         {/* Room Contents - Items, NPCs, Objects */}
         {mode === 'exploration' && location && (
-          <RoomContents location={location} />
+          <RoomContents location={location} onInteract={handleOpenInteract} />
         )}
 
         {/* Hero Panel - Character Head with Surrounding Buttons */}
@@ -368,7 +418,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
               setShowInventory(!showInventory)
             }}
             onActionsClick={() => setShowActions(!showActions)}
-            onInteractClick={() => setShowInteract(!showInteract)}
+            onInteractClick={() => handleOpenInteract()}
             onOffensiveClick={() => handleCombatMoveClick('Offensive')}
             onDefensiveClick={() => handleCombatMoveClick('Defensive')}
             onManeuverClick={() => handleCombatMoveClick('Maneuver')}
@@ -378,7 +428,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         </div>
 
         {/* Combat Move Panel */}
-        {showCombatMoves && mode === 'combat' && (
+        {showCombatMoves && mode === 'combat' && isMyTurn && (
           <CombatMovePanel
             moves={availableMoves}
             category={combatMovesCategory}
@@ -454,7 +504,11 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         {showInteract && location && mode === 'exploration' && (
           <InteractPanel
             location={location}
-            onClose={() => setShowInteract(false)}
+            initialTarget={interactTarget}
+            onClose={() => {
+              setShowInteract(false)
+              setInteractTarget(null)
+            }}
             onEventsTriggered={onEventsTriggered}
             onInteractionComplete={onInteractionComplete}
             onRefetch={onRefetch}

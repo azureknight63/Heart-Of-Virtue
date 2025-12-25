@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import apiEndpoints from '../api/endpoints'
 
-export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete, onRefetch }) {
+export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete, onRefetch, initialTarget }) {
     const [targets, setTargets] = useState([])
-    const [selectedTarget, setSelectedTarget] = useState(null)
+    const [selectedTarget, setSelectedTarget] = useState(initialTarget || null)
     const [interactionOutput, setInteractionOutput] = useState(null)
     const [loading, setLoading] = useState(false)
     const [isLocked, setIsLocked] = useState(false)
