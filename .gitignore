@@ -54,3 +54,12 @@ logs/browser/*
 
 # Archived audio files
 frontend/public/assets/sounds/archive
+
+# Node dependencies
+frontend/node_modules
+node_modules
+
+# Test assets
+frontend/src/test
+frontend/coverage
+tests/*
