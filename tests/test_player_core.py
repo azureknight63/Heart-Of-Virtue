@@ -1087,21 +1087,39 @@ class TestPlayerCore:
 
     def test_refresh_merchants(self, player):
         player.universe = MagicMock()
-        mock_merchant = MagicMock()
-        mock_cls = MagicMock()
-        mock_merchant.__class__ = mock_cls
-        # Mock MRO to include a class named 'Merchant'
-        mock_cls.mro.return_value = [MagicMock(__name__='Merchant')]
-        mock_merchant.name = "Trader Joe"
-        mock_merchant.shop = MagicMock()
+        
+        # Merchant 1: Success
+        m1 = MagicMock()
+        m1.__class__ = MagicMock()
+        m1.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
+        m1.name = "M1"
+        m1.shop = MagicMock()
+        
+        # Merchant 2: Needs initialization
+        m2 = MagicMock()
+        m2.__class__ = MagicMock()
+        m2.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
+        m2.name = "M2"
+        m2.shop = None
+        
+        # Merchant 3: Fails update
+        m3 = MagicMock()
+        m3.__class__ = MagicMock()
+        m3.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
+        m3.name = "M3"
+        m3.shop = MagicMock()
+        m3.update_goods.side_effect = Exception("Update failed")
         
         mock_tile = MagicMock()
-        mock_tile.npcs_here = [mock_merchant]
-        player.universe.maps = [{(0, 0): mock_tile}]
+        mock_tile.npcs_here = [m1, m2, m3, MagicMock()] # One non-merchant
+        player.universe.maps = [{(0, 0): mock_tile}, "not a dict"] # One invalid map
         
         with patch('player.cprint'), patch('time.sleep'):
-            player.refresh_merchants()
-            mock_merchant.update_goods.assert_called_once()
+            player.refresh_merchants(phrase="M")
+            m1.update_goods.assert_called_once()
+            m2.initialize_shop.assert_called_once()
+            m2.update_goods.assert_called_once()
+            m3.update_goods.assert_called_once()
 
     def test_level_up_interactive(self, player):
         player.level = 1
