@@ -111,8 +111,8 @@ class AdventureSong(Song):
 
             # --- Transition to Theme B ---
             # A short C Major chord swell to resolve the F from Theme A and lead into F of Theme B
-            trans_chord = generate_chord([fr(x) for x in [262, 330, 392]], d(1.5), 0.25, wave_type='sine') # C Major
-            trans_bass = generate_tone(fr(131), d(1.5), 0.3, wave_type='sawtooth') # C Bass
+            trans_chord = generate_chord([fr(x) for x in [262, 330, 392]], d(1.5), 0.05, wave_type='sine') # C Major
+            trans_bass = generate_tone(fr(131), d(1.5), 0.1, wave_type='sawtooth') # C Bass
             trans_perc = generate_percussion_pattern([1, 1, 1, 1], d(1.5)) # Roll
             all_sections += mix_layers([trans_chord, trans_bass, trans_perc])
 
