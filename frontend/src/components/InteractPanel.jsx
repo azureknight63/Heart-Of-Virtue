@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 
 export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete, onRefetch, initialTarget }) {
@@ -483,6 +483,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
 function TypewriterOutput({ text }) {
     const [displayedText, setDisplayedText] = useState('')
     const [isComplete, setIsComplete] = useState(false)
+    const intervalRef = useRef(null)
 
     useEffect(() => {
         setDisplayedText('')
@@ -493,10 +494,10 @@ function TypewriterOutput({ text }) {
         const words = text.split(' ')
         let wordsAdded = 0
 
-        const intervalId = setInterval(() => {
+        intervalRef.current = setInterval(() => {
             if (wordsAdded >= words.length) {
                 setIsComplete(true)
-                clearInterval(intervalId)
+                if (intervalRef.current) clearInterval(intervalRef.current)
                 return
             }
 
@@ -510,11 +511,14 @@ function TypewriterOutput({ text }) {
             wordsAdded++
         }, 50) // Adjust speed here (ms per word)
 
-        return () => clearInterval(intervalId)
+        return () => {
+            if (intervalRef.current) clearInterval(intervalRef.current)
+        }
     }, [text])
 
     const finishImmediately = () => {
         if (!isComplete) {
+            if (intervalRef.current) clearInterval(intervalRef.current)
             setDisplayedText(text)
             setIsComplete(true)
         }

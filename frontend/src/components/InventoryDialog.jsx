@@ -252,6 +252,7 @@ export default function InventoryDialog({ player, onClose, onRefetch, combatMode
       'light armor': '👕',
       'medium armor': '👔',
       'heavy armor': '🛡️',
+      'shield': '🛡️',
       // Boots
       'light boots': '👟',
       'medium boots': '👞',
@@ -610,26 +611,26 @@ export default function InventoryDialog({ player, onClose, onRefetch, combatMode
                 }}
                   onMouseEnter={(e) => {
                     if (equipped) {
-                      e.target.style.backgroundColor = 'rgba(100, 200, 100, 0.8)'
-                      e.target.style.borderColor = '#00ff88'
+                      e.currentTarget.style.backgroundColor = 'rgba(100, 200, 100, 0.8)'
+                      e.currentTarget.style.borderColor = '#00ff88'
                     } else if (item.is_merchandise) {
-                      e.target.style.backgroundColor = 'rgba(150, 120, 70, 0.8)'
-                      e.target.style.borderColor = '#ddaa66'
+                      e.currentTarget.style.backgroundColor = 'rgba(150, 120, 70, 0.8)'
+                      e.currentTarget.style.borderColor = '#ddaa66'
                     } else {
-                      e.target.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
-                      e.target.style.borderColor = '#ffff00'
+                      e.currentTarget.style.backgroundColor = 'rgba(150, 75, 0, 0.8)'
+                      e.currentTarget.style.borderColor = '#ffff00'
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (equipped) {
-                      e.target.style.backgroundColor = 'rgba(50, 150, 50, 0.6)'
-                      e.target.style.borderColor = '#00ff00'
+                      e.currentTarget.style.backgroundColor = 'rgba(50, 150, 50, 0.6)'
+                      e.currentTarget.style.borderColor = '#00ff00'
                     } else if (item.is_merchandise) {
-                      e.target.style.backgroundColor = 'rgba(100, 80, 50, 0.6)'
-                      e.target.style.borderColor = '#cc9944'
+                      e.currentTarget.style.backgroundColor = 'rgba(100, 80, 50, 0.6)'
+                      e.currentTarget.style.borderColor = '#cc9944'
                     } else {
-                      e.target.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
-                      e.target.style.borderColor = '#ffaa00'
+                      e.currentTarget.style.backgroundColor = 'rgba(100, 50, 0, 0.6)'
+                      e.currentTarget.style.borderColor = '#ffaa00'
                     }
                   }}
                 >

@@ -120,6 +120,8 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
     }
 
     const validateInput = () => {
+        setValidationMessage('')
+
         if (inputType === 'choice' && !selectedChoice) {
             setValidationMessage('Please select an option')
             setValidationSeverity('error')
@@ -166,7 +168,6 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
             }
         }
 
-        setValidationMessage('')
         return true
     }
 
@@ -217,6 +218,8 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
             <div
                 ref={dialogRef}
                 tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
                 style={{
                     backgroundColor: 'rgba(10, 20, 10, 0.98)',
                     border: '3px solid #00cc66',
@@ -282,6 +285,7 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
 
                 {/* Event Text Output */}
                 <div
+                    data-testid="event-text-container"
                     onClick={finishImmediately}
                     style={{
                         padding: '16px',

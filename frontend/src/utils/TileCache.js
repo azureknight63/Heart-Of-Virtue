@@ -10,7 +10,7 @@
 
 import apiEndpoints from '../api/endpoints'
 
-class TileCache {
+export class TileCache {
     constructor(maxCacheSize = 200) {
         // Map of "x,y" -> tile data
         this.cache = new Map()
