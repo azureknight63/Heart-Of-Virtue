@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAudio } from '../context/AudioContext'
 import apiEndpoints from '../api/endpoints'
 
@@ -21,13 +22,14 @@ const COMMAND_TOOLTIPS = {
   'Refresh Merchants': '[DEBUG] Refresh all merchant inventories',
 }
 
-export default function ActionsPanel({ player, location, onClose, onRefetch }) {
+export default function ActionsPanel({ player, location, onClose, onRefetch, onMove }) {
   const [commands, setCommands] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [actionMessage, setActionMessage] = useState('')
   const [hoveredCommand, setHoveredCommand] = useState(null)
   const { playSFX } = useAudio()
+  const navigate = useNavigate()
 
   // Fetch available commands from backend
   useEffect(() => {
@@ -82,23 +84,22 @@ export default function ActionsPanel({ player, location, onClose, onRefetch }) {
         }
       } else if (command.name === 'Menu') {
         setActionMessage('Opening menu...')
-        // TODO: Implement menu dialog
         setTimeout(() => {
-          setActionMessage('Menu functionality coming soon.')
-          setTimeout(() => setActionMessage(''), 2000)
-        }, 500)
+          navigate('/menu')
+        }, 300)
       } else if (command.name === 'Save') {
         setActionMessage('Saving game...')
         const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
         const response = await apiEndpoints.saves.save(saveName)
 
-        if (response.data) {
+        if (response.data && response.data.success) {
           const data = response.data
           setActionMessage(data.message || 'Game saved successfully!')
           setTimeout(() => setActionMessage(''), 3000)
         } else {
-          setActionMessage('Save failed.')
-          setTimeout(() => setActionMessage(''), 2000)
+          const errorMsg = response.data?.error || 'Save failed.'
+          setActionMessage(errorMsg)
+          setTimeout(() => setActionMessage(''), 3000)
         }
       } else {
         // Default behavior for other commands

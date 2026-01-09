@@ -25,7 +25,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
             // Update selected target if it's still in the room (to get updated count/desc)
             if (selectedTarget) {
                 let updatedTarget = allTargets.find(t => t.id === selectedTarget.id)
-                
+
                 // Fallback: if ID changed (e.g. server reloaded objects), try finding by name and type
                 if (!updatedTarget) {
                     updatedTarget = allTargets.find(t => t.name === selectedTarget.name && t.type === selectedTarget.type)
@@ -33,9 +33,9 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
 
                 if (updatedTarget) {
                     // Only update if something actually changed to avoid infinite loops
-                    const hasChanged = updatedTarget.count !== selectedTarget.count || 
-                                     updatedTarget.description !== selectedTarget.description ||
-                                     updatedTarget.id !== selectedTarget.id
+                    const hasChanged = updatedTarget.count !== selectedTarget.count ||
+                        updatedTarget.description !== selectedTarget.description ||
+                        updatedTarget.id !== selectedTarget.id
 
                     if (hasChanged) {
                         setSelectedTarget(updatedTarget)
@@ -70,7 +70,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
         setError(null)
         setLoading(true)
         setShowQuantityInput(false)
-        
+
         try {
             const response = await apiEndpoints.world.interact(selectedTarget.id, action, qty)
             const data = response.data
@@ -84,7 +84,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                     // If we took/dropped fewer than all, don't lock
                     const currentCount = parseInt(selectedTarget.count) || 1
                     const requestedQty = parseInt(qty) || 0
-                    
+
                     if (requestedQty > 0 && requestedQty < currentCount) {
                         setIsLocked(false)
                     } else {
@@ -279,9 +279,9 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                             {target.name} {target.count > 1 ? `(x${target.count})` : ''}
                                         </span>
                                         {target.description && (
-                                            <span style={{ 
-                                                fontSize: '11px', 
-                                                color: '#888', 
+                                            <span style={{
+                                                fontSize: '11px',
+                                                color: '#888',
                                                 maxWidth: '300px',
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
@@ -423,6 +423,89 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                             </div>
                         )}
 
+                        {/* Container Contents */}
+                        {selectedTarget.is_container && selectedTarget.opened && selectedTarget.contents && (
+                            <div style={{
+                                marginTop: '12px',
+                                padding: '10px',
+                                backgroundColor: 'rgba(0, 50, 25, 0.4)',
+                                border: '1px solid #00ddaa',
+                                borderRadius: '4px',
+                                animation: 'fadeIn 0.3s ease-out',
+                                width: '100%',
+                            }}>
+                                <div style={{
+                                    color: '#00ddaa',
+                                    fontSize: '12px',
+                                    marginBottom: '10px',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'monospace',
+                                    borderBottom: '1px solid rgba(0, 221, 170, 0.3)',
+                                    paddingBottom: '4px'
+                                }}>
+                                    CONTENTS:
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {selectedTarget.contents.length > 0 ? (
+                                        selectedTarget.contents.map((item, idx) => (
+                                            <div key={idx} style={{
+                                                color: '#ffff00',
+                                                fontSize: '13px',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                fontFamily: 'monospace',
+                                                backgroundColor: 'rgba(0,0,0,0.2)',
+                                                padding: '4px 6px',
+                                                borderRadius: '2px'
+                                            }}>
+                                                <span>
+                                                    {item.name} {item.count > 1 ? `x${item.count}` : ''}
+                                                </span>
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        setLoading(true);
+                                                        try {
+                                                            const response = await apiEndpoints.world.interact(item.id, 'take');
+                                                            if (response.data.success) {
+                                                                setInteractionOutput(response.data.message || `Took ${item.name}`);
+                                                                if (onRefetch) await onRefetch();
+                                                            } else {
+                                                                setError(response.data.error || 'Failed to take item');
+                                                            }
+                                                        } catch (err) {
+                                                            setError('Network error');
+                                                        } finally {
+                                                            setLoading(false);
+                                                        }
+                                                    }}
+                                                    disabled={loading}
+                                                    style={{
+                                                        color: '#00ddaa',
+                                                        background: 'rgba(0, 221, 170, 0.1)',
+                                                        border: '1px solid #00ddaa',
+                                                        borderRadius: '3px',
+                                                        cursor: loading ? 'not-allowed' : 'pointer',
+                                                        fontSize: '10px',
+                                                        padding: '2px 6px',
+                                                        fontWeight: 'bold',
+                                                        textTransform: 'uppercase'
+                                                    }}
+                                                >
+                                                    TAKE
+                                                </button>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div style={{ color: '#666', fontSize: '13px', fontStyle: 'italic', fontFamily: 'monospace' }}>
+                                            (Empty)
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         <div style={{
                             display: 'flex',
                             flexWrap: 'wrap',
@@ -503,7 +586,7 @@ function TypewriterOutput({ text }) {
 
             // Capture the word to add in this tick's closure
             const wordToAdd = words[wordsAdded]
-            
+
             setDisplayedText(prev => {
                 return prev ? `${prev} ${wordToAdd}` : wordToAdd
             })

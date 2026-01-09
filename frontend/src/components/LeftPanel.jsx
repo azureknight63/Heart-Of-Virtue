@@ -69,8 +69,8 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     }
   }, [isProcessingLog, onLogProcessingChange])
 
-  // Determine if it's player's turn - ONLY if not processing log
-  const isMyTurn = (combat?.awaiting_input || false) && !isProcessingLog
+  // Determine if it's player's turn - ONLY if not processing log and combat hasn't ended
+  const isMyTurn = (combat?.awaiting_input || false) && !isProcessingLog && !combat?.end_state
 
   // Get active player data (merging combat status if in combat)
   const activePlayer = (mode === 'combat' && combat?.player)
@@ -204,35 +204,26 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const hasDefensiveMoves = isMoveSelection && availableMoves.some(move => move.category === 'Defensive')
 
   // Show input dialog when backend requests input (target_selection, direction_selection, etc.)
+  // But NOT if combat has ended (end_state is present)
   useEffect(() => {
-    if (combat?.input_type && combat.input_type !== 'move_selection' && combat.awaiting_input && !isProcessingLog) {
+    if (combat?.input_type && combat.input_type !== 'move_selection' && combat.awaiting_input && !isProcessingLog && !combat?.end_state) {
       setShowInputDialog(true)
       setShowCombatMoves(false) // Close move panel when showing input dialog
     } else {
       setShowInputDialog(false)
     }
-  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog])
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state])
 
-  // Show combat moves panel when awaiting move selection
+  // Close combat moves panel when not in move selection mode or when combat has ended
   useEffect(() => {
-    if (combat?.input_type === 'move_selection' && combat.awaiting_input && !isProcessingLog) {
-      setShowCombatMoves(true)
-      // Set default category if none selected (or if it was 'Basic' which is now removed)
-      if (!combatMovesCategory || combatMovesCategory === 'Basic') {
-        setCombatMovesCategory('Offensive')
-      }
-      // Close other panels when move selection starts
-      setShowInventory(false)
-      setShowSkills(false)
-      setShowAttributes(false)
-      setShowStatus(false)
-      setShowActions(false)
-    } else if (mode === 'combat') {
+    if (mode === 'combat') {
       // If we're in combat but not in move selection (e.g. processing log or enemy turn),
-      // ensure the move panel is closed.
-      setShowCombatMoves(false)
+      // or if combat has ended, ensure the move panel is closed.
+      if (!(combat?.input_type === 'move_selection' && combat.awaiting_input && !isProcessingLog && !combat?.end_state)) {
+        setShowCombatMoves(false)
+      }
     }
-  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combatMovesCategory, mode])
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state, mode])
 
   // Show check dialog when check_data is available
   useEffect(() => {
