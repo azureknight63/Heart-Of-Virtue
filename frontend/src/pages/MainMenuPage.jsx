@@ -1,0 +1,326 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useApi'
+import { saves } from '../api/endpoints'
+import { useAudio } from '../context/AudioContext'
+
+export default function MainMenuPage() {
+    const navigate = useNavigate()
+    const { logout } = useAuth()
+    const { playBGM, playSFX } = useAudio()
+
+    const [showLoadModal, setShowLoadModal] = useState(false)
+    const [saveList, setSaveList] = useState([])
+    const [mostRecentSave, setMostRecentSave] = useState(null)
+    const [isLoadingSaves, setIsLoadingSaves] = useState(false)
+    const [loadingAction, setLoadingAction] = useState(false)
+
+    // Play theme and fetch saves on mount
+    useEffect(() => {
+        playBGM('adventure')
+        const initMenu = async () => {
+            try {
+                const response = await saves.list()
+                const savesList = response.data?.saves || []
+                setSaveList(savesList)
+            } catch (error) {
+                console.error("Failed to initialize menu saves", error)
+            }
+        }
+        initMenu()
+    }, [playBGM])
+
+    // Keep mostRecentSave in sync with saveList
+    useEffect(() => {
+        if (saveList && saveList.length > 0) {
+            const sorted = [...saveList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            setMostRecentSave(sorted[0])
+        } else {
+            setMostRecentSave(null)
+        }
+    }, [saveList])
+
+    const handleNewGame = () => {
+        playSFX('click')
+        // Logic to ensure fresh start could go here, but for now just navigate
+        navigate('/game')
+    }
+
+    const handleContinue = async () => {
+        if (!mostRecentSave) return
+        playSFX('click')
+        setLoadingAction(true)
+        try {
+            await saves.load(mostRecentSave.id)
+            navigate('/game')
+        } catch (error) {
+            console.error("Failed to load save", error)
+            playSFX('error')
+        } finally {
+            setLoadingAction(false)
+        }
+    }
+
+    const handleLoadGameClick = async () => {
+        playSFX('click')
+        setShowLoadModal(true)
+        setIsLoadingSaves(true)
+        try {
+            const response = await saves.list()
+            // API returns { success: true, saves: [...] }
+            setSaveList(response.data?.saves || [])
+        } catch (error) {
+            console.error("Failed to list saves", error)
+        } finally {
+            setIsLoadingSaves(false)
+        }
+    }
+
+    const handleLoadConfirm = async (saveId) => {
+        playSFX('click')
+        setLoadingAction(true)
+        try {
+            await saves.load(saveId)
+            navigate('/game')
+        } catch (error) {
+            console.error("Failed to load save", error)
+            playSFX('error')
+        } finally {
+            setLoadingAction(false)
+        }
+    }
+
+    const handleDeleteSave = async (e, saveId) => {
+        e.stopPropagation() // Prevent row click
+        if (!window.confirm("Are you sure you want to delete this save?")) return
+
+        try {
+            await saves.delete(saveId)
+            setSaveList(prev => prev.filter(s => s.id !== saveId))
+            playSFX('click')
+        } catch (error) {
+            console.error("Failed to delete save", error)
+            playSFX('error')
+        }
+    }
+
+    const handleLogout = async () => {
+        playSFX('click')
+        await logout()
+        navigate('/login')
+    }
+
+    // Styles
+    const containerStyle = {
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#050505',
+        backgroundImage: `radial-gradient(circle at 50% 50%, #1a2a3a 0%, #000000 100%)`,
+        color: '#e0e0e0',
+        fontFamily: '"Outfit", sans-serif',
+        position: 'relative',
+        overflow: 'hidden'
+    }
+
+    const menuCardStyle = {
+        background: 'rgba(20, 20, 20, 0.85)',
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(0, 255, 136, 0.2)',
+        boxShadow: '0 0 20px rgba(0, 255, 136, 0.1)',
+        borderRadius: '1rem',
+        padding: '3rem',
+        width: '100%',
+        maxWidth: '400px',
+        textAlign: 'center',
+        animation: 'fadeInUp 0.8s ease-out'
+    }
+
+    const titleStyle = {
+        fontSize: '2.5rem',
+        background: 'linear-gradient(to right, #00ff88, #00ccff)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        marginBottom: '2rem',
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        filter: 'drop-shadow(0 0 10px rgba(0, 255, 136, 0.3))'
+    }
+
+    const buttonStyle = {
+        display: 'block',
+        width: '100%',
+        padding: '1rem',
+        margin: '1rem 0',
+        background: 'transparent',
+        border: '1px solid #00ff88',
+        color: '#00ff88',
+        fontSize: '1.1rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.1em',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        borderRadius: '0.25rem'
+    }
+
+    // Hover effect handler via inline styles is tricky with pseudo-selectors.
+    // We'll use a class or simple inline logic.
+    // Ideally we'd use a styled component or CSS module.
+    // For now, I'll rely on the 'btn-menu' class if I can add it, or just use className="btn-menu" and add to index.css later?
+    // Or just simpler inline.
+
+    const modalOverlayStyle = {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000
+    }
+
+    const modalContentStyle = {
+        background: '#111',
+        border: '1px solid #333',
+        borderRadius: '0.5rem',
+        width: '90%',
+        maxWidth: '600px',
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+    }
+
+    return (
+        <div style={containerStyle}>
+
+            {/* Background Ambience (Optional Particles could go here) */}
+
+            <div style={menuCardStyle}>
+                <h1 style={titleStyle}>Heart of Virtue</h1>
+
+                <nav>
+                    {mostRecentSave && (
+                        <MenuButton onClick={handleContinue}>Continue</MenuButton>
+                    )}
+                    <MenuButton onClick={handleNewGame}>New Game</MenuButton>
+                    <MenuButton onClick={handleLoadGameClick}>Load Game</MenuButton>
+                    <MenuButton onClick={() => playSFX('error') /* Placeholder */}>Manage Account</MenuButton>
+                    <MenuButton onClick={handleLogout} variant="danger">Logout</MenuButton>
+                </nav>
+            </div>
+
+            {/* Load Game Modal */}
+            {showLoadModal && (
+                <div style={modalOverlayStyle} onClick={() => setShowLoadModal(false)}>
+                    <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: '1rem', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ color: '#00ff88', margin: 0 }}>Load Game</h2>
+                            <button
+                                onClick={() => setShowLoadModal(false)}
+                                style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1.5rem' }}
+                            >×</button>
+                        </div>
+
+                        <div style={{ padding: '1rem', overflowY: 'auto' }}>
+                            {isLoadingSaves ? (
+                                <div style={{ color: '#666', textAlign: 'center' }}>Loading saves...</div>
+                            ) : saveList.length === 0 ? (
+                                <div style={{ color: '#666', textAlign: 'center' }}>No saves found.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    {saveList.map(save => (
+                                        <div
+                                            key={save.id}
+                                            onClick={() => handleLoadConfirm(save.id)}
+                                            className="save-slot"
+                                            style={{
+                                                padding: '1rem',
+                                                background: '#1a1a1a',
+                                                border: '1px solid #333',
+                                                borderRadius: '0.25rem',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                transition: 'background 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#252525'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = '#1a1a1a'}
+                                        >
+                                            <div>
+                                                <div style={{ color: '#fff', fontWeight: 'bold' }}>{save.name || 'Untitled Save'}</div>
+                                                <div style={{ color: '#888', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                                                    Lvl {save.level} • {save.map_name} • {save.room_title}
+                                                </div>
+                                                <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                                                    {new Date(save.timestamp).toLocaleString()}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={(e) => handleDeleteSave(e, save.id)}
+                                                style={{
+                                                    background: 'none',
+                                                    border: '1px solid #662222',
+                                                    color: '#ee5555',
+                                                    padding: '0.25rem 0.5rem',
+                                                    borderRadius: '0.25rem',
+                                                    fontSize: '0.8rem',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Loading Overlay */}
+            {loadingAction && (
+                <div style={{ ...modalOverlayStyle, zIndex: 1100 }}>
+                    <div style={{ color: '#00ff88', fontSize: '1.5rem' }}>Loading...</div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function MenuButton({ children, onClick, variant = 'primary' }) {
+    const [hover, setHover] = useState(false)
+    const baseColor = variant === 'danger' ? '#ff4444' : '#00ff88'
+
+    return (
+        <button
+            onClick={onClick}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+            style={{
+                display: 'block',
+                width: '100%',
+                padding: '1rem',
+                margin: '1rem 0',
+                background: hover ? `rgba(${variant === 'danger' ? '255,68,68' : '0,255,136'}, 0.1)` : 'transparent',
+                border: `1px solid ${baseColor}`,
+                color: baseColor,
+                fontSize: '1rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.15em',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                borderRadius: '0.25rem',
+                boxShadow: hover ? `0 0 15px rgba(${variant === 'danger' ? '255,68,68' : '0,255,136'}, 0.3)` : 'none'
+            }}
+        >
+            {children}
+        </button>
+    )
+}
