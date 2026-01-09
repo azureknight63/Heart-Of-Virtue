@@ -58,11 +58,11 @@ export default function GamePage() {
       refetchPlayer(),
       refetchWorld()
     ]
-    
+
     if (inCombat) {
       promises.push(fetchCombatStatus())
     }
-    
+
     await Promise.all(promises)
   }
 
@@ -135,6 +135,12 @@ export default function GamePage() {
           needs_input: false
         }
         setCurrentEvent(resultEvent)
+      }
+
+      // Check if event triggered combat
+      if (data.combat_started) {
+        console.log('Combat initiated by event!', data.combat_state)
+        await fetchCombatStatus()
       }
 
       // Refetch player and world state after event processing
