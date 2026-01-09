@@ -15,16 +15,39 @@ class MinimalPlayer:
         self.name = name
         self.location_x = 0  # Starting at origin
         self.location_y = 0
+        self.universe = None
         self.inventory = self._create_starting_inventory()
         self.equipment = {}
         self.hp = 100
-        self.max_hp = 100
+        self.maxhp = 100
+        self.maxhp_base = 100
+        
+        # Core stats to avoid crashes in events/interactions
+        self.strength = 10
+        self.finesse = 10
+        self.faith = 10
+        self.intelligence = 10
+        self.charisma = 10
+        self.endurance = 10
+        self.speed = 10
+        self.awareness = 10
+        
         self.level = 1
         self.exp = 0
         self.story = {}  # Empty story dict for API operations
         self.reputation = {}  # Empty reputation dict for API operations
         self.completed_dialogues = []  # Track completed dialogues
         self.dialogue_contexts = {}  # Store active dialogue contexts
+        
+        # Default prayer messages (subset of Player messages)
+        self.prayer_msg = [
+            "A warm sense of peace fills Jean's heart.",
+            'Jean frowns impatiently.',
+            'Jean shudders slightly.',
+            'Jean makes the sign of the cross.',
+            'Jean becomes conscious of his own heart beating loudly.',
+            'Jean feels the silence around him to be very heavy.'
+        ]
     
     def _create_starting_inventory(self):
         """Create starting items for new players."""

@@ -163,6 +163,7 @@ class NPC:
             "personal": "it", "possessive": "its", "reflexive": "itself", "intensive": "itself"
         }
         self.player_ref = None  # Will be set during combat initialization for config access
+        self.ai_config = None # Initialized during combat
 
     def is_alive(self):
         return self.hp > 0
@@ -190,10 +191,27 @@ class NPC:
 
     def select_move(self):
         available_moves = self.refresh_moves()
+        
+        # Initialize AI config if we have a player reference (combat started)
+        if (not hasattr(self, 'ai_config') or self.ai_config is None) and hasattr(self, 'player_ref') and self.player_ref:
+            try:
+                from npc_ai_config import NPCAIConfig
+                self.ai_config = NPCAIConfig(self.player_ref)
+            except ImportError:
+                pass
+
         #  simple random selection; if you want something more complex, overwrite this for the specific NPC
         weighted_moves = []
         for move in available_moves:
-            for weight in range(move.weight):
+            # Calculate tactical weight modifications
+            weight = move.weight
+            if hasattr(self, 'ai_config') and self.ai_config:
+                 weight += self.ai_config.get_weighted_move_bonus(self, move.name)
+            
+            # Ensure at least 1 weight for viable moves
+            weight = max(1, weight)
+            
+            for _ in range(weight):
                 weighted_moves.append(move)
 
         #  add additional rest moves if fatigue is low to make it a more likely choice
@@ -201,8 +219,16 @@ class NPC:
             for i in range(0, 5):
                 weighted_moves.append(moves.NpcRest(self))
 
+        if not weighted_moves:
+            # Fallback if no moves generated
+            return
+
         num_choices = len(weighted_moves) - 1
-        while self.current_move is None:
+        max_attempts = 20 # Prevent infinite loops
+        attempts = 0
+        
+        while self.current_move is None and attempts < max_attempts:
+            attempts += 1
             choice = random.randint(0, num_choices)
             if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
@@ -212,10 +238,22 @@ class NPC:
                     player = self.player_ref
                     if hasattr(player, 'combat_debug_manager') and player.combat_debug_manager:
                         if player.combat_debug_manager.should_debug_ai_decisions():
+                            # Gather debug info
+                            flank_bonus = 0
+                            retreat_prio = 0
+                            if hasattr(self, 'ai_config') and self.ai_config:
+                                flank_bonus = self.ai_config.get_weighted_move_bonus(self, self.current_move.name)
+                                retreat_prio = self.ai_config.calculate_retreat_priority(self, [])
+                                
                             player.combat_debug_manager.display_ai_debug_info(
                                 self,
                                 f"Selected {self.current_move.name}",
-                                {"fatigue_cost": self.current_move.fatigue_cost}
+                                {
+                                    "fatigue_cost": self.current_move.fatigue_cost,
+                                    "original_weight": weighted_moves[choice].weight,
+                                    "ai_bonus": flank_bonus,
+                                    "retreat_priority": retreat_prio
+                                }
                             )
 
     def add_move(self, move, weight=1):

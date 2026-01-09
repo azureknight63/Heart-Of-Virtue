@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-saves_bp = Blueprint("saves", __name__, url_prefix="/saves")
+saves_bp = Blueprint("saves", __name__)
 
 
 def get_session_and_player(request):
@@ -27,7 +27,8 @@ def get_session_and_player(request):
     return session_manager, session, player, None
 
 
-@saves_bp.route("/", methods=["GET"])
+@saves_bp.route("/saves/", methods=["GET"])
+@saves_bp.route("/saves", methods=["GET"])
 def list_saves():
     """List all saved games for player.
 
@@ -73,7 +74,8 @@ def list_saves():
         )
 
 
-@saves_bp.route("/", methods=["POST"])
+@saves_bp.route("/saves/", methods=["POST"])
+@saves_bp.route("/saves", methods=["POST"])
 def create_save():
     """Create a new save.
 
@@ -144,7 +146,7 @@ def create_save():
         )
 
 
-@saves_bp.route("/<save_id>/load", methods=["POST"])
+@saves_bp.route("/saves/<save_id>/load", methods=["POST"])
 def load_save(save_id):
     """Load a saved game.
 
@@ -209,7 +211,7 @@ def load_save(save_id):
         )
 
 
-@saves_bp.route("/<save_id>", methods=["DELETE"])
+@saves_bp.route("/saves/<save_id>", methods=["DELETE"])
 def delete_save(save_id):
     """Delete a saved game.
 

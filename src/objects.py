@@ -428,7 +428,7 @@ class Shrine(Object):
     game effects should only happen once.
     """
 
-    def __init__(self, player, tile, params=None):
+    def __init__(self, player=None, tile=None, params=None):
         description = "A beautiful shrine depicting a variety of saints praying to God."
         super().__init__(name="Shrine", description=description,
                          idle_message="There is an ornate shrine here.",
@@ -456,9 +456,12 @@ class Shrine(Object):
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
         time.sleep(random.randint(3, 10))
-        selection = random.randint(0, len(player.prayer_msg) - 1)
-        print(player.prayer_msg[selection])
-        if self.event is not None:
+        
+        # Robustly handle missing prayer_msg
+        prayer_messages = getattr(player, 'prayer_msg', ["Jean prays silently."])
+        selection = random.randint(0, len(prayer_messages) - 1)
+        print(prayer_messages[selection])
+        if getattr(self, 'event', None) is not None:
             time.sleep(random.randint(3, 10))
             self.event.process()
             self.event = None
@@ -766,7 +769,7 @@ class PrayerCandleRack(Object):
         time.sleep(5)
         print("A strange feeling fills his chest, as if there's a tune he can't quite remember.")
         time.sleep(0.5)
-        if self.event:
+        if getattr(self, 'event', None):
             self.event.process()
             if not getattr(self.event, 'repeat', False):
                 self.event = None

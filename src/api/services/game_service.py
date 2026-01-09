@@ -407,6 +407,29 @@ class GameService:
         # Remove from pending events
         del session_data["pending_events"][event_id]
         
+        # Check for combat after event processing (in case event spawned enemies)
+        from src.functions import check_for_combat
+        combat_enemies = check_for_combat(player)
+        
+        if combat_enemies:
+            # Initialize combat
+            self._initialize_combat(player, combat_enemies)
+            result["combat_started"] = True
+            
+            # Get initial combat state
+            if hasattr(player, '_combat_adapter'):
+                adapter_state = player._combat_adapter.get_combat_state()
+                result["combat_state"] = adapter_state.get('battle_state')
+            else:
+                # Fallback to direct serialization
+                result["combat_state"] = CombatStateSerializer.serialize_combat_state(
+                    player, combat_enemies,
+                    current_turn_index=getattr(player, "combat_turn_index", 0),
+                    round_number=getattr(player, "combat_round", 1)
+                )
+        else:
+            result["combat_started"] = False
+        
         return result
 
     def get_tile(self, player: "player_module.Player", x: int, y: int) -> Dict[str, Any]:
@@ -573,8 +596,22 @@ class GameService:
                     target = item
                     break
                     
+        # Try to find target in items inside open containers
+        if not target:
+            from src.objects import Container
+            for obj in tile.objects_here:
+                if isinstance(obj, Container) and obj.state == "opened" and hasattr(obj, "inventory"):
+                    for item in obj.inventory:
+                        if str(id(item)) == target_id:
+                            target = item
+                            # Attach the container reference for later use in take action
+                            target._parent_container = obj
+                            break
+                if target: break
+
         if not target:
             return {"success": False, "message": "Target not found."}
+
         is_valid = False
         if hasattr(target, "keywords") and action in target.keywords:
             is_valid = True
@@ -598,8 +635,8 @@ class GameService:
                 f.write(str(text) + '\n')
 
             def mock_input(prompt=""):
-                # Return empty string to prevent blocking if something calls input() directly
-                return ""
+                # Return 'x' to exit any terminal-based interactive loops (like loot menus)
+                return "x"
             
             # Patch at multiple levels since different modules import differently
             with contextlib.redirect_stdout(f), \
@@ -614,23 +651,37 @@ class GameService:
                  patch('src.items.cprint', mock_cprint), \
                  patch('items.cprint', mock_cprint):
                 
-                method = getattr(target, action)
-                # Check signature to see if we need to pass player
-                sig = inspect.signature(method)
-                # Get parameter names excluding 'self'
-                param_names = [p for p in sig.parameters.keys() if p != 'self']
+                from src.objects import Container
+                from src.items import Item
+                from src.interface import transfer_item
                 
-                # If there are parameters beyond 'self', pass player
-                if len(param_names) > 0:
-                    # If the method accepts quantity, pass it
-                    if 'quantity' in param_names:
-                        method(player, quantity=quantity)
-                    else:
-                        method(player)
+                if isinstance(target, Container) and action in ["loot", "check"]:
+                    target.open()
+                elif isinstance(target, Item) and action == "take" and hasattr(target, "_parent_container"):
+                    # Use transfer_item for items in containers
+                    qty_to_take = quantity if quantity is not None else getattr(target, 'count', 1)
+                    transfer_item(target._parent_container, player, target, qty_to_take)
+                    cprint(f"{player.name} takes {target.name}.", "green")
                 else:
-                    method()
+                    method = getattr(target, action)
+                    # Check signature to see if we need to pass player
+                    sig = inspect.signature(method)
+                    # Get parameter names excluding 'self'
+                    param_names = [p for p in sig.parameters.keys() if p != 'self']
+                    
+                    # If there are parameters beyond 'self', pass player
+                    if len(param_names) > 0:
+                        # If the method accepts quantity, pass it
+                        if 'quantity' in param_names:
+                            method(player, quantity=quantity)
+                        else:
+                            method(player)
+                    else:
+                        method()
                     
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return {"success": False, "message": f"Error executing action: {str(e)}"}
 
         output = f.getvalue()
@@ -1211,6 +1262,13 @@ class GameService:
             except Exception as e:
                 logging.error(f"Error getting available actions: {e}")
 
+        # Add default system commands if not already present
+        if not any(c.get("name") == "Save" for c in commands):
+            commands.append({"name": "Save", "hotkey": ["ctrl", "s"], "debug": False})
+        
+        if not any(c.get("name") == "Menu" for c in commands):
+            commands.append({"name": "Menu", "hotkey": ["esc"], "debug": False})
+
         return {
             "commands": commands,
             "count": len(commands),
@@ -1220,8 +1278,17 @@ class GameService:
     # Save/Load Methods
     # ========================
 
+    def _get_saves_dir(self) -> str:
+        """Get the directory for save files."""
+        import os
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        saves_dir = os.path.join(base_path, "saves")
+        if not os.path.exists(saves_dir):
+            os.makedirs(saves_dir)
+        return saves_dir
+
     def save_game(self, player: "player_module.Player", name: str) -> str:
-        """Save the game.
+        """Save the game with metadata.
 
         Args:
             player: The Player instance
@@ -1230,10 +1297,42 @@ class GameService:
         Returns:
             Save ID
         """
-        # TODO: Implement save persistence
         import uuid
+        import json
+        import os
+        import pickle
+        from datetime import datetime
 
         save_id = str(uuid.uuid4())
+        saves_dir = self._get_saves_dir()
+        
+        # Save .sav file (Pickle)
+        sav_path = os.path.join(saves_dir, f"{save_id}.sav")
+        with open(sav_path, "wb") as f:
+            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+
+        # Create Metadata
+        map_name = getattr(getattr(player, "map", None), "name", "Unknown Area")
+        room_name = getattr(getattr(player, "current_room", None), "name", "Unknown Room")
+        level = getattr(player, "level", 1)
+        playtime = getattr(player, "time_elapsed", 0)
+
+        metadata = {
+            "id": save_id,
+            "name": name,
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "map_name": map_name,
+            "room_title": room_name,
+            "playtime": playtime,
+            "filename": f"{save_id}.sav"
+        }
+
+        # Save .meta file (JSON)
+        meta_path = os.path.join(saves_dir, f"{save_id}.meta")
+        with open(meta_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+
         return save_id
 
     def load_game(self, save_id: str) -> Optional["player_module.Player"]:
@@ -1245,8 +1344,56 @@ class GameService:
         Returns:
             Loaded Player instance or None
         """
-        # TODO: Implement save loading
-        return None
+        import os
+        import src.functions as functions
+        
+        saves_dir = self._get_saves_dir()
+        sav_path = os.path.join(saves_dir, f"{save_id}.sav")
+        
+        if not os.path.exists(sav_path):
+            # Fallback: check if save_id is actually a legacy filename (e.g. "AutoSave")
+            # This handles cases where we might want to load old saves if we indexed them
+            legacy_path = os.path.join(saves_dir, save_id)
+            if os.path.exists(legacy_path):
+                sav_path = legacy_path
+            else:
+                return None
+
+        try:
+            # Use functions.load to handle safe unpickling and legacy compatibility
+            player = functions.load(sav_path)
+            
+            if player:
+                # Re-initialize universe connections
+                if not hasattr(player, "universe") or player.universe is None:
+                    player.universe = universe_module.Universe(player)
+                
+                # Ensure universe is built/linked
+                # Note: Universe.build(player) might be expensive or reset state?
+                # In game.py it calls build(player). checking universe.py...
+                # It seems build() populates maps. If the player was pickled with the universe, maybe we don't need this.
+                # But typically 'universe' field on player is what holds the world.
+                # If pickle saved the universe, we utilize it.
+                # If not, we rebuild.
+                
+                # Force rebuild of transient state if needed
+                if not hasattr(player.universe, "maps") or not player.universe.maps:
+                     player.universe.build(player)
+                
+                # Link player back to map/room objects if they were severed
+                # (Pickle usually handles circular refs fine, but good to be sure)
+                
+                # Update current_room reference based on location_x/y if needed
+                # (This is handled by game loop usually, but let's ensure it's set)
+                if hasattr(player, "map"):
+                     start_tile = player.universe.get_tile(player.location_x, player.location_y)
+                     if start_tile:
+                         player.current_room = start_tile
+
+            return player
+        except Exception as e:
+            print(f"Error loading save {save_id}: {e}")
+            return None
 
     def list_saves(self) -> List[Dict[str, Any]]:
         """List all saved games.
@@ -1254,8 +1401,59 @@ class GameService:
         Returns:
             List of save metadata dictionaries
         """
-        # TODO: Implement save listing
-        return []
+        import os
+        import json
+        import glob
+        
+        saves_dir = self._get_saves_dir()
+        saves = []
+        
+        # Pattern 1: .meta files (New system)
+        meta_files = glob.glob(os.path.join(saves_dir, "*.meta"))
+        for meta_file in meta_files:
+            try:
+                with open(meta_file, "r") as f:
+                    data = json.load(f)
+                    saves.append(data)
+            except Exception:
+                continue
+                
+        # Pattern 2: .sav files without .meta (Legacy/Auto-generated)
+        # We should list them too so the user isn't lost
+        sav_files = glob.glob(os.path.join(saves_dir, "*.sav"))
+        existing_ids = {s.get("id") for s in saves}
+        
+        for sav_file in sav_files:
+            filename = os.path.basename(sav_file)
+            save_id = filename.replace(".sav", "")
+            
+            # If we already have a meta record for this ID, skip
+            if save_id in existing_ids:
+                continue
+                
+            # Create a synthetic meta record for legacy save
+            try:
+                mtime = os.path.getmtime(sav_file)
+                from datetime import datetime
+                timestamp = datetime.fromtimestamp(mtime).isoformat()
+                
+                saves.append({
+                    "id": save_id,
+                    "name": filename.replace(".sav", ""), # Use filename as name
+                    "timestamp": timestamp,
+                    "level": "?",
+                    "map_name": "Legacy Save",
+                    "room_title": "Unknown",
+                    "playtime": 0,
+                    "filename": filename,
+                    "is_legacy": True
+                })
+            except Exception:
+                continue
+
+        # Sort by timestamp descending
+        saves.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return saves
 
     def delete_save(self, save_id: str) -> bool:
         """Delete a save.
@@ -1266,8 +1464,30 @@ class GameService:
         Returns:
             True if deleted, False otherwise
         """
-        # TODO: Implement save deletion
-        return False
+        import os
+        saves_dir = self._get_saves_dir()
+        
+        success = False
+        
+        # Delete .sav
+        sav_path = os.path.join(saves_dir, f"{save_id}.sav")
+        if os.path.exists(sav_path):
+            os.remove(sav_path)
+            success = True
+            
+        # Delete .meta
+        meta_path = os.path.join(saves_dir, f"{save_id}.meta")
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+            success = True # Count as success if we deleted the meta at least
+            
+        # Check direct legacy path
+        legacy_path = os.path.join(saves_dir, save_id)
+        if os.path.exists(legacy_path):
+             os.remove(legacy_path)
+             success = True
+
+        return success
 
     # ========================
     # Combat Methods

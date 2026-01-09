@@ -8,15 +8,8 @@ class ObjectSerializer:
     """Serialize world objects to JSON-safe dictionaries."""
 
     @staticmethod
-    def serialize(obj: Any) -> Dict[str, Any]:
-        """Serialize a single world object.
-        
-        Args:
-            obj: World object to serialize (Container, Chest, Door, Shrine, etc.)
-            
-        Returns:
-            Dictionary with object data
-        """
+    def _serialize_base(obj: Any) -> Dict[str, Any]:
+        """Internal method for basic object serialization to avoid recursion."""
         if not obj:
             return {}
 
@@ -44,14 +37,40 @@ class ObjectSerializer:
         # Specific object states
         if hasattr(obj, "locked"):
             obj_data["locked"] = obj.locked
-        if hasattr(obj, "opened"):
+
+        # Handle container state correctly
+        if hasattr(obj, "state"):
+            obj_data["state"] = obj.state
+            obj_data["opened"] = (obj.state == "opened")
+        elif hasattr(obj, "opened"):
             obj_data["opened"] = obj.opened
+            
         if hasattr(obj, "open_message"):
             obj_data["open_message"] = obj.open_message
         if hasattr(obj, "idle_message"):
             obj_data["idle_message"] = obj.idle_message
 
         return obj_data
+
+    @staticmethod
+    def serialize(obj: Any) -> Dict[str, Any]:
+        """Serialize a single world object.
+        
+        Args:
+            obj: World object to serialize (Container, Chest, Door, Shrine, etc.)
+            
+        Returns:
+            Dictionary with object data
+        """
+        if not obj:
+            return {}
+
+        # Check if it's a container and use container serialization if so
+        from src.objects import Container
+        if isinstance(obj, Container):
+            return ObjectSerializer.serialize_container(obj)
+
+        return ObjectSerializer._serialize_base(obj)
 
     @staticmethod
     def serialize_list(objects: List[Any]) -> List[Dict[str, Any]]:
@@ -78,13 +97,16 @@ class ObjectSerializer:
         Returns:
             Dictionary with container data and items
         """
-        obj_data = ObjectSerializer.serialize(obj)
+        obj_data = ObjectSerializer._serialize_base(obj)
 
         # Container-specific info
         obj_data["is_container"] = True
 
         # Serialize contents
-        if hasattr(obj, "contents") and obj.contents:
+        if hasattr(obj, "inventory") and obj.inventory:
+            obj_data["contents"] = ItemSerializer.serialize_list(obj.inventory)
+            obj_data["item_count"] = len(obj.inventory)
+        elif hasattr(obj, "contents") and obj.contents:
             obj_data["contents"] = ItemSerializer.serialize_list(obj.contents)
             obj_data["item_count"] = len(obj.contents)
         elif hasattr(obj, "items_here") and obj.items_here:
