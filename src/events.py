@@ -57,4 +57,24 @@ class Event:  # master class for all events
         """
         to be overwritten by an event subclass
         """
-        pass
+class CombatEvent(Event):
+    """
+    Event that initiates parameterized combat using a CombatEventConfig.
+    """
+    def __init__(self, name, player, tile, repeat, config):
+        """
+        Args:
+            config (CombatEventConfig): Configuration for the combat encounter
+        """
+        super().__init__(name, player, tile, repeat, params=[config])
+        self.config = config
+
+    def process(self):
+        """
+        Initiates combat with the configured parameters.
+        """
+        # Local import to avoid circular dependencies
+        from combat import combat
+        
+        # We assume combat() has been updated to accept an optional config
+        combat(self.player, event_config=self.config)

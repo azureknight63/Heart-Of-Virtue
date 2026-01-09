@@ -1000,7 +1000,25 @@
             "west",
             "northwest"
         ],
-        "events": [],
+        "events": [
+            {
+                "__class__": "CombatEvent",
+                "__module__": "events",
+                "props": {
+                    "name": "Rock Rumbler Ambush",
+                    "repeat": false,
+                    "config": {
+                       "__class__": "CombatEventConfig",
+                       "__module__": "combat_event_config",
+                       "props": {
+                          "enemy_list": [["RockRumbler", 2]],
+                          "grid_size_override": null,
+                          "scenario_type": "standard"
+                       }
+                    }
+                }
+            }
+        ],
         "items": [],
         "npcs": [
             {

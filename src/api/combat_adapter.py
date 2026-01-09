@@ -198,7 +198,7 @@ class ApiCombatAdapter:
                         if not hasattr(enemy, "combat_proximity"):
                             enemy.combat_proximity = {}
                         if not hasattr(enemy, "default_proximity"):
-                            enemy.default_proximity = 50  # Default distance
+                            enemy.default_proximity = 10  # Default distance - enemies start in striking range
                         if enemy not in ally.combat_proximity:
                             distance = int(enemy.default_proximity * random.uniform(0.75, 1.25))
                             ally.combat_proximity[enemy] = distance

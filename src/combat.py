@@ -11,9 +11,14 @@ from coordinate_config import CoordinateSystemConfig
 from combat_battlefield import CombatBattlefieldWindow
 
 
-def combat(player):
+from typing import Optional
+from combat_event_config import CombatEventConfig
+import importlib
+
+def combat(player, event_config: Optional[CombatEventConfig] = None):
     """
     :param player:
+    :param event_config: Optional configuration for parameterized combat events.
     :attr player.combat_list: A list of enemies to engage in this combat loop.
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
@@ -33,6 +38,51 @@ def combat(player):
     player.combat_debug_manager = debug_manager
     player.combat_coordinate_config = coordinate_config
     
+    # Handle parameterized event configuration
+    grid_width, grid_height = (50, 50) # Default fallback
+    scenario_type = "standard"
+    
+    if event_config:
+        # Override enemies if specified
+        if event_config.enemy_list:
+            player.combat_list = []
+            try:
+                npc_module = importlib.import_module("npc")
+                for enemy_name, count in event_config.enemy_list:
+                    if hasattr(npc_module, enemy_name):
+                        enemy_class = getattr(npc_module, enemy_name)
+                        for _ in range(count):
+                            player.combat_list.append(enemy_class())
+                    else:
+                        print(f"Error: Unknown enemy type '{enemy_name}'")
+            except ImportError:
+                print("Error: Could not import npc module for enemy generation")
+
+        # Override allies if specified (not fully implemented in player structure yet, but placeholder)
+        if event_config.ally_list:
+            # Logic for adding allies would go here
+            pass
+
+        # Set grid size
+        if event_config.grid_size_override:
+            grid_width, grid_height = event_config.grid_size_override
+        else:
+            combatant_count = len(player.combat_list) + len(player.combat_list_allies)
+            grid_width, grid_height = coordinate_config.get_dynamic_grid_size(combatant_count)
+            
+        scenario_type = event_config.scenario_type
+        
+    else:
+        # Standard combat initialization
+        combatant_count = len(player.combat_list) + len(player.combat_list_allies)
+        grid_width, grid_height = coordinate_config.get_dynamic_grid_size(combatant_count)
+        
+        # Determine scenario type based on combat situation
+        if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
+            scenario_type = "pincer"  # Ambush scenario
+        elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+            scenario_type = "boss_arena"  # Single vs single
+
     # Set player reference on all combatants for config access
     for npc in player.combat_list + player.combat_list_allies:
         npc.player_ref = player
@@ -146,19 +196,13 @@ def combat(player):
     for enemy in player.combat_list:
         check_for_dead_enemy(enemy, True)
 
-    # Initialize combat positions using coordinate system
-    # Determine scenario type based on combat situation
-    scenario_type = "standard"
-    if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
-        scenario_type = "pincer"  # Ambush scenario
-    elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
-        scenario_type = "boss_arena"  # Single vs single
-    
     try:
         positions.initialize_combat_positions(
             allies=player.combat_list_allies,
             enemies=player.combat_list,
-            scenario_type=scenario_type
+            scenario_type=scenario_type,
+            grid_width=grid_width,
+            grid_height=grid_height
         )
     except Exception as e:
         # Graceful fallback: if initialization fails, continue with old system
