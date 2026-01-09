@@ -133,16 +133,23 @@ class AdventureSong(Song):
                 
                 all_sections += mix_layers([mel, chd, bss, perc])
 
-            # --- Section 4: Theme C (The Challenge) x 2 (Shortened) ---
-            for _ in range(2): # Reduced from 4 to 2
+            # --- Section 4: Theme C (The Challenge) x 2 (Shortened) - Ethereal Version ---
+            for _ in range(2):
                 mel, chd, bss = b'', b'', b''
                 for phrase in theme_c:
-                    for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.3, wave_type='sawtooth')
-                for c, dur in prog_c * 2: chd += generate_chord([fr(x) for x in c], d(dur), 0.25, wave_type='sawtooth')
-                for f, dur in bass_c * 2: bss += generate_tone(fr(f), d(dur), 0.22, wave_type='triangle')
+                    # Ethereal: Sine wave, gradual volume increase (crescendo) within each phrase
+                    num_notes = len(phrase)
+                    for i, (f, dur) in enumerate(phrase):
+                        # Start at 0.04, ramp to 0.12
+                        vol = 0.04 + (0.21 * (i / (num_notes - 1))) if num_notes > 1 else 0.25
+                        mel += generate_tone(fr(f), d(dur), vol, wave_type='sine', attack_time=0.03)
+                # Softer, smoother chords and bass
+                for c, dur in prog_c * 2: chd += generate_chord([fr(x) for x in c], d(dur), 0.1, wave_type='sine', attack_time=0.05)
+                for f, dur in bass_c * 2: bss += generate_tone(fr(f), d(dur), 0.08, wave_type='triangle', attack_time=0.05)
                 
-                dur = sum(d(dur) for p in theme_c for _, dur in p)
-                perc = generate_percussion_pattern([1, 1, 1, 0] * 8, dur)
+                total_dur = sum(d(dur) for p in theme_c for _, dur in p) * 2 # Match the chord/bass duration
+                # Sparse, light percussion
+                perc = generate_percussion_pattern([1, 0, 0, 0] * 16, total_dur)
                 all_sections += mix_layers([mel, chd, bss, perc])
 
         # --- Section 5: Theme A Reprise (Grand Finale) x 2 ---
