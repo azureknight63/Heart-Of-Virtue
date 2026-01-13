@@ -160,4 +160,28 @@ describe('MainMenuPage', () => {
             expect(screen.queryByText(/New Save/i)).toBeNull();
         });
     });
+
+    it('opens settings modal on Settings click', async () => {
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+        render(
+            <MemoryRouter>
+                <MainMenuPage />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(screen.getByText(/Settings/i));
+        expect(screen.getByText(/Audio Settings/i)).toBeDefined();
+    });
+
+    it('opens credits modal on Credits click', async () => {
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+        render(
+            <MemoryRouter>
+                <MainMenuPage />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(screen.getByText(/Credits/i));
+        expect(screen.getByText(/The Development Team/i)).toBeDefined();
+    });
 });

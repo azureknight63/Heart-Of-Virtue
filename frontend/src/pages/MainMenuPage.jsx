@@ -7,9 +7,22 @@ import { useAudio } from '../context/AudioContext'
 export default function MainMenuPage() {
     const navigate = useNavigate()
     const { logout } = useAuth()
-    const { playBGM, playSFX } = useAudio()
+    const {
+        playBGM,
+        playSFX,
+        musicVolume,
+        setMusicVolume,
+        sfxVolume,
+        setSfxVolume,
+        isMusicMuted,
+        setIsMusicMuted,
+        isSfxMuted,
+        setIsSfxMuted
+    } = useAudio()
 
     const [showLoadModal, setShowLoadModal] = useState(false)
+    const [showSettings, setShowSettings] = useState(false)
+    const [showCredits, setShowCredits] = useState(false)
     const [saveList, setSaveList] = useState([])
     const [mostRecentSave, setMostRecentSave] = useState(null)
     const [isLoadingSaves, setIsLoadingSaves] = useState(false)
@@ -42,7 +55,6 @@ export default function MainMenuPage() {
 
     const handleNewGame = () => {
         playSFX('click')
-        // Logic to ensure fresh start could go here, but for now just navigate
         navigate('/game')
     }
 
@@ -67,7 +79,6 @@ export default function MainMenuPage() {
         setIsLoadingSaves(true)
         try {
             const response = await saves.list()
-            // API returns { success: true, saves: [...] }
             setSaveList(response.data?.saves || [])
         } catch (error) {
             console.error("Failed to list saves", error)
@@ -91,7 +102,7 @@ export default function MainMenuPage() {
     }
 
     const handleDeleteSave = async (e, saveId) => {
-        e.stopPropagation() // Prevent row click
+        e.stopPropagation()
         if (!window.confirm("Are you sure you want to delete this save?")) return
 
         try {
@@ -148,28 +159,6 @@ export default function MainMenuPage() {
         filter: 'drop-shadow(0 0 10px rgba(0, 255, 136, 0.3))'
     }
 
-    const buttonStyle = {
-        display: 'block',
-        width: '100%',
-        padding: '1rem',
-        margin: '1rem 0',
-        background: 'transparent',
-        border: '1px solid #00ff88',
-        color: '#00ff88',
-        fontSize: '1.1rem',
-        textTransform: 'uppercase',
-        letterSpacing: '0.1em',
-        cursor: 'pointer',
-        transition: 'all 0.3s ease',
-        borderRadius: '0.25rem'
-    }
-
-    // Hover effect handler via inline styles is tricky with pseudo-selectors.
-    // We'll use a class or simple inline logic.
-    // Ideally we'd use a styled component or CSS module.
-    // For now, I'll rely on the 'btn-menu' class if I can add it, or just use className="btn-menu" and add to index.css later?
-    // Or just simpler inline.
-
     const modalOverlayStyle = {
         position: 'fixed',
         top: 0,
@@ -197,9 +186,6 @@ export default function MainMenuPage() {
 
     return (
         <div style={containerStyle}>
-
-            {/* Background Ambience (Optional Particles could go here) */}
-
             <div style={menuCardStyle}>
                 <h1 style={titleStyle}>Heart of Virtue</h1>
 
@@ -209,10 +195,71 @@ export default function MainMenuPage() {
                     )}
                     <MenuButton onClick={handleNewGame}>New Game</MenuButton>
                     <MenuButton onClick={handleLoadGameClick}>Load Game</MenuButton>
-                    <MenuButton onClick={() => playSFX('error') /* Placeholder */}>Manage Account</MenuButton>
+                    <MenuButton onClick={() => setShowSettings(true)}>Settings</MenuButton>
+                    <MenuButton onClick={() => setShowCredits(true)}>Credits</MenuButton>
                     <MenuButton onClick={handleLogout} variant="danger">Logout</MenuButton>
                 </nav>
             </div>
+
+            {/* Settings Modal */}
+            {showSettings && (
+                <div style={modalOverlayStyle} onClick={() => setShowSettings(false)}>
+                    <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: '1rem', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ color: '#00ff88', margin: 0 }}>Settings</h2>
+                            <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1.5rem' }}>×</button>
+                        </div>
+                        <div style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                            <div>
+                                <h3 style={{ color: '#00ccff', marginBottom: '0.5rem' }}>Audio Settings</h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                            <span>Music Volume</span>
+                                            <span>{Math.round((musicVolume || 0) * 100)}%</span>
+                                        </div>
+                                        <input
+                                            type="range" min="0" max="1" step="0.01"
+                                            value={musicVolume || 0}
+                                            onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                                            style={{ width: '100%', accentColor: '#00ff88' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                            <span>SFX Volume</span>
+                                            <span>{Math.round((sfxVolume || 0) * 100)}%</span>
+                                        </div>
+                                        <input
+                                            type="range" min="0" max="1" step="0.01"
+                                            value={sfxVolume || 0}
+                                            onChange={(e) => setSfxVolume(parseFloat(e.target.value))}
+                                            style={{ width: '100%', accentColor: '#00ff88' }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Credits Modal */}
+            {showCredits && (
+                <div style={modalOverlayStyle} onClick={() => setShowCredits(false)}>
+                    <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: '1rem', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ color: '#00ff88', margin: 0 }}>Credits</h2>
+                            <button onClick={() => setShowCredits(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '1.5rem' }}>×</button>
+                        </div>
+                        <div style={{ padding: '2rem', textAlign: 'center' }}>
+                            <h3 style={{ color: '#00ccff' }}>The Development Team</h3>
+                            <p>Created by the Alpha Project Team</p>
+                            <p style={{ marginTop: '1rem', color: '#888' }}>Powered by Vitest & React</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Load Game Modal */}
             {showLoadModal && (
@@ -284,7 +331,6 @@ export default function MainMenuPage() {
                 </div>
             )}
 
-            {/* Loading Overlay */}
             {loadingAction && (
                 <div style={{ ...modalOverlayStyle, zIndex: 1100 }}>
                     <div style={{ color: '#00ff88', fontSize: '1.5rem' }}>Loading...</div>
