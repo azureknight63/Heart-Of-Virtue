@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import ActionsPanel from './ActionsPanel';
 import apiEndpoints from '../api/endpoints';
 import { AudioProvider } from '../context/AudioContext';
@@ -41,8 +42,16 @@ describe('ActionsPanel', () => {
     apiEndpoints.world.getCommands.mockResolvedValue({ data: { commands: mockCommands } });
   });
 
+  const renderWithRouter = (ui) => {
+    return render(
+      <MemoryRouter>
+        {ui}
+      </MemoryRouter>
+    );
+  };
+
   it('renders commands correctly', async () => {
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     expect(screen.getByText(/Loading commands.../i)).toBeDefined();
 
@@ -52,16 +61,16 @@ describe('ActionsPanel', () => {
   });
 
   it('handles Search action', async () => {
-    apiEndpoints.world.search.mockResolvedValue({ 
-      data: { 
-        messages: ['You found something!'] 
-      } 
+    apiEndpoints.world.search.mockResolvedValue({
+      data: {
+        messages: ['You found something!']
+      }
     });
 
-    render(<ActionsPanel onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} onRefetch={mockOnRefetch} />);
 
     await waitFor(() => screen.getByText(/Search/i));
-    
+
     fireEvent.click(screen.getByText(/Search/i));
 
     expect(screen.getByText(/Searching.../i)).toBeDefined();
@@ -74,30 +83,27 @@ describe('ActionsPanel', () => {
   });
 
   it('handles Menu action', async () => {
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Menu/i));
-    
+
     fireEvent.click(screen.getByText(/Menu/i));
 
     expect(screen.getByText(/Opening menu.../i)).toBeDefined();
-
-    await waitFor(() => {
-      expect(screen.getByText(/Menu functionality coming soon./i)).toBeDefined();
-    }, { timeout: 2000 });
   });
 
   it('handles Save action', async () => {
-    apiEndpoints.saves.save.mockResolvedValue({ 
-      data: { 
-        message: 'Game saved!' 
-      } 
+    apiEndpoints.saves.save.mockResolvedValue({
+      data: {
+        success: true,
+        message: 'Game saved!'
+      }
     });
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Save/i));
-    
+
     fireEvent.click(screen.getByText(/Save/i));
 
     expect(screen.getByText(/Saving game.../i)).toBeDefined();
@@ -109,20 +115,20 @@ describe('ActionsPanel', () => {
   });
 
   it('handles generic action', async () => {
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Teleport/i));
-    
+
     fireEvent.click(screen.getByText(/Teleport/i));
 
     expect(screen.getByText(/Teleport.../i)).toBeDefined();
   });
 
   it('shows tooltip on hover', async () => {
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Search/i));
-    
+
     const searchButton = screen.getAllByText(/Search/i)[0];
     fireEvent.mouseEnter(searchButton);
 
@@ -135,7 +141,7 @@ describe('ActionsPanel', () => {
   it('handles error state', async () => {
     apiEndpoints.world.getCommands.mockRejectedValue(new Error('Network error'));
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Error loading commands/i)).toBeDefined();
@@ -145,7 +151,7 @@ describe('ActionsPanel', () => {
   it('renders empty state', async () => {
     apiEndpoints.world.getCommands.mockResolvedValue({ data: { commands: [] } });
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => {
       expect(screen.getByText(/No commands available/i)).toBeDefined();
@@ -153,13 +159,13 @@ describe('ActionsPanel', () => {
   });
 
   it('handles Search with no messages', async () => {
-    apiEndpoints.world.search.mockResolvedValue({ 
-      data: { 
-        messages: [] 
-      } 
+    apiEndpoints.world.search.mockResolvedValue({
+      data: {
+        messages: []
+      }
     });
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Search/i));
     fireEvent.click(screen.getByText(/Search/i));
@@ -172,7 +178,7 @@ describe('ActionsPanel', () => {
   it('handles Search failure', async () => {
     apiEndpoints.world.search.mockResolvedValue({ data: null });
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Search/i));
     fireEvent.click(screen.getByText(/Search/i));
@@ -185,7 +191,7 @@ describe('ActionsPanel', () => {
   it('handles Save failure', async () => {
     apiEndpoints.saves.save.mockResolvedValue({ data: null });
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Save/i));
     fireEvent.click(screen.getByText(/Save/i));
@@ -198,7 +204,7 @@ describe('ActionsPanel', () => {
   it('handles action execution error', async () => {
     apiEndpoints.world.search.mockRejectedValue(new Error('Execution error'));
 
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => screen.getByText(/Search/i));
     fireEvent.click(screen.getByText(/Search/i));
@@ -209,7 +215,7 @@ describe('ActionsPanel', () => {
   });
 
   it('handles close button hover', () => {
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     const closeButton = screen.getByText(/✕/i);
     fireEvent.mouseEnter(closeButton);
@@ -220,7 +226,7 @@ describe('ActionsPanel', () => {
   });
 
   it('calls onClose when close button is clicked', async () => {
-    render(<ActionsPanel onClose={mockOnClose} />);
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     fireEvent.click(screen.getByText(/✕/i));
     expect(mockOnClose).toHaveBeenCalled();

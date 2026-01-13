@@ -101,6 +101,17 @@ export default function GamePage() {
   const handleEventInput = async (eventId, userInput) => {
     console.log('Event input submitted:', { eventId, userInput })
 
+    // Handle internal/frontend events
+    if (eventId === 'combat_init') {
+      if (userInput === 'combat_start') {
+        setMode('combat')
+        setCurrentEvent(null)
+        setCombatDialogShown(true)
+        fetchCombatStatus()
+      }
+      return
+    }
+
     try {
       const response = await fetch('/api/world/events/input', {
         method: 'POST',
@@ -137,9 +148,16 @@ export default function GamePage() {
         setCurrentEvent(resultEvent)
       }
 
+      // If event still needs input (persistent), add back to front of queue
+      if (data.needs_input && data.event) {
+        console.log('Event persists with updated data:', data.event)
+        setEventQueue(prev => [data.event, ...prev])
+      }
+
       // Check if event triggered combat
       if (data.combat_started) {
         console.log('Combat initiated by event!', data.combat_state)
+        setCombatDialogShown(true)
         await fetchCombatStatus()
       }
 
@@ -239,9 +257,12 @@ export default function GamePage() {
           : "Enemies draw near! Prepare for combat!"
 
         const alertEvent = {
+          event_id: 'combat_init',
           name: "Enemy Encounter",
           output_text: dialogDescription,
-          choices: [{ text: "FIGHT FOR YOUR LIFE", next: "combat_start" }]
+          needs_input: true,
+          input_type: 'choice',
+          input_options: [{ label: "FIGHT FOR YOUR LIFE", value: "combat_start" }]
         }
 
         setCurrentEvent(alertEvent)

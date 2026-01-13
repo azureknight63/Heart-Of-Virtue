@@ -33,9 +33,12 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
 
                 if (updatedTarget) {
                     // Only update if something actually changed to avoid infinite loops
-                    const hasChanged = updatedTarget.count !== selectedTarget.count ||
+                    const hasChanged =
+                        updatedTarget.count !== selectedTarget.count ||
                         updatedTarget.description !== selectedTarget.description ||
-                        updatedTarget.id !== selectedTarget.id
+                        updatedTarget.id !== selectedTarget.id ||
+                        updatedTarget.state !== selectedTarget.state ||
+                        (updatedTarget.contents?.length !== selectedTarget.contents?.length)
 
                     if (hasChanged) {
                         setSelectedTarget(updatedTarget)
@@ -97,7 +100,12 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                     await onRefetch()
                 }
 
-                // After interaction, trigger room events
+                // After interaction, trigger room events if any were returned in the response
+                if (data.events_triggered && data.events_triggered.length > 0 && onEventsTriggered) {
+                    onEventsTriggered(data.events_triggered)
+                }
+
+                // Also check for global room events
                 try {
                     const eventsResponse = await apiEndpoints.world.getEvents()
                     const eventsData = eventsResponse.data

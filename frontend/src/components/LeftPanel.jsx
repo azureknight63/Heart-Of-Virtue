@@ -138,11 +138,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
           // Notify parent of progress (for map synchronization)
           if (onLogProgress) {
-            const beatIndex = entry.beat_index !== undefined ? entry.beat_index : 0 // Default to 0 if undefined, or we'd need access to newLog length.
-            // Better to rely on beat_index if available. If not, maybe just use current index.
-            // But wait, the previous logic used newLog.length - 1.
-            // We can't access newLog here easily without replicating the logic.
-            // However, beat_index is the source of truth for map sync.
+            const beatIndex = entry.beat_index !== undefined ? entry.beat_index : 0
             onLogProgress(beatIndex)
           }
 
@@ -172,13 +168,17 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
         // Start processing
         processNextLine()
+      } else {
+        // If combat log is present but no new entries (meaning we already caught up or were interrupted)
+        // ensure we reset the processing flag so the UI can show input if needed.
+        setIsProcessingLog(false)
       }
     } else {
       // If log is empty or reset (e.g. new combat)
-      // Only clear if we actually have something to clear, to avoid unnecessary renders
       if (displayedLog.length > 0) {
         setDisplayedLog([])
       }
+      setIsProcessingLog(false)
     }
 
     // Cleanup function to cancel processing if component unmounts or deps change
