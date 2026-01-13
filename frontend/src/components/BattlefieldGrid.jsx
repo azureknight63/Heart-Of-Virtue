@@ -177,14 +177,14 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
     }
 
     // Map constants
-    const MAP_SIZE = 51 // Coordinates 0-50
+    const MAP_SIZE = 13 // Coordinates 0-12 (12x12 grid for small battles)
     const VIEW_SIZE = 15 // Base view size (Normal mode)
     const isFullMode = zoom === 'full'
 
     // Helper to get position safely
     const getPos = (entity) => {
       // Handle both backend structure (entity.position) and potential missing data
-      return entity?.position || { x: 25, y: 25 }
+      return entity?.position || { x: 6, y: 6 } // Center of 12x12 grid
     }
 
     const playerPos = getPos(combat?.player)
@@ -193,10 +193,10 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
     let gridCols, leftX, topY
 
     if (isFullMode) {
-      // Full Map Mode: Show entire 51x51 grid
+      // Full Map Mode: Show entire grid
       gridCols = MAP_SIZE
       leftX = 0
-      topY = MAP_SIZE - 1 // Top row is Y=50
+      topY = MAP_SIZE - 1 // Top row is Y=12
     } else {
       // Normal Mode: 15x15 centered on player
       gridCols = VIEW_SIZE

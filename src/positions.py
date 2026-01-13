@@ -112,10 +112,13 @@ def get_combat_scenario(
     scenario_type = scenario_type.lower()
     
     if scenario_type == "standard":
-        # Allies left (approx 0-20% width), Enemies right (approx 70-90% width)
+        # Allies left (approx 0-25% width), Enemies 3-6 feet from allies
+        # For a 12x12 grid: allies at x=0-3, enemies at x=3-9 (3-6 feet away)
         # Centered vertically with some buffer
         ally_x_max = max(2, int(grid_width * 0.25))
-        enemy_x_min = min(grid_width - 3, int(grid_width * 0.75))
+        # Enemies start 3-6 feet from ally zone
+        enemy_x_min = ally_x_max  # Start right after ally zone (3 feet on 12x12)
+        enemy_x_max = min(grid_width, ally_x_max + 6)  # Extend 6 feet from ally zone
         
         y_buffer = int(grid_height * 0.2)
         y_min = y_buffer
@@ -124,7 +127,7 @@ def get_combat_scenario(
         return CombatScenario(
             scenario_type="standard",
             ally_spawn_zone=((0, y_min), (ally_x_max, y_max)),
-            enemy_spawn_zones=[((enemy_x_min, y_min), (grid_width, y_max))],
+            enemy_spawn_zones=[((enemy_x_min, y_min), (enemy_x_max, y_max))],
             formation_type="spread",
             min_spacing=min(2, int(grid_width/10) + 1),
             seed=seed
