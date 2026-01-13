@@ -12,6 +12,7 @@ vi.mock('../api/endpoints', () => ({
     },
     player: {
       getStatus: vi.fn(),
+      getFullState: vi.fn(),
       getInventory: vi.fn(),
       getStats: vi.fn(),
       getSkills: vi.fn(),
@@ -53,7 +54,7 @@ describe('useAuth', () => {
     apiEndpoints.auth.login.mockResolvedValue(mockResponse);
 
     const { result } = renderHook(() => useAuth());
-    
+
     await act(async () => {
       await result.current.login('user', 'pass');
     });
@@ -89,10 +90,13 @@ describe('usePlayer', () => {
   });
 
   it('fetches player data successfully', async () => {
-    apiEndpoints.player.getStatus.mockResolvedValue({ data: { status: { name: 'Hero', level: 5 } } });
-    apiEndpoints.player.getInventory.mockResolvedValue({ data: { inventory: { items: [] } } });
-    apiEndpoints.player.getStats.mockResolvedValue({ data: { stats: { strength: 15 } } });
-    apiEndpoints.player.getSkills.mockResolvedValue({ data: { skills: { fireball: 1 } } });
+    const mockFullState = {
+      status: { name: 'Hero', level: 5 },
+      inventory: { items: [] },
+      stats: { strength: 15 },
+      skills: { skills: { fireball: 1 } }
+    };
+    apiEndpoints.player.getFullState.mockResolvedValue({ data: mockFullState });
 
     const { result } = renderHook(() => usePlayer());
 
@@ -106,7 +110,7 @@ describe('usePlayer', () => {
   });
 
   it('handles fetch error', async () => {
-    apiEndpoints.player.getStatus.mockRejectedValue(new Error('Fetch failed'));
+    apiEndpoints.player.getFullState.mockRejectedValue(new Error('Fetch failed'));
 
     const { result } = renderHook(() => usePlayer());
 
@@ -176,7 +180,7 @@ describe('useWorld', () => {
   it('moves to a new location', async () => {
     const initialRoom = { room: { x: 0, y: 0, name: 'Start', exits: { north: 'Room 2' } } };
     const nextRoom = { room: { x: 0, y: -1, name: 'Room 2', exits: { south: 'Start' } } };
-    
+
     apiEndpoints.world.getCurrentLocation.mockResolvedValue({ data: initialRoom });
     apiEndpoints.world.move.mockResolvedValue({ data: nextRoom });
 

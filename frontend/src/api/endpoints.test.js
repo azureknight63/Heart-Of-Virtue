@@ -38,6 +38,11 @@ describe('endpoints', () => {
       expect(apiClient.get).toHaveBeenCalledWith('/status');
     });
 
+    it('calls getFullState endpoint', () => {
+      endpoints.player.getFullState();
+      expect(apiClient.get).toHaveBeenCalledWith('/full-state');
+    });
+
     it('calls getInventory endpoint', () => {
       endpoints.player.getInventory();
       expect(apiClient.get).toHaveBeenCalledWith('/inventory');

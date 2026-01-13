@@ -10,6 +10,7 @@ export const auth = {
 // Player endpoints
 export const player = {
   getStatus: () => apiClient.get('/status'),
+  getFullState: () => apiClient.get('/full-state'),
   getInventory: () => apiClient.get('/inventory'),
   getEquipment: () => apiClient.get('/equipment'),
   getStats: () => apiClient.get('/stats'),

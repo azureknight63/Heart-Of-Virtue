@@ -62,17 +62,15 @@ export const usePlayer = () => {
   const fetchPlayer = async () => {
     try {
       setLoading(true)
-      const statusResponse = await apiEndpoints.player.getStatus()
-      const inventoryResponse = await apiEndpoints.player.getInventory()
-      const statsResponse = await apiEndpoints.player.getStats()
-      const skillsResponse = await apiEndpoints.player.getSkills()
+      const response = await apiEndpoints.player.getFullState()
+      const data = response.data
 
-      // Combine status, inventory, stats, and skills data
+      // Combined payload from consolidated endpoint
       const playerData = {
-        ...statusResponse.data.status,
-        inventory: inventoryResponse.data.inventory?.items || [],
-        ...statsResponse.data.stats,
-        ...skillsResponse.data.skills,
+        ...data.status,
+        inventory: data.inventory?.items || [],
+        ...data.stats,
+        ...data.skills,
       }
 
       setPlayer(playerData)

@@ -1,6 +1,8 @@
 """Player status and stats routes."""
 
 from flask import Blueprint, request, jsonify
+from src.api.serializers.inventory import InventorySerializer
+
 
 player_bp = Blueprint("player", __name__)
 
@@ -83,7 +85,55 @@ def get_status():
         )
 
 
+@player_bp.route("/full-state", methods=["GET"])
+def get_full_state():
+    """Get full player combined state (status, inventory, stats, skills).
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "status": {...},
+            "inventory": {...},
+            "stats": {...},
+            "skills": {...}
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        from flask import current_app
+        game_service = current_app.game_service
+
+        if not game_service:
+            return jsonify({"success": False, "error": "Game service not initialized"}), 500
+
+        # Collect all data in one pass
+        status = game_service.get_player_status(player)
+        inventory = InventorySerializer.serialize(player)
+        stats = game_service.get_player_stats(player)
+        skills = game_service.get_player_skills(player)
+
+        return jsonify({
+            "success": True, 
+            "status": status,
+            "inventory": inventory,
+            "stats": stats,
+            "skills": skills
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @player_bp.route("/stats", methods=["GET"])
+
 def get_stats():
     """Get player stats (strength, dexterity, etc.).
 
