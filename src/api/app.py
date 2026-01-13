@@ -34,7 +34,7 @@ def create_app(config_class=None):
          supports_credentials=True)
 
     # Initialize SocketIO for real-time updates
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=True, engineio_logger=True)
+    socketio = SocketIO(app, cors_allowed_origins=app.config["CORS_ORIGINS"], async_mode='threading', logger=True, engineio_logger=True)
     app.socketio = socketio
 
     # Load starting position and map from config file

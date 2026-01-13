@@ -1006,15 +1006,23 @@
                 "__module__": "events",
                 "props": {
                     "name": "Rock Rumbler Ambush",
+                    "player": null,
+                    "tile": null,
                     "repeat": false,
                     "config": {
-                       "__class__": "CombatEventConfig",
-                       "__module__": "combat_event_config",
-                       "props": {
-                          "enemy_list": [["RockRumbler", 2]],
-                          "grid_size_override": null,
-                          "scenario_type": "standard"
-                       }
+                        "__class__": "CombatEventConfig",
+                        "__module__": "combat_event_config",
+                        "props": {
+                            "enemy_list": [
+                                [
+                                    "RockRumbler",
+                                    2
+                                ]
+                            ],
+                            "grid_size_override": null,
+                            "scenario_type": "standard",
+                            "narrative_text": "The ground beneath your feet begins to shake with a low, rhythmic thrumming. Suddenly, the very stone seems to come alive as two massive, armored forms pull themselves from the cavern walls! Rock Rumblers block your path!"
+                        }
                     }
                 }
             }

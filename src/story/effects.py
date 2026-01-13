@@ -300,7 +300,6 @@ class StMichael(Shrine):
         qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
 
         """)
-        functions.await_input()
         print("Suddenly, Jean has the feeling of intense heat all around him. "
               "He hears a voice echoing inside his head.")
         time.sleep(2)
@@ -308,10 +307,12 @@ class StMichael(Shrine):
         
         for i, choice in enumerate(self.available_choices):
             print("{}: {}".format(i, choice[0]))
-        
-        # Use provided input if available (from API), otherwise prompt
+
         selection = user_input
         if selection is None:
+            # Fallback for terminal mode, but skip await_input if in API mode (user_input provided)
+            # Actually, just remove the blocking await_input as well
+            # functions.await_input()
             try:
                 selection = input(colored("Selection: ", "cyan"))
             except (EOFError, OSError, ValueError):
@@ -331,6 +332,15 @@ class StMichael(Shrine):
         functions.add_random_enchantments(drop, 1)
         cprint("There's a brief flash of light (or was it imagined?) \nSuddenly, at the foot of the shrine, "
                "there sits a {}.".format(drop.name), "cyan")
+
+        # Mark as completed so it doesn't prompt again
+        self.needs_input = False
+        self.completed = True
+        
+        # Remove from tile if not repeating
+        if not self.repeat:
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
 
 class NPCSpawnerEvent(Event):
     """Spawns a number of NPCs of a given class onto a specified tile.
@@ -475,7 +485,7 @@ class WhisperingStatue(Event):
             cprint("A hidden compartment opens at the statue's base!", "green")
             
             # Reward
-            cprint(f"{self.player.name} found a Sapphire Gem!", "green", attrs=['bold'])
+            cprint(f"{self.player.name} found a pouch of Gold!", "green", attrs=['bold'])
             self.tile.spawn_item('Gold', amt=500)
             
         else:
@@ -486,6 +496,19 @@ class WhisperingStatue(Event):
             
             # Punishment - Spawn a low level enemy
             cprint("A Slime oozes out from cracks in the earth!", "red")
-            self.tile.spawn_npc('Slime')
+            slime = self.tile.spawn_npc('Slime')
+            if slime:
+                # Force combat initiation by setting awareness high for this scripted ambush
+                # This ensures check_for_combat() in GameService will always detect it regardless of player finesse
+                slime.awareness = 999
             
-        functions.await_input()
+        # Mark as completed so it doesn't prompt again
+        self.needs_input = False
+        self.completed = True
+        
+        # Remove from tile if not repeating
+        if not self.repeat:
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            
+        # await_input is removed because it blocks the API request. The frontend handles dialog continuation.

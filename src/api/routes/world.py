@@ -588,7 +588,9 @@ def interact_with_target():
                 500,
             )
 
-        result = game_service.interact_with_target(player, target_id, action, quantity=quantity)
+        result = game_service.interact_with_target(
+            player, target_id, action, quantity=quantity, session_data=session.data
+        )
 
         if not result["success"]:
             return jsonify(result), 400

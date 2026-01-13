@@ -246,6 +246,9 @@ class GameService:
         Returns:
             List of triggered event data with captured output
         """
+        if getattr(player, "in_combat", False):
+            return []
+            
         import contextlib
         import io
         import re
@@ -404,8 +407,20 @@ class GameService:
             if clean_output:
                 result["output_text"] = clean_output
         
-        # Remove from pending events
-        del session_data["pending_events"][event_id]
+        # Check if event still needs input (persistent events)
+        from src.api.serializers.event_serializer import EventSerializer
+        updated_event_data = EventSerializer.serialize_with_input(event)
+        
+        if updated_event_data.get("needs_input") and not getattr(event, "completed", False):
+            # Update stored event data and keep it in session
+            updated_event_data["event_id"] = event_id
+            pending["event_data"] = updated_event_data
+            result["event"] = updated_event_data
+            result["needs_input"] = True
+        else:
+            # Remove from pending events
+            del session_data["pending_events"][event_id]
+            result["needs_input"] = False
         
         # Check for combat after event processing (in case event spawned enemies)
         from src.functions import check_for_combat
@@ -421,6 +436,7 @@ class GameService:
                 adapter_state = player._combat_adapter.get_combat_state()
                 result["combat_state"] = adapter_state.get('battle_state')
             else:
+                from src.api.serializers.combat_state_serializer import CombatStateSerializer
                 # Fallback to direct serialization
                 result["combat_state"] = CombatStateSerializer.serialize_combat_state(
                     player, combat_enemies,
@@ -550,7 +566,14 @@ class GameService:
     # Interaction Methods
     # ========================
 
-    def interact_with_target(self, player: "player_module.Player", target_id: str, action: str, quantity: Optional[int] = None) -> Dict[str, Any]:
+    def interact_with_target(
+        self, 
+        player: "player_module.Player", 
+        target_id: str, 
+        action: str, 
+        quantity: Optional[int] = None,
+        session_data: Optional[Dict] = None
+    ) -> Dict[str, Any]:
         """Interact with an object or NPC.
 
         Args:
@@ -558,6 +581,7 @@ class GameService:
             target_id: ID of the target object/NPC
             action: The action keyword to execute
             quantity: Optional quantity for stacked items
+            session_data: Optional session dictionary for storing pending events
 
         Returns:
             Dictionary with interaction result and output text
@@ -568,6 +592,8 @@ class GameService:
         from unittest.mock import patch
         import inspect
         import re
+        import uuid
+        from src.api.serializers.event_serializer import EventSerializer
 
         # Find target
         tile = player.universe.get_tile(player.location_x, player.location_y)
@@ -624,6 +650,7 @@ class GameService:
 
         # Execute action and capture output
         f = io.StringIO()
+        events_triggered = []
         try:
             # We need to patch await_input to prevent blocking, and time.sleep to prevent delays
             # Also patch cprint and print_slow to capture colored output
@@ -651,16 +678,52 @@ class GameService:
                  patch('src.items.cprint', mock_cprint), \
                  patch('items.cprint', mock_cprint):
                 
-                from src.objects import Container
-                from src.items import Item
-                from src.interface import transfer_item
+                try:
+                    from objects import Container
+                except ImportError:
+                    from src.objects import Container
+                try:
+                    from items import Item
+                except ImportError:
+                    from src.items import Item
+                try:
+                    from interface import transfer_item
+                except ImportError:
+                    from src.interface import transfer_item
+                try:
+                    from events import LootEvent
+                except ImportError:
+                    from src.events import LootEvent
                 
-                if isinstance(target, Container) and action in ["loot", "check"]:
+                is_container = type(target).__name__ == "Container" or isinstance(target, Container)
+                is_item = type(target).__name__ == "Item" or isinstance(target, Item)
+                
+                if is_container and action in ["loot", "check"]:
                     target.open()
-                elif isinstance(target, Item) and action == "take" and hasattr(target, "_parent_container"):
+                    # Create a LootEvent and store it
+                    loot_event = LootEvent(f"Looting {target.name}", player, tile, target)
+                    event_data = EventSerializer.serialize_with_input(loot_event)
+                    
+                    if session_data is not None:
+                        event_id = str(uuid.uuid4())
+                        event_data["event_id"] = event_id
+                        
+                        if "pending_events" not in session_data:
+                            session_data["pending_events"] = {}
+                        session_data["pending_events"][event_id] = {
+                            "event": loot_event,
+                            "tile_x": tile.x,
+                            "tile_y": tile.y,
+                            "event_data": event_data
+                        }
+                    
+                    events_triggered.append(event_data)
+                elif is_item and action == "take" and hasattr(target, "_parent_container"):
                     # Use transfer_item for items in containers
                     qty_to_take = quantity if quantity is not None else getattr(target, 'count', 1)
                     transfer_item(target._parent_container, player, target, qty_to_take)
+                    if hasattr(target._parent_container, "refresh_description"):
+                        target._parent_container.refresh_description()
                     cprint(f"{player.name} takes {target.name}.", "green")
                 else:
                     method = getattr(target, action)
@@ -702,7 +765,8 @@ class GameService:
             "success": True, 
             "message": clean_output,
             "target_name": getattr(target, "name", "Unknown"),
-            "action": action
+            "action": action,
+            "events_triggered": events_triggered
         }
 
     # ========================

@@ -1,6 +1,7 @@
 """Authentication routes."""
 
 from flask import Blueprint, request, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
 from src.api.services import SessionManager
 
 auth_bp = Blueprint("auth", __name__)
@@ -56,17 +57,21 @@ def register():
                 400,
             )
 
-        if not password or len(password) < 3:
+        if not password or len(password) < 8:
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
-                        "message": "Password must be at least 3 characters",
+                        "message": "Password must be at least 8 characters",
                     }
                 ),
                 400,
             )
+
+        # Hash password (prepared for database storage in the future)
+        # Note: Current session manager doesn't persist users yet
+        hashed_password = generate_password_hash(password)
 
         # Get session manager from app context
         from flask import current_app
