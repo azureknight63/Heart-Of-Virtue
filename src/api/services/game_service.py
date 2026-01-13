@@ -877,7 +877,6 @@ class GameService:
             
             if item_type == "Weapon":
                 player.eq_weapon = item
-                player.weapon = item
             elif item_type == "Shield":
                 player.shield = item
             elif item_type == "Armor" or item_type == "Helm" or item_type == "Boots" or item_type == "Gloves":
@@ -942,7 +941,6 @@ class GameService:
                 # Equip fists if no weapon
                 if hasattr(player, "fists"):
                     player.eq_weapon = player.fists
-                    player.weapon = player.fists
             else:
                 setattr(player, attr_name, None)
             
