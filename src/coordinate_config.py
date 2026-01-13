@@ -27,12 +27,12 @@ class CoordinateSystemConfig:
             
         Returns:
             (width, height) tuple. 
-            Returns (10, 10) for small groups (< 6 combatants).
+            Returns (12, 12) for small groups (< 6 combatants).
             Returns (20, 20) for larger groups (>= 6 combatants).
         """
         if combatant_count >= 6:
             return (20, 20)
-        return (10, 10)
+        return (12, 12)
 
     def get_grid_size(self) -> Tuple[int, int]:
         """Get current grid size from config.

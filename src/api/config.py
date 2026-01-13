@@ -8,7 +8,7 @@ class Config:
     """Base configuration."""
 
     # Flask settings
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
     DEBUG = os.environ.get("FLASK_DEBUG", True)
     TESTING = False
 

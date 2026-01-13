@@ -24,3 +24,9 @@ class CombatEventConfig:
     
     # Scenario type ("standard", "pincer", "melee", "boss_arena")
     scenario_type: str = "standard"
+
+    # Narrative text to display when the event is triggered (narrative bridge to combat)
+    narrative_text: str = ""
+
+    # Optional text to display upon victory
+    on_victory_text: str = ""
