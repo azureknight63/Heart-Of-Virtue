@@ -13,7 +13,7 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
     const [validationMessage, setValidationMessage] = useState('')
     const [validationSeverity, setValidationSeverity] = useState('') // 'warning' or 'error'
     const [selectedChoice, setSelectedChoice] = useState(null)
-    
+
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
 
@@ -117,6 +117,10 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
     const handleChoiceSelect = (value) => {
         setSelectedChoice(value)
         setValidationMessage('')
+        // Submit immediately for choice type as per user request
+        if (onSubmitInput && eventId) {
+            onSubmitInput(eventId, value)
+        }
     }
 
     const validateInput = () => {
@@ -344,7 +348,7 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                                 {inputOptions.map((option, idx) => {
                                     const isSelected = selectedChoice === option.value
                                     const keyBinding = idx < 9 ? `[${idx + 1}]` : ''
-                                    
+
                                     return (
                                         <button
                                             key={idx}
@@ -494,33 +498,35 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                             </div>
                         )}
 
-                        {/* Submit Button */}
-                        <button
-                            onClick={handleSubmit}
-                            style={{
-                                padding: '14px 24px',
-                                backgroundColor: 'rgba(0, 102, 51, 0.6)',
-                                border: '2px solid #00ff88',
-                                borderRadius: '6px',
-                                color: '#00ff88',
-                                fontFamily: 'monospace',
-                                fontSize: '16px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                marginTop: '8px',
-                                transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = 'rgba(0, 153, 76, 0.8)'
-                                e.target.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.7)'
-                            }}
-                            onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = 'rgba(0, 102, 51, 0.6)'
-                                e.target.style.boxShadow = 'none'
-                            }}
-                        >
-                            Submit {inputType === 'choice' && '(Enter)'}
-                        </button>
+                        {/* Submit Button - Only show for non-choice inputs */}
+                        {inputType !== 'choice' && (
+                            <button
+                                onClick={handleSubmit}
+                                style={{
+                                    padding: '14px 24px',
+                                    backgroundColor: 'rgba(0, 102, 51, 0.6)',
+                                    border: '2px solid #00ff88',
+                                    borderRadius: '6px',
+                                    color: '#00ff88',
+                                    fontFamily: 'monospace',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    marginTop: '8px',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.target.style.backgroundColor = 'rgba(0, 153, 76, 0.8)'
+                                    e.target.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.7)'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.backgroundColor = 'rgba(0, 102, 51, 0.6)'
+                                    e.target.style.boxShadow = 'none'
+                                }}
+                            >
+                                Submit
+                            </button>
+                        )}
 
                         {/* Keyboard shortcuts hint */}
                         {inputType === 'choice' && inputOptions.length > 0 && (
@@ -531,7 +537,7 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                                 fontStyle: 'italic',
                                 marginTop: '4px',
                             }}>
-                                Press 1-{Math.min(inputOptions.length, 9)} to select, Enter to submit
+                                Press 1-{Math.min(inputOptions.length, 9)} to select
                             </div>
                         )}
                     </div>

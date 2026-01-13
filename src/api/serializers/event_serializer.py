@@ -333,7 +333,9 @@ class EventSerializer:
             "DialogueChoice",
             "MerchantNegotiation",
             "PuzzleEvent",
-            "RiddleEvent"
+            "RiddleEvent",
+            "CombatEvent",
+            "NPCSpawnerEvent"
         ]
         
         return event_type in input_requiring_events
