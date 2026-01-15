@@ -718,13 +718,18 @@ class GameService:
                         }
                     
                     events_triggered.append(event_data)
-                elif is_item and action == "take" and hasattr(target, "_parent_container"):
+                elif is_item and action in ["take", "equip"] and hasattr(target, "_parent_container"):
                     # Use transfer_item for items in containers
                     qty_to_take = quantity if quantity is not None else getattr(target, 'count', 1)
                     transfer_item(target._parent_container, player, target, qty_to_take)
                     if hasattr(target._parent_container, "refresh_description"):
                         target._parent_container.refresh_description()
-                    cprint(f"{player.name} takes {target.name}.", "green")
+                    
+                    if action == "take":
+                        cprint(f"{player.name} takes {target.name}.", "green")
+                    else:
+                        # Proceed with equipment logic
+                        target.equip(player)
                 else:
                     method = getattr(target, action)
                     # Check signature to see if we need to pass player
@@ -873,18 +878,33 @@ class GameService:
             item.isequipped = True
             
             # Update player's equipment based on item type
-            item_type = type(item).__name__
+            maintype = getattr(item, "maintype", None)
             
-            if item_type == "Weapon":
+            if maintype == "Weapon":
                 player.eq_weapon = item
-            elif item_type == "Shield":
+            elif maintype == "Shield":
                 player.shield = item
-            elif item_type == "Armor" or item_type == "Helm" or item_type == "Boots" or item_type == "Gloves":
-                # Find appropriate slot
+            elif maintype in ["Armor", "Helm", "Boots", "Gloves"]:
+                # Map maintype to common player slot names
+                slot_map = {
+                    "Armor": "body",
+                    "Helm": "head",
+                    "Boots": "feet",
+                    "Gloves": "hands"
+                }
+                slot_name = slot_map.get(maintype)
+                
+                # Check for item-defined slot name as well
                 if hasattr(item, "type_s"):
                     slot_name = item.type_s.lower()
-                    if hasattr(player, slot_name):
-                        setattr(player, slot_name, item)
+                elif hasattr(item, "subtype") and not slot_name:
+                    slot_name = item.subtype.lower()
+                
+                if slot_name and hasattr(player, slot_name):
+                    setattr(player, slot_name, item)
+                elif slot_name == "armor" and hasattr(player, "body"):
+                    player.body = item
+
             
             # Refresh stat bonuses after equipment change
             from src import functions
