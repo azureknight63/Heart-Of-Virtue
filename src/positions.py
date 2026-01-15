@@ -507,6 +507,53 @@ def move_away_from(
     
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
+def move_away_constrained(
+    current: CombatPosition,
+    threat: CombatPosition,
+    distance: int,
+    occupied: List[CombatPosition],
+    max_w: int = 50,
+    max_h: int = 50
+) -> CombatPosition:
+    """Move away from threat but ensure destination is not occupied.
+    
+    If ideal destination is occupied, tries successively shorter distances.
+    
+    Args:
+        current: Starting position
+        threat: Position to move away from
+        distance: Maximum distance to move
+        occupied: List of positions occupied by other units
+        max_w: Grid width limit
+        max_h: Grid height limit
+    
+    Returns:
+        New valid CombatPosition
+    """
+    if not occupied:
+        return move_away_from(current, threat, distance, max_w, max_h)
+        
+    test_dist = distance
+    while test_dist > 0:
+        new_pos = move_away_from(current, threat, test_dist, max_w, max_h)
+        
+        # Check if new_pos is occupied (unless it's our current pos)
+        if new_pos.x == current.x and new_pos.y == current.y:
+            return current
+            
+        has_collision = False
+        for occ in occupied:
+            if occ.x == new_pos.x and occ.y == new_pos.y:
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return new_pos
+            
+        test_dist -= 1
+        
+    return current.copy()
+
 
 def move_to_flank(
     current: CombatPosition,
@@ -541,6 +588,43 @@ def move_to_flank(
     new_y = max(0, min(max_h, int(round(target.y + offset_y))))
     
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
+def move_to_flank_constrained(
+    current: CombatPosition,
+    target: CombatPosition,
+    distance: int,
+    occupied: List[CombatPosition],
+    max_w: int = 50,
+    max_h: int = 50
+) -> CombatPosition:
+    """Move to flank but avoid occupied squares.
+    
+    Tries both left (+90°) and right (-90°) flanking positions.
+    """
+    if not occupied:
+        return move_to_flank(current, target, distance, max_w, max_h)
+        
+    options = [90, -90]
+    for angle_offset in options:
+        target_facing_angle = target.facing.value
+        flank_angle = (target_facing_angle + angle_offset) % 360
+        flank_rad = math.radians(flank_angle)
+        offset_x = math.cos(flank_rad) * distance
+        offset_y = math.sin(flank_rad) * distance
+        
+        new_x = max(0, min(max_w, int(round(target.x + offset_x))))
+        new_y = max(0, min(max_h, int(round(target.y + offset_y))))
+        
+        has_collision = False
+        for occ in occupied:
+            if occ.x == new_x and occ.y == new_y:
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+            
+    return current.copy()
 
 
 def turn_toward(
@@ -638,6 +722,8 @@ def initialize_combat_positions(
         zone=scenario.ally_spawn_zone,
         formation_type=scenario.formation_type,
         min_spacing=scenario.min_spacing,
+        grid_width=grid_width,
+        grid_height=grid_height,
         seed=scenario.seed
     )
     
@@ -655,6 +741,8 @@ def initialize_combat_positions(
             zone=zone,
             formation_type=scenario.formation_type,
             min_spacing=scenario.min_spacing,
+            grid_width=grid_width,
+            grid_height=grid_height,
             seed=scenario.seed
         )
     
@@ -682,6 +770,8 @@ def _spawn_units_in_zone(
     zone: Tuple[Tuple[int, int], Tuple[int, int]],
     formation_type: str = "spread",
     min_spacing: int = 1,
+    grid_width: int = 50,
+    grid_height: int = 50,
     seed: Optional[int] = None
 ) -> None:
     """Spawn units within a zone using the specified formation.
@@ -708,7 +798,13 @@ def _spawn_units_in_zone(
             )
         elif formation_type == "cluster":
             # Cluster units tightly in center of zone
-            position = _find_clustered_position(zone, spawned, min_spacing)
+            position = _find_clustered_position(
+                zone, 
+                spawned, 
+                min_spacing,
+                grid_width=grid_width,
+                grid_height=grid_height
+            )
         else:  # "random"
             # Random placement with minimum spacing
             position = _find_random_position(zone, spawned, min_spacing)
@@ -750,7 +846,9 @@ def _find_spaced_position(
 def _find_clustered_position(
     zone: Tuple[Tuple[int, int], Tuple[int, int]],
     occupied: List[CombatPosition],
-    min_spacing: int
+    min_spacing: int,
+    grid_width: int = 50,
+    grid_height: int = 50
 ) -> CombatPosition:
     """Find position clustered near other units in zone.
     
@@ -776,7 +874,7 @@ def _find_clustered_position(
                 x = cluster_center.x + dx
                 y = cluster_center.y + dy
                 
-                if not (0 <= x <= 50 and 0 <= y <= 50):
+                if not (0 <= x <= grid_width and 0 <= y <= grid_height):
                     continue
                 
                 # Check if position is in zone and has spacing
@@ -836,7 +934,7 @@ def _calculate_center_position(
     ]
     
     if not valid_positions:
-        return CombatPosition(x=25, y=25)  # Grid center as fallback
+        return CombatPosition(x=12//2, y=12//2)  # Use small grid center as safe default if no units
     
     avg_x = sum(p.x for p in valid_positions) // len(valid_positions)
     avg_y = sum(p.y for p in valid_positions) // len(valid_positions)

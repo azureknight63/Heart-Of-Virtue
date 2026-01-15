@@ -30,6 +30,35 @@ def _ensure_weapon_exp(user):
         # Silent fail to avoid disrupting combat flow if something unexpected occurs
         pass
 
+def get_combat_occupancy(user):
+    """Collect all occupied positions in the current combat context, excluding the user."""
+    occupied = []
+    
+    # Context usually stems from the player or is accessible via player_ref
+    player = None
+    if getattr(user, 'name', '') == "Jean":
+        player = user
+    elif hasattr(user, 'player_ref') and user.player_ref:
+        player = user.player_ref
+    elif hasattr(user, 'universe') and user.universe and hasattr(user.universe, 'player'):
+        player = user.universe.player
+        
+    if player:
+        # Check all enemies (player.combat_list)
+        if hasattr(player, 'combat_list'):
+            for enemy in player.combat_list:
+                if enemy != user and hasattr(enemy, 'combat_position') and enemy.combat_position:
+                    if getattr(enemy, 'hp', 0) > 0:
+                        occupied.append(enemy.combat_position)
+        # Check all allies (player.combat_list_allies)
+        if hasattr(player, 'combat_list_allies'):
+            for ally in player.combat_list_allies:
+                if ally != user and hasattr(ally, 'combat_position') and ally.combat_position:
+                    if getattr(ally, 'hp', 0) > 0:
+                        occupied.append(ally.combat_position)
+    
+    return occupied
+
 default_animations = {
     "p": "None",  # prep
     "e": "None",  # execute
@@ -504,16 +533,7 @@ class Advance(Move):
             distance_moved = max(1, (performance - threshold) // 5)  # Smaller increments when close
         
         # Move toward target (may overshoot slightly)
-        # Collect occupied positions
-        occupied = []
-        if hasattr(user, 'combat_list'):
-            for u in user.combat_list:
-                if hasattr(u, 'combat_position') and u.combat_position:
-                    occupied.append(u.combat_position)
-        if hasattr(user, 'combat_list_allies'):
-            for u in user.combat_list_allies:
-                if hasattr(u, 'combat_position') and u.combat_position and u != user:
-                    occupied.append(u.combat_position)
+        occupied = get_combat_occupancy(user)
 
         new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
@@ -655,7 +675,8 @@ class Withdraw(Move):
         distance_moved = min(distance_moved, 3)  # Cap at 3 squares
         
         # Move away from nearest threat
-        new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
+        occupied = get_combat_occupancy(user)
+        new_pos = positions.move_away_constrained(user.combat_position, nearest_threat.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
         
         # Face the direction of retreat (toward where we're retreating, away from threat)
@@ -765,16 +786,7 @@ class BullCharge(Move):
         current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
         
         # Move toward target (may overshoot slightly)
-        # Collect occupied positions
-        occupied = []
-        if hasattr(user, 'combat_list'):
-            for u in user.combat_list:
-                if hasattr(u, 'combat_position') and u.combat_position:
-                    occupied.append(u.combat_position)
-        if hasattr(user, 'combat_list_allies'):
-            for u in user.combat_list_allies:
-                if hasattr(u, 'combat_position') and u.combat_position and u != user:
-                    occupied.append(u.combat_position)
+        occupied = get_combat_occupancy(user)
 
         new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
@@ -855,7 +867,8 @@ class TacticalRetreat(Move):
             return
         
         distance_moved = random.randint(3, 4)
-        new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
+        occupied = get_combat_occupancy(user)
+        new_pos = positions.move_away_constrained(user.combat_position, nearest_threat.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
         
         # Face threat while retreating (defensive stance)
@@ -926,7 +939,8 @@ class FlankingManeuver(Move):
         
         # Calculate flanking position (perpendicular to target's facing)
         flank_distance = random.randint(2, 4)
-        new_pos = positions.move_to_flank(user.combat_position, self.target.combat_position, flank_distance)
+        occupied = get_combat_occupancy(user)
+        new_pos = positions.move_to_flank_constrained(user.combat_position, self.target.combat_position, flank_distance, occupied)
         user.combat_position = new_pos
         
         # Face target from flank position
@@ -1504,6 +1518,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         return viability
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
+
         power = self.user.eq_weapon.damage + \
                 (self.user.strength * self.user.eq_weapon.str_mod) + \
                 (self.user.finesse * self.user.eq_weapon.fin_mod)

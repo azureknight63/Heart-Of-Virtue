@@ -1071,7 +1071,7 @@ he lets out a barely audible whisper:""", "red")
 
         functions.await_input()
 
-    def equip_item(self, phrase=''):
+    def equip_item(self, phrase='', item_object=None):
 
         def confirm(thing):
             check = input(colored("Equip {}? (y/n)".format(thing.name), "cyan"))
@@ -1080,9 +1080,9 @@ he lets out a barely audible whisper:""", "red")
             else:
                 return False
 
-        target_item = None
+        target_item = item_object
         candidates = []
-        if phrase != '':  # equip the indicated item, if possible
+        if phrase != '' and target_item is None:  # equip the indicated item, if possible
             lower_phrase = phrase.lower()
             for item in self.inventory:
                 if hasattr(item, "isequipped"):
@@ -1095,7 +1095,7 @@ he lets out a barely audible whisper:""", "red")
                         search_item = item.name.lower() + ' ' + item.announce.lower()
                         if lower_phrase in search_item:
                             candidates.append(self.current_room.items_here.pop(i))
-        else:  # open the menu
+        elif phrase == '' and target_item is None:  # open the menu
             target_item = self.equip_item_menu()
 
         if len(candidates) == 1:
@@ -1112,10 +1112,30 @@ he lets out a barely audible whisper:""", "red")
                     if capacity is not None and hasattr(self, "weight_current"):
                          if self.weight_current + getattr(target_item, "weight", 0) > capacity:
                              cprint("It's too heavy to carry!", "red")
-                             # Put it back in the room since it was popped
-                             self.current_room.items_here.append(target_item)
+                             # Put it back in the room if it was previously in current_room.items_here
+                             # (though if passed directly as item_object it might not have been removed yet)
+                             if target_item in candidates: # Was popped in candidates logic
+                                self.current_room.items_here.append(target_item)
                              return
                     
+                    # Ensure it is removed from the room if it's there
+                    if target_item in self.current_room.items_here:
+                        try:
+                            self.current_room.items_here.remove(target_item)
+                        except ValueError:
+                            pass
+                    
+                    # Handle removal from container if applicable
+                    if hasattr(target_item, "_parent_container"):
+                        container = target_item._parent_container
+                        if hasattr(container, "inventory") and target_item in container.inventory:
+                            try:
+                                container.inventory.remove(target_item)
+                                if hasattr(container, "refresh_description"):
+                                    container.refresh_description()
+                            except (ValueError, AttributeError):
+                                pass
+
                     # add to inventory
                     self.inventory.append(target_item)
                 if target_item.isequipped:

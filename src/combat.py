@@ -16,6 +16,7 @@ from combat_event_config import CombatEventConfig
 import importlib
 
 def combat(player, event_config: Optional[CombatEventConfig] = None):
+    print(f"[DEBUG] combat() started. player={player.name}, eq_weapon={player.eq_weapon.name}")
     """
     :param player:
     :param event_config: Optional configuration for parameterized combat events.

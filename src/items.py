@@ -289,7 +289,7 @@ class Item:
             player.current_room.stack_duplicate_items()
 
     def equip(self, player: 'Player') -> None:
-        player.equip_item(phrase="{}".format(self.name))
+        player.equip_item(item_object=self)
 
     def unequip(self, player: 'Player') -> None:
         if hasattr(self, "isequipped"):
