@@ -17,8 +17,14 @@ const mockCombat = {
     enemies: [{ name: 'Slime', hp: 10, max_hp: 10 }],
     combatants: [{ name: 'Jean', position: [0, 0] }],
     beat_states: [
-        { combatants: [{ name: 'Jean', position: [0, 0] }] },
-        { combatants: [{ name: 'Jean', position: [1, 1] }] }
+        {
+            combatants: [{ name: 'Jean', position: [0, 0] }],
+            enemies: [{ name: 'Slime', hp: 10, max_hp: 10 }]
+        },
+        {
+            combatants: [{ name: 'Jean', position: [1, 1] }],
+            enemies: [{ name: 'Slime', hp: 5, max_hp: 10 }]
+        }
     ]
 };
 
