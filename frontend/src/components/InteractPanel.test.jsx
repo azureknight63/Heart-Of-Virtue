@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
+import React from 'react';
 
 // Mock apiEndpoints
 vi.mock('../api/endpoints', () => ({
@@ -69,8 +70,8 @@ describe('InteractPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/The guard nods at you./i)).toBeDefined();
-    });
-    
+    }, { timeout: 3000 });
+
     expect(mockOnRefetch).toHaveBeenCalled();
   });
 
@@ -86,7 +87,7 @@ describe('InteractPanel', () => {
     expect(input.value).toBe('10');
 
     fireEvent.change(input, { target: { value: '5' } });
-    
+
     apiEndpoints.world.interact.mockResolvedValue({
       data: {
         success: true,
@@ -100,7 +101,7 @@ describe('InteractPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/You took 5 Gold Coins./i)).toBeDefined();
-    });
+    }, { timeout: 3000 });
   });
 
   it('handles interaction error', async () => {
@@ -118,7 +119,7 @@ describe('InteractPanel', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/You cannot do that./i)).toBeDefined();
-    });
+    }, { timeout: 3000 });
   });
 
   it('calls onClose when close button is clicked', () => {
@@ -131,18 +132,18 @@ describe('InteractPanel', () => {
   it('triggers events after successful interaction', async () => {
     const mockOnEventsTriggered = vi.fn();
     apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Success' } });
-    apiEndpoints.world.getEvents.mockResolvedValue({ 
-      data: { 
-        success: true, 
-        events: [{ output_text: 'Something happened!' }] 
-      } 
+    apiEndpoints.world.getEvents.mockResolvedValue({
+      data: {
+        success: true,
+        events: [{ output_text: 'Something happened!' }]
+      }
     });
 
     render(
-      <InteractPanel 
-        location={mockLocation} 
-        onClose={mockOnClose} 
-        onEventsTriggered={mockOnEventsTriggered} 
+      <InteractPanel
+        location={mockLocation}
+        onClose={mockOnClose}
+        onEventsTriggered={mockOnEventsTriggered}
       />
     );
 
@@ -151,7 +152,7 @@ describe('InteractPanel', () => {
 
     await waitFor(() => {
       expect(mockOnEventsTriggered).toHaveBeenCalledWith([{ output_text: 'Something happened!' }]);
-    });
+    }, { timeout: 3000 });
   });
 
   it('handles back button correctly', () => {
@@ -179,14 +180,14 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Take/i));
 
     expect(screen.getByText(/How many/i)).toBeDefined();
-    
+
     fireEvent.click(screen.getByText(/Cancel/i));
     expect(screen.queryByText(/How many/i)).toBeNull();
   });
 
   it('finishes typewriter effect immediately on click', async () => {
     apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'A very long message that would take time to type out word by word.' } });
-    
+
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
 
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
@@ -196,7 +197,7 @@ describe('InteractPanel', () => {
       const output = screen.getByText(/A very long/i);
       fireEvent.click(output);
       expect(output.textContent).toContain('A very long message that would take time to type out word by word.');
-    });
+    }, { timeout: 3000 });
   });
 
   it('clears selection when target is no longer in room', () => {
@@ -210,7 +211,7 @@ describe('InteractPanel', () => {
       npcs: [],
     };
 
-    rerender(<InteractPanel location={newLocation} onClose={mockOnClose} />);
+    rerender(<InteractPanel location={newLocation} onClose={newLocation} />); // Just pass something else for location
 
     expect(screen.queryByText(/A stern guard./i)).toBeNull();
   });

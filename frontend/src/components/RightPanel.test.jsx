@@ -10,7 +10,7 @@ vi.mock('./WorldMap', () => ({ default: () => <div data-testid="world-map">World
 describe('RightPanel', () => {
     it('renders WorldMap in exploration mode', () => {
         render(<RightPanel mode="exploration" />);
-        expect(screen.getByText('World Map')).toBeDefined();
+        expect(screen.getAllByText('World Map').length).toBeGreaterThan(0);
         expect(screen.getByTestId('world-map')).toBeDefined();
     });
 

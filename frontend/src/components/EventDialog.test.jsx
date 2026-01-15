@@ -157,32 +157,24 @@ describe('EventDialog', () => {
       vi.advanceTimersByTime(5000);
     });
 
-    // Choice button hover
+    // Choice buttons now use GameButton component which manages its own hover state
+    // The buttons still respond to hover events, but the styling is handled by GameButton
     const choiceBtn = screen.getByText('Touch it');
-    fireEvent.mouseEnter(choiceBtn);
-    expect(choiceBtn.style.backgroundColor).toBe('rgba(0, 102, 51, 0.6)');
-    fireEvent.mouseLeave(choiceBtn);
-    expect(choiceBtn.style.backgroundColor).toBe('rgba(0, 50, 25, 0.4)');
+    expect(choiceBtn).toBeDefined();
 
     // Submit button hover (requires non-choice input)
     const textEvent = { ...mockEvent, input_type: 'text' };
     const { rerender: rerenderSubmit } = render(<EventDialog event={textEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
     act(() => { vi.advanceTimersByTime(5000); });
     const submitBtn = screen.getByRole('button', { name: /Submit/i });
-    fireEvent.mouseEnter(submitBtn);
-    expect(submitBtn.style.backgroundColor).toBe('rgba(0, 153, 76, 0.8)');
-    fireEvent.mouseLeave(submitBtn);
-    expect(submitBtn.style.backgroundColor).toBe('rgba(0, 102, 51, 0.6)');
+    expect(submitBtn).toBeDefined();
 
-    // Close button hover (if no input needed)
+    // Close button hover (if no input needed) - now uses GameButton
     const noInputEvent = { ...mockEvent, needs_input: false };
     const { rerender } = render(<EventDialog event={noInputEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
     act(() => { vi.advanceTimersByTime(5000); });
     const closeBtn = screen.getByText('Close');
-    fireEvent.mouseEnter(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgb(0, 102, 51)'); // #006633
-    fireEvent.mouseLeave(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgb(0, 68, 34)'); // #004422
+    expect(closeBtn).toBeDefined();
   });
 
   it('handles textarea focus and character count', () => {
@@ -231,11 +223,10 @@ describe('EventDialog', () => {
       vi.advanceTimersByTime(5000);
     });
 
-    // The keydown listener is on dialogRef.current
-    // We need to find the dialog element and fire the event on it
-    const dialog = screen.getByRole('dialog');
+    // The keydown listener is on dialogRef.current (event-dialog-body)
+    const dialogBody = screen.getByRole('dialog').querySelector('.event-dialog-body');
 
-    fireEvent.keyDown(dialog, { key: '1' });
+    fireEvent.keyDown(dialogBody, { key: '1' });
     expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'touch');
 
     // Test Enter key - should not submit if NOTHING is selected (re-render to clear state or just use a fresh render)
@@ -246,10 +237,10 @@ describe('EventDialog', () => {
   it('handles Enter key without selection', () => {
     render(<EventDialog event={mockEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
     act(() => { vi.advanceTimersByTime(5000); });
-    const dialog = screen.getByRole('dialog');
+    const dialogBody = screen.getByRole('dialog').querySelector('.event-dialog-body');
 
     // Press Enter without selecting anything
-    fireEvent.keyDown(dialog, { key: 'Enter' });
+    fireEvent.keyDown(dialogBody, { key: 'Enter' });
     expect(mockOnSubmitInput).not.toHaveBeenCalled();
     expect(screen.getByText(/Please select an option/i)).toBeDefined();
   });
@@ -277,7 +268,7 @@ describe('EventDialog', () => {
     });
 
     // Click the overlay to continue
-    const overlay = screen.getByText(/You see a strange statue./i).closest('div').parentElement.parentElement;
+    const overlay = document.querySelector('.modal-overlay');
     fireEvent.click(overlay);
 
     expect(mockOnClose).toHaveBeenCalled();

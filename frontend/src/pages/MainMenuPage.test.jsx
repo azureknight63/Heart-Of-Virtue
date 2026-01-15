@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React, { useState } from 'react';
 import MainMenuPage from './MainMenuPage';
 import { saves } from '../api/endpoints';
 import { MemoryRouter } from 'react-router-dom';
@@ -22,13 +23,23 @@ vi.mock('../hooks/useApi', () => ({
 }));
 
 // Mock useAudio
-vi.mock('../context/AudioContext', () => ({
-    useAudio: () => ({
-        playBGM: vi.fn(),
-        playSFX: vi.fn(),
-    }),
-    AudioProvider: ({ children }) => <div>{children}</div>,
-}));
+vi.mock('../context/AudioContext', () => {
+    return {
+        useAudio: () => {
+            const [musicVolume, setMusicVolume] = React.useState(0.5);
+            const [sfxVolume, setSfxVolume] = React.useState(0.5);
+            return {
+                playBGM: vi.fn(),
+                playSFX: vi.fn(),
+                musicVolume,
+                setMusicVolume,
+                sfxVolume,
+                setSfxVolume,
+            };
+        },
+        AudioProvider: ({ children }) => <div>{children}</div>,
+    };
+});
 
 // Mock saves API
 vi.mock('../api/endpoints', () => ({
@@ -183,5 +194,37 @@ describe('MainMenuPage', () => {
 
         fireEvent.click(screen.getByText(/Credits/i));
         expect(screen.getByText(/The Development Team/i)).toBeDefined();
+    });
+
+    it('navigates to login on Logout click', async () => {
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+        render(
+            <MemoryRouter>
+                <MainMenuPage />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(screen.getByText(/Logout/i));
+        await waitFor(() => {
+            expect(mockNavigate).toHaveBeenCalledWith('/login');
+        });
+    });
+
+    it('handles volume slider changes', async () => {
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+        render(
+            <MemoryRouter>
+                <MainMenuPage />
+            </MemoryRouter>
+        );
+
+        fireEvent.click(screen.getByText(/Settings/i));
+
+        const sliders = screen.getAllByRole('slider');
+        fireEvent.change(sliders[0], { target: { value: '0.2' } });
+        expect(screen.getByText('20%')).toBeDefined();
+
+        fireEvent.change(sliders[1], { target: { value: '0.8' } });
+        expect(screen.getByText('80%')).toBeDefined();
     });
 });
