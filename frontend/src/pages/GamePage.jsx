@@ -32,6 +32,7 @@ export default function GamePage() {
   const [showDefeatDialog, setShowDefeatDialog] = useState(false)
   const [endState, setEndState] = useState(null)
   const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
+  const [displayedLogCount, setDisplayedLogCount] = useState(0)
 
   // Debug: Log combat state changes
   useEffect(() => {
@@ -279,12 +280,16 @@ export default function GamePage() {
       setCombatDialogShown(false)
       // If combat ended with a victory/defeat summary, keep combat mode until the dialog is completed
       const maybeEnd = combat?.end_state
+      // Check if we have logs that haven't been displayed yet
+      const combatLogLength = combat?.log?.length || 0
+      const hasPendingLogs = combatLogLength > displayedLogCount
+
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
         // Only show once per end_state id
         if (maybeEnd.id && maybeEnd.id !== lastEndStateId) {
           // Wait until the combat log finishes processing so death/destroy lines are visible first
-          if (!isCombatLogProcessing) {
+          if (!isCombatLogProcessing && !hasPendingLogs) {
             if (maybeEnd.status === 'victory') {
               setShowVictoryDialog(true)
             } else {
@@ -293,7 +298,21 @@ export default function GamePage() {
             setLastEndStateId(maybeEnd.id)
           }
         }
-        setMode('combat')
+
+        // Determine mode: stay in combat if dialog is open OR if we just received a new end state
+        const isHandled = maybeEnd.id && maybeEnd.id === lastEndStateId
+        const isDialogOpen = showVictoryDialog || showDefeatDialog
+
+        // Use a slight buffer or strict check?
+        // If it's not handled (new), we stay in combat to show the dialog eventually.
+        // If it IS handled, we only stay in combat if the dialog is actually open.
+        if (!isHandled || isDialogOpen) {
+          setMode('combat')
+        } else {
+          // Handled and dialog closed -> Exploration
+          setMode('exploration')
+        }
+
       } else {
         setMode('exploration')
         // Don't refetch here continuously
@@ -308,9 +327,13 @@ export default function GamePage() {
   // If combat ended and we were waiting for log processing to finish, open victory dialog now
   useEffect(() => {
     const maybeEnd = combat?.end_state
+    // Check if we have logs that haven't been displayed yet
+    const combatLogLength = combat?.log?.length || 0
+    const hasPendingLogs = combatLogLength > displayedLogCount
+
     if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
       setEndState(maybeEnd)
-      if (!isCombatLogProcessing && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
+      if (!isCombatLogProcessing && !hasPendingLogs && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
         if (maybeEnd.status === 'victory') {
           setShowVictoryDialog(true)
         } else {
@@ -319,7 +342,7 @@ export default function GamePage() {
         setLastEndStateId(maybeEnd.id)
       }
     }
-  }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId])
+  }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log])
 
   // Manage BGM based on mode
   useEffect(() => {
@@ -369,6 +392,7 @@ export default function GamePage() {
         onCombatAction={performAction}
         onLogProgress={setCurrentLogIndex}
         onLogProcessingChange={setIsCombatLogProcessing}
+        onDisplayedLogCountChange={setDisplayedLogCount}
       />
 
       {/* Right Panel - Battlefield/Map */}

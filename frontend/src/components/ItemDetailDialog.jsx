@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import apiClient from '../api/client'
+import BaseDialog from './BaseDialog'
+import GameButton from './GameButton'
 
+/**
+ * ItemDetailDialog - Displays detailed information about an item and handles actions (equip, use, drop)
+ * Used as a sub-view within InventoryDialog
+ */
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
@@ -36,9 +42,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         if (onRefetch) {
           onRefetch()
         }
-
-        // We no longer auto-close/timeout here because the dialog handles it
-        // when the user clicks Ok
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to equip'))
       }
@@ -108,70 +111,52 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   }
 
   const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
-  const isWeapon = categoryType.includes('weapon')
 
   return (
     <div style={{
-      backgroundColor: 'rgba(50, 20, 0, 0.3)',
+      backgroundColor: 'rgba(20, 10, 0, 0.4)',
       border: '2px solid #ffaa00',
-      borderRadius: '6px',
-      padding: '16px',
+      borderRadius: '8px',
+      padding: '20px',
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      gap: '12px',
+      gap: '16px',
+      boxShadow: 'inset 0 0 15px rgba(0,0,0,0.5)',
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '8px',
-        paddingBottom: '8px',
-        borderBottom: '2px solid #ffaa00',
+        paddingBottom: '12px',
+        borderBottom: '2px solid rgba(255, 170, 0, 0.3)',
       }}>
         <div style={{
           color: '#ffff00',
           fontWeight: 'bold',
-          fontSize: '20px',
+          fontSize: '22px',
           fontFamily: 'monospace',
+          textShadow: '0 0 10px rgba(255, 255, 0, 0.3)',
         }}>
           {item.name}
         </div>
-        <button
+        <GameButton
           onClick={onBack}
-          style={{
-            padding: '6px 10px',
-            backgroundColor: '#cc4400',
-            color: '#ffff00',
-            border: '1px solid #ff6600',
-            borderRadius: '3px',
-            cursor: 'pointer',
-            fontSize: '15px',
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.backgroundColor = '#ff6600'
-            e.target.style.boxShadow = '0 0 8px rgba(255, 102, 0, 0.8)'
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#cc4400'
-            e.target.style.boxShadow = 'none'
-          }}
+          variant="secondary"
+          style={{ padding: '6px 16px', fontSize: '14px' }}
         >
           ← Back
-        </button>
+        </GameButton>
       </div>
 
-      {/* Item Info */}
+      {/* Item Info Card */}
       <div style={{
         flex: 1,
-        backgroundColor: 'rgba(30, 15, 0, 0.4)',
-        border: '1px solid #664400',
-        borderRadius: '4px',
-        padding: '12px',
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        border: '1px solid rgba(255, 170, 0, 0.2)',
+        borderRadius: '6px',
+        padding: '16px',
         overflowY: 'auto',
         color: '#ffcc00',
         fontSize: '15px',
@@ -179,476 +164,252 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         lineHeight: '1.6',
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
+        gap: '12px',
       }}>
-        {/* Properties Grid - Inline */}
+        {/* Properties Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-          gap: '1px',
-          backgroundColor: '#664400',
-          padding: '1px',
-          borderRadius: '3px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+          gap: '8px',
         }}>
-          {/* Type Property */}
+          {/* Type */}
           <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            padding: '6px',
+            backgroundColor: 'rgba(255, 170, 0, 0.05)',
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 170, 0, 0.15)',
             textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
           }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Type</div>
-            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.maintype || item.type}</div>
+            <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Type</div>
+            <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.maintype || item.type}</div>
           </div>
 
-          {/* Subtype Property */}
+          {/* Subtype */}
           {item.subtype && (
             <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
+              backgroundColor: 'rgba(255, 170, 0, 0.05)',
+              padding: '8px',
+              borderRadius: '4px',
+              border: '1px solid rgba(255, 170, 0, 0.15)',
               textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
             }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Subtype</div>
-              <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.subtype}</div>
+              <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Subtype</div>
+              <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.subtype}</div>
             </div>
           )}
 
-          {/* Weight Property */}
+          {/* Weight */}
           <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            padding: '6px',
+            backgroundColor: 'rgba(255, 170, 0, 0.05)',
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 170, 0, 0.15)',
             textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
           }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Weight</div>
-            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.weight?.toFixed(2) || 0}w</div>
+            <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Weight</div>
+            <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.weight?.toFixed(2) || 0}w</div>
           </div>
 
-          {/* Value Property */}
+          {/* Value */}
           <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            padding: '6px',
+            backgroundColor: 'rgba(255, 170, 0, 0.05)',
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid rgba(255, 170, 0, 0.15)',
             textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
           }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Value</div>
-            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.value || 0}g</div>
+            <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Value</div>
+            <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.value || 0}g</div>
           </div>
+        </div>
 
-          {/* Rarity Property */}
-          {item.rarity && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Rarity</div>
-              <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.rarity}</div>
-            </div>
-          )}
-
-          {/* Quantity Property */}
-          {item.quantity > 1 && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Qty</div>
-              <div style={{ color: '#ffee99', fontSize: '14px' }}>×{item.quantity}</div>
-            </div>
-          )}
-
-          {/* Equipped Status */}
+        {/* Status Callouts */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {item.is_equipped && (
             <div style={{
-              backgroundColor: 'rgba(0, 50, 0, 0.6)',
-              padding: '6px',
+              backgroundColor: 'rgba(0, 255, 136, 0.1)',
+              padding: '10px',
+              borderRadius: '4px',
+              border: '1px solid rgba(0, 255, 136, 0.3)',
+              color: '#00ff88',
+              fontWeight: 'bold',
               textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              gridColumn: '1 / -1',
+              fontSize: '14px',
             }}>
-              <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '14px' }}>
-                ✓ Equipped
-              </div>
+              ✓ INSTALLED / EQUIPPED
+            </div>
+          )}
+
+          {item.is_merchandise && (
+            <div style={{
+              backgroundColor: 'rgba(255, 170, 0, 0.1)',
+              padding: '10px',
+              borderRadius: '4px',
+              border: '1px solid rgba(255, 170, 0, 0.3)',
+              color: '#ffaa00',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              fontSize: '14px',
+              letterSpacing: '0.5px',
+            }}>
+              ⚠️ MERCHANDISE - NOT OWNED
             </div>
           )}
         </div>
 
-        {/* Merchandise Callout */}
-        {item.is_merchandise && (
-          <div style={{
-            marginTop: '8px',
-            padding: '8px 10px',
-            backgroundColor: 'rgba(150, 120, 70, 0.4)',
-            border: '1px solid #cc9944',
-            borderRadius: '4px',
-            color: '#ddaa66',
-            fontWeight: 'bold',
-            fontSize: '14px',
-            textAlign: 'center',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}>
-            ⚠️ MERCHANDISE - NOT OWNED
-          </div>
-        )}
-
-        {/* Description Section */}
+        {/* Description */}
         {item.description && (
           <div style={{
-            paddingTop: '12px',
-            paddingBottom: '8px',
-            borderTop: '1px solid #664400',
-            borderBottom: '1px solid #664400',
+            marginTop: '8px',
+            paddingTop: '16px',
+            borderTop: '1px solid rgba(255, 170, 0, 0.1)',
             color: '#ffee99',
             fontStyle: 'italic',
             fontSize: '14px',
-            lineHeight: '1.5',
+            lineHeight: '1.6',
             whiteSpace: 'pre-wrap',
-            wordWrap: 'break-word',
           }}>
             {item.description}
           </div>
         )}
       </div>
 
-      {/* Action Message */}
-      {actionMessage && (
+      {/* Action Message Overlay-ish */}
+      {actionMessage && !actionResult && (
         <div style={{
-          padding: '8px',
-          backgroundColor: 'rgba(100, 50, 0, 0.5)',
-          border: '1px solid #ffaa00',
-          borderRadius: '3px',
-          color: actionMessage.startsWith('✓') ? '#00ff88' : '#ff6666',
-          fontSize: '15px',
-          fontFamily: 'monospace',
+          padding: '10px',
+          backgroundColor: actionMessage.startsWith('✓') ? 'rgba(0, 68, 34, 0.6)' : 'rgba(102, 0, 0, 0.6)',
+          border: `1px solid ${actionMessage.startsWith('✓') ? '#00ff88' : '#ff4444'}`,
+          borderRadius: '4px',
+          color: actionMessage.startsWith('✓') ? '#00ff88' : '#ffaaaa',
+          fontSize: '14px',
           textAlign: 'center',
+          fontFamily: 'monospace',
         }}>
           {actionMessage}
         </div>
       )}
 
-      {/* Action Buttons */}
+      {/* Primary Actions */}
       <div style={{
         display: 'flex',
-        gap: '8px',
-        justifyContent: 'space-between',
+        gap: '12px',
+        justifyContent: 'stretch',
       }}>
-
         {item.can_equip && !combatMode && (
-          <button
+          <GameButton
             onClick={handleEquip}
             disabled={isLoading}
-            style={{
-              flex: 1,
-              padding: '10px',
-              backgroundColor: item.is_equipped ? '#004400' : '#006633',
-              color: '#00ff88',
-              border: '1px solid #00ff88',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              transition: 'all 0.2s',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-            onMouseEnter={(e) => {
-              if (!isLoading) {
-                e.target.style.backgroundColor = item.is_equipped ? '#006633' : '#009944'
-                e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.6)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = item.is_equipped ? '#004400' : '#006633'
-              e.target.style.boxShadow = 'none'
-            }}
+            variant={item.is_equipped ? 'secondary' : 'primary'}
+            style={{ flex: 1, padding: '12px' }}
           >
             {item.is_equipped ? '✗ Unequip' : '⚔️ Equip'}
-          </button>
+          </GameButton>
         )}
 
         {item.can_use && !item.is_merchandise && (
-          <button
+          <GameButton
             onClick={handleUse}
             disabled={isLoading}
-            style={{
-              flex: 1,
-              padding: '10px',
-              backgroundColor: '#663300',
-              color: '#ffff00',
-              border: '1px solid #ffaa00',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              transition: 'all 0.2s',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-            onMouseEnter={(e) => {
-              if (!isLoading) {
-                e.target.style.backgroundColor = '#994400'
-                e.target.style.boxShadow = '0 0 8px rgba(255, 170, 0, 0.6)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#663300'
-              e.target.style.boxShadow = 'none'
-            }}
+            variant="primary"
+            style={{ flex: 1, padding: '12px' }}
           >
             💊 Use
-          </button>
+          </GameButton>
         )}
 
         {item.can_drop && !combatMode && (
-          <button
+          <GameButton
             onClick={() => setShowDropConfirm(true)}
             disabled={isLoading}
-            style={{
-              flex: 1,
-              padding: '10px',
-              backgroundColor: '#663333',
-              color: '#ff8888',
-              border: '1px solid #ff6666',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              transition: 'all 0.2s',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-            onMouseEnter={(e) => {
-              if (!isLoading) {
-                e.target.style.backgroundColor = '#994444'
-                e.target.style.boxShadow = '0 0 8px rgba(255, 102, 102, 0.6)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#663333'
-              e.target.style.boxShadow = 'none'
-            }}
+            variant="danger"
+            style={{ flex: 1, padding: '12px' }}
           >
             🗑️ Drop
-          </button>
+          </GameButton>
         )}
       </div>
 
-      {/* Generic Action Success Dialog */}
+      {/* Modals */}
       {actionResult && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1100, // Higher than drop confirm
-        }}>
+        <BaseDialog
+          title="Action Complete"
+          onClose={() => {
+            setActionResult(null)
+            onBack()
+          }}
+          maxWidth="400px"
+          zIndex={3000}
+        >
           <div style={{
-            backgroundColor: 'rgba(30, 20, 5, 0.98)',
-            border: '2px solid #00ff00',
-            borderRadius: '8px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px',
-            // animate fadeIn
-            animation: 'fadeIn 0.2s ease-out',
-            boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
+            alignItems: 'center',
+            gap: '20px',
+            padding: '10px 0',
           }}>
-            {/* Message */}
             <div style={{
               fontSize: '16px',
               textAlign: 'center',
-              lineHeight: '1.5',
-              fontWeight: 'normal',
+              lineHeight: '1.6',
               color: '#00ff88',
-              fontFamily: 'monospace',
             }}>
               {actionResult.message}
             </div>
-
-            {/* Button */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-            }}>
-              <button
-                onClick={() => {
-                  setActionResult(null)
-                  onBack() // Go back to inventory list
-                }}
-                style={{
-                  padding: '8px 32px',
-                  backgroundColor: '#004400',
-                  color: '#00ff00',
-                  border: '1px solid #00ff00',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold',
-                  transition: 'all 0.2s',
-                  textTransform: 'uppercase',
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = '#006600'
-                  e.target.style.boxShadow = '0 0 8px rgba(0, 255, 0, 0.6)'
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = '#004400'
-                  e.target.style.boxShadow = 'none'
-                }}
-              >
-                Ok
-              </button>
-            </div>
+            <GameButton
+              onClick={() => {
+                setActionResult(null)
+                onBack()
+              }}
+              variant="primary"
+              style={{ padding: '8px 40px' }}
+            >
+              OK
+            </GameButton>
           </div>
-          <style>{`
-            @keyframes fadeIn {
-              from { opacity: 0; transform: scale(0.9); }
-              to { opacity: 1; transform: scale(1); }
-            }
-          `}</style>
-        </div>
+        </BaseDialog>
       )}
+
       {showDropConfirm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-        }}>
+        <BaseDialog
+          title="Drop Item?"
+          onClose={() => setShowDropConfirm(false)}
+          variant="warning"
+          maxWidth="400px"
+          zIndex={3000}
+        >
           <div style={{
-            backgroundColor: 'rgba(50, 20, 0, 0.95)',
-            border: '2px solid #ffaa00',
-            borderRadius: '8px',
-            padding: '24px',
-            maxWidth: '400px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '16px',
-            color: '#ffcc00',
-            fontFamily: 'monospace',
+            gap: '20px',
+            padding: '10px 0',
           }}>
-            {/* Title */}
             <div style={{
-              fontSize: '18px',
-              fontWeight: 'bold',
-              color: '#ffff00',
-              borderBottom: '1px solid #ffaa00',
-              paddingBottom: '12px',
-            }}>
-              Drop Item?
-            </div>
-
-            {/* Message */}
-            <div style={{
-              fontSize: '14px',
+              fontSize: '15px',
               color: '#ffcc88',
-              lineHeight: '1.5',
+              lineHeight: '1.6',
+              textAlign: 'center',
             }}>
               Are you sure you want to drop <strong>{item.name}</strong>? It will be left on the ground at your current location.
             </div>
-
-            {/* Buttons */}
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-              justifyContent: 'flex-end',
-            }}>
-              <button
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <GameButton
                 onClick={() => setShowDropConfirm(false)}
+                variant="secondary"
                 disabled={isLoading}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#444444',
-                  color: '#cccccc',
-                  border: '1px solid #666666',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold',
-                  transition: 'all 0.2s',
-                  opacity: isLoading ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!isLoading) {
-                    e.target.style.backgroundColor = '#666666'
-                    e.target.style.boxShadow = '0 0 8px rgba(100, 100, 100, 0.6)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = '#444444'
-                  e.target.style.boxShadow = 'none'
-                }}
               >
                 Cancel
-              </button>
-              <button
+              </GameButton>
+              <GameButton
                 onClick={handleDrop}
+                variant="danger"
                 disabled={isLoading}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#994444',
-                  color: '#ff8888',
-                  border: '1px solid #ff6666',
-                  borderRadius: '3px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold',
-                  transition: 'all 0.2s',
-                  opacity: isLoading ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!isLoading) {
-                    e.target.style.backgroundColor = '#cc5555'
-                    e.target.style.boxShadow = '0 0 8px rgba(255, 102, 102, 0.6)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = '#994444'
-                  e.target.style.boxShadow = 'none'
-                }}
               >
-                {isLoading ? '...' : '🗑️ Drop'}
-              </button>
+                {isLoading ? 'Dropping...' : 'Confirm Drop'}
+              </GameButton>
             </div>
           </div>
-        </div>
+        </BaseDialog>
       )}
     </div>
   )

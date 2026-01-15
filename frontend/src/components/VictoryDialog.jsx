@@ -1,10 +1,17 @@
 import { useMemo, useState } from 'react'
+import BaseDialog from './BaseDialog'
+import GameButton from './GameButton'
 
+/**
+ * VictoryDialog - Shown after combat victory
+ * Handles EXP display, loot, and attribute point allocation
+ */
 export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
   const [selectedAttr, setSelectedAttr] = useState('strength_base')
   const [amount, setAmount] = useState('1')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
 
   const remainingPoints = Number(endState?.attribute_points_available || 0)
 
@@ -47,7 +54,6 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
     try {
       setIsSubmitting(true)
       const result = await onAllocatePoints(selectedAttr, amt)
-      // Update local endState-like values via parent refresh; parent should pass a new endState next render.
       if (!result?.success) {
         setError(result?.error || 'Failed to allocate points.')
       }
@@ -58,212 +64,222 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
     }
   }
 
-  return (
-    <div
-      style={{
+  // Minimized View (Bottom Bar)
+  if (isMinimized) {
+    return (
+      <div style={{
         position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '100%',
+        maxWidth: '800px',
+        backgroundColor: 'rgba(5, 15, 5, 0.95)',
+        border: '2px solid #00ff88',
+        borderBottom: 'none',
+        borderRadius: '12px 12px 0 0',
+        padding: '12px 24px',
+        zIndex: 2500,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2500,
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'rgba(10, 20, 10, 0.98)',
-          border: '3px solid #00cc66',
-          borderRadius: '12px',
-          padding: '24px',
-          width: '90%',
-          maxWidth: '720px',
-          maxHeight: '80vh',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-          boxShadow: '0 0 30px rgba(0, 204, 102, 0.6), inset 0 0 20px rgba(0, 0, 0, 0.8)',
-          overflowY: 'auto',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            borderBottom: '2px solid #00cc66',
-            paddingBottom: '12px',
-          }}
-        >
-          <div
-            style={{
-              color: '#00ff88',
-              fontWeight: 'bold',
-              fontSize: '18px',
-              fontFamily: 'monospace',
-              textShadow: '0 0 8px rgba(0, 255, 136, 0.8)',
-            }}
-          >
-            {endState?.message || 'Victory!'}
+        justifyContent: 'space-between',
+        boxShadow: '0 -4px 30px rgba(0, 255, 136, 0.3)',
+        animation: 'slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '18px', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0,255,136,0.5)' }}>
+            ⚔️ VICTORY!
           </div>
-          <button
-            onClick={onClose}
-            disabled={!canClose}
-            style={{
-              padding: '6px 12px',
-              backgroundColor: canClose ? '#004422' : '#222222',
-              color: canClose ? '#00ff88' : '#888888',
-              border: '1px solid #00cc66',
-              borderRadius: '6px',
-              cursor: canClose ? 'pointer' : 'not-allowed',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-            }}
-            title={canClose ? 'Close' : 'Spend all points before closing'}
-          >
-            CLOSE
-          </button>
-        </div>
-
-        {/* EXP gained */}
-        <div style={{ border: '1px solid #00cc66', borderRadius: '10px', padding: '12px' }}>
-          <div style={{ color: '#00ff88', fontFamily: 'monospace', fontWeight: 'bold', marginBottom: '8px' }}>
-            EXP gained
-          </div>
-          {expEntries.length === 0 ? (
-            <div style={{ color: '#cccccc', fontFamily: 'monospace' }}>None</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {expEntries.map((e) => (
-                <div key={e.category} style={{ color: '#e6ffe6', fontFamily: 'monospace' }}>
-                  {e.category}: <span style={{ color: '#00ff88' }}>{e.amount}</span>
-                </div>
-              ))}
+          {remainingPoints > 0 && (
+            <div style={{ color: '#ffaa00', fontFamily: 'monospace', fontSize: '14px', animation: 'pulse 2s infinite' }}>
+              ⚠️ {remainingPoints} point{remainingPoints !== 1 ? 's' : ''} to allocate
             </div>
           )}
         </div>
-
-        {/* Drops */}
-        <div style={{ border: '1px solid #00cc66', borderRadius: '10px', padding: '12px' }}>
-          <div style={{ color: '#00ff88', fontFamily: 'monospace', fontWeight: 'bold', marginBottom: '8px' }}>
-            Items dropped
-          </div>
-          {drops.length === 0 ? (
-            <div style={{ color: '#cccccc', fontFamily: 'monospace' }}>None</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {drops.map((d, idx) => (
-                <div key={`${d.name}-${idx}`} style={{ color: '#e6ffe6', fontFamily: 'monospace' }}>
-                  {d.name} x <span style={{ color: '#00ff88' }}>{d.quantity}</span>
-                </div>
-              ))}
-            </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <GameButton onClick={() => setIsMinimized(false)} variant="primary">
+            RESTORE
+          </GameButton>
+          {canClose && (
+            <GameButton onClick={onClose} variant="secondary">
+              CONTINUE
+            </GameButton>
           )}
         </div>
-
-        {/* Level up + point spending */}
-        {levelUps.length > 0 && (
-          <div style={{ border: '1px solid #00cc66', borderRadius: '10px', padding: '12px' }}>
-            <div style={{ color: '#00ff88', fontFamily: 'monospace', fontWeight: 'bold', marginBottom: '8px' }}>
-              Level up
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {levelUps.map((lu, idx) => (
-                <div key={idx} style={{ color: '#e6ffe6', fontFamily: 'monospace' }}>
-                  Level {lu.old_level} → <span style={{ color: '#00ff88' }}>{lu.new_level}</span> (points awarded: {lu.points_awarded})
-                </div>
-              ))}
-            </div>
-
-            <div style={{ marginTop: '12px', color: '#e6ffe6', fontFamily: 'monospace' }}>
-              Points to distribute: <span style={{ color: '#00ff88' }}>{remainingPoints}</span>
-            </div>
-
-            <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                value={selectedAttr}
-                onChange={(e) => setSelectedAttr(e.target.value)}
-                style={{
-                  padding: '8px',
-                  backgroundColor: '#002211',
-                  color: '#00ff88',
-                  border: '1px solid #00cc66',
-                  borderRadius: '6px',
-                  fontFamily: 'monospace',
-                }}
-              >
-                {attrOptions.map((o) => (
-                  <option key={o.key} value={o.key}>
-                    {o.label}{typeof o.value === 'number' ? ` (${o.value})` : ''}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="number"
-                min="1"
-                max={Math.max(1, remainingPoints)}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                style={{
-                  width: '120px',
-                  padding: '8px',
-                  backgroundColor: '#002211',
-                  color: '#00ff88',
-                  border: '1px solid #00cc66',
-                  borderRadius: '6px',
-                  fontFamily: 'monospace',
-                }}
-              />
-
-              <button
-                onClick={handleAllocate}
-                disabled={isSubmitting || remainingPoints <= 0}
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: remainingPoints > 0 ? '#00cc66' : '#222222',
-                  color: '#000000',
-                  border: '1px solid #000000',
-                  borderRadius: '6px',
-                  cursor: remainingPoints > 0 ? 'pointer' : 'not-allowed',
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold',
-                }}
-              >
-                {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE'}
-              </button>
-            </div>
-
-            {error && (
-              <div style={{ marginTop: '10px', color: '#ff6666', fontFamily: 'monospace' }}>{error}</div>
-            )}
-
-            {!canClose && (
-              <div style={{ marginTop: '8px', color: '#cccccc', fontFamily: 'monospace' }}>
-                Spend all points to continue.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* No level-up but still has points */}
-        {levelUps.length === 0 && remainingPoints > 0 && (
-          <div style={{ border: '1px solid #00cc66', borderRadius: '10px', padding: '12px' }}>
-            <div style={{ color: '#00ff88', fontFamily: 'monospace', fontWeight: 'bold', marginBottom: '8px' }}>
-              Attribute points
-            </div>
-            <div style={{ color: '#e6ffe6', fontFamily: 'monospace' }}>
-              Points to distribute: <span style={{ color: '#00ff88' }}>{remainingPoints}</span>
-            </div>
-            <div style={{ marginTop: '8px', color: '#cccccc', fontFamily: 'monospace' }}>
-              Spend all points to continue.
-            </div>
-          </div>
-        )}
+        <style>{`
+                    @keyframes slideUp { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
+                    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+                `}</style>
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <BaseDialog
+      title={`✨ ${endState?.message || 'Combat Victory'}`}
+      onClose={canClose ? onClose : () => setIsMinimized(true)}
+      maxWidth="700px"
+      zIndex={2500}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Header Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '12px' }}>
+            MINIMIZE
+          </GameButton>
+          <GameButton onClick={onClose} disabled={!canClose} variant={canClose ? 'primary' : 'secondary'} style={{ fontSize: '12px' }}>
+            CLOSE
+          </GameButton>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+          {/* EXP & Loot Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* EXP Section */}
+            <div style={{
+              padding: '16px',
+              backgroundColor: 'rgba(0, 255, 136, 0.05)',
+              border: '1px solid rgba(0, 255, 136, 0.2)',
+              borderRadius: '12px'
+            }}>
+              <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '14px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                📈 Experience Gained
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {expEntries.length > 0 ? expEntries.map((e) => (
+                  <div key={e.category} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
+                    <span style={{ color: '#ccc' }}>{e.category}</span>
+                    <span style={{ color: '#00ff88', fontWeight: 'bold' }}>+{e.amount}</span>
+                  </div>
+                )) : <div style={{ color: '#666', fontStyle: 'italic' }}>None</div>}
+              </div>
+            </div>
+
+            {/* Loot Section */}
+            <div style={{
+              padding: '16px',
+              backgroundColor: 'rgba(255, 170, 0, 0.05)',
+              border: '1px solid rgba(255, 170, 0, 0.2)',
+              borderRadius: '12px'
+            }}>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '14px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                🎁 Loot Collected
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {drops.length > 0 ? drops.map((d, idx) => (
+                  <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
+                    <span style={{ color: '#ccc' }}>{d.name}</span>
+                    <span style={{ color: '#ffaa00', fontWeight: 'bold' }}>x{d.quantity}</span>
+                  </div>
+                )) : <div style={{ color: '#666', fontStyle: 'italic' }}>None</div>}
+              </div>
+            </div>
+          </div>
+
+          {/* Level Up & Attributes Section */}
+          <div style={{
+            padding: '16px',
+            backgroundColor: 'rgba(0, 204, 255, 0.05)',
+            border: '1px solid rgba(0, 204, 255, 0.2)',
+            borderRadius: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ color: '#00ccff', fontWeight: 'bold', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              ⭐ Level Ups & Growth
+            </div>
+
+            {levelUps.map((lu, idx) => (
+              <div key={idx} style={{
+                padding: '10px',
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderRadius: '8px',
+                border: '1px solid rgba(0, 204, 255, 0.1)',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: '#fff', fontSize: '15px', fontWeight: 'bold' }}>
+                  LEVEL {lu.old_level} → <span style={{ color: '#00ff88' }}>{lu.new_level}</span>
+                </div>
+                <div style={{ color: '#888', fontSize: '12px' }}>+{lu.points_awarded} Points awarded</div>
+              </div>
+            ))}
+
+            <div style={{ marginTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ color: '#ccc', fontSize: '13px' }}>Available Points:</span>
+                <span style={{ color: '#ffaa00', fontSize: '20px', fontWeight: 'bold', fontFamily: 'monospace' }}>{remainingPoints}</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select
+                    value={selectedAttr}
+                    onChange={(e) => setSelectedAttr(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      backgroundColor: '#1a1a1a',
+                      color: '#00ccff',
+                      border: '1px solid rgba(0, 204, 255, 0.3)',
+                      borderRadius: '8px',
+                      fontFamily: 'monospace',
+                      fontSize: '13px',
+                      outline: 'none',
+                    }}
+                  >
+                    {attrOptions.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label}{typeof o.value === 'number' ? ` (${o.value})` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="number"
+                    min="1"
+                    max={Math.max(1, remainingPoints)}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    style={{
+                      width: '70px',
+                      padding: '10px',
+                      backgroundColor: '#1a1a1a',
+                      color: '#00ccff',
+                      border: '1px solid rgba(0, 204, 255, 0.3)',
+                      borderRadius: '8px',
+                      fontFamily: 'monospace',
+                      textAlign: 'center',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <GameButton
+                  onClick={handleAllocate}
+                  disabled={isSubmitting || remainingPoints <= 0}
+                  variant={remainingPoints > 0 ? 'primary' : 'secondary'}
+                  style={{ width: '100%', padding: '12px' }}
+                >
+                  {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
+                </GameButton>
+              </div>
+
+              {error && (
+                <div style={{ marginTop: '12px', color: '#ff4444', fontSize: '12px', fontFamily: 'monospace', textAlign: 'center' }}>
+                  ⚠️ {error}
+                </div>
+              )}
+
+              {!canClose && (
+                <div style={{ marginTop: '12px', color: '#888', fontSize: '11px', textAlign: 'center', fontStyle: 'italic' }}>
+                  Must spend all points to continue expedition.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </BaseDialog>
   )
 }

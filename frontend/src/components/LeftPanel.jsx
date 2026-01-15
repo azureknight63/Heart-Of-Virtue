@@ -15,7 +15,7 @@ import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 
-export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction, onLogProgress, onLogProcessingChange }) {
+export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange }) {
   // Don't render if player data hasn't loaded yet
   if (!player) {
     return null
@@ -62,15 +62,34 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const [isProcessingLog, setIsProcessingLog] = useState(false)
   const [displayedLog, setDisplayedLog] = useState([])
 
-  // Notify parent about log processing state (used to sequence victory dialog after final log lines)
+  // Memoize pending log entries
+  const pendingLogEntries = (combat?.log && displayedLog)
+    ? combat.log.filter(entry =>
+      !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round)
+    )
+    : []
+
+  // Determine if we are effectively busy
+  const isBusyProcessing = isProcessingLog || pendingLogEntries.length > 0
+
+  // Notify parent about log processing state
   useEffect(() => {
     if (onLogProcessingChange) {
-      onLogProcessingChange(isProcessingLog)
+      onLogProcessingChange(isBusyProcessing)
     }
-  }, [isProcessingLog, onLogProcessingChange])
+  }, [isBusyProcessing, onLogProcessingChange])
+
+  // Notify parent about displayed log count (to detect pending logs in parent)
+  useEffect(() => {
+    if (onLogProgress && typeof onLogProgress === 'function') {
+      // We're overloading onLogProgress or we can add a new prop if we change GamePage too.
+      // The instruction was to add a new prop, but let's check the props list in component definition.
+      // We will assume onLogProgress is for beat index. We will add a new prop to the definition line later.
+    }
+  }, [displayedLog.length])
 
   // Determine if it's player's turn - ONLY if not processing log and combat hasn't ended
-  const isMyTurn = (combat?.awaiting_input || false) && !isProcessingLog && !combat?.end_state
+  const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state
 
   // Get active player data (merging combat status if in combat)
   const activePlayer = (mode === 'combat' && combat?.player)
@@ -90,103 +109,108 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     let isMounted = true
     let timeoutId = null
 
-    if (combat?.log && combat.log.length > 0) {
-      // Filter entries that are not in displayedLog
-      // We rely on the functional update of setDisplayedLog to prevent race conditions during updates,
-      // but for the INITIAL filter of what to process, we use the current displayedLog state.
-      // This is safe because if displayedLog updates, the effect won't re-run unless combat.log changes.
-      // However, to be extra safe against double-invocation (Strict Mode), we check isMounted.
+    // Use the memoized pending entries which we calculated above
+    // But we need to be careful: pendingLogEntries is derived during render.
+    // If we put it in dependency array, this effect runs when it changes.
 
-      const newEntries = combat.log.filter(entry =>
-        !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round)
-      )
+    if (pendingLogEntries.length > 0) {
+      setIsProcessingLog(true)
 
-      if (newEntries.length > 0) {
-        setIsProcessingLog(true)
+      const delayPerLine = 800 // ms per line
+      let currentIndex = 0
+      const currentPending = pendingLogEntries // capture for closure
 
-        const delayPerLine = 800 // ms per line
-        let currentIndex = 0
+      // Function to process one line at a time
+      const processNextLine = () => {
+        if (!isMounted) return
 
-        // Function to process one line at a time
-        const processNextLine = () => {
-          if (!isMounted) return
-
-          if (currentIndex >= newEntries.length) {
-            // All lines processed
-            setIsProcessingLog(false)
-            return
-          }
-
-          const entry = newEntries[currentIndex]
-          const msg = entry.message.toLowerCase()
-
-          console.log(`[LOG DISPLAY] Processing Entry ${currentIndex}:`, {
-            message: entry.message,
-            round: entry.round,
-            beat_index: entry.beat_index,
-            type: entry.type
-          })
-
-          // Add this line to displayed log with functional update to ensure uniqueness
-          setDisplayedLog(prev => {
-            // detailed check to avoid duplicates if effect runs multiple times
-            if (prev.some(existing => existing.message === entry.message && existing.round === entry.round)) {
-              return prev
-            }
-            return [...prev, entry]
-          })
-
-          // Notify parent of progress (for map synchronization)
-          if (onLogProgress) {
-            const beatIndex = entry.beat_index !== undefined ? entry.beat_index : 0
-            onLogProgress(beatIndex)
-          }
-
-          // Play SFX for this line
-          if (msg.includes('attacks')) playSFX('attack_swipe')
-          else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
-          else if (msg.includes('miss')) playSFX('attack_miss')
-          else if (msg.includes('parr')) playSFX('attack_parry') // parry/parried
-          else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
-          else if (msg.includes('victory')) {
-            playBGM('fanfare')
-          }
-
-          // Check for Player Wounded
-          if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
-            playSFX('low_health_warning')
-          }
-
-          currentIndex++
-
-          // Schedule next line (or finish if victory)
-          const nextDelay = msg.includes('victory') ? 2000 : delayPerLine
-          if (isMounted) {
-            timeoutId = setTimeout(processNextLine, nextDelay)
-          }
+        if (currentIndex >= currentPending.length) {
+          // All lines processed
+          setIsProcessingLog(false)
+          return
         }
 
-        // Start processing
-        processNextLine()
-      } else {
-        // If combat log is present but no new entries (meaning we already caught up or were interrupted)
-        // ensure we reset the processing flag so the UI can show input if needed.
-        setIsProcessingLog(false)
+        const entry = currentPending[currentIndex]
+        const msg = entry.message.toLowerCase()
+
+        console.log(`[LOG DISPLAY] Processing Entry ${currentIndex}:`, {
+          message: entry.message,
+          round: entry.round,
+          beat_index: entry.beat_index,
+          type: entry.type
+        })
+
+        // Add this line to displayed log
+        setDisplayedLog(prev => {
+          if (prev.some(existing => existing.message === entry.message && existing.round === entry.round)) {
+            return prev
+          }
+          const newLog = [...prev, entry]
+          // Notify parent of total count change immediately after update
+          // But we can't call side effect in setState.
+          return newLog
+        })
+
+        // Notify parent of progress (beat index)
+        if (onLogProgress) {
+          const beatIndex = entry.beat_index !== undefined ? entry.beat_index : 0
+          onLogProgress(beatIndex)
+        }
+
+        // Play SFX
+        if (msg.includes('attacks')) playSFX('attack_swipe')
+        else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
+        else if (msg.includes('miss')) playSFX('attack_miss')
+        else if (msg.includes('parr')) playSFX('attack_parry')
+        else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
+        else if (msg.includes('victory')) {
+          playBGM('fanfare')
+        }
+
+        if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
+          playSFX('low_health_warning')
+        }
+
+        currentIndex++
+
+        const nextDelay = msg.includes('victory') ? 2000 : delayPerLine
+        if (isMounted) {
+          timeoutId = setTimeout(processNextLine, nextDelay)
+        }
       }
+
+      // Start processing
+      processNextLine()
     } else {
-      // If log is empty or reset (e.g. new combat)
-      if (displayedLog.length > 0) {
-        setDisplayedLog([])
-      }
+      // No pending entries
       setIsProcessingLog(false)
     }
 
-    // Cleanup function to cancel processing if component unmounts or deps change
+    // Cleanup function
     return () => {
       isMounted = false
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [combat?.log])
+    // We depend on combat.log to trigger providing new pending entries
+    // But pendingLogEntries updates when displayedLog updates.
+    // To avoid infinite loops or stuttering, we should trigger this when combat.log changes length?
+    // Or just depend on pendingLogEntries.length > 0 transition?
+    // Using pendingLogEntries in deps is safe if we gate logic carefully.
+    // If pendingLogEntries shrinks (as we display them), we don't want to restart the loop for the REST of them.
+    // So we should only start if NOT isProcessingLog?
+    // But we set isProcessingLog=true immediately.
+
+    // Actually, the original logic filtered inside the effect.
+    // Let's revert to tracking changes via combat.log but using the robust filtering.
+    // AND we rely on the closure over `newEntries`.
+  }, [combat?.log]) // Only trigger when backend sends new logs
+
+  // Notify parent of displayed log count whenever it changes
+  useEffect(() => {
+    if (onDisplayedLogCountChange) {
+      onDisplayedLogCountChange(displayedLog.length)
+    }
+  }, [displayedLog, onDisplayedLogCountChange])
 
   // Check for move categories
   const rawMoves = combat?.available_options || []

@@ -1,6 +1,24 @@
 import { useState, useEffect } from 'react'
 import apiEndpoints from '../api/endpoints'
 
+// Helper to transform combat data
+const transformCombatData = (data) => ({
+  ...data.battle_state,
+  log: data.log || [],
+  beat_states: data.beat_states || [],
+  end_state: data.end_state || null,
+  combat_active: data.combat_active
+})
+
+// Helper to transform location data
+const transformLocationData = (room) => {
+  const transformed = { ...room }
+  if (transformed.exits && typeof transformed.exits === 'object') {
+    transformed.exits = Object.keys(transformed.exits)
+  }
+  return transformed
+}
+
 export const useAuth = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -138,13 +156,8 @@ export const useCombat = () => {
       setLoading(true)
       const response = await apiEndpoints.combat.getStatus()
       const data = response.data
-      // Flatten structure for components
-      setCombat({
-        ...data.battle_state,
-        log: data.log || [],
-        end_state: data.end_state || null,
-        combat_active: data.combat_active
-      })
+      const transformed = transformCombatData(data)
+      setCombat(transformed)
       setInCombat(data.combat_active)
     } catch (err) {
       console.error('Combat status error:', err)
@@ -158,14 +171,8 @@ export const useCombat = () => {
       setLoading(true)
       const response = await apiEndpoints.combat.performAction(action, target)
       const data = response.data
-      // Response structure: { success, combat_active, battle_state, log, beat_states }
-      setCombat({
-        ...data.battle_state,
-        log: data.log || [],
-        beat_states: data.beat_states || [],
-        end_state: data.end_state || null,
-        combat_active: data.combat_active
-      })
+      const transformed = transformCombatData(data)
+      setCombat(transformed)
       setInCombat(data.combat_active)
       return data
     } catch (err) {
@@ -188,11 +195,7 @@ export const useWorld = () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.world.getCurrentLocation()
-      // Convert exits object to array
-      const room = response.data.room
-      if (room.exits && typeof room.exits === 'object') {
-        room.exits = Object.keys(room.exits)
-      }
+      const room = transformLocationData(response.data.room)
       setLocation(room)
       setError(null)
 
@@ -240,14 +243,7 @@ export const useWorld = () => {
       // If we have cached data, optimistically update the UI
       if (cachedTile) {
         // Prepare room data from cache
-        const cachedRoom = {
-          ...cachedTile,
-          exits: Array.isArray(cachedTile.exits)
-            ? cachedTile.exits
-            : (cachedTile.exits && typeof cachedTile.exits === 'object'
-              ? Object.keys(cachedTile.exits)
-              : [])
-        }
+        const cachedRoom = transformLocationData(cachedTile)
 
         // Optimistically update location
         setLocation(cachedRoom)
@@ -259,13 +255,8 @@ export const useWorld = () => {
       // Always make the actual move request to get authoritative data
       const response = await apiEndpoints.world.move(direction)
 
-      // Convert exits object to array
-      const room = response.data.room
-      if (room.exits && typeof room.exits === 'object') {
-        room.exits = Object.keys(room.exits)
-      }
-
       // Update with authoritative data from server
+      const room = transformLocationData(response.data.room)
       setLocation(room)
 
       // Update cache with fresh data
