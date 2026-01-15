@@ -237,7 +237,7 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
       if (style) entitiesToRender.push({ entity: combat.player, style, isPlayer: true })
     }
     combat?.enemies?.forEach(enemy => {
-      if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0 > 0)) {
+      if (enemy.hp === undefined || enemy.hp > 0 || ((enemy.health?.current ?? 0) > 0)) {
         const style = getEntityStyle(enemy)
         if (style) entitiesToRender.push({ entity: enemy, style, isPlayer: false })
       }

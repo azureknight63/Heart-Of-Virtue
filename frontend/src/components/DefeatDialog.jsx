@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuth } from '../hooks/useApi'
+import BaseDialog from './BaseDialog'
+import GameButton from './GameButton'
 
 export default function DefeatDialog({ endState, onLoadedSave }) {
   const { logout } = useAuth()
@@ -72,131 +74,69 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2500,
-      }}
+    <BaseDialog
+      title="Defeat"
+      variant="danger"
+      maxWidth="720px"
+      zIndex={2500}
+      showCloseButton={false}
     >
-      <div
-        style={{
-          backgroundColor: 'rgba(25, 10, 10, 0.98)',
-          border: '3px solid #cc0000',
-          borderRadius: '12px',
-          padding: '24px',
-          width: '90%',
-          maxWidth: '720px',
-          maxHeight: '80vh',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-          boxShadow: '0 0 30px rgba(204, 0, 0, 0.6), inset 0 0 20px rgba(0, 0, 0, 0.8)',
-          overflowY: 'auto',
-          fontFamily: 'monospace',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            borderBottom: '2px solid #cc0000',
-            paddingBottom: '12px',
-          }}
-        >
-          <div
-            style={{
-              color: '#ff5555',
-              fontWeight: 'bold',
-              fontSize: '18px',
-              textShadow: '0 0 8px rgba(255, 85, 85, 0.8)',
-            }}
-          >
-            Defeat
+      <div style={{ color: '#ffe6e6', marginBottom: '8px' }}>{message}</div>
+      <div style={{ color: '#cccccc', marginBottom: '16px' }}>Reload a save or start over.</div>
+
+      <div style={{ border: '1px solid #cc0000', borderRadius: '10px', padding: '12px', marginBottom: '16px' }}>
+        <div style={{ color: '#ff7777', fontWeight: 'bold', marginBottom: '8px' }}>Load save</div>
+
+        {loading && <div style={{ color: '#cccccc' }}>Loading…</div>}
+
+        {!loading && saveOptions.length === 0 && (
+          <div style={{ color: '#cccccc' }}>No saves found.</div>
+        )}
+
+        {!loading && saveOptions.length > 0 && (
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              value={selectedSaveId}
+              onChange={(e) => setSelectedSaveId(e.target.value)}
+              style={{
+                padding: '8px',
+                backgroundColor: '#220000',
+                color: '#ff7777',
+                border: '1px solid #cc0000',
+                borderRadius: '6px',
+                minWidth: '320px',
+              }}
+            >
+              {saveOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <GameButton
+              onClick={handleLoad}
+              disabled={loading || !selectedSaveId}
+              variant="danger"
+            >
+              {loading ? 'LOADING…' : 'LOAD'}
+            </GameButton>
           </div>
-        </div>
+        )}
 
-        <div style={{ color: '#ffe6e6' }}>{message}</div>
-        <div style={{ color: '#cccccc' }}>Reload a save or start over.</div>
-
-        <div style={{ border: '1px solid #cc0000', borderRadius: '10px', padding: '12px' }}>
-          <div style={{ color: '#ff7777', fontWeight: 'bold', marginBottom: '8px' }}>Load save</div>
-
-          {loading && <div style={{ color: '#cccccc' }}>Loading…</div>}
-
-          {!loading && saveOptions.length === 0 && (
-            <div style={{ color: '#cccccc' }}>No saves found.</div>
-          )}
-
-          {!loading && saveOptions.length > 0 && (
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                value={selectedSaveId}
-                onChange={(e) => setSelectedSaveId(e.target.value)}
-                style={{
-                  padding: '8px',
-                  backgroundColor: '#220000',
-                  color: '#ff7777',
-                  border: '1px solid #cc0000',
-                  borderRadius: '6px',
-                  minWidth: '320px',
-                }}
-              >
-                {saveOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={handleLoad}
-                disabled={loading || !selectedSaveId}
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: '#cc0000',
-                  color: '#000000',
-                  border: '1px solid #000000',
-                  borderRadius: '6px',
-                  cursor: loading || !selectedSaveId ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold',
-                }}
-              >
-                {loading ? 'LOADING…' : 'LOAD'}
-              </button>
-            </div>
-          )}
-
-          {error && <div style={{ marginTop: '10px', color: '#ff7777' }}>{error}</div>}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            onClick={handleStartOver}
-            disabled={loading}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: '#222222',
-              color: '#ff7777',
-              border: '1px solid #cc0000',
-              borderRadius: '6px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: 'bold',
-            }}
-          >
-            START OVER
-          </button>
-        </div>
+        {error && <div style={{ marginTop: '10px', color: '#ff7777' }}>{error}</div>}
       </div>
-    </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <GameButton
+          onClick={handleStartOver}
+          disabled={loading}
+          variant="secondary"
+          style={{ border: '1px solid #cc0000', color: '#ff7777' }}
+        >
+          START OVER
+        </GameButton>
+      </div>
+    </BaseDialog>
   )
 }

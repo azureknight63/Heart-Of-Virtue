@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import BaseDialog from './BaseDialog'
+import GameButton from './GameButton'
 
 /**
  * EventDialog - Displays event output text and handles player input for events
@@ -203,94 +205,43 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
     const charLimit = 500
     const charCountColor = charCount > charLimit ? '#ff4444' : charCount > charLimit * 0.9 ? '#ffaa00' : '#888'
 
+    const handleGlobalInteraction = () => {
+        if (!isComplete) {
+            finishImmediately()
+        } else if (!needsInput) {
+            onClose()
+        }
+    }
+
     return (
-        <div
-            style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 2000,
-            }}
-            onClick={!needsInput && isComplete ? handleContinue : finishImmediately}
+        <BaseDialog
+            title={`✨ ${event?.name || 'Event'}`}
+            onClose={handleGlobalInteraction}
+            showCloseButton={!needsInput}
+            zIndex={2000}
+            maxWidth="700px"
+            contentClassName="event-dialog-content"
         >
             <div
                 ref={dialogRef}
                 tabIndex={-1}
-                role="dialog"
-                aria-modal="true"
+                className="event-dialog-body"
+                onClick={handleGlobalInteraction}
                 style={{
-                    backgroundColor: 'rgba(10, 20, 10, 0.98)',
-                    border: '3px solid #00cc66',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    width: '90%',
-                    maxWidth: '700px',
-                    maxHeight: '80vh',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '16px',
-                    boxShadow: '0 0 30px rgba(0, 204, 102, 0.6), inset 0 0 20px rgba(0, 0, 0, 0.8)',
-                    overflowY: 'auto',
                     outline: 'none',
+                    height: '100%',
                 }}
-                onClick={(e) => e.stopPropagation()}
             >
-                {/* Header */}
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    borderBottom: '2px solid #00cc66',
-                    paddingBottom: '12px',
-                }}>
-                    <div style={{
-                        color: '#00ff88',
-                        fontWeight: 'bold',
-                        fontSize: '18px',
-                        fontFamily: 'monospace',
-                        textShadow: '0 0 8px rgba(0, 255, 136, 0.8)',
-                    }}>
-                        ✨ {event?.name || 'Event'}
-                    </div>
-                    {!needsInput && (
-                        <button
-                            onClick={onClose}
-                            style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#004422',
-                                color: '#00ff88',
-                                border: '2px solid #00cc66',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                fontSize: '14px',
-                                fontFamily: 'monospace',
-                                fontWeight: 'bold',
-                                transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = '#006633'
-                                e.target.style.boxShadow = '0 0 10px rgba(0, 204, 102, 0.8)'
-                            }}
-                            onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = '#004422'
-                                e.target.style.boxShadow = 'none'
-                            }}
-                        >
-                            Close
-                        </button>
-                    )}
-                </div>
-
                 {/* Event Text Output */}
                 <div
                     data-testid="event-text-container"
-                    onClick={finishImmediately}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        finishImmediately();
+                    }}
                     style={{
                         padding: '16px',
                         backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -350,37 +301,21 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                                     const keyBinding = idx < 9 ? `[${idx + 1}]` : ''
 
                                     return (
-                                        <button
+                                        <GameButton
                                             key={idx}
                                             onClick={() => handleChoiceSelect(option.value)}
+                                            variant={isSelected ? 'primary' : 'secondary'}
                                             style={{
                                                 padding: '14px 20px',
-                                                backgroundColor: isSelected ? 'rgba(0, 102, 51, 0.6)' : 'rgba(0, 50, 25, 0.4)',
-                                                border: `2px solid ${isSelected ? '#00ff88' : '#00cc66'}`,
-                                                borderRadius: '6px',
-                                                color: '#88ffcc',
-                                                fontFamily: 'monospace',
                                                 fontSize: '15px',
-                                                cursor: 'pointer',
-                                                textAlign: 'center',
-                                                fontWeight: 'bold',
-                                                transition: 'all 0.2s',
-                                                boxShadow: isSelected ? '0 0 12px rgba(0, 255, 136, 0.5)' : 'none',
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                e.currentTarget.style.backgroundColor = 'rgba(0, 102, 51, 0.6)'
-                                                e.currentTarget.style.borderColor = '#00ff88'
-                                                e.currentTarget.style.boxShadow = '0 0 12px rgba(0, 255, 136, 0.5)'
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                e.currentTarget.style.backgroundColor = isSelected ? 'rgba(0, 102, 51, 0.6)' : 'rgba(0, 50, 25, 0.4)'
-                                                e.currentTarget.style.borderColor = isSelected ? '#00ff88' : '#00cc66'
-                                                e.currentTarget.style.boxShadow = isSelected ? '0 0 12px rgba(0, 255, 136, 0.5)' : 'none'
+                                                borderColor: isSelected ? '#00ff88' : '#00cc66',
+                                                backgroundColor: isSelected ? 'rgba(0, 102, 51, 0.6)' : 'rgba(0, 50, 25, 0.4)',
+                                                color: '#88ffcc',
                                             }}
                                         >
                                             {keyBinding && <span style={{ color: '#ffaa00', marginRight: '8px' }}>{keyBinding}</span>}
                                             {option.label}
-                                        </button>
+                                        </GameButton>
                                     )
                                 })}
                             </div>
@@ -500,32 +435,17 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
 
                         {/* Submit Button - Only show for non-choice inputs */}
                         {inputType !== 'choice' && (
-                            <button
+                            <GameButton
                                 onClick={handleSubmit}
+                                variant="primary"
                                 style={{
                                     padding: '14px 24px',
-                                    backgroundColor: 'rgba(0, 102, 51, 0.6)',
-                                    border: '2px solid #00ff88',
-                                    borderRadius: '6px',
-                                    color: '#00ff88',
-                                    fontFamily: 'monospace',
                                     fontSize: '16px',
-                                    fontWeight: 'bold',
-                                    cursor: 'pointer',
                                     marginTop: '8px',
-                                    transition: 'all 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.target.style.backgroundColor = 'rgba(0, 153, 76, 0.8)'
-                                    e.target.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.7)'
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.target.style.backgroundColor = 'rgba(0, 102, 51, 0.6)'
-                                    e.target.style.boxShadow = 'none'
                                 }}
                             >
                                 Submit
-                            </button>
+                            </GameButton>
                         )}
 
                         {/* Keyboard shortcuts hint */}
@@ -547,12 +467,26 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                 {!needsInput && isComplete && (
                     <div style={{
                         textAlign: 'center',
-                        color: '#666',
-                        fontSize: '13px',
-                        fontStyle: 'italic',
-                        marginTop: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginTop: '16px',
                     }}>
-                        Click anywhere to continue...
+                        <GameButton
+                            onClick={onClose}
+                            variant="secondary"
+                            style={{ padding: '10px 30px' }}
+                        >
+                            Close
+                        </GameButton>
+                        <div style={{
+                            color: '#666',
+                            fontSize: '13px',
+                            fontStyle: 'italic',
+                        }}>
+                            or click anywhere to continue...
+                        </div>
                     </div>
                 )}
 
@@ -562,6 +496,6 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
           }
         `}</style>
             </div>
-        </div>
+        </BaseDialog>
     )
 }
