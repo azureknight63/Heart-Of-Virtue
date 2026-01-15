@@ -115,6 +115,8 @@ def get_full_state():
         # Collect all data in one pass
         status = game_service.get_player_status(player)
         inventory = InventorySerializer.serialize(player)
+        from src.api.serializers.inventory import EquipmentSerializer
+        equipment = EquipmentSerializer.serialize(player)
         stats = game_service.get_player_stats(player)
         skills = game_service.get_player_skills(player)
 
@@ -122,9 +124,11 @@ def get_full_state():
             "success": True, 
             "status": status,
             "inventory": inventory,
+            "equipment": equipment,
             "stats": stats,
             "skills": skills
         }), 200
+
 
     except Exception as e:
         import traceback
@@ -392,3 +396,4 @@ def allocate_level_up_points():
             ),
             500,
         )
+

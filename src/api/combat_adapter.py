@@ -183,10 +183,17 @@ class ApiCombatAdapter:
                 scenario_type = "boss_arena"
             
             try:
+                from src.coordinate_config import CoordinateSystemConfig
+                coord_config = CoordinateSystemConfig(self.player)
+                total_combatants = len(self.player.combat_list_allies) + len(self.player.combat_list)
+                grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
+                
                 positions.initialize_combat_positions(
                     allies=self.player.combat_list_allies,
                     enemies=self.player.combat_list,
-                    scenario_type=scenario_type
+                    scenario_type=scenario_type,
+                    grid_width=grid_w,
+                    grid_height=grid_h
                 )
             except Exception as e:
                 print(f"Warning: Position initialization failed: {e}")
@@ -577,6 +584,7 @@ class ApiCombatAdapter:
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat(s)."""
         print(f"[DEBUG] _execute_move called for move: {move.name}")
+        print(f"[DEBUG] _execute_move: player={self.player.name}, eq_weapon={self.player.eq_weapon.name}")
         print(f"[DEBUG] Current beat before execution: {self.player.combat_beat}")
         
         # Reset beat state index for this move execution
@@ -1027,6 +1035,7 @@ class ApiCombatAdapter:
         result: Dict[str, Any] = {
             "combat_active": self.player.in_combat,
             "battle_state": battle_state,
+            "beat_states": [battle_state],  # Initial state as a single beat state
             "log": self.player.combat_log,
         }
 

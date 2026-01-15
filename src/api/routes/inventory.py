@@ -357,6 +357,7 @@ def equip_item():
                 item.on_equip(player)
             
             # Update weapon reference if applicable
+            maintype = getattr(item, "maintype", None)
             if maintype == "Weapon":
                 player.eq_weapon = item
             
@@ -365,6 +366,7 @@ def equip_item():
             functions.refresh_stat_bonuses(player)
             
             message = f"{item.name} equipped"
+
 
         # Get updated equipment data
         from src.api.serializers.inventory import EquipmentSerializer

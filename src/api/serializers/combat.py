@@ -46,6 +46,7 @@ class CombatStateSerializer:
             "player": CombatantSerializer.serialize_combatant(player),
             "enemies": [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
             "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
+            "combatants": [CombatantSerializer.serialize_combatant(player)] + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies]
         }
 
     @staticmethod

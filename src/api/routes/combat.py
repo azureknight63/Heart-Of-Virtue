@@ -146,8 +146,6 @@ def execute_move():
             return jsonify({"success": False, "error": result["error"]}), 400
 
         session_manager.save_session(session.session_id)
-
-        print(f"[DEBUG] Route returning result with beat_states: {len(result.get('beat_states', []))}")
         return jsonify({"success": True, **result}), 200
 
     except Exception as e:
