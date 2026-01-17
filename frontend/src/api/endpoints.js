@@ -92,6 +92,7 @@ export const saves = {
   load: (saveId) => apiClient.post(`/saves/${saveId}/load`),
   list: () => apiClient.get('/saves/'),
   delete: (saveId) => apiClient.delete(`/saves/${saveId}`),
+  newGame: () => apiClient.post('/game/new'),
 }
 
 export default {

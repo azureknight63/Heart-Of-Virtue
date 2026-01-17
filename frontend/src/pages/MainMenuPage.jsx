@@ -53,9 +53,18 @@ export default function MainMenuPage() {
         }
     }, [saveList])
 
-    const handleNewGame = () => {
+    const handleNewGame = async () => {
         playSFX('click')
-        navigate('/game')
+        setLoadingAction(true)
+        try {
+            await saves.newGame()
+            navigate('/game')
+        } catch (error) {
+            console.error("Failed to start new game", error)
+            playSFX('error')
+        } finally {
+            setLoadingAction(false)
+        }
     }
 
     const handleContinue = async () => {

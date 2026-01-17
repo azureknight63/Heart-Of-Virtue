@@ -274,6 +274,69 @@ class SessionManager:
         
         return items
 
+    def _create_player_for_session(self, username: str) -> object:
+        """Create a fresh player instance for a session.
+        
+        Args:
+            username: Username for the player
+            
+        Returns:
+            Player or MinimalPlayer instance
+        """
+        try:
+            # Create fresh player and universe for every session to ensure isolation
+            try:
+                from src.player import Player
+                from src.universe import Universe
+                
+                # Create new player
+                player = Player()
+                player.name = username
+                
+                # Create isolated universe for this player
+                player.universe = Universe(player)
+                player.universe.build(player)
+                
+                # Set starting map
+                starting_map = next(
+                    (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
+                    player.universe.starting_map_default
+                )
+                player.map = starting_map
+                print(f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}", flush=True)
+            except (ImportError, Exception) as e:
+                 print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
+                 player = MinimalPlayer(username)
+            
+            # Set starting position from config
+            player.location_x, player.location_y = self.start_x, self.start_y
+            
+            # Add starting items from config if available
+            config_items = self._create_items_from_config()
+            if config_items:
+                # If player already has inventory, extend it
+                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
+                    player.inventory.extend(config_items)
+                    print(f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory", flush=True)
+            
+            return player
+        except Exception as e:
+            print(f"[SessionManager] Error creating player: {e}", flush=True)
+            # Fallback to minimal player
+            player = MinimalPlayer(username)
+            
+            # Set starting position from config
+            player.location_x, player.location_y = self.start_x, self.start_y
+            
+            # Add starting items from config if available
+            config_items = self._create_items_from_config()
+            if config_items:
+                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
+                    player.inventory.extend(config_items)
+                    print(f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory", flush=True)
+            
+            return player
+
     def create_session(self, username: str) -> Tuple[str, str]:
         """Create a new player session.
 
@@ -292,60 +355,36 @@ class SessionManager:
         self.session_to_player[session_id] = player_id
 
         # Create new player
-        try:
-            # Create fresh player and universe for every session to ensure isolation
-            try:
-                from src.player import Player
-                from src.universe import Universe
-                
-                # Create new player
-                player = Player()
-                
-                # Create isolated universe for this player
-                player.universe = Universe(player)
-                player.universe.build(player)
-                
-                # Set starting map
-                starting_map = next(
-                    (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
-                    player.universe.starting_map_default
-                )
-                player.map = starting_map
-                print(f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}", flush=True)
-            except (ImportError, Exception) as e:
-                 print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
-                 player = MinimalPlayer("Jean")
-            
-            # Set starting position from config
-            player.location_x, player.location_y = self.start_x, self.start_y
-            
-            # Add starting items from config if available
-            config_items = self._create_items_from_config()
-            if config_items:
-                # If player already has inventory, extend it
-                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
-                    player.inventory.extend(config_items)
-                    print(f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory", flush=True)
-            
-            self.players[player_id] = player
-        except Exception as e:
-            print(f"[SessionManager] Error creating player: {e}", flush=True)
-            # Fallback to minimal player
-            player = MinimalPlayer("Jean")
-            
-            # Set starting position from config
-            player.location_x, player.location_y = self.start_x, self.start_y
-            
-            # Add starting items from config if available
-            config_items = self._create_items_from_config()
-            if config_items:
-                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
-                    player.inventory.extend(config_items)
-                    print(f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory", flush=True)
-            
-            self.players[player_id] = player
+        player = self._create_player_for_session(username)
+        self.players[player_id] = player
 
         return session_id, player_id
+
+    def start_new_game(self, session_id: str) -> bool:
+        """Reset player state for an existing session to start a new game.
+        
+        Args:
+            session_id: The session ID to reset
+            
+        Returns:
+            True if successful, False if session not found
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return False
+            
+        player_id = session.player_id
+        
+        # Create fresh player instance
+        player = self._create_player_for_session(session.username)
+        
+        # Replace existing player
+        self.players[player_id] = player
+        
+        # Explicitly clear any combat state if game_service exists (though we don't have ref here easily)
+        # Actually replacing the player object should be enough as combat is usually linked to player
+        
+        return True
 
     def get_session(self, session_id: str) -> Optional[Session]:
         """Get a session by ID.

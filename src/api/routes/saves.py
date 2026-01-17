@@ -269,3 +269,54 @@ def delete_save(save_id):
             ),
             500,
         )
+@saves_bp.route("/game/new", methods=["POST"])
+def new_game():
+    """Start a new game for the current session.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "message": str
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        success = session_manager.start_new_game(session.session_id)
+
+        if success:
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "message": "New game started successfully",
+                    }
+                ),
+                200,
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Failed to start new game",
+                    }
+                ),
+                400,
+            )
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
