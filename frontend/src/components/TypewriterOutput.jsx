@@ -1,11 +1,11 @@
 import React from 'react'
 import useTypewriter from '../hooks/useTypewriter'
-import { colors, shadows, spacing, fonts, commonStyles } from '../styles/theme'
+import { colors } from '../styles/theme'
 
 /**
  * TypewriterOutput - Reusable component for displaying text with a typewriter effect
  */
-export default function TypewriterOutput({ text, speed = 30, style = {}, onComplete }) {
+export default function TypewriterOutput({ text, speed = 30, style = {}, onComplete, formatter }) {
     const { displayedText, isComplete, finishImmediately } = useTypewriter(text, speed)
 
     React.useEffect(() => {
@@ -18,22 +18,28 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
         <div
             onClick={finishImmediately}
             style={{
-                ...commonStyles.typewriterBox,
+                padding: '12px',
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                border: `1px solid ${colors.secondary}`,
+                borderRadius: '8px',
+                color: colors.gold,
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                whiteSpace: 'pre-wrap',
+                minHeight: '4em',
                 cursor: isComplete ? 'default' : 'pointer',
+                position: 'relative',
                 ...style,
             }}
         >
-            {displayedText}
+            {formatter ? formatter(displayedText) : displayedText}
             {!isComplete && (
                 <span style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '14px',
-                    backgroundColor: colors.secondary,
+                    borderRight: `3px solid ${colors.primary}`,
                     marginLeft: '4px',
-                    verticalAlign: 'middle',
-                    animation: 'blink 0.8s step-end infinite',
-                }} />
+                    animation: 'blink 1s step-end infinite'
+                }}>&nbsp;</span>
             )}
             <style>{`
                 @keyframes blink { 50% { opacity: 0; } }

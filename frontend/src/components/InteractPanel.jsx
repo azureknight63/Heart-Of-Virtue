@@ -1,15 +1,25 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import apiEndpoints from '../api/endpoints'
+import apiClient from '../api/client'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import TypewriterOutput from './TypewriterOutput'
-import { colors, spacing } from '../styles/theme'
+import { colors, spacing, commonStyles } from '../styles/theme'
+import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
 
 /**
- * InteractPanel - Main interface for interacting with entities in the current room
- * Allows selecting targets (NPCs, Objects, Items) and performing actions on them
+ * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
+ * Provides target selection, detailed item/object info, and action execution
  */
-export default function InteractPanel({ location, onClose, onEventsTriggered, onInteractionComplete, onRefetch, initialTarget }) {
+export default function InteractPanel({
+    location,
+    onInteractionComplete,
+    onEventsTriggered,
+    onRefetch,
+    onClose,
+    initialTarget = null,
+    history = []
+}) {
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(initialTarget || null)
     const [interactionOutput, setInteractionOutput] = useState(null)
@@ -178,9 +188,6 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
         }
     }
 
-    const getTargetColor = (type) => {
-        return colors.entities[type] || colors.text.bright
-    }
 
     return (
         <BaseDialog
@@ -252,8 +259,8 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                         </div>
                                         <div style={{
                                             fontSize: '10px',
-                                            color: getTargetColor(target.type),
-                                            border: `1px solid ${getTargetColor(target.type)}`,
+                                            color: getEntityColor(target.type),
+                                            border: `1px solid ${getEntityColor(target.type)}`,
                                             padding: '2px 6px',
                                             borderRadius: '4px',
                                             textTransform: 'uppercase',
@@ -284,10 +291,10 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                 padding: spacing.md,
                                 backgroundColor: colors.bg.panelLight,
                                 borderRadius: '8px',
-                                borderLeft: `4px solid ${getTargetColor(selectedTarget.type)}`,
+                                borderLeft: `4px solid ${getEntityColor(selectedTarget.type)}`,
                                 lineHeight: '1.5',
                             }}>
-                                {selectedTarget.description}
+                                {renderTextWithLinks(selectedTarget.description, targets, (t) => setSelectedTarget(t), selectedTarget)}
                             </div>
                         )}
 
@@ -506,13 +513,16 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                         whiteSpace: 'pre-wrap',
                                         opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
                                     }}>
-                                        {msg}
+                                        {renderTextWithLinks(msg, targets, (t) => setSelectedTarget(t))}
                                     </div>
                                 ))}
                             </div>
                         ) : (
                             interactionOutput && (
-                                <TypewriterOutput text={interactionOutput} />
+                                <TypewriterOutput
+                                    text={interactionOutput}
+                                    formatter={(text) => renderTextWithLinks(text, targets, (t) => setSelectedTarget(t))}
+                                />
                             )
                         )}
                     </div>

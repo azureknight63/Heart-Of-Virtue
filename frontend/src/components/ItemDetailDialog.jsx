@@ -2,415 +2,273 @@ import { useState } from 'react'
 import apiClient from '../api/client'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import { colors, spacing, commonStyles } from '../styles/theme'
+import { getRarityColor } from '../utils/itemUtils'
+import useAsyncAction from '../hooks/useAsyncAction'
 
 /**
  * ItemDetailDialog - Displays detailed information about an item and handles actions (equip, use, drop)
  * Used as a sub-view within InventoryDialog
  */
-export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
-  const [isLoading, setIsLoading] = useState(false)
+export default function ItemDetailDialog({ item, player, onClose, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [actionMessage, setActionMessage] = useState('')
   const [showDropConfirm, setShowDropConfirm] = useState(false)
   const [actionResult, setActionResult] = useState(null)
+  const [isRemoved, setIsRemoved] = useState(false)
 
-  const handleEquip = async () => {
-    if (!item.can_equip) return
-
-    setIsLoading(true)
-    try {
-      const response = await apiClient.post('/inventory/equip', {
-        item_id: item.id,
+  const equipAction = useAsyncAction(async () => {
+    const response = await apiClient.post('/inventory/equip', { item_id: item.id })
+    return response.data || response
+  }, {
+    onSuccess: (data) => {
+      const isNowEquipped = !item.is_equipped
+      setActionMessage(isNowEquipped ? '✓ Item equipped!' : '✗ Item unequipped!')
+      setActionResult({
+        message: (
+          <div style={{ textAlign: 'center' }}>
+            <strong>{player?.name || 'Player'}</strong> {isNowEquipped ? 'equipped' : 'unequipped'} <br />
+            <span style={{ color: colors.gold, fontSize: '18px', fontWeight: 'bold' }}>{item.name}</span>.
+          </div>
+        )
       })
-      const data = response.data || response
-      if (data.success) {
-        const isNowEquipped = !item.is_equipped
-        setActionMessage(isNowEquipped ? '✓ Item equipped!' : '✗ Item unequipped!')
+      if (onItemUpdated) onItemUpdated(item.id, { is_equipped: isNowEquipped })
+      if (onRefetch) onRefetch()
+    },
+    onError: (err) => setActionMessage('✗ Error: ' + err.message)
+  })
 
-        // Show success dialog
-        setActionResult({
-          message: isNowEquipped
-            ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-            : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-        })
-
-        // Update item's equipped state locally
-        if (onItemUpdated) {
-          onItemUpdated(item.id, { is_equipped: isNowEquipped })
-        }
-
-        // Trigger global refresh to ensure state persists when closing/reopening inventory
-        if (onRefetch) {
-          onRefetch()
-        }
-      } else {
-        setActionMessage('✗ ' + (data.error || 'Failed to equip'))
-      }
-    } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleUse = async () => {
-    setIsLoading(true)
-    try {
-      const response = await apiClient.post('/inventory/use', {
-        item_id: item.id,
+  const useAction = useAsyncAction(async () => {
+    const response = await apiClient.post('/inventory/use', { item_id: item.id })
+    return response.data || response
+  }, {
+    onSuccess: (data) => {
+      setActionMessage('✓ Item used!')
+      setActionResult({
+        message: <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>{data.message}</div>
       })
-      const data = response.data || response
-      if (data.success) {
-        setActionMessage('✓ Item used!')
-        // Show success dialog with the actual message from the backend
-        setActionResult({
-          message: <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>{data.message}</div>
-        })
+      setIsRemoved(true)
+      if (onRefetch) onRefetch()
+    },
+    onError: (err) => setActionMessage('✗ Error: ' + err.message)
+  })
 
-        // For consumables, remove from inventory
-        if (onItemRemoved) onItemRemoved(item.id)
-
-        // Refresh player state to show healing/buffs
-        if (onRefetch) onRefetch()
-      } else {
-        setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
-      }
-    } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleDrop = async () => {
-    setIsLoading(true)
-    try {
-      const response = await apiClient.post('/inventory/drop', {
-        item_id: item.id,
+  const dropAction = useAsyncAction(async () => {
+    const response = await apiClient.post('/inventory/drop', { item_id: item.id })
+    return response.data || response
+  }, {
+    onSuccess: (data) => {
+      setActionMessage('✓ Item dropped!')
+      setActionResult({
+        message: (
+          <div style={{ textAlign: 'center' }}>
+            <strong>{player?.name || 'Player'}</strong> dropped <br />
+            <span style={{ color: colors.gold, fontSize: '18px', fontWeight: 'bold' }}>{item.name}</span>.
+          </div>
+        )
       })
-      const data = response.data || response
-      if (data.success) {
-        setActionMessage('✓ Item dropped!')
-        // Show success dialog
-        setActionResult({
-          message: <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-        })
+      setIsRemoved(true)
+      if (onRefetch) onRefetch()
+    },
+    onError: (err) => setActionMessage('✗ Error: ' + err.message)
+  })
 
-        // Call onItemRemoved to update inventory client-side
-        if (onItemRemoved) onItemRemoved(item.id)
-        // Refresh room contents to show dropped item
-        if (onRefetch) onRefetch()
-      } else {
-        setActionMessage('✗ ' + (data.error || 'Failed to drop'))
-      }
-    } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
-    } finally {
-      setIsLoading(false)
-      setShowDropConfirm(false)
-    }
-  }
+  if (!item) return null
 
-  const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
+  const rarityColor = getRarityColor(item.rarity)
+  const isEquippable = item.can_equip
+  const isConsumable = item.can_use && (item.maintype === 'Consumable' || item.subtype === 'Potion' || item.subtype === 'Food')
+  const isLoading = equipAction.loading || useAction.loading || dropAction.loading
 
   return (
-    <div style={{
-      backgroundColor: 'rgba(20, 10, 0, 0.4)',
-      border: '2px solid #ffaa00',
-      borderRadius: '8px',
-      padding: '20px',
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      gap: '16px',
-      boxShadow: 'inset 0 0 15px rgba(0,0,0,0.5)',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingBottom: '12px',
-        borderBottom: '2px solid rgba(255, 170, 0, 0.3)',
-      }}>
-        <div style={{
-          color: '#ffff00',
-          fontWeight: 'bold',
-          fontSize: '22px',
-          fontFamily: 'monospace',
-          textShadow: '0 0 10px rgba(255, 255, 0, 0.3)',
-        }}>
-          {item.name}
-        </div>
-        <GameButton
-          onClick={onBack}
-          variant="secondary"
-          style={{ padding: '6px 16px', fontSize: '14px' }}
-        >
-          ← Back
-        </GameButton>
-      </div>
-
-      {/* Item Info Card */}
-      <div style={{
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.3)',
-        border: '1px solid rgba(255, 170, 0, 0.2)',
-        borderRadius: '6px',
-        padding: '16px',
-        overflowY: 'auto',
-        color: '#ffcc00',
-        fontSize: '15px',
-        fontFamily: 'monospace',
-        lineHeight: '1.6',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-      }}>
-        {/* Properties Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
-          gap: '8px',
-        }}>
-          {/* Type */}
+    <BaseDialog
+      title={item.name}
+      onClose={onClose}
+      maxWidth="450px"
+      zIndex={2000}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
+        {/* Item Header */}
+        <div style={{ display: 'flex', gap: spacing.md, alignItems: 'flex-start' }}>
           <div style={{
-            backgroundColor: 'rgba(255, 170, 0, 0.05)',
-            padding: '8px',
-            borderRadius: '4px',
-            border: '1px solid rgba(255, 170, 0, 0.15)',
-            textAlign: 'center',
+            width: '64px',
+            height: '64px',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            border: `2px solid ${rarityColor}`,
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '32px',
+            boxShadow: `0 0 15px ${rarityColor}33`
           }}>
-            <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Type</div>
-            <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.maintype || item.type}</div>
+            {item.icon || '📦'}
           </div>
-
-          {/* Subtype */}
-          {item.subtype && (
-            <div style={{
-              backgroundColor: 'rgba(255, 170, 0, 0.05)',
-              padding: '8px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 170, 0, 0.15)',
-              textAlign: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Subtype</div>
-              <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.subtype}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', color: rarityColor }}>{item.name}</div>
+            <div style={{ fontSize: '12px', color: colors.text.muted, textTransform: 'uppercase', letterSpacing: '1px' }}>
+              {item.rarity} {item.subtype || item.maintype}
             </div>
-          )}
-
-          {/* Weight */}
-          <div style={{
-            backgroundColor: 'rgba(255, 170, 0, 0.05)',
-            padding: '8px',
-            borderRadius: '4px',
-            border: '1px solid rgba(255, 170, 0, 0.15)',
-            textAlign: 'center',
-          }}>
-            <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Weight</div>
-            <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.weight?.toFixed(2) || 0}w</div>
+            {item.is_equipped && (
+              <div style={{ display: 'inline-block', marginTop: '4px', padding: '2px 8px', backgroundColor: colors.primary + '33', color: colors.primary, borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', border: `1px solid ${colors.primary}55` }}>
+                ✓ CURRENTLY EQUIPPED
+              </div>
+            )}
           </div>
-
-          {/* Value */}
-          <div style={{
-            backgroundColor: 'rgba(255, 170, 0, 0.05)',
-            padding: '8px',
-            borderRadius: '4px',
-            border: '1px solid rgba(255, 170, 0, 0.15)',
-            textAlign: 'center',
-          }}>
-            <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>Value</div>
-            <div style={{ color: '#ffee99', fontSize: '15px' }}>{item.value || 0}g</div>
-          </div>
-        </div>
-
-        {/* Status Callouts */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {item.is_equipped && (
-            <div style={{
-              backgroundColor: 'rgba(0, 255, 136, 0.1)',
-              padding: '10px',
-              borderRadius: '4px',
-              border: '1px solid rgba(0, 255, 136, 0.3)',
-              color: '#00ff88',
-              fontWeight: 'bold',
-              textAlign: 'center',
-              fontSize: '14px',
-            }}>
-              ✓ INSTALLED / EQUIPPED
-            </div>
-          )}
-
-          {item.is_merchandise && (
-            <div style={{
-              backgroundColor: 'rgba(255, 170, 0, 0.1)',
-              padding: '10px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 170, 0, 0.3)',
-              color: '#ffaa00',
-              fontWeight: 'bold',
-              textAlign: 'center',
-              fontSize: '14px',
-              letterSpacing: '0.5px',
-            }}>
-              ⚠️ MERCHANDISE - NOT OWNED
-            </div>
-          )}
         </div>
 
         {/* Description */}
-        {item.description && (
-          <div style={{
-            marginTop: '8px',
-            paddingTop: '16px',
-            borderTop: '1px solid rgba(255, 170, 0, 0.1)',
-            color: '#ffee99',
-            fontStyle: 'italic',
-            fontSize: '14px',
-            lineHeight: '1.6',
-            whiteSpace: 'pre-wrap',
-          }}>
-            {item.description}
+        <div style={{
+          padding: spacing.md,
+          backgroundColor: colors.bg.panelLight,
+          borderRadius: '8px',
+          borderLeft: `4px solid ${rarityColor}`,
+          fontSize: '14px',
+          lineHeight: '1.6',
+          color: colors.text.main,
+          fontStyle: 'italic'
+        }}>
+          {item.description || "No description available."}
+        </div>
+
+        {/* Stats Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md }}>
+          <StatRow label="Value" value={`${item.value}💰`} />
+          <StatRow label="Weight" value={`${item.weight}kg`} />
+          {item.damage && <StatRow label="Attack" value={`+${item.damage}`} color={colors.danger} />}
+          {item.protection && <StatRow label="Defense" value={`+${item.protection}`} color={colors.text.highlight} />}
+          {item.durability_max > 0 && <StatRow label="Durability" value={`${item.durability} / ${item.durability_max}`} />}
+        </div>
+
+        {/* Requirement/Flags */}
+        {(item.req_str > 0 || item.req_dex > 0 || item.req_int > 0) && (
+          <div style={{ fontSize: '11px', color: colors.text.muted, padding: '4px 8px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
+            Requirements: {item.req_str > 0 && `STR ${item.req_str} `} {item.req_dex > 0 && `DEX ${item.req_dex} `} {item.req_int > 0 && `INT ${item.req_int} `}
           </div>
         )}
-      </div>
 
-      {/* Action Message Overlay-ish */}
-      {actionMessage && !actionResult && (
-        <div style={{
-          padding: '10px',
-          backgroundColor: actionMessage.startsWith('✓') ? 'rgba(0, 68, 34, 0.6)' : 'rgba(102, 0, 0, 0.6)',
-          border: `1px solid ${actionMessage.startsWith('✓') ? '#00ff88' : '#ff4444'}`,
-          borderRadius: '4px',
-          color: actionMessage.startsWith('✓') ? '#00ff88' : '#ffaaaa',
-          fontSize: '14px',
-          textAlign: 'center',
-          fontFamily: 'monospace',
-        }}>
-          {actionMessage}
+        {/* Action Message */}
+        {actionMessage && (
+          <div style={{
+            textAlign: 'center',
+            fontSize: '13px',
+            color: actionMessage.startsWith('✓') ? colors.primary : colors.danger,
+            fontWeight: 'bold',
+            padding: '4px',
+            fontFamily: 'monospace'
+          }}>
+            {actionMessage}
+          </div>
+        )}
+
+        {/* Actions Footer */}
+        <div style={{ display: 'flex', gap: spacing.md, marginTop: spacing.sm }}>
+          {isEquippable && !combatMode && (
+            <GameButton
+              onClick={equipAction.execute}
+              disabled={isLoading || !!actionResult || isRemoved}
+              variant="primary"
+              style={{ flex: 1 }}
+            >
+              {item.is_equipped ? 'UNEQUIP' : 'EQUIP'}
+            </GameButton>
+          )}
+
+          {isConsumable && (
+            <GameButton
+              onClick={useAction.execute}
+              disabled={isLoading || isRemoved || !!actionResult}
+              variant="secondary"
+              style={{ flex: 1 }}
+            >
+              USE
+            </GameButton>
+          )}
+
+          {!combatMode && (
+            <GameButton
+              onClick={() => setShowDropConfirm(true)}
+              disabled={isLoading || isRemoved || !!actionResult}
+              variant="danger"
+              style={{ flex: 1 }}
+            >
+              DROP
+            </GameButton>
+          )}
         </div>
-      )}
 
-      {/* Primary Actions */}
-      <div style={{
-        display: 'flex',
-        gap: '12px',
-        justifyContent: 'stretch',
-      }}>
-        {item.can_equip && !combatMode && (
-          <GameButton
-            onClick={handleEquip}
-            disabled={isLoading}
-            variant={item.is_equipped ? 'secondary' : 'primary'}
-            style={{ flex: 1, padding: '12px' }}
-          >
-            {item.is_equipped ? '✗ Unequip' : '⚔️ Equip'}
-          </GameButton>
-        )}
-
-        {item.can_use && !item.is_merchandise && (
-          <GameButton
-            onClick={handleUse}
-            disabled={isLoading}
-            variant="primary"
-            style={{ flex: 1, padding: '12px' }}
-          >
-            💊 Use
-          </GameButton>
-        )}
-
-        {item.can_drop && !combatMode && (
-          <GameButton
-            onClick={() => setShowDropConfirm(true)}
-            disabled={isLoading}
-            variant="danger"
-            style={{ flex: 1, padding: '12px' }}
-          >
-            🗑️ Drop
-          </GameButton>
-        )}
+        <GameButton variant="secondary" onClick={onClose} style={{ width: '100%' }}>
+          {item || actionResult ? 'BACK' : 'CLOSE'}
+        </GameButton>
       </div>
 
-      {/* Modals */}
+      {/* Action Result Backdrop Dialog */}
       {actionResult && (
         <BaseDialog
-          title="Action Complete"
+          title="Action Result"
           onClose={() => {
             setActionResult(null)
-            onBack()
+            if (isRemoved) {
+              if (onItemRemoved) onItemRemoved(item.id)
+              onClose()
+            }
           }}
-          maxWidth="400px"
-          zIndex={3000}
+          maxWidth="350px"
+          zIndex={2100}
         >
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '20px',
-            padding: '10px 0',
-          }}>
-            <div style={{
-              fontSize: '16px',
-              textAlign: 'center',
-              lineHeight: '1.6',
-              color: '#00ff88',
-            }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg, padding: spacing.md }}>
+            <div style={{ fontSize: '15px', color: colors.text.main, lineHeight: '1.6' }}>
               {actionResult.message}
             </div>
-            <GameButton
-              onClick={() => {
-                setActionResult(null)
-                onBack()
-              }}
-              variant="primary"
-              style={{ padding: '8px 40px' }}
-            >
-              OK
+            <GameButton variant="primary" onClick={() => {
+              setActionResult(null)
+              if (isRemoved) {
+                if (onItemRemoved) onItemRemoved(item.id)
+                onClose()
+              }
+            }}>
+              OKAY
             </GameButton>
           </div>
         </BaseDialog>
       )}
 
+      {/* Drop confirmation */}
       {showDropConfirm && (
         <BaseDialog
           title="Drop Item?"
           onClose={() => setShowDropConfirm(false)}
-          variant="warning"
-          maxWidth="400px"
-          zIndex={3000}
+          maxWidth="350px"
+          zIndex={2100}
         >
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-            padding: '10px 0',
-          }}>
-            <div style={{
-              fontSize: '15px',
-              color: '#ffcc88',
-              lineHeight: '1.6',
-              textAlign: 'center',
-            }}>
-              Are you sure you want to drop <strong>{item.name}</strong>? It will be left on the ground at your current location.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg, padding: spacing.md }}>
+            <div style={{ fontSize: '15px', color: colors.text.main }}>
+              Are you sure you want to drop <strong>{item.name}</strong> on the ground?
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: spacing.md }}>
               <GameButton
-                onClick={() => setShowDropConfirm(false)}
-                variant="secondary"
-                disabled={isLoading}
-              >
-                Cancel
-              </GameButton>
-              <GameButton
-                onClick={handleDrop}
                 variant="danger"
-                disabled={isLoading}
+                disabled={isLoading || !!actionResult}
+                onClick={() => { setShowDropConfirm(false); dropAction.execute(); }}
+                style={{ flex: 1 }}
               >
-                {isLoading ? 'Dropping...' : 'Confirm Drop'}
+                DROP
+              </GameButton>
+              <GameButton variant="secondary" onClick={() => setShowDropConfirm(false)} style={{ flex: 1 }}>
+                CANCEL
               </GameButton>
             </div>
           </div>
         </BaseDialog>
       )}
+    </BaseDialog>
+  )
+}
+
+function StatRow({ label, value, color = colors.text.muted }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '2px' }}>
+      <span style={{ fontSize: '12px', color: colors.text.muted }}>{label}</span>
+      <span style={{ fontSize: '13px', fontWeight: 'bold', color: color }}>{value}</span>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import { colors, spacing } from '../styles/theme'
 
 /**
  * BaseDialog - A reusable dialog component to reduce DRY violations in modals.
@@ -14,16 +14,16 @@ export default function BaseDialog({
     className = '',
     contentClassName = '',
 }) {
-    const isDanger = variant === 'danger';
-    const isWarning = variant === 'warning';
+    const isDanger = variant === 'danger'
+    const isWarning = variant === 'warning'
 
-    const theme = {
-        borderColor: isDanger ? '#cc0000' : (isWarning ? '#ffaa00' : '#00ff88'),
-        backgroundColor: isDanger ? 'rgba(25, 10, 10, 0.98)' : (isWarning ? 'rgba(30, 15, 0, 0.95)' : '#1a1a2e'),
-        glowColor: isDanger ? 'rgba(204, 0, 0, 0.6)' : (isWarning ? 'rgba(255, 170, 0, 0.5)' : '#00ff88'),
-        titleColor: isDanger ? '#ff5555' : (isWarning ? '#ffff00' : '#00ff88'),
-        overlayColor: isDanger ? 'rgba(0, 0, 0, 0.9)' : (isWarning ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.7)'),
-    };
+    const themeStyles = {
+        borderColor: isDanger ? colors.danger : (isWarning ? colors.secondary : colors.primary),
+        backgroundColor: isDanger ? 'rgba(25, 10, 10, 0.98)' : (isWarning ? 'rgba(30, 15, 0, 0.95)' : colors.bg.main),
+        glowColor: isDanger ? 'rgba(204, 0, 0, 0.6)' : (isWarning ? 'rgba(255, 170, 0, 0.5)' : colors.primary),
+        titleColor: isDanger ? '#ff5555' : (isWarning ? colors.gold : colors.primary),
+        overlayColor: 'rgba(0, 0, 0, 0.7)',
+    }
 
     return (
         <div
@@ -38,7 +38,8 @@ export default function BaseDialog({
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex,
-                backgroundColor: theme.overlayColor,
+                backgroundColor: themeStyles.overlayColor,
+                backdropFilter: 'blur(3px)',
             }}
             onClick={onClose}
         >
@@ -50,11 +51,11 @@ export default function BaseDialog({
                 style={{
                     maxWidth,
                     width: '90%',
-                    backgroundColor: theme.backgroundColor,
-                    border: `3px solid ${theme.borderColor}`,
+                    backgroundColor: themeStyles.backgroundColor,
+                    border: `3px solid ${themeStyles.borderColor}`,
                     borderRadius: '8px',
-                    padding: '24px',
-                    boxShadow: `0 0 20px ${theme.glowColor}`,
+                    padding: spacing.xl,
+                    boxShadow: `0 0 20px ${themeStyles.glowColor}66`,
                     fontFamily: 'monospace',
                     display: 'flex',
                     flexDirection: 'column',
@@ -68,9 +69,9 @@ export default function BaseDialog({
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            borderBottom: `2px solid ${theme.borderColor}`,
-                            paddingBottom: '10px',
-                            marginBottom: '20px',
+                            borderBottom: `2px solid ${themeStyles.borderColor}44`,
+                            paddingBottom: spacing.sm,
+                            marginBottom: spacing.md,
                         }}
                     >
                         {title && (
@@ -79,9 +80,11 @@ export default function BaseDialog({
                                 style={{
                                     fontSize: '20px',
                                     fontWeight: 'bold',
-                                    color: theme.titleColor,
+                                    color: themeStyles.titleColor,
                                     textAlign: 'center',
                                     flex: 1,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '1px'
                                 }}
                             >
                                 {title}
@@ -93,12 +96,15 @@ export default function BaseDialog({
                                 style={{
                                     background: 'none',
                                     border: 'none',
-                                    color: '#888',
+                                    color: colors.text.muted,
                                     cursor: 'pointer',
-                                    fontSize: '20px',
-                                    marginLeft: '10px',
+                                    fontSize: '22px',
+                                    marginLeft: spacing.sm,
                                     padding: '4px',
+                                    transition: 'color 0.2s'
                                 }}
+                                onMouseEnter={(e) => e.target.style.color = colors.text.highlight}
+                                onMouseLeave={(e) => e.target.style.color = colors.text.muted}
                             >
                                 ✕
                             </button>
@@ -111,5 +117,5 @@ export default function BaseDialog({
                 </div>
             </div>
         </div>
-    );
+    )
 }

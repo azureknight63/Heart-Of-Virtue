@@ -1,3 +1,6 @@
+import { colors, spacing } from '../styles/theme'
+import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
+
 /**
  * RoomContents - Display integrated room description with contents
  * Displays room contents descriptions inline with the main room description,
@@ -12,83 +15,6 @@ export default function RoomContents({ location, onInteract }) {
   const objects = (location.objects || []).map(o => ({ ...o, type: 'object' }))
 
   const allEntities = [...npcs, ...items, ...objects].filter(e => !e.hidden)
-
-  // Helper to render text with clickable entity names
-  const renderTextWithLinks = (text, preferredEntity = null) => {
-    if (!text) return null
-
-    // Create a mapping of all matchable terms (names and aliases) to their entities
-    const termMap = []
-    allEntities.forEach(entity => {
-      // Add the name
-      termMap.push({ term: entity.name, entity })
-      // Add aliases if they exist
-      if (entity.aliases && Array.isArray(entity.aliases)) {
-        entity.aliases.forEach(alias => {
-          termMap.push({ term: alias, entity })
-        })
-      }
-    })
-
-    // Sort terms by length descending to avoid partial matches
-    termMap.sort((a, b) => b.term.length - a.term.length)
-
-    // Create a regex that matches any of the terms
-    const terms = termMap.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    if (terms.length === 0) return text
-
-    const regex = new RegExp(`(${terms.join('|')})`, 'gi')
-    const parts = text.split(regex)
-
-    return parts.map((part, i) => {
-      // Find the entity for this part.
-      let entity = null
-
-      // 1. Check if it matches preferredEntity's name or aliases
-      if (preferredEntity) {
-        const isMatch = part.toLowerCase() === preferredEntity.name.toLowerCase() ||
-          (preferredEntity.aliases && preferredEntity.aliases.some(a => a.toLowerCase() === part.toLowerCase()))
-        if (isMatch) {
-          entity = preferredEntity
-        }
-      }
-
-      // 2. Otherwise search in termMap
-      if (!entity) {
-        const match = termMap.find(t => t.term.toLowerCase() === part.toLowerCase())
-        if (match) {
-          entity = match.entity
-        }
-      }
-
-      if (entity) {
-        const description = entity.description || `Interact with ${entity.name}`
-        const truncatedDesc = description.length > 150
-          ? `${description.substring(0, 147)}...`
-          : description
-
-        return (
-          <span
-            key={i}
-            onClick={() => onInteract && onInteract(entity)}
-            style={{
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              fontWeight: 'bold',
-              // Use specific colors for different types
-              color: entity.type === 'npc' ? '#ff9999' :
-                entity.type === 'item' ? '#00ddaa' :
-                  '#ffcc88'
-            }}
-            title={truncatedDesc}
-          >
-            {part}
-          </span>
-        )
-      }
-      return part
-    })
-  }
 
   // Build content descriptions array
   const contentDescriptions = []
@@ -115,6 +41,7 @@ export default function RoomContents({ location, onInteract }) {
       text: text,
       name: item.name,
       entity: item,
+      id: item.id
     })
   })
 
@@ -135,7 +62,8 @@ export default function RoomContents({ location, onInteract }) {
   const hasContentDescriptions = contentDescriptions.length > 0
 
   return (
-    <div className="bg-[rgba(0,100,50,0.2)] border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif" style={{
+    <div className="border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif" style={{
+      backgroundColor: 'rgba(0,100,50,0.2)',
       maxHeight: '30vh',
       overflowY: 'auto',
     }}>
@@ -145,7 +73,7 @@ export default function RoomContents({ location, onInteract }) {
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
+        gap: spacing.md,
       }}>
         {/* Main room description - no links to avoid confusion with non-interactable flavor text */}
         <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
@@ -157,15 +85,13 @@ export default function RoomContents({ location, onInteract }) {
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px',
+            gap: spacing.xs,
           }}>
             {contentDescriptions.map((content, idx) => (
               <div
                 key={idx}
                 style={{
-                  color: content.type === 'npc' ? '#ff9999' :
-                    content.type === 'item' ? '#00ddaa' :
-                      '#ffcc88',
+                  color: getEntityColor(content.type),
                   fontFamily: 'serif',
                   fontStyle: 'italic',
                   fontSize: '16px',
@@ -174,6 +100,8 @@ export default function RoomContents({ location, onInteract }) {
               >
                 {renderTextWithLinks(
                   content.text.startsWith(' ') ? `${content.name}${content.text}` : content.text,
+                  allEntities,
+                  onInteract,
                   content.entity
                 )}
               </div>
@@ -184,7 +112,7 @@ export default function RoomContents({ location, onInteract }) {
         {/* Empty state */}
         {!hasContentDescriptions && (
           <div style={{
-            color: '#666666',
+            color: colors.text.muted,
             fontSize: '16px',
             fontStyle: 'italic',
           }}>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { colors, spacing } from '../styles/theme'
 
 export default function HeroPanel({
   player,
@@ -32,9 +33,6 @@ export default function HeroPanel({
   }
 
   // Calculate heart rate based on HP and Combat status
-  // Base: 60 BPM
-  // Combat: +40 BPM
-  // Low HP: Up to +60 BPM (Exploration) or +80 BPM (Combat)
   const hpPercent = Math.max(0, Math.min(1, hp.current / hp.max))
   const baseBpm = 60
   const combatBonus = inCombat ? 40 : 0
@@ -52,12 +50,12 @@ export default function HeroPanel({
   ]
 
   const combatButtons = [
-    { key: 'offensive', label: 'OFFENSIVE', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onOffensiveClick, color: '#ff4444' },
-    { key: 'maneuver', label: 'MANEUVER', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onManeuverClick, color: '#4444ff' },
+    { key: 'offensive', label: 'OFFENSIVE', top: '0px', left: '20%', transform: 'translateX(-50%)', onClick: onOffensiveClick, color: colors.danger },
+    { key: 'maneuver', label: 'MANEUVER', top: '0px', left: 'calc(50% + 60px)', transform: 'translate(-50%, 0)', onClick: onManeuverClick, color: colors.text.highlight },
     { key: 'inventory', label: 'INVENTORY', top: '50%', left: '-40px', transform: 'translateY(-50%)', onClick: onInventoryClick },
     { key: 'special', label: 'SPECIAL', top: '50%', left: 'calc(50% + 70px)', transform: 'translateY(-50%)', onClick: onSpecialClick, color: '#9944ff', show: hasSpecialMoves },
-    { key: 'miscellaneous', label: 'MISC', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onMiscellaneousClick, color: '#aaaaaa' },
-    { key: 'defensive', label: 'DEFENSIVE', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onDefensiveClick, color: '#eebb00', show: hasDefensiveMoves },
+    { key: 'miscellaneous', label: 'MISC', top: 'calc(50% + 80px)', left: '5px', transform: 'translate(0, -50%)', onClick: onMiscellaneousClick, color: colors.text.muted },
+    { key: 'defensive', label: 'DEFENSIVE', top: 'calc(50% + 80px)', left: 'calc(50% + 60px)', transform: 'translate(-50%, -50%)', onClick: onDefensiveClick, color: colors.secondary, show: hasDefensiveMoves },
   ]
 
   const buttons = inCombat ? combatButtons.filter(btn => btn.show !== false) : explorationButtons
@@ -66,9 +64,9 @@ export default function HeroPanel({
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      gap: '16px',
+      gap: spacing.md,
       alignItems: 'center',
-      padding: '24px 16px',
+      padding: `${spacing.xl} ${spacing.md}`,
       position: 'relative',
     }}>
       {/* Hero Head Container */}
@@ -89,7 +87,7 @@ export default function HeroPanel({
             width: '140px',
             height: '140px',
             objectFit: 'contain',
-            filter: 'drop-shadow(0 0 10px rgba(0, 255, 136, 0.3))',
+            filter: `drop-shadow(0 0 10px ${colors.primary}44)`,
             zIndex: 1,
             animation: `pulse ${animationDuration} infinite ease-in-out`,
           }}
@@ -97,12 +95,12 @@ export default function HeroPanel({
         <style>
           {`
             @keyframes pulse {
-              0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
-              10% { transform: scale(1.007); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
-              20% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
-              30% { transform: scale(1.007); filter: drop-shadow(0 0 14px rgba(0, 255, 136, 0.25)); }
-              50% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
-              100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.3)); }
+              0% { transform: scale(1); filter: drop-shadow(0 0 10px ${colors.primary}44); }
+              10% { transform: scale(1.007); filter: drop-shadow(0 0 14px ${colors.primary}66); }
+              20% { transform: scale(1); filter: drop-shadow(0 0 10px ${colors.primary}44); }
+              30% { transform: scale(1.007); filter: drop-shadow(0 0 14px ${colors.primary}66); }
+              50% { transform: scale(1); filter: drop-shadow(0 0 10px ${colors.primary}44); }
+              100% { transform: scale(1); filter: drop-shadow(0 0 10px ${colors.primary}44); }
             }
           `}
         </style>
@@ -112,7 +110,6 @@ export default function HeroPanel({
           onMouseEnter={() => setHoveredBar('hp')}
           onMouseLeave={() => setHoveredBar(null)}
           onClick={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
-          onTouchStart={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
           style={{
             position: 'absolute',
             left: '-75px',
@@ -121,25 +118,23 @@ export default function HeroPanel({
             width: '15px',
             height: '150px',
             borderRadius: '15px 0 0 15px',
-            border: '2px solid #ff4444',
+            border: `2px solid ${colors.danger}`,
             backgroundColor: 'rgba(255, 68, 68, 0.1)',
-            boxShadow: '0 0 10px rgba(255, 68, 68, 0.5), inset 0 0 8px rgba(255, 68, 68, 0.3)',
+            boxShadow: `0 0 10px ${colors.danger}88, inset 0 0 8px ${colors.danger}44`,
             zIndex: 3,
             display: 'flex',
             flexDirection: 'column-reverse',
             overflow: 'visible',
             cursor: 'pointer',
           }}>
-          {/* HP Fill */}
           <div style={{
             width: '100%',
             height: `${(hp.current / hp.max) * 100}%`,
-            backgroundColor: '#ff4444',
+            backgroundColor: colors.danger,
             borderRadius: '12px 0 0 12px',
-            boxShadow: '0 0 8px rgba(255, 68, 68, 0.8), inset 0 0 4px rgba(255, 255, 255, 0.3)',
+            boxShadow: `0 0 8px ${colors.danger}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
           }} />
 
-          {/* HP Tooltip */}
           {(hoveredBar === 'hp' || focusedBar === 'hp') && (
             <div style={{
               position: 'absolute',
@@ -147,18 +142,18 @@ export default function HeroPanel({
               bottom: '-35px',
               transform: 'translateX(-50%)',
               backgroundColor: '#1a1a1a',
-              border: '1.5px solid #ff4444',
+              border: `1.5px solid ${colors.danger}`,
               borderRadius: '3px',
               padding: '4px 6px',
-              color: '#ff4444',
+              color: colors.danger,
               fontSize: '8px',
               fontWeight: 'bold',
               fontFamily: 'monospace',
               whiteSpace: 'nowrap',
-              boxShadow: '0 0 8px rgba(255, 68, 68, 0.6)',
+              boxShadow: `0 0 8px ${colors.danger}99`,
               zIndex: 20,
             }}>
-              HP<br />{hp.current}/{hp.max}
+              HP<br />{hp.current.toFixed(0)}/{hp.max}
             </div>
           )}
         </div>
@@ -168,7 +163,6 @@ export default function HeroPanel({
           onMouseEnter={() => setHoveredBar('fatigue')}
           onMouseLeave={() => setHoveredBar(null)}
           onClick={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
-          onTouchStart={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
           style={{
             position: 'absolute',
             right: '-75px',
@@ -177,25 +171,23 @@ export default function HeroPanel({
             width: '15px',
             height: '150px',
             borderRadius: '0 15px 15px 0',
-            border: '2px solid #ffaa00',
+            border: `2px solid ${colors.secondary}`,
             backgroundColor: 'rgba(255, 170, 0, 0.1)',
-            boxShadow: '0 0 10px rgba(255, 170, 0, 0.5), inset 0 0 8px rgba(255, 170, 0, 0.3)',
+            boxShadow: `0 0 10px ${colors.secondary}88, inset 0 0 8px ${colors.secondary}44`,
             zIndex: 3,
             display: 'flex',
             flexDirection: 'column-reverse',
             overflow: 'visible',
             cursor: 'pointer',
           }}>
-          {/* Fatigue Fill */}
           <div style={{
             width: '100%',
             height: `${(fatigue.current / fatigue.max) * 100}%`,
-            backgroundColor: '#ffaa00',
+            backgroundColor: colors.secondary,
             borderRadius: '0 12px 12px 0',
-            boxShadow: '0 0 8px rgba(255, 170, 0, 0.8), inset 0 0 4px rgba(255, 255, 255, 0.3)',
+            boxShadow: `0 0 8px ${colors.secondary}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
           }} />
 
-          {/* Fatigue Tooltip */}
           {(hoveredBar === 'fatigue' || focusedBar === 'fatigue') && (
             <div style={{
               position: 'absolute',
@@ -203,18 +195,18 @@ export default function HeroPanel({
               bottom: '-35px',
               transform: 'translateX(50%)',
               backgroundColor: '#1a1a1a',
-              border: '1.5px solid #ffaa00',
+              border: `1.5px solid ${colors.secondary}`,
               borderRadius: '3px',
               padding: '4px 6px',
-              color: '#ffaa00',
+              color: colors.secondary,
               fontSize: '8px',
               fontWeight: 'bold',
               fontFamily: 'monospace',
               whiteSpace: 'nowrap',
-              boxShadow: '0 0 8px rgba(255, 170, 0, 0.6)',
+              boxShadow: `0 0 8px ${colors.secondary}99`,
               zIndex: 20,
             }}>
-              Fatigue<br />{fatigue.current}/{fatigue.max}
+              Fatigue<br />{fatigue.current.toFixed(0)}/{fatigue.max}
             </div>
           )}
         </div>
@@ -222,8 +214,8 @@ export default function HeroPanel({
         {/* Surrounding Buttons */}
         {buttons.map(({ key, label, top, left, transform, onClick, color }) => {
           const isHovered = hoveredButton === key
-          const baseColor = color || '#00aa55'
-          const hoverColor = color || '#00ff88'
+          const baseColor = color || colors.primary
+          const hoverColor = color || '#00ffaa'
 
           return (
             <button
@@ -238,19 +230,19 @@ export default function HeroPanel({
                 transform,
                 width: '70px',
                 height: '40px',
-                borderRadius: '4px',
+                borderRadius: '6px',
                 border: `2px solid ${isHovered ? hoverColor : baseColor}`,
                 backgroundColor: isHovered
-                  ? `${baseColor}4D` // 30% opacity
-                  : `${baseColor}1A`, // 10% opacity
+                  ? `${baseColor}4D`
+                  : `${baseColor}1A`,
                 color: isHovered ? hoverColor : baseColor,
                 fontSize: '9px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
                 boxShadow: isHovered
-                  ? `0 0 12px ${baseColor}B3` // 70% opacity
-                  : `0 0 6px ${baseColor}4D`, // 30% opacity
+                  ? `0 0 12px ${baseColor}B3`
+                  : `0 0 6px ${baseColor}44`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -259,6 +251,7 @@ export default function HeroPanel({
                 textAlign: 'center',
                 padding: '4px',
                 lineHeight: '1.2',
+                textTransform: 'uppercase'
               }}
             >
               {label}
