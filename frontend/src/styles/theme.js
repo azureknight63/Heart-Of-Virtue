@@ -1,0 +1,122 @@
+/**
+ * theme.js - Centralized design tokens and shared style objects
+ * Use these constants to maintain visual consistency across the application.
+ */
+
+export const colors = {
+    // Brand Colors
+    primary: '#00ff88',    // Lime Green
+    secondary: '#ffaa00',  // Orange
+    accent: '#00ccff',     // Cyan
+    gold: '#ffcc00',       // Gold
+
+    // Semantic Colors
+    success: '#00ff88',
+    warning: '#ffaa00',
+    danger: '#ff4444',
+    info: '#00ccff',
+
+    // Neutral / Background Colors
+    text: {
+        main: '#e0e0e0',
+        muted: '#888888',
+        bright: '#ffffff',
+        highlight: '#ffeeaa',
+        warning: '#ffcc88',
+    },
+
+    bg: {
+        main: '#0a0a0a',
+        panel: 'rgba(0, 0, 0, 0.3)',
+        panelLight: 'rgba(0, 0, 0, 0.2)',
+        panelHeavy: 'rgba(0, 0, 0, 0.7)',
+        panelDeep: 'rgba(0, 0, 0, 0.9)',
+        overlay: 'rgba(0, 0, 0, 0.75)',
+        dialog: 'rgba(20, 10, 0, 0.4)',
+    },
+
+    border: {
+        main: 'rgba(255, 170, 0, 0.3)',
+        light: 'rgba(255, 170, 0, 0.1)',
+        bright: '#ffaa00',
+        success: '#00ff88',
+        danger: '#ff4444',
+    },
+
+    // Entity specific
+    entities: {
+        npc: '#00ff88',
+        item: '#00ccff',
+        object: '#ffaa00',
+    }
+}
+
+export const shadows = {
+    main: '0 4px 12px rgba(0, 0, 0, 0.5)',
+    glow: '0 0 15px rgba(255, 170, 0, 0.2)',
+    inset: 'inset 0 2px 10px rgba(0, 0, 0, 0.5)',
+}
+
+export const spacing = {
+    xs: '4px',
+    sm: '8px',
+    md: '12px',
+    lg: '16px',
+    xl: '20px',
+    xxl: '24px',
+}
+
+export const fonts = {
+    main: "'Courier New', monospace",
+    serif: "Georgia, 'Times New Roman', serif",
+}
+
+export const commonStyles = {
+    typewriterBox: {
+        marginTop: spacing.sm,
+        padding: spacing.lg,
+        backgroundColor: colors.bg.panelHeavy,
+        border: `1px solid ${colors.border.main}`,
+        borderRadius: '8px',
+        color: colors.text.warning,
+        fontFamily: fonts.main,
+        fontSize: '14px',
+        lineHeight: '1.6',
+        whiteSpace: 'pre-wrap',
+        maxHeight: '200px',
+        overflowY: 'auto',
+        boxShadow: shadows.inset,
+        position: 'relative',
+    },
+    errorBox: {
+        color: colors.danger,
+        fontSize: '13px',
+        padding: '10px',
+        backgroundColor: 'rgba(255, 0, 0, 0.1)',
+        borderRadius: '6px',
+        border: `1px solid rgba(255, 68, 68, 0.3)`,
+        fontFamily: fonts.main,
+    },
+    infoCard: {
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        border: `1px solid ${colors.border.light}`,
+        borderRadius: '6px',
+        padding: spacing.lg,
+        overflowY: 'auto',
+        color: colors.warning,
+        fontSize: '15px',
+        fontFamily: fonts.main,
+        lineHeight: '1.6',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: spacing.md,
+    }
+}
+
+export default {
+    colors,
+    shadows,
+    spacing,
+    fonts,
+    commonStyles
+}

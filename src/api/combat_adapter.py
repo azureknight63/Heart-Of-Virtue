@@ -265,7 +265,6 @@ class ApiCombatAdapter:
             
             # Emit combat started event
             if self.session_id:
-                print(f"[DEBUG] Emitting combat:started for session {self.session_id}")
                 try:
                     from flask import current_app
                     from src.api.serializers.combat import CombatStateSerializer
@@ -276,13 +275,10 @@ class ApiCombatAdapter:
                             {'battle_state': serialized_state}, 
                             room=f"combat_{self.session_id}"
                         )
-                        print(f"[DEBUG] Successfully emitted combat:started to room combat_{self.session_id}")
                 except Exception as e:
-                    print(f"[DEBUG] Error emitting combat:started: {e}")
                     import traceback
                     traceback.print_exc()
             else:
-                print("[DEBUG] No session_id in ApiCombatAdapter, skipping combat:started emission")
                 
             return result
         
@@ -310,8 +306,6 @@ class ApiCombatAdapter:
         Returns:
             Updated combat state
         """
-        print(f"[DEBUG] process_command called: {command}")
-        print(f"[DEBUG] awaiting_input={self.awaiting_input}, input_type={self.input_type}")
         
         if not self.awaiting_input:
             return {"error": "Not awaiting input"}
@@ -346,13 +340,11 @@ class ApiCombatAdapter:
         self.available_options = self._get_available_moves()
         
         # Log cancellation (optional, but good for debugging)
-        print("[DEBUG] Cancelled selection, reverted to move selection")
         
         return self.get_combat_state()
     
     def _handle_move_selection(self, move_index: int) -> Dict[str, Any]:
         """Handle player selecting a move."""
-        print(f"[DEBUG] _handle_move_selection: move_index={move_index}, input_type={self.input_type}")
         
         if self.input_type != "move_selection":
             return {"error": "Not expecting move selection"}
@@ -583,9 +575,6 @@ class ApiCombatAdapter:
     
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat(s)."""
-        print(f"[DEBUG] _execute_move called for move: {move.name}")
-        print(f"[DEBUG] _execute_move: player={self.player.name}, eq_weapon={self.player.eq_weapon.name}")
-        print(f"[DEBUG] Current beat before execution: {self.player.combat_beat}")
         
         # Reset beat state index for this move execution
         self.current_beat_state_index = 0
@@ -636,7 +625,6 @@ class ApiCombatAdapter:
                     
                     # Increment beat
                     self.player.combat_beat += 1
-                    print(f"[DEBUG] Beat incremented to: {self.player.combat_beat}")
                 
                 # Capture state for this beat AFTER processing
                 beat_state = CombatStateSerializer.serialize_combat_state(
@@ -722,7 +710,6 @@ class ApiCombatAdapter:
         
         result = self.get_combat_state()
         result["beat_states"] = beat_states
-        print(f"[DEBUG] Returning {len(beat_states)} beat states")
         return result
     
     def _process_initial_turns(self):

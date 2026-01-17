@@ -410,7 +410,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         A game tick occurs whenever the game loop iterates,
         which is generally whenever the player takes an action.
         """
-        print(f"\033[91m[DEBUG] game_tick: {self.game_tick}\033[0m")
+        self.game_tick += 1
         if self.game_tick == 0:
             # Single evaluation pass (includes repeat events once) to avoid double spawning
             self._evaluate_map_entry_spawners(process_repeats=True)

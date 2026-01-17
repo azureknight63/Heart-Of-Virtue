@@ -597,7 +597,6 @@ def interact_with_target():
 
         # Save session to ensure world state changes (like block_exit) are persisted
         session_manager.save_session(session.session_id)
-        print(f"[DEBUG] /world/interact success. Saved session {session.session_id}", flush=True)
 
         return jsonify(result), 200
 
@@ -715,7 +714,6 @@ def search_room():
 
         # Save session to ensure items/NPCs found during search are persisted
         session_manager.save_session(session.session_id)
-        print(f"[DEBUG] /world/search success. Saved session {session.session_id}", flush=True)
 
         return jsonify(result), 200
 

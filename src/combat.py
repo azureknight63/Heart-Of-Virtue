@@ -16,7 +16,7 @@ from combat_event_config import CombatEventConfig
 import importlib
 
 def combat(player, event_config: Optional[CombatEventConfig] = None):
-    print(f"[DEBUG] combat() started. player={player.name}, eq_weapon={player.eq_weapon.name}")
+    # If the player is in combat, they cannot move, interact, or do anything else
     """
     :param player:
     :param event_config: Optional configuration for parameterized combat events.

@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import TypewriterOutput from './TypewriterOutput'
+import { colors, spacing } from '../styles/theme'
 
 /**
  * InteractPanel - Main interface for interacting with entities in the current room
@@ -177,12 +179,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
     }
 
     const getTargetColor = (type) => {
-        switch (type) {
-            case 'npc': return '#00ff88'
-            case 'item': return '#00ccff'
-            case 'object': return '#ffaa00'
-            default: return '#ffffff'
-        }
+        return colors.entities[type] || colors.text.bright
     }
 
     return (
@@ -192,11 +189,11 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
             maxWidth="500px"
             zIndex={2000}
         >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
                 {/* Error State */}
                 {error && (
                     <div style={{
-                        color: '#ff4444',
+                        color: colors.danger,
                         fontSize: '13px',
                         padding: '10px',
                         backgroundColor: 'rgba(255, 0, 0, 0.1)',
@@ -213,14 +210,14 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                     <div style={{
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '8px',
+                        gap: spacing.sm,
                         maxHeight: '60vh',
                         overflowY: 'auto',
-                        padding: '4px',
+                        padding: spacing.xs,
                     }}>
                         {targets.length === 0 ? (
                             <div style={{
-                                color: '#666',
+                                color: colors.text.muted,
                                 fontSize: '15px',
                                 fontStyle: 'italic',
                                 textAlign: 'center',
@@ -241,14 +238,14 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                         width: '100%',
                                     }}
                                 >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, width: '100%' }}>
                                         <div style={{ fontSize: '20px' }}>{getTargetIcon(target.type)}</div>
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                            <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#ffeeaa' }}>
+                                            <div style={{ fontWeight: 'bold', fontSize: '14px', color: colors.text.highlight }}>
                                                 {target.name} {target.count > 1 ? `(x${target.count})` : ''}
                                             </div>
                                             {target.description && (
-                                                <div style={{ fontSize: '11px', color: '#888', fontStyle: 'italic', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <div style={{ fontSize: '11px', color: colors.text.muted, fontStyle: 'italic', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {target.description}
                                                 </div>
                                             )}
@@ -272,8 +269,8 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                     </div>
                 ) : (
                     // Interaction View
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
+                        <div style={{ display: 'flex', gap: spacing.sm }}>
                             <GameButton onClick={handleBack} variant="secondary" style={{ padding: '4px 12px', fontSize: '12px' }}>
                                 ← Back
                             </GameButton>
@@ -282,10 +279,10 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                         {/* Target Description */}
                         {selectedTarget.description && (
                             <div style={{
-                                color: '#ccc',
+                                color: colors.text.main,
                                 fontSize: '14px',
-                                padding: '12px',
-                                backgroundColor: 'rgba(0,0,0,0.2)',
+                                padding: spacing.md,
+                                backgroundColor: colors.bg.panelLight,
                                 borderRadius: '8px',
                                 borderLeft: `4px solid ${getTargetColor(selectedTarget.type)}`,
                                 lineHeight: '1.5',
@@ -298,18 +295,18 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                         {showQuantityInput && (
                             <div style={{
                                 backgroundColor: 'rgba(255, 170, 0, 0.1)',
-                                border: '1px solid #ffaa00',
+                                border: `1px solid ${colors.secondary}`,
                                 borderRadius: '8px',
-                                padding: '16px',
+                                padding: spacing.lg,
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '12px',
+                                gap: spacing.md,
                             }}>
-                                <div style={{ color: '#ffcc88', fontSize: '13px', fontWeight: 'bold' }}>
+                                <div style={{ color: colors.text.warning, fontSize: '13px', fontWeight: 'bold' }}>
                                     How many would you like to {pendingAction}?
-                                    <span style={{ color: '#888', fontWeight: 'normal', display: 'block' }}>Available: {selectedTarget.count}</span>
+                                    <span style={{ color: colors.text.muted, fontWeight: 'normal', display: 'block' }}>Available: {selectedTarget.count}</span>
                                 </div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
                                     <input
                                         type="number"
                                         min="1"
@@ -318,8 +315,8 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                         onChange={(e) => setQuantity(Math.min(selectedTarget.count, Math.max(1, parseInt(e.target.value) || 1)))}
                                         style={{
                                             backgroundColor: '#1a1a1a',
-                                            border: '1px solid #ffaa00',
-                                            color: '#ffcc00',
+                                            border: `1px solid ${colors.secondary}`,
+                                            color: colors.gold,
                                             padding: '8px 12px',
                                             borderRadius: '6px',
                                             width: '80px',
@@ -342,7 +339,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                         {/* Container Contents */}
                         {selectedTarget.is_container && selectedTarget.opened && selectedTarget.contents && (
                             <div style={{
-                                padding: '12px',
+                                padding: spacing.md,
                                 backgroundColor: 'rgba(0, 255, 136, 0.05)',
                                 border: '1px solid rgba(0, 255, 136, 0.2)',
                                 borderRadius: '8px',
@@ -351,7 +348,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                 gap: '10px',
                             }}>
                                 <div style={{
-                                    color: '#00ff88',
+                                    color: colors.primary,
                                     fontSize: '11px',
                                     fontWeight: 'bold',
                                     textTransform: 'uppercase',
@@ -372,7 +369,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                                 padding: '6px 10px',
                                                 borderRadius: '6px',
                                             }}>
-                                                <span style={{ color: '#ffeeaa', fontSize: '13px' }}>
+                                                <span style={{ color: colors.text.highlight, fontSize: '13px' }}>
                                                     {item.name} {item.count > 1 ? `x${item.count}` : ''}
                                                 </span>
                                                 <GameButton
@@ -402,7 +399,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                             </div>
                                         ))
                                     ) : (
-                                        <div style={{ color: '#666', fontSize: '13px', fontStyle: 'italic', textAlign: 'center' }}>
+                                        <div style={{ color: colors.text.muted, fontSize: '13px', fontStyle: 'italic', textAlign: 'center' }}>
                                             The container is empty.
                                         </div>
                                     )}
@@ -437,7 +434,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                         </GameButton>
                                     ))
                             ) : (
-                                <div style={{ color: '#666', fontSize: '13px', fontStyle: 'italic', width: '100%', textAlign: 'center', padding: '10px' }}>
+                                <div style={{ color: colors.text.muted, fontSize: '13px', fontStyle: 'italic', width: '100%', textAlign: 'center', padding: '10px' }}>
                                     No actions available for this target.
                                 </div>
                             )}
@@ -447,11 +444,11 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
 
                 {/* Interaction Output & History */}
                 {(interactionOutput || interactionHistory.length > 0) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
                         {/* History Toggle Header */}
                         {interactionHistory.length > 1 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-                                <div style={{ color: '#888', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                <div style={{ color: colors.text.muted, fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                     {showHistory ? 'Interaction History' : 'Last Message'}
                                 </div>
                                 <button
@@ -459,7 +456,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                     style={{
                                         background: 'none',
                                         border: 'none',
-                                        color: '#ffaa00',
+                                        color: colors.secondary,
                                         fontSize: '10px',
                                         fontWeight: 'bold',
                                         cursor: 'pointer',
@@ -484,11 +481,11 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                     if (el) el.scrollTop = el.scrollHeight;
                                 }}
                                 style={{
-                                    padding: '16px',
-                                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                                    border: '1px solid rgba(255, 170, 0, 0.3)',
+                                    padding: spacing.lg,
+                                    backgroundColor: colors.bg.panelHeavy,
+                                    border: `1px solid ${colors.border.main}`,
                                     borderRadius: '8px',
-                                    color: '#ffcc88',
+                                    color: colors.text.warning,
                                     fontFamily: 'monospace',
                                     fontSize: '14px',
                                     lineHeight: '1.6',
@@ -497,14 +494,14 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                                     boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '12px',
+                                    gap: spacing.md,
                                     scrollbarWidth: 'thin',
-                                    scrollbarColor: '#ffaa00 rgba(0,0,0,0.2)'
+                                    scrollbarColor: `${colors.secondary} rgba(0,0,0,0.2)`
                                 }}
                             >
                                 {interactionHistory.map((msg, idx) => (
                                     <div key={idx} style={{
-                                        paddingBottom: idx === interactionHistory.length - 1 ? '0' : '12px',
+                                        paddingBottom: idx === interactionHistory.length - 1 ? '0' : spacing.md,
                                         borderBottom: idx === interactionHistory.length - 1 ? 'none' : '1px solid rgba(255, 170, 0, 0.1)',
                                         whiteSpace: 'pre-wrap',
                                         opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
@@ -522,87 +519,5 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                 )}
             </div>
         </BaseDialog>
-    )
-}
-
-/**
- * TypewriterOutput - Sub-component for displaying interaction messages with a typing effect
- */
-function TypewriterOutput({ text }) {
-    const [displayedText, setDisplayedText] = useState('')
-    const [isComplete, setIsComplete] = useState(false)
-    const intervalRef = useRef(null)
-
-    useEffect(() => {
-        setDisplayedText('')
-        setIsComplete(false)
-
-        if (!text) return
-
-        const words = text.split(' ')
-        let wordsAdded = 0
-
-        intervalRef.current = setInterval(() => {
-            if (wordsAdded >= words.length) {
-                setIsComplete(true)
-                if (intervalRef.current) clearInterval(intervalRef.current)
-                return
-            }
-
-            const wordToAdd = words[wordsAdded]
-            setDisplayedText(prev => prev ? `${prev} ${wordToAdd}` : wordToAdd)
-            wordsAdded++
-        }, 30)
-
-        return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current)
-        }
-    }, [text])
-
-    const finishImmediately = () => {
-        if (!isComplete) {
-            if (intervalRef.current) clearInterval(intervalRef.current)
-            setDisplayedText(text)
-            setIsComplete(true)
-        }
-    }
-
-    return (
-        <div
-            onClick={finishImmediately}
-            style={{
-                marginTop: '8px',
-                padding: '16px',
-                backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                border: '1px solid rgba(255, 170, 0, 0.3)',
-                borderRadius: '8px',
-                color: '#ffcc88',
-                fontFamily: 'monospace',
-                fontSize: '14px',
-                lineHeight: '1.6',
-                whiteSpace: 'pre-wrap',
-                maxHeight: '200px',
-                overflowY: 'auto',
-                cursor: isComplete ? 'default' : 'pointer',
-                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
-                position: 'relative',
-            }}
-        >
-            {displayedText}
-            {!isComplete && (
-                <span style={{
-                    display: 'inline-block',
-                    width: '8px',
-                    height: '14px',
-                    backgroundColor: '#ffaa00',
-                    marginLeft: '4px',
-                    verticalAlign: 'middle',
-                    animation: 'blink 0.8s step-end infinite',
-                }} />
-            )}
-            <style>{`
-                @keyframes blink { 50% { opacity: 0; } }
-            `}</style>
-        </div>
     )
 }

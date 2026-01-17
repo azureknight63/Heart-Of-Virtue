@@ -1051,7 +1051,6 @@ class GameService:
 
     def start_combat(self, player: "player_module.Player", enemy_id: str, session_id: str = None) -> Dict[str, Any]:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
-        print(f"[DEBUG] start_combat: Player ID: {id(player)}")
         # Find enemy in current room
         tile = player.universe.get_tile(player.location_x, player.location_y)
         enemy = None
@@ -1654,7 +1653,6 @@ class GameService:
             
             # If the set of enemies is the same, we assume this is a duplicate request
             if current_combatants == new_combatants:
-                print(f"[DEBUG] Skipping duplicate combat initialization for {player.name} against {new_combatants}")
                 return
 
         from src.api.combat_adapter import ApiCombatAdapter
