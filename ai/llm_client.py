@@ -90,6 +90,29 @@ class MynxLLMAdapter:
         # Probe availability lazily; we don't want to fail import-time
         self._available: Optional[bool] = None
         self._unavailable_reason: Optional[str] = None
+        
+        # Discover model if using Ollama and default is not specified
+        if self.provider == "ollama" and not os.getenv("MYNX_LLM_MODEL"):
+            self._discover_ollama_model()
+
+    def _discover_ollama_model(self):
+        """Try to find an available Ollama model if the default is missing."""
+        try:
+            import requests # type: ignore
+            r = requests.get(self.base_url + "/api/tags", timeout=1.5)
+            if r.status_code == 200:
+                data = r.json()
+                models = [m.get("name") for m in data.get("models", [])]
+                if models and self.model not in models:
+                    # Prefer gemma, then llama, then the first one available
+                    for pref in ["gemma", "llama", "mistral", "phi"]:
+                        for m in models:
+                            if pref in m.lower():
+                                self.model = m
+                                return
+                    self.model = models[0]
+        except Exception:
+            pass
 
     def available(self) -> bool:
         if not self.enabled:
@@ -155,10 +178,25 @@ class MynxLLMAdapter:
         if not self.available():
             return None
         if self.provider == "ollama":
-            return self._ollama_chat(context=context, structured=False)
-        if self.provider == "openrouter":
-            return self._openrouter_chat(context=context, structured=False)
-        return None
+            res = self._ollama_chat(context=context, structured=False)
+        elif self.provider == "openrouter":
+            res = self._openrouter_chat(context=context, structured=False)
+        else:
+            return None
+            
+        if not res:
+            return None
+            
+        # If the model ignored our 'plain-text' request and returned JSON anyway, 
+        # try to extract the 'description' field.
+        if isinstance(res, str) and (res.strip().startswith("{") or "```json" in res.lower()):
+            obj = _JSONTools.try_parse_json(res)
+            if isinstance(obj, dict):
+                desc = obj.get("description") or obj.get("action") or obj.get("text")
+                if desc:
+                    return _JSONTools.sanitize_text(str(desc))
+        
+        return str(res)
 
     def generate_structured(self, context: str) -> Optional[Dict[str, Any]]:
         if not self.available():
@@ -382,6 +420,7 @@ class MynxLLMAdapter:
             return (
                 "Return plain description. One immediate nonverbal action of the mynx, "
                 "present-tense, <= 2 short sentences. No quotes, no speech. "
+                "CRITICAL: RETURN ONLY PLAIN TEXT, NO JSON, NO CODE FENCES. "
                 f"Context: {ctx}"
             )
 

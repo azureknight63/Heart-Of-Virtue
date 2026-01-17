@@ -25,6 +25,8 @@ class ItemSerializer:
             "name": getattr(item, "name", "Unknown"),
             "type": type(item).__name__,
             "description": getattr(item, "description", ""),
+            "aliases": getattr(item, "aliases", []),
+            "action_aliases": getattr(item, "action_aliases", []),
             "value": getattr(item, "value", 0),
             "weight": getattr(item, "weight", 0.0),
             "count": 1,

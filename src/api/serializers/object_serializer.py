@@ -18,6 +18,8 @@ class ObjectSerializer:
             "name": getattr(obj, "name", "Unknown"),
             "type": type(obj).__name__,
             "description": getattr(obj, "description", ""),
+            "aliases": getattr(obj, "aliases", []),
+            "action_aliases": getattr(obj, "action_aliases", []),
         }
 
         # Passability and state

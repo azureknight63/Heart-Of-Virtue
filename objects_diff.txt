@@ -1,0 +1,102 @@
+diff --git a/src/objects.py b/src/objects.py
+index d065f93..cefc9a6 100644
+--- a/src/objects.py
++++ b/src/objects.py
+@@ -18,7 +18,8 @@ from items import Item # noqa; This is used in type hints
+ class Object:
+     def __init__(self, name, description, tile=None, player=None, hidden=False, hide_factor=0,
+                  idle_message=' is here.',
+-                 discovery_message='something interesting.'):
++                 discovery_message='something interesting.',
++                 aliases=None):
+         self.name = name
+         self.description = description
+         self.idle_message = idle_message
+@@ -26,7 +27,9 @@ class Object:
+         self.hide_factor = hide_factor
+         self.discovery_message = discovery_message
+         self.announce = self.idle_message
++        self.aliases = aliases or []
+         self.keywords = []  # action keywords to hook up an arbitrary command like "press" for a switch
++        self.action_aliases = []  # Keywords that are aliases for other primary actions
+         self.events = []  # a list of events that occur when the player interacts with the object.
+         # Events with "repeat" will persist.
+         self.tile = tile
+@@ -91,13 +94,14 @@ class WallSwitch(Object):
+         description = "A small depression in the wall. You may be able to PRESS on it."
+         super().__init__(name="Wall Depression", description=description,
+                          idle_message="There's a small depression in the wall.",
+-                         discovery_message="a small depression in the wall!", player=player, tile=tile)
++                         discovery_message="a small depression in the wall!", player=player, tile=tile,
++                         aliases=["depression", "small depression"])
+         self.position: bool = position  # False is unpressed, True is pressed
+         self.event_on = None
+         self.event_off = None
+         self.keywords.append('press')
+-        self.keywords.append('touch')
+-        self.keywords.append('push')
++        self.action_aliases.extend(['touch', 'push'])
++        self.keywords.extend(self.action_aliases)
+ 
+         if params:
+             for thing in params:
+@@ -152,7 +156,8 @@ class WallInscription(Object):
+                  text: str=None):
+         super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
+                          idle_message="There appears to be some words inscribed in the wall.",
+-                         discovery_message="some words etched into the wall!", player=player, tile=tile)
++                         discovery_message="some words etched into the wall!", player=player, tile=tile,
++                         aliases=["words inscribed", "inscription", "words etched"])
+         self.events = []
+         self.keywords.append('read')
+         self.text = text
+@@ -231,16 +236,20 @@ class Container(Object):
+         self.stock_count = stock_count  # Maximum number of items the container should hold (for shop logic)
+         self.inventory = inv if inv else []
+ 
++        aliases = [nickname, name.lower()]
+         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
+                          idle_message=idle_message,
+-                         discovery_message=discovery_message, player=player, tile=tile)
++                         discovery_message=discovery_message, player=player, tile=tile,
++                         aliases=aliases)
+ 
+         # Extend events list efficiently if events provided
+         if events:
+             self.events.extend(events)
+ 
+         # Add keywords efficiently
+-        self.keywords.extend(self._DEFAULT_KEYWORDS)
++        self.keywords.extend(['open', 'unlock', 'loot'])
++        self.action_aliases.extend(['check', 'view', 'examine', 'inspect', 'peruse'])
++        self.keywords.extend(self.action_aliases)
+ 
+         self.process_events()  # process initial events (triggers labeled "auto")
+         self.stack_items()
+@@ -542,11 +551,15 @@ class Passageway(Object):
+                  description: str="A passageway leading elsewhere is here.",
+                  idle_message: str="There is a passageway here.",
+                  discovery_message: str =" a passageway!"):
++        aliases = [name.lower(), "passage"]
+         super().__init__(name=name, description=description,
+                          idle_message=idle_message,
+                          hidden=hidden, hide_factor=hide_factor,
+-                         discovery_message=discovery_message, player=player, tile=tile)
+-        self.keywords.extend(['enter', 'go', 'leave', 'exit'])
++                         discovery_message=discovery_message, player=player, tile=tile,
++                         aliases=aliases)
++        self.keywords.append('enter')
++        self.action_aliases.extend(['go', 'leave', 'exit'])
++        self.keywords.extend(self.action_aliases)
+         self.events_before = events_before if events_before is not None else []
+         self.events_after = events_after if events_after is not None else []
+         self.teleport_map = teleport_map if teleport_map is not None else ""
+@@ -574,7 +587,7 @@ class Passageway(Object):
+         functions.await_input()
+ 
+     def go(self, player):
+-            self.enter(player)
++        self.enter(player)
+ 
+     def leave(self, player):
+         self.enter(player)

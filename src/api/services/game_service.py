@@ -97,6 +97,9 @@ class GameService:
         blocked = getattr(tile, "block_exit", [])
         
         # Check each direction
+        blocked = getattr(tile, "block_exit", [])
+        
+        exits = {}
         for direction, (dx, dy) in directions.items():
             if direction in blocked:
                 continue
@@ -109,11 +112,12 @@ class GameService:
         
         return exits
 
-    def get_current_room(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_current_room(self, player: "player_module.Player", session_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """Get current room/tile data.
 
         Args:
             player: The Player instance
+            session_data: Optional session data for applying tile modifications
 
         Returns:
             Dictionary with room data (position, description, exits, items, npcs, objects)
@@ -121,6 +125,10 @@ class GameService:
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Invalid player position"}
+
+        # Apply any stored tile modifications from session
+        if session_data:
+            self.apply_tile_modifications(tile, session_data)
 
         # Calculate exits dynamically by checking adjacent tiles
         exits_data = self._calculate_exits(player.universe, tile, player.location_x, player.location_y)
@@ -149,7 +157,52 @@ class GameService:
             "items": items_data,
             "npcs": npcs_data,
             "objects": objects_data,
+            "is_passable": getattr(tile, "is_passable", True),
         }
+
+    def store_tile_modification(self, session_data: Dict[str, Any], x: int, y: int, modification_type: str, data: Any) -> None:
+        """Store a tile modification in session data for persistence.
+        
+        Args:
+            session_data: The session data dictionary
+            x: Tile x coordinate
+            y: Tile y coordinate  
+            modification_type: Type of modification (e.g., 'block_exit', 'objects_removed')
+            data: The modification data
+        """
+        if "tile_modifications" not in session_data:
+            session_data["tile_modifications"] = {}
+        
+        tile_key = f"{x},{y}"
+        if tile_key not in session_data["tile_modifications"]:
+            session_data["tile_modifications"][tile_key] = {}
+        
+        session_data["tile_modifications"][tile_key][modification_type] = data
+
+    def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
+        """Apply stored modifications to a tile.
+        
+        Args:
+            tile: The MapTile object to modify
+            session_data: The session data dictionary containing modifications
+        """
+        if not session_data or "tile_modifications" not in session_data:
+            return
+        
+        tile_key = f"{tile.x},{tile.y}"
+        if tile_key not in session_data["tile_modifications"]:
+            return
+        
+        modifications = session_data["tile_modifications"][tile_key]
+        
+        # Apply block_exit modifications
+        if "block_exit" in modifications:
+            tile.block_exit = modifications["block_exit"].copy()
+        
+        # Apply objects_removed modifications
+        if "objects_removed" in modifications:
+            removed_ids = modifications["objects_removed"]
+            tile.objects_here = [obj for obj in tile.objects_here if id(obj) not in removed_ids]
 
     def move_player(
         self, player: "player_module.Player", direction: str, session_data: Optional[Dict] = None
@@ -765,6 +818,17 @@ class GameService:
         # Provide fallback message if no output was captured
         if not clean_output:
             clean_output = f"Action '{action}' completed successfully."
+
+        # Store tile modifications after action execution
+        if session_data is not None:
+            current_block_exit = tile.block_exit.copy() if hasattr(tile, 'block_exit') else []
+            self.store_tile_modification(
+                session_data, 
+                tile.x, 
+                tile.y, 
+                'block_exit', 
+                current_block_exit
+            )
 
         return {
             "success": True, 

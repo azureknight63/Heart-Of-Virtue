@@ -12,10 +12,21 @@ const transformCombatData = (data) => ({
 
 // Helper to transform location data
 const transformLocationData = (room) => {
-  const transformed = { ...room }
-  if (transformed.exits && typeof transformed.exits === 'object') {
-    transformed.exits = Object.keys(transformed.exits)
+  // Create a completely new object with new array references
+  // This ensures React's shallow comparison detects changes
+  const transformed = {
+    ...room,
+    // Always create new array references to trigger React re-renders
+    exits: Array.isArray(room.exits)
+      ? [...room.exits]
+      : (room.exits && typeof room.exits === 'object' ? Object.keys(room.exits) : []),
+    items: room.items ? [...room.items] : [],
+    npcs: room.npcs ? [...room.npcs] : [],
+    objects: room.objects ? [...room.objects] : [],
+    // Add timestamp to guarantee unique object reference
+    _fetchedAt: Date.now()
   }
+
   return transformed
 }
 

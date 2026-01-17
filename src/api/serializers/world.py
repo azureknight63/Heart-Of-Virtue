@@ -24,6 +24,8 @@ class ItemSerializer:
             "name": getattr(item, "name", type(item).__name__),
             "type": type(item).__name__,
             "description": getattr(item, "description", ""),
+            "aliases": getattr(item, "aliases", []),
+            "action_aliases": getattr(item, "action_aliases", []),
         }
 
         # Add quantity if available (for stackable items)
@@ -131,6 +133,8 @@ class ObjectSerializer:
             "name": getattr(obj, "name", type(obj).__name__),
             "type": type(obj).__name__,
             "description": getattr(obj, "description", ""),
+            "aliases": getattr(obj, "aliases", []),
+            "action_aliases": getattr(obj, "action_aliases", []),
             "is_passable": getattr(obj, "is_passable", True),
         }
 

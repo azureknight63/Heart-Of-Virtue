@@ -19,6 +19,7 @@ export default function GamePage() {
   // Event handling state
   const [eventQueue, setEventQueue] = useState([])
   const [currentEvent, setCurrentEvent] = useState(null)
+  const [eventHistory, setEventHistory] = useState([])
 
   // Combat log display progress (for map synchronization)
   const [currentLogIndex, setCurrentLogIndex] = useState(0)
@@ -73,11 +74,12 @@ export default function GamePage() {
       const tileKey = `${location.x},${location.y}`
       setExploredTiles(prev => {
         const newMap = new Map(prev)
-        // Store tile data with items, NPCs, and objects
+        // Store tile data with items, NPCs, objects, and EXITS
         newMap.set(tileKey, {
           items: location.items || [],
           npcs: location.npcs || [],
-          objects: location.objects || []
+          objects: location.objects || [],
+          exits: location.exits || []
         })
         return newMap
       })
@@ -90,12 +92,22 @@ export default function GamePage() {
       const nextEvent = eventQueue[0]
       setCurrentEvent(nextEvent)
       setEventQueue(prev => prev.slice(1))
+
+      // Add to history
+      const text = nextEvent.output_text || nextEvent.message || nextEvent.description || ''
+      if (text.trim()) {
+        setEventHistory(prev => [...prev, text])
+      }
     }
   }, [eventQueue, currentEvent])
 
   // Handle event close
   const handleEventClose = () => {
     setCurrentEvent(null)
+    // Clear history if we're actually closing the dialog and no more events are pending
+    if (eventQueue.length === 0) {
+      setEventHistory([])
+    }
   }
 
   // Handle event input submission
@@ -147,6 +159,7 @@ export default function GamePage() {
           needs_input: false
         }
         setCurrentEvent(resultEvent)
+        setEventHistory(prev => [...prev, data.output_text])
       }
 
       // If event still needs input (persistent), add back to front of queue
@@ -267,6 +280,7 @@ export default function GamePage() {
         }
 
         setCurrentEvent(alertEvent)
+        setEventHistory(prev => [...prev, dialogDescription])
         setCombatDialogShown(true)
       } else {
         // Dialog already shown, just ensure mode is correct
@@ -410,6 +424,7 @@ export default function GamePage() {
       {currentEvent && (
         <EventDialog
           event={currentEvent}
+          history={eventHistory}
           onClose={handleEventClose}
           onSubmitInput={handleEventInput}
         />

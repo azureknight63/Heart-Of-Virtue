@@ -17,29 +17,54 @@ export default function RoomContents({ location, onInteract }) {
   const renderTextWithLinks = (text, preferredEntity = null) => {
     if (!text) return null
 
-    // Sort entities by name length descending to avoid partial matches
-    const sortedEntities = [...allEntities].sort((a, b) => b.name.length - a.name.length)
+    // Create a mapping of all matchable terms (names and aliases) to their entities
+    const termMap = []
+    allEntities.forEach(entity => {
+      // Add the name
+      termMap.push({ term: entity.name, entity })
+      // Add aliases if they exist
+      if (entity.aliases && Array.isArray(entity.aliases)) {
+        entity.aliases.forEach(alias => {
+          termMap.push({ term: alias, entity })
+        })
+      }
+    })
 
-    // Create a regex that matches any of the entity names
-    const names = sortedEntities.map(e => e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    if (names.length === 0) return text
+    // Sort terms by length descending to avoid partial matches
+    termMap.sort((a, b) => b.term.length - a.term.length)
 
-    const regex = new RegExp(`(${names.join('|')})`, 'gi')
+    // Create a regex that matches any of the terms
+    const terms = termMap.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    if (terms.length === 0) return text
+
+    const regex = new RegExp(`(${terms.join('|')})`, 'gi')
     const parts = text.split(regex)
 
     return parts.map((part, i) => {
-      // Find the entity for this part. If it matches the preferredEntity's name, use that specific one.
+      // Find the entity for this part.
       let entity = null
-      if (preferredEntity && preferredEntity.name.toLowerCase() === part.toLowerCase()) {
-        entity = preferredEntity
-      } else {
-        entity = sortedEntities.find(e => e.name.toLowerCase() === part.toLowerCase())
+
+      // 1. Check if it matches preferredEntity's name or aliases
+      if (preferredEntity) {
+        const isMatch = part.toLowerCase() === preferredEntity.name.toLowerCase() ||
+          (preferredEntity.aliases && preferredEntity.aliases.some(a => a.toLowerCase() === part.toLowerCase()))
+        if (isMatch) {
+          entity = preferredEntity
+        }
+      }
+
+      // 2. Otherwise search in termMap
+      if (!entity) {
+        const match = termMap.find(t => t.term.toLowerCase() === part.toLowerCase())
+        if (match) {
+          entity = match.entity
+        }
       }
 
       if (entity) {
         const description = entity.description || `Interact with ${entity.name}`
-        const truncatedDesc = description.length > 150 
-          ? `${description.substring(0, 147)}...` 
+        const truncatedDesc = description.length > 150
+          ? `${description.substring(0, 147)}...`
           : description
 
         return (
@@ -122,9 +147,9 @@ export default function RoomContents({ location, onInteract }) {
         flexDirection: 'column',
         gap: '10px',
       }}>
-        {/* Main room description */}
+        {/* Main room description - no links to avoid confusion with non-interactable flavor text */}
         <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
-          {renderTextWithLinks(roomDescriptionText)}
+          {roomDescriptionText}
         </p>
 
         {/* Content descriptions immediately following */}

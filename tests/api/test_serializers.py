@@ -30,6 +30,8 @@ class MockItem:
         self.rarity = "common"
         self.weight = 5
         self.value = 100
+        self.aliases = []
+        self.action_aliases = []
 
 
 class MockNPC:
@@ -56,6 +58,8 @@ class MockObject:
         self.is_container = False
         self.is_open = False
         self.is_locked = False
+        self.aliases = []
+        self.action_aliases = []
 
 
 class MockEvent:
@@ -94,6 +98,8 @@ class MockPlayer:
     def __init__(self):
         self.x = 0
         self.y = 0
+        self.location_x = 0
+        self.location_y = 0
         self.name = "Test Player"
 
 
@@ -278,8 +284,8 @@ class TestWorldSerializer:
     def test_serialize_movement_result(self):
         """Test serializing movement result."""
         player = MockPlayer()
-        player.x = 0
-        player.y = 1
+        player.location_x = 0
+        player.location_y = 1
         tile = MockTile()
         tile.x = 0
         tile.y = 1

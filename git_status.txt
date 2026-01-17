@@ -1,0 +1,21 @@
+ M .gitignore
+ M ai/llm_client.py
+ M frontend/package-lock.json
+ M frontend/package.json
+ M frontend/src/components/EventDialog.jsx
+ M frontend/src/components/InteractPanel.jsx
+ M frontend/src/components/InteractPanel.test.jsx
+ M frontend/src/components/RoomContents.jsx
+ M frontend/src/hooks/useApi.js
+ M frontend/src/pages/GamePage.jsx
+ M src/api/routes/world.py
+ M src/api/serializers/item_serializer.py
+ M src/api/serializers/object_serializer.py
+ M src/api/serializers/world.py
+ M src/api/services/game_service.py
+ M src/items.py
+ M src/npc.py
+ M src/objects.py
+ M tests/api/test_serializers.py
+?? frontend/src/components/RoomContents.test.jsx
+?? git_status.txt

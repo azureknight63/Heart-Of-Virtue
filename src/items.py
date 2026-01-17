@@ -92,7 +92,8 @@ class Item:
 
     def __init__(self, name: str, description: str, value: Union[int, float], maintype: str, subtype: str,
                  discovery_message: str, hidden: bool = False, hide_factor: Union[int, float] = 0,
-                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0,
+                 aliases: Optional[List[str]] = None) -> None:
         self.name = name
         self.description = description
         self.value = value
@@ -103,6 +104,8 @@ class Item:
         self.merchandise = merchandise
         self.discovery_message = discovery_message
         self.announce = "There's a {} here.".format(self.name)
+        self.aliases = aliases or []
+        self.action_aliases = []
         self.interactions = ["drop"]  # things to do with the item from the inventory menu
         self.skills = skills  # skills that can be learned from using the item (acquiring exp)
         self.owner = None  # used to tie an item to an owner for special interactions

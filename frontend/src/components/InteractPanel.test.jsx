@@ -125,7 +125,7 @@ describe('InteractPanel', () => {
   it('calls onClose when close button is clicked', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
 
-    fireEvent.click(screen.getByText(/Close/i));
+    fireEvent.click(screen.getByText('✕'));
     expect(mockOnClose).toHaveBeenCalled();
   });
 
@@ -170,7 +170,7 @@ describe('InteractPanel', () => {
     const emptyLocation = { ...mockLocation, npcs: [], objects: [], items: [] };
     render(<InteractPanel location={emptyLocation} onClose={mockOnClose} />);
 
-    expect(screen.getByText(/Nothing to interact with here./i)).toBeDefined();
+    expect(screen.getByText(/There is nothing here to interact with./i)).toBeDefined();
   });
 
   it('handles cancel in quantity input', () => {
@@ -211,7 +211,7 @@ describe('InteractPanel', () => {
       npcs: [],
     };
 
-    rerender(<InteractPanel location={newLocation} onClose={newLocation} />); // Just pass something else for location
+    rerender(<InteractPanel location={newLocation} onClose={mockOnClose} />); // Use the original mockOnClose
 
     expect(screen.queryByText(/A stern guard./i)).toBeNull();
   });

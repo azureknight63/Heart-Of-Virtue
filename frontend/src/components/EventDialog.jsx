@@ -6,10 +6,11 @@ import GameButton from './GameButton'
  * EventDialog - Displays event output text and handles player input for events
  * Supports choice selection, text input, and number input with keyboard shortcuts
  */
-export default function EventDialog({ event, onClose, onSubmitInput }) {
+export default function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const [displayedText, setDisplayedText] = useState('')
     const [isComplete, setIsComplete] = useState(false)
     const [showInput, setShowInput] = useState(false)
+    const [showHistory, setShowHistory] = useState(false)
     const [textInput, setTextInput] = useState('')
     const [numberInput, setNumberInput] = useState('')
     const [validationMessage, setValidationMessage] = useState('')
@@ -235,39 +236,107 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
                     height: '100%',
                 }}
             >
-                {/* Event Text Output */}
-                <div
-                    data-testid="event-text-container"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        finishImmediately();
-                    }}
-                    style={{
-                        padding: '16px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                        border: '2px solid #00cc66',
-                        borderRadius: '8px',
-                        color: '#88ffcc',
-                        fontFamily: 'monospace',
-                        fontSize: '16px',
-                        lineHeight: '1.8',
-                        whiteSpace: 'pre-wrap',
-                        minHeight: '120px',
-                        maxHeight: '400px',
-                        overflowY: 'auto',
-                        boxShadow: 'inset 0 0 15px rgba(0,0,0,0.9)',
-                        cursor: isComplete ? 'default' : 'pointer',
-                    }}
-                >
-                    {displayedText}
-                    {!isComplete && (
-                        <span style={{
-                            borderRight: '3px solid #00cc66',
-                            marginLeft: '4px',
-                            animation: 'blink 1s step-end infinite'
-                        }}>&nbsp;</span>
-                    )}
-                </div>
+                {/* Event History Toggle (only if multiple messages) */}
+                {history.length > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-8px' }}>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowHistory(!showHistory);
+                            }}
+                            style={{
+                                background: 'rgba(0, 204, 102, 0.1)',
+                                border: '1px solid rgba(0, 204, 102, 0.4)',
+                                color: '#00ff88',
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                padding: '4px 12px',
+                                borderRadius: '4px',
+                                textTransform: 'uppercase',
+                                transition: 'all 0.2s ease',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                            }}
+                        >
+                            {showHistory ? '↩ Back to Present' : `📜 View Log (${history.length})`}
+                        </button>
+                    </div>
+                )}
+
+                {/* Event Text Output / History View */}
+                {showHistory ? (
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            padding: '20px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            border: '2px dashed #00cc66',
+                            borderRadius: '10px',
+                            color: '#88ffcc',
+                            fontFamily: 'monospace',
+                            fontSize: '15px',
+                            lineHeight: '1.8',
+                            height: '350px',
+                            overflowY: 'auto',
+                            boxShadow: 'inset 0 0 20px rgba(0,0,0,1)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '20px',
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: '#00cc66 rgba(0,0,0,0.5)'
+                        }}
+                        ref={(el) => {
+                            if (el) el.scrollTop = el.scrollHeight;
+                        }}
+                    >
+                        {history.map((text, idx) => (
+                            <div key={idx} style={{
+                                paddingBottom: idx === history.length - 1 ? '0' : '20px',
+                                borderBottom: idx === history.length - 1 ? 'none' : '1px solid rgba(0, 204, 102, 0.2)',
+                                whiteSpace: 'pre-wrap',
+                                opacity: idx === history.length - 1 ? 1 : 0.6
+                            }}>
+                                <span style={{ color: '#00ff88', marginRight: '10px', fontSize: '12px' }}>[{idx + 1}]</span>
+                                {text}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div
+                        data-testid="event-text-container"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            finishImmediately();
+                        }}
+                        style={{
+                            padding: '16px',
+                            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                            border: '2px solid #00cc66',
+                            borderRadius: '8px',
+                            color: '#88ffcc',
+                            fontFamily: 'monospace',
+                            fontSize: '16px',
+                            lineHeight: '1.8',
+                            whiteSpace: 'pre-wrap',
+                            minHeight: '120px',
+                            maxHeight: '400px',
+                            overflowY: 'auto',
+                            boxShadow: 'inset 0 0 15px rgba(0,0,0,0.9)',
+                            cursor: isComplete ? 'default' : 'pointer',
+                        }}
+                    >
+                        {displayedText}
+                        {!isComplete && (
+                            <span style={{
+                                borderRight: '3px solid #00cc66',
+                                marginLeft: '4px',
+                                animation: 'blink 1s step-end infinite'
+                            }}>&nbsp;</span>
+                        )}
+                    </div>
+                )}
 
                 {/* Input Section */}
                 {showInput && needsInput && (

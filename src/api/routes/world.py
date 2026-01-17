@@ -77,7 +77,7 @@ def get_current_room():
                 500,
             )
 
-        room = game_service.get_current_room(player)
+        room = game_service.get_current_room(player, session.data)
         
         # Debug: Check if room has error
         if "error" in room:
@@ -593,7 +593,11 @@ def interact_with_target():
         )
 
         if not result["success"]:
-            return jsonify(result), 400
+            return jsonify(result), 200
+
+        # Save session to ensure world state changes (like block_exit) are persisted
+        session_manager.save_session(session.session_id)
+        print(f"[DEBUG] /world/interact success. Saved session {session.session_id}", flush=True)
 
         return jsonify(result), 200
 
@@ -647,7 +651,17 @@ def trigger_room_events():
             return jsonify({"success": False, "error": "Current tile not found"}), 404
 
         # Trigger events on the tile
-        events_triggered = game_service.trigger_tile_events(player, tile)
+        events_triggered = game_service.trigger_tile_events(player, tile, session.data)
+
+        # Store tile modifications after events have processed
+        game_service.store_tile_modification(
+            session.data,
+            tile.x,
+            tile.y,
+            'block_exit',
+            tile.block_exit.copy() if hasattr(tile, 'block_exit') else []
+        )
+        session_manager.save_session(session.session_id)
 
         return jsonify({"success": True, "events": events_triggered}), 200
 
@@ -698,6 +712,10 @@ def search_room():
             )
 
         result = game_service.search(player)
+
+        # Save session to ensure items/NPCs found during search are persisted
+        session_manager.save_session(session.session_id)
+        print(f"[DEBUG] /world/search success. Saved session {session.session_id}", flush=True)
 
         return jsonify(result), 200
 

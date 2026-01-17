@@ -76,3 +76,4 @@ frontend/public/assets/sounds/archive
 .github/copilot-instructions.md
 DEVELOPMENT_PLAN.md
 frontend/coverage*
+frontend/test_report.txt

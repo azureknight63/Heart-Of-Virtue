@@ -11,12 +11,15 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(initialTarget || null)
     const [interactionOutput, setInteractionOutput] = useState(null)
+    const [interactionHistory, setInteractionHistory] = useState([])
+    const [showHistory, setShowHistory] = useState(false)
     const [loading, setLoading] = useState(false)
     const [isLocked, setIsLocked] = useState(false)
     const [error, setError] = useState(null)
     const [quantity, setQuantity] = useState(1)
     const [showQuantityInput, setShowQuantityInput] = useState(false)
     const [pendingAction, setPendingAction] = useState(null)
+    const historyRef = useRef(null)
 
     useEffect(() => {
         if (location) {
@@ -49,16 +52,19 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                     if (hasChanged) {
                         setSelectedTarget(updatedTarget)
                     }
-                } else if (!interactionOutput) {
-                    // Only clear if we're not showing an interaction result
+                } else {
+                    // Target is gone! Clear it so we don't try to interact with it again
                     setSelectedTarget(null)
                 }
             }
         }
-    }, [location, interactionOutput, selectedTarget])
+    }, [location, selectedTarget])
 
     const handleTargetClick = (target) => {
         setSelectedTarget(target)
+        setInteractionOutput(null)
+        setInteractionHistory([])
+        setShowHistory(false)
         setError(null)
         setShowQuantityInput(false)
     }
@@ -85,7 +91,9 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
             const data = response.data
 
             if (data.success) {
-                setInteractionOutput(data.message || 'Action completed.')
+                const message = data.message || 'Action completed.'
+                setInteractionOutput(message)
+                setInteractionHistory(prev => [...prev, message])
 
                 // Check if this action should lock the panel (e.g. item moved)
                 const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
@@ -124,6 +132,11 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                         if (eventsWithOutput.length > 0 && onEventsTriggered) {
                             onEventsTriggered(eventsWithOutput)
                         }
+
+                        // Refetch location after events process (they may modify world state)
+                        if (onRefetch) {
+                            await onRefetch()
+                        }
                     }
                 } catch (eventsErr) {
                     console.error('Failed to trigger events:', eventsErr)
@@ -135,7 +148,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                     onInteractionComplete()
                 }
             } else {
-                setError(data.error || 'Interaction failed')
+                setError(data.error || data.message || 'Interaction failed')
             }
         } catch (err) {
             console.error('Interaction error:', err)
@@ -148,6 +161,8 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
     const handleBack = () => {
         setSelectedTarget(null)
         setInteractionOutput(null)
+        setInteractionHistory([])
+        setShowHistory(false)
         setError(null)
         setIsLocked(false)
     }
@@ -402,33 +417,106 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
                             gap: '10px',
                         }}>
                             {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
-                                selectedTarget.keywords.map((keyword, idx) => (
-                                    <GameButton
-                                        key={idx}
-                                        onClick={() => handleActionClick(keyword)}
-                                        disabled={loading || isLocked}
-                                        variant="primary"
-                                        style={{
-                                            flex: '1 0 120px',
-                                            textTransform: 'uppercase',
-                                            fontSize: '13px',
-                                            padding: '12px',
-                                            opacity: (loading || isLocked) ? 0.6 : 1,
-                                        }}
-                                    >
-                                        {keyword}
-                                    </GameButton>
-                                ))
+                                selectedTarget.keywords
+                                    .filter(keyword => !selectedTarget.action_aliases?.includes(keyword))
+                                    .map((keyword, idx) => (
+                                        <GameButton
+                                            key={idx}
+                                            onClick={() => handleActionClick(keyword)}
+                                            disabled={loading || isLocked}
+                                            variant="primary"
+                                            style={{
+                                                flex: '1 0 120px',
+                                                textTransform: 'uppercase',
+                                                fontSize: '13px',
+                                                padding: '12px',
+                                                opacity: (loading || isLocked) ? 0.6 : 1,
+                                            }}
+                                        >
+                                            {keyword}
+                                        </GameButton>
+                                    ))
                             ) : (
                                 <div style={{ color: '#666', fontSize: '13px', fontStyle: 'italic', width: '100%', textAlign: 'center', padding: '10px' }}>
                                     No actions available for this target.
                                 </div>
                             )}
                         </div>
+                    </div>
+                )}
 
-                        {/* Interaction Output */}
-                        {interactionOutput && (
-                            <TypewriterOutput text={interactionOutput} />
+                {/* Interaction Output & History */}
+                {(interactionOutput || interactionHistory.length > 0) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {/* History Toggle Header */}
+                        {interactionHistory.length > 1 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                                <div style={{ color: '#888', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    {showHistory ? 'Interaction History' : 'Last Message'}
+                                </div>
+                                <button
+                                    onClick={() => setShowHistory(!showHistory)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#ffaa00',
+                                        fontSize: '10px',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        padding: '4px 8px',
+                                        borderRadius: '4px',
+                                        backgroundColor: 'rgba(255, 170, 0, 0.1)',
+                                        textTransform: 'uppercase',
+                                        transition: 'all 0.2s ease',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    {showHistory ? '↩ Hide History' : `📜 View History (${interactionHistory.length})`}
+                                </button>
+                            </div>
+                        )}
+
+                        {showHistory ? (
+                            <div
+                                ref={(el) => {
+                                    if (el) el.scrollTop = el.scrollHeight;
+                                }}
+                                style={{
+                                    padding: '16px',
+                                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                                    border: '1px solid rgba(255, 170, 0, 0.3)',
+                                    borderRadius: '8px',
+                                    color: '#ffcc88',
+                                    fontFamily: 'monospace',
+                                    fontSize: '14px',
+                                    lineHeight: '1.6',
+                                    maxHeight: '300px',
+                                    overflowY: 'auto',
+                                    boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px',
+                                    scrollbarWidth: 'thin',
+                                    scrollbarColor: '#ffaa00 rgba(0,0,0,0.2)'
+                                }}
+                            >
+                                {interactionHistory.map((msg, idx) => (
+                                    <div key={idx} style={{
+                                        paddingBottom: idx === interactionHistory.length - 1 ? '0' : '12px',
+                                        borderBottom: idx === interactionHistory.length - 1 ? 'none' : '1px solid rgba(255, 170, 0, 0.1)',
+                                        whiteSpace: 'pre-wrap',
+                                        opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
+                                    }}>
+                                        {msg}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            interactionOutput && (
+                                <TypewriterOutput text={interactionOutput} />
+                            )
                         )}
                     </div>
                 )}
