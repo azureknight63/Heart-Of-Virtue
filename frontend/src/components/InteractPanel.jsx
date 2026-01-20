@@ -355,15 +355,31 @@ export default function InteractPanel({
                                 gap: '10px',
                             }}>
                                 <div style={{
-                                    color: colors.primary,
-                                    fontSize: '11px',
-                                    fontWeight: 'bold',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '1px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
                                     borderBottom: '1px solid rgba(0, 255, 136, 0.1)',
                                     paddingBottom: '4px',
                                 }}>
-                                    Container Contents
+                                    <div style={{
+                                        color: colors.primary,
+                                        fontSize: '11px',
+                                        fontWeight: 'bold',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '1px',
+                                    }}>
+                                        Container Contents
+                                    </div>
+                                    {selectedTarget.contents.length > 1 && !selectedTarget.locked && (
+                                        <GameButton
+                                            onClick={() => handleActionClick('take_all')}
+                                            disabled={loading}
+                                            variant="secondary"
+                                            style={{ padding: '2px 8px', fontSize: '10px' }}
+                                        >
+                                            TAKE ALL
+                                        </GameButton>
+                                    )}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                     {selectedTarget.contents.length > 0 ? (
@@ -422,7 +438,12 @@ export default function InteractPanel({
                         }}>
                             {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
                                 selectedTarget.keywords
-                                    .filter(keyword => !selectedTarget.action_aliases?.includes(keyword))
+                                    .filter(keyword => {
+                                        // Exclude LOOT and TAKE_ALL for containers as we have the contents dialog and a dedicated TAKE ALL button
+                                        const action = keyword.toLowerCase();
+                                        if (selectedTarget.is_container && (action === 'loot' || action === 'take_all')) return false;
+                                        return !selectedTarget.action_aliases?.includes(keyword);
+                                    })
                                     .map((keyword, idx) => (
                                         <GameButton
                                             key={idx}

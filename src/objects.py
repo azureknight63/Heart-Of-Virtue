@@ -247,7 +247,7 @@ class Container(Object):
             self.events.extend(events)
 
         # Add keywords efficiently
-        self.keywords.extend(['open', 'unlock', 'loot'])
+        self.keywords.extend(['open', 'unlock', 'loot', 'take_all'])
         self.action_aliases.extend(['check', 'view', 'examine', 'inspect', 'peruse'])
         self.keywords.extend(self.action_aliases)
 
@@ -315,6 +315,34 @@ class Container(Object):
         # Create and run the loot interface
         loot_interface = ContainerLootInterface(self, self.player)
         loot_interface.run()
+
+    def take_all(self, player):
+        """
+        Transfer all items from container to player.
+        """
+        if self.state == "closed":
+            self.open()
+
+        if self.state != "opened":
+            return
+
+        try:
+            from interface import transfer_item
+        except ImportError:
+            from src.interface import transfer_item
+
+        if not self.inventory:
+            print(f"The {self.nickname} is already empty.")
+            return
+
+        # Snapshot inventory since transfer_item modifies it
+        snapshot = self.inventory[:]
+        for item in snapshot:
+            qty = getattr(item, 'count', 1)
+            transfer_item(self, player, item, qty)
+
+        self.refresh_description()
+        self.process_events()
 
     def check(self):
         self.loot()

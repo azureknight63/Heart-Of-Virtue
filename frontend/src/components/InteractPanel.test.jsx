@@ -215,4 +215,77 @@ describe('InteractPanel', () => {
 
     expect(screen.queryByText(/A stern guard./i)).toBeNull();
   });
+
+  it('shows Take All button for open containers with multiple items and hides LOOT', () => {
+    const containerLocation = {
+      ...mockLocation,
+      objects: [
+        {
+          id: 'chest1',
+          name: 'Chest',
+          is_container: true,
+          opened: true,
+          contents: [
+            { id: 'item1', name: 'Gold', count: 10 },
+            { id: 'item2', name: 'Key', count: 1 }
+          ],
+          keywords: ['Open', 'Loot']
+        }
+      ]
+    };
+    render(<InteractPanel location={containerLocation} onClose={mockOnClose} />);
+
+    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+
+    // TAKE ALL should be present
+    expect(screen.getByText(/TAKE ALL/i)).toBeDefined();
+
+    // LOOT should be hidden from main actions
+    expect(screen.queryByText(/^Loot$/i)).toBeNull();
+  });
+
+  it('hides Take All button for locked containers', () => {
+    const lockedContainer = {
+      ...mockLocation,
+      objects: [
+        {
+          id: 'chest1',
+          name: 'Chest',
+          is_container: true,
+          opened: true,
+          locked: true,
+          contents: [
+            { id: 'item1', name: 'Gold', count: 10 },
+            { id: 'item2', name: 'Key', count: 1 }
+          ],
+          keywords: ['Open', 'Loot', 'Take_all']
+        }
+      ]
+    };
+    render(<InteractPanel location={lockedContainer} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+    expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
+  });
+
+  it('hides Take All button when container is not opened', () => {
+    const closedContainer = {
+      ...mockLocation,
+      objects: [
+        {
+          id: 'chest1',
+          name: 'Chest',
+          is_container: true,
+          opened: false,
+          contents: [
+            { id: 'item1', name: 'Gold', count: 10 },
+            { id: 'item2', name: 'Key', count: 1 }
+          ],
+          keywords: ['Open', 'Loot', 'Take_all']
+        }
+      ]
+    };
+    render(<InteractPanel location={closedContainer} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+    expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
+  });
 });
