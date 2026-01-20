@@ -25,6 +25,7 @@ export default function MainMenuPage() {
     const [showCredits, setShowCredits] = useState(false)
     const [saveList, setSaveList] = useState([])
     const [mostRecentSave, setMostRecentSave] = useState(null)
+    const [isLoadingInitial, setIsLoadingInitial] = useState(true)
     const [isLoadingSaves, setIsLoadingSaves] = useState(false)
     const [loadingAction, setLoadingAction] = useState(false)
 
@@ -38,6 +39,9 @@ export default function MainMenuPage() {
                 setSaveList(savesList)
             } catch (error) {
                 console.error("Failed to initialize menu saves", error)
+                setSaveList([])
+            } finally {
+                setIsLoadingInitial(false)
             }
         }
         initMenu()
@@ -199,11 +203,13 @@ export default function MainMenuPage() {
                 <h1 style={titleStyle}>Heart of Virtue</h1>
 
                 <nav>
-                    {mostRecentSave && (
+                    {!isLoadingInitial && saveList.length > 0 && mostRecentSave && (
                         <MenuButton onClick={handleContinue}>Continue</MenuButton>
                     )}
                     <MenuButton onClick={handleNewGame}>New Game</MenuButton>
-                    <MenuButton onClick={handleLoadGameClick}>Load Game</MenuButton>
+                    {!isLoadingInitial && saveList.length > 0 && (
+                        <MenuButton onClick={handleLoadGameClick}>Load Game</MenuButton>
+                    )}
                     <MenuButton onClick={() => setShowSettings(true)}>Settings</MenuButton>
                     <MenuButton onClick={() => setShowCredits(true)}>Credits</MenuButton>
                     <MenuButton onClick={handleLogout} variant="danger">Logout</MenuButton>

@@ -47,6 +47,7 @@ vi.mock('../api/endpoints', () => ({
         list: vi.fn(),
         load: vi.fn(),
         delete: vi.fn(),
+        newGame: vi.fn(),
     },
 }));
 
@@ -73,7 +74,7 @@ describe('MainMenuPage', () => {
         });
     });
 
-    it('does not render Continue button when no saves exist', async () => {
+    it('does not render Continue or Load Game buttons when no saves exist', async () => {
         saves.list.mockResolvedValue({ data: { saves: [] } });
 
         render(
@@ -84,6 +85,7 @@ describe('MainMenuPage', () => {
 
         await waitFor(() => {
             expect(screen.queryByText(/Continue/i)).toBeNull();
+            expect(screen.queryByText(/Load Game/i)).toBeNull();
         });
     });
 
@@ -120,11 +122,16 @@ describe('MainMenuPage', () => {
         );
 
         fireEvent.click(screen.getByText(/New Game/i));
-        expect(mockNavigate).toHaveBeenCalledWith('/game');
+        await waitFor(() => {
+            expect(mockNavigate).toHaveBeenCalledWith('/game');
+        });
     });
 
     it('opens load modal on Load Game click', async () => {
-        saves.list.mockResolvedValue({ data: { saves: [] } });
+        const mockSaves = [
+            { id: 1, name: 'Save 1', timestamp: '2023-01-01T10:00:00Z', level: 1, map_name: 'Map 1', room_title: 'Room 1' }
+        ];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
 
         render(
             <MemoryRouter>
@@ -132,11 +139,11 @@ describe('MainMenuPage', () => {
             </MemoryRouter>
         );
 
-        const menuButtons = screen.getAllByText(/Load Game/i);
-        fireEvent.click(menuButtons[0]);
+        await waitFor(() => screen.getByText(/Load Game/i));
+        fireEvent.click(screen.getByText(/Load Game/i));
 
         await waitFor(() => {
-            expect(screen.getByText(/No saves found/i)).toBeDefined();
+            expect(screen.getByText(/Save 1/i)).toBeDefined();
         });
     });
 
