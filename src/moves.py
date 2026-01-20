@@ -825,7 +825,7 @@ class TacticalRetreat(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.evaluate()
 
     def viable(self):
@@ -900,7 +900,7 @@ class FlankingManeuver(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.evaluate()
 
     def viable(self):
@@ -974,7 +974,7 @@ class QuietMovement(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=user, user=user)
+                         target=user, user=user, category="Utility")
         self.evaluate()
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
@@ -1009,7 +1009,7 @@ class PowerStrike(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user)
+                         target=self.target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -1128,7 +1128,7 @@ class Jab(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user)
+                         target=self.target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -1212,7 +1212,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
         super().__init__(name="Check", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=["Jean checks his surroundings.",
+                         stage_announce=[f"{player.name} checks his surroundings.",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
@@ -1325,7 +1325,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
         if hasattr(user, 'combat_log'):
             user.combat_log.append({
                 "round": getattr(user, "combat_beat", 0),
-                "message": f"Jean checks the battlefield... {len(combatants_data)} combatant(s) detected.",
+                "message": f"{user.name} checks the battlefield... {len(combatants_data)} combatant(s) detected.",
                 "type": "info"
             })
     
@@ -1417,7 +1417,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         super().__init__(name="Wait", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=["Jean is waiting.",
+                         stage_announce=[f"{player.name} is waiting.",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
@@ -1441,7 +1441,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
             if hasattr(player, 'combat_log'):
                 player.combat_log.append({
                     "round": getattr(player, "combat_beat", 0),
-                    "message": f"Jean waits for {duration} beats...",
+                    "message": f"{user.name} waits for {duration} beats...",
                     "type": "info"
                 })
             return
@@ -1599,11 +1599,11 @@ class Rest(Move):  # standard rest to restore fatigue.
         super().__init__(name="Rest", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=["Jean relaxes his muscles for a moment.",
-                                         colored("Jean is resting.", "green"),
+                         stage_announce=[f"{player.name} relaxes his muscles for a moment.",
+                                         colored(f"{player.name} is resting.", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player)
+                         beats_left=execute, target=player, user=player, category="Utility")
 
     def viable(self):
         viability = True
@@ -1637,7 +1637,7 @@ class UseItem(Move):
                                          "",
                                          f"{player.name} closes his bag.",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player)
+                         beats_left=execute, target=player, user=player, category="Utility")
 
     def viable(self):
         viability = True
@@ -1671,7 +1671,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
                                          colored(f"{player.name} slashes with his " + weapon + "!", "green"),
                                          f"{player.name} braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player)
+                         target=None, user=player, category="Offensive")
         self.power = 0
         self.evaluate()
         self.base_damage_type = "slashing"
@@ -1795,7 +1795,7 @@ class PommelStrike(Move):
                                                  "green"),
                                          f"{player.name} braces himself from the recoil of his attack.", ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player)
+                         target=None, user=player, category="Offensive")
         self.power = 0  # enter the base damage bonus of the attack
         self.base_damage_type = "crushing"
         self.evaluate()
@@ -1908,7 +1908,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                                          colored(f"{player.name} lets his arrow fly!", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player, verbose_targeting=True)
+                         target=None, user=player, verbose_targeting=True, category="Offensive")
         self.arrow = items.WoodenArrow()  # modified later, based on player arrow type fired;
         # arrow type chosen at prep stage
         self.power = 0
@@ -2081,7 +2081,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                 self.user.inventory.remove(self.arrow)
 
         else:
-            cprint("Jean relaxes his bow as his target is no longer in range.", "green")
+            cprint(f"{self.user.name} relaxes his bow as his target is no longer in range.", "green")
             return
         roll = random.randint(0, 100)
         arrow_recovery = self.arrow.sturdiness
@@ -2144,7 +2144,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc)
+                         target=npc.target, user=npc, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -2256,7 +2256,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
                                          colored("{} is resting.".format(npc.name), "white"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=npc, user=npc)
+                         beats_left=execute, target=npc, user=npc, category="Utility")
 
     def execute(self, npc):
         print(self.stage_announce[1])
@@ -2282,7 +2282,7 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
                                          str(npc.name + npc.idle_message),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=npc, user=npc)
+                         beats_left=execute, target=npc, user=npc, category="Utility")
 
     def execute(self, npc):
         print(self.stage_announce[1])
@@ -2308,7 +2308,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
                              "{} recoils heavily from the attack.".format(npc.name),
                              ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc)
+                         target=npc.target, user=npc, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -2412,7 +2412,7 @@ class VenomClaw(Move):  # Poisonous attack
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc)
+                         target=npc.target, user=npc, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -2515,7 +2515,7 @@ class SpiderBite(Move):  # Poisonous attack
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc)
+                         target=npc.target, user=npc, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -2620,7 +2620,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc)
+                         target=npc.target, user=npc, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -3017,7 +3017,7 @@ class FeintAndPivot(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -3326,7 +3326,8 @@ class QuickSwap(Move):
             fatigue_cost=fatigue_cost,
             beats_left=prep,
             target=target,
-            user=user
+            user=user,
+            category="Maneuver"
         )
         self.evaluate()
     

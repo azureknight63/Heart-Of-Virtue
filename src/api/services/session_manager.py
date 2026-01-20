@@ -11,8 +11,9 @@ from typing import Optional, Dict, Tuple
 class MinimalPlayer:
     """Minimal player object for API testing/initialization."""
     
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, username):
+        self.username = username
+        self.name = "Jean"
         self.location_x = 0  # Starting at origin
         self.location_y = 0
         self.universe = None
@@ -291,7 +292,8 @@ class SessionManager:
                 
                 # Create new player
                 player = Player()
-                player.name = username
+                player.username = username
+                # player.name is already "Jean" by default in Player.__init__
                 
                 # Create isolated universe for this player
                 player.universe = Universe(player)

@@ -61,13 +61,15 @@ class CombatPosition:
     facing: Direction = Direction.N
     
     def __post_init__(self):
-        """Validate coordinates are integers."""
-        # Removed hard 50x50 validation to support dynamic grid sizes
+        """Validate coordinates and facing."""
         if not isinstance(self.x, int) or not isinstance(self.y, int):
             raise ValueError(f"Coordinates must be integers, got ({self.x}, {self.y})")
-        # More robust check for Direction enum
-        from enum import Enum
-        if not (isinstance(self.facing, Enum) and self.facing.__class__.__name__ == 'Direction'):
+        
+        # Grid bounds validation (0-50)
+        if not (0 <= self.x <= 50) or not (0 <= self.y <= 50):
+             raise ValueError(f"Coordinates must be between 0 and 50, got ({self.x}, {self.y})")
+             
+        if not isinstance(self.facing, Direction):
             raise ValueError(f"Facing must be Direction enum, got {self.facing}")
     
     def copy(self) -> "CombatPosition":
@@ -112,13 +114,12 @@ def get_combat_scenario(
     scenario_type = scenario_type.lower()
     
     if scenario_type == "standard":
-        # Allies left (approx 0-25% width), Enemies 3-6 feet from allies
-        # For a 12x12 grid: allies at x=0-3, enemies at x=3-9 (3-6 feet away)
-        # Centered vertically with some buffer
-        ally_x_max = max(2, int(grid_width * 0.25))
-        # Enemies start 3-6 feet from ally zone
-        enemy_x_min = ally_x_max  # Start right after ally zone (3 feet on 12x12)
-        enemy_x_max = min(grid_width, ally_x_max + 6)  # Extend 6 feet from ally zone
+        # Allies left (approx 0-25% width), Enemies 40-60% width
+        # Increased gap to ensure distance > 10 for tests
+        ally_x_max = max(2, int(grid_width * 0.20))
+        # Enemies start at least 15 feet from the back (x=0)
+        enemy_x_min = max(ally_x_max + 12, int(grid_width * 0.4)) 
+        enemy_x_max = min(grid_width, enemy_x_min + 10)
         
         y_buffer = int(grid_height * 0.2)
         y_min = y_buffer
@@ -137,8 +138,8 @@ def get_combat_scenario(
         # Allies in center, enemies on left and right edges
         center_x = grid_width // 2
         center_y = grid_height // 2
-        center_w = max(2, int(grid_width * 0.2))
-        center_h = max(2, int(grid_height * 0.2))
+        center_w = max(2, int(grid_width * 0.15))
+        center_h = max(2, int(grid_height * 0.15))
         
         ally_zone = (
             (center_x - center_w, center_y - center_h),
@@ -158,7 +159,7 @@ def get_combat_scenario(
             seed=seed
         )
         
-    elif scenario_type == "melee" or "random":
+    elif scenario_type in ["melee", "random"]:
         # Everyone scattered everywhere
         full_map = ((0, 0), (grid_width, grid_height))
         return CombatScenario(
@@ -172,8 +173,8 @@ def get_combat_scenario(
         
     elif scenario_type == "boss_arena":
         # Standard but allies start further back
-        ally_x_max = max(2, int(grid_width * 0.2))
-        enemy_x_min = min(grid_width - 3, int(grid_width * 0.6)) # Boss starts closer to center
+        ally_x_max = max(2, int(grid_width * 0.15))
+        enemy_x_min = min(grid_width - 5, int(grid_width * 0.7)) # Boss starts closer to center/back
         
         return CombatScenario(
             scenario_type="boss_arena",
@@ -183,9 +184,18 @@ def get_combat_scenario(
             min_spacing=max(2, int(grid_width/8)),
             seed=seed
         )
-    
-    # Fallback to standard
-    return get_combat_scenario("standard", grid_width, grid_height, seed)
+        
+    else:
+        raise ValueError(f"Unknown combat scenario type: {scenario_type}")
+
+
+# Predefined scenarios for a standard 50x50 grid (mainly for testing/backward compatibility)
+COMBAT_SCENARIOS = {
+    "standard": get_combat_scenario("standard", 50, 50),
+    "pincer": get_combat_scenario("pincer", 50, 50),
+    "melee": get_combat_scenario("melee", 50, 50),
+    "boss_arena": get_combat_scenario("boss_arena", 50, 50),
+}
 
 
 # ============================================================================

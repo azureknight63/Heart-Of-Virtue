@@ -22,7 +22,6 @@ export default function useAsyncAction(actionFn, { onSuccess, onError } = {}) {
             const errorMessage = err.response?.data?.error || err.message || 'An unexpected error occurred'
             setError(errorMessage)
             if (onError) onError(errorMessage)
-            throw err
         } finally {
             setIsLoading(false)
         }

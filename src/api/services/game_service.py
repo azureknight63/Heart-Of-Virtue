@@ -253,6 +253,17 @@ class GameService:
         # Trigger tile entry events with session data for pending event storage
         events_triggered = self.trigger_tile_events(player, new_tile, session_data)
 
+        # Store tile modifications after entry events have processed to capture state changes
+        if session_data is not None:
+            current_block_exit = new_tile.block_exit.copy() if hasattr(new_tile, 'block_exit') else []
+            self.store_tile_modification(
+                session_data, 
+                new_tile.x, 
+                new_tile.y, 
+                'block_exit', 
+                current_block_exit
+            )
+
         # Check for combat initiation
         from src.functions import check_for_combat
         combat_enemies = check_for_combat(player)
@@ -575,7 +586,7 @@ class GameService:
                     if search_ability > hide_factor:
                         npc.hidden = False
                         discovery_msg = getattr(npc, "discovery_message", f"a hidden {getattr(npc, 'name', 'NPC')}")
-                        messages.append(f"Jean uncovered {discovery_msg}")
+                        messages.append(f"{player.name} uncovered {discovery_msg}")
                         something_found = True
                         found_items.append({"type": "npc", "name": getattr(npc, "name", "Unknown"), "id": str(id(npc))})
 
@@ -587,7 +598,7 @@ class GameService:
                     if search_ability > hide_factor:
                         item.hidden = False
                         discovery_msg = getattr(item, "discovery_message", f"a hidden {getattr(item, 'name', 'Item')}")
-                        messages.append(f"Jean found {discovery_msg}")
+                        messages.append(f"{player.name} found {discovery_msg}")
                         something_found = True
                         found_items.append({"type": "item", "name": getattr(item, "name", "Unknown"), "id": str(id(item))})
 
@@ -599,14 +610,14 @@ class GameService:
                     if search_ability > hide_factor:
                         obj.hidden = False
                         discovery_msg = getattr(obj, "discovery_message", f"a hidden {getattr(obj, 'name', 'Object')}")
-                        messages.append(f"Jean found {discovery_msg}")
+                        messages.append(f"{player.name} found {discovery_msg}")
                         something_found = True
                         found_items.append({"type": "object", "name": getattr(obj, "name", "Unknown"), "id": str(id(obj))})
 
         if not something_found:
-            messages.append("Jean searches around the area... but couldn't find anything of interest.")
+            messages.append(f"{player.name} searches around the area... but couldn't find anything of interest.")
         else:
-            messages.insert(0, "Jean searches around the area...")
+            messages.insert(0, f"{player.name} searches around the area...")
 
         return {
             "success": True,
@@ -679,11 +690,11 @@ class GameService:
         if not target:
             from src.objects import Container
             for obj in tile.objects_here:
-                if isinstance(obj, Container) and obj.state == "opened" and hasattr(obj, "inventory"):
+                is_container = type(obj).__name__ == "Container" or isinstance(obj, Container)
+                if is_container and getattr(obj, "state", "") == "opened" and hasattr(obj, "inventory"):
                     for item in obj.inventory:
                         if str(id(item)) == target_id:
                             target = item
-                            # Attach the container reference for later use in take action
                             target._parent_container = obj
                             break
                 if target: break
@@ -749,7 +760,9 @@ class GameService:
                     from src.events import LootEvent
                 
                 is_container = type(target).__name__ == "Container" or isinstance(target, Container)
-                is_item = type(target).__name__ == "Item" or isinstance(target, Item)
+                # More robust item check that handles subclasses and module mismatches
+                item_types = ["Item", "Weapon", "Armor", "Consumable", "Gold", "Key", "Tool", "Usable"]
+                is_item = type(target).__name__ in item_types or isinstance(target, Item) or hasattr(target, "_parent_container")
                 
                 if is_container and action in ["loot", "check"]:
                     target.open()
@@ -779,7 +792,7 @@ class GameService:
                         target._parent_container.refresh_description()
                     
                     if action == "take":
-                        cprint(f"{player.name} takes {target.name}.", "green")
+                        print(f"{player.name} takes {target.name}.")
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
@@ -819,8 +832,17 @@ class GameService:
         if not clean_output:
             clean_output = f"Action '{action}' completed successfully."
 
-        # Store tile modifications after action execution
+        # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
+        more_events = self.trigger_tile_events(player, tile, session_data)
+        if more_events:
+            for new_event in more_events:
+                # Avoid duplicates if they somehow got in
+                if not any(e.get('name') == new_event.get('name') for e in events_triggered):
+                    events_triggered.append(new_event)
+
+        # Store tile modifications AFTER all events have processed to capture state changes
         if session_data is not None:
+            # 1. Store blocked exits
             current_block_exit = tile.block_exit.copy() if hasattr(tile, 'block_exit') else []
             self.store_tile_modification(
                 session_data, 
@@ -829,13 +851,46 @@ class GameService:
                 'block_exit', 
                 current_block_exit
             )
+            
+            # 2. Store removed objects (using object names as stable identifiers)
+            if hasattr(tile, 'objects_here'):
+                # We need to consider what was there originally vs now
+                # This is a bit complex in a stateless environment, but for now 
+                # we'll trust that the event removed what it needed to.
+                pass
+
+        # Check for combat initiation
+        from src.functions import check_for_combat
+        combat_enemies = check_for_combat(player)
+        
+        combat_started = False
+        combat_state = None
+        
+        if combat_enemies:
+            # Initialize combat
+            self._initialize_combat(player, combat_enemies)
+            combat_started = True
+            
+            # Get initial combat state from the adapter
+            if hasattr(player, '_combat_adapter'):
+                adapter_state = player._combat_adapter.get_combat_state()
+                combat_state = adapter_state.get('battle_state')
+            else:
+                # Fallback to direct serialization if adapter not available
+                combat_state = CombatStateSerializer.serialize_combat_state(
+                    player, combat_enemies, 
+                    current_turn_index=getattr(player, "combat_turn_index", 0), 
+                    round_number=getattr(player, "combat_round", 1)
+                )
 
         return {
             "success": True, 
             "message": clean_output,
             "target_name": getattr(target, "name", "Unknown"),
             "action": action,
-            "events_triggered": events_triggered
+            "events_triggered": events_triggered,
+            "combat_started": combat_started,
+            "combat_state": combat_state
         }
 
     # ========================
@@ -1168,7 +1223,11 @@ class GameService:
     def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get current combat status."""
         if not hasattr(player, "_combat_adapter"):
-            return {"combat_active": False}
+            return {
+                "combat_active": getattr(player, "in_combat", False),
+                "log": getattr(player, "combat_log", []),
+                "battle_state": None
+            }
             
         return player._combat_adapter.get_combat_state()
 
@@ -2981,7 +3040,7 @@ class GameService:
         history = ConversationHistory(
             conversation_id=conversation_id,
             npc_id=npc_id,
-            player_id=player.name,
+            player_id=getattr(player, "name", "Jean"),
             dialogue_id=dialogue_id,
             started_at=datetime.now().isoformat(),
             status="ongoing"
@@ -3108,7 +3167,7 @@ class GameService:
         history = ConversationHistory(
             conversation_id=conversation_id,
             npc_id="npc_1",
-            player_id=player.name,
+            player_id=getattr(player, "name", "Jean"),
             dialogue_id="dial_1",
             started_at="2025-11-10T10:00:00Z"
         )

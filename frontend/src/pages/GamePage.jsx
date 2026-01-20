@@ -221,20 +221,15 @@ export default function GamePage() {
   // Check combat status on mount and when inCombat changes
   useEffect(() => {
     if (inCombat) {
-      if (!combatDialogShown) {
+      // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
+      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent) {
         // Show dialog if not already shown
         const logEntries = combat?.log || []
-
 
         const alertMessages = logEntries
           .filter(entry => entry.type === 'system')
           .map(e => e.message)
           .join('\n\n')
-
-
-        // Only show dialog if we have actual logs or confirmed start
-        // If combat is null/loading, we might want to wait?
-        // But if inCombat is true, we should have data.
 
         const dialogDescription = (alertMessages && alertMessages.length > 0)
           ? alertMessages
@@ -251,14 +246,11 @@ export default function GamePage() {
 
         setCurrentEvent(alertEvent)
         setEventHistory(prev => [...prev, dialogDescription])
-        setCombatDialogShown(true)
-      } else {
-        // Dialog already shown, just ensure mode is correct
+        // Removed: setCombatDialogShown(true) - wait until they click FIGHT
+      } else if (combatDialogShown && eventQueue.length === 0 && !currentEvent) {
+        // Only jump to combat mode automatically if the initiation dialog was already handled
+        // and we aren't currently showing/waiting for story events
         setMode('combat')
-        // Only reset log index if we are truly starting (?)
-        // Actually this else block runs on every re-render while in combat if we verify dependencies
-        // We should be careful not to reset currentLogIndex repeatedly.
-        // Determining "start of combat" vs "continuation" is tricky here.
       }
     } else {
       setCombatDialogShown(false)
@@ -306,7 +298,7 @@ export default function GamePage() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inCombat, combat])
+  }, [inCombat, combat, eventQueue, currentEvent])
 
   // If combat ended and we were waiting for log processing to finish, open victory dialog now
   useEffect(() => {

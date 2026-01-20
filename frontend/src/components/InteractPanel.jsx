@@ -72,6 +72,31 @@ export default function InteractPanel({
         }
     }, [location, selectedTarget])
 
+    // Automatically close the panel if there is nothing left to interact with
+    useEffect(() => {
+        // We only auto-close if:
+        // 1. We have location data (not initial state)
+        // 2. There are truly no targets left 
+        // 3. We aren't in the middle of an interaction (loading)
+        // 4. We aren't showing an error (user needs to see it)
+        // 5. We aren't viewing history (user is reviewing)
+        // 6. We aren't looking at a specific target (if targets is empty but selectedTarget is non-null, 
+        //    it means the sync effect hasn't cleared it yet or it's a special state)
+        if (location && targets.length === 0 && !selectedTarget && !error && !loading && !showHistory) {
+            // If there's an interaction message, give the user time to read it
+            const delay = interactionOutput ? 3000 : 0;
+
+            const timer = setTimeout(() => {
+                // Double check conditions before actually closing
+                if (targets.length === 0 && !selectedTarget && !error && !loading && !showHistory) {
+                    onClose();
+                }
+            }, delay);
+
+            return () => clearTimeout(timer);
+        }
+    }, [targets.length, selectedTarget, interactionOutput, error, loading, showHistory, location, onClose]);
+
     const handleTargetClick = (target) => {
         setSelectedTarget(target)
         setInteractionOutput(null)
@@ -355,15 +380,31 @@ export default function InteractPanel({
                                 gap: '10px',
                             }}>
                                 <div style={{
-                                    color: colors.primary,
-                                    fontSize: '11px',
-                                    fontWeight: 'bold',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '1px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
                                     borderBottom: '1px solid rgba(0, 255, 136, 0.1)',
                                     paddingBottom: '4px',
                                 }}>
-                                    Container Contents
+                                    <div style={{
+                                        color: colors.primary,
+                                        fontSize: '11px',
+                                        fontWeight: 'bold',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '1px',
+                                    }}>
+                                        Container Contents
+                                    </div>
+                                    {selectedTarget.contents.length > 1 && !selectedTarget.locked && (
+                                        <GameButton
+                                            onClick={() => handleActionClick('take_all')}
+                                            disabled={loading}
+                                            variant="secondary"
+                                            style={{ padding: '2px 8px', fontSize: '10px' }}
+                                        >
+                                            TAKE ALL
+                                        </GameButton>
+                                    )}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                     {selectedTarget.contents.length > 0 ? (
@@ -422,7 +463,12 @@ export default function InteractPanel({
                         }}>
                             {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
                                 selectedTarget.keywords
-                                    .filter(keyword => !selectedTarget.action_aliases?.includes(keyword))
+                                    .filter(keyword => {
+                                        // Exclude LOOT and TAKE_ALL for containers as we have the contents dialog and a dedicated TAKE ALL button
+                                        const action = keyword.toLowerCase();
+                                        if (selectedTarget.is_container && (action === 'loot' || action === 'take_all')) return false;
+                                        return !selectedTarget.action_aliases?.includes(keyword);
+                                    })
                                     .map((keyword, idx) => (
                                         <GameButton
                                             key={idx}

@@ -247,7 +247,7 @@ class Container(Object):
             self.events.extend(events)
 
         # Add keywords efficiently
-        self.keywords.extend(['open', 'unlock', 'loot'])
+        self.keywords.extend(['open', 'unlock', 'loot', 'take_all'])
         self.action_aliases.extend(['check', 'view', 'examine', 'inspect', 'peruse'])
         self.keywords.extend(self.action_aliases)
 
@@ -297,6 +297,32 @@ class Container(Object):
             self.process_events()
         else:
             print(f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside.")
+
+    def take_all(self, player):
+        """
+        Transfer all items from container to player.
+        """
+        if self.state == "closed":
+            self.open()
+
+        if self.state != "opened":
+            return
+
+        from interface import transfer_item
+        
+        # Create a snapshot to prevent modification during iteration
+        items = self.inventory[:]
+        if not items:
+            print(f"The {self.nickname} is empty.")
+            return
+
+        print(f"Jean begins gathering everything from the {self.nickname}...")
+        for item in items:
+            qty = getattr(item, 'count', 1)
+            transfer_item(self, player, item, qty)
+        
+        self.refresh_description()
+        self.process_events()
 
     def loot(self):
         """

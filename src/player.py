@@ -89,6 +89,7 @@ def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
 class Player:
     def __init__(self):
         self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
+        self.username = None
         self.name = "Jean"
         self.name_long = "Jean Claire"
         self.pronouns = {

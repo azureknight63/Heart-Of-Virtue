@@ -278,8 +278,6 @@ class ApiCombatAdapter:
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
-            else:
-                
             return result
         
         except Exception as e:
@@ -371,11 +369,9 @@ class ApiCombatAdapter:
         self.player.current_move = selected_move
         self.player.current_move.user = self.player
         
-        # Log move selection
-        # Log move selection
         self._add_log_entry(
             self.output_capture.current_round,
-            f"Jean uses {selected_move.name}!",
+            f"{self.player.name} uses {selected_move.name}!",
             "player_action"
         )
         

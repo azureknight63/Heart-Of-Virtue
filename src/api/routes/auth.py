@@ -100,8 +100,7 @@ def register():
                     "success": True,
                     "data": {
                         "session_id": session_id,
-                        "username": username,
-                        "message": f"Account created successfully. Welcome, {username}!",
+                        "message": "Account created successfully. Welcome!",
                     }
                 }
             ),
@@ -210,8 +209,7 @@ def login():
                     "success": True,
                     "data": {
                         "session_id": session_id,
-                        "username": username,
-                        "message": f"Welcome back, {username}!",
+                        "message": "Welcome back!",
                     }
                 }
             ),
@@ -334,7 +332,6 @@ def validate_session():
                 jsonify(
                     {
                         "valid": True,
-                        "username": session.username,
                         "player_id": session.player_id,
                     }
                 ),

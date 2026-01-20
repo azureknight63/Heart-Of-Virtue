@@ -19,8 +19,8 @@ class MockTile:
     def __init__(self, name="Test Tile", x=0, y=0):
         self.name = name
         self.description = f"Description of {name}"
-        self.x = x
-        self.y = y
+        self.location_x = x
+        self.location_y = y
         self.exits = {
             "north": (x, y + 1),
             "south": (x, y - 1),
@@ -29,6 +29,7 @@ class MockTile:
         }
         self.items_here = []
         self.npcs_here = []
+        self.objects_here = []
         self.events_here = []
 
 
@@ -82,21 +83,30 @@ class MockPlayer:
 
     def __init__(self, name="Hero", x=0, y=0):
         self.name = name
-        self.x = x
-        self.y = y
+        self.username = None
+        self.location_x = x
+        self.location_y = y
+        self.universe = None # Will be set in setup_method
         self.level = 1
         self.exp = 0
-        self.current_hp = 50
-        self.max_hp = 50
-        self.inventory = []
+        self.hp = 50
+        self.maxhp = 50
+        self.exp_to_level = 100
+        self.fatigue = 150
+        self.maxfatigue = 150
+        self.inventory_list = []
         self.weight = 0
         self.max_carrying_capacity = 500
         self.strength = 10
-        self.dexterity = 10
-        self.vitality = 10
-        self.intelligence = 10
-        self.wisdom = 10
+        self.finesse = 10
         self.speed = 10
+        self.endurance = 10
+        self.charisma = 10
+        self.intelligence = 10
+        self.faith = 10
+        self.in_combat = False
+        self.time_elapsed = 0
+        self.current_room = None
 
 
 class TestGameService:
@@ -105,9 +115,11 @@ class TestGameService:
     def setup_method(self):
         """Set up test fixtures."""
         self.universe = MockUniverse()
-        self.service = GameService(self.universe)
+        self.service = GameService()
         # Position player at (2, 3) which has north and east exits
         self.player = MockPlayer(x=2, y=3)
+        self.player.universe = self.universe
+        self.player.current_room = self.universe.get_tile(2, 3)
 
     def test_get_current_room(self):
         """Test getting current room data."""
@@ -128,8 +140,8 @@ class TestGameService:
         assert result["success"] is True
         assert result["new_position"]["x"] == 2
         assert result["new_position"]["y"] == 2
-        assert self.player.x == 2
-        assert self.player.y == 2
+        assert self.player.location_x == 2
+        assert self.player.location_y == 2
 
     def test_move_player_invalid_direction(self):
         """Test moving in invalid direction."""
@@ -140,15 +152,15 @@ class TestGameService:
     def test_move_player_blocked(self):
         """Test moving to blocked exit."""
         # Try to move to a tile that doesn't exist
-        self.player.x = 1
-        self.player.y = 0
+        self.player.location_x = 1
+        self.player.location_y = 0
         result = self.service.move_player(self.player, "south")
 
         assert "error" in result
 
     def test_get_tile(self):
         """Test getting tile data."""
-        result = self.service.get_tile(2, 3)
+        result = self.service.get_tile(self.player, 2, 3)
 
         assert result["x"] == 2
         assert result["y"] == 3
@@ -158,7 +170,7 @@ class TestGameService:
 
     def test_get_tile_invalid(self):
         """Test getting non-existent tile."""
-        result = self.service.get_tile(99, 99)
+        result = self.service.get_tile(self.player, 99, 99)
 
         assert "error" in result
 
@@ -194,11 +206,12 @@ class TestGameService:
         result = self.service.get_player_stats(self.player)
 
         assert result["strength"] == 10
-        assert result["dexterity"] == 10
-        assert result["vitality"] == 10
-        assert result["intelligence"] == 10
-        assert result["wisdom"] == 10
+        assert result["finesse"] == 10
         assert result["speed"] == 10
+        assert result["endurance"] == 10
+        assert result["charisma"] == 10
+        assert result["intelligence"] == 10
+        assert result["faith"] == 10
 
     def test_get_combat_status(self):
         """Test getting combat status (not in combat)."""
@@ -226,6 +239,9 @@ class TestGameService:
             
             def process(self):
                 self.processed = True
+
+            def check_conditions(self):
+                self.process()
         
         event = MockEvent()
         tile.events_here.append(event)
@@ -268,12 +284,12 @@ class TestGameService:
         tile.npcs_here.append(MockNPC())
         tile.objects_here = [MockObject()]
         
-        result = self.service.get_tile(2, 3)
+        result = self.service.get_tile(self.player, 2, 3)
         
         assert result["name"] == "Test Room B"
         assert len(result["items"]) == 1
         assert result["items"][0]["name"] == "Test Item"
-        assert result["items"][0]["quantity"] == 1
+        assert result["items"][0]["count"] == 1
         assert len(result["npcs"]) == 1
         assert result["npcs"][0]["name"] == "Test NPC"
         assert result["npcs"][0]["level"] == 5

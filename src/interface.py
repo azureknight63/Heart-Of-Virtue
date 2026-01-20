@@ -305,7 +305,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
 
     # If the item isn't in the source inventory, nothing to do
     if item not in from_inventory:
-        print(f"{RED}Error: Item not found in source inventory.{RESET}")
+        print(f"{RED}Error: Item {getattr(item, 'name', 'Unknown')} not found in source inventory.{RESET}")
         return
 
     # Handle stackable items
