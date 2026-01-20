@@ -72,6 +72,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
       title="🎒 INVENTORY"
       onClose={onClose}
       maxWidth="800px"
+      padding="16px"
       zIndex={1500}
     >
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: spacing.md }}>
@@ -132,12 +133,12 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
         </div>
 
         {/* Main Content: Tabs + Item List */}
-        <div style={{ display: 'flex', gap: spacing.md, height: '400px', minHeight: '400px' }}>
+        <div style={{ display: 'flex', gap: spacing.md, height: '550px', minHeight: '550px' }}>
           {/* Vertical Tabs */}
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: spacing.xs,
+            gap: spacing.sm,
             width: '120px',
             flexShrink: 0
           }}>
@@ -152,7 +153,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    padding: '10px 4px',
+                    padding: '4px 4px',
                     borderRadius: '8px',
                     border: `1px solid ${isActive ? colors.primary : 'transparent'}`,
                     backgroundColor: isActive ? 'rgba(0, 255, 136, 0.1)' : 'transparent',
@@ -162,8 +163,8 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                     position: 'relative'
                   }}
                 >
-                  <span style={{ fontSize: '20px' }}>{tab.icon}</span>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', marginTop: '4px' }}>{tab.title}</span>
+                  <span style={{ fontSize: '18px' }}>{tab.icon}</span>
+                  <span style={{ fontSize: '9.5px', fontWeight: 'bold', textTransform: 'uppercase', marginTop: '2px' }}>{tab.title}</span>
                   {count > 0 && (
                     <span style={{
                       position: 'absolute',
@@ -201,11 +202,32 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
             gap: spacing.md,
           }}>
             {/* Owned Items */}
-            <div>
-              <div style={{ color: colors.primary, fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: spacing.sm, borderBottom: `1px solid ${colors.border.main}` }}>
-                Your Items
+            <div style={{
+              flex: categories[activeTab].merchandise.length > 0 ? '0 1 auto' : 1,
+              display: 'flex',
+              flexDirection: 'column',
+            }}>
+              <div style={{
+                color: colors.primary,
+                fontSize: '11px',
+                fontWeight: 'bold',
+                textTransform: 'uppercase',
+                marginBottom: spacing.sm,
+                borderBottom: `1px solid ${colors.border.main}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span>Your Items</span>
+                <span style={{ fontSize: '9px', opacity: 0.6 }}>{categories[activeTab].owned.length} total</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: spacing.sm }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                gap: spacing.sm,
+                flex: 1,
+                alignContent: 'start'
+              }}>
                 {sortItems(categories[activeTab].owned).map((item) => (
                   <ItemCard
                     key={item.id}

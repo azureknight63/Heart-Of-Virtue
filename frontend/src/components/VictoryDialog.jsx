@@ -119,16 +119,17 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
     <BaseDialog
       title={`✨ ${endState?.message || 'Combat Victory'}`}
       onClose={canClose ? onClose : () => setIsMinimized(true)}
-      maxWidth="700px"
+      maxWidth="720px"
+      padding="16px"
       zIndex={2500}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {/* Header Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: spacing.sm }}>
-          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '12px' }}>
+          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '11px', padding: '4px 10px' }}>
             MINIMIZE
           </GameButton>
-          <GameButton onClick={onClose} disabled={!canClose} variant={canClose ? 'primary' : 'secondary'} style={{ fontSize: '12px' }}>
+          <GameButton onClick={onClose} disabled={!canClose} variant={canClose ? 'primary' : 'secondary'} style={{ fontSize: '11px', padding: '4px 10px' }}>
             CLOSE
           </GameButton>
         </div>
@@ -138,56 +139,56 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
             {/* EXP Section */}
             <div style={{
-              padding: '16px',
+              padding: '12px',
               backgroundColor: colors.bg.panelLight,
               border: `1px solid ${colors.primary}33`,
               borderRadius: '12px'
             }}>
-              <div style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <div style={{ color: colors.primary, fontWeight: 'bold', fontSize: '13px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 📈 Experience Gained
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {expEntries.length > 0 ? expEntries.map((e) => (
                   <div key={e.category} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                    <span style={{ color: colors.text.muted }}>{e.category}</span>
-                    <span style={{ color: colors.primary, fontWeight: 'bold' }}>+{e.amount}</span>
+                    <span style={{ color: colors.text.muted, fontSize: '12px' }}>{e.category}</span>
+                    <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '12px' }}>+{e.amount}</span>
                   </div>
-                )) : <div style={{ color: colors.text.muted, fontStyle: 'italic' }}>None</div>}
+                )) : <div style={{ color: colors.text.muted, fontStyle: 'italic', fontSize: '12px' }}>None</div>}
               </div>
             </div>
 
             {/* Loot Section */}
             <div style={{
-              padding: '16px',
+              padding: '12px',
               backgroundColor: 'rgba(255, 170, 0, 0.05)',
               border: `1px solid ${colors.secondary}33`,
               borderRadius: '12px'
             }}>
-              <div style={{ color: colors.secondary, fontWeight: 'bold', fontSize: '14px', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <div style={{ color: colors.secondary, fontWeight: 'bold', fontSize: '13px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 🎁 Loot Collected
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {drops.length > 0 ? drops.map((d, idx) => (
                   <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                    <span style={{ color: colors.text.muted }}>{d.name}</span>
-                    <span style={{ color: colors.secondary, fontWeight: 'bold' }}>x{d.quantity}</span>
+                    <span style={{ color: colors.text.muted, fontSize: '12px' }}>{d.name}</span>
+                    <span style={{ color: colors.secondary, fontWeight: 'bold', fontSize: '12px' }}>x{d.quantity}</span>
                   </div>
-                )) : <div style={{ color: colors.text.muted, fontStyle: 'italic' }}>None</div>}
+                )) : <div style={{ color: colors.text.muted, fontStyle: 'italic', fontSize: '12px' }}>None</div>}
               </div>
             </div>
           </div>
 
           {/* Level Up & Attributes Section */}
           <div style={{
-            padding: '16px',
+            padding: '12px',
             backgroundColor: 'rgba(0, 204, 255, 0.05)',
             border: `1px solid ${colors.text.highlight}33`,
             borderRadius: '12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: spacing.md
+            gap: '12px'
           }}>
-            <div style={{ color: colors.text.highlight, fontWeight: 'bold', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <div style={{ color: colors.text.highlight, fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px' }}>
               ⭐ Level Ups & Growth
             </div>
 
@@ -206,10 +207,10 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
               </div>
             ))}
 
-            <div style={{ marginTop: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ color: colors.text.muted, fontSize: '13px' }}>Available Points:</span>
-                <span style={{ color: colors.secondary, fontSize: '20px', fontWeight: 'bold', fontFamily: 'monospace' }}>{remainingPoints}</span>
+            <div style={{ marginTop: '2px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: colors.text.muted, fontSize: '12px' }}>Available Points:</span>
+                <span style={{ color: colors.secondary, fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}>{remainingPoints}</span>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -260,7 +261,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
                   onClick={handleAllocate}
                   disabled={isSubmitting || remainingPoints <= 0}
                   variant={remainingPoints > 0 ? 'primary' : 'secondary'}
-                  style={{ width: '100%', padding: '12px' }}
+                  style={{ width: '100%', padding: '10px', fontSize: '12px' }}
                 >
                   {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
                 </GameButton>

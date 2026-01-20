@@ -41,31 +41,32 @@ export default function StatsPanel({ player, onClose }) {
     <BaseDialog
       title="📊 CHARACTER STATS"
       onClose={onClose}
-      maxWidth="600px"
+      maxWidth="620px"
+      padding="16px"
       zIndex={2000}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {/* Core Stats Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-          gap: '10px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+          gap: '8px',
         }}>
           {coreStats.map((stat, idx) => (
             <div key={idx} style={{
               backgroundColor: 'rgba(0,0,0,0.3)',
               border: `1px solid ${stat.color}44`,
               borderRadius: '8px',
-              padding: '10px',
+              padding: '8px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '4px',
+              gap: '2px',
               fontFamily: 'monospace',
             }}>
-              <div style={{ fontSize: '18px' }}>{stat.icon}</div>
-              <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase' }}>{stat.label}</div>
-              <div style={{ fontSize: '14px', fontWeight: 'bold', color: stat.color }}>{stat.val}</div>
+              <div style={{ fontSize: '16px' }}>{stat.icon}</div>
+              <div style={{ fontSize: '9px', color: '#888', textTransform: 'uppercase' }}>{stat.label}</div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: stat.color }}>{stat.val}</div>
             </div>
           ))}
         </div>
@@ -75,12 +76,12 @@ export default function StatsPanel({ player, onClose }) {
           backgroundColor: 'rgba(255, 170, 0, 0.05)',
           border: '1px solid rgba(255, 170, 0, 0.2)',
           borderRadius: '12px',
-          padding: '16px',
+          padding: '12px',
         }}>
-          <div style={{ color: '#ffaa00', fontSize: '12px', fontWeight: 'bold', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <div style={{ color: '#ffaa00', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
             {attributes.map((attr) => {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
@@ -90,18 +91,18 @@ export default function StatsPanel({ player, onClose }) {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '8px 12px',
+                  padding: '6px 10px',
                   backgroundColor: 'rgba(0,0,0,0.2)',
                   borderRadius: '8px',
                   fontFamily: 'monospace',
                   cursor: 'help',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '16px' }}>{attr.icon}</span>
-                    <span style={{ color: '#ccc', fontSize: '13px' }}>{attr.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '14px' }}>{attr.icon}</span>
+                    <span style={{ color: '#ccc', fontSize: '12px' }}>{attr.name}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ color, fontWeight: 'bold', fontSize: '15px' }}>{current}</div>
+                    <div style={{ color, fontWeight: 'bold', fontSize: '14px' }}>{current}</div>
                     <div style={{ color: '#666', fontSize: '9px' }}>BASE: {base}</div>
                   </div>
                 </div>
@@ -111,42 +112,44 @@ export default function StatsPanel({ player, onClose }) {
         </div>
 
         {/* Resistances & Status Section */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
           {/* Damage Resistances */}
-          {Object.keys(resistance).length > 0 && (
-            <div style={{ padding: '12px', backgroundColor: 'rgba(0, 204, 255, 0.05)', border: '1px solid rgba(0, 204, 255, 0.2)', borderRadius: '12px' }}>
-              <div style={{ color: '#00ccff', fontSize: '11px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase' }}>
-                Resistances
+          {Object.entries(resistance).filter(([_, v]) => v !== 1).length > 0 && (
+            <div style={{ padding: '10px', backgroundColor: 'rgba(0, 204, 255, 0.05)', border: '1px solid rgba(0, 204, 255, 0.2)', borderRadius: '12px' }}>
+              <div style={{ color: '#00ccff', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>
+                Resistances & Weaknesses
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {Object.entries(resistance).map(([type, value]) => (
-                  <div key={type} style={{
-                    padding: '4px 8px',
-                    backgroundColor: 'rgba(0,0,0,0.2)',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                    color: value >= 1 ? '#ffff00' : value < 1 ? '#00ccff' : '#ff6666',
-                  }}>
-                    {type.toUpperCase()}: {Math.round(value * 100)}%
-                  </div>
-                ))}
+                {Object.entries(resistance)
+                  .filter(([_, value]) => value !== 1)
+                  .map(([type, value]) => (
+                    <div key={type} style={{
+                      padding: '3px 6px',
+                      backgroundColor: 'rgba(0,0,0,0.2)',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontFamily: 'monospace',
+                      color: value > 1 ? '#ff6666' : '#00ccff',
+                    }}>
+                      {type.toUpperCase()}: {Math.round(value * 100)}%
+                    </div>
+                  ))}
               </div>
             </div>
           )}
 
           {/* Active Effects */}
-          <div style={{ padding: '12px', backgroundColor: 'rgba(255, 68, 68, 0.05)', border: '1px solid rgba(255, 68, 68, 0.2)', borderRadius: '12px' }}>
-            <div style={{ color: '#ff4444', fontSize: '11px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase' }}>
+          <div style={{ padding: '10px', backgroundColor: 'rgba(255, 68, 68, 0.05)', border: '1px solid rgba(255, 68, 68, 0.2)', borderRadius: '12px' }}>
+            <div style={{ color: '#ff4444', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>
               Active Effects
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {states.length > 0 ? states.map((state, idx) => (
                 <div key={idx} style={{
-                  padding: '6px 10px',
+                  padding: '4px 8px',
                   backgroundColor: 'rgba(255, 0, 0, 0.1)',
                   borderRadius: '6px',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   color: '#ff9999',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -154,13 +157,13 @@ export default function StatsPanel({ player, onClose }) {
                   <span>{state.name}</span>
                   {state.steps_left && <span style={{ opacity: 0.6, fontSize: '10px' }}>{state.steps_left}T</span>}
                 </div>
-              )) : <div style={{ color: '#666', fontStyle: 'italic', fontSize: '12px' }}>No active status effects</div>}
+              )) : <div style={{ color: '#666', fontStyle: 'italic', fontSize: '11px' }}>No active status effects</div>}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px' }}>
-          <GameButton onClick={onClose} variant="secondary">
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '4px' }}>
+          <GameButton onClick={onClose} variant="secondary" style={{ padding: '8px 20px', fontSize: '12px' }}>
             CLOSE SHEET
           </GameButton>
         </div>

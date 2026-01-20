@@ -36,25 +36,25 @@ describe('VictoryDialog', () => {
 
   it('renders victory message and rewards correctly', () => {
     render(
-      <VictoryDialog 
-        endState={mockEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
-    expect(screen.getByText('Victory!')).toBeDefined();
-    expect(screen.getByText('Combat:')).toBeDefined();
-    expect(screen.getByText('100')).toBeDefined();
-    expect(screen.getByText('Exploration:')).toBeDefined();
-    expect(screen.getByText('50')).toBeDefined();
-    expect(screen.getByText('Rusty Sword x')).toBeDefined();
-    expect(screen.getByText('1')).toBeDefined();
-    expect(screen.getByText('Health Potion x')).toBeDefined();
-    expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/Level 1/)).toBeDefined();
-    expect(screen.getByText(/Points to distribute:/)).toBeDefined();
-    expect(screen.getByText(/points awarded: 5/)).toBeDefined();
+    expect(screen.getByText(/Victory!/)).toBeDefined();
+    expect(screen.getByText(/Combat/i)).toBeDefined();
+    expect(screen.getByText(/\+100/)).toBeDefined();
+    expect(screen.getByText(/Exploration/i)).toBeDefined();
+    expect(screen.getByText(/\+50/)).toBeDefined();
+    expect(screen.getByText(/Rusty Sword/i)).toBeDefined();
+    expect(screen.getByText(/x1/)).toBeDefined();
+    expect(screen.getByText(/Health Potion/i)).toBeDefined();
+    expect(screen.getByText(/x2/)).toBeDefined();
+    expect(screen.getByText(/LEVEL 1/)).toBeDefined();
+    expect(screen.getByText(/Available Points:/)).toBeDefined();
+    expect(screen.getByText(/\+5 Points awarded/)).toBeDefined();
   });
 
   it('renders "None" when there are no rewards', () => {
@@ -67,10 +67,10 @@ describe('VictoryDialog', () => {
     };
 
     render(
-      <VictoryDialog 
-        endState={emptyEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={emptyEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
@@ -80,25 +80,25 @@ describe('VictoryDialog', () => {
 
   it('disables CLOSE button if points are remaining', () => {
     render(
-      <VictoryDialog 
-        endState={mockEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
     const closeBtn = screen.getByText('CLOSE');
     expect(closeBtn.disabled).toBe(true);
-    expect(screen.getByText('Spend all points to continue.')).toBeDefined();
+    expect(screen.getByText('Must spend all points to continue expedition.')).toBeDefined();
   });
 
   it('enables CLOSE button if no points are remaining', () => {
     const noPointsEndState = { ...mockEndState, attribute_points_available: 0 };
     render(
-      <VictoryDialog 
-        endState={noPointsEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={noPointsEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
@@ -112,23 +112,23 @@ describe('VictoryDialog', () => {
     mockOnAllocatePoints.mockResolvedValue({ success: true });
 
     render(
-      <VictoryDialog 
-        endState={mockEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
     const select = screen.getByRole('combobox');
     const input = screen.getByRole('spinbutton');
-    const allocateBtn = screen.getByText('ALLOCATE');
+    const allocateBtn = screen.getByText('ALLOCATE POINTS');
 
     fireEvent.change(select, { target: { value: 'strength_base' } });
     fireEvent.change(input, { target: { value: '2' } });
     fireEvent.click(allocateBtn);
 
     expect(allocateBtn.textContent).toBe('ALLOCATING...');
-    
+
     await waitFor(() => {
       expect(mockOnAllocatePoints).toHaveBeenCalledWith('strength_base', 2);
     });
@@ -138,18 +138,18 @@ describe('VictoryDialog', () => {
     mockOnAllocatePoints.mockResolvedValue({ success: false, error: 'API Error' });
 
     render(
-      <VictoryDialog 
-        endState={mockEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
-    const allocateBtn = screen.getByText('ALLOCATE');
+    const allocateBtn = screen.getByText('ALLOCATE POINTS');
     fireEvent.click(allocateBtn);
 
     await waitFor(() => {
-      expect(screen.getByText('API Error')).toBeDefined();
+      expect(screen.getByText(/API Error/)).toBeDefined();
     });
   });
 
@@ -157,42 +157,42 @@ describe('VictoryDialog', () => {
     mockOnAllocatePoints.mockRejectedValue(new Error('Network Error'));
 
     render(
-      <VictoryDialog 
-        endState={mockEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
-    const allocateBtn = screen.getByText('ALLOCATE');
+    const allocateBtn = screen.getByText('ALLOCATE POINTS');
     fireEvent.click(allocateBtn);
 
     await waitFor(() => {
-      expect(screen.getByText('Network Error')).toBeDefined();
+      expect(screen.getByText(/Network Error/)).toBeDefined();
     });
   });
 
   it('validates allocation amount', () => {
     render(
-      <VictoryDialog 
-        endState={mockEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
     const input = screen.getByRole('spinbutton');
-    const allocateBtn = screen.getByText('ALLOCATE');
+    const allocateBtn = screen.getByText('ALLOCATE POINTS');
 
     // Invalid number
     fireEvent.change(input, { target: { value: 'abc' } });
     fireEvent.click(allocateBtn);
-    expect(screen.getByText('Enter a valid point amount.')).toBeDefined();
+    expect(screen.getByText(/Enter a valid point amount\./)).toBeDefined();
 
     // Too many points
     fireEvent.change(input, { target: { value: '10' } });
     fireEvent.click(allocateBtn);
-    expect(screen.getByText('Not enough points available.')).toBeDefined();
+    expect(screen.getByText(/Not enough points available\./)).toBeDefined();
   });
 
   it('renders attribute points section when no level ups but points available', () => {
@@ -203,15 +203,15 @@ describe('VictoryDialog', () => {
     };
 
     render(
-      <VictoryDialog 
-        endState={pointsOnlyEndState} 
-        onClose={mockOnClose} 
-        onAllocatePoints={mockOnAllocatePoints} 
+      <VictoryDialog
+        endState={pointsOnlyEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
       />
     );
 
-    expect(screen.getByText('Attribute points')).toBeDefined();
-    expect(screen.getByText('Points to distribute:')).toBeDefined();
+    expect(screen.getByText('⭐ Level Ups & Growth')).toBeDefined();
+    expect(screen.getByText('Available Points:')).toBeDefined();
     expect(screen.getByText('3')).toBeDefined();
   });
 });

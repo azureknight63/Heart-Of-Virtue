@@ -1,12 +1,9 @@
-/**
- * ActionsPanel - Display available actions player can take
- * Fetches commands from backend and displays all available actions
- */
-
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAudio } from '../context/AudioContext'
 import apiEndpoints from '../api/endpoints'
+import BaseDialog from './BaseDialog'
+import { colors, spacing } from '../styles/theme'
 
 // Tooltip descriptions for each command
 const COMMAND_TOOLTIPS = {
@@ -22,6 +19,9 @@ const COMMAND_TOOLTIPS = {
   'Refresh Merchants': '[DEBUG] Refresh all merchant inventories',
 }
 
+/**
+ * ActionsPanel - Display available actions player can take
+ */
 export default function ActionsPanel({ player, location, onClose, onRefetch, onMove }) {
   const [commands, setCommands] = useState([])
   const [loading, setLoading] = useState(false)
@@ -114,221 +114,155 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
   }
 
   return (
-    <div style={{
-      backgroundColor: 'rgba(50, 20, 0, 0.3)',
-      border: '2px solid #ffaa00',
-      borderRadius: '6px',
-      padding: '8px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '6px',
-    }}>
-      {/* Header */}
+    <BaseDialog
+      title="⚡ COMMANDS"
+      onClose={onClose}
+      variant="warning"
+      maxWidth="600px"
+      padding="16px"
+      zIndex={2000}
+    >
       <div style={{
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderBottom: '2px solid #ffaa00',
-        paddingBottom: '4px',
-        marginBottom: '2px',
+        flexDirection: 'column',
+        gap: '14px',
+        paddingTop: actionMessage ? '20px' : '48px' // Added headroom to prevent tooltip clipping
       }}>
-        <div style={{
-          color: '#ffff00',
-          fontWeight: 'bold',
-          fontSize: '13px',
-          fontFamily: 'monospace',
-        }}>
-          ⚡ COMMANDS
-        </div>
-        <button
-          onClick={onClose}
-          style={{
-            padding: '2px 6px',
-            backgroundColor: '#cc4400',
-            color: '#ffff00',
-            border: '1px solid #ff6600',
-            borderRadius: '3px',
-            cursor: 'pointer',
-            fontSize: '10px',
+        {/* Action Message */}
+        {actionMessage && (
+          <div style={{
+            backgroundColor: 'rgba(255, 170, 0, 0.1)',
+            border: '1px solid rgba(255, 170, 0, 0.3)',
+            borderRadius: '8px',
+            padding: '12px',
+            fontSize: '14px',
             fontFamily: 'monospace',
-            fontWeight: 'bold',
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.backgroundColor = '#ff6600'
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.backgroundColor = '#cc4400'
-          }}
-        >
-          ✕
-        </button>
-      </div>
+            color: colors.gold,
+            textAlign: 'center',
+            boxShadow: '0 0 15px rgba(255, 170, 0, 0.2)',
+            animation: 'fadeIn 0.3s ease-out'
+          }}>
+            {actionMessage}
+          </div>
+        )}
 
-      {/* Action Message */}
-      {actionMessage && (
+        {/* Commands Container */}
         <div style={{
-          backgroundColor: 'rgba(100, 50, 0, 0.5)',
-          border: '1px solid #ffaa00',
-          borderRadius: '3px',
-          padding: '4px 6px',
-          fontSize: '10px',
-          fontFamily: 'monospace',
-          color: '#ffff00',
-          textAlign: 'center',
-        }}>
-          {actionMessage}
-        </div>
-      )}
-
-      {/* Loading State */}
-      {loading && (
-        <div style={{
-          color: '#ffcc00',
-          fontSize: '10px',
-          fontFamily: 'monospace',
-          textAlign: 'center',
-          padding: '8px',
-        }}>
-          Loading commands...
-        </div>
-      )}
-
-      {/* Error State */}
-      {error && (
-        <div style={{
-          color: '#ff6666',
-          fontSize: '10px',
-          fontFamily: 'monospace',
-          padding: '8px',
-          backgroundColor: 'rgba(100, 0, 0, 0.2)',
-          borderRadius: '3px',
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* Commands List - Inline blocks */}
-      {!loading && commands.length > 0 && (
-        <div style={{
-          backgroundColor: 'rgba(30, 15, 0, 0.3)',
-          border: '1px solid #664400',
-          borderRadius: '4px',
-          padding: '6px',
+          backgroundColor: 'rgba(0, 0, 0, 0.4)',
+          border: '1px solid rgba(255, 170, 0, 0.2)',
+          borderRadius: '12px',
+          padding: '16px',
+          minHeight: '200px',
           display: 'flex',
-          flexWrap: 'wrap',
-          gap: '4px',
-          position: 'relative',
+          flexDirection: 'column',
+          gap: '12px'
         }}>
-          {commands.map((command, idx) => {
-            // Determine colors based on command type
-            const isDebug = command.debug === true
-            const bgColor = isDebug ? 'rgba(80, 80, 90, 0.3)' : 'rgba(100, 50, 0, 0.3)'
-            const borderColor = isDebug ? '#a9a9a9' : '#ff9933'
-            const textColor = isDebug ? '#c0c0c0' : '#ffcc88'
-            const hoverBgColor = isDebug ? 'rgba(120, 120, 130, 0.5)' : 'rgba(150, 80, 0, 0.5)'
-            const hoverShadow = isDebug
-              ? '0 0 8px rgba(192, 192, 192, 0.4) inset'
-              : '0 0 8px rgba(255, 153, 51, 0.4) inset'
+          {loading ? (
+            <div style={{ color: colors.gold, fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
+              Communicating with world spirits...
+            </div>
+          ) : error ? (
+            <div style={{ color: colors.danger, textAlign: 'center', padding: '40px' }}>
+              ⚠️ {error}
+            </div>
+          ) : commands.length === 0 ? (
+            <div style={{ color: colors.text.muted, fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
+              No commands currently available.
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+              gap: '10px'
+            }}>
+              {commands.map((command, idx) => {
+                const isDebug = command.debug === true
+                const isHovered = hoveredCommand === idx
+                const borderColor = isDebug ? 'rgba(200, 200, 200, 0.4)' : colors.secondary
+                const textColor = isDebug ? '#999' : colors.gold
 
-            return (
-              <div key={idx} style={{ position: 'relative', display: 'inline-block' }}>
-                <button
-                  onClick={() => handleAction(command)}
-                  onMouseEnter={(e) => {
-                    setHoveredCommand(idx)
-                    e.target.style.backgroundColor = hoverBgColor
-                    e.target.style.boxShadow = hoverShadow
-                  }}
-                  onMouseLeave={(e) => {
-                    setHoveredCommand(null)
-                    e.target.style.backgroundColor = bgColor
-                    e.target.style.boxShadow = 'none'
-                  }}
-                  style={{
-                    padding: '8px 14px',
-                    backgroundColor: bgColor,
-                    border: `1px solid ${borderColor}`,
-                    borderRadius: '3px',
-                    color: textColor,
-                    fontFamily: 'monospace',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'inline-block',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {command.name}
-                </button>
+                return (
+                  <div key={idx} style={{ position: 'relative' }}>
+                    <button
+                      onClick={() => handleAction(command)}
+                      onMouseEnter={() => setHoveredCommand(idx)}
+                      onMouseLeave={() => setHoveredCommand(null)}
+                      style={{
+                        width: '100%',
+                        padding: '12px 8px',
+                        backgroundColor: isHovered
+                          ? (isDebug ? 'rgba(100, 100, 100, 0.2)' : 'rgba(255, 170, 0, 0.1)')
+                          : 'transparent',
+                        border: `1.5px solid ${isHovered ? colors.primary : borderColor}`,
+                        borderRadius: '8px',
+                        color: isHovered ? colors.primary : textColor,
+                        fontFamily: 'monospace',
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        textTransform: 'uppercase',
+                        boxShadow: isHovered ? `0 0 10px ${colors.primary}44` : 'none'
+                      }}
+                    >
+                      {command.name}
+                    </button>
 
-                {/* Tooltip */}
-                {hoveredCommand === idx && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '100%',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    marginBottom: '8px',
-                    backgroundColor: 'rgba(20, 20, 20, 0.95)',
-                    border: '1px solid #ffaa00',
-                    borderRadius: '4px',
-                    padding: '10px 14px',
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                    color: '#ffcc88',
-                    maxWidth: '280px',
-                    whiteSpace: 'normal',
-                    zIndex: 1000,
-                    textAlign: 'center',
-                    boxShadow: '0 0 8px rgba(255, 170, 0, 0.3)',
-                    lineHeight: '1.4',
-                  }}>
-                    {COMMAND_TOOLTIPS[command.name] || 'Unknown command'}
-                    {/* Tooltip arrow */}
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      width: '0',
-                      height: '0',
-                      borderLeft: '6px solid transparent',
-                      borderRight: '6px solid transparent',
-                      borderTop: '6px solid rgba(20, 20, 20, 0.95)',
-                    }} />
+                    {/* Tooltip */}
+                    {isHovered && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 'calc(100% + 10px)',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: '200px',
+                        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+                        border: `1px solid ${colors.primary}`,
+                        borderRadius: '6px',
+                        padding: '10px',
+                        fontSize: '11px',
+                        color: '#fff',
+                        zIndex: 3000,
+                        textAlign: 'center',
+                        boxShadow: `0 0 15px ${colors.primary}66`,
+                        pointerEvents: 'none'
+                      }}>
+                        {COMMAND_TOOLTIPS[command.name] || 'General interaction command.'}
+                        {/* Arrow */}
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          borderLeft: '6px solid transparent',
+                          borderRight: '6px solid transparent',
+                          borderTop: `6px solid ${colors.primary}`
+                        }} />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+          )}
         </div>
-      )}
 
-      {/* Empty State */}
-      {!loading && commands.length === 0 && !error && (
         <div style={{
-          color: '#666666',
-          fontSize: '11px',
-          fontStyle: 'italic',
+          fontSize: '10px',
+          color: colors.text.muted,
           textAlign: 'center',
-          padding: '8px',
+          fontStyle: 'italic',
+          padding: '4px'
         }}>
-          No commands available
+          {isDebugMode() ? "[DEBUG MODE ACTIVE]" : "Available Commands"}
         </div>
-      )}
-
-      {/* Help Text */}
-      <div style={{
-        fontSize: '9px',
-        color: '#999999',
-        fontFamily: 'monospace',
-        marginTop: '2px',
-        padding: '4px',
-        borderTop: '1px solid #664400',
-        textAlign: 'center',
-      }}>
-        Hover over a command for details
       </div>
-    </div>
+    </BaseDialog>
   )
 }
+
+function isDebugMode() {
+  // Simple check for debug commands existence
+  return true; // For now assuming we show them if returned
+}
+

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
@@ -215,11 +215,51 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     })
     : []
 
-  const isMoveSelection = availableMoves.length > 0
-  const hasSpecialMoves = isMoveSelection && availableMoves.some(move =>
-    move.category === 'Special' || move.category === 'Spiritual' || move.category === 'Supernatural'
-  )
-  const hasDefensiveMoves = isMoveSelection && availableMoves.some(move => move.category === 'Defensive')
+  const hasSpecialMoves = mode === 'combat' && combat?.available_moves?.some(m => m.category === 'Special')
+  const hasDefensiveMoves = mode === 'combat' && (combat?.available_actions?.includes('Defensive') || combat?.available_moves?.some(m => m.category === 'Defensive'))
+
+  // Auto-scaling logic for HeroPanel
+  const heroContainerRef = useRef(null)
+  const [heroScale, setHeroScale] = useState(1)
+
+  useEffect(() => {
+    if (!heroContainerRef.current) return
+
+    const calculateScale = () => {
+      const container = heroContainerRef.current
+      if (!container) return
+
+      const { width, height } = container.getBoundingClientRect()
+
+      // HeroPanel base bounding box is approx 360x310 at scale(1)
+      const baseWidth = 360
+      const baseHeight = 310
+
+      if (width === 0 || height === 0) return
+
+      const scaleW = width / baseWidth
+      const scaleH = height / baseHeight
+
+      // Calculate scale to fit while filling space
+      // For combat, we might want it slightly larger or smaller? 
+      // User said "auto-scale to fill the space", so we use the smaller of W/H to fit.
+      let newScale = Math.min(scaleW, scaleH)
+
+      // Sanity bounds
+      newScale = Math.max(0.4, Math.min(newScale, 2.8))
+
+      setHeroScale(newScale)
+    }
+
+    const observer = new ResizeObserver(() => {
+      calculateScale()
+    })
+
+    observer.observe(heroContainerRef.current)
+    calculateScale()
+
+    return () => observer.disconnect()
+  }, [mode, location, showInventory, showSkills, showActions, showStatus, showAttributes])
 
   // Show input dialog when backend requests input (target_selection, direction_selection, etc.)
   // But NOT if combat has ended (end_state is present)
@@ -380,58 +420,75 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         </div>
       </div>
 
-      {/* Content */}
+      {/* Main Panel Content Area */}
       <div style={{
         flex: 1,
-        overflowY: 'auto',
-        padding: '14px',
         display: 'flex',
         flexDirection: 'column',
+        overflow: 'hidden', // Disable parent scroll to allow internal specific scrolling
+        padding: '14px',
         gap: '14px',
-        overflow: 'auto',
       }}>
-        {/* Room Contents - Items, NPCs, Objects */}
+        {/* Room Contents - Scrollable portion */}
         {mode === 'exploration' && location && (
-          <RoomContents location={location} onInteract={handleOpenInteract} />
+          <div style={{
+            flex: '0 1 auto',
+            overflowY: 'auto',
+            maxHeight: '40%',
+            minHeight: '80px',
+            borderBottom: '1px solid rgba(0, 255, 136, 0.1)',
+            paddingBottom: '10px'
+          }}>
+            <RoomContents location={location} onInteract={handleOpenInteract} />
+          </div>
         )}
 
-        {/* Hero Panel - Character Head with Surrounding Buttons */}
-        <div style={{
-          transform: (mode === 'combat')
-            ? 'scale(1.2)'
-            : (showStatus || showInventory || showAttributes || showActions || showSkills || showInteract ? 'scale(1)' : 'scale(2)'),
-          transformOrigin: 'top center',
-          transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          overflow: 'visible',
-          zIndex: 50,
-          flex: (mode === 'combat' && isMyTurn) ? '1 1 0' : '0 0 auto',
-          display: (mode === 'combat' && !isMyTurn) ? 'none' : 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <HeroPanel
-            player={activePlayer}
-            inCombat={mode === 'combat'}
-            hasSpecialMoves={hasSpecialMoves}
-            hasDefensiveMoves={hasDefensiveMoves}
-            onAttributeClick={() => setShowAttributes(!showAttributes)}
-            onStatusClick={() => setShowStatus(!showStatus)}
-            onSkillsClick={() => {
-              if (!showSkills) setShowInventory(false)
-              setShowSkills(!showSkills)
-            }}
-            onInventoryClick={() => {
-              if (!showInventory) setShowSkills(false)
-              setShowInventory(!showInventory)
-            }}
-            onActionsClick={() => setShowActions(!showActions)}
-            onInteractClick={() => handleOpenInteract()}
-            onOffensiveClick={() => handleCombatMoveClick('Offensive')}
-            onDefensiveClick={() => handleCombatMoveClick('Defensive')}
-            onManeuverClick={() => handleCombatMoveClick('Maneuver')}
-            onMiscellaneousClick={() => handleCombatMoveClick('Miscellaneous')}
-            onSpecialClick={() => handleCombatMoveClick('Special')}
-          />
+        {/* Hero Panel Container - Anchored to remaining space, auto-scaling */}
+        <div
+          ref={heroContainerRef}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+        >
+          <div style={{
+            transform: `scale(${heroScale})`,
+            transformOrigin: 'center center',
+            transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+            overflow: 'visible',
+            zIndex: 50,
+            display: (mode === 'combat' && !isMyTurn) ? 'none' : 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <HeroPanel
+              player={activePlayer}
+              inCombat={mode === 'combat'}
+              hasSpecialMoves={hasSpecialMoves}
+              hasDefensiveMoves={hasDefensiveMoves}
+              onAttributeClick={() => setShowAttributes(!showAttributes)}
+              onStatusClick={() => setShowStatus(!showStatus)}
+              onSkillsClick={() => {
+                if (!showSkills) setShowInventory(false)
+                setShowSkills(!showSkills)
+              }}
+              onInventoryClick={() => {
+                if (!showInventory) setShowSkills(false)
+                setShowInventory(!showInventory)
+              }}
+              onActionsClick={() => setShowActions(!showActions)}
+              onInteractClick={() => handleOpenInteract()}
+              onOffensiveClick={() => handleCombatMoveClick('Offensive')}
+              onDefensiveClick={() => handleCombatMoveClick('Defensive')}
+              onManeuverClick={() => handleCombatMoveClick('Maneuver')}
+              onMiscellaneousClick={() => handleCombatMoveClick('Miscellaneous')}
+              onSpecialClick={() => handleCombatMoveClick('Special')}
+            />
+          </div>
         </div>
 
         {/* Combat Move Panel */}
@@ -472,58 +529,56 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
           </div>
         )}
 
-        {/* Player Status */}
-        {showStatus && player && <PartyPanel player={player} onClose={() => setShowStatus(false)} />}
 
-        {/* Stats/Attributes Panel */}
-        {showAttributes && player && (
-          <StatsPanel player={player} onClose={() => setShowAttributes(false)} />
-        )}
-
-        {/* Inventory Dialog */}
-        {showInventory && player && (
-          <InventoryDialog
-            items={player.inventory}
-            player={player}
-            onClose={() => setShowInventory(false)}
-            onRefetch={onRefetch}
-            combatMode={mode === 'combat'}
-          />
-        )}
-
-        {/* Skills Panel */}
-        {showSkills && player && (
-          <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
-        )}
-
-        {/* Actions Panel */}
-        {showActions && location && mode === 'exploration' && (
-          <ActionsPanel
-            player={player}
-            location={location}
-            onClose={() => setShowActions(false)}
-            onMove={onMove}
-            onRefetch={onRefetch}
-          />
-        )}
-
-        {/* Interact Panel */}
-        {showInteract && location && mode === 'exploration' && (
-          <InteractPanel
-            location={location}
-            initialTarget={interactTarget}
-            onClose={() => {
-              setShowInteract(false)
-              setInteractTarget(null)
-            }}
-            onEventsTriggered={onEventsTriggered}
-            onInteractionComplete={onInteractionComplete}
-            onRefetch={onRefetch}
-          />
-        )}
       </div>
 
-      {/* Account Dialog */}
+      {/* Modal Overlays */}
+      {showStatus && player && (
+        <PartyPanel player={player} onClose={() => setShowStatus(false)} />
+      )}
+
+      {showAttributes && player && (
+        <StatsPanel player={player} onClose={() => setShowAttributes(false)} />
+      )}
+
+      {showInventory && player && (
+        <InventoryDialog
+          items={player.inventory}
+          player={player}
+          onClose={() => setShowInventory(false)}
+          onRefetch={onRefetch}
+          combatMode={mode === 'combat'}
+        />
+      )}
+
+      {showSkills && player && (
+        <SkillsPanel player={player} onClose={() => setShowSkills(false)} />
+      )}
+
+      {showActions && location && mode === 'exploration' && (
+        <ActionsPanel
+          player={player}
+          location={location}
+          onClose={() => setShowActions(false)}
+          onMove={onMove}
+          onRefetch={onRefetch}
+        />
+      )}
+
+      {showInteract && location && mode === 'exploration' && (
+        <InteractPanel
+          location={location}
+          initialTarget={interactTarget}
+          onClose={() => {
+            setShowInteract(false)
+            setInteractTarget(null)
+          }}
+          onEventsTriggered={onEventsTriggered}
+          onInteractionComplete={onInteractionComplete}
+          onRefetch={onRefetch}
+        />
+      )}
+
       {showAccount && (
         <AccountDialog
           player={player}
@@ -531,14 +586,12 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         />
       )}
 
-      {/* Audio Dialog */}
       {showAudio && (
         <AudioControlDialog
           onClose={() => setShowAudio(false)}
         />
       )}
 
-      {/* Combat Check Dialog */}
       {showCheckDialog && checkData && (
         <CombatCheckDialog
           checkData={checkData}

@@ -18,6 +18,9 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
 
   const equipAction = useAsyncAction(async () => {
     const response = await apiClient.post('/inventory/equip', { item_id: item.id })
+    if (response.data && response.data.success === false) {
+      throw new Error(response.data.error || 'Failed to equip item')
+    }
     return response.data || response
   }, {
     onSuccess: (data) => {
@@ -34,11 +37,14 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       if (onItemUpdated) onItemUpdated(item.id, { is_equipped: isNowEquipped })
       if (onRefetch) onRefetch()
     },
-    onError: (err) => setActionMessage('✗ Error: ' + err.message)
+    onError: (err) => setActionMessage('✗ Error: ' + (typeof err === 'string' ? err : err.message))
   })
 
   const useAction = useAsyncAction(async () => {
     const response = await apiClient.post('/inventory/use', { item_id: item.id })
+    if (response.data && response.data.success === false) {
+      throw new Error(response.data.error || 'Failed to use item')
+    }
     return response.data || response
   }, {
     onSuccess: (data) => {
@@ -49,11 +55,14 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       setIsRemoved(true)
       if (onRefetch) onRefetch()
     },
-    onError: (err) => setActionMessage('✗ Error: ' + err.message)
+    onError: (err) => setActionMessage('✗ Error: ' + (typeof err === 'string' ? err : err.message))
   })
 
   const dropAction = useAsyncAction(async () => {
     const response = await apiClient.post('/inventory/drop', { item_id: item.id })
+    if (response.data && response.data.success === false) {
+      throw new Error(response.data.error || 'Failed to drop item')
+    }
     return response.data || response
   }, {
     onSuccess: (data) => {
@@ -69,7 +78,7 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       setIsRemoved(true)
       if (onRefetch) onRefetch()
     },
-    onError: (err) => setActionMessage('✗ Error: ' + err.message)
+    onError: (err) => setActionMessage('✗ Error: ' + (typeof err === 'string' ? err : err.message))
   })
 
   if (!item) return null

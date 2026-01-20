@@ -53,7 +53,7 @@ describe('ActionsPanel', () => {
   it('renders commands correctly', async () => {
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
-    expect(screen.getByText(/Loading commands.../i)).toBeDefined();
+    expect(screen.getByText(/Communicating with world spirits.../i)).toBeDefined();
 
     await waitFor(() => {
       expect(screen.getByText(/Search/i)).toBeDefined();
@@ -154,7 +154,7 @@ describe('ActionsPanel', () => {
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/No commands available/i)).toBeDefined();
+      expect(screen.getByText(/No commands currently available/i)).toBeDefined();
     });
   });
 
@@ -219,10 +219,11 @@ describe('ActionsPanel', () => {
 
     const closeButton = screen.getByText(/✕/i);
     fireEvent.mouseEnter(closeButton);
-    expect(closeButton.style.backgroundColor).toBe('rgb(255, 102, 0)');
+    // BaseDialog uses color for hover, not backgroundColor
+    expect(closeButton.style.color).toBe('rgb(255, 238, 170)'); // #ffeeaa
 
     fireEvent.mouseLeave(closeButton);
-    expect(closeButton.style.backgroundColor).toBe('rgb(204, 68, 0)');
+    expect(closeButton.style.color).toBe('rgb(136, 136, 136)'); // #888888
   });
 
   it('calls onClose when close button is clicked', async () => {

@@ -79,15 +79,16 @@ export default function SkillsPanel({ player, onClose }) {
       title="⚡ ABILITIES & SKILLS"
       onClose={onClose}
       maxWidth="650px"
+      padding="16px"
       zIndex={2000}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '400px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minHeight: '300px' }}>
         {/* Discipline Tabs */}
         <div style={{
           display: 'flex',
-          gap: '8px',
+          gap: '6px',
           overflowX: 'auto',
-          paddingBottom: '8px',
+          paddingBottom: '6px',
           borderBottom: '1px solid rgba(255, 255, 0, 0.1)',
         }}>
           {categories.map(cat => (
@@ -96,10 +97,10 @@ export default function SkillsPanel({ player, onClose }) {
               onClick={() => setSelectedCategory(cat)}
               variant={selectedCategory === cat ? 'primary' : 'secondary'}
               style={{
-                padding: '6px 12px',
-                fontSize: '12px',
+                padding: '4px 10px',
+                fontSize: '11px',
                 whiteSpace: 'nowrap',
-                minWidth: '80px',
+                minWidth: '70px',
               }}
             >
               {cat}
@@ -114,12 +115,12 @@ export default function SkillsPanel({ player, onClose }) {
             justifyContent: 'space-between',
             alignItems: 'center',
             backgroundColor: 'rgba(0, 255, 0, 0.05)',
-            padding: '10px 16px',
+            padding: '8px 12px',
             borderRadius: '8px',
             border: '1px solid rgba(0, 255, 0, 0.1)',
           }}>
-            <div style={{ color: '#aaa', fontSize: '11px', textTransform: 'uppercase' }}>Available {selectedCategory} Experience</div>
-            <div style={{ color: '#00ff88', fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+            <div style={{ color: '#aaa', fontSize: '10px', textTransform: 'uppercase' }}>Available {selectedCategory} XP</div>
+            <div style={{ color: '#00ff88', fontSize: '16px', fontWeight: 'bold', fontFamily: 'monospace' }}>
               {skill_exp[selectedCategory] || 0} XP
             </div>
           </div>
@@ -139,10 +140,10 @@ export default function SkillsPanel({ player, onClose }) {
               backgroundColor: skill.is_known ? 'rgba(0, 255, 136, 0.05)' : 'rgba(0,0,0,0.2)',
               border: `1px solid ${skill.is_known ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
               borderRadius: '10px',
-              padding: '16px',
+              padding: '12px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '10px',
+              gap: '8px',
               transition: 'all 0.2s',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -198,8 +199,8 @@ export default function SkillsPanel({ player, onClose }) {
           )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px' }}>
-          <GameButton onClick={onClose} variant="secondary">
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '4px' }}>
+          <GameButton onClick={onClose} variant="secondary" style={{ padding: '8px 20px', fontSize: '12px' }}>
             CLOSE BOOK
           </GameButton>
         </div>

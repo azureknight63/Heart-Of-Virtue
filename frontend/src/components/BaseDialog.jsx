@@ -11,6 +11,7 @@ export default function BaseDialog({
     maxWidth = '400px',
     zIndex = 1000,
     showCloseButton = true,
+    padding = spacing.xl,
     className = '',
     contentClassName = '',
 }) {
@@ -54,7 +55,7 @@ export default function BaseDialog({
                     backgroundColor: themeStyles.backgroundColor,
                     border: `3px solid ${themeStyles.borderColor}`,
                     borderRadius: '8px',
-                    padding: spacing.xl,
+                    padding: padding,
                     boxShadow: `0 0 20px ${themeStyles.glowColor}66`,
                     fontFamily: 'monospace',
                     display: 'flex',
