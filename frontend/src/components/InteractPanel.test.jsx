@@ -346,4 +346,37 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Chest/i)[0]);
     expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
   });
+
+  it('resets isLocked state when clicking a new target after a locking action', async () => {
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: { success: true, message: 'Item taken' }
+    });
+
+    const { rerender } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+
+    // 1. Select Gold Coin
+    fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+
+    // 2. Take it (locking action)
+    fireEvent.click(screen.getByText(/Take/i));
+    fireEvent.click(screen.getByText(/CONFIRM/i));
+
+    // Wait for interaction
+    await waitFor(() => {
+      expect(screen.getByText(/Item taken/i)).toBeDefined();
+    });
+
+    // 3. Simulate room update where item is gone
+    const updatedLocation = {
+      ...mockLocation,
+      items: [] // Gold coin is gone
+    };
+    rerender(<InteractPanel location={updatedLocation} onClose={mockOnClose} />);
+
+    // 4. Now we should be back at the list. Select NPC.
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+
+    // 5. Verify NPC buttons are NOT disabled
+    expect(screen.getByText(/Talk/i).closest('button')).not.toBeDisabled();
+  });
 });

@@ -49,7 +49,7 @@ describe('ItemDetailDialog', () => {
       />
     );
 
-    expect(screen.getByText('Iron Sword')).toBeDefined();
+    expect(screen.getAllByText('Iron Sword')[0]).toBeDefined();
     expect(screen.getByText('A sturdy iron sword.')).toBeDefined();
     expect(screen.getByText('5kg')).toBeDefined();
     expect(screen.getByText(/100💰/i)).toBeDefined();

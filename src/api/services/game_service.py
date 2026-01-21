@@ -830,7 +830,10 @@ class GameService:
         
         # Provide fallback message if no output was captured
         if not clean_output:
-            clean_output = f"Action '{action}' completed successfully."
+            if action == 'take_all':
+                clean_output = "Jean collects all of the available items."
+            else:
+                clean_output = f"Jean successfully completes the '{action}' action."
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
         more_events = self.trigger_tile_events(player, tile, session_data)

@@ -104,6 +104,9 @@ export default function InteractPanel({
         setShowHistory(false)
         setError(null)
         setShowQuantityInput(false)
+        setPendingAction(null)
+        setQuantity(1)
+        setIsLocked(false)
     }
 
     const handleActionClick = async (action, qty = null) => {
@@ -319,7 +322,7 @@ export default function InteractPanel({
                                 borderLeft: `4px solid ${getEntityColor(selectedTarget.type)}`,
                                 lineHeight: '1.5',
                             }}>
-                                {renderTextWithLinks(selectedTarget.description, targets, (t) => setSelectedTarget(t), selectedTarget)}
+                                {renderTextWithLinks(selectedTarget.description, targets, handleTargetClick, selectedTarget)}
                             </div>
                         )}
 
@@ -559,7 +562,7 @@ export default function InteractPanel({
                                         whiteSpace: 'pre-wrap',
                                         opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
                                     }}>
-                                        {renderTextWithLinks(msg, targets, (t) => setSelectedTarget(t))}
+                                        {renderTextWithLinks(msg, targets, handleTargetClick)}
                                     </div>
                                 ))}
                             </div>
@@ -567,7 +570,7 @@ export default function InteractPanel({
                             interactionOutput && (
                                 <TypewriterOutput
                                     text={interactionOutput}
-                                    formatter={(text) => renderTextWithLinks(text, targets, (t) => setSelectedTarget(t))}
+                                    formatter={(text) => renderTextWithLinks(text, targets, handleTargetClick)}
                                 />
                             )
                         )}

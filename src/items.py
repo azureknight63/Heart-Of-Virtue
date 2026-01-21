@@ -315,7 +315,8 @@ class Gold(Item):
         self.maintype = "Gold"
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
                          value=self.amt, maintype="Currency", subtype="Gold",
-                         discovery_message="a small pouch of gold.")
+                         discovery_message="a small pouch of gold.",
+                         aliases=["pouch of gold"])
         self.announce = "There's a small pouch of gold on the ground."
         self.interactions = []
         self.count = self.amt  # allow gold to stack in inventory
@@ -346,7 +347,8 @@ class Weapon(Item):
                  isequipped: bool, str_req: int, fin_req: int, str_mod: Union[int, float], fin_mod: Union[int, float],
                  weight: Union[int, float], maintype: str, subtype: str, wpnrange: Tuple[int, int] = (0, 5),
                  discovery_message: str = 'a kind of weapon.', twohand: bool = False,
-                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0,
+                 aliases: Optional[List[str]] = None) -> None:
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -359,7 +361,7 @@ class Weapon(Item):
         self.wpnrange = wpnrange  # tuple containing the min and max range for the weapon
         super().__init__(name, description, value, maintype, subtype,
                          discovery_message, skills=skills, merchandise=merchandise,
-                         enchantment_level=enchantment_level)
+                         enchantment_level=enchantment_level, aliases=aliases)
         self.announce = "There's a {} here.".format(self.name)
         self.twohand = twohand
         self.gives_exp = True
@@ -390,7 +392,7 @@ class Armor(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a piece of armor.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -399,7 +401,7 @@ class Armor(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -422,7 +424,7 @@ class Boots(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a pair of footgear.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -431,7 +433,7 @@ class Boots(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -531,7 +533,7 @@ class Helm(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a kind of head covering.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -540,7 +542,7 @@ class Helm(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -563,7 +565,7 @@ class Gloves(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a pair of gloves.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -572,7 +574,7 @@ class Gloves(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -673,7 +675,7 @@ class Accessory(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a small trinket.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_mod = str_mod
         self.fin_mod = fin_mod
@@ -682,7 +684,7 @@ class Accessory(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype, discovery_message, merchandise=merchandise,
-                         enchantment_level=enchantment_level)
+                         enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -701,7 +703,7 @@ class Consumable(Item):
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a useful item.', count: int = 1,
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
@@ -709,7 +711,7 @@ class Consumable(Item):
         self.interactions = ["take", "use", "drop"]
         self.stack_key = name
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def stack_grammar(self) -> None:
         """Checks the stack count for the item and changes the verbiage accordingly"""
@@ -732,14 +734,14 @@ class Special(Item):
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a strange object.',
-                 merchandise: bool = False) -> None:
+                 merchandise: bool = False, aliases: Optional[List[str]] = None) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
         self.count = 1
         self.interactions = ["drop"]
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
@@ -755,9 +757,9 @@ class Commodity(Special):
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a commodity item.',
-                 count: int = 1, merchandise: bool = False) -> None:
+                 count: int = 1, merchandise: bool = False, aliases: Optional[List[str]] = None) -> None:
         super().__init__(name, description, value, weight, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, aliases=aliases)
         self.count = count
         self.stack_key = name
         self.interactions = ["drop"]
@@ -1384,7 +1386,8 @@ class Restorative(Consumable):
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves.",
-                         value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count, merchandise=merchandise)
+                         value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count, merchandise=merchandise,
+                         aliases=["small glass vial", "vial", "box of small glass vials", "vials"])
         self.power = 60
         self.count = count
         self.interactions = ["use", "drink", "drop"]

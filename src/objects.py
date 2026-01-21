@@ -260,7 +260,7 @@ class Container(Object):
             self.description = f"A {self.nickname} which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
         elif self.inventory:
             # Use join for efficient string building instead of concatenation
-            item_descriptions = [colored(item.description, 'yellow') for item in self.inventory]
+            item_descriptions = [item.description for item in self.inventory]
             self.description = f"A {self.nickname}. Inside are the following things: \n\n" + '\n'.join(item_descriptions)
         else:
             self.description = f"A {self.nickname}. It's empty. Very sorry."
@@ -320,6 +320,8 @@ class Container(Object):
         for item in items:
             qty = getattr(item, 'count', 1)
             transfer_item(self, player, item, qty)
+        
+        print(f"Jean collects all of the available items.")
         
         self.refresh_description()
         self.process_events()

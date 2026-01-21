@@ -12,7 +12,7 @@ describe('PartyPanel', () => {
 
   it('renders empty state when no party members', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
-    expect(screen.getByText(/No party members yet/i)).toBeDefined();
+    expect(screen.getByText(/No party members currently in your group/i)).toBeDefined();
     expect(screen.getAllByText(/PARTY/i).length).toBeGreaterThan(0);
   });
 
@@ -24,15 +24,15 @@ describe('PartyPanel', () => {
       ]
     };
     render(<PartyPanel player={player} onClose={mockOnClose} />);
-    
+
     expect(screen.getByText(/Aria/i)).toBeDefined();
     expect(screen.getByText(/Kael/i)).toBeDefined();
-    
+
     // Check HP and Level
-    expect(screen.getByText(/50/i)).toBeDefined();
-    expect(screen.getByText(/100/i)).toBeDefined();
-    expect(screen.getByText('5')).toBeDefined();
-    expect(screen.getByText('4')).toBeDefined();
+    expect(screen.getByText(/50 \/ 100/i)).toBeDefined();
+    expect(screen.getByText(/LVL 5/i)).toBeDefined();
+    expect(screen.getByText(/LVL 4/i)).toBeDefined();
+
   });
 
   it('calls onClose when close button is clicked', () => {
@@ -46,22 +46,23 @@ describe('PartyPanel', () => {
     const player = { party_members: [{ name: 'Aria' }] };
     render(<PartyPanel player={player} onClose={mockOnClose} />);
     const closeButton = screen.getByText('✕');
-    
+
     fireEvent.mouseEnter(closeButton);
-    expect(closeButton.style.backgroundColor).toBe('rgb(255, 102, 0)');
-    
+    expect(closeButton.style.color).toBe('rgb(255, 238, 170)');
+
     fireEvent.mouseLeave(closeButton);
-    expect(closeButton.style.backgroundColor).toBe('rgb(204, 68, 0)');
+    expect(closeButton.style.color).toBe('rgb(136, 136, 136)');
   });
 
   it('handles close button hover in empty state', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
     const closeButton = screen.getByText('✕');
-    
+
     fireEvent.mouseEnter(closeButton);
-    expect(closeButton.style.backgroundColor).toBe('rgb(255, 102, 0)');
-    
+    expect(closeButton.style.color).toBe('rgb(255, 238, 170)');
+
     fireEvent.mouseLeave(closeButton);
-    expect(closeButton.style.backgroundColor).toBe('rgb(204, 68, 0)');
+    expect(closeButton.style.color).toBe('rgb(136, 136, 136)');
   });
+
 });

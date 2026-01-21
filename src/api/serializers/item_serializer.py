@@ -72,6 +72,10 @@ class ItemSerializer:
         if hasattr(item, "merchandise"):
             item_data["merchandise"] = item.merchandise
 
+        # Add announce text for room display
+        if hasattr(item, "announce"):
+            item_data["announce"] = item.announce
+
         # Add keywords for interaction
         # For items in the world, we want 'take' and potentially 'equip' for equippable items
         keywords = []
