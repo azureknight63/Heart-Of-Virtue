@@ -3,166 +3,9 @@
 from typing import Any, Dict, List, Optional
 
 
-class ItemSerializer:
-    """Serializes item objects for API responses."""
-
-    @staticmethod
-    def serialize(item: Any) -> Dict[str, Any]:
-        """Serialize a single item.
-
-        Args:
-            item: The item object to serialize
-
-        Returns:
-            Dictionary with item data
-        """
-        if not item:
-            return {}
-
-        result = {
-            "id": str(id(item)),
-            "name": getattr(item, "name", type(item).__name__),
-            "type": type(item).__name__,
-            "description": getattr(item, "description", ""),
-            "aliases": getattr(item, "aliases", []),
-            "action_aliases": getattr(item, "action_aliases", []),
-        }
-
-        # Add quantity if available (for stackable items)
-        if hasattr(item, "quantity"):
-            result["quantity"] = item.quantity
-
-        # Add rarity if available
-        if hasattr(item, "rarity"):
-            result["rarity"] = item.rarity
-
-        # Add weight if available
-        if hasattr(item, "weight"):
-            result["weight"] = item.weight
-
-        # Add value if available
-        if hasattr(item, "value"):
-            result["value"] = item.value
-
-        return result
-
-    @staticmethod
-    def serialize_many(items: List[Any]) -> List[Dict[str, Any]]:
-        """Serialize multiple items.
-
-        Args:
-            items: List of item objects
-
-        Returns:
-            List of serialized item dictionaries
-        """
-        return [ItemSerializer.serialize(item) for item in items]
-
-
-class NPCSerializer:
-    """Serializes NPC objects for API responses."""
-
-    @staticmethod
-    def serialize(npc: Any) -> Dict[str, Any]:
-        """Serialize a single NPC.
-
-        Args:
-            npc: The NPC object to serialize
-
-        Returns:
-            Dictionary with NPC data
-        """
-        if not npc:
-            return {}
-
-        result = {
-            "id": str(id(npc)),
-            "name": getattr(npc, "name", "Unknown"),
-            "type": type(npc).__name__,
-            "level": getattr(npc, "level", 1),
-            "health": getattr(npc, "health", 0),
-            "max_health": getattr(npc, "max_health", 0),
-            "is_hostile": getattr(npc, "is_hostile", False),
-        }
-
-        # Add description if available
-        if hasattr(npc, "description"):
-            result["description"] = npc.description
-
-        # Add faction if available
-        if hasattr(npc, "faction"):
-            result["faction"] = npc.faction
-
-        # Add merchant status if available
-        if hasattr(npc, "is_merchant"):
-            result["is_merchant"] = npc.is_merchant
-
-        return result
-
-    @staticmethod
-    def serialize_many(npcs: List[Any]) -> List[Dict[str, Any]]:
-        """Serialize multiple NPCs.
-
-        Args:
-            npcs: List of NPC objects
-
-        Returns:
-            List of serialized NPC dictionaries
-        """
-        return [NPCSerializer.serialize(npc) for npc in npcs]
-
-
-class ObjectSerializer:
-    """Serializes world objects for API responses."""
-
-    @staticmethod
-    def serialize(obj: Any) -> Dict[str, Any]:
-        """Serialize a single world object.
-
-        Args:
-            obj: The object to serialize
-
-        Returns:
-            Dictionary with object data
-        """
-        if not obj:
-            return {}
-
-        result = {
-            "id": str(id(obj)),
-            "name": getattr(obj, "name", type(obj).__name__),
-            "type": type(obj).__name__,
-            "description": getattr(obj, "description", ""),
-            "aliases": getattr(obj, "aliases", []),
-            "action_aliases": getattr(obj, "action_aliases", []),
-            "is_passable": getattr(obj, "is_passable", True),
-        }
-
-        # Add container status if applicable
-        if hasattr(obj, "is_container"):
-            result["is_container"] = obj.is_container
-
-        # Add opened status for containers
-        if hasattr(obj, "is_open"):
-            result["is_open"] = obj.is_open
-
-        # Add locked status if applicable
-        if hasattr(obj, "is_locked"):
-            result["is_locked"] = obj.is_locked
-
-        return result
-
-    @staticmethod
-    def serialize_many(objects: List[Any]) -> List[Dict[str, Any]]:
-        """Serialize multiple world objects.
-
-        Args:
-            objects: List of world objects
-
-        Returns:
-            List of serialized object dictionaries
-        """
-        return [ObjectSerializer.serialize(obj) for obj in objects]
+from src.api.serializers.item_serializer import ItemSerializer
+from src.api.serializers.npc_serializer import NPCSerializer
+from src.api.serializers.object_serializer import ObjectSerializer
 
 
 class EventSerializer:
@@ -237,19 +80,19 @@ class TileSerializer:
 
         # Serialize items
         items = getattr(tile, "items_here", [])
-        result["items"] = ItemSerializer.serialize_many(items)
+        result["items"] = ItemSerializer.serialize_list(items)
 
         # Serialize NPCs
         npcs = getattr(tile, "npcs_here", [])
-        result["npcs"] = NPCSerializer.serialize_many(npcs)
+        result["npcs"] = NPCSerializer.serialize_list(npcs)
 
         # Serialize objects
         objects = getattr(tile, "objects_here", [])
-        result["objects"] = ObjectSerializer.serialize_many(objects)
+        result["objects"] = ObjectSerializer.serialize_list(objects)
 
         # Serialize events
         events = getattr(tile, "events_here", [])
-        result["events"] = EventSerializer.serialize_many(events)
+        result["events"] = EventSerializer.serialize_list(events)
 
         # Serialize exits/connections
         exits = {}

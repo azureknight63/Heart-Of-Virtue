@@ -40,12 +40,36 @@ class ObjectSerializer:
         if hasattr(obj, "locked"):
             obj_data["locked"] = obj.locked
 
-        # Handle container state correctly
+        # Handle state/opened flag consistently
         if hasattr(obj, "state"):
             obj_data["state"] = obj.state
             obj_data["opened"] = (obj.state == "opened")
         elif hasattr(obj, "opened"):
             obj_data["opened"] = obj.opened
+            
+        # Ensure keywords are consistent with dynamic state
+        if "keywords" in obj_data and isinstance(obj_data["keywords"], list):
+            has_locked = hasattr(obj, "locked")
+            has_opened_attr = hasattr(obj, "opened") or hasattr(obj, "state")
+            
+            if has_locked or has_opened_attr:
+                current_k = obj_data["keywords"]
+                is_locked = obj_data.get("locked", False)
+                is_opened = obj_data.get("opened", False)
+                
+                # Filter out state-dependent keywords to avoid duplicates or inconsistencies
+                new_k = [k for k in current_k if k not in ("open", "unlock")]
+                
+                if is_locked:
+                    # If locked, only show unlock
+                    if "unlock" not in new_k:
+                        new_k.append("unlock")
+                elif not is_opened:
+                    # If closed and unlocked, show open
+                    if "open" not in new_k:
+                        new_k.append("open")
+                
+                obj_data["keywords"] = new_k
             
         if hasattr(obj, "open_message"):
             obj_data["open_message"] = obj.open_message

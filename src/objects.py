@@ -247,7 +247,16 @@ class Container(Object):
             self.events.extend(events)
 
         # Add keywords efficiently
-        self.keywords.extend(['open', 'unlock', 'loot', 'take_all'])
+        self.keywords.extend(['loot', 'take_all'])
+        
+        # Add conditional keywords based on state
+        if self.locked:
+            if 'unlock' not in self.keywords:
+                self.keywords.append('unlock')
+        elif self.state == "closed":
+            if 'open' not in self.keywords:
+                self.keywords.append('open')
+
         self.action_aliases.extend(['check', 'view', 'examine', 'inspect', 'peruse'])
         self.keywords.extend(self.action_aliases)
 
@@ -277,6 +286,10 @@ class Container(Object):
 
         if matching_key:
             self.locked = False
+            if 'unlock' in self.keywords:
+                self.keywords.remove('unlock')
+            if 'open' not in self.keywords and self.state == "closed":
+                self.keywords.append('open')
             cprint(f"Jean uses {matching_key.name} to unlock the {self.name}.", "green")
         else:
             cprint("Jean couldn't find a matching key.", "red")
@@ -293,56 +306,12 @@ class Container(Object):
             print("The lid lifts back on the hinge, revealing the contents inside.")
             self.revealed = True
             self.state = "opened"
+            if 'open' in self.keywords:
+                self.keywords.remove('open')
             self.refresh_description()
             self.process_events()
         else:
             print(f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside.")
-
-    def take_all(self, player):
-        """
-        Transfer all items from container to player.
-        """
-        if self.state == "closed":
-            self.open()
-
-        if self.state != "opened":
-            return
-
-        from interface import transfer_item
-        
-        # Create a snapshot to prevent modification during iteration
-        items = self.inventory[:]
-        if not items:
-            print(f"The {self.nickname} is empty.")
-            return
-
-        print(f"Jean begins gathering everything from the {self.nickname}...")
-        for item in items:
-            qty = getattr(item, 'count', 1)
-            transfer_item(self, player, item, qty)
-        
-        print(f"Jean collects all of the available items.")
-        
-        self.refresh_description()
-        self.process_events()
-
-    def loot(self):
-        """
-        Allows the player to loot the container. If the container is closed, it opens it first.
-        If the container is opened, launches the ContainerLootInterface for item selection and transfer.
-        """
-        if self.state == "closed":
-            self.open()
-
-        if self.state != "opened":
-            return
-
-        # Import the interface class
-        from interface import ContainerLootInterface
-
-        # Create and run the loot interface
-        loot_interface = ContainerLootInterface(self, self.player)
-        loot_interface.run()
 
     def take_all(self, player):
         """
@@ -365,12 +334,35 @@ class Container(Object):
 
         # Snapshot inventory since transfer_item modifies it
         snapshot = self.inventory[:]
+        print(f"Jean begins gathering everything from the {self.nickname}...")
         for item in snapshot:
             qty = getattr(item, 'count', 1)
             transfer_item(self, player, item, qty)
 
+        print(f"Jean collects all of the available items.")
         self.refresh_description()
         self.process_events()
+
+    def loot(self):
+        """
+        Allows the player to loot the container. If the container is closed, it opens it first.
+        If the container is opened, launches the ContainerLootInterface for item selection and transfer.
+        """
+        if self.state == "closed":
+            self.open()
+
+        if self.state != "opened":
+            return
+
+        # Import the interface class
+        try:
+            from interface import ContainerLootInterface
+        except ImportError:
+            from src.interface import ContainerLootInterface
+
+        # Create and run the loot interface
+        loot_interface = ContainerLootInterface(self, self.player)
+        loot_interface.run()
 
     def check(self):
         self.loot()
@@ -462,8 +454,10 @@ class Crate(Container):
                          merchant=merchant, allowed_subtypes=allowed_subtypes,
                          discovery_message=" a large wooden crate!", player=player, tile=tile,
                          nickname="crate", locked=False, start_open=True, stock_count=stock_count)
-        self.keywords.remove("open")
-        self.keywords.remove("unlock")
+        if "open" in self.keywords:
+            self.keywords.remove("open")
+        if "unlock" in self.keywords:
+            self.keywords.remove("unlock")
 
 
 class Shelf(Container):
@@ -479,8 +473,10 @@ class Shelf(Container):
                          merchant=merchant, allowed_subtypes=allowed_subtypes,
                          discovery_message=" a wooden shelf!", player=player, tile=tile,
                          nickname="shelf", locked=False, start_open=True, stock_count=stock_count)
-        self.keywords.remove("open")
-        self.keywords.remove("unlock")
+        if "open" in self.keywords:
+            self.keywords.remove("open")
+        if "unlock" in self.keywords:
+            self.keywords.remove("unlock")
 
 """
 World objects

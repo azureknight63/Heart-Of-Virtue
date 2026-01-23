@@ -410,13 +410,17 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         A game tick occurs whenever the game loop iterates,
         which is generally whenever the player takes an action.
         """
+        # Trigger merchant refresh on multiples of 1000 before incrementing
+        if self.game_tick > 0 and self.game_tick % 1000 == 0:
+            self.player.refresh_merchants()
+
         self.game_tick += 1
-        if self.game_tick == 0:
-            # Single evaluation pass (includes repeat events once) to avoid double spawning
+
+        if self.game_tick == 1:
+            # Single evaluation pass (includes repeat events once) after first tick
             self._evaluate_map_entry_spawners(process_repeats=True)
             return
-        if self.game_tick % 1000 == 0:
-            self.player.refresh_merchants()
+
         self._evaluate_map_entry_spawners(process_repeats=True)
 
     def _evaluate_map_entry_spawners(self, process_repeats=False):
