@@ -58,15 +58,15 @@ describe('SkillsPanel', () => {
   });
 
   it('renders loading state initially', async () => {
-    apiEndpoints.player.getSkills.mockReturnValue(new Promise(() => {})); // Never resolves
-    render(<SkillsPanel player={mockPlayer} onClose={() => {}} />);
-    expect(screen.getByText(/Loading skills.../i)).toBeDefined();
+    apiEndpoints.player.getSkills.mockReturnValue(new Promise(() => { })); // Never resolves
+    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    expect(screen.getByText(/Accessing ancient scrolls/i)).toBeDefined();
   });
 
   it('renders error state if fetch fails', async () => {
     apiEndpoints.player.getSkills.mockRejectedValue(new Error('Fetch failed'));
-    render(<SkillsPanel player={mockPlayer} onClose={() => {}} />);
-    
+    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+
     await waitFor(() => {
       expect(screen.getByText(/Failed to load skills/i)).toBeDefined();
     });
@@ -80,21 +80,22 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => {}} />);
+    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/⚡ SKILLS/i)).toBeDefined();
-      expect(screen.getByText(/EXP: 100/i)).toBeDefined();
+      expect(screen.getByText(/⚡ ABILITIES & SKILLS/i)).toBeDefined();
+      expect(screen.getByText(/100 XP/i)).toBeDefined();
     });
 
     // Check categories
-    expect(screen.getByText(/Combat/i)).toBeDefined();
-    expect(screen.getByText(/Magic/i)).toBeDefined();
+    expect(screen.getAllByText(/Combat/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Magic/i).length).toBeGreaterThan(0);
+
 
     // Check skills in default category (Combat)
     expect(screen.getByText(/Power Strike/i)).toBeDefined();
     expect(screen.getByText(/A powerful melee attack./i)).toBeDefined();
-    expect(screen.getByText(/LEARN \(100 XP\)/i)).toBeDefined();
+    expect(screen.getByText(/LEARN \(100\)/i)).toBeDefined();
   });
 
   it('switches categories when clicked', async () => {
@@ -105,17 +106,18 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => {}} />);
+    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Combat/i)).toBeDefined();
+      expect(screen.getAllByText(/Combat/i).length).toBeGreaterThan(0);
     });
+
 
     fireEvent.click(screen.getByText(/Magic/i));
 
     expect(screen.getByText(/Fireball/i)).toBeDefined();
     expect(screen.getByText(/Shoot a ball of fire./i)).toBeDefined();
-    expect(screen.getByText(/\(LEARNED\)/i)).toBeDefined();
+    expect(screen.getByText(/✓ Learned/i)).toBeDefined();
   });
 
   it('calls learnSkill when Learn button is clicked', async () => {
@@ -145,19 +147,19 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => {}} />);
+    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Power Strike/i)).toBeDefined();
     });
 
-    const learnButton = screen.getByText(/LEARN \(100 XP\)/i);
+    const learnButton = screen.getByText(/LEARN \(100\)/i);
     fireEvent.click(learnButton);
 
     expect(apiEndpoints.player.learnSkill).toHaveBeenCalledWith('Power Strike', 'Combat');
 
     await waitFor(() => {
-      expect(screen.getAllByText(/\(LEARNED\)/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/✓ Learned/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -169,9 +171,9 @@ describe('SkillsPanel', () => {
       },
     });
 
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
-    
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+
     apiEndpoints.player.learnSkill.mockRejectedValue({
       response: {
         data: {
@@ -180,13 +182,13 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => {}} />);
+    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Power Strike/i)).toBeDefined();
     });
 
-    fireEvent.click(screen.getByText(/LEARN \(100 XP\)/i));
+    fireEvent.click(screen.getByText(/LEARN \(100\)/i));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith('Not enough skill points');

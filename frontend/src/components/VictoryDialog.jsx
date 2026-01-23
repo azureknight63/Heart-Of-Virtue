@@ -208,64 +208,70 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
             ))}
 
             <div style={{ marginTop: '2px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <span style={{ color: colors.text.muted, fontSize: '11px' }}>EXP to Next Level:</span>
+                <span style={{ color: colors.text.highlight, fontSize: '12px', fontWeight: 'bold', fontFamily: 'monospace' }}>{endState?.exp_to_next_level || 0}</span>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <span style={{ color: colors.text.muted, fontSize: '12px' }}>Available Points:</span>
                 <span style={{ color: colors.secondary, fontSize: '18px', fontWeight: 'bold', fontFamily: 'monospace' }}>{remainingPoints}</span>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <select
-                    value={selectedAttr}
-                    onChange={(e) => setSelectedAttr(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      backgroundColor: '#1a1a1a',
-                      color: colors.text.highlight,
-                      border: `1px solid ${colors.text.highlight}55`,
-                      borderRadius: '8px',
-                      fontFamily: 'monospace',
-                      fontSize: '13px',
-                      outline: 'none',
-                    }}
+              {remainingPoints > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={selectedAttr}
+                      onChange={(e) => setSelectedAttr(e.target.value)}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        backgroundColor: '#1a1a1a',
+                        color: colors.text.highlight,
+                        border: `1px solid ${colors.text.highlight}55`,
+                        borderRadius: '8px',
+                        fontFamily: 'monospace',
+                        fontSize: '13px',
+                        outline: 'none',
+                      }}
+                    >
+                      {attrOptions.map((o) => (
+                        <option key={o.key} value={o.key}>
+                          {o.label}{typeof o.value === 'number' ? ` (${o.value})` : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max={Math.max(1, remainingPoints)}
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      style={{
+                        width: '70px',
+                        padding: '10px',
+                        backgroundColor: '#1a1a1a',
+                        color: colors.text.highlight,
+                        border: `1px solid ${colors.text.highlight}55`,
+                        borderRadius: '8px',
+                        fontFamily: 'monospace',
+                        textAlign: 'center',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  <GameButton
+                    onClick={handleAllocate}
+                    disabled={isSubmitting || remainingPoints <= 0}
+                    variant={remainingPoints > 0 ? 'primary' : 'secondary'}
+                    style={{ width: '100%', padding: '10px', fontSize: '12px' }}
                   >
-                    {attrOptions.map((o) => (
-                      <option key={o.key} value={o.key}>
-                        {o.label}{typeof o.value === 'number' ? ` (${o.value})` : ''}
-                      </option>
-                    ))}
-                  </select>
-
-                  <input
-                    type="number"
-                    min="1"
-                    max={Math.max(1, remainingPoints)}
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    style={{
-                      width: '70px',
-                      padding: '10px',
-                      backgroundColor: '#1a1a1a',
-                      color: colors.text.highlight,
-                      border: `1px solid ${colors.text.highlight}55`,
-                      borderRadius: '8px',
-                      fontFamily: 'monospace',
-                      textAlign: 'center',
-                      outline: 'none',
-                    }}
-                  />
+                    {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
+                  </GameButton>
                 </div>
-
-                <GameButton
-                  onClick={handleAllocate}
-                  disabled={isSubmitting || remainingPoints <= 0}
-                  variant={remainingPoints > 0 ? 'primary' : 'secondary'}
-                  style={{ width: '100%', padding: '10px', fontSize: '12px' }}
-                >
-                  {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
-                </GameButton>
-              </div>
+              )}
 
               {error && (
                 <div style={{ marginTop: '12px', color: colors.danger, fontSize: '12px', fontFamily: 'monospace', textAlign: 'center' }}>

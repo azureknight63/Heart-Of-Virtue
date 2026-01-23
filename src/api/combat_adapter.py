@@ -865,6 +865,7 @@ class ApiCombatAdapter:
             "items_dropped": items_dropped,
             "level_ups": level_ups,
             "attribute_points_available": int(getattr(self.player, "pending_attribute_points", 0) or 0),
+            "exp_to_next_level": int((getattr(self.player, "exp_to_level", 0) or 0) - (getattr(self.player, "exp", 0) or 0)),
             "attributes": {
                 "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
                 "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
