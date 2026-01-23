@@ -248,6 +248,7 @@ class Player:
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
+        self.explored_tiles = {}  # key: "x,y", value: {items, npcs, objects, exits}
         self.combat_idle_msg = [
             'Jean breathes heavily. ',
             'Jean swallows forcefully. ',

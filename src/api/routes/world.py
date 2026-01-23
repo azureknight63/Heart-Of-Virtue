@@ -337,23 +337,61 @@ def get_tile():
             )
 
         tile = game_service.get_tile(player, x, y)
-
         if "error" in tile:
             return jsonify({"success": False, "error": tile["error"]}), 404
 
         return jsonify({"success": True, "tile": tile}), 200
-    
     except Exception as e:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Internal server error",
-                        "message": str(e),
-                    }
-                ),
-                500,
-            )
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Internal server error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@world_bp.route("/world/explored", methods=["GET"])
+def get_explored_tiles():
+    """Get all tiles explored by the player.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "explored_tiles": {
+                "x,y": {
+                    "items": [...],
+                    "npcs": [...],
+                    "objects": [...],
+                    "exits": {...}
+                },
+                ...
+            }
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        from flask import current_app
+        game_service = current_app.game_service
+
+        if not game_service:
+            return jsonify({"success": False, "error": "Game service not initialized"}), 500
+
+        explored_tiles = game_service.get_explored_tiles(player)
+
+        return jsonify({"success": True, "explored_tiles": explored_tiles}), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @world_bp.route("/world/tiles/batch", methods=["POST"])

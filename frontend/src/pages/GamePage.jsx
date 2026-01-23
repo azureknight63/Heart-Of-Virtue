@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { usePlayer, useWorld, useCombat } from '../hooks/useApi'
+import { usePlayer, useWorld, useCombat, useExploration } from '../hooks/useApi'
 import { useAudio } from '../context/AudioContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
@@ -10,11 +10,10 @@ import DefeatDialog from '../components/DefeatDialog'
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
+  const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
   const { playBGM, playSFX } = useAudio()
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
-  // Store explored tiles as a Map: key = "x,y", value = { items, npcs, objects }
-  const [exploredTiles, setExploredTiles] = useState(new Map())
 
   // Event handling state
   const [eventQueue, setEventQueue] = useState([])
@@ -40,7 +39,8 @@ export default function GamePage() {
   const handleRefetch = async () => {
     const promises = [
       refetchPlayer(),
-      refetchWorld()
+      refetchWorld(),
+      refetchExploration()
     ]
 
     if (inCombat) {

@@ -3,6 +3,7 @@
 from typing import Dict, Any, Optional, List
 import src.universe as universe_module
 import src.player as player_module
+from src.interface import get_gold
 from src.api.serializers.item_serializer import ItemSerializer
 from src.api.serializers.npc_serializer import NPCSerializer
 from src.api.serializers.object_serializer import ObjectSerializer
@@ -133,6 +134,9 @@ class GameService:
         # Calculate exits dynamically by checking adjacent tiles
         exits_data = self._calculate_exits(player.universe, tile, player.location_x, player.location_y)
 
+        # Record exploration
+        self._record_exploration(player, tile)
+
         # Serialize items in room
         items_data = []
         if hasattr(tile, "items_here"):
@@ -159,6 +163,59 @@ class GameService:
             "objects": objects_data,
             "is_passable": getattr(tile, "is_passable", True),
         }
+
+    def _record_exploration(self, player: "player_module.Player", tile: Any) -> None:
+        """Record a tile as explored in the player's history.
+        
+        Args:
+            player: The Player instance
+            tile: The MapTile instance to record
+        """
+        if not hasattr(player, "explored_tiles"):
+            player.explored_tiles = {}
+        
+        tile_key = f"{tile.x},{tile.y}"
+        
+        # We need to manually serialize to avoid circular dependencies if we used TileSerializer here
+        # (Though TileSerializer is imported at top level, let's keep it simple)
+        
+        # Calculate exits for this tile
+        exits_data = self._calculate_exits(player.universe, tile, tile.x, tile.y)
+        
+        # Serialize items
+        items_data = []
+        if hasattr(tile, "items_here"):
+            items_data = ItemSerializer.serialize_list(tile.items_here)
+            
+        # Serialize NPCs
+        npcs_data = []
+        if hasattr(tile, "npcs_here"):
+            npcs_data = NPCSerializer.serialize_list(tile.npcs_here)
+            
+        # Serialize objects
+        objects_data = []
+        if hasattr(tile, "objects_here"):
+            objects_data = ObjectSerializer.serialize_list(tile.objects_here)
+
+        player.explored_tiles[tile_key] = {
+            "items": items_data,
+            "npcs": npcs_data,
+            "objects": objects_data,
+            "exits": exits_data
+        }
+
+    def get_explored_tiles(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get the player's explored tiles history.
+        
+        Args:
+            player: The Player instance
+            
+        Returns:
+            Dictionary mapping "x,y" strings to tile data
+        """
+        if not hasattr(player, "explored_tiles"):
+            player.explored_tiles = {}
+        return player.explored_tiles
 
     def store_tile_modification(self, session_data: Dict[str, Any], x: int, y: int, modification_type: str, data: Any) -> None:
         """Store a tile modification in session data for persistence.
@@ -249,6 +306,9 @@ class GameService:
         player.location_x = new_x
         player.location_y = new_y
         player.current_room = new_tile
+        
+        # Record exploration of the new tile
+        self._record_exploration(player, new_tile)
 
         # Trigger tile entry events with session data for pending event storage
         events_triggered = self.trigger_tile_events(player, new_tile, session_data)
@@ -1272,6 +1332,16 @@ class GameService:
         Returns:
             Dictionary with player status
         """
+        # Consolidate gold and refresh weight before serializing
+        if hasattr(player, "stack_gold"):
+            player.stack_gold()
+        if hasattr(player, "refresh_weight"):
+            player.refresh_weight()
+
+        weight = getattr(player, "weight_current", 0)
+        max_weight = getattr(player, "weight_tolerance", 100)
+        weight_pct = (weight / max_weight * 100) if max_weight > 0 else 0
+
         return {
             "name": getattr(player, "name", "Unknown"),
             "level": getattr(player, "level", 1),
@@ -1281,6 +1351,10 @@ class GameService:
             "max_hp": getattr(player, "maxhp", 0),
             "fatigue": getattr(player, "fatigue", 0),
             "max_fatigue": getattr(player, "maxfatigue", 0),
+            "gold": get_gold(getattr(player, "inventory", [])),
+            "weight": weight,
+            "max_weight": max_weight,
+            "weight_pct": weight_pct,
             "state": "normal",  # TODO: Get actual status effects
         }
 
@@ -1315,8 +1389,15 @@ class GameService:
         stats["max_hp"] = getattr(player, "maxhp", 0)
         stats["fatigue"] = getattr(player, "fatigue", 0)
         stats["max_fatigue"] = getattr(player, "maxfatigue", 0)
-        stats["weight_current"] = getattr(player, "weight_current", 0)
-        stats["carrying_capacity"] = getattr(player, "carrying_capacity", 100)
+        
+        weight = getattr(player, "weight_current", 0)
+        max_weight = getattr(player, "weight_tolerance", 100)
+        
+        stats["weight_current"] = weight
+        stats["carrying_capacity"] = max_weight
+        stats["weight"] = weight
+        stats["max_weight"] = max_weight
+        stats["gold"] = get_gold(getattr(player, "inventory", []))
         stats["protection"] = getattr(player, "protection", 0)
         
         # Calculate combat stats
@@ -2419,9 +2500,17 @@ class GameService:
             Dictionary with gold update info
         """
         from src.api.serializers.quest_rewards import RewardDistributionSerializer
+        import src.items as items
 
-        old_gold = getattr(player, "gold", 0)
-        player.gold = old_gold + amount
+        # Create a gold item and add it to inventory
+        gold_item = items.Gold(amount)
+        player.inventory.append(gold_item)
+        
+        # Consolidate gold and refresh weight
+        if hasattr(player, "stack_gold"):
+            player.stack_gold()
+        if hasattr(player, "refresh_weight"):
+            player.refresh_weight()
 
         result = RewardDistributionSerializer.serialize_gold_gain(player, amount)
 
@@ -2490,24 +2579,48 @@ class GameService:
             Dictionary with item award info
         """
         from src.api.serializers.quest_rewards import RewardDistributionSerializer
+        import src.items as items
 
-        inventory = getattr(player, "inventory", [])
-        max_inventory = getattr(player, "max_inventory", 20)
-
-        if len(inventory) >= max_inventory:
-            return {
-                "success": False,
-                "error": "Inventory full",
-                "item_id": item_id,
+        # Simplified item award (tries to find class in src.items)
+        # In a real game, you'd have a factory or registry
+        item_class = getattr(items, item_id, None)
+        if item_class:
+            item = item_class()
+            if hasattr(item, "count"):
+                item.count = quantity
+            if hasattr(item, "amt") and item.name == "Gold":
+                item.amt = quantity
+        else:
+            # Fallback to generic item dictionary ONLY if class not found
+            # (Warning: engine may not support this everywhere)
+            item = {
+                "id": item_id,
+                "name": item_name,
+                "quantity": quantity,
+                "maintype": "Special",
             }
 
-        # Add item to inventory (simplified)
-        item = {
-            "id": item_id,
-            "name": item_name,
-            "quantity": quantity,
-        }
-        inventory.append(item)
+        # Check weight limit if it's an object with weight
+        if not isinstance(item, dict) and hasattr(item, "weight"):
+            item_weight = item.weight * getattr(item, "count", 1)
+            capacity = getattr(player, "weight_tolerance", 100)
+            if player.weight_current + item_weight > capacity:
+                return {
+                    "success": False,
+                    "error": "Too heavy to carry",
+                    "item_id": item_id,
+                }
+
+        player.inventory.append(item)
+        
+        # Consolidate inventory if it's a real item
+        if not isinstance(item, dict) and hasattr(player, "stack_inv_items"):
+            player.stack_inv_items()
+            if hasattr(item, "name") and item.name == "Gold":
+                player.stack_gold()
+        
+        if hasattr(player, "refresh_weight"):
+            player.refresh_weight()
 
         result = RewardDistributionSerializer.serialize_item_reward(
             item_id, item_name, quantity

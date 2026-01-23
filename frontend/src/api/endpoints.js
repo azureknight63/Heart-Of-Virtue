@@ -30,6 +30,7 @@ export const world = {
   getEvents: () => apiClient.post('/world/events'),
   getCommands: () => apiClient.get('/world/commands'),
   search: () => apiClient.post('/world/search'),
+  getExploredTiles: () => apiClient.get('/world/explored'),
 }
 
 // Combat endpoints

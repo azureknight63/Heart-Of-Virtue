@@ -295,3 +295,38 @@ export const useWorld = () => {
   return { location, loading, error, moveToLocation: move, refetch: fetchLocation }
 }
 
+export const useExploration = () => {
+  const [exploredTiles, setExploredTiles] = useState(new Map())
+  const [loading, setLoading] = useState(false)
+
+  const fetchExploredTiles = async () => {
+    try {
+      setLoading(true)
+      const response = await apiEndpoints.world.getExploredTiles()
+      const { explored_tiles } = response.data
+
+      const newMap = new Map()
+      Object.entries(explored_tiles).forEach(([key, value]) => {
+        newMap.set(key, {
+          ...value,
+          exits: Array.isArray(value.exits)
+            ? value.exits
+            : (value.exits && typeof value.exits === 'object' ? Object.keys(value.exits) : [])
+        })
+      })
+
+      setExploredTiles(newMap)
+    } catch (err) {
+      console.error('Error fetching explored tiles:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchExploredTiles()
+  }, [])
+
+  return { exploredTiles, setExploredTiles, loading, refetch: fetchExploredTiles }
+}
+
