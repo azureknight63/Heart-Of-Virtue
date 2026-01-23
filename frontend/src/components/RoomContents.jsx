@@ -75,7 +75,6 @@ export default function RoomContents({ location, onInteract }) {
         flexDirection: 'column',
         gap: spacing.md,
       }}>
-        {/* Main room description - no links to avoid confusion with non-interactable flavor text */}
         <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
           {roomDescriptionText}
         </p>
