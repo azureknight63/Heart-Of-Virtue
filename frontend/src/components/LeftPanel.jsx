@@ -15,7 +15,7 @@ import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 
-export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange }) {
+export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange }) {
   // Don't render if player data hasn't loaded yet
   if (!player) {
     return null
@@ -51,6 +51,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   // Combat state
   const [showCombatMoves, setShowCombatMoves] = useState(false)
   const [combatMovesCategory, setCombatMovesCategory] = useState(null)
+  const [lastKnownMoves, setLastKnownMoves] = useState([])
   const [showInputDialog, setShowInputDialog] = useState(false)
   const [showCheckDialog, setShowCheckDialog] = useState(false)
   const [checkData, setCheckData] = useState(null)
@@ -206,17 +207,37 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
     }
   }, [displayedLog, onDisplayedLogCountChange])
 
-  // Check for move categories
-  const rawMoves = combat?.available_options || []
-  const availableMoves = Array.isArray(rawMoves)
-    ? rawMoves.filter(move => {
+  // Check for move categories - handle both direct API response and transformed state
+  const rawMoves = combat?.available_options || combat?.battle_state?.available_options || []
+
+  // Track the most recent set of moves we've received
+  useEffect(() => {
+    if (combat?.input_type === 'move_selection' && rawMoves.length > 0) {
+      // Check if these are actually moves (have a category)
+      const hasCategories = rawMoves.some(m => m.category)
+      if (hasCategories) {
+        setLastKnownMoves(rawMoves)
+      }
+    }
+  }, [combat?.input_type, rawMoves])
+
+  // Use current moves if we're in move selection, otherwise use cached moves for the buttons
+  const movesForButtons = (combat?.input_type === 'move_selection' && rawMoves.length > 0)
+    ? rawMoves
+    : lastKnownMoves
+
+  const availableMoves = Array.isArray(movesForButtons)
+    ? movesForButtons.filter(move => {
       const name = move.name || ''
       return name !== 'UseItem' && name !== 'Use Item'
     })
     : []
 
-  const hasSpecialMoves = mode === 'combat' && combat?.available_moves?.some(m => m.category === 'Special')
-  const hasDefensiveMoves = mode === 'combat' && (combat?.available_actions?.includes('Defensive') || combat?.available_moves?.some(m => m.category === 'Defensive'))
+  const hasOffensiveMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Offensive') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Offensive')))
+  const hasManeuverMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Maneuver') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Maneuver')))
+  const hasSpecialMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Special' || m.category === 'Spiritual' || m.category === 'Supernatural') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Special')))
+  const hasDefensiveMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Defensive') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Defensive')))
+  const hasMiscellaneousMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility')))
 
   // Auto-scaling logic for HeroPanel
   const heroContainerRef = useRef(null)
@@ -470,6 +491,9 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
               inCombat={mode === 'combat'}
               hasSpecialMoves={hasSpecialMoves}
               hasDefensiveMoves={hasDefensiveMoves}
+              hasOffensiveMoves={hasOffensiveMoves}
+              hasManeuverMoves={hasManeuverMoves}
+              hasMiscellaneousMoves={hasMiscellaneousMoves}
               onAttributeClick={() => setShowAttributes(!showAttributes)}
               onStatusClick={() => setShowStatus(!showStatus)}
               onSkillsClick={() => {
@@ -572,10 +596,13 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
           onClose={() => {
             setShowInteract(false)
             setInteractTarget(null)
+            if (onInteractionTypingChange) onInteractionTypingChange(false)
           }}
           onEventsTriggered={onEventsTriggered}
           onInteractionComplete={onInteractionComplete}
+          onInteractionTypingChange={onInteractionTypingChange}
           onRefetch={onRefetch}
+          onTypingChange={onInteractionTypingChange}
         />
       )}
 

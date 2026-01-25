@@ -6,6 +6,7 @@ import RightPanel from '../components/RightPanel'
 import EventDialog from '../components/EventDialog'
 import VictoryDialog from '../components/VictoryDialog'
 import DefeatDialog from '../components/DefeatDialog'
+import SuggestedMovesPanel from '../components/SuggestedMovesPanel'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
@@ -33,6 +34,8 @@ export default function GamePage() {
   const [endState, setEndState] = useState(null)
   const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
   const [displayedLogCount, setDisplayedLogCount] = useState(0)
+  const [isInteractionTyping, setIsInteractionTyping] = useState(false)
+  const [isInteractionDelayActive, setIsInteractionDelayActive] = useState(false)
 
 
   // Combined refetch function
@@ -47,8 +50,33 @@ export default function GamePage() {
       promises.push(fetchCombatStatus())
     }
 
+    promises.push(fetchPendingEvents())
+
     await Promise.all(promises)
   }
+
+  // Fetch already interactive events from session
+  const fetchPendingEvents = async () => {
+    try {
+      const response = await fetch('/api/world/events/pending', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        }
+      });
+      const data = await response.json();
+      if (data.success && data.events && data.events.length > 0) {
+        console.log('[DEBUG] Recovered pending events from session:', data.events);
+        handleEventsTriggered(data.events);
+      }
+    } catch (err) {
+      console.error('Failed to fetch pending events:', err);
+    }
+  }
+
+  // On mount: check for pending events
+  useEffect(() => {
+    fetchPendingEvents();
+  }, []);
 
   // Track explored tiles when location changes
   useEffect(() => {
@@ -70,10 +98,22 @@ export default function GamePage() {
 
   // Process event queue
   useEffect(() => {
-    if (eventQueue.length > 0 && !currentEvent) {
+    console.log('[DEBUG] Event Queue Check:', {
+      queueLength: eventQueue.length,
+      hasCurrentEvent: !!currentEvent,
+      isTyping: isInteractionTyping,
+      isDelayActive: isInteractionDelayActive
+    });
+
+    if (eventQueue.length > 0 && !currentEvent && !isInteractionTyping && !isInteractionDelayActive) {
       const nextEvent = eventQueue[0]
+      console.log('[DEBUG] Showing next event from queue:', nextEvent);
       setCurrentEvent(nextEvent)
-      setEventQueue(prev => prev.slice(1))
+      setEventQueue(prev => {
+        const newQueue = prev.slice(1);
+        console.log('[DEBUG] Updated queue after dequeue:', newQueue.length);
+        return newQueue;
+      })
 
       // Add to history
       const text = nextEvent.output_text || nextEvent.message || nextEvent.description || ''
@@ -81,7 +121,21 @@ export default function GamePage() {
         setEventHistory(prev => [...prev, text])
       }
     }
-  }, [eventQueue, currentEvent])
+  }, [eventQueue, currentEvent, isInteractionTyping, isInteractionDelayActive])
+
+  // Handle interaction delay
+  useEffect(() => {
+    let timer;
+    if (!isInteractionTyping && isInteractionDelayActive) {
+      // Start the timer after typing finishes
+      timer = setTimeout(() => {
+        setIsInteractionDelayActive(false)
+      }, 3000) // 3 second delay
+    }
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [isInteractionTyping, isInteractionDelayActive])
 
   // Handle event close
   const handleEventClose = () => {
@@ -162,6 +216,19 @@ export default function GamePage() {
     }
   }
 
+  // Handle suggested move click
+  const handleSuggestedMoveClick = async (suggestion) => {
+    try {
+      await performAction('select_move_and_target', {
+        move_name: suggestion.move_name,
+        target_id: suggestion.target_id
+      })
+      playSFX('ui_confirm')
+    } catch (err) {
+      console.error('Failed to execute suggested move:', err)
+    }
+  }
+
   // Handle event choice (for legacy events or combat transitions)
   const handleEventChoice = async (choice) => {
 
@@ -176,14 +243,38 @@ export default function GamePage() {
 
   // Handle events triggered from interactions
   const handleEventsTriggered = (events) => {
+    console.log('[DEBUG] handleEventsTriggered called with:', events);
     if (events && events.length > 0) {
       // Filter events that have output text or need input to display
       const displayableEvents = events.filter(
-        event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
+        event => {
+          const hasOutput = (event.output_text && event.output_text.trim().length > 0);
+          const needsInput = event.needs_input;
+          return hasOutput || needsInput;
+        }
       )
 
       if (displayableEvents.length > 0) {
-        setEventQueue(prev => [...prev, ...displayableEvents])
+        setEventQueue(prev => {
+          const newQueue = [...prev];
+          displayableEvents.forEach(newEvent => {
+            // Check if this event (by ID or name) is already in queue
+            const existingIndex = newQueue.findIndex(e =>
+              (e.event_id && e.event_id === newEvent.event_id) ||
+              (e.id === newEvent.id && e.name === newEvent.name)
+            );
+
+            if (existingIndex >= 0) {
+              // Update existing event with new data (prefer needs_input=true)
+              console.log(`[DEBUG] Updating existing event in queue: ${newEvent.name}`);
+              newQueue[existingIndex] = { ...newQueue[existingIndex], ...newEvent };
+            } else {
+              console.log(`[DEBUG] Adding new event to queue: ${newEvent.name}`);
+              newQueue.push(newEvent);
+            }
+          });
+          return newQueue;
+        })
       }
     }
   }
@@ -365,6 +456,12 @@ export default function GamePage() {
         onRefetch={handleRefetch}
         onEventsTriggered={handleEventsTriggered}
         onInteractionComplete={handleInteractionComplete}
+        onInteractionTypingChange={(isTyping) => {
+          setIsInteractionTyping(isTyping)
+          if (isTyping) {
+            setIsInteractionDelayActive(true)
+          }
+        }}
         onCombatAction={performAction}
         onLogProgress={setCurrentLogIndex}
         onLogProcessingChange={setIsCombatLogProcessing}
@@ -425,6 +522,16 @@ export default function GamePage() {
             await handleRefetch()
             await fetchCombatStatus()
           }}
+        />
+      )}
+
+      {/* Suggested Moves Panel for Strategist */}
+      {mode === 'combat' && (
+        <SuggestedMovesPanel
+          suggestions={combat?.suggested_moves || []}
+          lastOutcome={combat?.last_move_outcome || ""}
+          isPlayerTurn={mode === 'combat' && (combat?.awaiting_input || false) && !isCombatLogProcessing}
+          onSuggestClick={handleSuggestedMoveClick}
         />
       )}
     </div>

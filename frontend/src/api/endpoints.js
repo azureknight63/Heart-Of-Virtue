@@ -28,6 +28,7 @@ export const world = {
   getTilesBatch: (coordinates) => apiClient.post('/world/tiles/batch', { coordinates }),
   interact: (targetId, action, quantity) => apiClient.post('/world/interact', { target_id: targetId, action, quantity }),
   getEvents: () => apiClient.post('/world/events'),
+  getPendingEvents: () => apiClient.get('/world/events/pending'),
   getCommands: () => apiClient.get('/world/commands'),
   search: () => apiClient.post('/world/search'),
   getExploredTiles: () => apiClient.get('/world/explored'),
@@ -63,6 +64,12 @@ export const combat = {
       payload = {
         move_type: 'number',
         target_id: params.value.toString()
+      }
+    } else if (actionType === 'select_move_and_target') {
+      payload = {
+        move_type: 'select_move_and_target',
+        move_id: params.move_name,
+        target_id: params.target_id
       }
     } else if (actionType === 'cancel') {
       payload = {
