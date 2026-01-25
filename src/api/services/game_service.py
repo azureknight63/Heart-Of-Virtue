@@ -457,9 +457,6 @@ class GameService:
                          contextlib.redirect_stderr(f), \
                          contextlib.ExitStack() as stack:
                         
-                        event_mod = getattr(event, '__module__', 'unknown')
-                        print(f"[DEBUG] Processing event '{getattr(event, 'name', 'unnamed')}' in module {event_mod}...")
-                        
                         for p in patches:
                             try:
                                 stack.enter_context(p)
@@ -481,7 +478,6 @@ class GameService:
                                 event_id = str(uuid.uuid4())
                                 event.api_event_id = event_id
                             
-                            print(f"[DEBUG] Event '{getattr(event, 'name', event.__class__.__name__)}' became interactive. ID: {event_id}")
                             event_data["event_id"] = event_id
                             
                             if session_data is not None:
@@ -586,8 +582,6 @@ class GameService:
                  contextlib.redirect_stderr(f), \
                  contextlib.ExitStack() as stack:
                 
-                print(f"[DEBUG] Processing input for event '{getattr(event, 'name', 'unnamed')}'...")
-                
                 for p in patches:
                     try:
                         stack.enter_context(p)
@@ -604,7 +598,6 @@ class GameService:
                 from src.functions import check_for_combat
                 combat_enemies = check_for_combat(player)
                 if combat_enemies:
-                    print(f"[DEBUG] Combat triggered after event input for {player.name}.")
                     self._initialize_combat(player, combat_enemies)
                     result["combat_started"] = True
                     if hasattr(player, '_combat_adapter'):
@@ -613,7 +606,6 @@ class GameService:
 
                 # Check outcome
                 if getattr(event, "completed", False):
-                    print(f"[DEBUG] Event '{getattr(event, 'name', 'unnamed')}' completed.")
                     # Event finished, remove from pending safely
                     if "pending_events" in session_data:
                         session_data["pending_events"].pop(event_id, None)
@@ -1275,6 +1267,148 @@ class GameService:
     # ========================
 
     # ========================
+    # ========================
+    # Combat Methods
+    # ========================
+
+    def trigger_combat_events(
+        self, player: "player_module.Player", session_data: Dict[str, Any] = None
+    ) -> List[Dict[str, Any]]:
+        """Trigger combat-specific events.
+
+        Args:
+            player: The Player instance
+            session_data: Optional session data for storing pending events
+
+        Returns:
+            List of triggered events
+        """
+        if not hasattr(player, "combat_events") or not player.combat_events:
+            return []
+
+        events_triggered = []
+        from src.api.serializers.event_serializer import EventSerializer
+
+        for event in list(player.combat_events):
+            # Check if event already has an ID assigned in this session
+            event_id = getattr(event, "api_event_id", None)
+            
+            # Check if event requires input using EventSerializer
+            event_data = EventSerializer.serialize_with_input(event)
+            
+            # If event is already in interactive state, ensure it's in session and skip processing
+            if event_data.get("needs_input") and not getattr(event, "completed", False):
+                if not event_id:
+                    event_id = str(uuid.uuid4())
+                    event.api_event_id = event_id
+                    event_data["event_id"] = event_id
+                else:
+                    event_data["event_id"] = event_id
+                
+                # Store or update event in session
+                if session_data is not None:
+                    if "pending_events" not in session_data:
+                        session_data["pending_events"] = {}
+                    session_data["pending_events"][event_id] = {
+                        "event": event,
+                        "event_data": event_data
+                    }
+                
+                events_triggered.append(event_data)
+                continue
+            
+            # For non-input events, process normally
+            # Try to trigger the event and capture output
+            method_name = "check_combat_conditions" if hasattr(event, "check_combat_conditions") else "check_conditions"
+            
+            if hasattr(event, method_name):
+                f = io.StringIO()
+                try:
+                    # Patch functions to capture output without blocking
+                    def mock_cprint(text, *args, **kwargs):
+                        f.write(str(text) + '\n')
+                    
+                    def mock_print_slow(text, speed="slow"):
+                        f.write(str(text) + '\n')
+                        
+                    def mock_input(prompt=""):
+                        if prompt:
+                            f.write(str(prompt) + '\n')
+                        return "1"
+
+                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 
+                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events']
+                    
+                    if hasattr(event, '__module__'):
+                        target_modules.append(event.__module__)
+                    
+                    patches = [
+                        patch('builtins.input', mock_input),
+                        patch('neotermcolor.cprint', mock_cprint),
+                        patch('time.sleep', return_value=None),
+                    ]
+                    
+                    for mod in set(target_modules):
+                        patches.extend([
+                            patch(f"{mod}.cprint", mock_cprint, create=True),
+                            patch(f"{mod}.print_slow", mock_print_slow, create=True),
+                            patch(f"{mod}.await_input", return_value=None, create=True),
+                            patch(f"{mod}.input", mock_input, create=True),
+                        ])
+                    
+                    # Capture stdout/stderr and patch blocking functions
+                    with contextlib.redirect_stdout(f), \
+                         contextlib.redirect_stderr(f), \
+                         contextlib.ExitStack() as stack:
+                        
+                        for p in patches:
+                            try:
+                                stack.enter_context(p)
+                            except (AttributeError, ImportError, TypeError, ValueError, Exception):
+                                pass 
+                        
+                        # Call the appropriate check method
+                        getattr(event, method_name)()
+                        
+                        # Refresh event data after processing
+                        new_data = EventSerializer.serialize_with_input(event)
+                        event_data.update(new_data)
+
+                        # If event dynamically requested input during processing, 
+                        # handle it as a pending event.
+                        needs_input = getattr(event, "needs_input", False)
+                        completed = getattr(event, "completed", False)
+                        if needs_input and not completed:
+                            if not event_id:
+                                event_id = str(uuid.uuid4())
+                                event.api_event_id = event_id
+                            
+                            event_data["event_id"] = event_id
+                            
+                            if session_data is not None:
+                                if "pending_events" not in session_data:
+                                    session_data["pending_events"] = {}
+                                session_data["pending_events"][event_id] = {
+                                    "event": event,
+                                    "event_data": event_data
+                                }
+                        
+                except Exception as e:
+                    event_data["error"] = str(e)
+                
+                # Capture and clean output
+                output = f.getvalue()
+                if output:
+                    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                    clean_output = ansi_escape.sub('', output).strip()
+                    if clean_output:
+                        event_data["output_text"] = clean_output
+            
+            events_triggered.append(event_data)
+
+        return events_triggered
+
+    # ========================
     # Player Status Methods
     # ========================
 
@@ -1295,7 +1429,7 @@ class GameService:
         result = self._initialize_combat(player, [enemy], session_id=session_id)
         return result
 
-    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None, direction: str = None, session_id: str = None) -> Dict[str, Any]:
+    def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None, direction: str = None, session_id: str = None, session_data: Dict = None) -> Dict[str, Any]:
         """Execute a combat move."""
 
         # Check if player is in combat
@@ -1305,7 +1439,11 @@ class GameService:
         # Ensure adapter exists
         if not hasattr(player, "_combat_adapter"):
             from src.api.combat_adapter import ApiCombatAdapter
-            player._combat_adapter = ApiCombatAdapter(player, session_id=session_id)
+            # Create a wrapper for trigger_combat_events that matches the expected signature
+            def event_callback(p):
+                return self.trigger_combat_events(p, session_data=session_data)
+                
+            player._combat_adapter = ApiCombatAdapter(player, session_id=session_id, on_event_callback=event_callback)
             # If we had to recreate the adapter, combat state might be lost
             if hasattr(player, 'combat_list') and player.combat_list:
                 player._combat_adapter.initialize_combat(player.combat_list)
@@ -1405,11 +1543,19 @@ class GameService:
     def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get current combat status."""
         if not hasattr(player, "_combat_adapter"):
-            return {
-                "combat_active": getattr(player, "in_combat", False),
-                "log": getattr(player, "combat_log", []),
-                "battle_state": None
-            }
+            # If player is in combat, try to re-initialize the adapter
+            if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
+                from src.api.combat_adapter import ApiCombatAdapter
+                player._combat_adapter = ApiCombatAdapter(player)
+                # Note: We might want to call initialize_combat with current enemies, 
+                # but we need to be careful not to reset their state.
+                # For now, just creating the adapter is a good start.
+            else:
+                return {
+                    "combat_active": getattr(player, "in_combat", False),
+                    "log": getattr(player, "combat_log", []),
+                    "battle_state": None
+                }
             
         return player._combat_adapter.get_combat_state()
 

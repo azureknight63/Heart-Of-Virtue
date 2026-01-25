@@ -85,7 +85,18 @@ export default function HeroPanel({
         overflow: 'visible',
       }}>
         {/* Status Effects Icons */}
-        <StatusEffectsIconPanel effects={player?.status_effects} />
+        <div style={{
+          position: 'absolute',
+          top: '-40px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          zIndex: 10
+        }}>
+          <StatusEffectsIconPanel effects={player?.status_effects} />
+        </div>
 
         {/* Hero Heart Image */}
         <img

@@ -1,4 +1,5 @@
 import React from 'react';
+import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 
 // Helper to calculate torus path
 const describeArc = (x, y, radius, startAngle, endAngle) => {
@@ -149,6 +150,13 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
       <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-xs select-none z-10 pointer-events-none">
         {!isFullMode && content}
       </div>
+
+      {/* Status Effects - Floating above marker */}
+      {!isFullMode && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-auto">
+          <StatusEffectsIconPanel effects={entity.status_effects} />
+        </div>
+      )}
     </div>
   );
 };
@@ -161,8 +169,13 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
           <div className="space-y-2">
             {combat.enemies?.map((enemy, idx) => (
               <div key={idx} className="bg-[rgba(255,68,68,0.1)] border border-red-600 rounded p-2">
-                <div className="text-orange font-bold text-sm">{enemy.name}</div>
-                <div className="text-xs text-orange mt-1">HP: {enemy.hp} / {enemy.max_hp}</div>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-orange font-bold text-sm">{enemy.name}</div>
+                    <div className="text-xs text-orange mt-1">HP: {enemy.hp} / {enemy.max_hp}</div>
+                  </div>
+                  <StatusEffectsIconPanel effects={enemy.status_effects} />
+                </div>
                 <div className="hp-bar mt-1">
                   <div
                     className="h-full bg-gradient-to-r from-[#ff4444] to-[#ffaa44]"

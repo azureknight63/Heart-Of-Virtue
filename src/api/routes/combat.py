@@ -140,7 +140,7 @@ def execute_move():
 
         game_service = current_app.game_service
 
-        result = game_service.execute_move(player, move_type, move_id, target_id, direction, session_id=session.session_id)
+        result = game_service.execute_move(player, move_type, move_id, target_id, direction, session_id=session.session_id, session_data=session.data)
 
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400

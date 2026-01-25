@@ -7,6 +7,7 @@ import EventDialog from '../components/EventDialog'
 import VictoryDialog from '../components/VictoryDialog'
 import DefeatDialog from '../components/DefeatDialog'
 import SuggestedMovesPanel from '../components/SuggestedMovesPanel'
+import TacticalAnalysisPanel from '../components/TacticalAnalysisPanel'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
@@ -14,6 +15,15 @@ export default function GamePage() {
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
   const { playBGM, playSFX } = useAudio()
+
+  useEffect(() => {
+    if (inCombat && combat) {
+      console.log('[DEBUG] Combat Data:', combat);
+      console.log('[DEBUG] Suggested Moves:', combat.suggested_moves);
+      console.log('[DEBUG] Player Status Effects:', combat.player?.status_effects);
+    }
+  }, [inCombat, combat]);
+
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
 
   // Event handling state
@@ -338,10 +348,12 @@ export default function GamePage() {
         setCurrentEvent(alertEvent)
         setEventHistory(prev => [...prev, dialogDescription])
         // Removed: setCombatDialogShown(true) - wait until they click FIGHT
-      } else if (combatDialogShown && eventQueue.length === 0 && !currentEvent) {
+      } else if (eventQueue.length === 0 && !currentEvent) {
         // Only jump to combat mode automatically if the initiation dialog was already handled
-        // and we aren't currently showing/waiting for story events
-        setMode('combat')
+        // or if we are already deep in combat (round > 1)
+        if (combatDialogShown || (combat?.round > 1)) {
+          setMode('combat')
+        }
       }
     } else {
       setCombatDialogShown(false)
@@ -439,9 +451,12 @@ export default function GamePage() {
   }
 
   // Handle interaction completion (check for combat)
-  const handleInteractionComplete = () => {
-    // Check combat status after interaction completes
-    fetchCombatStatus()
+  // Handle combat action with event check
+  const handleCombatAction = async (action, target) => {
+    const result = await performAction(action, target)
+    if (result && result.events_triggered) {
+      handleEventsTriggered(result.events_triggered)
+    }
   }
 
   return (
@@ -462,7 +477,7 @@ export default function GamePage() {
             setIsInteractionDelayActive(true)
           }
         }}
-        onCombatAction={performAction}
+        onCombatAction={handleCombatAction}
         onLogProgress={setCurrentLogIndex}
         onLogProcessingChange={setIsCombatLogProcessing}
         onDisplayedLogCountChange={setDisplayedLogCount}
@@ -533,6 +548,11 @@ export default function GamePage() {
           isPlayerTurn={mode === 'combat' && (combat?.awaiting_input || false) && !isCombatLogProcessing}
           onSuggestClick={handleSuggestedMoveClick}
         />
+      )}
+
+      {/* Tactical Analysis Panel */}
+      {mode === 'combat' && (
+        <TacticalAnalysisPanel combat={combat} />
       )}
     </div>
   )

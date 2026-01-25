@@ -65,9 +65,10 @@ class ApiCombatAdapter:
     player commands without blocking for input.
     """
     
-    def __init__(self, player: "Player", session_id: str = None):
+    def __init__(self, player: "Player", session_id: str = None, on_event_callback: callable = None):
         self.player = player
         self.session_id = session_id
+        self.on_event_callback = on_event_callback
         self.output_capture = CombatOutputCapture()
         self.current_beat_state_index = 0  # Track which beat state we're currently building
         self.strategist = CombatStrategist()
@@ -677,6 +678,18 @@ class ApiCombatAdapter:
                     
                     # Increment beat
                     self.player.combat_beat += 1
+
+                # Check for combat events after each beat
+                if self.on_event_callback:
+                    events = self.on_event_callback(self.player)
+                    if events:
+                        # Narrative pause: record events and stop processing beats for now
+                        if not hasattr(self.player, "combat_adapter_state"):
+                             self.player.combat_adapter_state = {}
+                        self.player.combat_adapter_state["events_triggered"] = events
+                        
+                        # Stop processing beats
+                        break
                 
                 # Capture state for this beat AFTER processing
                 beat_state = CombatStateSerializer.serialize_combat_state(
@@ -1111,6 +1124,12 @@ class ApiCombatAdapter:
             "beat_states": [battle_state],  # Initial state as a single beat state
             "log": self.player.combat_log,
         }
+
+        # Include triggered events if any (narrative pause)
+        if hasattr(self.player, 'combat_adapter_state') and 'events_triggered' in self.player.combat_adapter_state:
+            result["events_triggered"] = self.player.combat_adapter_state['events_triggered']
+            # Clear after including
+            del self.player.combat_adapter_state['events_triggered']
 
         # Include end-of-combat summary (victory/defeat) if present
         if not self.player.in_combat and getattr(self.player, "combat_end_summary", None):

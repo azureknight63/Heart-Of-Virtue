@@ -5,15 +5,15 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
     const [isVisible, setIsVisible] = useState(false)
 
     useEffect(() => {
-        if (suggestions.length > 0 && isPlayerTurn) {
+        if (isPlayerTurn) {
             const timer = setTimeout(() => setIsVisible(true), 500)
             return () => clearTimeout(timer)
         } else {
             setIsVisible(false)
         }
-    }, [suggestions.length, isPlayerTurn])
+    }, [isPlayerTurn])
 
-    if (!isPlayerTurn || suggestions.length === 0) return null
+    if (!isPlayerTurn) return null
 
     return (
         <div style={{
@@ -90,63 +90,85 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
                 flexDirection: 'column',
                 gap: '12px'
             }}>
-                {suggestions.map((s, idx) => (
-                    <div
-                        key={idx}
-                        onClick={() => onSuggestClick?.(s)}
-                        style={{
-                            padding: '10px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                            border: `1px solid rgba(0, 255, 136, 0.15)`,
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            position: 'relative',
-                            overflow: 'hidden'
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'
-                            e.currentTarget.style.borderColor = colors.primary
-                            e.currentTarget.style.boxShadow = `0 0 10px ${colors.primary}33`
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                            e.currentTarget.style.borderColor = 'rgba(0, 255, 136, 0.15)'
-                            e.currentTarget.style.boxShadow = 'none'
-                        }}
-                    >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <span style={{ color: colors.text.highlight, fontWeight: 'bold', fontSize: '13px' }}>
-                                {s.move_name}
-                            </span>
-                            <span style={{
-                                color: colors.primary,
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                backgroundColor: `${colors.primary}22`,
-                                padding: '2px 6px',
-                                borderRadius: '10px'
-                            }}>
-                                {s.score}%
-                            </span>
-                        </div>
-
-                        <div style={{ fontSize: '11px', color: colors.text.muted, lineHeight: '1.4' }}>
-                            {s.reasoning}
-                        </div>
-
-                        {/* Selection highlight bar */}
-                        <div style={{
-                            position: 'absolute',
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            width: '3px',
-                            backgroundColor: colors.primary,
-                            opacity: 0.6
+                {suggestions.length === 0 ? (
+                    <div style={{
+                        padding: '20px 10px',
+                        textAlign: 'center',
+                        color: colors.text.muted,
+                        fontSize: '11px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '12px'
+                    }}>
+                        <div className="animate-spin" style={{
+                            width: '20px',
+                            height: '20px',
+                            border: `2px solid ${colors.primary}22`,
+                            borderTop: `2px solid ${colors.primary}`,
+                            borderRadius: '50%'
                         }} />
+                        <span>ANALYZING BATTLEFIELD COORDINATES...</span>
                     </div>
-                ))}
+                ) : (
+                    suggestions.map((s, idx) => (
+                        <div
+                            key={idx}
+                            onClick={() => onSuggestClick?.(s)}
+                            style={{
+                                padding: '10px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                border: `1px solid rgba(0, 255, 136, 0.15)`,
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                position: 'relative',
+                                overflow: 'hidden'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'
+                                e.currentTarget.style.borderColor = colors.primary
+                                e.currentTarget.style.boxShadow = `0 0 10px ${colors.primary}33`
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
+                                e.currentTarget.style.borderColor = 'rgba(0, 255, 136, 0.15)'
+                                e.currentTarget.style.boxShadow = 'none'
+                            }}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ color: colors.text.highlight, fontWeight: 'bold', fontSize: '13px' }}>
+                                    {s.move_name}
+                                </span>
+                                <span style={{
+                                    color: colors.primary,
+                                    fontSize: '10px',
+                                    fontWeight: 'bold',
+                                    backgroundColor: `${colors.primary}22`,
+                                    padding: '2px 6px',
+                                    borderRadius: '10px'
+                                }}>
+                                    {s.score}%
+                                </span>
+                            </div>
+
+                            <div style={{ fontSize: '11px', color: colors.text.muted, lineHeight: '1.4' }}>
+                                {s.reasoning}
+                            </div>
+
+                            {/* Selection highlight bar */}
+                            <div style={{
+                                position: 'absolute',
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                width: '3px',
+                                backgroundColor: colors.primary,
+                                opacity: 0.6
+                            }} />
+                        </div>
+                    ))
+                )}
             </div>
 
             <div style={{
