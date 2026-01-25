@@ -98,6 +98,9 @@ class Player:
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
+        self.base_suggested_move_count = 1
+        self.last_move_data = {}  # Stores { "name": ..., "target_id": ..., "params": ... }
+        self.last_move_summary = "" # Text summary of the last move outcome
         self.fatigue = 150  # cannot perform moves without enough of this stuff
         self.maxfatigue = 150
         self.maxfatigue_base = 150
@@ -218,6 +221,7 @@ class Player:
             # viable (moves will check their own conditions)
             moves.Check(self), moves.Wait(self), moves.Rest(self), moves.Turn(self),
             moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self),
+            moves.Dodge(self), moves.Parry(self), moves.Jab(self),
         ]
         self.current_move = None
         self.heat = 1.0
@@ -1092,11 +1096,15 @@ he lets out a barely audible whisper:""", "red")
                     if lower_phrase in search_item:
                         candidates.append(item)
             if target_item is None:
+                to_remove = []
                 for i, item in enumerate(self.current_room.items_here):
                     if hasattr(item, "isequipped"):
                         search_item = item.name.lower() + ' ' + item.announce.lower()
                         if lower_phrase in search_item:
-                            candidates.append(self.current_room.items_here.pop(i))
+                            candidates.append(item)
+                            to_remove.append(item)
+                for item in to_remove:
+                    self.current_room.items_here.remove(item)
         elif phrase == '' and target_item is None:  # open the menu
             target_item = self.equip_item_menu()
 

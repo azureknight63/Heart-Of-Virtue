@@ -714,6 +714,37 @@ def trigger_room_events():
         )
 
 
+@world_bp.route("/world/events/pending", methods=["GET"])
+def get_pending_events():
+    """Get any pending/interactive events stored in the session.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Returns:
+        {
+            "success": bool,
+            "events": [...]
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error[0], error[1]
+
+        pending_events = []
+        if "pending_events" in session.data:
+            for event_id, data in session.data["pending_events"].items():
+                event_data = data.get("event_data", {}).copy()
+                event_data["event_id"] = event_id
+                pending_events.append(event_data)
+
+        return jsonify({"success": True, "events": pending_events}), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @world_bp.route("/world/search", methods=["POST"])
 def search_room():
     """Search the current room for hidden items/NPCs.

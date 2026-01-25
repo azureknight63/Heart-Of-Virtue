@@ -44,8 +44,8 @@ class _JSONTools:
         return t[:500]
 
 
-class MynxLLMAdapter:
-    """Adapter for generating Mynx responses using either a local Ollama model or an OpenRouter API model.
+class GenericLLMClient:
+    """Adapter for generating responses using either a local Ollama model or an OpenRouter API model.
 
     Providers:
       - ollama      (local inference)
@@ -80,12 +80,6 @@ class MynxLLMAdapter:
         self._openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self._openrouter_site = os.getenv("OPENROUTER_SITE", "").strip() or None
         self._openrouter_site_title = os.getenv("OPENROUTER_SITE_TITLE", "").strip() or None
-
-        self._advisor = self._load_mynx_advisor()
-        self._allowed_actions = set(self._advisor.get("behavior_profile", {}).get("typical_actions", []))
-        self._system_prompt = self._advisor.get("system_prompt_snippet", "")
-        # Example schema for structured responses
-        self._example_struct = self._advisor.get("example_structured_response", {})
 
         # Probe availability lazily; we don't want to fail import-time
         self._available: Optional[bool] = None
@@ -143,27 +137,20 @@ class MynxLLMAdapter:
             # Verify openai SDK importable OR be ready to fallback
             try:
                 from openai import OpenAI as _OpenAIClass  # type: ignore  # noqa: F401
-                # If it's the project stub (has _is_stub) we can still be 'available' because we'll do direct HTTP fallback
-                # Mark reason only for transparency in debug.
                 if getattr(_OpenAIClass, "_is_stub", False):
                     self._available = True
-                    # Only set a reason that indicates fallback if debug flag set later.
                 else:
                     self._available = True
             except Exception as e:
-                # We can still attempt direct HTTP call w/out SDK, so mark available.
                 self._available = True
                 self._unavailable_reason = f"openai SDK import failed; will use direct HTTP fallback: {e}"
             return True
-        # Unknown provider
         self._available = False
         self._unavailable_reason = f"Unknown provider '{self.provider}'."
         return False
 
     def debug_status(self) -> Dict[str, Any]:
-        """Return a dictionary summarizing adapter configuration & availability.
-        Safe to call even when unavailable; does not make network calls beyond the availability probe.
-        """
+        """Return a dictionary summarizing adapter configuration & availability."""
         avail = self.available()
         return {
             "enabled": self.enabled,
@@ -171,16 +158,15 @@ class MynxLLMAdapter:
             "model": self.model,
             "available": avail,
             "reason": None if avail else self._unavailable_reason,
-            "allowed_actions_count": len(self._allowed_actions),
         }
 
-    def generate_plain(self, context: str) -> Optional[str]:
+    def generate_plain(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         if not self.available():
             return None
         if self.provider == "ollama":
-            res = self._ollama_chat(context=context, structured=False)
+            res = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
         elif self.provider == "openrouter":
-            res = self._openrouter_chat(context=context, structured=False)
+            res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
         else:
             return None
             
@@ -198,49 +184,41 @@ class MynxLLMAdapter:
         
         return str(res)
 
-    def generate_structured(self, context: str) -> Optional[Dict[str, Any]]:
+    def generate_structured(self, system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
         if not self.available():
             return None
         if self.provider == "ollama":
-            obj = self._ollama_chat(context=context, structured=True)
+            obj = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
         elif self.provider == "openrouter":
-            obj = self._openrouter_chat(context=context, structured=True)
+            obj = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
         else:
             return None
+        
         if isinstance(obj, dict):
-            valid = self._validate_structured(obj)
-            if valid:
-                return obj
-            # attempt a minimal repair: coerce action and description
-            repaired = self._repair_structured(obj)
-            if repaired and self._validate_structured(repaired):
-                return repaired
+            return obj
         return None
 
     # Provider-specific implementation: Ollama (local)
-    def _ollama_chat(self, context: str, structured: bool) -> Optional[Any]:
+    def _ollama_chat(self, system_prompt: str, user_prompt: str, structured: bool) -> Optional[Any]:
         import requests  # type: ignore
         url = self.base_url + "/api/chat"
-        user_prompt = self._build_user_prompt(context=context, structured=structured)
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self._system_prompt},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,
-            # Keep responses short and deterministic-ish
             "options": {
                 "temperature": 0.2,
                 "top_p": 0.9,
-                "num_ctx": 2048,
+                "num_ctx": 4096,
             },
         }
         try:
             r = requests.post(url, json=payload, timeout=30)
             if r.status_code != 200:
                 return None
-            # Robustly extract textual content from multiple possible Ollama response shapes
             content = None
             try:
                 data = r.json()
@@ -248,11 +226,9 @@ class MynxLLMAdapter:
                 data = None
 
             if isinstance(data, dict):
-                # common shape: {"message": {"content": "..."}}
                 msg = data.get("message")
                 if isinstance(msg, dict):
                     content = msg.get("content") or msg.get("text")
-                # OpenAI-like choices
                 if content is None and isinstance(data.get("choices"), list):
                     for c in data.get("choices"):
                         if isinstance(c, dict):
@@ -263,7 +239,6 @@ class MynxLLMAdapter:
                             if c.get("content") or c.get("text"):
                                 content = c.get("content") or c.get("text")
                                 break
-                # Ollama sometimes returns 'output' array where elements have 'content' or 'text'
                 if content is None and isinstance(data.get("output"), list):
                     parts = []
                     for el in data.get("output"):
@@ -272,7 +247,6 @@ class MynxLLMAdapter:
                         elif isinstance(el, str):
                             parts.append(el)
                     content = "\n".join(p for p in parts if p)
-                # Some versions use 'result' or top-level 'content'/'text'
                 if content is None:
                     if isinstance(data.get("result"), str):
                         content = data.get("result")
@@ -280,26 +254,19 @@ class MynxLLMAdapter:
                         content = data.get("result").get("content") or data.get("result").get("text")
                 if content is None:
                     content = data.get("content") or data.get("text")
-            # Fallback to raw text body
             if not content:
                 raw = r.text or ""
                 content = raw.strip()
 
             if structured:
-                # Try parse JSON from content robustly
                 obj = _JSONTools.try_parse_json(content)
                 return obj
-            # Plain text: sanitize and return short string
             return _JSONTools.sanitize_text(content or "")
         except Exception:
             return None
 
     # Provider-specific implementation: OpenRouter (remote API)
-    def _openrouter_chat(self, context: str, structured: bool) -> Optional[Any]:
-        # Build prompt early; we may need it for either SDK or direct HTTP.
-        user_prompt = self._build_user_prompt(context=context, structured=structured)
-
-        # Attempt to import the OpenAI SDK (new style). If stub or import error, we'll do direct HTTP.
+    def _openrouter_chat(self, system_prompt: str, user_prompt: str, structured: bool) -> Optional[Any]:
         sdk_client = None
         sdk_is_stub = False
         try:
@@ -307,7 +274,6 @@ class MynxLLMAdapter:
             if getattr(OpenAI, "_is_stub", False):
                 sdk_is_stub = True
             else:
-                # Instantiate SDK client only if real
                 sdk_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
         except Exception:
             sdk_client = None
@@ -321,7 +287,6 @@ class MynxLLMAdapter:
         if self._openrouter_site_title:
             headers["X-Title"] = self._openrouter_site_title
 
-        # Direct HTTP fallback when SDK unavailable or stub detected
         if sdk_client is None or sdk_is_stub:
             try:
                 import requests  # type: ignore
@@ -330,19 +295,18 @@ class MynxLLMAdapter:
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 }
-                # Merge optional ranking headers
                 for k, v in (headers or {}).items():
                     if v:
                         http_headers[k] = v
                 payload = {
                     "model": self.model,
                     "messages": [
-                        {"role": "system", "content": self._system_prompt},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                     "temperature": 0.2,
                     "top_p": 0.9,
-                    "max_tokens": 256 if not structured else 180,
+                    "max_tokens": 1024 if structured else 256,
                 }
                 resp = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=http_headers, timeout=30)
                 if resp.status_code != 200:
@@ -372,18 +336,16 @@ class MynxLLMAdapter:
             completion = sdk_client.chat.completions.create(  # type: ignore
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self._system_prompt},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 extra_headers=headers or None,
                 temperature=0.2,
                 top_p=0.9,
-                # Provide a gentle max tokens guard (OpenRouter accepts OpenAI fields)
-                max_tokens=256 if not structured else 180,
+                max_tokens=1024 if structured else 256,
             )
         except Exception:
             return None
-        # Extract first message content (OpenAI-compatible schema)
         try:
             msg = completion.choices[0].message  # type: ignore
             content = getattr(msg, "content", None)
@@ -396,6 +358,33 @@ class MynxLLMAdapter:
         if structured:
             return _JSONTools.try_parse_json(str(content))
         return _JSONTools.sanitize_text(str(content))
+
+
+class MynxLLMAdapter(GenericLLMClient):
+    """Legacy adapter for Mynx, now inheriting from GenericLLMClient."""
+
+    def __init__(self):
+        super().__init__()
+        self._advisor = self._load_mynx_advisor()
+        self._allowed_actions = set(self._advisor.get("behavior_profile", {}).get("typical_actions", []))
+        self._system_prompt = self._advisor.get("system_prompt_snippet", "")
+        self._example_struct = self._advisor.get("example_structured_response", {})
+
+    def generate_plain(self, context: str) -> Optional[str]:
+        user_prompt = self._build_user_prompt(context=context, structured=False)
+        return super().generate_plain(system_prompt=self._system_prompt, user_prompt=user_prompt)
+
+    def generate_structured(self, context: str) -> Optional[Dict[str, Any]]:
+        user_prompt = self._build_user_prompt(context=context, structured=True)
+        obj = super().generate_structured(system_prompt=self._system_prompt, user_prompt=user_prompt)
+        if isinstance(obj, dict):
+            valid = self._validate_structured(obj)
+            if valid:
+                return obj
+            repaired = self._repair_structured(obj)
+            if repaired and self._validate_structured(repaired):
+                return repaired
+        return None
 
     def _build_user_prompt(self, context: str, structured: bool) -> str:
         ctx = context.strip()
@@ -425,7 +414,6 @@ class MynxLLMAdapter:
             )
 
     def _validate_structured(self, obj: Dict[str, Any]) -> bool:
-        # Minimal schema validation
         required = {"action", "intensity", "description", "duration_seconds", "audible"}
         if not required.issubset(obj.keys()):
             return False
@@ -435,18 +423,15 @@ class MynxLLMAdapter:
             return False
         if not isinstance(obj.get("description"), str):
             return False
-        # keep description sanitized
         obj["description"] = _JSONTools.sanitize_text(obj["description"])  # type: ignore
         return True
 
     def _repair_structured(self, obj: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        # Coerce to expected keys and clamp action to first allowed
         action = obj.get("action")
         desc = obj.get("description") or obj.get("text") or ""
         if not isinstance(desc, str):
             desc = str(desc)
         desc = _JSONTools.sanitize_text(desc)
-        # choose a default allowed action if invalid
         if not isinstance(action, str) or action not in self._allowed_actions:
             action = next(iter(self._allowed_actions)) if self._allowed_actions else "investigate_object"
         repaired = {
@@ -463,7 +448,6 @@ class MynxLLMAdapter:
             with open(MYNX_JSON_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
-            # Fallback minimal advisor
             return {
                 "behavior_profile": {"typical_actions": ["investigate_object", "groom", "play"]},
                 "system_prompt_snippet": (

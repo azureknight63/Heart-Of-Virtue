@@ -46,8 +46,27 @@ class CombatStateSerializer:
             "player": CombatantSerializer.serialize_combatant(player),
             "enemies": [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
             "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
-            "combatants": [CombatantSerializer.serialize_combatant(player)] + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies]
+            "combatants": [CombatantSerializer.serialize_combatant(player)] + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
+            "suggested_moves": getattr(player, "suggested_moves", []),
+            "last_move_outcome": getattr(player, "last_move_summary", ""),
+            "player_consumables": CombatStateSerializer._get_consumables(player)
         }
+
+    @staticmethod
+    def _get_consumables(player: "Player") -> List[Dict[str, Any]]:
+        """Get consumable items from player inventory."""
+        consumables = []
+        if hasattr(player, "inventory"):
+            for item in player.inventory:
+                # Basic check for consumables: if it has a 'use' method or is a potion
+                # For now, let's include everything with a value and quantity for the LLM to decide
+                consumables.append({
+                    "name": getattr(item, "name", "Unknown"),
+                    "qty": getattr(item, "count", 1),
+                    "value": getattr(item, "value", 0),
+                    "description": getattr(item, "description", "")
+                })
+        return consumables
 
     @staticmethod
     def serialize_turn_data(combatant: Any) -> Dict[str, Any]:
@@ -181,14 +200,18 @@ class CombatantSerializer:
             "max_hp": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
             "fatigue": getattr(combatant, "fatigue", 0),
             "max_fatigue": getattr(combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)),
+            "heat": getattr(combatant, "heat", 1.0) if is_player else 1.0,
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
+            "attributes": CombatantSerializer._serialize_base_attributes(combatant),
             "status_effects": CombatantSerializer._serialize_status_effects(
                 combatant
             ),
+            "passives": CombatantSerializer._serialize_passives(combatant),
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
             "distance": CombatantSerializer._get_distance(combatant, reference),
             "position": CombatantSerializer._serialize_position(combatant),
             "current_move": CombatantSerializer._serialize_active_move(combatant),
+            "move_in_process": CombatantSerializer._serialize_active_move(combatant), # Alias for Strategist
         }
 
     @staticmethod
@@ -201,6 +224,8 @@ class CombatantSerializer:
                 "category": getattr(move, "category", "Miscellaneous"),
                 "description": getattr(move, "description", ""),
                 "current_stage": getattr(move, "current_stage", 0),
+                "beats_left": getattr(move, "beats_left", 0),
+                "total_beats": getattr(move, "stage_beat", [0, 0, 0, 0])[getattr(move, "current_stage", 0)] if hasattr(move, "stage_beat") else 0,
             }
         return None
 
@@ -275,15 +300,39 @@ class CombatantSerializer:
         }
 
     @staticmethod
-    def _serialize_combat_stats(combatant: Any) -> Dict[str, int]:
+    def _serialize_combat_stats(combatant: Any) -> Dict[str, Any]:
         """Serialize combat-relevant stats."""
         return {
-            "damage": getattr(combatant, "damage", 0),
-            "armor": getattr(combatant, "armor", 0),
-            "speed": getattr(combatant, "speed", 5),
-            "accuracy": getattr(combatant, "accuracy", 80),
-            "evasion": getattr(combatant, "evasion", 0),
+            "damage": int(getattr(combatant, "damage", 0)),
+            "armor": int(getattr(combatant, "armor", 0)),
+            "speed": int(getattr(combatant, "speed", 5)),
+            "accuracy": int(getattr(combatant, "accuracy", 80)),
+            "evasion": int(getattr(combatant, "evasion", 0)),
+            "defense": int(getattr(combatant, "defense", 0)),
+            "attack_power": int(getattr(combatant, "attack_power", 0)),
         }
+
+    @staticmethod
+    def _serialize_base_attributes(combatant: Any) -> Dict[str, int]:
+        """Serialize base RPG attributes."""
+        return {
+            "strength": int(getattr(combatant, "strength", 0)),
+            "finesse": int(getattr(combatant, "finesse", 0)),
+            "speed": int(getattr(combatant, "speed", 0)),
+            "endurance": int(getattr(combatant, "endurance", 0)),
+            "intelligence": int(getattr(combatant, "intelligence", 0)),
+            "charisma": int(getattr(combatant, "charisma", 0)),
+        }
+
+    @staticmethod
+    def _serialize_passives(combatant: Any) -> List[str]:
+        """Serialize passive skills/moves."""
+        passives = []
+        if hasattr(combatant, "known_moves"):
+            for move in combatant.known_moves:
+                if getattr(move, "passive", False):
+                    passives.append(move.name)
+        return passives
 
     @staticmethod
     def _serialize_status_effects(combatant: Any) -> List[Dict[str, Any]]:

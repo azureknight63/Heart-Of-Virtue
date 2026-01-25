@@ -18,7 +18,8 @@ if TYPE_CHECKING:
     from player import Player
 
 import positions  # type: ignore
-from src.api.serializers.combat import CombatStateSerializer
+from src.api.serializers.combat import CombatStateSerializer, CombatantSerializer
+from ai.combat_strategist import CombatStrategist
 
 
 class CombatOutputCapture:
@@ -69,6 +70,7 @@ class ApiCombatAdapter:
         self.session_id = session_id
         self.output_capture = CombatOutputCapture()
         self.current_beat_state_index = 0  # Track which beat state we're currently building
+        self.strategist = CombatStrategist()
         
         # Initialize persistent state if missing
         if not hasattr(self.player, "combat_adapter_state"):
@@ -260,6 +262,7 @@ class ApiCombatAdapter:
             self.awaiting_input = True
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
+            self._refresh_suggestions()
             
             result = self.get_combat_state()
             
@@ -318,6 +321,8 @@ class ApiCombatAdapter:
             return self._handle_direction_selection(command.get("direction"))
         elif command_type == "select_number":
             return self._handle_number_selection(command.get("value"))
+        elif command_type == "select_move_and_target":
+            return self._handle_combined_selection(command.get("move_name"), command.get("target_id"))
         elif command_type == "cancel_selection":
             return self._handle_cancel_selection()
         else:
@@ -340,6 +345,57 @@ class ApiCombatAdapter:
         # Log cancellation (optional, but good for debugging)
         
         return self.get_combat_state()
+
+    def _handle_combined_selection(self, move_name: str, target_id: Optional[str]) -> Dict[str, Any]:
+        """Handle player selecting a move and target in one command."""
+        if self.input_type != "move_selection":
+            return {"error": "Not expecting move selection"}
+
+        # Find move by name
+        move_index = -1
+        for i, m in enumerate(self.player.known_moves):
+            if m.name == move_name:
+                move_index = i
+                break
+        
+        if move_index == -1:
+            return {"error": f"Move '{move_name}' not found"}
+        
+        selected_move = self.player.known_moves[move_index]
+        if not selected_move.viable():
+            return {"error": "Move is not currently available"}
+        
+        if self.player.fatigue < selected_move.fatigue_cost:
+            return {"error": "Not enough fatigue"}
+
+        # If move is targeted, find target
+        if selected_move.targeted:
+            if not target_id:
+                return {"error": "Target required for this move"}
+            
+            target_obj_id = target_id.replace("enemy_", "")
+            target = None
+            all_combatants = self.player.combat_list + self.player.combat_list_allies
+            for combatant in all_combatants:
+                if str(id(combatant)) == target_obj_id:
+                    target = combatant
+                    break
+            
+            if not target:
+                return {"error": "Invalid target"}
+            
+            selected_move.target = target
+        else:
+            selected_move.target = self.player
+
+        self.player.current_move = selected_move
+        self._add_log_entry(
+            self.output_capture.current_round,
+            f"{self.player.name} uses {selected_move.name}!",
+            "player_action"
+        )
+        
+        return self._execute_move(selected_move)
     
     def _handle_move_selection(self, move_index: int) -> Dict[str, Any]:
         """Handle player selecting a move."""
@@ -643,6 +699,10 @@ class ApiCombatAdapter:
                 if not self.player.is_alive() or len(self.player.combat_list) == 0:
                     break
         
+        # Capture last move summary from the log entries of this move
+        move_logs = [s["message"] for s in self.player.combat_log if s.get("type") in ("combat", "player_action")][-5:] # Last 5 relevant entries
+        self.player.last_move_summary = " ".join(move_logs)
+
         # Move execution finished
         result = self.get_combat_state()
         
@@ -703,6 +763,7 @@ class ApiCombatAdapter:
         self.input_type = "move_selection"
         self.available_options = self._get_available_moves()
         self.pending_move_index = None
+        self._refresh_suggestions()
         
         result = self.get_combat_state()
         result["beat_states"] = beat_states
@@ -811,6 +872,32 @@ class ApiCombatAdapter:
                 amt = 0.001
             self.player.heat -= amt
     
+    def _refresh_suggestions(self):
+        """Fetch tactical suggestions from the strategist."""
+        try:
+            # Calculate allowed suggestions count
+            count = getattr(self.player, "base_suggested_move_count", 1)
+            for m in self.player.known_moves:
+                if m.name in ["Strategic Insight", "Master Tactician"]:
+                    count += 1
+            
+            # Gather context
+            # Gather context from serializers imported at top level
+            ctx = {
+                "player": CombatantSerializer.serialize_combatant(self.player),
+                "enemies": [CombatantSerializer.serialize_combatant(e, reference=self.player) for e in self.player.combat_list],
+                "history": [entry["message"] for entry in self.player.combat_log[-20:]], # Last 20 messages
+                "last_move": self.player.last_move_summary or "None",
+                "available_moves": self.available_options
+            }
+            
+            # Fetch from strategist
+            self.player.suggested_moves = self.strategist.get_suggestions(ctx, max_suggestions=count)
+            
+        except Exception as e:
+            print(f"Error refreshing suggestions: {e}")
+            self.player.suggested_moves = []
+
     def _handle_victory(self):
         """Handle combat victory."""
         self.player.in_combat = False
@@ -882,6 +969,8 @@ class ApiCombatAdapter:
         
         # Get all known moves, not just viable ones
         for i, move in enumerate(self.player.known_moves):
+            if getattr(move, "passive", False):
+                continue
             is_viable = move.viable()
             
             move_data = {

@@ -70,7 +70,7 @@ default_animations = {
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0, 9999), heat_gain=0, fatigue_cost=0,
-                 instant=False, verbose_targeting=False, category="Miscellaneous"):
+                 instant=False, verbose_targeting=False, category="Miscellaneous", passive=False):
         self.name = name
         self.description = description
         self.category = category
@@ -94,11 +94,14 @@ class Move:  # master class for all moves
         self.mvrange = mvrange  # tuple containing the min and max ranges for the move
         self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
         self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
+        self.passive = passive
 
     def viable(self):
-        """Check arbitrary conditions to see if the move is available for use; return True or False"""
-        viability = True
-        return viability
+        """Check arbitrary conditions to see if the move is available for use.
+        Default implementation returns True. Subclasses should override this if they have
+        specific requirements (like range, fatigue, context, etc.).
+        """
+        return True
 
     def process_stage(self, user):
         if user.current_move == self:
@@ -379,6 +382,30 @@ class Move:  # master class for all moves
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+
+
+
+class StrategicInsight(Move):
+    """Marker skill that unlocks the 2nd suggestion in combat."""
+
+    def __init__(self, user):
+        super().__init__("Strategic Insight", "Gain a second tactical suggestion during your turn.", 0, 0, 0,
+                         "Strategic Insight active", user, user, 0, False, category="Basic", passive=True)
+
+    def viable(self):
+        return False
+
+
+class MasterTactician(Move):
+    """Marker skill that unlocks the 3rd suggestion in combat."""
+
+    def __init__(self, user):
+        super().__init__("Master Tactician", "Gain a third tactical suggestion during your turn.", 0, 0, 0,
+                         "Master Tactician active", user, user, 0, False, category="Basic", passive=True)
+
+    def viable(self):
+        """Marker skill that unlocks the 3rd suggestion in combat."""
+        return False
 
 
 """
