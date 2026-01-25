@@ -30,18 +30,15 @@ class CombatStrategist:
         user_prompt = self._build_user_prompt(combat_context)
         
         try:
-            # We use generate_structured to get an array of JSON objects
-            # Note: client.generate_structured returns a Dict. If the LLM returns a List, 
-            # we might need to handle it or wrap it in our prompt.
-            # To be safe, we'll ask for a wrapper object or just parse the list if we can.
-            
             # Let's refine the prompt to return a named object for easier parsing via GenericLLMClient
             wrapped_prompt = user_prompt + "\nReturn the result as a JSON object with a key 'suggestions' containing the list of move objects."
             
+            logger.info(f"Requesting {max_suggestions} suggestions for {combat_context.get('player', {}).get('name')}")
             raw_response = self.client.generate_structured(self.system_prompt, wrapped_prompt)
             
             if not raw_response or not isinstance(raw_response, dict):
-                return []
+                logger.warning("Strategist received empty or non-dict response from LLM.")
+                return self._get_fallback_suggestions(combat_context, max_suggestions)
 
             suggestions = raw_response.get("suggestions", [])
             if not isinstance(suggestions, list):
@@ -49,7 +46,8 @@ class CombatStrategist:
                 if isinstance(raw_response, list):
                     suggestions = raw_response
                 else:
-                    return []
+                    logger.warning(f"Strategist failed to parse suggestions from: {raw_response}")
+                    return self._get_fallback_suggestions(combat_context, max_suggestions)
             
             # Sanitize and sort
             valid_suggestions = []
@@ -62,6 +60,12 @@ class CombatStrategist:
                         s["score"] = 0
                     valid_suggestions.append(s)
             
+            logger.info(f"Strategist found {len(valid_suggestions)} valid suggestions.")
+            
+            # If no valid suggestions found, use fallback
+            if not valid_suggestions:
+                return self._get_fallback_suggestions(combat_context, max_suggestions)
+
             # Sort by score descending
             valid_suggestions.sort(key=lambda x: x["score"], reverse=True)
             
@@ -69,8 +73,26 @@ class CombatStrategist:
             return valid_suggestions[:max_suggestions]
 
         except Exception as e:
-            logger.error(f"Error fetching combat suggestions: {e}")
+            logger.error(f"Error fetching combat suggestions: {e}", exc_info=True)
+            return self._get_fallback_suggestions(combat_context, max_suggestions)
+
+    def _get_fallback_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int) -> List[Dict[str, Any]]:
+        """Provide basic suggestions if the LLM fails."""
+        available = combat_context.get("available_moves", [])
+        if not available:
             return []
+            
+        fallbacks = []
+        # Suggest available moves with basic score
+        for m in available:
+            if m.get("available", False):
+                fallbacks.append({
+                    "move_name": m.get("name"),
+                    "target_id": None,
+                    "score": 50,
+                    "reasoning": f"Tactical analysis interrupted; {m.get('name')} is a viable baseline option."
+                })
+        return fallbacks[:max_suggestions]
 
     def _build_user_prompt(self, ctx: Dict[str, Any]) -> str:
         """Construct the context string for the LLM."""

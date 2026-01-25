@@ -325,13 +325,18 @@ class CombatantSerializer:
         }
 
     @staticmethod
-    def _serialize_passives(combatant: Any) -> List[str]:
-        """Serialize passive skills/moves."""
+    def _serialize_passives(combatant: Any) -> List[Dict[str, Any]]:
+        """Serialize passive skills/moves with metadata for UI."""
         passives = []
         if hasattr(combatant, "known_moves"):
             for move in combatant.known_moves:
                 if getattr(move, "passive", False):
-                    passives.append(move.name)
+                    passives.append({
+                        "name": move.name,
+                        "type": "passive",
+                        "description": getattr(move, "description", "Passive skill."),
+                        "category": getattr(move, "category", "Miscellaneous")
+                    })
         return passives
 
     @staticmethod

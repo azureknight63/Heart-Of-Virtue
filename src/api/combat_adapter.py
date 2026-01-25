@@ -637,6 +637,10 @@ class ApiCombatAdapter:
         
         # Cast the move (capture output for initial cast message)
         with self._capture_output():
+            # Store for repeat functionality
+            self.player.last_move_name = move.name
+            self.player.last_move_target_id = getattr(move.target, 'id', f"enemy_{id(move.target)}") if getattr(move, 'target', None) else None
+            
             move.cast()
             
         # For instant moves, process all stages immediately without advancing beats
@@ -1123,6 +1127,10 @@ class ApiCombatAdapter:
             "battle_state": battle_state,
             "beat_states": [battle_state],  # Initial state as a single beat state
             "log": self.player.combat_log,
+            "suggested_moves": getattr(self.player, "suggested_moves", []),
+            "last_move_outcome": getattr(self.player, "last_move_summary", ""),
+            "last_move_name": getattr(self.player, "last_move_name", ""),
+            "last_move_target_id": getattr(self.player, "last_move_target_id", None)
         }
 
         # Include triggered events if any (narrative pause)

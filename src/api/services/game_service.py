@@ -1546,10 +1546,12 @@ class GameService:
             # If player is in combat, try to re-initialize the adapter
             if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
                 from src.api.combat_adapter import ApiCombatAdapter
-                player._combat_adapter = ApiCombatAdapter(player)
-                # Note: We might want to call initialize_combat with current enemies, 
-                # but we need to be careful not to reset their state.
-                # For now, just creating the adapter is a good start.
+                
+                # Ensure the new adapter has the event callback
+                def event_callback(p):
+                    return self.trigger_combat_events(p)
+                
+                player._combat_adapter = ApiCombatAdapter(player, on_event_callback=event_callback)
             else:
                 return {
                     "combat_active": getattr(player, "in_combat", False),
