@@ -17,23 +17,20 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
 
     return (
         <div style={{
-            position: 'absolute',
-            right: '20px',
-            top: '20px',
-            width: '280px',
-            maxHeight: 'calc(100vh - 40px)',
+            width: '100%',
             backgroundColor: 'rgba(10, 15, 10, 0.9)',
             border: `2px solid ${colors.primary}`,
             borderRadius: '8px',
-            boxShadow: `0 0 20px ${colors.primary}44, inset 0 0 10px rgba(0, 0, 0, 0.5)`,
+            boxShadow: `0 0 15px ${colors.primary}33, inset 0 0 10px rgba(0, 0, 0, 0.5)`,
             display: 'flex',
             flexDirection: 'column',
-            zIndex: 1000,
             fontFamily: 'monospace',
             opacity: isVisible ? 1 : 0,
-            transform: isVisible ? 'translateX(0)' : 'translateX(20px)',
-            transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-            overflow: 'hidden'
+            transform: isVisible ? 'translateY(0)' : 'translateY(10px)',
+            transition: 'all 0.4s ease-out',
+            overflow: 'hidden',
+            marginBottom: '14px',
+            flexShrink: 0
         }}>
             {/* Header */}
             <div style={{
@@ -67,7 +64,7 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
         `}
             </style>
 
-            {/* Outcome Section */}
+            {/* Outcome Section & Repeat Action */}
             {lastOutcome && (
                 <div style={{
                     padding: '10px 12px',
@@ -75,10 +72,39 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
                     color: colors.text.muted,
                     borderBottom: '1px solid rgba(0, 255, 136, 0.1)',
                     backgroundColor: 'rgba(0, 255, 136, 0.03)',
-                    fontStyle: 'italic'
+                    fontStyle: 'italic',
+                    position: 'relative'
                 }}>
                     <div style={{ color: colors.text.highlight, fontSize: '9px', marginBottom: '2px', opacity: 0.7 }}>ANALYSIS OF PREVIOUS CYCLE:</div>
-                    "{lastOutcome}"
+                    <div style={{ marginBottom: '8px' }}>"{lastOutcome}"</div>
+
+                    <button
+                        onClick={() => {
+                            // Extract move name from outcome if possible, or just look at last move
+                            // For now, we rely on the parent to know what the last move was if it wants to repeat
+                            onSuggestClick?.({ move_name: 'repeat_last' })
+                        }}
+                        style={{
+                            width: '100%',
+                            padding: '6px',
+                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            border: `1px solid ${colors.primary}`,
+                            borderRadius: '4px',
+                            color: colors.primary,
+                            fontSize: '10px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'}
+                    >
+                        <span>🔄</span> DO IT AGAIN
+                    </button>
                 </div>
             )}
 

@@ -14,6 +14,7 @@ import CombatMovePanel from './CombatMovePanel'
 import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
+import SuggestedMovesPanel from './SuggestedMovesPanel'
 
 export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange }) {
   // Don't render if player data hasn't loaded yet
@@ -482,9 +483,12 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
             overflow: 'visible',
             zIndex: 50,
-            display: (mode === 'combat' && !isMyTurn) ? 'none' : 'flex',
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            opacity: (mode === 'combat' && !isMyTurn) ? 0.6 : 1,
+            filter: (mode === 'combat' && !isMyTurn) ? 'grayscale(0.5)' : 'none',
+            pointerEvents: (mode === 'combat' && !isMyTurn) ? 'none' : 'auto',
           }}>
             <HeroPanel
               player={activePlayer}
@@ -534,6 +538,33 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             onCancel={() => {
               setShowInputDialog(false)
               onCombatAction('cancel', {})
+            }}
+          />
+        )}
+
+        {/* Suggested Moves Panel for Strategist */}
+        {mode === 'combat' && isMyTurn && (
+          <SuggestedMovesPanel
+            suggestions={combat?.suggested_moves || []}
+            lastOutcome={combat?.last_move_outcome || ""}
+            isPlayerTurn={isMyTurn}
+            onSuggestClick={(s) => {
+              if (s.move_name === 'repeat_last') {
+                // Use explicit tracking fields from backend
+                const moveName = combat?.last_move_name
+                const targetId = combat?.last_move_target_id
+
+                if (moveName) {
+                  onCombatAction(moveName, { target_id: targetId })
+                } else {
+                  // Fallback to the first recommended suggestion if no last move found
+                  if (combat?.suggested_moves?.length > 0) {
+                    onCombatAction(combat.suggested_moves[0].move_name, { target_id: combat.suggested_moves[0].target_id })
+                  }
+                }
+              } else {
+                onCombatAction(s.move_name, { target_id: s.target_id })
+              }
             }}
           />
         )}

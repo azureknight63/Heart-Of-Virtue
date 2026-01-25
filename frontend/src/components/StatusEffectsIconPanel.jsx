@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { colors } from '../styles/theme'
 
-export default function StatusEffectsIconPanel({ effects = [] }) {
+export default function StatusEffectsIconPanel({ effects = [], vertical = false }) {
     const [hoveredEffect, setHoveredEffect] = useState(null)
 
     if (!effects || effects.length === 0) return null
@@ -28,6 +28,7 @@ export default function StatusEffectsIconPanel({ effects = [] }) {
             case 'buff': return colors.primary
             case 'debuff': return colors.danger
             case 'ailment': return '#ffaa00'
+            case 'passive': return colors.text.highlight
             default: return colors.text.highlight
         }
     }
@@ -35,9 +36,10 @@ export default function StatusEffectsIconPanel({ effects = [] }) {
     return (
         <div style={{
             display: 'flex',
+            flexDirection: vertical ? 'column' : 'row',
             gap: '4px',
             justifyContent: 'center',
-            marginBottom: '8px',
+            marginBottom: vertical ? '0' : '8px',
             position: 'relative',
             zIndex: 100
         }}>

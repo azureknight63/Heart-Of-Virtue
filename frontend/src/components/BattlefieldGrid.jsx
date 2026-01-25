@@ -153,7 +153,14 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
 
       {/* Status Effects - Floating above marker */}
       {!isFullMode && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-auto">
+        <div
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-auto transition-opacity duration-200"
+          style={{
+            opacity: 0.35,
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={(e) => e.currentTarget.style.opacity = '0.35'}
+        >
           <StatusEffectsIconPanel effects={entity.status_effects} />
         </div>
       )}

@@ -84,18 +84,42 @@ export default function HeroPanel({
         justifyContent: 'center',
         overflow: 'visible',
       }}>
-        {/* Status Effects Icons */}
+        {/* Passive Effects Icons (Left Side) */}
         <div style={{
           position: 'absolute',
-          top: '-40px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '100%',
+          top: '50%',
+          left: '-135px',
+          transform: 'translateY(-50%)',
           display: 'flex',
-          justifyContent: 'center',
-          zIndex: 10
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '4px',
+          zIndex: 10,
+          pointerEvents: 'auto'
         }}>
-          <StatusEffectsIconPanel effects={player?.status_effects} />
+          {player?.passives?.length > 0 && (
+            <div style={{ fontSize: '7px', color: colors.text.muted, marginBottom: '2px', fontWeight: 'bold' }}>PASSIVES</div>
+          )}
+          <StatusEffectsIconPanel effects={player?.passives} vertical />
+        </div>
+
+        {/* Status Effects Icons (Right Side) */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          right: '-135px',
+          transform: 'translateY(-50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '4px',
+          zIndex: 10,
+          pointerEvents: 'auto'
+        }}>
+          {player?.status_effects?.length > 0 && (
+            <div style={{ fontSize: '7px', color: colors.text.muted, marginBottom: '2px', fontWeight: 'bold' }}>STATUS</div>
+          )}
+          <StatusEffectsIconPanel effects={player?.status_effects} vertical />
         </div>
 
         {/* Hero Heart Image */}

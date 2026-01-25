@@ -7,7 +7,6 @@ import EventDialog from '../components/EventDialog'
 import VictoryDialog from '../components/VictoryDialog'
 import DefeatDialog from '../components/DefeatDialog'
 import SuggestedMovesPanel from '../components/SuggestedMovesPanel'
-import TacticalAnalysisPanel from '../components/TacticalAnalysisPanel'
 
 export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
@@ -451,6 +450,11 @@ export default function GamePage() {
   }
 
   // Handle interaction completion (check for combat)
+  const handleInteractionComplete = () => {
+    // Check combat status after interaction completes
+    fetchCombatStatus()
+  }
+
   // Handle combat action with event check
   const handleCombatAction = async (action, target) => {
     const result = await performAction(action, target)
@@ -540,20 +544,6 @@ export default function GamePage() {
         />
       )}
 
-      {/* Suggested Moves Panel for Strategist */}
-      {mode === 'combat' && (
-        <SuggestedMovesPanel
-          suggestions={combat?.suggested_moves || []}
-          lastOutcome={combat?.last_move_outcome || ""}
-          isPlayerTurn={mode === 'combat' && (combat?.awaiting_input || false) && !isCombatLogProcessing}
-          onSuggestClick={handleSuggestedMoveClick}
-        />
-      )}
-
-      {/* Tactical Analysis Panel */}
-      {mode === 'combat' && (
-        <TacticalAnalysisPanel combat={combat} />
-      )}
     </div>
   )
 }
