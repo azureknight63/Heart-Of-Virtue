@@ -170,7 +170,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
 
     return (
         <BaseDialog
-            title={`✨ ${event?.name || 'Event'}`}
+            title={`✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`}
             onClose={handleGlobalInteraction}
             showCloseButton={!needsInput}
             zIndex={2000}

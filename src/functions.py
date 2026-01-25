@@ -431,13 +431,13 @@ def refresh_moves(player):
     else:
         player.known_moves.clear()
 
-    default_moves = ("Rest", "PlayerAttack")
+    default_moves = ("Check", "Wait", "Rest", "Turn", "UseItem", "Advance", "Withdraw", "Attack", "Dodge", "Parry", "Jab")
     for move_name in default_moves:
         if _moves is None or not hasattr(_moves, move_name):
             continue
         move_class = getattr(_moves, move_name)
         try:
-            move_instance = move_class()
+            move_instance = move_class(player)
         except Exception:
             # Skip moves that fail to instantiate
             continue

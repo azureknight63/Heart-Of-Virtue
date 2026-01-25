@@ -63,39 +63,54 @@ class MemoryFlash(Event):
         # Override this in subclasses for specific trigger conditions
         self.pass_conditions_to_process()
     
-    def process(self):
+    def process(self, user_input=None):
         """Display the memory flash sequence."""
-        # Pause before the memory begins
-        time.sleep(1)
-        print()
-        cprint("For a moment, there is only silence...", "white")
-        time.sleep(1.5)
-        print()
-        
-        # Top border with animation
-        memory_border("top")
-        
-        # Display each memory line with individual timing
-        for line, pause in self.memory_lines:
-            cprint(line, "magenta")
-            time.sleep(pause)
-        
-        # Bottom border
-        memory_border("bottom")
-        print()
-        
-        # Aftermath - Jean's reaction to the memory
-        if self.aftermath_text:
+        if user_input is None:
+            # First pass: display the memory and aftermath, then pause for input
+            # Pause before the memory begins
             time.sleep(1)
-            for line in self.aftermath_text:
-                cprint(line, "cyan")
-                time.sleep(2)
-        
-        # Wait for player acknowledgment
-        functions.await_input()
+            print()
+            cprint("For a moment, there is only silence...", "white")
+            time.sleep(0.5) # Reduced for API responsiveness
+            print()
+            
+            # Top border with animation
+            memory_border("top")
+            
+            # Display each memory line with individual timing
+            for line, pause in self.memory_lines:
+                cprint(line, "magenta")
+                # Removed long sleeps to prevent API timeouts, frontend handles pacing
+            
+            # Bottom border
+            memory_border("bottom")
+            print()
+            
+            # Aftermath - Jean's reaction to the memory
+            if self.aftermath_text:
+                for line in self.aftermath_text:
+                    cprint(line, "cyan")
+            
+            # Signal requirement for input
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = "The memory fades..."
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            return
+
+        # Second pass: user has clicked continue
         print()
         cprint("═" * 79, "cyan")
         print()
+        self.needs_input = False
+        self.completed = True
+        
+        # Remove from tile/combat events if not repeating
+        if not self.repeat:
+            if hasattr(self, "tile") and self.tile and self in getattr(self.tile, "events_here", []):
+                self.tile.events_here.remove(self)
+            elif hasattr(self, "player") and self.player and self in getattr(self.player, "combat_events", []):
+                self.player.combat_events.remove(self)
 
 
 class Effect(Event):

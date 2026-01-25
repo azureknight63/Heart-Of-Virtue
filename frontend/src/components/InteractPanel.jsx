@@ -18,7 +18,8 @@ export default function InteractPanel({
     onRefetch,
     onClose,
     initialTarget = null,
-    history = []
+    history = [],
+    onTypingChange
 }) {
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(initialTarget || null)
@@ -131,8 +132,10 @@ export default function InteractPanel({
             const data = response.data
 
             if (data.success) {
+                console.log('[DEBUG] Interaction success:', data);
                 const message = data.message || 'Action completed.'
                 setInteractionOutput(message)
+                if (onTypingChange) onTypingChange(true)
                 setInteractionHistory(prev => [...prev, message])
 
                 // Check if this action should lock the panel (e.g. item moved)
@@ -161,8 +164,10 @@ export default function InteractPanel({
 
                 // Also check for global room events
                 try {
+                    console.log('[DEBUG] Fetching background events...');
                     const eventsResponse = await apiEndpoints.world.getEvents()
                     const eventsData = eventsResponse.data
+                    console.log('[DEBUG] Background events response:', eventsData);
                     if (eventsData.success && eventsData.events && eventsData.events.length > 0) {
                         // Filter events with output text
                         const eventsWithOutput = eventsData.events.filter(
@@ -170,6 +175,7 @@ export default function InteractPanel({
                         )
 
                         if (eventsWithOutput.length > 0 && onEventsTriggered) {
+                            console.log('[DEBUG] Triggering background events:', eventsWithOutput);
                             onEventsTriggered(eventsWithOutput)
                         }
 
@@ -570,6 +576,9 @@ export default function InteractPanel({
                             interactionOutput && (
                                 <TypewriterOutput
                                     text={interactionOutput}
+                                    onComplete={() => {
+                                        if (onTypingChange) onTypingChange(false)
+                                    }}
                                     formatter={(text) => renderTextWithLinks(text, targets, handleTargetClick)}
                                 />
                             )

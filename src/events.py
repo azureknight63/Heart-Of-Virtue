@@ -43,7 +43,9 @@ class Event:  # master class for all events
 
     def pass_conditions_to_process(self):
         self.process()
-        if not self.repeat:
+        # If the event requires input, we don't want to remove it yet; 
+        # it will be removed once it's completed or on subsequent check
+        if not self.repeat and not getattr(self, "needs_input", False):
             if self in self.tile.events_here:
                 self.tile.events_here.remove(self)  # if this is a one-time event, kill it after it executes
             elif self in self.player.combat_events:

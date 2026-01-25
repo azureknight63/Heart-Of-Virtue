@@ -147,31 +147,50 @@ class Ch01ChestRumblerBattle(Event):
 
     def __init__(self, player, tile, params=None, repeat=True, name='Ch01_Chest_Rumbler_Battle'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        self.triggered = False  # Track if we've already started the narrative
 
     def check_conditions(self):
+        # Only check if we haven't triggered yet
+        if self.triggered:
+            return
+            
         for thing in self.tile.objects_here:
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
                     if len(thing.inventory) == 0:  # if the chest is empty, continue
+                        self.triggered = True  # Mark as triggered before processing
                         self.pass_conditions_to_process()
                         break
 
-    def process(self):
-        time.sleep(2)
-        cprint(
-            "Apparently, there is also a rusty iron mace in the chest. "
-            "Jean takes it and swings it around gently, testing its balance.")
-        time.sleep(3)
-        mace = getattr(__import__('items'), 'RustedIronMace')()
-        self.player.inventory.append(mace)
-        self.player.equip_item(mace.name)
-        cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
-        self.tile.spawn_npc("RockRumbler")
+    def process(self, user_input=None):
+        if user_input is None:
+            cprint(
+                "Apparently, there is also a rusty iron mace in the chest. "
+                "Jean takes it and swings it around gently, testing its balance.")
+            import items
+            mace = items.RustedIronMace()
+            self.player.inventory.append(mace)
+            self.player.equip_item(mace.name)
+            cprint("Suddenly, Jean hears a loud rumbling noise and the sound of scraping rocks.", 'yellow')
+            
+            # Signal to the API that we need a narrative pause
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = "What's that noise!?"
+            self.description = "Jean hears a loud rumbling noise and the sound of scraping rocks."
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            return
+
+        # Second part of the trigger after user acknowledgment
         cprint("A rock-like creature appears and advances toward Jean!")
+        self.tile.spawn_npc("RockRumbler")
         time.sleep(0.5)
         self.player.combat_events.append(Ch01PostRumbler(player=self.player, tile=self.tile, params=False,
                                                          repeat=False))
-        self.tile.events_here.remove(self)
+        self.completed = True
+        self.needs_input = False
+        if self in self.tile.events_here:
+            self.tile.events_here.remove(self)
 
 
 class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after opening the chest
