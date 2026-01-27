@@ -38,6 +38,10 @@ class CombatOutputCapture:
             clean_text = ansi_escape.sub('', text).strip()
             
             if clean_text:
+                # Skip technical debug lines
+                if clean_text.startswith("DEBUG:"):
+                    return
+                    
                 self.log_entries.append({
                     "round": self.current_round,
                     "message": clean_text,
@@ -769,7 +773,14 @@ class ApiCombatAdapter:
             result["beat_states"] = beat_states
             return result
         
-        if len(self.player.combat_list) == 0:
+        # Check win/loss conditions
+        # ONLY proceed to victory if:
+        # 1. Player is alive
+        # 2. Enemy list is empty
+        # 3. NO narrative event just triggered (which might spawn more enemies after user input)
+        event_just_triggered = hasattr(self.player, 'combat_adapter_state') and 'events_triggered' in self.player.combat_adapter_state
+        
+        if len(self.player.combat_list) == 0 and not event_just_triggered:
             self._handle_victory()
             result = self.get_combat_state()
             result["beat_states"] = beat_states
@@ -912,7 +923,7 @@ class ApiCombatAdapter:
             self.player.suggested_moves = self.strategist.get_suggestions(ctx, max_suggestions=count)
             
         except Exception as e:
-            print(f"Error refreshing suggestions: {e}")
+            logger.error(f"Error in _refresh_suggestions: {e}")
             self.player.suggested_moves = []
 
     def _handle_victory(self):

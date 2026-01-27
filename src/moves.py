@@ -30,35 +30,6 @@ def _ensure_weapon_exp(user):
         # Silent fail to avoid disrupting combat flow if something unexpected occurs
         pass
 
-def get_combat_occupancy(user):
-    """Collect all occupied positions in the current combat context, excluding the user."""
-    occupied = []
-    
-    # Context usually stems from the player or is accessible via player_ref
-    player = None
-    if getattr(user, 'name', '') == "Jean":
-        player = user
-    elif hasattr(user, 'player_ref') and user.player_ref:
-        player = user.player_ref
-    elif hasattr(user, 'universe') and user.universe and hasattr(user.universe, 'player'):
-        player = user.universe.player
-        
-    if player:
-        # Check all enemies (player.combat_list)
-        if hasattr(player, 'combat_list'):
-            for enemy in player.combat_list:
-                if enemy != user and hasattr(enemy, 'combat_position') and enemy.combat_position:
-                    if getattr(enemy, 'hp', 0) > 0:
-                        occupied.append(enemy.combat_position)
-        # Check all allies (player.combat_list_allies)
-        if hasattr(player, 'combat_list_allies'):
-            for ally in player.combat_list_allies:
-                if ally != user and hasattr(ally, 'combat_position') and ally.combat_position:
-                    if getattr(ally, 'hp', 0) > 0:
-                        occupied.append(ally.combat_position)
-    
-    return occupied
-
 default_animations = {
     "p": "None",  # prep
     "e": "None",  # execute
@@ -70,7 +41,7 @@ default_animations = {
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0, 9999), heat_gain=0, fatigue_cost=0,
-                 instant=False, verbose_targeting=False, category="Miscellaneous", passive=False):
+                 instant=False, verbose_targeting=False, category="Miscellaneous"):
         self.name = name
         self.description = description
         self.category = category
@@ -94,14 +65,11 @@ class Move:  # master class for all moves
         self.mvrange = mvrange  # tuple containing the min and max ranges for the move
         self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
         self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
-        self.passive = passive
 
     def viable(self):
-        """Check arbitrary conditions to see if the move is available for use.
-        Default implementation returns True. Subclasses should override this if they have
-        specific requirements (like range, fatigue, context, etc.).
-        """
-        return True
+        """Check arbitrary conditions to see if the move is available for use; return True or False"""
+        viability = True
+        return viability
 
     def process_stage(self, user):
         if user.current_move == self:
@@ -384,30 +352,6 @@ class Move:  # master class for all moves
         self.user.fatigue -= self.fatigue_cost
 
 
-
-class StrategicInsight(Move):
-    """Marker skill that unlocks the 2nd suggestion in combat."""
-
-    def __init__(self, user):
-        super().__init__("Strategic Insight", "Gain a second tactical suggestion during your turn.", 0, 0, 0,
-                         "Strategic Insight active", user, user, 0, False, category="Basic", passive=True)
-
-    def viable(self):
-        return False
-
-
-class MasterTactician(Move):
-    """Marker skill that unlocks the 3rd suggestion in combat."""
-
-    def __init__(self, user):
-        super().__init__("Master Tactician", "Gain a third tactical suggestion during your turn.", 0, 0, 0,
-                         "Master Tactician active", user, user, 0, False, category="Basic", passive=True)
-
-    def viable(self):
-        """Marker skill that unlocks the 3rd suggestion in combat."""
-        return False
-
-
 """
 ANY MOVES
 """
@@ -560,7 +504,16 @@ class Advance(Move):
             distance_moved = max(1, (performance - threshold) // 5)  # Smaller increments when close
         
         # Move toward target (may overshoot slightly)
-        occupied = get_combat_occupancy(user)
+        # Collect occupied positions
+        occupied = []
+        if hasattr(user, 'combat_list'):
+            for u in user.combat_list:
+                if hasattr(u, 'combat_position') and u.combat_position:
+                    occupied.append(u.combat_position)
+        if hasattr(user, 'combat_list_allies'):
+            for u in user.combat_list_allies:
+                if hasattr(u, 'combat_position') and u.combat_position and u != user:
+                    occupied.append(u.combat_position)
 
         new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
@@ -702,8 +655,7 @@ class Withdraw(Move):
         distance_moved = min(distance_moved, 3)  # Cap at 3 squares
         
         # Move away from nearest threat
-        occupied = get_combat_occupancy(user)
-        new_pos = positions.move_away_constrained(user.combat_position, nearest_threat.combat_position, distance_moved, occupied)
+        new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
         user.combat_position = new_pos
         
         # Face the direction of retreat (toward where we're retreating, away from threat)
@@ -813,7 +765,16 @@ class BullCharge(Move):
         current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
         
         # Move toward target (may overshoot slightly)
-        occupied = get_combat_occupancy(user)
+        # Collect occupied positions
+        occupied = []
+        if hasattr(user, 'combat_list'):
+            for u in user.combat_list:
+                if hasattr(u, 'combat_position') and u.combat_position:
+                    occupied.append(u.combat_position)
+        if hasattr(user, 'combat_list_allies'):
+            for u in user.combat_list_allies:
+                if hasattr(u, 'combat_position') and u.combat_position and u != user:
+                    occupied.append(u.combat_position)
 
         new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
@@ -852,7 +813,7 @@ class TacticalRetreat(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user, category="Maneuver")
+                         target=target, user=user)
         self.evaluate()
 
     def viable(self):
@@ -894,8 +855,7 @@ class TacticalRetreat(Move):
             return
         
         distance_moved = random.randint(3, 4)
-        occupied = get_combat_occupancy(user)
-        new_pos = positions.move_away_constrained(user.combat_position, nearest_threat.combat_position, distance_moved, occupied)
+        new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
         user.combat_position = new_pos
         
         # Face threat while retreating (defensive stance)
@@ -927,7 +887,7 @@ class FlankingManeuver(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user, category="Maneuver")
+                         target=target, user=user)
         self.evaluate()
 
     def viable(self):
@@ -966,8 +926,7 @@ class FlankingManeuver(Move):
         
         # Calculate flanking position (perpendicular to target's facing)
         flank_distance = random.randint(2, 4)
-        occupied = get_combat_occupancy(user)
-        new_pos = positions.move_to_flank_constrained(user.combat_position, self.target.combat_position, flank_distance, occupied)
+        new_pos = positions.move_to_flank(user.combat_position, self.target.combat_position, flank_distance)
         user.combat_position = new_pos
         
         # Face target from flank position
@@ -1001,7 +960,7 @@ class QuietMovement(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=user, user=user, category="Utility")
+                         target=user, user=user)
         self.evaluate()
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
@@ -1036,7 +995,7 @@ class PowerStrike(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user, category="Offensive")
+                         target=self.target, user=user)
         self.evaluate()
 
     def viable(self):
@@ -1155,7 +1114,7 @@ class Jab(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user, category="Offensive")
+                         target=self.target, user=user)
         self.evaluate()
 
     def viable(self):
@@ -1239,7 +1198,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
         super().__init__(name="Check", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=[f"{player.name} checks his surroundings.",
+                         stage_announce=["Jean checks his surroundings.",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
@@ -1352,7 +1311,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
         if hasattr(user, 'combat_log'):
             user.combat_log.append({
                 "round": getattr(user, "combat_beat", 0),
-                "message": f"{user.name} checks the battlefield... {len(combatants_data)} combatant(s) detected.",
+                "message": f"Jean checks the battlefield... {len(combatants_data)} combatant(s) detected.",
                 "type": "info"
             })
     
@@ -1444,7 +1403,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         super().__init__(name="Wait", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=[f"{player.name} is waiting.",
+                         stage_announce=["Jean is waiting.",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
@@ -1468,7 +1427,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
             if hasattr(player, 'combat_log'):
                 player.combat_log.append({
                     "round": getattr(player, "combat_beat", 0),
-                    "message": f"{user.name} waits for {duration} beats...",
+                    "message": f"Jean waits for {duration} beats...",
                     "type": "info"
                 })
             return
@@ -1545,7 +1504,6 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         return viability
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
-
         power = self.user.eq_weapon.damage + \
                 (self.user.strength * self.user.eq_weapon.str_mod) + \
                 (self.user.finesse * self.user.eq_weapon.fin_mod)
@@ -1626,11 +1584,11 @@ class Rest(Move):  # standard rest to restore fatigue.
         super().__init__(name="Rest", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=[f"{player.name} relaxes his muscles for a moment.",
-                                         colored(f"{player.name} is resting.", "green"),
+                         stage_announce=["Jean relaxes his muscles for a moment.",
+                                         colored("Jean is resting.", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player, category="Utility")
+                         beats_left=execute, target=player, user=player)
 
     def viable(self):
         viability = True
@@ -1664,7 +1622,7 @@ class UseItem(Move):
                                          "",
                                          f"{player.name} closes his bag.",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player, category="Utility")
+                         beats_left=execute, target=player, user=player)
 
     def viable(self):
         viability = True
@@ -1698,7 +1656,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
                                          colored(f"{player.name} slashes with his " + weapon + "!", "green"),
                                          f"{player.name} braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player, category="Offensive")
+                         target=None, user=player)
         self.power = 0
         self.evaluate()
         self.base_damage_type = "slashing"
@@ -1822,7 +1780,7 @@ class PommelStrike(Move):
                                                  "green"),
                                          f"{player.name} braces himself from the recoil of his attack.", ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player, category="Offensive")
+                         target=None, user=player)
         self.power = 0  # enter the base damage bonus of the attack
         self.base_damage_type = "crushing"
         self.evaluate()
@@ -1935,7 +1893,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                                          colored(f"{player.name} lets his arrow fly!", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player, verbose_targeting=True, category="Offensive")
+                         target=None, user=player, verbose_targeting=True)
         self.arrow = items.WoodenArrow()  # modified later, based on player arrow type fired;
         # arrow type chosen at prep stage
         self.power = 0
@@ -2108,7 +2066,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                 self.user.inventory.remove(self.arrow)
 
         else:
-            cprint(f"{self.user.name} relaxes his bow as his target is no longer in range.", "green")
+            cprint("Jean relaxes his bow as his target is no longer in range.", "green")
             return
         roll = random.randint(0, 100)
         arrow_recovery = self.arrow.sturdiness
@@ -2171,7 +2129,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc, category="Offensive")
+                         target=npc.target, user=npc)
         self.evaluate()
 
     def viable(self):
@@ -2283,7 +2241,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
                                          colored("{} is resting.".format(npc.name), "white"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=npc, user=npc, category="Utility")
+                         beats_left=execute, target=npc, user=npc)
 
     def execute(self, npc):
         print(self.stage_announce[1])
@@ -2309,7 +2267,7 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
                                          str(npc.name + npc.idle_message),
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=npc, user=npc, category="Utility")
+                         beats_left=execute, target=npc, user=npc)
 
     def execute(self, npc):
         print(self.stage_announce[1])
@@ -2335,7 +2293,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
                              "{} recoils heavily from the attack.".format(npc.name),
                              ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc, category="Offensive")
+                         target=npc.target, user=npc)
         self.evaluate()
 
     def viable(self):
@@ -2439,7 +2397,7 @@ class VenomClaw(Move):  # Poisonous attack
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc, category="Offensive")
+                         target=npc.target, user=npc)
         self.evaluate()
 
     def viable(self):
@@ -2542,7 +2500,7 @@ class SpiderBite(Move):  # Poisonous attack
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc, category="Offensive")
+                         target=npc.target, user=npc)
         self.evaluate()
 
     def viable(self):
@@ -2647,7 +2605,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
                                          "{} recoils from the attack.".format(npc.name),
                                          ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=npc.target, user=npc, category="Offensive")
+                         target=npc.target, user=npc)
         self.evaluate()
 
     def viable(self):
@@ -3044,7 +3002,7 @@ class FeintAndPivot(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user, category="Offensive")
+                         target=target, user=user)
         self.evaluate()
 
     def viable(self):
@@ -3353,8 +3311,7 @@ class QuickSwap(Move):
             fatigue_cost=fatigue_cost,
             beats_left=prep,
             target=target,
-            user=user,
-            category="Maneuver"
+            user=user
         )
         self.evaluate()
     

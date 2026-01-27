@@ -201,21 +201,43 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
         if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
-    def process(self):
-        # Trigger the first memory flash before more enemies appear
-        memory = Ch01_Memory_Amelia(player=self.player, tile=self.tile)
-        memory.process()
-        
+    def process(self, user_input=None):
+        if user_input is None:
+            # Stage 1: Trigger the memory flash
+            memory = Ch01_Memory_Amelia(player=self.player, tile=self.tile)
+            memory.process()
+            
+            # Sync state from memory to this event to pause processing
+            self.needs_input = True
+            self.input_type = getattr(memory, "input_type", "choice")
+            self.input_prompt = getattr(memory, "input_prompt", "The memory fades...")
+            self.input_options = getattr(memory, "input_options", [{"value": "continue", "label": "Continue"}])
+            self.description = getattr(memory, "description", "")
+            return
+
+        # Stage 2: After user clicks 'Continue'
         # Then continue with the original sequence
-        print_slow("\nThe ground quivers slightly as more rock creatures appear.\n")
-        time.sleep(0.5)
+        cprint("\nThe ground quivers slightly as more rock creatures appear.\n", "yellow")
+        
+        # Ensure we use the current tile instance to avoid stale refs
+        target_tile = self.tile
+        if hasattr(self.player, 'current_room'):
+            target_tile = self.player.current_room
+
         for x in range(0, 2):
-            npc = self.tile.spawn_npc("RockRumbler")
+            npc = target_tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
-        self.player.combat_events.append(Ch01PostRumblerRep(player=self.player, tile=self.tile, params=False,
+            
+        self.player.combat_events.append(Ch01PostRumblerRep(player=self.player, tile=target_tile, params=False,
                                                             repeat=True))
-        self.player.combat_events.append(Ch01PostRumbler2(player=self.player, tile=self.tile, params=False,
+        self.player.combat_events.append(Ch01PostRumbler2(player=self.player, tile=target_tile, params=False,
                                                           repeat=False))
+        self.completed = True
+        self.needs_input = False
+        
+        # Clean up this event manually since staged events might persist in lists
+        if self in self.player.combat_events:
+             self.player.combat_events.remove(self)
 
 
 class Ch01PostRumblerRep(Event):
@@ -229,12 +251,17 @@ class Ch01PostRumblerRep(Event):
             self.pass_conditions_to_process()
 
     def process(self):
-        cprint("\nThe ground quivers slightly as even more rock creatures appear.\n")
-        time.sleep(0.5)
+        # Ensure we use the current tile instance to avoid stale refs
+        target_tile = self.tile
+        if hasattr(self.player, 'current_room'):
+            target_tile = self.player.current_room
+
+        cprint("\nThe ground quivers slightly as even more rock creatures appear.\n", "yellow")
         for x in range(0, self.iteration):
-            npc = self.tile.spawn_npc("RockRumbler")
+            npc = target_tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
-            self.iteration += 1
+        
+        self.iteration += 1
 
 
 class Ch01PostRumbler2(Event):
@@ -246,35 +273,42 @@ class Ch01PostRumbler2(Event):
             self.pass_conditions_to_process()
 
     def process(self):
+        # Ensure we use the current tile instance to avoid stale refs
+        target_tile = self.tile
+        if hasattr(self.player, 'current_room'):
+            target_tile = self.player.current_room
+
         for event in self.player.combat_events:
             if event.name == 'Ch01_PostRumbler_Rep':
                 self.player.combat_events.remove(event)  # Remove the repeating event
+        
         cprint(
             "\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
-            "leaps out, smashing its huge fist down on top of one of the rock creatures.")
-        time.sleep(2)
-        self.player.combat_list[0].hp = 0  # instagib one of the rock creatures
-        print(colored(self.player.combat_list[0].name, "magenta") + " exploded into fragments of light!")
-        self.player.current_room.npcs_here.remove(self.player.combat_list[0])
-        self.player.combat_list.remove(self.player.combat_list[0])
-        self.player.refresh_enemy_list_and_prox()
-        time.sleep(3)
+            "leaps out, smashing its huge fist down on top of one of the rock creatures.", "yellow")
+        
+        if self.player.combat_list:
+            enemy = self.player.combat_list[0]
+            enemy.hp = 0  # instagib one of the rock creatures
+            print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
+            if enemy in target_tile.npcs_here:
+                target_tile.npcs_here.remove(enemy)
+            if enemy in self.player.combat_list:
+                self.player.combat_list.remove(enemy)
+            self.player.refresh_enemy_list_and_prox()
+
         cprint("The massive figure somewhat resembles a man, except he is covered head-to-toe in armor not much "
-               "different from the chamber walls. There is a star-shaped patch of moss on its left shoulder.")
-        time.sleep(3)
-        cprint("Two more rock creatures advance on him, snapping their heavy jaws.")
-        time.sleep(3)
+               "different from the chamber walls. There is a star-shaped patch of moss on its left shoulder.", "cyan")
+        cprint("Two more rock creatures advance on him, snapping their heavy jaws.", "cyan")
         cprint("Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, "
-               "then turns to face the creatures. A loud rumble billows out from the figure, vibrating Jean's chest.")
-        time.sleep(4)
-        cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.")
-        time.sleep(3)
-        cprint("It burns in his throat, but he can feel strength quickly returning to his limbs.")
-        time.sleep(3)
-        cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.")
+               "then turns to face the creatures. A loud rumble billows out from the figure, vibrating Jean's chest.", "cyan")
+        cprint("\nSensing the urgency of his situation, Jean quaffs the strange liquid.", "yellow")
+        cprint("It burns in his throat, but he can feel strength quickly returning to his limbs.", "cyan")
+        cprint("Jean would like to thank the strange rock-man, but he's not out of danger just yet.", "cyan")
+        
         if len(self.player.combat_list) == 0:
-            npc = self.tile.spawn_npc("RockRumbler")
+            npc = target_tile.spawn_npc("RockRumbler")
             npc.combat_engage(self.player)
+            
         self.player.hp = self.player.maxhp
         self.player.fatigue = self.player.maxfatigue
         self.player.heat += 0.75
