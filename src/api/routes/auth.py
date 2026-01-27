@@ -1,14 +1,14 @@
 """Authentication routes."""
 
 from flask import Blueprint, request, jsonify
-from werkzeug.security import generate_password_hash, check_password_hash
 from src.api.services import SessionManager
+from src.api.services.auth_service import auth_service
 
 auth_bp = Blueprint("auth", __name__)
 
 
 @auth_bp.route("/auth/register", methods=["POST"])
-def register():
+async def register():
     """Create a new player account and session.
 
     Request body:
@@ -30,13 +30,13 @@ def register():
     try:
         data = request.get_json()
 
-        if not data or "username" not in data or "password" not in data:
+        if not data or "username" not in data or "password" not in data or "email" not in data:
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
-                        "message": "Missing username or password",
+                        "message": "Missing username, password, or email",
                     }
                 ),
                 400,
@@ -44,55 +44,45 @@ def register():
 
         username = data["username"].strip()
         password = data["password"]
+        email = data["email"].strip()
 
-        if not username or len(username) < 2:
+        # Registration logic using auth_service
+        try:
+            user = await auth_service.create_user(username, password, email)
+        except ValueError as ve:
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
-                        "message": "Username must be at least 2 characters",
+                        "message": str(ve),
                     }
                 ),
                 400,
             )
-
-        if not password or len(password) < 8:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "validation_error",
-                        "message": "Password must be at least 8 characters",
-                    }
-                ),
-                400,
-            )
-
-        # Hash password (prepared for database storage in the future)
-        # Note: Current session manager doesn't persist users yet
-        hashed_password = generate_password_hash(password)
+        except Exception as e:
+            if "UNIQUE constraint failed" in str(e):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "conflict_error",
+                            "message": "Username already exists",
+                        }
+                    ),
+                    409,
+                )
+            raise e
 
         # Get session manager from app context
         from flask import current_app
-
         session_manager = current_app.session_manager
 
-        if not session_manager:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "server_error",
-                        "message": "Session manager not initialized",
-                    }
-                ),
-                500,
-            )
-
-        # Create session (in a real app, would store password hash, check for duplicates, etc)
+        # Create session with the DB user ID
         session_id, player_id = session_manager.create_session(username)
+        # Link session to DB user ID
         session = session_manager.get_session(session_id)
+        session.db_user_id = user["id"]
 
         return (
             jsonify(
@@ -121,7 +111,7 @@ def register():
 
 
 @auth_bp.route("/auth/login", methods=["POST"])
-def login():
+async def login():
     """Create a new player session (or login existing player).
 
     Request body:
@@ -158,50 +148,30 @@ def login():
         username = data["username"].strip()
         password = data["password"]
 
-        if not username or len(username) < 2:
+        # Authenticate using auth_service
+        user = await auth_service.authenticate_user(username, password)
+        
+        if not user:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "error": "validation_error",
-                        "message": "Username must be at least 2 characters",
+                        "error": "auth_error",
+                        "message": "Invalid username or password",
                     }
                 ),
-                400,
-            )
-
-        if not password:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "validation_error",
-                        "message": "Password is required",
-                    }
-                ),
-                400,
+                401,
             )
 
         # Get session manager from app context
         from flask import current_app
-
         session_manager = current_app.session_manager
 
-        if not session_manager:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "server_error",
-                        "message": "Session manager not initialized",
-                    }
-                ),
-                500,
-            )
-
-        # Create session (in a real app, would validate password hash)
+        # Create session
         session_id, player_id = session_manager.create_session(username)
+        # Link session to DB user ID
         session = session_manager.get_session(session_id)
+        session.db_user_id = user["id"]
 
         return (
             jsonify(
