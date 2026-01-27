@@ -431,9 +431,8 @@ class GameService:
                             f.write(str(prompt) + '\n')
                         return "1"  # Default to first option
                         
-                    # Build robust patch list across multiple core modules
-                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 
-                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events']
+                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 'animations',
+                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events', 'src.animations']
                     
                     if hasattr(event, '__module__'):
                         target_modules.append(event.__module__)
@@ -449,6 +448,7 @@ class GameService:
                             patch(f"{mod}.cprint", mock_cprint, create=True),
                             patch(f"{mod}.print_slow", mock_print_slow, create=True),
                             patch(f"{mod}.await_input", return_value=None, create=True),
+                            patch(f"{mod}.animate_to_main_screen", return_value=None, create=True),
                             patch(f"{mod}.input", mock_input, create=True),
                         ])
                     
@@ -463,6 +463,11 @@ class GameService:
                             except (AttributeError, ImportError, TypeError, ValueError):
                                 pass 
                         
+                        # Ensure event has current player and room references
+                        event.player = player
+                        if hasattr(player, 'current_room'):
+                            event.tile = player.current_room
+
                         event.check_conditions()
                         
                         # Refresh event data after processing
@@ -500,7 +505,10 @@ class GameService:
                 if output:
                     # Remove ANSI codes
                     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                    clean_output = ansi_escape.sub('', output).strip()
+                    lines = output.splitlines()
+                    # Filter out technical debug lines
+                    filtered_lines = [l for l in lines if not l.strip().startswith("DEBUG:")]
+                    clean_output = ansi_escape.sub('', "\n".join(filtered_lines)).strip()
                     if clean_output:
                         event_data["output_text"] = clean_output
             
@@ -629,7 +637,10 @@ class GameService:
         if output:
             # Remove ANSI codes
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            clean_output = ansi_escape.sub('', output).strip()
+            lines = output.splitlines()
+            # Filter out technical debug lines
+            filtered_lines = [l for l in lines if not l.strip().startswith("DEBUG:")]
+            clean_output = ansi_escape.sub('', "\n".join(filtered_lines)).strip()
             if clean_output:
                 result["output_text"] = clean_output
         
@@ -1317,6 +1328,12 @@ class GameService:
                 events_triggered.append(event_data)
                 continue
             
+            # Ensure event has current player and room references
+            # (Crucial when loading from session where events might hold stale refs)
+            event.player = player
+            if hasattr(player, 'current_room'):
+                event.tile = player.current_room
+
             # For non-input events, process normally
             # Try to trigger the event and capture output
             method_name = "check_combat_conditions" if hasattr(event, "check_combat_conditions") else "check_conditions"
@@ -1336,8 +1353,8 @@ class GameService:
                             f.write(str(prompt) + '\n')
                         return "1"
 
-                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 
-                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events']
+                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 'animations',
+                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events', 'src.animations']
                     
                     if hasattr(event, '__module__'):
                         target_modules.append(event.__module__)
@@ -1353,6 +1370,7 @@ class GameService:
                             patch(f"{mod}.cprint", mock_cprint, create=True),
                             patch(f"{mod}.print_slow", mock_print_slow, create=True),
                             patch(f"{mod}.await_input", return_value=None, create=True),
+                            patch(f"{mod}.animate_to_main_screen", return_value=None, create=True),
                             patch(f"{mod}.input", mock_input, create=True),
                         ])
                     
@@ -1398,13 +1416,24 @@ class GameService:
                 
                 # Capture and clean output
                 output = f.getvalue()
+                triggered = False
                 if output:
                     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                    clean_output = ansi_escape.sub('', output).strip()
+                    lines = output.splitlines()
+                    # Filter out technical debug lines
+                    filtered_lines = [l for l in lines if not l.strip().startswith("DEBUG:")]
+                    clean_output = ansi_escape.sub('', "\n".join(filtered_lines)).strip()
                     if clean_output:
                         event_data["output_text"] = clean_output
-            
-            events_triggered.append(event_data)
+                        triggered = True
+
+                # Mark as triggered if input required
+                if getattr(event, "needs_input", False):
+                    triggered = True
+                
+                # Only add to results if it actually did something
+                if triggered:
+                    events_triggered.append(event_data)
 
         return events_triggered
 
@@ -1444,6 +1473,14 @@ class GameService:
                 return self.trigger_combat_events(p, session_data=session_data)
                 
             player._combat_adapter = ApiCombatAdapter(player, session_id=session_id, on_event_callback=event_callback)
+        else:
+            # Update existing adapter's callback to ensure it has access to current session_data
+            def event_callback(p):
+                return self.trigger_combat_events(p, session_data=session_data)
+            
+            player._combat_adapter.on_event_callback = event_callback
+            if session_id:
+                player._combat_adapter.session_id = session_id
             # If we had to recreate the adapter, combat state might be lost
             if hasattr(player, 'combat_list') and player.combat_list:
                 player._combat_adapter.initialize_combat(player.combat_list)
@@ -1552,6 +1589,9 @@ class GameService:
                     return self.trigger_combat_events(p)
                 
                 player._combat_adapter = ApiCombatAdapter(player, on_event_callback=event_callback)
+                # Synchronize initial state for the new adapter
+                player._combat_adapter.available_options = player._combat_adapter._get_available_moves()
+                player._combat_adapter._refresh_suggestions()
             else:
                 return {
                     "combat_active": getattr(player, "in_combat", False),
@@ -1842,104 +1882,123 @@ class GameService:
             os.makedirs(saves_dir)
         return saves_dir
 
-    def save_game(self, player: "player_module.Player", name: str) -> str:
-        """Save the game with metadata.
+    async def save_game(self, player: "player_module.Player", name: str, user_id: str, is_autosave: bool = False) -> str:
+        """Save the game to Turso database.
 
         Args:
             player: The Player instance
             name: Name for the save
+            user_id: The DB user ID
+            is_autosave: Whether this is an autosave
 
         Returns:
             Save ID
         """
         import uuid
-        import json
-        import os
         import pickle
         from datetime import datetime
+        from src.api.db import db
+
+        # 1. Enforcement of manual save limit
+        if not is_autosave:
+            count_sql = "SELECT COUNT(*) FROM saves WHERE user_id = ? AND is_autosave = FALSE"
+            res = await db.execute(count_sql, [user_id])
+            count = res.rows[0][0]
+            if count >= 20:
+                raise ValueError("Maximum number of manual saves reached (20). Please delete an existing save to create a new one.")
 
         save_id = str(uuid.uuid4())
-        saves_dir = self._get_saves_dir()
         
-        # Save .sav file (Pickle)
-        sav_path = os.path.join(saves_dir, f"{save_id}.sav")
-        with open(sav_path, "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+        # Serialize player state
+        # Note: We use pickle for BLOB storage to maintain character objects
+        save_data = pickle.dumps(player)
 
-        # Create Metadata
-        map_name = getattr(getattr(player, "map", None), "name", "Unknown Area")
-        room_name = getattr(getattr(player, "current_room", None), "name", "Unknown Room")
-        level = getattr(player, "level", 1)
-        playtime = getattr(player, "time_elapsed", 0)
+        # 2. Hybrid Autosave Logic: UPSERT for the single autosave
+        if is_autosave:
+            # Check if an autosave already exists for this user
+            check_sql = "SELECT id FROM saves WHERE user_id = ? AND is_autosave = TRUE"
+            check_res = await db.execute(check_sql, [user_id])
+            
+            if check_res.rows:
+                # Update existing autosave
+                save_id = check_res.rows[0][0]
+                sql = """
+                UPDATE saves 
+                SET data = ?, timestamp = CURRENT_TIMESTAMP, 
+                    level = ?, map_name = ?, room_title = ?, playtime = ?
+                WHERE id = ?
+                """
+                params = [
+                    save_data,
+                    getattr(player, "level", 1),
+                    getattr(getattr(player, "map", None), "name", "Unknown"),
+                    getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                    getattr(player, "time_elapsed", 0),
+                    save_id
+                ]
+            else:
+                # Create first autosave
+                sql = """
+                INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                params = [
+                    save_id, user_id, "Autosave", save_data, True,
+                    getattr(player, "level", 1),
+                    getattr(getattr(player, "map", None), "name", "Unknown"),
+                    getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                    getattr(player, "time_elapsed", 0)
+                ]
+        else:
+            # Manual save
+            sql = """
+            INSERT INTO saves (id, user_id, name, data, is_autosave, level, map_name, room_title, playtime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            params = [
+                save_id, user_id, name, save_data, False,
+                getattr(player, "level", 1),
+                getattr(getattr(player, "map", None), "name", "Unknown"),
+                getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                getattr(player, "time_elapsed", 0)
+            ]
 
-        metadata = {
-            "id": save_id,
-            "name": name,
-            "timestamp": datetime.now().isoformat(),
-            "level": level,
-            "map_name": map_name,
-            "room_title": room_name,
-            "playtime": playtime,
-            "filename": f"{save_id}.sav"
-        }
-
-        # Save .meta file (JSON)
-        meta_path = os.path.join(saves_dir, f"{save_id}.meta")
-        with open(meta_path, "w") as f:
-            json.dump(metadata, f, indent=2)
-
+        await db.execute(sql, params)
         return save_id
 
-    def load_game(self, save_id: str) -> Optional["player_module.Player"]:
-        """Load a saved game.
+    async def load_game(self, save_id: str, user_id: str) -> Optional["player_module.Player"]:
+        """Load a saved game from Turso.
 
         Args:
             save_id: ID of save to load
+            user_id: The DB user ID (for security validation)
 
         Returns:
             Loaded Player instance or None
         """
-        import os
-        import src.functions as functions
+        import pickle
+        from src.api.db import db
         
-        saves_dir = self._get_saves_dir()
-        sav_path = os.path.join(saves_dir, f"{save_id}.sav")
+        sql = "SELECT data FROM saves WHERE id = ? AND user_id = ?"
+        result = await db.execute(sql, [save_id, user_id])
         
-        if not os.path.exists(sav_path):
-            # Fallback: check if save_id is actually a legacy filename (e.g. "AutoSave")
-            # This handles cases where we might want to load old saves if we indexed them
-            legacy_path = os.path.join(saves_dir, save_id)
-            if os.path.exists(legacy_path):
-                sav_path = legacy_path
-            else:
-                return None
+        if not result.rows:
+            return None
 
         try:
-            # Use functions.load to handle safe unpickling and legacy compatibility
-            player = functions.load(sav_path)
+            save_data = result.rows[0][0]
+            player = pickle.loads(save_data)
             
             if player:
                 # Re-initialize universe connections
                 if not hasattr(player, "universe") or player.universe is None:
+                    import src.universe as universe_module
                     player.universe = universe_module.Universe(player)
-                
-                # Ensure universe is built/linked
-                # Note: Universe.build(player) might be expensive or reset state?
-                # In game.py it calls build(player). checking universe.py...
-                # It seems build() populates maps. If the player was pickled with the universe, maybe we don't need this.
-                # But typically 'universe' field on player is what holds the world.
-                # If pickle saved the universe, we utilize it.
-                # If not, we rebuild.
                 
                 # Force rebuild of transient state if needed
                 if not hasattr(player.universe, "maps") or not player.universe.maps:
                      player.universe.build(player)
                 
-                # Link player back to map/room objects if they were severed
-                # (Pickle usually handles circular refs fine, but good to be sure)
-                
-                # Update current_room reference based on location_x/y if needed
-                # (This is handled by game loop usually, but let's ensure it's set)
                 if hasattr(player, "map"):
                      start_tile = player.universe.get_tile(player.location_x, player.location_y)
                      if start_tile:
@@ -1950,105 +2009,59 @@ class GameService:
             print(f"Error loading save {save_id}: {e}")
             return None
 
-    def list_saves(self) -> List[Dict[str, Any]]:
-        """List all saved games.
+    async def list_saves(self, user_id: str) -> List[Dict[str, Any]]:
+        """List all saved games for a user from Turso.
 
         Returns:
             List of save metadata dictionaries
         """
-        import os
-        import json
-        import glob
+        from src.api.db import db
         
-        saves_dir = self._get_saves_dir()
+        sql = """
+        SELECT id, name, timestamp, is_autosave, level, map_name, room_title, playtime 
+        FROM saves 
+        WHERE user_id = ? 
+        ORDER BY timestamp DESC
+        """
+        result = await db.execute(sql, [user_id])
+        
         saves = []
-        
-        # Pattern 1: .meta files (New system)
-        meta_files = glob.glob(os.path.join(saves_dir, "*.meta"))
-        for meta_file in meta_files:
-            try:
-                with open(meta_file, "r") as f:
-                    data = json.load(f)
-                    saves.append(data)
-            except Exception:
-                continue
+        for row in result.rows:
+            saves.append({
+                "id": str(row[0]),
+                "name": str(row[1]),
+                "timestamp": str(row[2]),
+                "is_autosave": bool(row[3]),
+                "level": int(row[4]) if row[4] is not None else "?",
+                "map_name": str(row[5]) if row[5] else "Unknown",
+                "room_title": str(row[6]) if row[6] else "Unknown",
+                "playtime": int(row[7]) if row[7] is not None else 0
+            })
                 
-        # Pattern 2: .sav files without .meta (Legacy/Auto-generated)
-        # We should list them too so the user isn't lost
-        sav_files = glob.glob(os.path.join(saves_dir, "*.sav"))
-        existing_ids = {s.get("id") for s in saves}
-        
-        for sav_file in sav_files:
-            filename = os.path.basename(sav_file)
-            save_id = filename.replace(".sav", "")
-            
-            # If we already have a meta record for this ID, skip
-            if save_id in existing_ids:
-                continue
-                
-            # Create a synthetic meta record for legacy save
-            try:
-                mtime = os.path.getmtime(sav_file)
-                from datetime import datetime
-                timestamp = datetime.fromtimestamp(mtime).isoformat()
-                
-                saves.append({
-                    "id": save_id,
-                    "name": filename.replace(".sav", ""), # Use filename as name
-                    "timestamp": timestamp,
-                    "level": "?",
-                    "map_name": "Legacy Save",
-                    "room_title": "Unknown",
-                    "playtime": 0,
-                    "filename": filename,
-                    "is_legacy": True
-                })
-            except Exception:
-                continue
-
-        # Sort by timestamp descending
-        saves.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return saves
 
-    def delete_save(self, save_id: str) -> bool:
-        """Delete a save.
+    async def delete_save(self, save_id: str, user_id: str) -> bool:
+        """Delete a save from Turso.
 
         Args:
             save_id: ID of save to delete
+            user_id: The DB user ID
 
         Returns:
             True if deleted, False otherwise
         """
-        import os
-        saves_dir = self._get_saves_dir()
+        from src.api.db import db
         
-        success = False
+        sql = "DELETE FROM saves WHERE id = ? AND user_id = ?"
+        result = await db.execute(sql, [save_id, user_id])
         
-        # Delete .sav
-        sav_path = os.path.join(saves_dir, f"{save_id}.sav")
-        if os.path.exists(sav_path):
-            os.remove(sav_path)
-            success = True
-            
-        # Delete .meta
-        meta_path = os.path.join(saves_dir, f"{save_id}.meta")
-        if os.path.exists(meta_path):
-            os.remove(meta_path)
-            success = True # Count as success if we deleted the meta at least
-            
-        # Check direct legacy path
-        legacy_path = os.path.join(saves_dir, save_id)
-        if os.path.exists(legacy_path):
-             os.remove(legacy_path)
-             success = True
-
-        return success
+        return result.rows_affected > 0
 
     # ========================
     # Combat Methods
     # ========================
 
-    def _initialize_combat(self, player: "player_module.Player", enemies: List[Any], session_id: str = None) -> Dict[str, Any]:
+    def _initialize_combat(self, player: "player_module.Player", enemies: List[Any], session_id: str = None, session_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """Initialize combat state for player and enemies using the combat adapter.
         
         Args:
@@ -2075,7 +2088,11 @@ class GameService:
         # Create or get combat adapter
         from src.api.combat_adapter import ApiCombatAdapter
         if not hasattr(player, '_combat_adapter'):
-            player._combat_adapter = ApiCombatAdapter(player, session_id=session_id)
+            # Define event callback for logic during beats
+            def event_callback(p):
+                return self.trigger_combat_events(p, session_data=session_data)
+                
+            player._combat_adapter = ApiCombatAdapter(player, session_id=session_id, on_event_callback=event_callback)
         elif session_id:
             player._combat_adapter.session_id = session_id
         

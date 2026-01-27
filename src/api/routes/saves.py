@@ -29,36 +29,20 @@ def get_session_and_player(request):
 
 @saves_bp.route("/saves/", methods=["GET"])
 @saves_bp.route("/saves", methods=["GET"])
-def list_saves():
-    """List all saved games for player.
-
-    Headers:
-        Authorization: Bearer <session_id>
-
-    Returns:
-        {
-            "success": bool,
-            "saves": [
-                {
-                    "id": str,
-                    "name": str,
-                    "timestamp": ISO 8601,
-                    "location": str,
-                    "level": int
-                }
-            ]
-        }
-    """
+async def list_saves():
+    """List all saved games for player from Turso cloud storage."""
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
-        from flask import current_app
+        if not hasattr(session, "db_user_id"):
+             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
 
+        from flask import current_app
         game_service = current_app.game_service
 
-        saves = game_service.list_saves()
+        saves = await game_service.list_saves(session.db_user_id)
 
         return jsonify({"success": True, "saves": saves}), 200
 
@@ -76,49 +60,31 @@ def list_saves():
 
 @saves_bp.route("/saves/", methods=["POST"])
 @saves_bp.route("/saves", methods=["POST"])
-def create_save():
-    """Create a new save.
-
-    Headers:
-        Authorization: Bearer <session_id>
-
-    Request body:
-        {
-            "name": str
-        }
-
-    Returns:
-        {
-            "success": bool,
-            "save_id": str,
-            "timestamp": ISO 8601,
-            "message": str
-        }
-    """
+async def create_save():
+    """Create a new manual or auto save in Turso cloud."""
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
-        data = request.get_json()
-        if not data or "name" not in data:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing save name",
-                    }
-                ),
-                400,
-            )
+        if not hasattr(session, "db_user_id"):
+             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
 
-        save_name = data["name"]
+        data = request.get_json()
+        if not data or ("name" not in data and "is_autosave" not in data):
+            return jsonify({"success": False, "error": "Missing save name or type"}), 400
+
+        save_name = data.get("name", "Manual Save")
+        is_autosave = data.get("is_autosave", False)
 
         from flask import current_app
-
         game_service = current_app.game_service
 
-        save_id = game_service.save_game(player, save_name)
+        try:
+            save_id = await game_service.save_game(player, save_name, session.db_user_id, is_autosave=is_autosave)
+        except ValueError as ve:
+            # Handle the 20 manual save limit
+            return jsonify({"success": False, "error": str(ve)}), 403
 
         from datetime import datetime
 
@@ -128,7 +94,7 @@ def create_save():
                     "success": True,
                     "save_id": save_id,
                     "timestamp": datetime.now().isoformat(),
-                    "message": f"Game saved: {save_name}",
+                    "message": f"Game saved: {save_name}" if not is_autosave else "Game autosaved",
                 }
             ),
             201,
@@ -147,39 +113,27 @@ def create_save():
 
 
 @saves_bp.route("/saves/<save_id>/load", methods=["POST"])
-def load_save(save_id):
-    """Load a saved game.
-
-    Headers:
-        Authorization: Bearer <session_id>
-
-    Path parameters:
-        save_id: str (save identifier)
-
-    Returns:
-        {
-            "success": bool,
-            "message": str,
-            "player": {...}
-        }
-    """
+async def load_save(save_id):
+    """Load a saved game from Turso cloud."""
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
-        from flask import current_app
+        if not hasattr(session, "db_user_id"):
+             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
 
+        from flask import current_app
         game_service = current_app.game_service
 
-        loaded_player = game_service.load_game(save_id)
+        loaded_player = await game_service.load_game(save_id, session.db_user_id)
 
         if not loaded_player:
             return (
                 jsonify(
                     {
                         "success": False,
-                        "error": "Save not found",
+                        "error": "Save not found or access denied",
                     }
                 ),
                 404,
@@ -212,52 +166,25 @@ def load_save(save_id):
 
 
 @saves_bp.route("/saves/<save_id>", methods=["DELETE"])
-def delete_save(save_id):
-    """Delete a saved game.
-
-    Headers:
-        Authorization: Bearer <session_id>
-
-    Path parameters:
-        save_id: str (save identifier)
-
-    Returns:
-        {
-            "success": bool,
-            "message": str
-        }
-    """
+async def delete_save(save_id):
+    """Delete a saved game from Turso cloud."""
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
-        from flask import current_app
+        if not hasattr(session, "db_user_id"):
+             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
 
+        from flask import current_app
         game_service = current_app.game_service
 
-        success = game_service.delete_save(save_id)
+        success = await game_service.delete_save(save_id, session.db_user_id)
 
         if success:
-            return (
-                jsonify(
-                    {
-                        "success": True,
-                        "message": "Save deleted successfully",
-                    }
-                ),
-                200,
-            )
+            return jsonify({"success": True, "message": "Save deleted successfully"}), 200
         else:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Save not found",
-                    }
-                ),
-                404,
-            )
+            return jsonify({"success": False, "error": "Save not found or access denied"}), 404
 
     except Exception as e:
         return (
