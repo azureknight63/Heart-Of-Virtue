@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { colors } from '../styles/theme'
 
-export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = "", onSuggestClick, isPlayerTurn = false }) {
+export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false }) {
     const [isVisible, setIsVisible] = useState(false)
 
     useEffect(() => {
@@ -78,7 +78,7 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
                     <div style={{ color: colors.text.highlight, fontSize: '9px', marginBottom: '2px', opacity: 0.7 }}>ANALYSIS OF PREVIOUS CYCLE:</div>
                     <div style={{ marginBottom: '8px' }}>"{lastOutcome}"</div>
 
-                    <button
+                    {lastMoveViable && <button
                         onClick={() => {
                             // Extract move name from outcome if possible, or just look at last move
                             // For now, we rely on the parent to know what the last move was if it wants to repeat
@@ -104,7 +104,7 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'}
                     >
                         <span>🔄</span> DO IT AGAIN
-                    </button>
+                    </button>}
                 </div>
             )}
 

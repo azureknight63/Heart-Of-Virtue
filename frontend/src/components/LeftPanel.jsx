@@ -547,6 +547,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
           <SuggestedMovesPanel
             suggestions={combat?.suggested_moves || []}
             lastOutcome={combat?.last_move_outcome || ""}
+            lastMoveViable={combat?.available_options?.some(opt => opt.name === combat?.last_move_name && opt.available)}
             isPlayerTurn={isMyTurn}
             onSuggestClick={(s) => {
               if (s.move_name === 'repeat_last') {
@@ -555,15 +556,16 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
                 const targetId = combat?.last_move_target_id
 
                 if (moveName) {
-                  onCombatAction(moveName, { target_id: targetId })
+                  onCombatAction('select_move_and_target', { move_name: moveName, target_id: targetId })
                 } else {
                   // Fallback to the first recommended suggestion if no last move found
                   if (combat?.suggested_moves?.length > 0) {
-                    onCombatAction(combat.suggested_moves[0].move_name, { target_id: combat.suggested_moves[0].target_id })
+                    const firstSug = combat.suggested_moves[0];
+                    onCombatAction('select_move_and_target', { move_name: firstSug.move_name, target_id: firstSug.target_id })
                   }
                 }
               } else {
-                onCombatAction(s.move_name, { target_id: s.target_id })
+                onCombatAction('select_move_and_target', { move_name: s.move_name, target_id: s.target_id })
               }
             }}
           />
