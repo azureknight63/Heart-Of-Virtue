@@ -1,12 +1,16 @@
 import json
 import os
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, Dict, Optional, List
+import requests
 
 # We intentionally import requests lazily inside provider code paths so tests don't require it
 
 AI_DIR = os.path.dirname(__file__)
 MYNX_JSON_PATH = os.path.join(AI_DIR, "npc", "animal", "mynx.json")
 
+
+logger = logging.getLogger(__name__)
 
 class _JSONTools:
     @staticmethod
@@ -65,14 +69,14 @@ class GenericLLMClient:
         - OPENROUTER_SITE_TITLE="Your Site"   (optional ranking metadata)
 
     Defaults:
-      - model: 'llama3.1:7b' for ollama, 'x-ai/grok-4-fast:free' for openrouter (if unset)
+      - model: 'llama3.1:7b' for ollama, 'google/gemini-flash-1.5:free' for openrouter (if unset)
     """
 
     def __init__(self):
         self.enabled = os.getenv("MYNX_LLM_ENABLED", "0") in ("1", "true", "True")
         self.provider = os.getenv("MYNX_LLM_PROVIDER", "").strip().lower() or "ollama"
         # Choose a sensible default model per provider if user did not specify
-        default_model = "llama3.1:7b" if self.provider == "ollama" else "x-ai/grok-4-fast:free"
+        default_model = "llama3.1:7b" if self.provider == "ollama" else "google/gemini-flash-1.5:free"
         self.model = os.getenv("MYNX_LLM_MODEL", "").strip() or default_model
         self.base_url = os.getenv("MYNX_LLM_URL", "").strip() or "http://localhost:11434"
 
@@ -80,14 +84,18 @@ class GenericLLMClient:
         self._openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self._openrouter_site = os.getenv("OPENROUTER_SITE", "").strip() or None
         self._openrouter_site_title = os.getenv("OPENROUTER_SITE_TITLE", "").strip() or None
+        self._free_models_cache: List[str] = []
 
         # Probe availability lazily; we don't want to fail import-time
         self._available: Optional[bool] = None
         self._unavailable_reason: Optional[str] = None
         
-        # Discover model if using Ollama and default is not specified
-        if self.provider == "ollama" and not os.getenv("MYNX_LLM_MODEL"):
-            self._discover_ollama_model()
+        # Discover models
+        if self.enabled:
+            if self.provider == "ollama" and not os.getenv("MYNX_LLM_MODEL"):
+                self._discover_ollama_model()
+            elif self.provider == "openrouter":
+                self._discover_openrouter_model()
 
     def _discover_ollama_model(self):
         """Try to find an available Ollama model if the default is missing."""
@@ -107,6 +115,35 @@ class GenericLLMClient:
                     self.model = models[0]
         except Exception:
             pass
+
+    def _discover_openrouter_model(self):
+        """Fetch list of free models from OpenRouter to use as fallbacks."""
+        if not self._openrouter_api_key:
+            return
+        
+        try:
+            r = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                models = data.get("data", [])
+                free_models = []
+                for m in models:
+                    pricing = m.get("pricing", {})
+                    # Look for truly free models (0 cost for prompt and completion)
+                    if str(pricing.get("prompt")) == "0" and str(pricing.get("completion")) == "0":
+                        free_models.append(m.get("id"))
+                
+                self._free_models_cache = free_models
+                logger.info(f"DEBUG: Discovered {len(free_models)} free OpenRouter models.")
+                
+                # If current model is generic or unset, pick the best available free model
+                if self.model in ["auto", "free", ""] or not self.model:
+                    if "google/gemini-flash-1.5:free" in free_models:
+                        self.model = "google/gemini-flash-1.5:free"
+                    elif free_models:
+                        self.model = free_models[0]
+        except Exception as e:
+            logger.warning(f"DEBUG: Failed to discover OpenRouter models: {e}")
 
     def available(self) -> bool:
         if not self.enabled:
@@ -187,6 +224,7 @@ class GenericLLMClient:
     def generate_structured(self, system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
         if not self.available():
             return None
+            
         if self.provider == "ollama":
             obj = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
         elif self.provider == "openrouter":
@@ -196,6 +234,7 @@ class GenericLLMClient:
         
         if isinstance(obj, dict):
             return obj
+            
         return None
 
     # Provider-specific implementation: Ollama (local)
@@ -295,39 +334,68 @@ class GenericLLMClient:
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 }
-                for k, v in (headers or {}).items():
-                    if v:
-                        http_headers[k] = v
-                payload = {
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "max_tokens": 1024 if structured else 256,
-                }
-                resp = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=http_headers, timeout=30)
-                if resp.status_code != 200:
-                    return None
-                data = resp.json()
-                content = None
-                if isinstance(data, dict):
-                    choices = data.get("choices")
-                    if isinstance(choices, list) and choices:
-                        first = choices[0]
-                        if isinstance(first, dict):
-                            msg = first.get("message")
-                            if isinstance(msg, dict):
-                                content = msg.get("content")
-                            if not content:
-                                content = first.get("text") or first.get("content")
-                if not content:
-                    return None
-                if structured:
-                    return _JSONTools.try_parse_json(str(content))
-                return _JSONTools.sanitize_text(str(content))
+                if self._openrouter_site:
+                    http_headers["HTTP-Referer"] = self._openrouter_site
+                if self._openrouter_site_title:
+                    http_headers["X-Title"] = self._openrouter_site_title
+
+                # Attempt with preferred model, then fallbacks
+                models_to_try = [self.model]
+                if self._free_models_cache:
+                    # Add fallbacks that aren't the primary model
+                    models_to_try.extend([m for m in self._free_models_cache if m != self.model][:2])
+
+                for model_id in models_to_try:
+                    payload = {
+                        "model": model_id,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.2,
+                        "top_p": 0.9,
+                        "max_tokens": 1024 if structured else 256,
+                    }
+                    
+                    try:
+                        resp = requests.post(
+                            "https://openrouter.ai/api/v1/chat/completions", 
+                            json=payload, 
+                            headers=http_headers, 
+                            timeout=30
+                        )
+                        
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            content = None
+                            if isinstance(data, dict):
+                                choices = data.get("choices")
+                                if isinstance(choices, list) and choices:
+                                    first = choices[0]
+                                    if isinstance(first, dict):
+                                        msg = first.get("message")
+                                        if isinstance(msg, dict):
+                                            content = msg.get("content")
+                                        if not content:
+                                            content = first.get("text") or first.get("content")
+                            
+                            if content:
+                                if model_id != self.model:
+                                    logger.info(f"DEBUG: Successfully used fallback model: {model_id}")
+                                if structured:
+                                    return _JSONTools.try_parse_json(str(content))
+                                return _JSONTools.sanitize_text(str(content))
+                        
+                        # If not 200, log and try next model if it's a model-related error
+                        logger.warning(f"DEBUG: model {model_id} failed with {resp.status_code}: {resp.text}")
+                        if resp.status_code not in [400, 404, 403]: # Only retry on likely availability/rights issues
+                             break
+
+                    except Exception as e:
+                        logger.error(f"DEBUG: Request exception for {model_id}: {e}")
+                        continue
+                
+                return None
             except Exception:
                 return None
 

@@ -2,7 +2,7 @@ import apiClient from './client'
 
 // Auth endpoints
 export const auth = {
-  register: (username, password) => apiClient.post('/auth/register', { username, password }),
+  register: (username, password, email) => apiClient.post('/auth/register', { username, password, email }),
   login: (username, password) => apiClient.post('/auth/login', { username, password }),
   logout: () => apiClient.post('/auth/logout'),
 }
@@ -96,7 +96,7 @@ export const equipment = {
 
 // Save/Load endpoints
 export const saves = {
-  save: (saveName) => apiClient.post('/saves/', { name: saveName }),
+  save: (saveName, isAutosave = false) => apiClient.post('/saves/', { name: saveName, is_autosave: isAutosave }),
   load: (saveId) => apiClient.post(`/saves/${saveId}/load`),
   list: () => apiClient.get('/saves/'),
   delete: (saveId) => apiClient.delete(`/saves/${saveId}`),

@@ -25,7 +25,7 @@ class CombatStrategist:
     def get_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int = 1) -> List[Dict[str, Any]]:
         """Fetch movement suggestions from the LLM."""
         if not self.client.available():
-            return []
+            return self._get_fallback_suggestions(combat_context, max_suggestions)
 
         user_prompt = self._build_user_prompt(combat_context)
         
@@ -33,20 +33,21 @@ class CombatStrategist:
             # Let's refine the prompt to return a named object for easier parsing via GenericLLMClient
             wrapped_prompt = user_prompt + "\nReturn the result as a JSON object with a key 'suggestions' containing the list of move objects."
             
-            logger.info(f"Requesting {max_suggestions} suggestions for {combat_context.get('player', {}).get('name')}")
+            logger.info(f"DEBUG: Requesting {max_suggestions} suggestions for {combat_context.get('player', {}).get('name')}")
+            logger.debug(f"DEBUG: STRATEGIST PROMPT:\n{wrapped_prompt}")
             raw_response = self.client.generate_structured(self.system_prompt, wrapped_prompt)
             
             if not raw_response or not isinstance(raw_response, dict):
-                logger.warning("Strategist received empty or non-dict response from LLM.")
+                logger.warning("DEBUG: Strategist received empty or non-dict response from LLM.")
                 return self._get_fallback_suggestions(combat_context, max_suggestions)
-
+ 
             suggestions = raw_response.get("suggestions", [])
             if not isinstance(suggestions, list):
                 # Fallback: maybe it returned a list directly or in another key
                 if isinstance(raw_response, list):
                     suggestions = raw_response
                 else:
-                    logger.warning(f"Strategist failed to parse suggestions from: {raw_response}")
+                    logger.warning(f"DEBUG: Strategist failed to parse suggestions from: {raw_response}")
                     return self._get_fallback_suggestions(combat_context, max_suggestions)
             
             # Sanitize and sort
@@ -60,7 +61,7 @@ class CombatStrategist:
                         s["score"] = 0
                     valid_suggestions.append(s)
             
-            logger.info(f"Strategist found {len(valid_suggestions)} valid suggestions.")
+            logger.debug(f"DEBUG: Strategist found {len(valid_suggestions)} valid suggestions.")
             
             # If no valid suggestions found, use fallback
             if not valid_suggestions:
@@ -73,7 +74,7 @@ class CombatStrategist:
             return valid_suggestions[:max_suggestions]
 
         except Exception as e:
-            logger.error(f"Error fetching combat suggestions: {e}", exc_info=True)
+            logger.error(f"DEBUG: Error fetching combat suggestions: {e}", exc_info=True)
             return self._get_fallback_suggestions(combat_context, max_suggestions)
 
     def _get_fallback_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int) -> List[Dict[str, Any]]:
@@ -82,17 +83,64 @@ class CombatStrategist:
         if not available:
             return []
             
-        fallbacks = []
-        # Suggest available moves with basic score
+        # Try to find a target if moves are targeted
+        enemies = combat_context.get("enemies", [])
+        primary_target_id = enemies[0].get("id") if enemies else None
+            
+        # Prioritize moves: Offensive > Maneuver > Defensive > Miscellaneous
+        # But filter only those that are 'available'
+        scored_moves = []
         for m in available:
-            if m.get("available", False):
-                fallbacks.append({
-                    "move_name": m.get("name"),
-                    "target_id": None,
-                    "score": 50,
-                    "reasoning": f"Tactical analysis interrupted; {m.get('name')} is a viable baseline option."
-                })
-        return fallbacks[:max_suggestions]
+            if not m.get("available", True):
+                continue
+            
+            name = m.get("name", "Unknown")
+            category = m.get("category", "Miscellaneous")
+            
+            # Skip noise
+            if name in ["Cancel"]:
+                continue
+                
+            # Basic scoring heuristic for fallback
+            base_score = 40
+            if category == "Offensive":
+                base_score = 85
+            elif category == "Maneuver":
+                # High priority if far away? Let's just check if it's Advance
+                if name == "Advance":
+                    base_score = 80
+                else: base_score = 75
+            elif category == "Defensive":
+                base_score = 65
+            elif category == "Special":
+                base_score = 70
+                
+            # Penalyze Wait/Check unless nothing else
+            if name in ["Wait", "Check"]:
+                base_score = 20
+
+            target_id = primary_target_id if category in ["Offensive", "Maneuver"] else None
+            
+            scored_moves.append({
+                "move_name": name,
+                "target_id": target_id,
+                "score": base_score,
+                "reasoning": f"Tactical analysis delayed; {name} is a high-priority tactical alternative."
+            })
+
+        # Sort and limit
+        scored_moves.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Ensure we return at least one even if it's 'Check'
+        if not scored_moves:
+            return [{
+                "move_name": "Check",
+                "target_id": None,
+                "score": 10,
+                "reasoning": "No other moves available; reassess the battlefield."
+            }]
+
+        return scored_moves[:max(1, min(3, max_suggestions))]
 
     def _build_user_prompt(self, ctx: Dict[str, Any]) -> str:
         """Construct the context string for the LLM."""
