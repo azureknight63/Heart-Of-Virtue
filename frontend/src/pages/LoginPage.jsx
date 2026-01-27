@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useApi'
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
@@ -18,14 +19,17 @@ export default function LoginPage() {
 
     try {
       if (isRegistering) {
-        await register(username, password)
+        if (password.length < 16) {
+          throw new Error('Password must be at least 16 characters long for cloud security.')
+        }
+        await register(username, password, email)
       } else {
         await login(username, password)
       }
       // Token is now in localStorage, navigate and page will reload state
       window.location.href = '/menu'
     } catch (err) {
-      setError(err.response?.data?.message || 'Authentication failed. Please try again.')
+      setError(err.message || err.response?.data?.message || 'Authentication failed. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -92,11 +96,33 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input-field"
-                placeholder="Enter your password"
+                placeholder={isRegistering ? "Min 16 characters" : "Enter your password"}
                 style={{ width: '100%' }}
                 required
               />
+              {isRegistering && <span style={{ fontSize: '10px', color: '#666' }}>Security: Argon2id hashing active</span>}
             </div>
+
+            {isRegistering && (
+              <div>
+                <label style={{
+                  display: 'block',
+                  color: '#00ff88',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem'
+                }}>Email Address</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input-field"
+                  placeholder="For account recovery (encrypted)"
+                  style={{ width: '100%' }}
+                  required
+                />
+              </div>
+            )}
 
             {error && (
               <div style={{

@@ -330,3 +330,50 @@ export const useExploration = () => {
   return { exploredTiles, setExploredTiles, loading, refetch: fetchExploredTiles }
 }
 
+/**
+ * useAutosave - Hybrid persistence hook
+ * Saves to LocalStorage every "tick"
+ * Saves to Turso Cloud (DB) every 20 "ticks"
+ */
+export const useAutosave = (player) => {
+  const [tickCount, setTickCount] = useState(0)
+  const [lastCloudSave, setLastCloudSave] = useState(Date.now())
+
+  // Save to LocalStorage whenever player state changes (every interaction/move)
+  useEffect(() => {
+    if (player && player.name !== 'Unknown') {
+      const saveData = {
+        player,
+        timestamp: new Date().toISOString(),
+        type: 'local_autosave'
+      }
+      localStorage.setItem('hov_local_autosave', JSON.stringify(saveData))
+    }
+  }, [player])
+
+  const triggerTick = async () => {
+    setTickCount(prev => {
+      const newCount = prev + 1
+
+      // Every 20 ticks, trigger a cloud autosave
+      if (newCount >= 20) {
+        saveToCloud()
+        return 0
+      }
+      return newCount
+    })
+  }
+
+  const saveToCloud = async () => {
+    try {
+      console.log('[Autosave] Triggering cloud sync...')
+      await apiEndpoints.saves.save('Autosave', true)
+      setLastCloudSave(Date.now())
+    } catch (err) {
+      console.error('[Autosave] Cloud sync failed:', err)
+    }
+  }
+
+  return { tickCount, lastCloudSave, triggerTick, saveToCloud }
+}
+

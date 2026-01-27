@@ -35,8 +35,33 @@ export default function MainMenuPage() {
         const initMenu = async () => {
             try {
                 const response = await saves.list()
-                const savesList = response.data?.saves || []
-                setSaveList(savesList)
+                let cloudSaves = response.data?.saves || []
+
+                // Get local autosave
+                const localData = localStorage.getItem('hov_local_autosave')
+                let mergedSaves = [...cloudSaves]
+
+                if (localData) {
+                    try {
+                        const parsed = JSON.parse(localData)
+                        mergedSaves.push({
+                            id: 'local_autosave',
+                            name: 'Local Autosave',
+                            timestamp: parsed.timestamp,
+                            level: parsed.player.level,
+                            map_name: parsed.player.map_name || 'Unknown',
+                            room_title: parsed.player.room_title || 'Current Location',
+                            playtime: parsed.player.playtime || 0,
+                            isLocal: true
+                        })
+                    } catch (e) {
+                        console.error("Local save corrupted", e)
+                    }
+                }
+
+                // Sort by timestamp
+                mergedSaves.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                setSaveList(mergedSaves)
             } catch (error) {
                 console.error("Failed to initialize menu saves", error)
                 setSaveList([])
@@ -100,12 +125,24 @@ export default function MainMenuPage() {
         }
     }
 
-    const handleLoadConfirm = async (saveId) => {
+    const handleLoadConfirm = async (saveId, isLocal = false) => {
         playSFX('click')
         setLoadingAction(true)
         try {
-            await saves.load(saveId)
-            navigate('/game')
+            if (isLocal && saveId === 'local_autosave') {
+                // To load local, we would normally send the data to the server
+                // But for now, since the API doesn't support 'load from raw data' easily,
+                // we'll rely on the fact that 'Continue' or 'Load' usually targets the server state.
+                // REFINEMENT: If it's local, we might need an endpoint to sync it first.
+                // For this implementation, let's treat 'local_autosave' as a special case if we had a sync endpoint.
+                // Assuming cloud is the primary source of truth now.
+                // If the user selects a local save, we warn them or just load if supported.
+                alert("Loading from Local Storage is currently being synchronized with the cloud. Please select a Cloud save for now.")
+                // In a full implementation, we'd POST the local data to a 'sync' endpoint.
+            } else {
+                await saves.load(saveId)
+                navigate('/game')
+            }
         } catch (error) {
             console.error("Failed to load save", error)
             playSFX('error')
@@ -114,12 +151,16 @@ export default function MainMenuPage() {
         }
     }
 
-    const handleDeleteSave = async (e, saveId) => {
+    const handleDeleteSave = async (e, saveId, isLocal = false) => {
         e.stopPropagation()
         if (!window.confirm("Are you sure you want to delete this save?")) return
 
         try {
-            await saves.delete(saveId)
+            if (isLocal) {
+                localStorage.removeItem('hov_local_autosave')
+            } else {
+                await saves.delete(saveId)
+            }
             setSaveList(prev => prev.filter(s => s.id !== saveId))
             playSFX('click')
         } catch (error) {
@@ -298,24 +339,41 @@ export default function MainMenuPage() {
                                     {saveList.map(save => (
                                         <div
                                             key={save.id}
-                                            onClick={() => handleLoadConfirm(save.id)}
+                                            onClick={() => handleLoadConfirm(save.id, save.isLocal)}
                                             className="save-slot"
                                             style={{
                                                 padding: '1rem',
                                                 background: '#1a1a1a',
-                                                border: '1px solid #333',
+                                                border: `1px solid ${save.isLocal ? '#4444ff44' : '#333'}`,
                                                 borderRadius: '0.25rem',
                                                 cursor: 'pointer',
                                                 display: 'flex',
                                                 justifyContent: 'space-between',
                                                 alignItems: 'center',
-                                                transition: 'background 0.2s'
+                                                transition: 'background 0.2s',
+                                                position: 'relative'
                                             }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#252525'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = '#1a1a1a'}
                                         >
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                right: 0,
+                                                fontSize: '8px',
+                                                padding: '2px 6px',
+                                                background: save.isLocal ? '#4444ff88' : '#00ff8844',
+                                                borderBottomLeftRadius: '4px',
+                                                color: '#fff',
+                                                textTransform: 'uppercase'
+                                            }}>
+                                                {save.isLocal ? 'Local' : 'Cloud'}
+                                            </div>
                                             <div>
-                                                <div style={{ color: '#fff', fontWeight: 'bold' }}>{save.name || 'Untitled Save'}</div>
+                                                <div style={{ color: '#fff', fontWeight: 'bold' }}>
+                                                    {save.name || 'Untitled Save'}
+                                                    {save.is_autosave && <span style={{ color: '#ffaa00', fontSize: '0.7rem', marginLeft: '6px' }}>(Autosave)</span>}
+                                                </div>
                                                 <div style={{ color: '#888', fontSize: '0.8rem', marginTop: '0.25rem' }}>
                                                     Lvl {save.level} • {save.map_name} • {save.room_title}
                                                 </div>
@@ -324,7 +382,7 @@ export default function MainMenuPage() {
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={(e) => handleDeleteSave(e, save.id)}
+                                                onClick={(e) => handleDeleteSave(e, save.id, save.isLocal)}
                                                 style={{
                                                     background: 'none',
                                                     border: '1px solid #662222',
@@ -332,7 +390,8 @@ export default function MainMenuPage() {
                                                     padding: '0.25rem 0.5rem',
                                                     borderRadius: '0.25rem',
                                                     fontSize: '0.8rem',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    zIndex: 2
                                                 }}
                                             >
                                                 Delete

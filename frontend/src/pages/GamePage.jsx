@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { usePlayer, useWorld, useCombat, useExploration } from '../hooks/useApi'
+import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useAudio } from '../context/AudioContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
@@ -14,6 +14,7 @@ export default function GamePage() {
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
   const { playBGM, playSFX } = useAudio()
+  const { triggerTick } = useAutosave(player)
 
   useEffect(() => {
     if (inCombat && combat) {
@@ -215,9 +216,10 @@ export default function GamePage() {
         await fetchCombatStatus()
       }
 
-      // Refetch player and world state after event processing
+      // Refetch state after event processing to reflect any story consequences
       await refetchPlayer()
       await refetchWorld()
+      await fetchCombatStatus()
 
     } catch (err) {
       console.error('Error submitting event input:', err)
@@ -312,6 +314,10 @@ export default function GamePage() {
 
       // Refetch player data after movement
       await refetchPlayer()
+      
+      // Trigger autosave tick
+      triggerTick()
+      
       return result
     } catch (err) {
       throw err
@@ -461,6 +467,8 @@ export default function GamePage() {
     if (result && result.events_triggered) {
       handleEventsTriggered(result.events_triggered)
     }
+    // Trigger autosave tick on combat action
+    triggerTick()
   }
 
   return (
