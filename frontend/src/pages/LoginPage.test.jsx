@@ -63,9 +63,12 @@ describe('LoginPage', () => {
         });
     });
 
-    it('handles login failure', async () => {
+    it('handles login failure with 401', async () => {
         mockLogin.mockRejectedValue({
-            response: { data: { message: 'Invalid credentials' } }
+            response: {
+                status: 401,
+                data: { message: 'Unauthorized' }
+            }
         });
         renderLoginPage();
 
@@ -74,7 +77,7 @@ describe('LoginPage', () => {
         fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
 
         await waitFor(() => {
-            expect(screen.getByText('Invalid credentials')).toBeDefined();
+            expect(screen.getByText('Invalid username or password; try again or register a new account.')).toBeDefined();
         });
     });
 
