@@ -29,7 +29,11 @@ export default function LoginPage() {
       // Token is now in localStorage, navigate and page will reload state
       window.location.href = '/menu'
     } catch (err) {
-      setError(err.message || err.response?.data?.message || 'Authentication failed. Please try again.')
+      if (err.response?.status === 401) {
+        setError('Invalid username or password; try again or register a new account.')
+      } else {
+        setError(err.response?.data?.message || err.message || 'Authentication failed. Please try again.')
+      }
     } finally {
       setLoading(false)
     }

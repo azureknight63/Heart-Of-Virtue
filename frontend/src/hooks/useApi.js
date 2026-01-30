@@ -66,9 +66,9 @@ export const useAuth = () => {
     }
   }
 
-  const register = async (username, password) => {
+  const register = async (username, password, email) => {
     try {
-      const response = await apiEndpoints.auth.register(username, password)
+      const response = await apiEndpoints.auth.register(username, password, email)
       const { session_id } = response.data.data
       localStorage.setItem('authToken', session_id)
       localStorage.setItem('username', username)

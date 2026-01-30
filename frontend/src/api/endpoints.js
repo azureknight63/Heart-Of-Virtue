@@ -96,9 +96,9 @@ export const equipment = {
 
 // Save/Load endpoints
 export const saves = {
-  save: (saveName, isAutosave = false) => apiClient.post('/saves/', { name: saveName, is_autosave: isAutosave }),
+  save: (saveName, isAutosave = false) => apiClient.post('/saves', { name: saveName, is_autosave: isAutosave }),
   load: (saveId) => apiClient.post(`/saves/${saveId}/load`),
-  list: () => apiClient.get('/saves/'),
+  list: () => apiClient.get('/saves'),
   delete: (saveId) => apiClient.delete(`/saves/${saveId}`),
   newGame: () => apiClient.post('/game/new'),
 }
