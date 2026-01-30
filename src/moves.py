@@ -41,7 +41,7 @@ default_animations = {
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0, 9999), heat_gain=0, fatigue_cost=0,
-                 instant=False, verbose_targeting=False, category="Miscellaneous"):
+                 instant=False, verbose_targeting=False, category="Miscellaneous", passive=False):
         self.name = name
         self.description = description
         self.category = category
@@ -65,6 +65,7 @@ class Move:  # master class for all moves
         self.mvrange = mvrange  # tuple containing the min and max ranges for the move
         self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
         self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
+        self.passive = passive
 
     def viable(self):
         """Check arbitrary conditions to see if the move is available for use; return True or False"""
@@ -355,6 +356,22 @@ class Move:  # master class for all moves
 """
 ANY MOVES
 """
+
+class StrategicInsight(Move):
+    def __init__(self, user):
+        description = "Provides advanced tactical suggestions during combat."
+        super().__init__(name="Strategic Insight", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[0, 0, 0, 0], targeted=False,
+                         stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+                         target=user, user=user, category="Special", passive=True)
+
+class MasterTactician(Move):
+    def __init__(self, user):
+        description = "Expertly analyzes the battlefield to provide the best possible tactical moves."
+        super().__init__(name="Master Tactician", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[0, 0, 0, 0], targeted=False,
+                         stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+                         target=user, user=user, category="Special", passive=True)
 
 
 class Dodge(Move):

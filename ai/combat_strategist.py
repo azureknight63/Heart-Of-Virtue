@@ -14,7 +14,7 @@ class CombatStrategist:
             "You are the Tactical Strategist for Jean Claire. Your goal is to analyze the current combat state and suggest the best moves.\n"
             "Consider Heat (affects damage/XP), Fatigue (resource for moves), and Distance (proximity to enemies).\n"
             "Consider everything provided in the context, including player attributes, consumables, status effects, and the narrative flow of the combat log.\n"
-            "Suggest up to 10 moves, sorted by tactical advantage (highest score first).\n"
+            "Suggest only moves that are currently listed in the 'Available Moves' section below. "
             "Format each suggestion as a JSON object with:\n"
             "- move_name: The exact name of the move.\n"
             "- target_id: The exact ID of the target as provided in the context (e.g., 'enemy_12345'). Use null if the move is not targeted or is self-targeted.\n"
@@ -179,7 +179,7 @@ class CombatStrategist:
 
         # Build Context block
         history_str = "\n".join(history[-5:]) # Last 5 log entries
-        moves_str = ", ".join([m.get("name") for m in available_moves])
+        moves_str = ", ".join([m.get("name") for m in available_moves if m.get("available", True)])
 
         return (
             f"{player_block}\n\n"
