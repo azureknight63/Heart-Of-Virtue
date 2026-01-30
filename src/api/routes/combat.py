@@ -132,7 +132,7 @@ def execute_move():
             )
 
         move_type = data["move_type"]
-        move_id = data.get("move_id", "")
+        move_id = data.get("move_id", data.get("move_name", ""))
         target_id = data.get("target_id")
         direction = data.get("direction")
 

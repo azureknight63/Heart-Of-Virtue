@@ -27,7 +27,6 @@ def get_session_and_player(request):
     return session_manager, session, player, None
 
 
-@saves_bp.route("/saves/", methods=["GET"])
 @saves_bp.route("/saves", methods=["GET"])
 async def list_saves():
     """List all saved games for player from Turso cloud storage."""
@@ -58,7 +57,6 @@ async def list_saves():
         )
 
 
-@saves_bp.route("/saves/", methods=["POST"])
 @saves_bp.route("/saves", methods=["POST"])
 async def create_save():
     """Create a new manual or auto save in Turso cloud."""

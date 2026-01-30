@@ -14,6 +14,21 @@ class Database:
         return cls._instance
 
     def get_client(self):
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        # If client exists, check if it's usable
+        if self._client is not None:
+            # We need to verify if the client's loop is still active and matches
+            # The http client usually has a _session.loop
+            session = getattr(self._client, "_session", None)
+            if session:
+                if session.closed or (loop and session.loop != loop) or session.loop.is_closed():
+                    self._client = None
+
         if self._client is None:
             url = os.getenv("TURSO_DATABASE_URL")
             auth_token = os.getenv("TURSO_AUTH_TOKEN")

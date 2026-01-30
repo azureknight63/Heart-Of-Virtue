@@ -276,7 +276,7 @@ class ApiCombatAdapter:
                 try:
                     from flask import current_app
                     from src.api.serializers.combat import CombatStateSerializer
-                    serialized_state = CombatStateSerializer.serialize(result)
+                    serialized_state = result
                     if hasattr(current_app, 'socketio'):
                         current_app.socketio.emit(
                             'combat:started', 
@@ -909,6 +909,10 @@ class ApiCombatAdapter:
                 if m.name in ["Strategic Insight", "Master Tactician"]:
                     count += 1
             
+            # Ensure combat_log exists
+            if not hasattr(self.player, 'combat_log'):
+                self.player.combat_log = []
+
             # Gather context
             # Gather context from serializers imported at top level
             ctx = {
@@ -923,7 +927,8 @@ class ApiCombatAdapter:
             self.player.suggested_moves = self.strategist.get_suggestions(ctx, max_suggestions=count)
             
         except Exception as e:
-            logger.error(f"Error in _refresh_suggestions: {e}")
+            # Fallback when logger is not defined or other errors occur
+            print(f"Error in _refresh_suggestions: {e}")
             self.player.suggested_moves = []
 
     def _handle_victory(self):

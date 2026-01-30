@@ -1444,13 +1444,24 @@ class GameService:
     def start_combat(self, player: "player_module.Player", enemy_id: str, session_id: str = None) -> Dict[str, Any]:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
         # Find enemy in current room
-        tile = player.universe.get_tile(player.location_x, player.location_y)
         enemy = None
-        if hasattr(tile, "npcs_here"):
-            for npc in tile.npcs_here:
-                if str(id(npc)) == enemy_id:
-                    enemy = npc
-                    break
+        
+        # 1. Try universe tile
+        if hasattr(player, 'universe') and player.universe:
+            tile = player.universe.get_tile(player.location_x, player.location_y)
+            if hasattr(tile, "npcs_here"):
+                for npc in tile.npcs_here:
+                    if str(id(npc)) == enemy_id:
+                        enemy = npc
+                        break
+        
+        # 2. Try player.current_room (fallback for tests/specific events)
+        if not enemy and hasattr(player, "current_room") and player.current_room:
+            if hasattr(player.current_room, "npcs_here"):
+                for npc in player.current_room.npcs_here:
+                    if str(id(npc)) == enemy_id:
+                        enemy = npc
+                        break
         
         if not enemy:
             return {"error": "Enemy not found"}

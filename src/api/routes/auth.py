@@ -14,7 +14,8 @@ async def register():
     Request body:
         {
             "username": "str",
-            "password": "str"
+            "password": "str",
+            "email": "str"
         }
 
     Returns:

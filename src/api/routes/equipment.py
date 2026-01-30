@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-equipment_bp = Blueprint("equipment", __name__, url_prefix="/equipment")
+equipment_bp = Blueprint("equipment", __name__)
 
 
 def get_session_and_player(request):
@@ -27,7 +27,7 @@ def get_session_and_player(request):
     return session_manager, session, player, None
 
 
-@equipment_bp.route("/", methods=["GET"])
+@equipment_bp.route("/equipment", methods=["GET"])
 def get_equipment():
     """Get player equipment status.
 
@@ -83,7 +83,7 @@ def get_equipment():
         )
 
 
-@equipment_bp.route("/equip", methods=["POST"])
+@equipment_bp.route("/equipment/equip", methods=["POST"])
 def equip_item():
     """Equip an item.
 
@@ -146,7 +146,7 @@ def equip_item():
         )
 
 
-@equipment_bp.route("/unequip", methods=["POST"])
+@equipment_bp.route("/equipment/unequip", methods=["POST"])
 def unequip_item():
     """Unequip an item from a slot.
 
