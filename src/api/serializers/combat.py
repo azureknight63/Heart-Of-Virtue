@@ -48,6 +48,7 @@ class CombatStateSerializer:
             "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
             "combatants": [CombatantSerializer.serialize_combatant(player)] + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
             "suggested_moves": getattr(player, "suggested_moves", []),
+            "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
             "player_consumables": CombatStateSerializer._get_consumables(player)
         }

@@ -25,13 +25,48 @@ class MinimalPlayer:
         
         # Core stats to avoid crashes in events/interactions
         self.strength = 10
+        self.strength_base = 10
         self.finesse = 10
+        self.finesse_base = 10
         self.faith = 10
+        self.faith_base = 10
         self.intelligence = 10
+        self.intelligence_base = 10
         self.charisma = 10
+        self.charisma_base = 10
         self.endurance = 10
+        self.endurance_base = 10
         self.speed = 10
+        self.speed_base = 10
         self.awareness = 10
+        
+        # Resistances (required by refresh_stat_bonuses and game_service)
+        self.resistance = {
+            "fire": 1.0, "ice": 1.0, "shock": 1.0, "earth": 1.0, "light": 1.0,
+            "dark": 1.0, "piercing": 1.0, "slashing": 1.0, "crushing": 1.0,
+            "spiritual": 1.0, "pure": 1.0
+        }
+        self.resistance_base = {
+            "fire": 1.0, "ice": 1.0, "shock": 1.0, "earth": 1.0, "light": 1.0,
+            "dark": 1.0, "piercing": 1.0, "slashing": 1.0, "crushing": 1.0,
+            "spiritual": 1.0, "pure": 1.0
+        }
+        self.status_resistance = {
+            "generic": 1.0, "stun": 1.0, "poison": 1.0, "inflamed": 1.0,
+            "sloth": 1.0, "apathy": 1.0, "blind": 1.0, "incoherence": 1.0,
+            "mute": 1.0, "enraged": 1.0, "enchanted": 1.0, "ethereal": 1.0,
+            "berserk": 1.0, "slow": 1.0, "sleep": 1.0, "confusion": 1.0,
+            "cursed": 1.0, "stop": 1.0, "stone": 1.0, "frozen": 1.0,
+            "doom": 1.0, "death": 1.0
+        }
+        self.status_resistance_base = {
+            "generic": 1.0, "stun": 1.0, "poison": 1.0, "inflamed": 1.0,
+            "sloth": 1.0, "apathy": 1.0, "blind": 1.0, "incoherence": 1.0,
+            "mute": 1.0, "enraged": 1.0, "enchanted": 1.0, "ethereal": 1.0,
+            "berserk": 1.0, "slow": 1.0, "sleep": 1.0, "confusion": 1.0,
+            "cursed": 1.0, "stop": 1.0, "stone": 1.0, "frozen": 1.0,
+            "doom": 1.0, "death": 1.0
+        }
         
         self.level = 1
         self.exp = 0

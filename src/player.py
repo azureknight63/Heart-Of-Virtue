@@ -89,6 +89,16 @@ def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
 class Player:
     def __init__(self):
         self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
+        # Equip starting gear
+        for item in self.inventory:
+            if item.name in ["Tattered Cloth", "Cloth Hood"]:
+                item.isequipped = True
+                if "equip" in item.interactions:
+                    item.interactions.remove("equip")
+                if "unequip" not in item.interactions:
+                    item.interactions.append("unequip")
+        
+        # Note: refresh_stat_bonuses is called at the end of __init__ after all base stats are defined
         self.username = None
         self.name = "Jean"
         self.name_long = "Jean Claire"
@@ -312,7 +322,7 @@ class Player:
             "that came with it.",
             'In spite of himself, Jean wonders just what, exactly, this is supposed to accomplish.',
             'Jean makes the sign of the cross.',
-            """Jean prays quietly, 
+            """Jean prays quietly,
             
 Je vous salue, Marie, pleine de grâce, Le Seigneur est avec vous.
 Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.
@@ -326,6 +336,9 @@ maintenant et à l'heure de notre mort. Amen.""",
             "An intense groaning makes its way through Jean's stomache.",
             "The smell of fresh, sweet lillies dances in Jean's memory. \nThey were Regina's favorite.",
         ]
+
+        # Apply stat bonuses from equipped items now that all base stats are initialized
+        functions.refresh_stat_bonuses(self)
 
     def refresh_merchants(self, phrase: str = ''):
         """Debug command: iterate all maps and force every Merchant to run update_goods().

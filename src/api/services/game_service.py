@@ -1528,7 +1528,8 @@ class GameService:
                     # Option can be dict or object
                     opt_name = option.get("name") if isinstance(option, dict) else getattr(option, "name", "")
                     if opt_name == move_id:
-                        move_index = i
+                        # Use the 'index' field from the option, not the loop index
+                        move_index = option.get("index", i) if isinstance(option, dict) else getattr(option, "index", i)
                         break
             
             if move_index is None:
