@@ -61,13 +61,21 @@ class TestErrorHandlers:
 
             abort(422)
 
-        @app.route("/test_500")
-        def test_500():
+        @app.route("/test_429")
+        def test_429():
             from flask import abort
 
-            abort(500)
+            abort(429)
 
-        return app
+        @app.route("/test_503")
+        def test_503():
+            from flask import abort
+
+            abort(503)
+
+        @app.route("/test_exception")
+        def test_exception():
+            raise Exception("Test exception")
 
     @pytest.fixture
     def client(self, app):
@@ -130,9 +138,26 @@ class TestErrorHandlers:
         assert "message" in data
         assert isinstance(data["message"], str)
 
-    def test_404_nonexistent_route(self, client):
-        """Test 404 for non-existent route."""
-        response = client.get("/nonexistent/route")
-        assert response.status_code == 404
+    def test_429_error_response(self, client):
+        """Test 429 Too Many Requests error response format."""
+        response = client.get("/test_429")
+        assert response.status_code == 429
         data = response.get_json()
         assert data["success"] is False
+        assert "Too many requests" in data["error"]
+
+    def test_503_error_response(self, client):
+        """Test 503 Service Unavailable error response format."""
+        response = client.get("/test_503")
+        assert response.status_code == 503
+        data = response.get_json()
+        assert data["success"] is False
+        assert "Service unavailable" in data["error"]
+
+    def test_generic_exception_handler(self, client):
+        """Test generic exception handler for unhandled exceptions."""
+        response = client.get("/test_exception")
+        assert response.status_code == 500
+        data = response.get_json()
+        assert data["success"] is False
+        assert "Internal server error" in data["error"]

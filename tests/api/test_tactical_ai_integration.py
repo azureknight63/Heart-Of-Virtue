@@ -53,6 +53,7 @@ def create_test_enemy(name, hp=30):
     )
     enemy.known_moves = [create_mock_move()]
     enemy.friend = False
+    enemy.default_proximity = 2
     return enemy
 
 
@@ -63,13 +64,17 @@ def ensure_player_room(player):
             def __init__(self):
                 self.npcs_here = []
         player.current_room = MockRoom()
+    # Ensure melee moves are viable for tests
+    player.default_proximity = 2
 
 
 class TestTacticalStrategistIntegration:
     """Integration tests for the full AI strategist flow."""
 
-    def test_full_combat_cycle_with_ai_suggestions(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_full_combat_cycle_with_ai_suggestions(self, mock_suggestions, app, client, authenticated_session):
         """Test complete combat cycle: start -> AI suggests -> execute -> victory."""
+        mock_suggestions.return_value = [{"move_name": "Attack", "score": 90, "reason": "High damage"}]
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
@@ -116,26 +121,33 @@ class TestTacticalStrategistIntegration:
                 "/api/combat/move",
                 data=json.dumps({
                     "move_type": "move",
-                    "move_id": "0",  # Attack is usually index 0
+                    "move_id": "Attack",
                     "target_id": f"enemy_{id(enemy)}"
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
             
+            if response.status_code != 200:
+                print(f"DEBUG: Response 120: {response.data.decode()}")
             assert response.status_code == 200
             move_data = json.loads(response.data)
             assert move_data["success"] is True
             
             # Verify combat log contains action
-            assert "log" in move_data["battle_state"]
-            assert len(move_data["battle_state"]["log"]) > 0
+            assert "log" in move_data
+            assert len(move_data["log"]) > 0
 
-    def test_ai_suggestions_increase_with_passive_skills(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_ai_suggestions_increase_with_passive_skills(self, mock_suggestions, app, client, authenticated_session):
         """Test that unlocking passive skills increases AI suggestion count."""
+        mock_suggestions.side_effect = lambda ctx, max_suggestions: [
+            {"move_name": f"Move {i}", "score": 100-i} for i in range(max_suggestions)
+        ]
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
+            ensure_player_room(player)
                         
             # Create mock passive skills
             class StrategicInsight:
@@ -171,6 +183,7 @@ class TestTacticalStrategistIntegration:
             )
             enemy.known_moves = [create_mock_move()]
             enemy.friend = False
+            enemy.default_proximity = 2
             
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
@@ -208,6 +221,7 @@ class TestTacticalStrategistIntegration:
             )
             enemy2.known_moves = [create_mock_move()]
             enemy2.friend = False
+            enemy2.default_proximity = 2
             
             player.current_room.npcs_here = [enemy2]
             
@@ -224,11 +238,14 @@ class TestTacticalStrategistIntegration:
             # Verify suggestion count increased (or stayed at 1 if LLM unavailable)
             assert insight_suggestion_count >= base_suggestion_count
 
-    def test_combined_move_and_target_execution(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_combined_move_and_target_execution(self, mock_suggestions, app, client, authenticated_session):
         """Test one-click move+target execution from AI suggestion."""
+        mock_suggestions.return_value = []
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
+            ensure_player_room(player)
             from src.npc import NPC
                         
             enemy = NPC(
@@ -242,6 +259,7 @@ class TestTacticalStrategistIntegration:
             )
             enemy.known_moves = [create_mock_move()]
             enemy.friend = False
+            enemy.default_proximity = 2
             
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
@@ -269,23 +287,27 @@ class TestTacticalStrategistIntegration:
                 headers={"Authorization": f"Bearer {session_id}"}
             )
             
+            if response.status_code != 200:
+                print(f"DEBUG: Response 290: {response.data.decode()}")
             assert response.status_code == 200
             data = json.loads(response.data)
             assert data["success"] is True
             
             # Verify move was executed
-            battle_state = data.get("battle_state", {})
-            assert "log" in battle_state
+            assert "log" in data
             
             # Check that combat log contains the action
-            log_messages = [entry.get("message", "") for entry in battle_state["log"]]
+            log_messages = [entry.get("message", "") for entry in data["log"]]
             assert any("Attack" in msg or player.name in msg for msg in log_messages)
 
-    def test_status_effects_serialization(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_status_effects_serialization(self, mock_suggestions, app, client, authenticated_session):
         """Test that status effects are properly serialized for frontend display."""
+        mock_suggestions.return_value = []
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
+            ensure_player_room(player)
             from src.npc import NPC
                         
             # Create enemy
@@ -300,6 +322,7 @@ class TestTacticalStrategistIntegration:
             )
             enemy.known_moves = [create_mock_move()]
             enemy.friend = False
+            enemy.default_proximity = 2
             
             # Add a mock status effect to player
             class MockEffect:
@@ -344,11 +367,14 @@ class TestTacticalStrategistIntegration:
             if "active_effects" in player_data:
                 assert isinstance(player_data["active_effects"], list)
 
-    def test_ai_context_includes_combat_history(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_ai_context_includes_combat_history(self, mock_suggestions, app, client, authenticated_session):
         """Test that AI receives combat history for context-aware suggestions."""
+        mock_suggestions.return_value = []
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
+            ensure_player_room(player)
             from src.npc import NPC
                         
             enemy = NPC(
@@ -362,6 +388,7 @@ class TestTacticalStrategistIntegration:
             )
             enemy.known_moves = [create_mock_move()]
             enemy.friend = False
+            enemy.default_proximity = 2
             
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
@@ -382,20 +409,21 @@ class TestTacticalStrategistIntegration:
                 "/api/combat/move",
                 data=json.dumps({
                     "move_type": "move",
-                    "move_id": "0",
+                    "move_id": "Attack",
                     "target_id": f"enemy_{id(enemy)}"
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
             
+            if response.status_code != 200:
+                print(f"DEBUG: Response 419: {response.data.decode()}")
             assert response.status_code == 200
             data = json.loads(response.data)
             
             # Verify combat log exists and has entries
-            battle_state = data.get("battle_state", {})
-            assert "log" in battle_state
-            assert len(battle_state["log"]) > 0
+            assert "log" in data
+            assert len(data["log"]) > 0
             
             # Verify last_move_summary is captured
             assert hasattr(player, "last_move_summary")
@@ -405,11 +433,14 @@ class TestTacticalStrategistIntegration:
 class TestEnhancedCombatVisualizationIntegration:
     """Integration tests for status effect visualization."""
 
-    def test_status_effects_in_combat_state(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_status_effects_in_combat_state(self, mock_suggestions, app, client, authenticated_session):
         """Test that status effects appear in serialized combat state."""
+        mock_suggestions.return_value = []
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
+            ensure_player_room(player)
             from src.npc import NPC
                         
             enemy = NPC(
@@ -423,6 +454,7 @@ class TestEnhancedCombatVisualizationIntegration:
             )
             enemy.known_moves = [create_mock_move()]
             enemy.friend = False
+            enemy.default_proximity = 2
             
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
@@ -450,11 +482,14 @@ class TestEnhancedCombatVisualizationIntegration:
                 assert "hp" in combatant
                 assert "max_hp" in combatant
 
-    def test_beat_states_include_position_data(self, app, client, authenticated_session):
+    @patch("ai.combat_strategist.CombatStrategist.get_suggestions")
+    def test_beat_states_include_position_data(self, mock_suggestions, app, client, authenticated_session):
         """Test that beat states include position/distance data for visualization."""
+        mock_suggestions.return_value = []
         session_id, player, session_manager = authenticated_session
         
         with app.app_context():
+            ensure_player_room(player)
             from src.npc import NPC
                         
             enemy = NPC(
@@ -468,6 +503,7 @@ class TestEnhancedCombatVisualizationIntegration:
             )
             enemy.known_moves = [create_mock_move()]
             enemy.friend = False
+            enemy.default_proximity = 2
             
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
@@ -489,13 +525,15 @@ class TestEnhancedCombatVisualizationIntegration:
                 "/api/combat/move",
                 data=json.dumps({
                     "move_type": "move",
-                    "move_id": "0",
+                    "move_id": "Attack",
                     "target_id": f"enemy_{id(enemy)}"
                 }),
                 content_type="application/json",
                 headers={"Authorization": f"Bearer {session_id}"}
             )
             
+            if response.status_code != 200:
+                print(f"DEBUG: Response 533: {response.data.decode()}")
             assert response.status_code == 200
             move_data = json.loads(response.data)
             

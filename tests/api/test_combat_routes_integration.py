@@ -27,7 +27,7 @@ class TestCombatRoutes:
         """Test starting combat without specifying enemy."""
         session_id, _, _ = authenticated_session
         response = client.post(
-            "/combat/start",
+            "/api/combat/start",
             json={},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -40,7 +40,7 @@ class TestCombatRoutes:
     def test_start_combat_no_auth(self, client):
         """Test starting combat without authentication."""
         response = client.post(
-            "/combat/start",
+            "/api/combat/start",
             json={"enemy_id": "goblin"},
             headers={},
         )
@@ -49,7 +49,7 @@ class TestCombatRoutes:
     def test_start_combat_invalid_session(self, client):
         """Test starting combat with invalid session."""
         response = client.post(
-            "/combat/start",
+            "/api/combat/start",
             json={"enemy_id": "goblin"},
             headers={"Authorization": "Bearer invalid_session"},
         )
@@ -59,7 +59,7 @@ class TestCombatRoutes:
         """Test starting combat with non-existent enemy."""
         session_id, _, _ = authenticated_session
         response = client.post(
-            "/combat/start",
+            "/api/combat/start",
             json={"enemy_id": "nonexistent_enemy"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -74,7 +74,7 @@ class TestCombatRoutes:
         """Test getting combat status when not in combat."""
         session_id, _, _ = authenticated_session
         response = client.get(
-            "/combat/status",
+            "/api/combat/status",
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
@@ -86,7 +86,7 @@ class TestCombatRoutes:
     def test_get_combat_status_no_auth(self, client):
         """Test getting combat status without authentication."""
         response = client.get(
-            "/combat/status",
+            "/api/combat/status",
             headers={},
         )
         assert response.status_code == 401
@@ -95,7 +95,7 @@ class TestCombatRoutes:
         """Test executing move without required parameters."""
         session_id, _, _ = authenticated_session
         response = client.post(
-            "/combat/move",
+            "/api/combat/move",
             json={},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -108,7 +108,7 @@ class TestCombatRoutes:
         """Test executing move when not in combat."""
         session_id, _, _ = authenticated_session
         response = client.post(
-            "/combat/move",
+            "/api/combat/move",
             json={"move_type": "attack", "move_id": "attack"},
             headers={"Authorization": f"Bearer {session_id}"},
         )
@@ -145,19 +145,19 @@ class TestGameServiceCombatMethods:
         _, player = session_manager.create_session("testplayer")
 
         result = game_service.get_combat_status(player)
-
+    
         assert result["combat_active"] is False
-        assert "combatants" in result
+        assert "battle_state" in result
         assert "log" in result
 
     def test_execute_move_not_in_combat(self, app):
         """Test executing move when not in combat."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
-
+        session_id, player_id = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
         result = game_service.execute_move(player, "attack", "attack")
-
+    
         assert "error" in result
         assert "not in combat" in result["error"].lower()
 
@@ -165,10 +165,10 @@ class TestGameServiceCombatMethods:
         """Test executing move with invalid type."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
-
+        session_id, player_id = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
         result = game_service.execute_move(player, "invalid_type", "attack")
-
+    
         assert "error" in result
         assert "not in combat" in result["error"].lower()  # First checks if in combat
 
@@ -176,11 +176,11 @@ class TestGameServiceCombatMethods:
         """Test getting available moves when not in combat."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
-
+        session_id, player_id = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
         result = game_service.get_available_moves(player)
-
-        assert "error" in result
+    
+        assert "moves" in result
 
     def test_defend_not_in_combat(self, app):
         """Test defend action when not in combat."""

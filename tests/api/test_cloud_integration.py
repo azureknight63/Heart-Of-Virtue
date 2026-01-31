@@ -5,7 +5,7 @@ import asyncio
 from src.api.services.auth_service import auth_service
 from src.api.db import db
 
-@pytest.mark.asyncio
+
 class TestCloudIntegration:
     """Integration tests for Cloud Authentication and Save System."""
 
@@ -16,8 +16,8 @@ class TestCloudIntegration:
         self.test_password = "SecurePassword123!@#" # > 16 chars
         self.test_email = "test@example.com"
 
-    async def teardown_method(self, method):
-        """Clean up test data."""
+    async def _do_cleanup(self):
+        """Actual cleanup logic."""
         try:
             sql_get_user = "SELECT id FROM users WHERE username = ?"
             res = await db.execute(sql_get_user, [self.test_username])
@@ -28,7 +28,11 @@ class TestCloudIntegration:
         except Exception as e:
             print(f"Teardown error: {e}")
 
-    async def test_user_lifecycle_and_saves(self, client, app):
+    def teardown_method(self, method):
+        """Clean up test data."""
+        asyncio.run(self._do_cleanup())
+
+    def test_user_lifecycle_and_saves(self, client, app):
         """Test registration, login, and cloud save persistence."""
         
         # 1. Test Registration
@@ -103,7 +107,7 @@ class TestCloudIntegration:
         assert load_resp.status_code == 200
         assert load_resp.get_json()["success"] is True
 
-    async def test_auth_validations(self, client):
+    def test_auth_validations(self, client):
         """Test username/password security constraints."""
         
         # Short Username
