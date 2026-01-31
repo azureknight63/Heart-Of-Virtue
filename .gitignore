@@ -78,3 +78,5 @@ frontend/public/assets/sounds/archive
 DEVELOPMENT_PLAN.md
 frontend/coverage*
 frontend/test_report.txt
+.kilocode/
+.kilocodemodes
