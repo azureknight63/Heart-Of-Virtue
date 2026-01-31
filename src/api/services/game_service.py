@@ -1492,9 +1492,9 @@ class GameService:
             player._combat_adapter.on_event_callback = event_callback
             if session_id:
                 player._combat_adapter.session_id = session_id
-            # If we had to recreate the adapter, combat state might be lost
-            if hasattr(player, 'combat_list') and player.combat_list:
-                player._combat_adapter.initialize_combat(player.combat_list)
+            # Note: We do NOT re-initialize combat here - that would reset the adapter state
+            # including input_type and pending_move_index, breaking multi-step moves like
+            # select move -> select target
         
         adapter = player._combat_adapter
         # Update session_id if it changed or was missing
