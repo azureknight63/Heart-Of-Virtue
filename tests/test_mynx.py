@@ -86,4 +86,4 @@ def test_mynx_pet_and_play_methods(capfd):
     # play (structured)
     obj2 = m.play(None, item="feather", structured=True)
     assert isinstance(obj2, dict)
-    assert obj2.get("action") in ("play", "investigate")
+    assert obj2.get("action") in ("playful_tussle", "investigate")
