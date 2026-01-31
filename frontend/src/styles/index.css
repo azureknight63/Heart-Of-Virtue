@@ -233,3 +233,109 @@ body {
   background-color: #ff4444;
   color: #fff;
 }
+
+/* Combat Dialog Transitions - Smooth animations for move/target selection flow */
+@keyframes dialog-pop-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-pop-out {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Combat panel entrance animation */
+.combat-panel-enter {
+  animation: dialog-pop-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Combat panel exit animation */
+.combat-panel-exit {
+  animation: dialog-pop-out 0.15s ease-out forwards;
+  pointer-events: none;
+}
+
+/* Modal overlay fade */
+.modal-fade-enter {
+  animation: overlay-fade-in 0.2s ease-out forwards;
+}
+
+/* Target card entrance animation */
+.target-card-enter {
+  animation: slide-up-fade 0.3s ease-out forwards;
+}
+
+/* Staggered animation delays for lists */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }
+
+/* Smooth button press feedback */
+.combat-button-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.combat-button-press:active {
+  transform: scale(0.98);
+}
+
+/* Loading shimmer effect for transitioning states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.transitioning-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 170, 0, 0.1) 25%,
+    rgba(255, 170, 0, 0.2) 50%,
+    rgba(255, 170, 0, 0.1) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
