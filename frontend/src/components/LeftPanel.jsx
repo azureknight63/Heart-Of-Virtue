@@ -56,6 +56,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const [showInputDialog, setShowInputDialog] = useState(false)
   const [showCheckDialog, setShowCheckDialog] = useState(false)
   const [checkData, setCheckData] = useState(null)
+  const [pendingMoveSelection, setPendingMoveSelection] = useState(false)
 
   // Audio context
   const { playSFX, playBGM } = useAudio()
@@ -332,18 +333,15 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const handleMoveSelection = async (move) => {
     // Execute move via API - use move.id which is the index
     try {
+      setPendingMoveSelection(true)
       await onCombatAction('move', { move_id: move.id })
-      setShowCombatMoves(false)
-      setCombatMovesCategory(null)
-      // Close all other potential dialogs
-      setShowInventory(false)
-      setShowSkills(false)
-      setShowAttributes(false)
-      setShowStatus(false)
-      setShowActions(false)
-      setShowCheckDialog(false)
+      // Don't close move panel immediately - let the input dialog effect handle it
+      // This creates a smoother transition where the move panel stays visible
+      // until the target selection dialog is ready to appear
     } catch (err) {
       console.error('Failed to execute move:', err)
+    } finally {
+      setPendingMoveSelection(false)
     }
   }
 
@@ -526,6 +524,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             category={combatMovesCategory}
             onMoveClick={handleMoveSelection}
             onClose={() => setShowCombatMoves(false)}
+            isProcessing={pendingMoveSelection}
           />
         )}
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { colors } from '../styles/theme'
 
-export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false }) {
+export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false }) {
     const [isVisible, setIsVisible] = useState(false)
 
     useEffect(() => {
@@ -116,7 +116,7 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
                 flexDirection: 'column',
                 gap: '12px'
             }}>
-                {suggestions.length === 0 ? (
+                {suggestionsLoading || suggestions.length === 0 ? (
                     <div style={{
                         padding: '20px 10px',
                         textAlign: 'center',
@@ -132,9 +132,16 @@ export default function SuggestedMovesPanel({ suggestions = [], lastOutcome = ""
                             height: '20px',
                             border: `2px solid ${colors.primary}22`,
                             borderTop: `2px solid ${colors.primary}`,
-                            borderRadius: '50%'
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite'
                         }} />
-                        <span>ANALYZING BATTLEFIELD COORDINATES...</span>
+                        <span>{suggestionsLoading ? 'ANALYZING COMBAT SITUATION...' : 'ANALYZING BATTLEFIELD COORDINATES...'}</span>
+                        <style>{`
+                            @keyframes spin {
+                                from { transform: rotate(0deg); }
+                                to { transform: rotate(360deg); }
+                            }
+                        `}</style>
                     </div>
                 ) : (
                     suggestions.map((s, idx) => (
