@@ -10,6 +10,7 @@ import io
 import sys
 import contextlib
 import uuid
+import threading
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from unittest.mock import patch
 import random
@@ -85,6 +86,11 @@ class ApiCombatAdapter:
                 "pending_move_index": None,
                 "available_options": []
             }
+        
+        # Track async suggestion loading state
+        self.player.suggestions_loading = False
+        self._suggestion_thread = None
+        self._suggestion_generation = 0  # Generation counter for race condition prevention
             
     @property
     def awaiting_input(self):
@@ -267,7 +273,8 @@ class ApiCombatAdapter:
             self.awaiting_input = True
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
-            self._refresh_suggestions()
+            # Start async suggestion fetch (non-blocking)
+            self._refresh_suggestions_async()
             
             result = self.get_combat_state()
             
@@ -375,19 +382,26 @@ class ApiCombatAdapter:
 
         # If move is targeted, find target
         if selected_move.targeted:
-            if not target_id:
-                return {"error": "Target required for this move"}
-            
-            target_obj_id = target_id.replace("enemy_", "")
             target = None
-            all_combatants = self.player.combat_list + self.player.combat_list_allies
-            for combatant in all_combatants:
-                if str(id(combatant)) == target_obj_id:
-                    target = combatant
-                    break
+            
+            if target_id:
+                # Try to find the specified target
+                target_obj_id = target_id.replace("enemy_", "")
+                all_combatants = self.player.combat_list + self.player.combat_list_allies
+                for combatant in all_combatants:
+                    if str(id(combatant)) == target_obj_id:
+                        target = combatant
+                        break
+            
+            # If no valid target found, auto-select the first available enemy
+            if not target and self.player.combat_list:
+                for enemy in self.player.combat_list:
+                    if enemy.is_alive():
+                        target = enemy
+                        break
             
             if not target:
-                return {"error": "Invalid target"}
+                return {"error": "No valid targets available"}
             
             selected_move.target = target
         else:
@@ -791,7 +805,8 @@ class ApiCombatAdapter:
         self.input_type = "move_selection"
         self.available_options = self._get_available_moves()
         self.pending_move_index = None
-        self._refresh_suggestions()
+        # Start async suggestion fetch (non-blocking)
+        self._refresh_suggestions_async()
         
         result = self.get_combat_state()
         result["beat_states"] = beat_states
@@ -901,7 +916,7 @@ class ApiCombatAdapter:
             self.player.heat -= amt
     
     def _refresh_suggestions(self):
-        """Fetch tactical suggestions from the strategist."""
+        """Fetch tactical suggestions from the strategist (synchronous version)."""
         try:
             # Calculate allowed suggestions count
             count = getattr(self.player, "base_suggested_move_count", 1)
@@ -930,6 +945,70 @@ class ApiCombatAdapter:
             # Fallback when logger is not defined or other errors occur
             print(f"Error in _refresh_suggestions: {e}")
             self.player.suggested_moves = []
+    
+    def _refresh_suggestions_async(self):
+        """Fetch tactical suggestions asynchronously without blocking combat."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Set loading state
+        self.player.suggestions_loading = True
+        self.player.suggested_moves = []  # Clear previous suggestions while loading
+        
+        # Increment generation counter to invalidate any in-flight requests
+        self._suggestion_generation += 1
+        current_gen = self._suggestion_generation
+        
+        # Create and start a new thread for fetching suggestions
+        def fetch_suggestions_worker():
+            try:
+                # Calculate allowed suggestions count
+                count = getattr(self.player, "base_suggested_move_count", 1)
+                for m in self.player.known_moves:
+                    if m.name in ["Strategic Insight", "Master Tactician"]:
+                        count += 1
+                
+                # Ensure combat_log exists
+                if not hasattr(self.player, 'combat_log'):
+                    self.player.combat_log = []
+
+                # Gather context
+                ctx = {
+                    "player": CombatantSerializer.serialize_combatant(self.player),
+                    "enemies": [CombatantSerializer.serialize_combatant(e, reference=self.player) for e in self.player.combat_list],
+                    "history": [entry["message"] for entry in self.player.combat_log[-20:]], # Last 20 messages
+                    "last_move": self.player.last_move_summary or "None",
+                    "available_moves": self.available_options
+                }
+                
+                # Fetch from strategist (this is the slow part)
+                suggestions = self.strategist.get_suggestions(ctx, max_suggestions=count)
+                
+                # Store results (only if this generation is still current)
+                if current_gen == self._suggestion_generation:
+                    self.player.suggested_moves = suggestions
+                    self.player.suggestions_loading = False
+                    
+                    # Emit socket event to notify frontend that suggestions are ready
+                    if self.session_id:
+                        try:
+                            from flask import current_app
+                            if hasattr(current_app, 'socketio'):
+                                current_app.socketio.emit(
+                                    'combat:suggestions_ready',
+                                    {'suggested_moves': suggestions},
+                                    room=f"combat_{self.session_id}"
+                                )
+                        except Exception as e:
+                            logger.error(f"Error emitting suggestions_ready event: {e}", exc_info=True)
+                            
+            except Exception as e:
+                logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
+                if current_gen == self._suggestion_generation:
+                    self.player.suggested_moves = []
+                    self.player.suggestions_loading = False
+        
+        threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
 
     def _handle_victory(self):
         """Handle combat victory."""

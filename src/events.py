@@ -111,7 +111,7 @@ class CombatEvent(Event):
             return {"combat_ready": True}
 
         # Terminal fallback
-        from combat import combat
+        from src.combat import combat
         
         # We assume combat() has been updated to accept an optional config
         combat(self.player, event_config=self.config)
