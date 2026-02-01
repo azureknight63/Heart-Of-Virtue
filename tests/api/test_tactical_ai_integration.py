@@ -23,6 +23,13 @@ def create_mock_move(name="Attack"):
             self.user = None
             self.target = None
             self.mvrange = (0, 5)
+            self.verbose_targeting = False
+            self.weight = 1 # Added for serialization
+            self.current_beat = 0
+            self.stage_beat = [1, 1, 1, 1]
+            self.stage_announce = ["", "", "", ""]
+            self.xp_gain = 0
+            self.description = "Mock move"
         
         def viable(self):
             return True
@@ -88,6 +95,14 @@ class TestTacticalStrategistIntegration:
             player.combat_list = []
             player.combat_list_allies = [player]
             
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
+            
             # Start combat
             response = client.post(
                 "/api/combat/start",
@@ -100,6 +115,10 @@ class TestTacticalStrategistIntegration:
             data = json.loads(response.data)
             assert data["success"] is True
             assert data["combat_active"] is True
+            
+            # Force proximity for test stability (ensure melee range)
+            player.combat_proximity = {enemy: 2}
+            enemy.combat_proximity = {player: 2}
             
             # Verify AI suggestions are present in battle state
             battle_state = data.get("battle_state", {})
@@ -189,6 +208,14 @@ class TestTacticalStrategistIntegration:
             player.combat_list = []
             player.combat_list_allies = [player]
             
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
+            
             # Start combat without passive skills
             base_moves = list(player.known_moves)
             
@@ -264,6 +291,14 @@ class TestTacticalStrategistIntegration:
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
             player.combat_list_allies = [player]
+            
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
             
             # Start combat
             response = client.post(
@@ -341,6 +376,14 @@ class TestTacticalStrategistIntegration:
             player.combat_list = []
             player.combat_list_allies = [player]
             
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
+            
             # Start combat
             response = client.post(
                 "/api/combat/start",
@@ -393,6 +436,14 @@ class TestTacticalStrategistIntegration:
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
             player.combat_list_allies = [player]
+            
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
             
             # Start combat
             response = client.post(
@@ -460,6 +511,14 @@ class TestEnhancedCombatVisualizationIntegration:
             player.combat_list = []
             player.combat_list_allies = [player]
             
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
+            
             # Start combat
             response = client.post(
                 "/api/combat/start",
@@ -508,6 +567,14 @@ class TestEnhancedCombatVisualizationIntegration:
             player.current_room.npcs_here = [enemy]
             player.combat_list = []
             player.combat_list_allies = [player]
+            
+            # Substitute real Attack with Mock move
+            for i, m in enumerate(player.known_moves):
+                if hasattr(m, "name") and m.name == "Attack":
+                    mock_attack = create_mock_move("Attack")
+                    mock_attack.user = player
+                    player.known_moves[i] = mock_attack
+                    break
             
             # Start combat
             response = client.post(

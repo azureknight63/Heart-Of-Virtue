@@ -38,7 +38,8 @@ class DummyEnemy:
 
 def get_attack_move(player: Player) -> Attack:
     for m in player.known_moves:
-        if isinstance(m, Attack):
+        # Check by name or instance to avoid sub-module import issues during testing
+        if isinstance(m, Attack) or (hasattr(m, 'name') and m.name == "Attack"):
             return m
     raise AssertionError("Attack move not found in player's known moves")
 
