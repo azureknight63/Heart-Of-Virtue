@@ -114,12 +114,12 @@ def get_combat_scenario(
     scenario_type = scenario_type.lower()
     
     if scenario_type == "standard":
-        # Allies left (approx 0-25% width), Enemies 40-60% width
-        # Increased gap to ensure distance > 10 for tests
-        ally_x_max = max(2, int(grid_width * 0.20))
-        # Enemies start at least 15 feet from the back (x=0)
-        enemy_x_min = max(ally_x_max + 12, int(grid_width * 0.4)) 
-        enemy_x_max = min(grid_width, enemy_x_min + 10)
+        # Allies left, Enemies right
+        # Gap should scale with grid size to maintain melee possibility on small grids
+        gap = max(4, int(grid_width * 0.2))
+        ally_x_max = max(1, int(grid_width * 0.20))
+        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.4)) 
+        enemy_x_max = min(grid_width, enemy_x_min + max(2, int(grid_width * 0.2)))
         
         y_buffer = int(grid_height * 0.2)
         y_min = y_buffer
@@ -130,7 +130,7 @@ def get_combat_scenario(
             ally_spawn_zone=((0, y_min), (ally_x_max, y_max)),
             enemy_spawn_zones=[((enemy_x_min, y_min), (enemy_x_max, y_max))],
             formation_type="spread",
-            min_spacing=min(2, int(grid_width/10) + 1),
+            min_spacing=max(1, int(grid_width/20)),
             seed=seed
         )
         
@@ -172,16 +172,17 @@ def get_combat_scenario(
         )
         
     elif scenario_type == "boss_arena":
-        # Standard but allies start further back
-        ally_x_max = max(2, int(grid_width * 0.15))
-        enemy_x_min = min(grid_width - 5, int(grid_width * 0.7)) # Boss starts closer to center/back
+        # Standard but allies start further back, and gap is smaller for tactical reasons
+        gap = 1 # Force melee range for boss arena on small grids
+        ally_x_max = max(1, int(grid_width * 0.15))
+        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.3)) 
         
         return CombatScenario(
             scenario_type="boss_arena",
             ally_spawn_zone=((0, 0), (ally_x_max, grid_height)),
             enemy_spawn_zones=[((enemy_x_min, int(grid_height*0.3)), (grid_width, int(grid_height*0.7)))],
             formation_type="spread",
-            min_spacing=max(2, int(grid_width/8)),
+            min_spacing=max(1, int(grid_width/15)),
             seed=seed
         )
         

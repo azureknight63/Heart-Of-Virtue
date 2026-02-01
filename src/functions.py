@@ -1,4 +1,5 @@
 import textwrap
+import math
 import os
 import inspect
 import re
@@ -383,11 +384,11 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
             try:
                 check_weight = target.weight_tolerance - target.weight_current
                 if check_weight > (target.weight_tolerance / 2):
-                    target.maxfatigue += (target.maxfatigue / 4)
+                    target.maxfatigue = int(math.ceil(target.maxfatigue * 1.25))
                 elif check_weight < 0:
                     # Overweight penalty
                     penalty = (-check_weight) * 10
-                    target.maxfatigue -= penalty
+                    target.maxfatigue = int(math.ceil(target.maxfatigue - penalty))
                     if target.maxfatigue < 0:
                         target.maxfatigue = 0
             except Exception:
@@ -399,6 +400,13 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
             target.refresh_protection_rating()
         except Exception:
             pass
+
+    # Ensure all fatigue values are rounded up to the nearest integer and clamped
+    if hasattr(target, "fatigue") and hasattr(target, "maxfatigue"):
+        target.maxfatigue = int(math.ceil(target.maxfatigue))
+        target.fatigue = int(math.ceil(target.fatigue))
+        if target.fatigue > target.maxfatigue:
+            target.fatigue = target.maxfatigue
 
 
 def check_parry(target):

@@ -22,6 +22,9 @@ class MinimalPlayer:
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
+        self.fatigue = 150
+        self.maxfatigue = 150
+        self.maxfatigue_base = 150
         
         # Core stats to avoid crashes in events/interactions
         self.strength = 10

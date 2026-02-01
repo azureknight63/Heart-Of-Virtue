@@ -1,6 +1,7 @@
 from __future__ import annotations
 import random
 import time
+import math
 from neotermcolor import colored, cprint
 import functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
@@ -1474,7 +1475,7 @@ class Draught(Consumable):
         if player.fatigue < player.maxfatigue:
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                   "to have lifted off of his shoulders for the time being.".format(self.name))
-            amount: int = int((self.power * random.uniform(0.8, 1.2)))
+            amount: int = int(math.ceil(self.power * random.uniform(0.8, 1.2)))
             missing_fatigue: int = player.maxfatigue - player.fatigue
             if amount > missing_fatigue:
                 amount = missing_fatigue

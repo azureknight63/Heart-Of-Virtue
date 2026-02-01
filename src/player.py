@@ -339,6 +339,10 @@ maintenant et à l'heure de notre mort. Amen.""",
 
         # Apply stat bonuses from equipped items now that all base stats are initialized
         functions.refresh_stat_bonuses(self)
+        
+        # Ensure player starts at full health and fatigue
+        self.hp = self.maxhp
+        self.fatigue = self.maxfatigue
 
     def refresh_merchants(self, phrase: str = ''):
         """Debug command: iterate all maps and force every Merchant to run update_goods().
@@ -995,7 +999,6 @@ he lets out a barely audible whisper:""", "red")
 
     def print_status(self):
         functions.refresh_stat_bonuses(self)
-        self.fatigue = self.maxfatigue
         self.refresh_protection_rating()
         cprint("=====\nStatus\n=====\n"
                "{}".format(self.name_long), "cyan")

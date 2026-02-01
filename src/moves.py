@@ -1473,7 +1473,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         if cooldown < 0:
             cooldown = 0
         weapon = "fist"  # modified later, based on player weapon
-        fatigue_cost = 100 - (5 * player.endurance)
+        fatigue_cost = int(math.ceil(100 - (5 * player.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
         mvrange = (0, 5)
@@ -1537,7 +1537,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
-        fatigue_cost = (70 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+        fatigue_cost = int(math.ceil(70 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
 
@@ -1615,8 +1615,7 @@ class Rest(Move):  # standard rest to restore fatigue.
 
     def execute(self, player):
         print(self.stage_announce[1])
-        recovery_amt = (player.maxfatigue * 0.4) * random.uniform(0.8, 1.2)
-        recovery_amt = int(recovery_amt)
+        recovery_amt = int(math.ceil((player.maxfatigue * 0.4) * random.uniform(0.8, 1.2)))
         if recovery_amt > player.maxfatigue - player.fatigue:
             recovery_amt = player.maxfatigue - player.fatigue
         player.fatigue += recovery_amt
@@ -1726,7 +1725,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
-        fatigue_cost = (85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+        fatigue_cost = int(math.ceil(85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
 
@@ -2037,7 +2036,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         cooldown = 3 - int(self.user.speed / 20)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 100 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
         # effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
@@ -2190,7 +2189,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 100 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
         self.power = power
@@ -2262,8 +2261,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
 
     def execute(self, npc):
         print(self.stage_announce[1])
-        recovery_amt = (self.user.maxfatigue * 0.25) * random.uniform(0.8, 1.2)
-        recovery_amt = int(recovery_amt)
+        recovery_amt = int(math.ceil((self.user.maxfatigue * 0.25) * random.uniform(0.8, 1.2)))
         if recovery_amt > self.user.maxfatigue - self.user.fatigue:
             recovery_amt = self.user.maxfatigue - self.user.fatigue
         self.user.fatigue += recovery_amt
@@ -2342,7 +2340,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         if cooldown < 0:
             cooldown = 0
         cooldown += 3
-        fatigue_cost = 100 - (3 * self.user.endurance)
+        fatigue_cost = int(math.ceil(100 - (3 * self.user.endurance)))
         if fatigue_cost <= 25:
             fatigue_cost = 25
         self.power = power
@@ -2442,7 +2440,7 @@ class VenomClaw(Move):  # Poisonous attack
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 120 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
         if fatigue_cost <= 20:
             fatigue_cost = 20
         self.power = power
@@ -2548,7 +2546,7 @@ class SpiderBite(Move):  # Poisonous attack
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 120 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
         if fatigue_cost <= 20:
             fatigue_cost = 20
         self.power = power
@@ -2653,7 +2651,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 120 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
         if fatigue_cost <= 20:
             fatigue_cost = 20
         self.power = power
