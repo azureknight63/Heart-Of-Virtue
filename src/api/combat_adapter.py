@@ -11,6 +11,7 @@ import sys
 import contextlib
 import uuid
 import threading
+import logging
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from unittest.mock import patch
 import random
@@ -21,6 +22,9 @@ if TYPE_CHECKING:
 import positions  # type: ignore
 from src.api.serializers.combat import CombatStateSerializer, CombatantSerializer
 from ai.combat_strategist import CombatStrategist
+
+
+logger = logging.getLogger(__name__)
 
 
 class CombatOutputCapture:
@@ -393,21 +397,26 @@ class ApiCombatAdapter:
                         target = combatant
                         break
             
-            # If no valid target found, auto-select the first available enemy
-            if not target and self.player.combat_list:
-                for enemy in self.player.combat_list:
-                    if enemy.is_alive():
-                        target = enemy
-                        break
+            # If no specific target found, try to auto-resolve if there's only one viable target
+            if not target:
+                viable_targets = self._get_available_targets(selected_move)
+                if len(viable_targets) == 1:
+                    target_obj_id = viable_targets[0]["id"].replace("enemy_", "")
+                    all_combatants = self.player.combat_list + self.player.combat_list_allies
+                    for combatant in all_combatants:
+                        if str(id(combatant)) == target_obj_id:
+                            target = combatant
+                            break
             
             if not target:
-                return {"error": "No valid targets available"}
+                return {"error": "Target required but none specified, and multiple or zero targets are viable."}
             
             selected_move.target = target
         else:
             selected_move.target = self.player
 
         self.player.current_move = selected_move
+        self.player.current_move.user = self.player
         self._add_log_entry(
             self.output_capture.current_round,
             f"{self.player.name} uses {selected_move.name}!",
@@ -452,8 +461,31 @@ class ApiCombatAdapter:
         
         # Check if move needs targeting
         if selected_move.targeted:
+            viable_targets = self._get_available_targets(selected_move)
+            
+            # Check if we can auto-select target (exactly one viable target)
+            if len(viable_targets) == 1:
+                target_obj_id = viable_targets[0]["id"].replace("enemy_", "")
+                target = None
+                all_combatants = self.player.combat_list + self.player.combat_list_allies
+                for combatant in all_combatants:
+                    if str(id(combatant)) == target_obj_id:
+                        target = combatant
+                        break
+                
+                if target:
+                    selected_move.target = target
+                    self.pending_move_index = None
+                    return self._execute_move(selected_move)
+                else:
+                    return {"error": "Failed to resolve single target"}
+            
+            if len(viable_targets) == 0:
+                return {"error": "No valid targets available for this move"}
+
+            # Multiple targets - standard flow
             self.input_type = "target_selection"
-            self.available_options = self._get_available_targets(selected_move)
+            self.available_options = viable_targets
             self.pending_move_index = move_index
             # Keep awaiting_input True so frontend knows to send target
             return self.get_combat_state()
@@ -959,55 +991,84 @@ class ApiCombatAdapter:
         self._suggestion_generation += 1
         current_gen = self._suggestion_generation
         
+        # Get flask app to pass to the thread
+        try:
+            from flask import current_app
+            flask_app = current_app._get_current_object()
+            logger.info(f"DEBUG: Flask app context captured for suggestion thread (App: {flask_app})")
+        except Exception as e:
+            logger.warning(f"DEBUG: Failed to capture flask app context: {e}")
+            flask_app = None
+
         # Create and start a new thread for fetching suggestions
         def fetch_suggestions_worker():
-            try:
-                # Calculate allowed suggestions count
-                count = getattr(self.player, "base_suggested_move_count", 1)
-                for m in self.player.known_moves:
-                    if m.name in ["Strategic Insight", "Master Tactician"]:
-                        count += 1
-                
-                # Ensure combat_log exists
-                if not hasattr(self.player, 'combat_log'):
-                    self.player.combat_log = []
-
-                # Gather context
-                ctx = {
-                    "player": CombatantSerializer.serialize_combatant(self.player),
-                    "enemies": [CombatantSerializer.serialize_combatant(e, reference=self.player) for e in self.player.combat_list],
-                    "history": [entry["message"] for entry in self.player.combat_log[-20:]], # Last 20 messages
-                    "last_move": self.player.last_move_summary or "None",
-                    "available_moves": self.available_options
-                }
-                
-                # Fetch from strategist (this is the slow part)
-                suggestions = self.strategist.get_suggestions(ctx, max_suggestions=count)
-                
-                # Store results (only if this generation is still current)
-                if current_gen == self._suggestion_generation:
-                    self.player.suggested_moves = suggestions
-                    self.player.suggestions_loading = False
+            logger.info(f"DEBUG: Thread fetch_suggestions_worker started (Gen: {current_gen})")
+            def run_with_context():
+                logger.info(f"DEBUG: Async suggestion fetch started (Gen: {current_gen})")
+                try:
+                    # Calculate allowed suggestions count
+                    count = getattr(self.player, "base_suggested_move_count", 1)
+                    for m in self.player.known_moves:
+                        if m.name in ["Strategic Insight", "Master Tactician"]:
+                            count += 1
                     
-                    # Emit socket event to notify frontend that suggestions are ready
-                    if self.session_id:
-                        try:
-                            from flask import current_app
-                            if hasattr(current_app, 'socketio'):
-                                current_app.socketio.emit(
-                                    'combat:suggestions_ready',
-                                    {'suggested_moves': suggestions},
-                                    room=f"combat_{self.session_id}"
-                                )
-                        except Exception as e:
-                            logger.error(f"Error emitting suggestions_ready event: {e}", exc_info=True)
-                            
-            except Exception as e:
-                logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
-                if current_gen == self._suggestion_generation:
-                    self.player.suggested_moves = []
-                    self.player.suggestions_loading = False
+                    # Ensure combat_log exists
+                    if not hasattr(self.player, 'combat_log'):
+                        self.player.combat_log = []
+
+                    logger.info(f"DEBUG: Preparing context for strategist with {len(self.player.combat_list)} enemies and {len(self.available_options)} available moves.")
+                    # Gather context
+                    from src.api.serializers.combat import CombatantSerializer
+                    ctx = {
+                        "player": CombatantSerializer.serialize_combatant(self.player),
+                        "enemies": [CombatantSerializer.serialize_combatant(e, reference=self.player) for e in self.player.combat_list],
+                        "history": [entry["message"] for entry in self.player.combat_log[-20:]], # Last 20 messages
+                        "last_move": getattr(self.player, "last_move_summary", "None"),
+                        "available_moves": self.available_options
+                    }
+                    
+                    logger.debug(f"DEBUG: Combat context keys: {list(ctx.keys())}")
+                    
+                    # Fetch from strategist (this is the slow part)
+                    suggestions = self.strategist.get_suggestions(ctx, max_suggestions=count)
+                    
+                    # Store results (only if this generation is still current)
+                    if current_gen == self._suggestion_generation:
+                        self.player.suggested_moves = suggestions
+                        self.player.suggestions_loading = False
+                        logger.info(f"DEBUG: Async suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)")
+                        
+                        # Emit socket event to notify frontend that suggestions are ready
+                        if self.session_id:
+                            try:
+                                if flask_app and hasattr(flask_app, 'socketio'):
+                                    logger.info(f"DEBUG: Emitting combat:suggestions_ready to room combat_{self.session_id} with {len(suggestions)} suggestions")
+                                    flask_app.socketio.emit(
+                                        'combat:suggestions_ready',
+                                        {'suggested_moves': suggestions},
+                                        room=f"combat_{self.session_id}"
+                                    )
+                                else:
+                                    logger.warning(f"DEBUG: Cannot emit suggestions - flask_app is {flask_app} or socketio missing")
+                            except Exception as e:
+                                logger.error(f"Error emitting suggestions_ready event: {e}")
+                        else:
+                            logger.warning(f"DEBUG: Cannot emit suggestions - session_id is missing")
+                                
+                except Exception as e:
+                    logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
+                    if current_gen == self._suggestion_generation:
+                        self.player.suggested_moves = []
+                        self.player.suggestions_loading = False
+                        logger.info(f"DEBUG: Reset suggestions_loading after error (Gen: {current_gen})")
+
+            if flask_app:
+                with flask_app.app_context():
+                    run_with_context()
+            else:
+                run_with_context()
         
+        import threading
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
 
     def _handle_victory(self):
@@ -1085,6 +1146,11 @@ class ApiCombatAdapter:
                 continue
             is_viable = move.viable()
             
+            is_targeted = getattr(move, "targeted", False)
+            viable_targets = []
+            if is_targeted and is_viable:
+                viable_targets = self._get_available_targets(move)
+            
             move_data = {
                 "id": str(i),
                 "index": i,
@@ -1093,7 +1159,10 @@ class ApiCombatAdapter:
                 "category": getattr(move, "category", "Miscellaneous"),
                 "fatigue_cost": move.fatigue_cost,
                 "available": True,
-                "reason": None
+                "reason": None,
+                "targeted": is_targeted,
+                "viable_targets": viable_targets,
+                "requires_target_selection": is_targeted and len(viable_targets) > 1
             }
             
             # Check various conditions that might make the move unavailable
@@ -1112,10 +1181,11 @@ class ApiCombatAdapter:
                 move_data["available"] = False
                 
                 # Check for common reasons
-                if hasattr(move, 'targeted') and move.targeted:
+                if is_targeted:
                     # Check if it's a range issue
-                    if hasattr(move, 'mvrange'):
-                        range_min, range_max = move.mvrange
+                    mvrange = getattr(move, 'mvrange', None)
+                    if mvrange:
+                        range_min, range_max = mvrange
                         enemies_in_range = any(
                             range_min <= dist <= range_max 
                             for dist in self.player.combat_proximity.values()
@@ -1141,10 +1211,16 @@ class ApiCombatAdapter:
     def _get_available_targets(self, move) -> List[Dict[str, Any]]:
         """Get list of available targets for a move."""
         targets = []
-        range_min, range_max = move.mvrange
         
+        # Get range from move
+        if hasattr(move, 'mvrange'):
+            range_min, range_max = move.mvrange
+        else:
+            # Default to adjacent if no range specified but targeted
+            range_min, range_max = 0, 5
+
         # Special handling for bow
-        if move.name == "Shoot Bow":
+        if move.name == "Shoot Bow" and self.player.eq_weapon:
             range_max = self.player.eq_weapon.range_base + (100 / self.player.eq_weapon.range_decay)
         
         # Iterate over combat_list instead of combat_proximity to ensure we use the correct enemy instances
@@ -1160,6 +1236,10 @@ class ApiCombatAdapter:
                     "id": f"enemy_{id(enemy)}",
                     "name": enemy.name,
                     "distance": distance,
+                    "health": {
+                        "current": getattr(enemy, "hp", getattr(enemy, "health", 0)),
+                        "max": getattr(enemy, "maxhp", getattr(enemy, "max_health", 100))
+                    }
                 }
                 
                 # Add hit chance if verbose targeting
@@ -1223,6 +1303,7 @@ class ApiCombatAdapter:
             "beat_states": [battle_state],  # Initial state as a single beat state
             "log": self.player.combat_log,
             "suggested_moves": getattr(self.player, "suggested_moves", []),
+            "suggestions_loading": getattr(self.player, "suggestions_loading", False),
             "last_move_outcome": getattr(self.player, "last_move_summary", ""),
             "last_move_name": getattr(self.player, "last_move_name", ""),
             "last_move_target_id": getattr(self.player, "last_move_target_id", None)
