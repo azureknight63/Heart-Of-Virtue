@@ -9,6 +9,7 @@ class CombatStrategist:
     """Strategist that suggests tactical moves during combat using an LLM."""
 
     def __init__(self, client: Optional[GenericLLMClient] = None):
+        logger.info("DEBUG: Initializing CombatStrategist")
         self.client = client or GenericLLMClient()
         self.system_prompt = (
             "You are the Tactical Strategist for Jean Claire. Your goal is to analyze the current combat state and suggest the best moves.\n"
@@ -24,7 +25,9 @@ class CombatStrategist:
 
     def get_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int = 1) -> List[Dict[str, Any]]:
         """Fetch movement suggestions from the LLM."""
+        logger.info(f"DEBUG: CombatStrategist.get_suggestions called (max: {max_suggestions})")
         if not self.client.available():
+            logger.warning(f"DEBUG: CombatStrategist.get_suggestions: client not available (reason: {self.client._unavailable_reason})")
             return self._get_fallback_suggestions(combat_context, max_suggestions)
 
         user_prompt = self._build_user_prompt(combat_context)
@@ -34,11 +37,13 @@ class CombatStrategist:
             wrapped_prompt = user_prompt + "\nReturn the result as a JSON object with a key 'suggestions' containing the list of move objects."
             
             logger.info(f"DEBUG: Requesting {max_suggestions} suggestions for {combat_context.get('player', {}).get('name')}")
-            logger.debug(f"DEBUG: STRATEGIST PROMPT:\n{wrapped_prompt}")
+            logger.info(f"DEBUG: STRATEGIST INPUT (first 200 chars): {wrapped_prompt[:200]}...")
             raw_response = self.client.generate_structured(self.system_prompt, wrapped_prompt)
             
+            logger.info(f"DEBUG: STRATEGIST RAW RESPONSE: {raw_response}")
+
             if not raw_response or not isinstance(raw_response, dict):
-                logger.warning("DEBUG: Strategist received empty or non-dict response from LLM.")
+                logger.warning(f"DEBUG: Strategist received empty or non-dict response from LLM of type {type(raw_response)}")
                 return self._get_fallback_suggestions(combat_context, max_suggestions)
  
             suggestions = raw_response.get("suggestions", [])
@@ -153,12 +158,13 @@ class CombatStrategist:
         # Build Player block
         p_attrs = ", ".join([f"{k}: {v}" for k, v in player.get("attributes", {}).items()])
         p_effects = f"Passives: {', '.join(player.get('passives', []))}\nStatus: {', '.join(player.get('active_effects', []))}"
-        p_consumables = ", ".join([f"{c['name']} (Qty: {c['qty']}, Value: {c['value']}g)" for c in player.get("consumables", [])])
+        p_consumables = ", ".join([f"{c.get('name', 'Item')} (Qty: {c.get('qty', 1)}, Value: {c.get('value', 0)}g)" for c in player.get("consumables", [])])
 
+        pos = player.get("position") or {}
         player_block = (
             f"Player: {player.get('name', 'Jean')} [HP: {player.get('hp')}/{player.get('max_hp')}, "
             f"Fatigue: {player.get('fatigue')}/{player.get('max_fatigue')}, Heat: {player.get('heat')}, "
-            f"Pos: {player.get('x')},{player.get('y')}, Facing: {player.get('facing')}]\n"
+            f"Pos: {pos.get('x')},{pos.get('y')}, Facing: {pos.get('facing')}]\n"
             f"Attributes: [{p_attrs}]\n"
             f"{p_effects}\n"
             f"Consumables: [{p_consumables or 'None'}]"
@@ -169,17 +175,29 @@ class CombatStrategist:
         for e in enemies:
             e_attrs = ", ".join([f"{k}: {v}" for k, v in e.get("attributes", {}).items()])
             mip = e.get("move_in_process")
-            mip_str = f", Move In Process: {mip['name']} (Beats Left: {mip['beats_left']})" if mip else ""
+            mip_str = f", Move In Process: {mip.get('name', 'Action')} (Beats Left: {mip.get('beats_left', 0)})" if mip else ""
+            e_pos = e.get("position") or {}
             enemy_list.append(
                 f"- {e.get('name')} [ID: {e.get('id')}, HP: {e.get('hp')}/{e.get('max_hp')}, "
-                f"Pos: {e.get('x')},{e.get('y')}, Dist: {e.get('distance')}ft, Facing: {e.get('facing')}{mip_str}]\n"
+                f"Pos: {e_pos.get('x')},{e_pos.get('y')}, Dist: {e.get('distance')}ft, Facing: {e_pos.get('facing')}{mip_str}]\n"
                 f"  Attributes: [{e_attrs}]"
             )
         enemies_block = "Enemies:\n" + "\n".join(enemy_list)
 
         # Build Context block
         history_str = "\n".join(history[-5:]) # Last 5 log entries
-        moves_str = ", ".join([m.get("name") for m in available_moves if m.get("available", True)])
+        move_descriptions = []
+        for m in available_moves:
+            if not m.get("available", True):
+                continue
+            name = m.get("name")
+            targets = m.get("viable_targets", [])
+            if targets:
+                target_names = [f"{t.get('name', 'Unknown')} (ID: {t.get('id', 'N/A')}, Dist: {t.get('distance', '?')}ft)" for t in targets]
+                move_descriptions.append(f"{name} [Targets: {', '.join(target_names)}]")
+            else:
+                move_descriptions.append(name)
+        moves_str = "; ".join(move_descriptions)
 
         return (
             f"{player_block}\n\n"
