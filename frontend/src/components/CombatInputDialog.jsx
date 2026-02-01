@@ -6,7 +6,7 @@ import GameButton from './GameButton';
 /**
  * CombatInputDialog - Versatile dialog for combat-specific inputs (targeting, directions, etc.)
  */
-const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
+const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHover }) => {
     const { playSFX } = useAudio();
 
     const getTitle = () => {
@@ -21,11 +21,13 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
 
     const handleSelect = (option) => {
         playSFX('attack');
+        // Clear hover when selecting
+        if (onTargetHover) onTargetHover(null);
         onSelect(option);
     };
 
     const renderOptions = () => {
-        if (!options || options.length === 0) {
+        if (!options || (Array.isArray(options) && options.length === 0)) {
             return (
                 <div style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
                     No valid targets or options available.
@@ -37,17 +39,24 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
             case 'target_selection':
                 return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                        {options.map((target, index) => (
-                            <div key={index} style={{
-                                backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                borderRadius: '12px',
-                                padding: '16px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '12px',
-                                transition: 'all 0.2s ease',
-                            }}>
+                        {Array.isArray(options) && options.map((target, index) => (
+                            <div
+                                key={index}
+                                onMouseEnter={() => onTargetHover && onTargetHover(target.id)}
+                                onMouseLeave={() => onTargetHover && onTargetHover(null)}
+                                style={{
+                                    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '12px',
+                                    padding: '16px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px',
+                                    transition: 'all 0.2s ease',
+                                    cursor: 'pointer'
+                                }}
+                                onClick={() => handleSelect(target.id)}
+                            >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ fontWeight: 'bold', color: '#fff', fontSize: '15px' }}>{target.name}</span>
                                     {target.distance !== undefined && (
@@ -75,7 +84,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
                                     )}
                                 </div>
 
-                                <GameButton onClick={() => handleSelect(target.id)} variant="primary" style={{ width: '100%', padding: '8px' }}>
+                                <GameButton variant="primary" style={{ width: '100%', padding: '8px', pointerEvents: 'none' }}>
                                     STRIKE
                                 </GameButton>
                             </div>
@@ -86,7 +95,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
             case 'direction_selection':
                 return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', maxWidth: '300px', margin: '0 auto' }}>
-                        {options.map((direction, index) => (
+                        {Array.isArray(options) && options.map((direction, index) => (
                             <GameButton
                                 key={index}
                                 onClick={() => handleSelect(direction)}
@@ -105,7 +114,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
             default:
                 return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {options.map((option, index) => (
+                        {Array.isArray(options) && options.map((option, index) => (
                             <GameButton
                                 key={index}
                                 onClick={() => handleSelect(typeof option === 'object' ? option.id : option)}
@@ -126,6 +135,8 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel }) => {
             onClose={onCancel}
             maxWidth="600px"
             zIndex={2500}
+            variant={inputType === 'target_selection' ? 'no-blur' : undefined}
+            containerCentered={true}
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={{ overflowY: 'auto', maxHeight: '50vh', padding: '4px' }}>

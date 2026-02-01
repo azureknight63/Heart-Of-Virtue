@@ -20,7 +20,7 @@ const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
   };
 }
 
-const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
+const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = false }) => {
   // Determine Glow Color based on prepared/current move category
   const getGlowStyle = (move) => {
     if (!move) return {}; // No glow
@@ -164,11 +164,33 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false }) => {
           <StatusEffectsIconPanel effects={entity.status_effects} />
         </div>
       )}
+
+      {/* Target Reticle Overlay */}
+      {isHovered && (
+        <div className="absolute inset-[-12px] pointer-events-none z-20">
+          <svg className="w-full h-full animate-[spin_4s_linear_infinite]" viewBox="0 0 100 100">
+            {/* Outer circle */}
+            <circle cx="50" cy="50" r="45" fill="none" stroke="#ffaa00" strokeWidth="2" strokeDasharray="10 5" opacity="0.8" />
+
+            {/* Reticle lines */}
+            <line x1="50" y1="5" x2="50" y2="20" stroke="#ffaa00" strokeWidth="3" />
+            <line x1="50" y1="80" x2="50" y2="95" stroke="#ffaa00" strokeWidth="3" />
+            <line x1="5" y1="50" x2="20" y2="50" stroke="#ffaa00" strokeWidth="3" />
+            <line x1="80" y1="50" x2="95" y2="50" stroke="#ffaa00" strokeWidth="3" />
+          </svg>
+
+          {/* Inner pulsating crosshair */}
+          <div className="absolute inset-0 flex items-center justify-center animate-pulse">
+            <div className="w-[110%] h-[1px] bg-[#ffaa00] opacity-60" />
+            <div className="w-[1px] h-[110%] bg-[#ffaa00] opacity-60 absolute" />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
+export default function BattlefieldGrid({ combat, tab, zoom = 1, hoveredTargetId = null }) {
   const renderGrid = () => {
     if (tab === 'enemies') {
       return (
@@ -293,6 +315,7 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1 }) {
                 entity={item.entity}
                 isPlayer={item.isPlayer}
                 isFullMode={isFullMode}
+                isHovered={hoveredTargetId === item.entity.id}
               />
             </div>
           ))}

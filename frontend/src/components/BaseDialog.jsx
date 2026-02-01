@@ -7,13 +7,14 @@ export default function BaseDialog({
     children,
     title,
     onClose,
-    variant = 'default', // 'default', 'danger', 'warning'
+    variant = 'default', // 'default', 'danger', 'warning', 'no-blur'
     maxWidth = '400px',
     zIndex = 1000,
     showCloseButton = true,
     padding = spacing.xl,
     className = '',
     contentClassName = '',
+    containerCentered = false, // If true, positions relative to parent container instead of viewport
 }) {
     const isDanger = variant === 'danger'
     const isWarning = variant === 'warning'
@@ -30,7 +31,7 @@ export default function BaseDialog({
         <div
             className={`modal-overlay ${className}`}
             style={{
-                position: 'fixed',
+                position: containerCentered ? 'absolute' : 'fixed',
                 top: 0,
                 left: 0,
                 right: 0,
@@ -40,7 +41,7 @@ export default function BaseDialog({
                 justifyContent: 'center',
                 zIndex,
                 backgroundColor: themeStyles.overlayColor,
-                backdropFilter: 'blur(3px)',
+                backdropFilter: variant === 'no-blur' ? 'none' : 'blur(3px)',
             }}
             onClick={onClose}
         >

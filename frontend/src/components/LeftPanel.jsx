@@ -16,7 +16,7 @@ import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 
-export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange }) {
+export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
   // Don't render if player data hasn't loaded yet
   if (!player) {
     return null
@@ -57,6 +57,12 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   const [showCheckDialog, setShowCheckDialog] = useState(false)
   const [checkData, setCheckData] = useState(null)
   const [pendingMoveSelection, setPendingMoveSelection] = useState(false)
+  const [localCombatInput, setLocalCombatInput] = useState(null)
+
+  // Clear local input when combat turn changes
+  useEffect(() => {
+    setLocalCombatInput(null)
+  }, [combat?.turn_number, combat?.combat_id])
 
   // Audio context
   const { playSFX, playBGM } = useAudio()
@@ -214,7 +220,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
 
   // Track the most recent set of moves we've received
   useEffect(() => {
-    if (combat?.input_type === 'move_selection' && rawMoves.length > 0) {
+    if (combat?.input_type === 'move_selection' && Array.isArray(rawMoves) && rawMoves.length > 0) {
       // Check if these are actually moves (have a category)
       const hasCategories = rawMoves.some(m => m.category)
       if (hasCategories) {
@@ -331,13 +337,41 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   }
 
   const handleMoveSelection = async (move) => {
-    // Execute move via API - use move.id which is the index
+    // Execute move via API
+    if (!move.available) return;
+
+    // Auto-select single target if it doesn't require selection
+    if (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1) {
+      const target = move.viable_targets[0];
+      try {
+        setPendingMoveSelection(true)
+        await onCombatAction('select_move_and_target', {
+          move_name: move.name,
+          target_id: target.id
+        })
+      } catch (err) {
+        console.error('Failed to auto-select target:', err)
+      } finally {
+        setPendingMoveSelection(false)
+      }
+      return;
+    }
+
+    // Show target selection locally if it requires it
+    if (move.targeted && move.requires_target_selection) {
+      setLocalCombatInput({
+        type: 'target_selection',
+        options: move.viable_targets || [],
+        moveName: move.name,
+        moveIndex: move.id
+      })
+      return;
+    }
+
+    // Default flow for everything else
     try {
       setPendingMoveSelection(true)
       await onCombatAction('move', { move_id: move.id })
-      // Don't close move panel immediately - let the input dialog effect handle it
-      // This creates a smoother transition where the move panel stays visible
-      // until the target selection dialog is ready to appear
     } catch (err) {
       console.error('Failed to execute move:', err)
     } finally {
@@ -368,7 +402,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible' }}>
+    <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
       {/* Header */}
       <div style={{
         backgroundColor: '#00ff88',
@@ -525,18 +559,38 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
             onMoveClick={handleMoveSelection}
             onClose={() => setShowCombatMoves(false)}
             isProcessing={pendingMoveSelection}
+            onTargetHover={onTargetHover}
           />
         )}
 
         {/* Combat Input Dialog - for target selection, direction selection, etc. */}
-        {showInputDialog && mode === 'combat' && (
+        {(showInputDialog || localCombatInput) && mode === 'combat' && (
           <CombatInputDialog
-            inputType={combat.input_type}
-            options={combat.available_options || []}
-            onSelect={handleInputSelection}
+            inputType={localCombatInput ? localCombatInput.type : combat.input_type}
+            options={localCombatInput ? localCombatInput.options : (combat.available_options || [])}
+            onTargetHover={onTargetHover}
+            onSelect={async (selectedValue) => {
+              if (localCombatInput) {
+                try {
+                  await onCombatAction('select_move_and_target', {
+                    move_name: localCombatInput.moveName,
+                    target_id: selectedValue
+                  })
+                  setLocalCombatInput(null)
+                } catch (err) {
+                  console.error('Failed to send local input:', err)
+                }
+              } else {
+                handleInputSelection(selectedValue)
+              }
+            }}
             onCancel={() => {
-              setShowInputDialog(false)
-              onCombatAction('cancel', {})
+              if (localCombatInput) {
+                setLocalCombatInput(null)
+              } else {
+                setShowInputDialog(false)
+                onCombatAction('cancel', {})
+              }
             }}
           />
         )}
@@ -545,9 +599,11 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         {mode === 'combat' && isMyTurn && (
           <SuggestedMovesPanel
             suggestions={combat?.suggested_moves || []}
+            suggestionsLoading={combat?.battle_state?.suggestions_loading || combat?.suggestions_loading || false}
             lastOutcome={combat?.last_move_outcome || ""}
-            lastMoveViable={combat?.available_options?.some(opt => opt.name === combat?.last_move_name && opt.available)}
+            lastMoveViable={Array.isArray(combat?.available_options) && combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available)}
             isPlayerTurn={isMyTurn}
+            onTargetHover={onTargetHover}
             onSuggestClick={(s) => {
               if (s.move_name === 'repeat_last') {
                 // Use explicit tracking fields from backend

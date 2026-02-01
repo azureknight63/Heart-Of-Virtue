@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAudio } from '../context/AudioContext';
 
-const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
+const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover }) => {
     const { playSFX } = useAudio();
     const filteredMoves = moves.filter(move => {
         if (category === 'Miscellaneous') {
@@ -60,6 +60,10 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
                     filteredMoves.map((move, index) => {
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
+                        // Single target detection for hover effect
+                        const singleTargetId = (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1)
+                            ? move.viable_targets[0].id
+                            : null;
 
                         return (
                             <button
@@ -67,6 +71,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
                                 onClick={() => {
                                     if (isAvailable) {
                                         playSFX('attack');
+                                        if (onTargetHover) onTargetHover(null);
                                         onMoveClick(move);
                                     }
                                 }}
@@ -89,12 +94,18 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose }) => {
                                     if (isAvailable) {
                                         e.currentTarget.style.backgroundColor = 'rgba(255, 170, 0, 0.1)';
                                         e.currentTarget.style.borderColor = '#ffaa00';
+                                        if (singleTargetId && onTargetHover) {
+                                            onTargetHover(singleTargetId);
+                                        }
                                     }
                                 }}
                                 onMouseLeave={(e) => {
                                     if (isAvailable) {
                                         e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
                                         e.currentTarget.style.borderColor = '#444';
+                                        if (onTargetHover) {
+                                            onTargetHover(null);
+                                        }
                                     }
                                 }}
                             >

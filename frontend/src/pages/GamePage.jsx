@@ -46,6 +46,7 @@ export default function GamePage() {
   const [displayedLogCount, setDisplayedLogCount] = useState(0)
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
   const [isInteractionDelayActive, setIsInteractionDelayActive] = useState(false)
+  const [hoveredTargetId, setHoveredTargetId] = useState(null)
 
 
   // Combined refetch function
@@ -314,10 +315,10 @@ export default function GamePage() {
 
       // Refetch player data after movement
       await refetchPlayer()
-      
+
       // Trigger autosave tick
       triggerTick()
-      
+
       return result
     } catch (err) {
       throw err
@@ -493,6 +494,7 @@ export default function GamePage() {
         onLogProgress={setCurrentLogIndex}
         onLogProcessingChange={setIsCombatLogProcessing}
         onDisplayedLogCountChange={setDisplayedLogCount}
+        onTargetHover={setHoveredTargetId}
       />
 
       {/* Right Panel - Battlefield/Map */}
@@ -504,6 +506,7 @@ export default function GamePage() {
         onModeChange={setMode}
         exploredTiles={exploredTiles}
         currentLogIndex={currentLogIndex}
+        hoveredTargetId={hoveredTargetId}
       />
 
       {/* Event Dialog */}

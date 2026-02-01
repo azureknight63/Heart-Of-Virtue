@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { colors } from '../styles/theme'
 
-export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false }) {
+export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover }) {
     const [isVisible, setIsVisible] = useState(false)
 
     useEffect(() => {
@@ -82,6 +82,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         onClick={() => {
                             // Extract move name from outcome if possible, or just look at last move
                             // For now, we rely on the parent to know what the last move was if it wants to repeat
+                            if (onTargetHover) onTargetHover(null);
                             onSuggestClick?.({ move_name: 'repeat_last' })
                         }}
                         style={{
@@ -147,7 +148,10 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     suggestions.map((s, idx) => (
                         <div
                             key={idx}
-                            onClick={() => onSuggestClick?.(s)}
+                            onClick={() => {
+                                if (onTargetHover) onTargetHover(null);
+                                onSuggestClick?.(s);
+                            }}
                             style={{
                                 padding: '10px',
                                 backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -162,11 +166,17 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                                 e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'
                                 e.currentTarget.style.borderColor = colors.primary
                                 e.currentTarget.style.boxShadow = `0 0 10px ${colors.primary}33`
+                                if (s.target_id && onTargetHover) {
+                                    onTargetHover(s.target_id);
+                                }
                             }}
                             onMouseLeave={(e) => {
                                 e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
                                 e.currentTarget.style.borderColor = 'rgba(0, 255, 136, 0.15)'
                                 e.currentTarget.style.boxShadow = 'none'
+                                if (onTargetHover) {
+                                    onTargetHover(null);
+                                }
                             }}
                         >
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
