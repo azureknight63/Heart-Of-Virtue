@@ -36,16 +36,16 @@ describe('LoginPage', () => {
     it('renders login form by default', () => {
         renderLoginPage();
         expect(screen.getByText('Heart of Virtue')).toBeDefined();
-        expect(screen.getByPlaceholderText('Enter your name')).toBeDefined();
-        expect(screen.getByPlaceholderText('Enter your password')).toBeDefined();
-        expect(screen.getByRole('button', { name: /Enter Game/i })).toBeDefined();
+        expect(screen.getByLabelText(/Username/i)).toBeDefined();
+        expect(screen.getByLabelText(/Password/i)).toBeDefined();
+        expect(screen.getByRole('button', { name: /Submit login form/i })).toBeDefined();
     });
 
     it('toggles between login and register', () => {
         renderLoginPage();
         const toggleBtn = screen.getByText(/Create Account/i);
         fireEvent.click(toggleBtn);
-        expect(screen.getByRole('button', { name: /Create Account/i })).toBeDefined();
+        expect(screen.getByRole('button', { name: /Submit registration form/i })).toBeDefined();
         expect(screen.getByText(/Back to Login/i)).toBeDefined();
     });
 
@@ -53,9 +53,9 @@ describe('LoginPage', () => {
         mockLogin.mockResolvedValue({ success: true });
         renderLoginPage();
 
-        fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'testuser' } });
-        fireEvent.change(screen.getByPlaceholderText('Enter your password'), { target: { value: 'password123' } });
-        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+        fireEvent.click(screen.getByRole('button', { name: /Submit login form/i }));
 
         await waitFor(() => {
             expect(mockLogin).toHaveBeenCalledWith('testuser', 'password123');
@@ -72,9 +72,9 @@ describe('LoginPage', () => {
         });
         renderLoginPage();
 
-        fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'testuser' } });
-        fireEvent.change(screen.getByPlaceholderText('Enter your password'), { target: { value: 'wrong' } });
-        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'wrong' } });
+        fireEvent.click(screen.getByRole('button', { name: /Submit login form/i }));
 
         await waitFor(() => {
             expect(screen.getByText('Invalid username or password; try again or register a new account.')).toBeDefined();
@@ -86,12 +86,13 @@ describe('LoginPage', () => {
         renderLoginPage();
 
         fireEvent.click(screen.getByText(/Create Account/i));
-        fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'newuser' } });
-        fireEvent.change(screen.getByPlaceholderText('Enter your password'), { target: { value: 'password123' } });
-        fireEvent.click(screen.getByRole('button', { name: /Create Account/i }));
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'newuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123456789' } });
+        fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'test@example.com' } });
+        fireEvent.click(screen.getByRole('button', { name: /Submit registration form/i }));
 
         await waitFor(() => {
-            expect(mockRegister).toHaveBeenCalledWith('newuser', 'password123');
+            expect(mockRegister).toHaveBeenCalledWith('newuser', 'password123456789', 'test@example.com');
             expect(window.location.href).toBe('/menu');
         });
     });

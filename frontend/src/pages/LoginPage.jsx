@@ -67,49 +67,165 @@ export default function LoginPage() {
             }}>Enter the world of heroism and virtue</p>
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label style={{
-                display: 'block',
-                color: '#00ff88',
-                fontSize: '0.875rem',
-                fontWeight: 'bold',
-                marginBottom: '0.5rem'
-              }}>Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="input-field"
-                placeholder="Enter your name"
-                style={{ width: '100%' }}
-                required
-              />
-            </div>
-
-            <div>
-              <label style={{
-                display: 'block',
-                color: '#00ff88',
-                fontSize: '0.875rem',
-                fontWeight: 'bold',
-                marginBottom: '0.5rem'
-              }}>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input-field"
-                placeholder={isRegistering ? "Min 16 characters" : "Enter your password"}
-                style={{ width: '100%' }}
-                required
-              />
-              {isRegistering && <span style={{ fontSize: '10px', color: '#666' }}>Security: Argon2id hashing active</span>}
-            </div>
-
-            {isRegistering && (
+          {!isRegistering ? (
+            <form
+              key="login-form"
+              id="login-form"
+              method="POST"
+              action="/login"
+              onSubmit={handleSubmit}
+              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            >
               <div>
-                <label style={{
+                <label htmlFor="username" style={{
+                  display: 'block',
+                  color: '#00ff88',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem'
+                }}>Username</label>
+                <input
+                  id="username"
+                  name="username"
+                  autoComplete="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="input-field"
+                  placeholder="Enter your name"
+                  style={{ width: '100%' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" style={{
+                  display: 'block',
+                  color: '#00ff88',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem'
+                }}>Password</label>
+                <input
+                  id="password"
+                  name="password"
+                  autoComplete="current-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field"
+                  placeholder="Enter your password"
+                  style={{ width: '100%' }}
+                  required
+                  data-lpignore="false"
+                  aria-label="Password"
+                />
+              </div>
+
+              {error && (
+                <div style={{
+                  padding: '0.75rem',
+                  backgroundColor: '#7f1d1d',
+                  border: '1px solid #991b1b',
+                  borderRadius: '0.25rem',
+                  color: '#fecaca',
+                  fontSize: '0.875rem'
+                }}>
+                  {error}
+                </div>
+              )}
+
+              <button type="submit" style={{ display: 'none' }} aria-hidden="true">Log In</button>
+              <button
+                type="submit"
+                disabled={loading}
+                aria-label="Submit login form"
+                className="btn btn-primary"
+                style={{
+                  width: '100%',
+                  fontWeight: 'bold',
+                  padding: '0.5rem',
+                  marginTop: '1.5rem',
+                  opacity: loading ? 0.5 : 1
+                }}
+              >
+                {loading ? 'Processing...' : 'Enter Game'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegistering(true)
+                  setError('')
+                }}
+                className="btn btn-secondary"
+                style={{
+                  width: '100%',
+                  fontSize: '0.875rem',
+                  padding: '0.5rem'
+                }}
+              >
+                New to the realm? Create Account
+              </button>
+            </form>
+          ) : (
+            <form
+              key="register-form"
+              id="register-form"
+              method="POST"
+              action="/register"
+              onSubmit={handleSubmit}
+              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            >
+              <div>
+                <label htmlFor="reg-username" style={{
+                  display: 'block',
+                  color: '#00ff88',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem'
+                }}>Username</label>
+                <input
+                  id="reg-username"
+                  name="username"
+                  autoComplete="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="input-field"
+                  placeholder="Enter your name"
+                  style={{ width: '100%' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="reg-password" style={{
+                  display: 'block',
+                  color: '#00ff88',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  marginBottom: '0.5rem'
+                }}>Password</label>
+                <input
+                  id="reg-password"
+                  name="password"
+                  autoComplete="new-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field"
+                  placeholder="Min 16 characters"
+                  style={{ width: '100%' }}
+                  required
+                  data-lpignore="false"
+                  aria-label="New Password"
+                />
+                <span style={{ fontSize: '10px', color: '#666' }}>Security: Argon2id hashing active</span>
+              </div>
+
+              <div>
+                <label htmlFor="reg-email" style={{
                   display: 'block',
                   color: '#00ff88',
                   fontSize: '0.875rem',
@@ -117,6 +233,9 @@ export default function LoginPage() {
                   marginBottom: '0.5rem'
                 }}>Email Address</label>
                 <input
+                  id="reg-email"
+                  name="email"
+                  autoComplete="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -126,52 +245,54 @@ export default function LoginPage() {
                   required
                 />
               </div>
-            )}
 
-            {error && (
-              <div style={{
-                padding: '0.75rem',
-                backgroundColor: '#7f1d1d',
-                border: '1px solid #991b1b',
-                borderRadius: '0.25rem',
-                color: '#fecaca',
-                fontSize: '0.875rem'
-              }}>
-                {error}
-              </div>
-            )}
+              {error && (
+                <div style={{
+                  padding: '0.75rem',
+                  backgroundColor: '#7f1d1d',
+                  border: '1px solid #991b1b',
+                  borderRadius: '0.25rem',
+                  color: '#fecaca',
+                  fontSize: '0.875rem'
+                }}>
+                  {error}
+                </div>
+              )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary"
-              style={{
-                width: '100%',
-                fontWeight: 'bold',
-                padding: '0.5rem',
-                marginTop: '1.5rem',
-                opacity: loading ? 0.5 : 1
-              }}
-            >
-              {loading ? 'Processing...' : isRegistering ? 'Create Account' : 'Enter Game'}
-            </button>
+              <button type="submit" style={{ display: 'none' }} aria-hidden="true">Create Account</button>
+              <button
+                type="submit"
+                disabled={loading}
+                aria-label="Submit registration form"
+                className="btn btn-primary"
+                style={{
+                  width: '100%',
+                  fontWeight: 'bold',
+                  padding: '0.5rem',
+                  marginTop: '1.5rem',
+                  opacity: loading ? 0.5 : 1
+                }}
+              >
+                {loading ? 'Processing...' : 'Create Account'}
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsRegistering(!isRegistering)
-                setError('')
-              }}
-              className="btn btn-secondary"
-              style={{
-                width: '100%',
-                fontSize: '0.875rem',
-                padding: '0.5rem'
-              }}
-            >
-              {isRegistering ? 'Back to Login' : 'New to the realm? Create Account'}
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegistering(false)
+                  setError('')
+                }}
+                className="btn btn-secondary"
+                style={{
+                  width: '100%',
+                  fontSize: '0.875rem',
+                  padding: '0.5rem'
+                }}
+              >
+                Back to Login
+              </button>
+            </form>
+          )}
         </div>
 
         <div style={{
