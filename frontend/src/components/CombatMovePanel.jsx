@@ -61,8 +61,9 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
                         // Single target detection for hover effect
-                        const singleTargetId = (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1)
-                            ? move.viable_targets[0].id
+                        const firstTarget = move.viable_targets?.[0];
+                        const singleTargetId = (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1 && firstTarget?.id?.startsWith('enemy_'))
+                            ? firstTarget.id
                             : null;
 
                         return (

@@ -7,7 +7,9 @@ const transformCombatData = (data) => ({
   log: data.log || [],
   beat_states: data.beat_states || [],
   end_state: data.end_state || null,
-  combat_active: data.combat_active
+  combat_active: data.combat_active,
+  suggested_moves: data.suggested_moves || [],
+  suggestions_loading: data.suggestions_loading || false
 })
 
 // Helper to transform location data

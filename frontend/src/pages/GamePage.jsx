@@ -107,6 +107,21 @@ export default function GamePage() {
     }
   }, [location])
 
+  // Poll for combat status when suggestions are loading (fallback for missing socket events)
+  useEffect(() => {
+    let pollInterval;
+    if (inCombat && combat?.suggestions_loading) {
+      console.log('[DEBUG] Suggestions loading, starting poll...');
+      pollInterval = setInterval(() => {
+        console.log('[DEBUG] Polling for suggestions...');
+        fetchCombatStatus();
+      }, 3000); // Poll every 3 seconds
+    }
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [inCombat, combat?.suggestions_loading]);
+
   // Process event queue
   useEffect(() => {
     console.log('[DEBUG] Event Queue Check:', {

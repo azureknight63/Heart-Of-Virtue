@@ -17,6 +17,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
     const [validationMessage, setValidationMessage] = useState('')
     const [validationSeverity, setValidationSeverity] = useState('') // 'warning' or 'error'
     const [selectedChoice, setSelectedChoice] = useState(null)
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
@@ -36,6 +37,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
         setNumberInput('')
         setValidationMessage('')
         setSelectedChoice(null)
+        setIsSubmitting(false)
     }, [eventText, needsInput])
 
     // Focus input when shown
@@ -49,6 +51,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (!showInput) return
+            if (isSubmitting) return
 
             // Handle number keys for choices
             if (inputType === 'choice' && inputOptions.length > 0) {
@@ -77,9 +80,11 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                 dialogRef.current.removeEventListener('keydown', handleKeyDown)
             }
         }
-    }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice])
+    }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
 
     const handleChoiceSelect = (value) => {
+        if (isSubmitting) return
+        setIsSubmitting(true)
         setSelectedChoice(value)
         setValidationMessage('')
         // Submit immediately for choice type as per user request
@@ -141,8 +146,10 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
     }
 
     const handleSubmit = () => {
+        if (isSubmitting) return
         if (!validateInput()) return
 
+        setIsSubmitting(true)
         let userInput = ''
         if (inputType === 'choice') {
             userInput = selectedChoice
@@ -163,7 +170,9 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
     const charCountColor = charCount > charLimit ? colors.danger : charCount > charLimit * 0.9 ? colors.warning : colors.text.muted
 
     const handleGlobalInteraction = () => {
+        if (isSubmitting) return
         if (isComplete && !needsInput) {
+            setIsSubmitting(true)
             onClose()
         }
     }
@@ -310,12 +319,15 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                             key={idx}
                                             onClick={() => handleChoiceSelect(option.value)}
                                             variant={isSelected ? 'primary' : 'secondary'}
+                                            disabled={isSubmitting}
                                             style={{
                                                 padding: '14px 20px',
                                                 fontSize: '15px',
                                                 borderColor: isSelected ? colors.primary : '#00cc66',
                                                 backgroundColor: isSelected ? 'rgba(0, 102, 51, 0.6)' : 'rgba(0, 50, 25, 0.4)',
                                                 color: '#88ffcc',
+                                                opacity: isSubmitting ? 0.6 : 1,
+                                                cursor: isSubmitting ? 'not-allowed' : 'pointer',
                                             }}
                                         >
                                             {keyBinding && <span style={{ color: colors.secondary, marginRight: '8px' }}>{keyBinding}</span>}
@@ -435,13 +447,16 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             <GameButton
                                 onClick={handleSubmit}
                                 variant="primary"
+                                disabled={isSubmitting}
                                 style={{
                                     padding: '14px 24px',
                                     fontSize: '16px',
                                     marginTop: spacing.sm,
+                                    opacity: isSubmitting ? 0.6 : 1,
+                                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
                                 }}
                             >
-                                Submit
+                                {isSubmitting ? 'Submitting...' : 'Submit'}
                             </GameButton>
                         )}
 
@@ -471,11 +486,16 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                         marginTop: spacing.lg,
                     }}>
                         <GameButton
-                            onClick={onClose}
+                            onClick={handleGlobalInteraction}
                             variant="secondary"
-                            style={{ padding: '10px 30px' }}
+                            disabled={isSubmitting}
+                            style={{
+                                padding: '10px 30px',
+                                opacity: isSubmitting ? 0.6 : 1,
+                                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                            }}
                         >
-                            Close
+                            {isSubmitting ? 'Closing...' : 'Close'}
                         </GameButton>
                         <div style={{
                             color: colors.text.muted,

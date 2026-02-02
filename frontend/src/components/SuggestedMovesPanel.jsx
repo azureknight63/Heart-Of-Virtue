@@ -166,7 +166,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                                 e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'
                                 e.currentTarget.style.borderColor = colors.primary
                                 e.currentTarget.style.boxShadow = `0 0 10px ${colors.primary}33`
-                                if (s.target_id && onTargetHover) {
+                                if (s.target_id?.startsWith('enemy_') && onTargetHover) {
                                     onTargetHover(s.target_id);
                                 }
                             }}
