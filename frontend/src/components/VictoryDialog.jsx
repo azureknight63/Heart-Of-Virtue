@@ -55,11 +55,20 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
     try {
       setIsSubmitting(true)
       const result = await onAllocatePoints(selectedAttr, amt)
-      if (!result?.success) {
+
+      // Check for backend success (some APIs might return result directly or result.data)
+      // Based on GamePage.jsx, it returns result.data which should have .success
+      if (result && result.success) {
+        // Success - reset amount to 1 and the parent will refresh endState
+        setAmount('1')
+        setError('')
+      } else {
         setError(result?.error || 'Failed to allocate points.')
       }
     } catch (e) {
-      setError(e?.message || 'Failed to allocate points.')
+      // Handle axios error specifically if available
+      const apiError = e.response?.data?.error || e.message
+      setError(apiError || 'Failed to allocate points.')
     } finally {
       setIsSubmitting(false)
     }
@@ -247,7 +256,14 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
                       min="1"
                       max={Math.max(1, remainingPoints)}
                       value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAmount(val);
+                        // Clear error if they fix the amount
+                        if (parseInt(val, 10) <= remainingPoints) {
+                          setError('');
+                        }
+                      }}
                       style={{
                         width: '70px',
                         padding: '10px',

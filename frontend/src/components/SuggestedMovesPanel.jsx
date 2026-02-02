@@ -117,7 +117,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 flexDirection: 'column',
                 gap: '12px'
             }}>
-                {suggestionsLoading || suggestions.length === 0 ? (
+                {suggestionsLoading ? (
                     <div style={{
                         padding: '20px 10px',
                         textAlign: 'center',
@@ -136,13 +136,17 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                             borderRadius: '50%',
                             animation: 'spin 1s linear infinite'
                         }} />
-                        <span>{suggestionsLoading ? 'ANALYZING COMBAT SITUATION...' : 'ANALYZING BATTLEFIELD COORDINATES...'}</span>
-                        <style>{`
-                            @keyframes spin {
-                                from { transform: rotate(0deg); }
-                                to { transform: rotate(360deg); }
-                            }
-                        `}</style>
+                        <span>ANALYZING COMBAT SITUATION...</span>
+                    </div>
+                ) : suggestions.length === 0 ? (
+                    <div style={{
+                        padding: '20px 10px',
+                        textAlign: 'center',
+                        color: colors.text.muted,
+                        fontSize: '11px',
+                        fontStyle: 'italic'
+                    }}>
+                        NO TACTICAL ADVANTAGE IDENTIFIED
                     </div>
                 ) : (
                     suggestions.map((s, idx) => (
