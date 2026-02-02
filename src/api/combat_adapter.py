@@ -367,13 +367,20 @@ class ApiCombatAdapter:
         if self.input_type != "move_selection":
             return {"error": "Not expecting move selection"}
 
-        # Find move by name
+        # Find move by name (case-insensitive)
         move_index = -1
         for i, m in enumerate(self.player.known_moves):
-            if m.name == move_name:
+            if m.name.strip().lower() == move_name.strip().lower():
                 move_index = i
                 break
         
+        if move_index == -1:
+            # Try partial match if no exact match
+            for i, m in enumerate(self.player.known_moves):
+                if move_name.strip().lower() in m.name.strip().lower():
+                    move_index = i
+                    break
+
         if move_index == -1:
             return {"error": f"Move '{move_name}' not found"}
         
@@ -1225,6 +1232,10 @@ class ApiCombatAdapter:
         
         # Iterate over combat_list instead of combat_proximity to ensure we use the correct enemy instances
         for enemy in self.player.combat_list:
+            # Explicitly skip the player if they somehow ended up in the combat_list
+            if enemy == self.player:
+                continue
+                
             if not enemy.is_alive():
                 continue
                 
