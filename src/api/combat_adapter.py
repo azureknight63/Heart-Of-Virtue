@@ -1328,6 +1328,19 @@ class ApiCombatAdapter:
 
         # Include end-of-combat summary (victory/defeat) if present
         if not self.player.in_combat and getattr(self.player, "combat_end_summary", None):
-            result["end_state"] = self.player.combat_end_summary
+            summary = self.player.combat_end_summary
+            # Refresh dynamic values if it's a victory
+            if summary.get("status") == "victory":
+                summary["attribute_points_available"] = int(getattr(self.player, "pending_attribute_points", 0) or 0)
+                summary["exp_to_next_level"] = int((getattr(self.player, "exp_to_level", 0) or 0) - (getattr(self.player, "exp", 0) or 0))
+                summary["attributes"] = {
+                    "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
+                    "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
+                    "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
+                    "endurance_base": int(getattr(self.player, "endurance_base", 0) or 0),
+                    "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
+                    "intelligence_base": int(getattr(self.player, "intelligence_base", 0) or 0),
+                }
+            result["end_state"] = summary
 
         return result
