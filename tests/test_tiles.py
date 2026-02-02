@@ -1,6 +1,15 @@
 """
 Unit tests for tiles module
 """
+import sys
+from pathlib import Path
+
+# Ensure the project's src directory is on sys.path so imports resolve like other tests
+ROOT = Path(__file__).resolve().parent.parent
+SRC_DIR = ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from src.tiles import MapTile
