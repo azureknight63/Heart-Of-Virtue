@@ -18,7 +18,9 @@ class CombatStrategist:
             "Suggest only moves that are currently listed in the 'Available Moves' section below. "
             "Format each suggestion as a JSON object with:\n"
             "- move_name: The exact name of the move.\n"
-            "- target_id: The exact ID of the target as provided in the context (e.g., 'enemy_12345'). Use null if the move is not targeted or is self-targeted.\n"
+            "target_id: The exact ID of the target as provided in the context (e.g., 'enemy_12345'). "
+            "IMPORTANT: If the move is listed as requiring a target (e.g., Attack, Advance), you MUST provide a valid target_id from the 'Enemies' list. "
+            "Use null ONLY if the move is strictly self-targeted or non-targeted.\n"
             "- score: 1-100 (An estimate of how significant this move will be toward maximizing tactical advantage).\n"
             "- reasoning: A brief, one-sentence explanation of why this move is optimal."
         )
@@ -76,7 +78,25 @@ class CombatStrategist:
             valid_suggestions.sort(key=lambda x: x["score"], reverse=True)
             
             # Limit to requested count
-            return valid_suggestions[:max_suggestions]
+            results = valid_suggestions[:max_suggestions]
+            
+            # Post-process results to ensure targeted moves have targets
+            enemies = combat_context.get("enemies", [])
+            primary_target_id = enemies[0].get("id") if enemies else None
+            
+            # Identify which moves in context are targeted
+            targeted_moves = {}
+            for m in combat_context.get("available_moves", []):
+                if m.get("targeted"):
+                    targeted_moves[m.get("name")] = True
+            
+            for s in results:
+                m_name = s.get("move_name")
+                if targeted_moves.get(m_name) and not s.get("target_id"):
+                    logger.info(f"DEBUG: Strategist auto-filling missing target_id for targeted move '{m_name}'")
+                    s["target_id"] = primary_target_id
+                    
+            return results
 
         except Exception as e:
             logger.error(f"DEBUG: Error fetching combat suggestions: {e}", exc_info=True)

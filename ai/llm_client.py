@@ -481,11 +481,14 @@ class GenericLLMClient:
                     content = msg.get("content")
                 
                 if content:
+                    logger.info(f"DEBUG: SDK request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
                     if structured:
                         return _JSONTools.try_parse_json(str(content))
                     return _JSONTools.sanitize_text(str(content))
+                else:
+                    logger.warning(f"DEBUG: SDK request for {model_id} returned NO CONTENT.")
             except Exception as e:
-                logger.warning(f"DEBUG: SDK request failed for {model_id}: {e}")
+                logger.warning(f"DEBUG: SDK request failed for {model_id}: {str(e)[:200]}")
                 # Fall through to requests path for this model
         
         # Try direct requests path
@@ -521,8 +524,14 @@ class GenericLLMClient:
             
             if resp.status_code == 200:
                 data = resp.json()
+                logger.debug(f"DEBUG: HTTP 200 Response Data from {model_id}: {data}")
                 content = None
                 if isinstance(data, dict):
+                    # Check for errors in the 200 response (some providers do this)
+                    if "error" in data:
+                        logger.warning(f"DEBUG: OpenRouter returned error in 200 payload for {model_id}: {data['error']}")
+                        return None
+
                     choices = data.get("choices")
                     if isinstance(choices, list) and choices:
                         first = choices[0]
@@ -534,13 +543,16 @@ class GenericLLMClient:
                                 content = first.get("text") or first.get("content")
                 
                 if content:
+                    logger.info(f"DEBUG: HTTP request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
                     if structured:
                         return _JSONTools.try_parse_json(str(content))
                     return _JSONTools.sanitize_text(str(content))
+                else:
+                    logger.warning(f"DEBUG: HTTP request for {model_id} returned NO CONTENT in choices.")
             
-            logger.warning(f"DEBUG: HTTP request failed for {model_id} with {resp.status_code}: {resp.text}")
+            logger.warning(f"DEBUG: HTTP request failed for {model_id} with {resp.status_code}: {resp.text[:500]}")
         except Exception as e:
-            logger.error(f"DEBUG: HTTP request exception for {model_id}: {e}")
+            logger.error(f"DEBUG: HTTP request exception for {model_id}: {e}", exc_info=True)
         
         return None
 

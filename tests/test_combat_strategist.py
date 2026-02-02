@@ -60,6 +60,7 @@ def test_get_suggestions_sorting(strategist):
 
 def test_get_suggestions_unavailable(strategist):
     strategist.client._available = False
+    strategist.client._unavailable_reason = "Mock unavailable"
     ctx = {}
     suggestions = strategist.get_suggestions(ctx)
     assert suggestions == []
@@ -107,7 +108,7 @@ def test_build_user_prompt(strategist):
     assert "Bat [ID: enemy_1" in prompt
     assert "Dist: 5ft" in prompt
     assert "Jean attacks Bat!" in prompt
-    assert "Available Moves: Slash, Dodge" in prompt
+    assert "Available Moves: Slash; Dodge" in prompt
 
 def test_malformed_json_handling(strategist):
     with patch.object(strategist.client, 'generate_structured', return_value="not a dict"):
