@@ -232,6 +232,8 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             for x in range(0, 2):
                 npc = target_tile.spawn_npc("RockRumbler")
                 new_enemies.append(npc)
+            
+            cprint("\nLow rumbles vibrate through the stone floor as more creatures emerge!", "yellow")
                 
             # Add them to combat and reinitialize positions for all combatants
             from functions import add_enemies_to_combat
@@ -273,7 +275,7 @@ class Ch01PostRumblerRep(Event):
         if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
-    def process(self):
+    def process(self, user_input=None):
         # Track which stage we're in using a stage attribute
         if not hasattr(self, '_announcement_stage'):
             self._announcement_stage = 1
@@ -293,7 +295,7 @@ class Ch01PostRumblerRep(Event):
             
             # Add them to combat and reinitialize positions
             from functions import add_enemies_to_combat
-            add_enemies_to_combat(self.player, new_enemies)
+            add_enemies_to_combat(self.player, new_enemies, f"The ground shudders violently as {len(new_enemies)} more rock creatures rise!")
             
             # Set up event dialog to announce the new enemies
             self.needs_input = True
@@ -320,13 +322,13 @@ class Ch01PostRumbler2(Event):
         if self.player.get_hp_pcnt() < 0.3:
             self.pass_conditions_to_process()
 
-    def process(self):
+    def process(self, user_input=None):
         # Ensure we use the current tile instance to avoid stale refs
         target_tile = self.tile
         if hasattr(self.player, 'current_room'):
             target_tile = self.player.current_room
 
-        for event in self.player.combat_events:
+        for event in list(self.player.combat_events):
             if event.name == 'Ch01_PostRumbler_Rep':
                 self.player.combat_events.remove(event)  # Remove the repeating event
         
