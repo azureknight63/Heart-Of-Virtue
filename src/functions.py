@@ -268,6 +268,75 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
     return enemy_combat_list
 
 
+def add_enemies_to_combat(player, new_enemies):
+    """Add new enemies to an ongoing combat and reinitialize positions.
+    
+    This function is designed for mid-combat enemy spawning (e.g., reinforcements,
+    ambushes, or event-triggered spawns). It properly integrates new enemies into
+    the combat system by:
+    
+    1. Adding them to the player's combat_list
+    2. Setting up bidirectional combat list references
+    3. Reinitializing battlefield positions for ALL combatants
+    4. Updating combat_proximity dicts for backward compatibility
+    
+    Args:
+        player: The Player instance
+        new_enemies: List of NPC instances to add to combat
+        
+    Example:
+        # In an event that spawns reinforcements:
+        new_enemies = [tile.spawn_npc("Goblin") for _ in range(3)]
+        add_enemies_to_combat(player, new_enemies)
+    """
+    from src.coordinate_config import CoordinateSystemConfig
+    import src.positions as positions
+    
+    # Add enemies to combat list
+    for enemy in new_enemies:
+        if enemy not in player.combat_list:
+            player.combat_list.append(enemy)
+            enemy.in_combat = True
+            
+            # Set up combat lists for the enemy
+            # Enemies target allies (player's team)
+            enemy.combat_list = player.combat_list_allies
+            # Enemies are allied with other enemies
+            enemy.combat_list_allies = player.combat_list
+    
+    # Reinitialize positions for ALL combatants to include new enemies
+    try:
+        coord_config = CoordinateSystemConfig(player)
+        total_combatants = len(player.combat_list_allies) + len(player.combat_list)
+        grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
+        
+        # Determine scenario type based on combat composition
+        scenario_type = "standard"
+        if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
+            scenario_type = "pincer"
+        elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+            scenario_type = "boss_arena"
+        
+        positions.initialize_combat_positions(
+            allies=player.combat_list_allies,
+            enemies=player.combat_list,
+            scenario_type=scenario_type,
+            grid_width=grid_w,
+            grid_height=grid_h
+        )
+    except Exception as e:
+        # Fallback to legacy proximity system if position initialization fails
+        for enemy in new_enemies:
+            default_proximity = getattr(enemy, 'default_proximity', 20)
+            player.combat_proximity[enemy] = int(default_proximity * random.uniform(0.75, 1.25))
+            
+            if len(player.combat_list_allies) > 0:
+                for ally in player.combat_list_allies:
+                    distance = int(default_proximity * random.uniform(0.75, 1.25))
+                    ally.combat_proximity[enemy] = distance
+                    enemy.combat_proximity[ally] = distance
+
+
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
     """Refresh dynamic stat bonuses on a target (player or NPC).
 
