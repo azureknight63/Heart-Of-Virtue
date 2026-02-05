@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 /**
  * useTypewriter - Hook for achieving a typewriter animation effect
  * @param {string} text - The full text to animate
- * @param {number} speed - The delay between words in milliseconds (default: 30)
+ * @param {number} speed - The delay between characters in milliseconds (default: 30)
  * @returns {object} { displayedText, isComplete, finishImmediately, reset }
  */
 export default function useTypewriter(text, speed = 30) {
@@ -30,19 +30,19 @@ export default function useTypewriter(text, speed = 30) {
 
         if (!text) return
 
-        const words = text.split(' ')
-        let wordsAdded = 0
+        const chars = Array.from(text)
+        let charsAdded = 0
 
         intervalRef.current = setInterval(() => {
-            if (wordsAdded >= words.length) {
+            if (charsAdded >= chars.length) {
                 setIsComplete(true)
                 if (intervalRef.current) clearInterval(intervalRef.current)
                 return
             }
 
-            const wordToAdd = words[wordsAdded]
-            setDisplayedText(prev => prev ? `${prev} ${wordToAdd}` : wordToAdd)
-            wordsAdded++
+            const charToAdd = chars[charsAdded]
+            setDisplayedText(prev => prev + charToAdd)
+            charsAdded++
         }, speed)
 
         return () => {

@@ -183,7 +183,9 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
             onClose={handleGlobalInteraction}
             showCloseButton={!needsInput}
             zIndex={2000}
-            maxWidth="700px"
+            maxWidth="800px"
+            width="90%"
+            allowInternalScroll={false}
         >
             <div
                 ref={dialogRef}
@@ -195,6 +197,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                     gap: spacing.lg,
                     outline: 'none',
                     height: '100%',
+                    maxHeight: '75vh', // Keep dialog from getting too tall
                 }}
             >
                 {/* Event History Toggle (only if multiple messages) */}
@@ -239,7 +242,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             fontFamily: 'monospace',
                             fontSize: '15px',
                             lineHeight: '1.8',
-                            height: '350px',
+                            flex: 1, // Expand to fill available space
                             overflowY: 'auto',
                             boxShadow: 'inset 0 0 20px rgba(0,0,0,1)',
                             display: 'flex',
@@ -256,7 +259,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             <div key={idx} style={{
                                 paddingBottom: idx === history.length - 1 ? '0' : '20px',
                                 borderBottom: idx === history.length - 1 ? 'none' : '1px solid rgba(0, 204, 102, 0.2)',
-                                whiteSpace: 'pre-wrap',
+                                whiteSpace: 'pre',
                                 opacity: idx === history.length - 1 ? 1 : 0.6
                             }}>
                                 <span style={{ color: colors.primary, marginRight: '10px', fontSize: '12px' }}>[{idx + 1}]</span>
@@ -267,7 +270,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                 ) : (
                     <TypewriterOutput
                         text={eventText}
-                        speed={50}
+                        speed={25}
                         onComplete={() => {
                             setIsComplete(true)
                             if (needsInput) setShowInput(true)
@@ -275,10 +278,13 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                         style={{
                             padding: '20px',
                             fontSize: '16px',
-                            minHeight: '120px',
+                            flex: 1, // Expand to fill available space
+                            maxHeight: '450px',
+                            overflowY: 'auto',
                             borderWidth: '2px',
                             borderColor: colors.primary,
                             color: '#88ffcc',
+                            whiteSpace: /memory/i.test(event?.type || '') || /memory/i.test(event?.name || '') ? 'pre' : 'pre-wrap',
                         }}
                     />
                 )}

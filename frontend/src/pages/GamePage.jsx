@@ -521,6 +521,7 @@ export default function GamePage() {
         onModeChange={setMode}
         exploredTiles={exploredTiles}
         currentLogIndex={currentLogIndex}
+        displayedLogCount={displayedLogCount}
         hoveredTargetId={hoveredTargetId}
       />
 

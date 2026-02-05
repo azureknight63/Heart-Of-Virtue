@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 
 import BattlefieldGrid from './BattlefieldGrid'
 
-export default function Battlefield({ combat, currentLogIndex, hoveredTargetId }) {
+export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId }) {
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(1)
 
@@ -82,7 +82,14 @@ export default function Battlefield({ combat, currentLogIndex, hoveredTargetId }
 
       {/* Battlefield Grid */}
       <div className="flex-1 overflow-hidden rounded border border-[#333] bg-[rgba(0,0,0,0.3)] relative">
-        <BattlefieldGrid combat={displayState} tab={selectedTab} zoom={zoom} hoveredTargetId={hoveredTargetId} />
+        <BattlefieldGrid
+          combat={displayState}
+          combatLog={combat?.log || []}
+          tab={selectedTab}
+          zoom={zoom}
+          displayedLogCount={displayedLogCount}
+          hoveredTargetId={hoveredTargetId}
+        />
       </div>
 
     </div>

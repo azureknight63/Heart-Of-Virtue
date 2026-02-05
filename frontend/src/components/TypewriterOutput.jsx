@@ -7,10 +7,19 @@ import { colors } from '../styles/theme'
  */
 export default function TypewriterOutput({ text, speed = 30, style = {}, onComplete, formatter }) {
     const { displayedText, isComplete, finishImmediately } = useTypewriter(text, speed)
+    const bottomRef = React.useRef(null)
+
+    React.useEffect(() => {
+        if (!isComplete) {
+            bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+        }
+    }, [displayedText, isComplete])
 
     React.useEffect(() => {
         if (isComplete && onComplete) {
             onComplete()
+            // Final scroll to ensure everything is visible
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
         }
     }, [isComplete, onComplete])
 
@@ -41,6 +50,7 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
                     animation: 'blink 1s step-end infinite'
                 }}>&nbsp;</span>
             )}
+            <div ref={bottomRef} style={{ height: 0, overflow: 'hidden' }} />
             <style>{`
                 @keyframes blink { 50% { opacity: 0; } }
             `}</style>

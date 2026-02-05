@@ -9,12 +9,15 @@ export default function BaseDialog({
     onClose,
     variant = 'default', // 'default', 'danger', 'warning', 'no-blur'
     maxWidth = '400px',
+    width = '90%',
+    minWidth = '0',
     zIndex = 1000,
     showCloseButton = true,
     padding = spacing.xl,
     className = '',
     contentClassName = '',
     containerCentered = false, // If true, positions relative to parent container instead of viewport
+    allowInternalScroll = true, // If false, the children container won't have overflowY: auto
 }) {
     const isDanger = variant === 'danger'
     const isWarning = variant === 'warning'
@@ -52,7 +55,8 @@ export default function BaseDialog({
                 aria-labelledby={title ? "base-dialog-title" : undefined}
                 style={{
                     maxWidth,
-                    width: '90%',
+                    minWidth,
+                    width,
                     backgroundColor: themeStyles.backgroundColor,
                     border: `3px solid ${themeStyles.borderColor}`,
                     borderRadius: '8px',
@@ -62,6 +66,7 @@ export default function BaseDialog({
                     display: 'flex',
                     flexDirection: 'column',
                     maxHeight: '90vh',
+                    overflowX: 'auto',
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -114,7 +119,7 @@ export default function BaseDialog({
                     </div>
                 )}
 
-                <div style={{ flex: 1, overflowY: 'auto' }}>
+                <div style={{ flex: 1, overflowY: allowInternalScroll ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column' }}>
                     {children}
                 </div>
             </div>

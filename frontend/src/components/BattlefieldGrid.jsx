@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 
 // Helper to calculate torus path
@@ -20,7 +20,7 @@ const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
   };
 }
 
-const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = false }) => {
+const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = false, animationState = null }) => {
   // Determine Glow Color based on prepared/current move category
   const getGlowStyle = (move) => {
     if (!move) return {}; // No glow
@@ -77,10 +77,60 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
     ? "absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent border-b-yellow-400 filter drop-shadow-sm opacity-90"
     : "absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-yellow-400 filter drop-shadow opacity-90";
 
+  // Animation styling
+  const getAnimationStyle = () => {
+    if (!animationState) return {};
+
+    if (animationState.isTarget) {
+      // Target flash based on outcome
+      if (animationState.phase === 'impact') {
+        switch (animationState.outcome) {
+          case 'hit':
+            return { backgroundColor: 'rgba(255, 0, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
+          case 'miss':
+            return { opacity: 0.3, transition: 'opacity 0.2s', filter: 'blur(2px)' };
+          case 'parry':
+            return { backgroundColor: 'rgba(255, 200, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
+          default:
+            return {};
+        }
+      }
+    } else if (animationState.isSource) {
+      // Source animation
+      if (animationState.phase === 'windup') {
+        return {
+          transform: 'scale(1.15)',
+          transition: 'transform 0.1s ease-out',
+          zIndex: 100
+        };
+      } else if (animationState.phase === 'strike') {
+        return {
+          transform: 'scale(1.1)',
+          zIndex: 100
+        };
+      } else if (animationState.phase === 'expand') {
+        return {
+          transform: 'scale(1.25)',
+          boxShadow: '0 0 25px rgba(255, 215, 0, 0.9)',
+          transition: 'all 0.15s ease-out',
+          zIndex: 100
+        };
+      } else if (animationState.phase === 'contract' || animationState.phase === 'return') {
+        return {
+          transform: 'scale(1)',
+          transition: 'all 0.2s ease-in'
+        };
+      }
+    }
+
+    return {};
+  };
+
   return (
     <div className="relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu bg-gray-900 border-2"
       style={{
         ...glowStyle,
+        ...getAnimationStyle(),
         // If no move prepared, default border color is handled by className or style override
         borderColor: glowStyle.borderColor || '#4b5563'
       }}
@@ -190,7 +240,89 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
   );
 };
 
-export default function BattlefieldGrid({ combat, tab, zoom = 1, hoveredTargetId = null }) {
+export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, displayedLogCount = 0, hoveredTargetId = null }) {
+  const [activeAnimation, setActiveAnimation] = useState(null);
+  const [animationPhase, setAnimationPhase] = useState(null);
+  const [lastProcessedLogIndex, setLastProcessedLogIndex] = useState(0);
+  const [animationQueue, setAnimationQueue] = useState([]);
+
+  // Animation registry - maps animation types to configurations
+  const animationConfigs = {
+    attack: {
+      duration: 800,
+      phases: [
+        { name: 'windup', duration: 100 },
+        { name: 'strike', duration: 300 },
+        { name: 'impact', duration: 200 },
+        { name: 'return', duration: 200 }
+      ]
+    },
+    pulse: {
+      duration: 400,
+      phases: [
+        { name: 'expand', duration: 200 },
+        { name: 'contract', duration: 200 }
+      ]
+    }
+  };
+
+  // Trigger animations from combat log
+  useEffect(() => {
+    const log = combatLog || combat?.log;
+    if (!log) return;
+
+    // Check for new log entries WITH A CEILING of what's currently displayed
+    // This ensures animations don't "spoil" the log timing
+    if (displayedLogCount > lastProcessedLogIndex) {
+      const newEntries = log.slice(lastProcessedLogIndex, displayedLogCount);
+      const animations = newEntries.filter(entry => entry.animation).map(entry => entry.animation);
+
+      if (animations.length > 0) {
+        setAnimationQueue(prev => [...prev, ...animations]);
+      }
+
+      setLastProcessedLogIndex(displayedLogCount);
+    }
+  }, [combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount]);
+
+  // Process animation queue
+  useEffect(() => {
+    if (!activeAnimation && animationQueue.length > 0) {
+      const nextAnim = animationQueue[0];
+      setAnimationQueue(prev => prev.slice(1));
+      playAnimation(nextAnim);
+    }
+  }, [activeAnimation, animationQueue]);
+
+  const playAnimation = (animData) => {
+    const config = animationConfigs[animData.type] || animationConfigs.pulse;
+    setActiveAnimation({ ...animData, config });
+    setAnimationPhase(config.phases[0].name);
+
+    // Sequence through animation phases
+    let currentPhaseIndex = 0;
+    let elapsed = 0;
+
+    const advancePhase = () => {
+      if (currentPhaseIndex >= config.phases.length) {
+        // Animation complete
+        setActiveAnimation(null);
+        setAnimationPhase(null);
+        return;
+      }
+
+      const phase = config.phases[currentPhaseIndex];
+      setAnimationPhase(phase.name);
+
+      setTimeout(() => {
+        currentPhaseIndex++;
+        advancePhase();
+      }, phase.duration);
+    };
+
+    advancePhase();
+  };
+
   const renderGrid = () => {
     if (tab === 'enemies') {
       return (
@@ -305,20 +437,74 @@ export default function BattlefieldGrid({ combat, tab, zoom = 1, hoveredTargetId
 
         {/* Entity Layer (Overlay) */}
         <div className="absolute inset-0 p-2 pointer-events-none">
-          {entitiesToRender.map((item, idx) => (
-            <div
-              key={`${item.entity.id || idx}-${item.isPlayer ? 'player' : 'enemy'}`}
-              className="absolute flex items-center justify-center transition-all duration-500 ease-in-out will-change-[top,left]"
-              style={item.style}
-            >
-              <CombatantMarker
-                entity={item.entity}
-                isPlayer={item.isPlayer}
-                isFullMode={isFullMode}
-                isHovered={hoveredTargetId === item.entity.id}
-              />
-            </div>
-          ))}
+          {entitiesToRender.map((item, idx) => {
+            const entityId = item.entity.id;
+
+            // Determine animation state for this entity
+            let animState = null;
+            if (activeAnimation && animationPhase) {
+              if (activeAnimation.source_id === entityId) {
+                animState = {
+                  isSource: true,
+                  isTarget: false,
+                  phase: animationPhase,
+                  outcome: activeAnimation.outcome
+                };
+              } else if (activeAnimation.target_id === entityId) {
+                animState = {
+                  isSource: false,
+                  isTarget: true,
+                  phase: animationPhase,
+                  outcome: activeAnimation.outcome
+                };
+              }
+            }
+
+            // Calculate translation for strike phase
+            let transformStyle = {};
+            if (animState?.isSource && animState.phase === 'strike' && activeAnimation.target_id) {
+              // Find target position
+              const target = entitiesToRender.find(e => e.entity.id === activeAnimation.target_id);
+              if (target) {
+                const sourcePos = getPos(item.entity);
+                const targetPos = getPos(target.entity);
+
+                // Calculate directional vector (40% of the distance)
+                const dx = (targetPos.x - sourcePos.x) * 40;
+                const dy = (sourcePos.y - targetPos.y) * 40;
+
+                transformStyle = {
+                  transform: `translate(${dx}px, ${dy}px)`,
+                  transition: 'transform 0.2s cubic-bezier(0.1, 0.7, 1.0, 0.1)',
+                  zIndex: 100
+                };
+              }
+            } else if (animState?.isSource && animState.phase === 'return') {
+              transformStyle = {
+                transform: 'translate(0, 0)',
+                transition: 'transform 0.2s ease-in-out'
+              };
+            }
+
+            return (
+              <div
+                key={`${item.entity.id || idx}-${item.isPlayer ? 'player' : 'enemy'}`}
+                className="absolute flex items-center justify-center transition-all duration-500 ease-in-out will-change-[top,left]"
+                style={{
+                  ...item.style,
+                  ...transformStyle
+                }}
+              >
+                <CombatantMarker
+                  entity={item.entity}
+                  isPlayer={item.isPlayer}
+                  isFullMode={isFullMode}
+                  isHovered={hoveredTargetId === item.entity.id}
+                  animationState={animState}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     )
