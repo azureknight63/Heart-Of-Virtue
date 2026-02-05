@@ -202,7 +202,11 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
-        if user_input is None:
+        # Track which stage we're in using a stage attribute
+        if not hasattr(self, '_stage'):
+            self._stage = 1
+            
+        if self._stage == 1:
             # Stage 1: Trigger the memory flash
             memory = Ch01_Memory_Amelia(player=self.player, tile=self.tile)
             memory.process()
@@ -213,31 +217,50 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             self.input_prompt = getattr(memory, "input_prompt", "The memory fades...")
             self.input_options = getattr(memory, "input_options", [{"value": "continue", "label": "Continue"}])
             self.description = getattr(memory, "description", "")
+            self._stage = 2
             return
 
-        # Stage 2: After user clicks 'Continue'
-        # Then continue with the original sequence
-        cprint("\nThe ground quivers slightly as more rock creatures appear.\n", "yellow")
-        
-        # Ensure we use the current tile instance to avoid stale refs
-        target_tile = self.tile
-        if hasattr(self.player, 'current_room'):
-            target_tile = self.player.current_room
+        elif self._stage == 2:
+            # Stage 2: Spawn enemies and show announcement dialog
+            # Ensure we use the current tile instance to avoid stale refs
+            target_tile = self.tile
+            if hasattr(self.player, 'current_room'):
+                target_tile = self.player.current_room
 
-        for x in range(0, 2):
-            npc = target_tile.spawn_npc("RockRumbler")
-            npc.combat_engage(self.player)
+            # Spawn new enemies
+            new_enemies = []
+            for x in range(0, 2):
+                npc = target_tile.spawn_npc("RockRumbler")
+                new_enemies.append(npc)
+                
+            # Add them to combat and reinitialize positions for all combatants
+            from functions import add_enemies_to_combat
+            add_enemies_to_combat(self.player, new_enemies)
+                
+            # Set up event dialog to announce the new enemies
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = "The ground quivers slightly as more rock creatures appear!"
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self.description = f"{len(new_enemies)} Rock Rumblers emerge from the shadows!"
             
-        self.player.combat_events.append(Ch01PostRumblerRep(player=self.player, tile=target_tile, params=False,
-                                                            repeat=True))
-        self.player.combat_events.append(Ch01PostRumbler2(player=self.player, tile=target_tile, params=False,
-                                                          repeat=False))
-        self.completed = True
-        self.needs_input = False
-        
-        # Clean up this event manually since staged events might persist in lists
-        if self in self.player.combat_events:
-             self.player.combat_events.remove(self)
+            # Add follow-up events
+            self.player.combat_events.append(Ch01PostRumblerRep(player=self.player, tile=target_tile, params=False,
+                                                                repeat=True))
+            self.player.combat_events.append(Ch01PostRumbler2(player=self.player, tile=target_tile, params=False,
+                                                              repeat=False))
+            
+            self._stage = 3
+            return
+            
+        elif self._stage == 3:
+            # Stage 3: User acknowledged the announcement, complete the event
+            self.completed = True
+            self.needs_input = False
+            
+            # Clean up this event manually since staged events might persist in lists
+            if self in self.player.combat_events:
+                 self.player.combat_events.remove(self)
 
 
 class Ch01PostRumblerRep(Event):
@@ -251,18 +274,43 @@ class Ch01PostRumblerRep(Event):
             self.pass_conditions_to_process()
 
     def process(self):
-        # Ensure we use the current tile instance to avoid stale refs
-        target_tile = self.tile
-        if hasattr(self.player, 'current_room'):
-            target_tile = self.player.current_room
+        # Track which stage we're in using a stage attribute
+        if not hasattr(self, '_announcement_stage'):
+            self._announcement_stage = 1
+            
+        if self._announcement_stage == 1:
+            # Stage 1: Spawn enemies and show announcement dialog
+            # Ensure we use the current tile instance to avoid stale refs
+            target_tile = self.tile
+            if hasattr(self.player, 'current_room'):
+                target_tile = self.player.current_room
 
-        cprint("\nThe ground quivers slightly as even more rock creatures appear.\n", "yellow")
-        for x in range(0, self.iteration):
-            npc = target_tile.spawn_npc("RockRumbler")
-            npc.combat_engage(self.player)
-        
-        self.iteration += 1
-
+            # Spawn new enemies
+            new_enemies = []
+            for x in range(0, self.iteration):
+                npc = target_tile.spawn_npc("RockRumbler")
+                new_enemies.append(npc)
+            
+            # Add them to combat and reinitialize positions
+            from functions import add_enemies_to_combat
+            add_enemies_to_combat(self.player, new_enemies)
+            
+            # Set up event dialog to announce the new enemies
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = f"The ground quivers as {len(new_enemies)} more rock creatures emerge!"
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self.description = f"{len(new_enemies)} additional Rock Rumblers join the fray!"
+            
+            self.iteration += 1
+            self._announcement_stage = 2
+            return
+            
+        elif self._announcement_stage == 2:
+            # Stage 2: User acknowledged the announcement, reset for next trigger
+            self.needs_input = False
+            self._announcement_stage = 1  # Reset for next time this repeating event triggers
+    
 
 class Ch01PostRumbler2(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler2'):
