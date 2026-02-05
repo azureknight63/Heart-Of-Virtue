@@ -538,6 +538,7 @@ class GameService:
         import io
         import re
         from unittest.mock import patch
+        from src.api.serializers.event_serializer import EventSerializer
 
         # Validate event exists
         if "pending_events" not in session_data:
@@ -645,7 +646,6 @@ class GameService:
                 result["output_text"] = clean_output
         
         # Check if event still needs input (persistent events)
-        from src.api.serializers.event_serializer import EventSerializer
         updated_event_data = EventSerializer.serialize_with_input(event)
         
         if updated_event_data.get("needs_input") and not getattr(event, "completed", False):
