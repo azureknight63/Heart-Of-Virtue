@@ -1,11 +1,11 @@
 __author__ = 'Alex Egbert'
 
-import functions as functions
+import src.functions as functions
 import json, inspect, importlib
 from pathlib import Path
 from typing import Final
-from scenario_config import ScenarioConfig
-from coordinate_config import CoordinateSystemConfig
+from src.scenario_config import ScenarioConfig
+from src.coordinate_config import CoordinateSystemConfig
 
 RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
 
