@@ -17,6 +17,7 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from items import Item
     from player import Player
     from tiles import MapTile
+    from npcs import NPC
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -268,7 +269,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
     return enemy_combat_list
 
 
-def add_enemies_to_combat(player, new_enemies):
+def add_enemies_to_combat(player, new_enemies, announcement:str=None):
     """Add new enemies to an ongoing combat and reinitialize positions.
     
     This function is designed for mid-combat enemy spawning (e.g., reinforcements,
@@ -291,6 +292,10 @@ def add_enemies_to_combat(player, new_enemies):
     """
     from src.coordinate_config import CoordinateSystemConfig
     import src.positions as positions
+
+    # Announce the new enemies
+    if announcement:
+        cprint(announcement, "red", attrs=["bold"])
     
     # Add enemies to combat list
     for enemy in new_enemies:

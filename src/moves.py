@@ -41,7 +41,7 @@ default_animations = {
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0, 9999), heat_gain=0, fatigue_cost=0,
-                 instant=False, verbose_targeting=False, category="Miscellaneous", passive=False):
+                 instant=False, verbose_targeting=False, category="Miscellaneous", passive=False, web_animation=None):
         self.name = name
         self.description = description
         self.category = category
@@ -66,6 +66,8 @@ class Move:  # master class for all moves
         self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
         self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
         self.passive = passive
+        self.web_animation = web_animation  # Animation type for web app ("attack", "pulse", "charge", etc.)
+        # None = auto-determine based on move properties
 
     def viable(self):
         """Check arbitrary conditions to see if the move is available for use; return True or False"""

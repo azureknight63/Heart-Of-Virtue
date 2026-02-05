@@ -339,7 +339,7 @@ class GameService:
         
         if combat_enemies:
             # Initialize combat
-            self._initialize_combat(player, combat_enemies)
+            self._initialize_combat(player, combat_enemies, session_data=session_data)
             combat_started = True
             
             # Get initial combat state from the adapter
@@ -606,8 +606,8 @@ class GameService:
                 # Check for combat initiation (Crucial: events like RumblerBattle spawn NPCs)
                 from src.functions import check_for_combat
                 combat_enemies = check_for_combat(player)
-                if combat_enemies:
-                    self._initialize_combat(player, combat_enemies)
+                if combat_enemies and not getattr(event, "needs_input", False):
+                    self._initialize_combat(player, combat_enemies, session_data=session_data)
                     result["combat_started"] = True
                     if hasattr(player, '_combat_adapter'):
                         adapter_state = player._combat_adapter.get_combat_state()
@@ -661,18 +661,20 @@ class GameService:
             result["needs_input"] = False
         
         # Check for combat after event processing (in case event spawned enemies)
+        # ONLY if the event doesn't still need input (wait for final resolution before continuing combat flow)
         from src.functions import check_for_combat
         combat_enemies = check_for_combat(player)
         
-        if combat_enemies:
+        if combat_enemies and not result.get("needs_input", False):
             # Initialize combat
-            self._initialize_combat(player, combat_enemies)
+            self._initialize_combat(player, combat_enemies, session_data=session_data)
             result["combat_started"] = True
             
             # Get initial combat state
             if hasattr(player, '_combat_adapter'):
                 adapter_state = player._combat_adapter.get_combat_state()
-                result["combat_state"] = adapter_state.get('battle_state')
+                # If we resumed a move, the adapter state already contains the full battle_state
+                result["combat_state"] = adapter_state.get('battle_state') or adapter_state
             else:
                 from src.api.serializers.combat_state_serializer import CombatStateSerializer
                 # Fallback to direct serialization
@@ -681,6 +683,9 @@ class GameService:
                     current_turn_index=getattr(player, "combat_turn_index", 0),
                     round_number=getattr(player, "combat_round", 1)
                 )
+        elif combat_enemies:
+            # Combat is present but we are paused for narrative
+            result["combat_started"] = True
         else:
             result["combat_started"] = False
         
@@ -1045,7 +1050,7 @@ class GameService:
         
         if combat_enemies:
             # Initialize combat
-            self._initialize_combat(player, combat_enemies)
+            self._initialize_combat(player, combat_enemies, session_data=session_data)
             combat_started = True
             
             # Get initial combat state from the adapter
@@ -2080,8 +2085,11 @@ class GameService:
             player: Player object
             enemies: List of enemy NPCs
         """
+        # Detect if this is a re-initialization (enemies joining an already active combat)
+        is_reinit = getattr(player, "in_combat", False)
+
         # Idempotency check: If player is already in combat with these enemies, do nothing.
-        if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
+        if is_reinit and hasattr(player, "combat_list"):
             # Check if we are fighting the same group of enemies
             current_combatants = set(getattr(e, "name", str(e)) for e in player.combat_list)
             new_combatants = set(getattr(e, "name", str(e)) for e in enemies)
@@ -2111,7 +2119,7 @@ class GameService:
         # Initialize combat through the adapter
         # This will set up all combat state, process initial NPC turns if needed,
         # and return the initial combat state
-        return player._combat_adapter.initialize_combat(enemies)
+        return player._combat_adapter.initialize_combat(enemies, reinit=is_reinit)
 
     # [Legacy methods removed]
 

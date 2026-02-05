@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 class CombatOutputCapture:
     """Captures print statements and stores them in a combat log."""
     
-    def __init__(self):
+    def __init__(self, player=None):
         self.log_entries = []
         self.current_round = 1
+        self.player = player  # Reference to player for animation tracking
         
     def write(self, text):
         """Capture text output."""
@@ -43,9 +44,18 @@ class CombatOutputCapture:
             clean_text = ansi_escape.sub('', text).strip()
             
             if clean_text:
-                # Skip technical debug lines
-                if clean_text.startswith("DEBUG:"):
+                # Skip technical debug lines and animation errors
+                if clean_text.startswith("DEBUG:") or "Animation not found" in clean_text:
                     return
+                
+                # Detect combat outcomes for animation metadata
+                if self.player and hasattr(self.player, '_pending_animation'):
+                    if "struck" in clean_text and "damage" in clean_text:
+                        self.player._pending_animation["outcome"] = "hit"
+                    elif "parried" in clean_text:
+                        self.player._pending_animation["outcome"] = "parry"
+                    elif "missed" in clean_text or "just missed" in clean_text:
+                        self.player._pending_animation["outcome"] = "miss"
                     
                 self.log_entries.append({
                     "round": self.current_round,
@@ -78,7 +88,7 @@ class ApiCombatAdapter:
         self.player = player
         self.session_id = session_id
         self.on_event_callback = on_event_callback
-        self.output_capture = CombatOutputCapture()
+        self.output_capture = CombatOutputCapture(player)
         self.current_beat_state_index = 0  # Track which beat state we're currently building
         self.strategist = CombatStrategist()
         
@@ -95,6 +105,13 @@ class ApiCombatAdapter:
         self.player.suggestions_loading = False
         self._suggestion_thread = None
         self._suggestion_generation = 0  # Generation counter for race condition prevention
+        
+        # Suppress terminal animations in API mode
+        try:
+            import src.animations as animations
+            animations.set_api_mode(True)
+        except Exception:
+            pass  # Fail silently if animations module isn't available
             
     @property
     def awaiting_input(self):
@@ -128,7 +145,7 @@ class ApiCombatAdapter:
     def available_options(self, value):
         self.player.combat_adapter_state["available_options"] = value
 
-    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat", beat_index: int = 0):
+    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat", beat_index: int = 0, animation_data: dict = None):
         """Add a log entry with deduplication check.
         
         Args:
@@ -136,6 +153,14 @@ class ApiCombatAdapter:
             message: Log message text
             entry_type: Type of log entry (combat, system, etc.)
             beat_index: Index of the beat state this log entry corresponds to (for map sync)
+            animation_data: Optional animation metadata for frontend
+                Format: {
+                    "type": "attack",  # Animation type
+                    "source_id": "enemy_123",  # Entity performing move
+                    "target_id": "enemy_456",  # Target entity (if targeted)
+                    "outcome": "hit",  # "hit", "miss", "parry", etc.
+                    "move_name": "Attack"
+                }
         """
         if not hasattr(self.player, 'combat_log'):
             self.player.combat_log = []
@@ -153,6 +178,11 @@ class ApiCombatAdapter:
                 "type": entry_type,
                 "beat_index": beat_index  # For syncing with beat_states array
             }
+            
+            # Add animation metadata if provided
+            if animation_data:
+                entry["animation"] = animation_data
+            
             self.player.combat_log.append(entry)
             
             # Emit socket event if session is known
@@ -165,32 +195,35 @@ class ApiCombatAdapter:
                 except Exception as e:
                     print(f"[SOCKET ERROR] Failed to emit log: {e}")
 
-    def initialize_combat(self, enemies: List[Any]) -> Dict[str, Any]:
+    def initialize_combat(self, enemies: List[Any], reinit: bool = False) -> Dict[str, Any]:
         """
         Initialize combat with the given enemies.
         
         Args:
             enemies: List of enemy NPCs
+            reinit: If True, this is a mid-combat update (reinforcements)
             
         Returns:
-            Initial combat state
+            Initial or updated combat state
         """
         try:
             # Import here to avoid circular dependencies
-            # Reset combat state for new combat
-            self.player.combat_beat = 1  # Start at beat 1 for synchronization
-            self.player.combat_log = []  # Clear log for new combat
-            # Clear any prior end-of-combat summary/drops from previous encounters
-            self.player.combat_end_summary = None
-            self.player.combat_drops = []
-            self.output_capture.clear()  # Clear captured output
-            self.current_beat_state_index = 0  # Reset beat state tracking
+            
+            if not reinit:
+                self.player.combat_beat = 1  # Start at beat 1 for synchronization
+                self.player.combat_log = []  # Clear log for new combat
+                # Clear any prior end-of-combat summary/drops from previous encounters
+                self.player.combat_end_summary = None
+                self.player.combat_drops = []
+                self.output_capture.clear()  # Clear captured output
+                self.current_beat_state_index = 0  # Reset beat state tracking
             
             # Initialize combat_proximity if it doesn't exist
             if not hasattr(self.player, "combat_proximity"):
                 self.player.combat_proximity = {}
             
-            self.player.heat = 1.0
+            if not reinit:
+                self.player.heat = 1.0
             
             # Initialize positions
             scenario_type = "standard"
@@ -228,22 +261,32 @@ class ApiCombatAdapter:
                             ally.combat_proximity[enemy] = distance
                             enemy.combat_proximity[ally] = distance
             
-            # Reset moves
-            for ally in self.player.combat_list_allies:
-                ally.in_combat = True
-                for move in ally.known_moves:
-                    move.current_stage = 0
-                    move.beats_left = 0
-            
-            for enemy in self.player.combat_list:
-                # Provide a back-reference for API-mode drop/loot tracking
-                try:
-                    enemy.player_ref = self.player
-                except Exception:
-                    pass
-                for move in enemy.known_moves:
-                    move.current_stage = 0
-                    move.beats_left = 0
+            if not reinit:
+                # Reset moves only for new combat
+                for ally in self.player.combat_list_allies:
+                    ally.in_combat = True
+                    for move in ally.known_moves:
+                        move.current_stage = 0
+                        move.beats_left = 0
+                
+                for enemy in self.player.combat_list:
+                    # Provide a back-reference for API-mode drop/loot tracking
+                    try:
+                        enemy.player_ref = self.player
+                    except Exception:
+                        pass
+                    for move in enemy.known_moves:
+                        move.current_stage = 0
+                        move.beats_left = 0
+            else:
+                # For re-init, just ensure ALL combatants are properly flagged
+                for ally in self.player.combat_list_allies:
+                    ally.in_combat = True
+                for enemy in self.player.combat_list:
+                    enemy.in_combat = True
+                    try:
+                        enemy.player_ref = self.player
+                    except: pass
             
             # Initialize combat lists for all participants (Enemies and Allies)
             # This ensures collision detection works correctly for everyone
@@ -270,10 +313,16 @@ class ApiCombatAdapter:
                 alert = getattr(enemy, "alert_message", "appears!")
                 self._add_log_entry(1, f"{name} {alert}", "system")
 
-            # Process initial NPC turns (this will capture alert messages and initial actions via print statements)
-            self._process_initial_turns()
+            # Process initial NPC turns only for new combats
+            if not reinit:
+                self._process_initial_turns()
             
-            # Set up for player's first move selection
+            # Set up for player's move selection OR resume existing move
+            if reinit and self.player.current_move is not None:
+                # RESUME the current move if we were mid-combat
+                # This ensures recoil/cooldown beats continue after reinforcements
+                return self._execute_move(self.player.current_move)
+            
             self.awaiting_input = True
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
@@ -683,6 +732,29 @@ class ApiCombatAdapter:
                     if each_enemy in each_ally.combat_proximity:
                         each_enemy.combat_proximity[each_ally] = each_ally.combat_proximity[each_enemy]
     
+    def _move_deals_damage(self, move) -> bool:
+        """Check if a move deals damage (for animation fallback logic).
+        
+        Args:
+            move: The move to check
+            
+        Returns:
+            True if the move is likely to deal damage, False otherwise
+        """
+        # Check move category
+        if hasattr(move, 'category'):
+            damage_categories = ['Attack', 'Offensive', 'Special']
+            if move.category in damage_categories:
+                return True
+        
+        # Check move name patterns
+        damage_keywords = ['attack', 'strike', 'slash', 'stab', 'smash', 'crush', 'punch', 'kick']
+        move_name_lower = move.name.lower()
+        if any(keyword in move_name_lower for keyword in damage_keywords):
+            return True
+        
+        return False
+    
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat(s)."""
         
@@ -697,6 +769,26 @@ class ApiCombatAdapter:
             # Store for repeat functionality
             self.player.last_move_name = move.name
             self.player.last_move_target_id = getattr(move.target, 'id', f"enemy_{id(move.target)}") if getattr(move, 'target', None) else None
+            
+            # Determine animation type using fallback logic
+            animation_type = getattr(move, 'web_animation', None)
+            if animation_type is None:
+                # Apply fallback logic
+                if move.targeted and self._move_deals_damage(move):
+                    animation_type = "attack"
+                else:
+                    animation_type = "pulse"
+            
+            # Create animation metadata
+            animation_data = {
+                "type": animation_type,
+                "source_id": "player",
+                "target_id": (f"enemy_{id(move.target)}" if move.target != self.player else "player") if move.targeted and move.target else None,
+                "move_name": move.name
+            }
+            
+            # Store for outcome tracking (will be updated when combat output is captured)
+            self.player._pending_animation = animation_data
             
             move.cast()
             
@@ -776,6 +868,20 @@ class ApiCombatAdapter:
         # Capture last move summary from the log entries of this move
         move_logs = [s["message"] for s in self.player.combat_log if s.get("type") in ("combat", "player_action")][-5:] # Last 5 relevant entries
         self.player.last_move_summary = " ".join(move_logs)
+        
+        # Emit animation data to combat log if available
+        if hasattr(self.player, '_pending_animation'):
+            animation_data = self.player._pending_animation
+            # Add animation entry to log
+            self._add_log_entry(
+                self.player.combat_beat,
+                f"{move.name} animation",
+                "animation",
+                beat_index=self.current_beat_state_index,
+                animation_data=animation_data
+            )
+            # Clean up pending animation
+            delattr(self.player, '_pending_animation')
 
         # Move execution finished
         result = self.get_combat_state()
@@ -934,8 +1040,39 @@ class ApiCombatAdapter:
                 npc.select_move()
                 if npc.current_move:
                     npc.current_move.target = npc.target
-                    if hasattr(npc.current_move, "cast") and callable(npc.current_move.cast):
-                        npc.current_move.cast()
+                    
+                    # Determine animation type
+                    animation_type = getattr(npc.current_move, 'web_animation', None)
+                    if animation_type is None:
+                        if npc.current_move.targeted and self._move_deals_damage(npc.current_move):
+                            animation_type = "attack"
+                        else:
+                            animation_type = "pulse"
+                    
+                    # Create animation data
+                    animation_data = {
+                        "type": animation_type,
+                        "source_id": f"enemy_{id(npc)}",
+                        "target_id": "player" if npc.target == self.player else (f"enemy_{id(npc.target)}" if npc.target else None),
+                        "move_name": npc.current_move.name
+                    }
+                    
+                    # Capture outcome and add to log later or immediately? 
+                    # For NPCs we'll just add it here before the check result happens, or store in a queue.
+                    # Actually, npc.current_move.cast() happens immediately.
+                    
+                    with self._capture_output():
+                        if hasattr(npc.current_move, "cast") and callable(npc.current_move.cast):
+                            npc.current_move.cast()
+                    
+                    # Add animation entry
+                    self._add_log_entry(
+                        self.player.combat_beat,
+                        f"{npc.name} uses {npc.current_move.name}",
+                        "animation",
+                        beat_index=self.current_beat_state_index,
+                        animation_data=animation_data
+                    )
         
         # Advance moves
         for move in npc.known_moves:
