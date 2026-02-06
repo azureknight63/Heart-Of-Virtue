@@ -290,8 +290,8 @@ def add_enemies_to_combat(player, new_enemies, announcement:str=None):
         new_enemies = [tile.spawn_npc("Goblin") for _ in range(3)]
         add_enemies_to_combat(player, new_enemies)
     """
-    from src.coordinate_config import CoordinateSystemConfig
-    import src.positions as positions
+    from coordinate_config import CoordinateSystemConfig
+    import positions
 
     # Announce the new enemies
     if announcement:
@@ -302,6 +302,20 @@ def add_enemies_to_combat(player, new_enemies, announcement:str=None):
         if enemy not in player.combat_list:
             player.combat_list.append(enemy)
             enemy.in_combat = True
+
+            # Provide back-reference for API drop/loot tracking when available
+            try:
+                enemy.player_ref = player
+            except Exception:
+                pass
+
+            # Reset move states for newly added enemies
+            if hasattr(enemy, "reset_combat_moves"):
+                enemy.reset_combat_moves()
+            else:
+                for move in getattr(enemy, "known_moves", []):
+                    move.current_stage = 0
+                    move.beats_left = 0
             
             # Set up combat lists for the enemy
             # Enemies target allies (player's team)
@@ -340,6 +354,13 @@ def add_enemies_to_combat(player, new_enemies, announcement:str=None):
                     distance = int(default_proximity * random.uniform(0.75, 1.25))
                     ally.combat_proximity[enemy] = distance
                     enemy.combat_proximity[ally] = distance
+
+    # Reinitialize API combat adapter state if present (mid-combat reinforcements)
+    if hasattr(player, "_combat_adapter"):
+        try:
+            player._combat_adapter.initialize_combat(new_enemies, reinit=True)
+        except Exception:
+            pass
 
 
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them

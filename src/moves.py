@@ -1014,7 +1014,7 @@ class PowerStrike(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user)
+                         target=self.target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -1133,7 +1133,7 @@ class Jab(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user)
+                         target=self.target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -1669,6 +1669,7 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         fatigue_cost = 0
         mvrange = (0, 5)
         super().__init__(name="Slash", description=description, xp_gain=1, current_stage=0,
+                         category="Offensive",
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=[f"{player.name} winds up for a strike...",
                                          colored(f"{player.name} slashes with his " + weapon + "!", "green"),

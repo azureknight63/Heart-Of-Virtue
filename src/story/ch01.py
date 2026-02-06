@@ -157,10 +157,10 @@ class Ch01ChestRumblerBattle(Event):
         for thing in self.tile.objects_here:
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
-                    if len(thing.inventory) == 0:  # if the chest is empty, continue
-                        self.triggered = True  # Mark as triggered before processing
-                        self.pass_conditions_to_process()
-                        break
+                    # if len(thing.inventory) == 0:  # if the chest is empty, continue
+                    self.triggered = True  # Mark as triggered before processing
+                    self.pass_conditions_to_process()
+                    break
 
     def process(self, user_input=None):
         if user_input is None:

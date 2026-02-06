@@ -14,7 +14,7 @@ if str(SRC_DIR) not in sys.path:
 from src.tiles import *
 
 
-class TestChestRoom(MapTile):
+class ChestRoom(MapTile):
     def __init__(self, universe, current_map, x, y, description: str=None):
         super().__init__(universe, current_map, x, y, description="""
         A test room with a wooden chest. This is for testing the chest rumbler battle narrative.
