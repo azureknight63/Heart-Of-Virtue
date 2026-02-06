@@ -6,6 +6,7 @@ import configparser
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Tuple
+from src.config_manager import ConfigManager
 
 
 class MinimalPlayer:
@@ -186,7 +187,9 @@ class SessionManager:
         self.start_x, self.start_y = 1, 1  # defaults
         self.starting_map_name = "default"
         self.starting_item_types = []  # List of item class names to spawn
+        self.game_config = None  # Full GameConfig object
         self._load_starting_position_from_config()
+        self._load_game_config()
         self._load_starting_items_from_config()
     
     def _load_starting_position_from_config(self):
@@ -276,6 +279,33 @@ class SessionManager:
                 print(f"[SessionManager] [ERROR] Error loading starting_items config: {e}", flush=True)
                 traceback.print_exc()
 
+    def _load_game_config(self):
+        """Load full game configuration using ConfigManager."""
+        config_file = os.environ.get("CONFIG_FILE", 'config_dev.ini')
+        
+        if config_file:
+            try:
+                # Remove quotes if present (from .env file)
+                config_file = config_file.strip("'\"")
+                config_path = Path(config_file)
+                
+                # If relative path, make it relative to project root
+                if not config_path.is_absolute():
+                    # Get project root (4 levels up from this file)
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent
+                    config_path = project_root / config_file
+                
+                if config_path.exists():
+                    config_mgr = ConfigManager(str(config_path))
+                    self.game_config = config_mgr.load()
+                    print(f"[SessionManager] [OK] Loaded full game config from: {config_path}", flush=True)
+                else:
+                    print(f"[SessionManager] Config file not found: {config_path}", flush=True)
+            except Exception as e:
+                import traceback
+                print(f"[SessionManager] [ERROR] Error loading game config: {e}", flush=True)
+                traceback.print_exc()
+
     def _create_items_from_config(self):
         """Create item instances from config item types.
         
@@ -347,6 +377,13 @@ class SessionManager:
             except (ImportError, Exception) as e:
                  print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
                  player = MinimalPlayer(username)
+            
+            # Apply game config if available
+            if self.game_config and hasattr(player, 'game_config'):
+                player.game_config = self.game_config
+                if self.game_config.starting_exp > 0:
+                    player.apply_starting_experience(self.game_config.starting_exp)
+                    print(f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories", flush=True)
             
             # Set starting position from config
             player.location_x, player.location_y = self.start_x, self.start_y

@@ -1299,13 +1299,22 @@ class GameService:
         Returns:
             List of triggered events
         """
-        if not hasattr(player, "combat_events") or not player.combat_events:
+        tile = getattr(player, "current_room", None)
+        if tile is None and hasattr(player, "universe"):
+            tile = player.universe.get_tile(player.location_x, player.location_y)
+
+        combat_events = list(getattr(player, "combat_events", []) or [])
+        tile_events = list(getattr(tile, "events_here", []) or []) if tile else []
+
+        if not combat_events and not tile_events:
             return []
 
         events_triggered = []
         from src.api.serializers.event_serializer import EventSerializer
 
-        for event in list(player.combat_events):
+        for event in list(combat_events + tile_events):
+            if not getattr(event, "combat_effect", False):
+                continue
             # Check if event already has an ID assigned in this session
             event_id = getattr(event, "api_event_id", None)
             
