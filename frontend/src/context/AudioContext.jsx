@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 
 const AudioContext = createContext();
 
@@ -58,27 +58,27 @@ export const AudioProvider = ({ children }) => {
         bgmRef.current.volume = isMusicMuted ? 0 : musicVolume;
     }, [musicVolume, isMusicMuted]);
 
-    const playBGM = (trackName) => {
+    const playBGM = useCallback((trackName) => {
         if (currentBGM === trackName) return;
 
         const path = `/assets/sounds/bgm_${trackName}.wav`;
         bgmRef.current.src = path;
         bgmRef.current.play().catch(e => console.warn("Audio play failed (user interaction needed):", e));
         setCurrentBGM(trackName);
-    };
+    }, []);
 
-    const stopBGM = () => {
+    const stopBGM = useCallback(() => {
         bgmRef.current.pause();
         bgmRef.current.currentTime = 0;
         setCurrentBGM(null);
-    };
+    }, []);
 
-    const playSFX = (sfxName) => {
+    const playSFX = useCallback((sfxName) => {
         const path = `/assets/sounds/sfx_${sfxName}.wav`;
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
         audio.play().catch(e => console.warn("SFX play failed:", e));
-    };
+    }, [isSfxMuted, sfxVolume]);
 
     const value = {
         playBGM,

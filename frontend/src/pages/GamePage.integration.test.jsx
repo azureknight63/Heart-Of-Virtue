@@ -1,7 +1,26 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage';
 import * as api from '../api/endpoints';
+import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave, useAuth } from '../hooks/useApi';
+import { useAudio } from '../context/AudioContext';
+
+// Mock the hooks first
+vi.mock('../hooks/useApi', () => ({
+    usePlayer: vi.fn(),
+    useWorld: vi.fn(),
+    useCombat: vi.fn(),
+    useExploration: vi.fn(),
+    useExits: vi.fn(),
+    useAutosave: vi.fn(),
+    useAuth: vi.fn(),
+}));
+
+vi.mock('../context/AudioContext', () => ({
+    useAudio: vi.fn(),
+}));
 
 // Mock the API
 vi.mock('../api/endpoints', () => ({
@@ -25,7 +44,73 @@ vi.mock('../api/endpoints', () => ({
 describe('Tactical AI Integration Tests', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+
+        // Setup hook mocks
+        usePlayer.mockReturnValue({
+            player: {
+                name: 'Jean',
+                level: 1,
+                hp: 80,
+                max_hp: 100,
+                mp: 30,
+                max_mp: 50,
+                map_name: 'forest_path',
+            },
+            loading: false,
+            refetch: vi.fn()
+        });
+
+        useWorld.mockReturnValue({
+            location: {
+                name: 'Forest Path',
+                description: 'A peaceful forest path',
+                x: 10,
+                y: 10,
+            },
+            loading: false,
+            moveToLocation: vi.fn(),
+            refetch: vi.fn()
+        });
+
+        useCombat.mockReturnValue({
+            combat: null,
+            inCombat: false,
+            loading: false,
+            fetchCombatStatus: vi.fn(),
+            performAction: vi.fn()
+        });
+
+        useExploration.mockReturnValue({
+            exploredTiles: new Map(),
+            setExploredTiles: vi.fn(),
+            loading: false,
+            refetch: vi.fn()
+        });
+
+        useExits.mockReturnValue({
+            exits: [],
+            loading: false,
+            refetch: vi.fn()
+        });
+
+        useAutosave.mockReturnValue({
+            triggerTick: vi.fn()
+        });
+
+        useAudio.mockReturnValue({
+            playSFX: vi.fn(),
+            playBGM: vi.fn(),
+            stopBGM: vi.fn()
+        });
     });
+
+    const renderGamePage = () => {
+        return render(
+            <MemoryRouter>
+                <GamePage />
+            </MemoryRouter>
+        );
+    };
 
     it('displays AI suggestions during combat', async () => {
         // Mock combat state with AI suggestions

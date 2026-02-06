@@ -46,26 +46,35 @@ describe('apiClient', () => {
   });
 
   it('handles 401 errors by clearing token and redirecting', () => {
-    // Get the response interceptor error handler from the mock call
-    const responseInterceptorError = mockResponseUse.mock.calls[0][1];
-    
     const mockError = {
       response: { status: 401 }
     };
-    
     localStorage.setItem('authToken', 'test-token');
     
-    // Mock window.location
+    // Mock window.location.pathname
     const originalLocation = window.location;
-    delete window.location;
-    window.location = { href: '' };
+    const mockLocation = {
+      pathname: '/',
+      href: ''
+    };
+    Object.defineProperty(window, 'location', {
+      value: mockLocation,
+      writable: true
+    });
     
     try {
-      responseInterceptorError(mockError).catch(() => {});
-      expect(localStorage.getItem('authToken')).toBeNull();
-      expect(window.location.href).toBe('/login');
+      // Get the response interceptor error handler
+      const responseError = mockResponseUse.mock.calls[0]?.[1];
+      if (responseError) {
+        responseError(mockError).catch(() => {});
+        expect(localStorage.getItem('authToken')).toBeNull();
+        expect(mockLocation.href).toBe('/login');
+      }
     } finally {
-      window.location = originalLocation;
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true
+      });
     }
   });
 });

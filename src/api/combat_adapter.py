@@ -12,6 +12,7 @@ import contextlib
 import uuid
 import threading
 import logging
+from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from unittest.mock import patch
 import random
@@ -60,7 +61,8 @@ class CombatOutputCapture:
                 self.log_entries.append({
                     "round": self.current_round,
                     "message": clean_text,
-                    "type": "combat"
+                    "type": "combat",
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
                 })
     
     def flush(self):
@@ -145,7 +147,7 @@ class ApiCombatAdapter:
     def available_options(self, value):
         self.player.combat_adapter_state["available_options"] = value
 
-    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat", beat_index: int = 0, animation_data: dict = None):
+    def _add_log_entry(self, round_num: int, message: str, entry_type: str = "combat", beat_index: int = 0, animation_data: dict = None, timestamp: str = None):
         """Add a log entry with deduplication check.
         
         Args:
@@ -176,6 +178,7 @@ class ApiCombatAdapter:
                 "round": round_num,
                 "message": message,
                 "type": entry_type,
+                "timestamp": timestamp or datetime.now().strftime("%H:%M:%S"),
                 "beat_index": beat_index  # For syncing with beat_states array
             }
             
@@ -1412,7 +1415,13 @@ class ApiCombatAdapter:
         if new_entries:
             current_beat = getattr(self.player, "combat_beat", 0)
             for entry in new_entries:
-                self._add_log_entry(current_beat, entry["message"], "combat", self.current_beat_state_index)
+                self._add_log_entry(
+                    current_beat, 
+                    entry["message"], 
+                    "combat", 
+                    self.current_beat_state_index,
+                    timestamp=entry.get("timestamp")
+                )
             
             # Clear capture for next time
             self.output_capture.clear()

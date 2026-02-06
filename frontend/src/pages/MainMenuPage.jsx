@@ -62,9 +62,11 @@ export default function MainMenuPage() {
                 // Sort by timestamp
                 mergedSaves.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
                 setSaveList(mergedSaves)
+                setMostRecentSave(mergedSaves.length > 0 ? mergedSaves[0] : null)
             } catch (error) {
                 console.error("Failed to initialize menu saves", error)
                 setSaveList([])
+                setMostRecentSave(null)
             } finally {
                 setIsLoadingInitial(false)
             }

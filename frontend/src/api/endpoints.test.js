@@ -206,7 +206,7 @@ describe('endpoints', () => {
   describe('saves', () => {
     it('calls save endpoint', () => {
       endpoints.saves.save('mysave');
-      expect(apiClient.post).toHaveBeenCalledWith('/saves/', { name: 'mysave' });
+      expect(apiClient.post).toHaveBeenCalledWith('/saves', { name: 'mysave', is_autosave: false });
     });
 
     it('calls load endpoint', () => {
@@ -216,7 +216,7 @@ describe('endpoints', () => {
 
     it('calls list endpoint', () => {
       endpoints.saves.list();
-      expect(apiClient.get).toHaveBeenCalledWith('/saves/');
+      expect(apiClient.get).toHaveBeenCalledWith('/saves');
     });
 
     it('calls delete endpoint', () => {

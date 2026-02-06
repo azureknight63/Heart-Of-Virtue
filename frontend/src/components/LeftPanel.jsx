@@ -74,7 +74,7 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
   // Memoize pending log entries
   const pendingLogEntries = (combat?.log && displayedLog)
     ? combat.log.filter(entry =>
-      !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round)
+      !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round && existing.type === entry.type)
     )
     : []
 
@@ -140,6 +140,22 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
         }
 
         const entry = currentPending[currentIndex]
+
+        // If it's an animation entry, add it to displayed log immediately and move to next 
+        // without waiting, so the animation triggers alongside the text but without adding delay
+        if (entry.type === 'animation') {
+          setDisplayedLog(prev => {
+            if (prev.some(existing => existing.message === entry.message && existing.round === entry.round && existing.type === entry.type)) {
+              return prev
+            }
+            return [...prev, entry]
+          })
+
+          currentIndex++
+          processNextLine()
+          return
+        }
+
         const msg = entry.message.toLowerCase()
 
 

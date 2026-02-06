@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamePage from './GamePage';
-import { usePlayer, useWorld, useCombat, useExploration, useExits } from '../hooks/useApi';
+import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -12,6 +12,8 @@ vi.mock('../hooks/useApi', () => ({
     useCombat: vi.fn(),
     useExploration: vi.fn(),
     useExits: vi.fn(),
+    useAutosave: vi.fn(),
+    useAuth: vi.fn(),
 }));
 
 vi.mock('../context/AudioContext', () => ({
@@ -118,6 +120,10 @@ describe('GamePage', () => {
             exits: [],
             loading: false,
             refetch: vi.fn()
+        });
+
+        useAutosave.mockReturnValue({
+            triggerTick: vi.fn()
         });
 
         useAudio.mockReturnValue({

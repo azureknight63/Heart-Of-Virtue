@@ -64,7 +64,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
             {log?.length === 0 && (
               <div className="text-gray-500 italic text-center py-2">Combat started...</div>
             )}
-            {log?.map((entry, idx) => (
+            {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => (
               <div
                 key={idx}
                 className={`${entry.type === 'damage'
