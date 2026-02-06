@@ -224,7 +224,13 @@ export default function GamePage() {
 
       // If event still needs input (persistent), add back to front of queue
       if (data.needs_input && data.event) {
-        setEventQueue(prev => [data.event, ...prev])
+        setEventQueue(prev => {
+          const eventId = data.event?.event_id
+          if (eventId && prev.some(existing => existing?.event_id === eventId)) {
+            return prev
+          }
+          return [data.event, ...prev]
+        })
       }
 
       // Check if event triggered combat
