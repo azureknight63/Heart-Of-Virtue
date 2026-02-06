@@ -30,6 +30,7 @@ export default function GamePage() {
   const [eventQueue, setEventQueue] = useState([])
   const [currentEvent, setCurrentEvent] = useState(null)
   const [eventHistory, setEventHistory] = useState([])
+  const isEventDialogActive = Boolean(currentEvent) || eventQueue.length > 0
 
   // Combat log display progress (for map synchronization)
   const [currentLogIndex, setCurrentLogIndex] = useState(0)
@@ -306,6 +307,13 @@ export default function GamePage() {
     }
   }
 
+  useEffect(() => {
+    if (combat?.events_triggered && combat.events_triggered.length > 0) {
+      handleEventsTriggered(combat.events_triggered)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combat?.events_triggered])
+
   // Wrapper for move that also refetches player data and handles combat initiation
   const handleMove = async (direction) => {
     try {
@@ -495,6 +503,7 @@ export default function GamePage() {
         location={location}
         mode={mode}
         combat={combat}
+        isEventDialogActive={isEventDialogActive}
         onMove={handleMove}
         onRefetch={handleRefetch}
         onEventsTriggered={handleEventsTriggered}

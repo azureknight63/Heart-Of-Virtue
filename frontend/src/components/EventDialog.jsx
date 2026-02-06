@@ -104,13 +104,14 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
 
         if (inputType === 'text') {
             const trimmed = textInput.trim()
+            const maxLength = event?.input_max_length ?? 500
             if (!trimmed) {
                 setValidationMessage('Input cannot be empty')
                 setValidationSeverity('error')
                 return false
             }
-            if (trimmed.length > 500) {
-                setValidationMessage(`Input too long (${trimmed.length}/500 characters)`)
+            if (trimmed.length > maxLength) {
+                setValidationMessage(`Input too long (${trimmed.length}/${maxLength} characters)`)
                 setValidationSeverity('error')
                 return false
             }
@@ -128,8 +129,8 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                 setValidationSeverity('error')
                 return false
             }
-            const minValue = event?.min_value
-            const maxValue = event?.max_value
+            const minValue = event?.input_min ?? event?.min_value
+            const maxValue = event?.input_max ?? event?.max_value
             if (minValue !== undefined && num < minValue) {
                 setValidationMessage(`Number must be at least ${minValue}`)
                 setValidationSeverity('error')
@@ -166,7 +167,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
 
     // Character counter for text input
     const charCount = textInput.length
-    const charLimit = 500
+    const charLimit = event?.input_max_length ?? 500
     const charCountColor = charCount > charLimit ? colors.danger : charCount > charLimit * 0.9 ? colors.warning : colors.text.muted
 
     const handleGlobalInteraction = () => {
@@ -182,7 +183,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
             title={`✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`}
             onClose={handleGlobalInteraction}
             showCloseButton={!needsInput}
-            zIndex={2000}
+            zIndex={3000}
             maxWidth="800px"
             width="90%"
             allowInternalScroll={false}

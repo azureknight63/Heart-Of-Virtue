@@ -16,7 +16,7 @@ import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 
-export default function LeftPanel({ player, location, mode, combat, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
+export default function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
   // Don't render if player data hasn't loaded yet
   if (!player) {
     return null
@@ -98,7 +98,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   }, [displayedLog.length])
 
   // Determine if it's player's turn - ONLY if not processing log and combat hasn't ended
-  const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state
+  const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive
 
   // Get active player data (merging combat status if in combat)
   const activePlayer = (mode === 'combat' && combat?.player)
@@ -293,13 +293,13 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
   // Show input dialog when backend requests input (target_selection, direction_selection, etc.)
   // But NOT if combat has ended (end_state is present)
   useEffect(() => {
-    if (combat?.input_type && combat.input_type !== 'move_selection' && combat.awaiting_input && !isProcessingLog && !combat?.end_state) {
+    if (combat?.input_type && combat.input_type !== 'move_selection' && combat.awaiting_input && !isProcessingLog && !combat?.end_state && !isEventDialogActive) {
       setShowInputDialog(true)
       setShowCombatMoves(false) // Close move panel when showing input dialog
     } else {
       setShowInputDialog(false)
     }
-  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state])
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state, isEventDialogActive])
 
   // Close combat moves panel when not in move selection mode or when combat has ended
   useEffect(() => {
@@ -564,7 +564,7 @@ export default function LeftPanel({ player, location, mode, combat, onMove, onRe
         )}
 
         {/* Combat Input Dialog - for target selection, direction selection, etc. */}
-        {(showInputDialog || localCombatInput) && mode === 'combat' && (
+        {(showInputDialog || localCombatInput) && mode === 'combat' && !isEventDialogActive && (
           <CombatInputDialog
             inputType={localCombatInput ? localCombatInput.type : combat.input_type}
             options={localCombatInput ? localCombatInput.options : (combat.available_options || [])}
