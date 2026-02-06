@@ -63,7 +63,9 @@ def test_get_suggestions_unavailable(strategist):
     strategist.client._unavailable_reason = "Mock unavailable"
     ctx = {}
     suggestions = strategist.get_suggestions(ctx)
-    assert suggestions == []
+    # When client is unavailable, fallback suggestions are returned (with Check move)
+    assert len(suggestions) >= 1
+    assert suggestions[0]["move_name"] == "Check"
 
 def test_build_user_prompt(strategist):
     ctx = {
@@ -101,10 +103,12 @@ def test_build_user_prompt(strategist):
     
     prompt = strategist._build_user_prompt(ctx)
     
-    assert "Jean [HP: 50/100" in prompt
+    # Prompt now includes gender and uses "Player:" prefix
+    assert "Player: Jean (Male Human) [HP: 50/100" in prompt
     assert "Heat: 1.2" in prompt
     assert "Strategic Insight" in prompt
     assert "Health Potion" in prompt
+    # Enemy format includes dash and exact ID format
     assert "Bat [ID: enemy_1" in prompt
     assert "Dist: 5ft" in prompt
     assert "Jean attacks Bat!" in prompt
@@ -113,9 +117,13 @@ def test_build_user_prompt(strategist):
 def test_malformed_json_handling(strategist):
     with patch.object(strategist.client, 'generate_structured', return_value="not a dict"):
         suggestions = strategist.get_suggestions({})
-        assert suggestions == []
+        # When JSON is malformed, fallback suggestions are returned (with Check move)
+        assert len(suggestions) >= 1
+        assert suggestions[0]["move_name"] == "Check"
 
 def test_non_list_suggestions_handling(strategist):
     with patch.object(strategist.client, 'generate_structured', return_value={"suggestions": "invalid"}):
         suggestions = strategist.get_suggestions({})
-        assert suggestions == []
+        # When suggestions aren't a list, fallback suggestions are returned (with Check move)
+        assert len(suggestions) >= 1
+        assert suggestions[0]["move_name"] == "Check"
