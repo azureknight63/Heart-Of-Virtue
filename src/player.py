@@ -344,6 +344,16 @@ maintenant et à l'heure de notre mort. Amen.""",
         self.hp = self.maxhp
         self.fatigue = self.maxfatigue
 
+    def apply_starting_experience(self, exp_value: int):
+        """Apply starting experience to all skill categories if exp_value > 0.
+        
+        Args:
+            exp_value: The experience value to set for each skill category
+        """
+        if exp_value > 0 and hasattr(self, 'skilltree') and hasattr(self, 'skill_exp'):
+            for category in self.skilltree.subtypes.keys():
+                self.skill_exp[category] = exp_value
+
     def refresh_merchants(self, phrase: str = ''):
         """Debug command: iterate all maps and force every Merchant to run update_goods().
 

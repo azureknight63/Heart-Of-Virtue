@@ -50,6 +50,7 @@ class TestEvent:
         assert event.thread is None
         assert event.has_run is False
         assert event.referenceobj is None
+        assert event.combat_effect is False
 
     def test_event_initialization_with_params(self):
         """Test Event initialization with all parameters."""
@@ -63,6 +64,7 @@ class TestEvent:
         assert event.tile == mock_tile
         assert event.repeat is True
         assert event.params == ["param1", "param2"]
+        assert event.combat_effect is False
 
     def test_event_check_conditions(self):
         """Test that check_conditions calls pass_conditions_to_process."""

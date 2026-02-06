@@ -124,6 +124,12 @@ Key documentation:
 pytest -q
 ```
 
+**Note:** When running tests that require Flask (e.g., API tests in `tests/api/`), ensure the virtual environment is activated first:
+```
+.venv\Scripts\Activate.ps1
+pytest tests/api/ -v
+```
+
 ### Coverage Report (Backend)
 ```
 pytest --cov=src --cov=ai --cov-report=term-missing

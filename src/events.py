@@ -31,7 +31,7 @@ class Event:  # master class for all events
     params is a list of additional parameters, None if omitted.
 
     """
-    def __init__(self, name, player=None, tile=None, repeat=False, params=None):
+    def __init__(self, name, player=None, tile=None, repeat=False, params=None, combat_effect: bool = False):
         self.name = name
         self.player = player
         self.tile = tile
@@ -40,6 +40,7 @@ class Event:  # master class for all events
         self.has_run = False
         self.params = params
         self.referenceobj = None  # objects being referenced for special conditions can be put here
+        self.combat_effect = combat_effect
 
     def pass_conditions_to_process(self):
         self.process()
