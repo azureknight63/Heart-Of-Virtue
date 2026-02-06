@@ -70,6 +70,97 @@ class GameService:
         """
         pass
 
+    def _get_event_target_modules(self, event, include_animations: bool = True) -> List[str]:
+        modules = [
+            "functions",
+            "player",
+            "interface",
+            "items",
+            "objects",
+            "events",
+            "effects",
+            "story.effects",
+            "src.functions",
+            "src.player",
+            "src.interface",
+            "src.items",
+            "src.objects",
+            "src.events",
+            "src.story.effects",
+        ]
+        if include_animations:
+            modules.extend(["animations", "src.animations"])
+        if hasattr(event, "__module__"):
+            modules.append(event.__module__)
+        return modules
+
+    def _build_event_patches(self, target_modules, mock_input, mock_cprint, mock_print_slow) -> List[Any]:
+        patches = [
+            patch("builtins.input", mock_input),
+            patch("neotermcolor.cprint", mock_cprint),
+            patch("time.sleep", return_value=None),
+        ]
+
+        for mod in set(target_modules):
+            patches.extend([
+                patch(f"{mod}.cprint", mock_cprint, create=True),
+                patch(f"{mod}.print_slow", mock_print_slow, create=True),
+                patch(f"{mod}.await_input", return_value=None, create=True),
+                patch(f"{mod}.animate_to_main_screen", return_value=None, create=True),
+                patch(f"{mod}.time.sleep", return_value=None, create=True),
+                patch(f"{mod}.input", mock_input, create=True),
+            ])
+
+        return patches
+
+    def _clean_event_output(self, output: str) -> str:
+        if not output:
+            return ""
+
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        lines = output.splitlines()
+        filtered_lines = [line for line in lines if not line.strip().startswith("DEBUG:")]
+        return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
+
+    def _store_pending_event(
+        self,
+        event,
+        event_data: Dict[str, Any],
+        session_data: Optional[Dict[str, Any]],
+        tile: Any = None,
+    ) -> Dict[str, Any]:
+        event_id = getattr(event, "api_event_id", None)
+        if not event_id:
+            event_id = str(uuid.uuid4())
+            event.api_event_id = event_id
+
+        event_data["event_id"] = event_id
+
+        if session_data is not None:
+            pending = session_data.setdefault("pending_events", {})
+            payload = {
+                "event": event,
+                "event_data": event_data,
+            }
+            if tile is not None and hasattr(tile, "x") and hasattr(tile, "y"):
+                payload["tile_x"] = tile.x
+                payload["tile_y"] = tile.y
+            pending[event_id] = payload
+
+        return event_data
+
+    def _queue_interactive_event(
+        self,
+        event,
+        event_data: Dict[str, Any],
+        session_data: Optional[Dict[str, Any]],
+        tile: Any = None,
+    ) -> Optional[Dict[str, Any]]:
+        if event_data.get("needs_input") and not getattr(event, "completed", False):
+            return self._store_pending_event(event, event_data, session_data, tile=tile)
+
+        return None
+
     # ========================
     # World Navigation Methods
     # ========================
@@ -385,33 +476,21 @@ class GameService:
             return events_triggered
 
         for event in list(tile.events_here):
-            # Check if event already has an ID assigned in this session
-            event_id = getattr(event, "api_event_id", None)
-            
             # Check if event requires input using EventSerializer
             event_data = EventSerializer.serialize_with_input(event)
-            
+
             # If event is already in interactive state, ensure it's in session and skip processing
-            if event_data.get("needs_input") and not getattr(event, "completed", False):
-                if not event_id:
-                    event_id = str(uuid.uuid4())
-                    event.api_event_id = event_id
-                    event_data["event_id"] = event_id
-                else:
-                    event_data["event_id"] = event_id
-                
-                # Store or update event in session
-                if session_data is not None:
-                    if "pending_events" not in session_data:
-                        session_data["pending_events"] = {}
-                    session_data["pending_events"][event_id] = {
-                        "event": event,
-                        "tile_x": tile.x,
-                        "tile_y": tile.y,
-                        "event_data": event_data
-                    }
-                
-                events_triggered.append(event_data)
+            event.player = player
+            if hasattr(player, "current_room"):
+                event.tile = player.current_room
+            queued_event = self._queue_interactive_event(
+                event,
+                event_data,
+                session_data,
+                tile=tile,
+            )
+            if queued_event:
+                events_triggered.append(queued_event)
                 continue
             
             # For non-input events, process normally
@@ -431,26 +510,13 @@ class GameService:
                             f.write(str(prompt) + '\n')
                         return "1"  # Default to first option
                         
-                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 'animations',
-                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events', 'src.animations']
-                    
-                    if hasattr(event, '__module__'):
-                        target_modules.append(event.__module__)
-                    
-                    patches = [
-                        patch('builtins.input', mock_input),
-                        patch('neotermcolor.cprint', mock_cprint),
-                        patch('time.sleep', return_value=None),
-                    ]
-                    
-                    for mod in set(target_modules):
-                        patches.extend([
-                            patch(f"{mod}.cprint", mock_cprint, create=True),
-                            patch(f"{mod}.print_slow", mock_print_slow, create=True),
-                            patch(f"{mod}.await_input", return_value=None, create=True),
-                            patch(f"{mod}.animate_to_main_screen", return_value=None, create=True),
-                            patch(f"{mod}.input", mock_input, create=True),
-                        ])
+                    target_modules = self._get_event_target_modules(event, include_animations=True)
+                    patches = self._build_event_patches(
+                        target_modules,
+                        mock_input,
+                        mock_cprint,
+                        mock_print_slow,
+                    )
                     
                     # Capture stdout/stderr and patch blocking functions
                     with contextlib.redirect_stdout(f), \
@@ -465,7 +531,7 @@ class GameService:
                         
                         # Ensure event has current player and room references
                         event.player = player
-                        if hasattr(player, 'current_room'):
+                        if hasattr(player, "current_room"):
                             event.tile = player.current_room
 
                         event.check_conditions()
@@ -479,21 +545,12 @@ class GameService:
                         needs_input = getattr(event, "needs_input", False)
                         completed = getattr(event, "completed", False)
                         if needs_input and not completed:
-                            if not event_id:
-                                event_id = str(uuid.uuid4())
-                                event.api_event_id = event_id
-                            
-                            event_data["event_id"] = event_id
-                            
-                            if session_data is not None:
-                                if "pending_events" not in session_data:
-                                    session_data["pending_events"] = {}
-                                session_data["pending_events"][event_id] = {
-                                    "event": event,
-                                    "tile_x": tile.x,
-                                    "tile_y": tile.y,
-                                    "event_data": event_data
-                                }
+                            event_data = self._store_pending_event(
+                                event,
+                                event_data,
+                                session_data,
+                                tile=tile,
+                            )
                         
                 except Exception as e:
                     # Log error but continue
@@ -501,16 +558,9 @@ class GameService:
                     print(f"[ERROR] Event processing: {e}")
                 
                 # Capture and clean output
-                output = f.getvalue()
-                if output:
-                    # Remove ANSI codes
-                    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                    lines = output.splitlines()
-                    # Filter out technical debug lines
-                    filtered_lines = [l for l in lines if not l.strip().startswith("DEBUG:")]
-                    clean_output = ansi_escape.sub('', "\n".join(filtered_lines)).strip()
-                    if clean_output:
-                        event_data["output_text"] = clean_output
+                clean_output = self._clean_event_output(f.getvalue())
+                if clean_output:
+                    event_data["output_text"] = clean_output
             
             events_triggered.append(event_data)
 
@@ -566,25 +616,13 @@ class GameService:
                 return user_input
 
             # Build robust patch list across multiple core modules
-            target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 
-                             'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events']
-            
-            if hasattr(event, '__module__'):
-                target_modules.append(event.__module__)
-            
-            patches = [
-                patch('builtins.input', mock_input),
-                patch('neotermcolor.cprint', mock_cprint),
-                patch('time.sleep', return_value=None),
-            ]
-            
-            for mod in set(target_modules):
-                patches.extend([
-                    patch(f"{mod}.cprint", mock_cprint, create=True),
-                    patch(f"{mod}.print_slow", mock_print_slow, create=True),
-                    patch(f"{mod}.await_input", return_value=None, create=True),
-                    patch(f"{mod}.input", mock_input, create=True),
-                ])
+            target_modules = self._get_event_target_modules(event, include_animations=False)
+            patches = self._build_event_patches(
+                target_modules,
+                mock_input,
+                mock_cprint,
+                mock_print_slow,
+            )
 
             # Process the event with captured output
             with contextlib.redirect_stdout(f), \
@@ -597,21 +635,16 @@ class GameService:
                     except (AttributeError, ImportError, TypeError, ValueError):
                         pass
 
+                # Ensure event has current player and room references
+                event.player = player
+                if hasattr(player, "current_room"):
+                    event.tile = player.current_room
+
                 # Call process() or check_conditions()
                 if hasattr(event, 'process'):
                     event.process(user_input=user_input)
                 elif hasattr(event, 'check_conditions'):
                     event.check_conditions()
-                    
-                # Check for combat initiation (Crucial: events like RumblerBattle spawn NPCs)
-                from src.functions import check_for_combat
-                combat_enemies = check_for_combat(player)
-                if combat_enemies and not getattr(event, "needs_input", False):
-                    self._initialize_combat(player, combat_enemies, session_data=session_data)
-                    result["combat_started"] = True
-                    if hasattr(player, '_combat_adapter'):
-                        adapter_state = player._combat_adapter.get_combat_state()
-                        result["combat_state"] = adapter_state.get('battle_state')
 
                 # Check outcome
                 if getattr(event, "completed", False):
@@ -634,16 +667,9 @@ class GameService:
             print(f"[ERROR] Event input processing: {e}")
         
         # Capture and clean output
-        output = f.getvalue()
-        if output:
-            # Remove ANSI codes
-            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            lines = output.splitlines()
-            # Filter out technical debug lines
-            filtered_lines = [l for l in lines if not l.strip().startswith("DEBUG:")]
-            clean_output = ansi_escape.sub('', "\n".join(filtered_lines)).strip()
-            if clean_output:
-                result["output_text"] = clean_output
+        clean_output = self._clean_event_output(f.getvalue())
+        if clean_output:
+            result["output_text"] = clean_output
         
         # Check if event still needs input (persistent events)
         updated_event_data = EventSerializer.serialize_with_input(event)
@@ -659,6 +685,29 @@ class GameService:
             if "pending_events" in session_data:
                 session_data["pending_events"].pop(event_id, None)
             result["needs_input"] = False
+
+        # Trigger tile events after event processing to handle state changes (e.g., chest looted)
+        # ONLY if the current event is completed, to allow subsequent events on the same tile to fire
+        if not result.get("needs_input", False):
+            tile = player.universe.get_tile(player.location_x, player.location_y)
+            if tile:
+                more_events = self.trigger_tile_events(player, tile, session_data)
+                if more_events:
+                    if "events_triggered" not in result:
+                        result["events_triggered"] = []
+                    for new_event in more_events:
+                        # Avoid duplicates
+                        if not any(e.get('name') == new_event.get('name') for e in result["events_triggered"]):
+                            result["events_triggered"].append(new_event)
+
+        # If we are already in combat, do not reinitialize combat from check_for_combat.
+        # This preserves reinforcement additions made during combat event processing.
+        if getattr(player, "in_combat", False):
+            result["combat_started"] = True
+            if hasattr(player, "_combat_adapter"):
+                adapter_state = player._combat_adapter.get_combat_state()
+                result["combat_state"] = adapter_state.get("battle_state") or adapter_state
+            return result
         
         # Check for combat after event processing (in case event spawned enemies)
         # ONLY if the event doesn't still need input (wait for final resolution before continuing combat flow)
@@ -1315,38 +1364,30 @@ class GameService:
         for event in list(combat_events + tile_events):
             if not getattr(event, "combat_effect", False):
                 continue
-            # Check if event already has an ID assigned in this session
-            event_id = getattr(event, "api_event_id", None)
-            
             # Check if event requires input using EventSerializer
             event_data = EventSerializer.serialize_with_input(event)
             
             # If event is already in interactive state, ensure it's in session and skip processing
             if event_data.get("needs_input") and not getattr(event, "completed", False):
-                if not event_id:
-                    event_id = str(uuid.uuid4())
-                    event.api_event_id = event_id
-                    event_data["event_id"] = event_id
-                else:
-                    event_data["event_id"] = event_id
-                
-                # Store or update event in session
-                if session_data is not None:
-                    if "pending_events" not in session_data:
-                        session_data["pending_events"] = {}
-                    session_data["pending_events"][event_id] = {
-                        "event": event,
-                        "event_data": event_data
-                    }
-                
-                events_triggered.append(event_data)
-                continue
+                # Keep references aligned to the current room for combat-driven events.
+                event.player = player
+                if hasattr(player, "current_room"):
+                    event.tile = player.current_room
+
+                queued_event = self._queue_interactive_event(
+                    event,
+                    event_data,
+                    session_data,
+                )
+                if queued_event:
+                    events_triggered.append(queued_event)
+                    continue
             
             # Ensure event has current player and room references
             # (Crucial when loading from session where events might hold stale refs)
             event.player = player
-            if hasattr(player, 'current_room'):
-                event.tile = player.current_room
+            if tile is not None:
+                event.tile = tile
 
             # For non-input events, process normally
             # Try to trigger the event and capture output
@@ -1367,26 +1408,13 @@ class GameService:
                             f.write(str(prompt) + '\n')
                         return "1"
 
-                    target_modules = ['functions', 'player', 'interface', 'items', 'objects', 'events', 'animations',
-                                     'src.functions', 'src.player', 'src.interface', 'src.items', 'src.objects', 'src.events', 'src.animations']
-                    
-                    if hasattr(event, '__module__'):
-                        target_modules.append(event.__module__)
-                    
-                    patches = [
-                        patch('builtins.input', mock_input),
-                        patch('neotermcolor.cprint', mock_cprint),
-                        patch('time.sleep', return_value=None),
-                    ]
-                    
-                    for mod in set(target_modules):
-                        patches.extend([
-                            patch(f"{mod}.cprint", mock_cprint, create=True),
-                            patch(f"{mod}.print_slow", mock_print_slow, create=True),
-                            patch(f"{mod}.await_input", return_value=None, create=True),
-                            patch(f"{mod}.animate_to_main_screen", return_value=None, create=True),
-                            patch(f"{mod}.input", mock_input, create=True),
-                        ])
+                    target_modules = self._get_event_target_modules(event, include_animations=True)
+                    patches = self._build_event_patches(
+                        target_modules,
+                        mock_input,
+                        mock_cprint,
+                        mock_print_slow,
+                    )
                     
                     # Capture stdout/stderr and patch blocking functions
                     with contextlib.redirect_stdout(f), \
@@ -1411,35 +1439,21 @@ class GameService:
                         needs_input = getattr(event, "needs_input", False)
                         completed = getattr(event, "completed", False)
                         if needs_input and not completed:
-                            if not event_id:
-                                event_id = str(uuid.uuid4())
-                                event.api_event_id = event_id
-                            
-                            event_data["event_id"] = event_id
-                            
-                            if session_data is not None:
-                                if "pending_events" not in session_data:
-                                    session_data["pending_events"] = {}
-                                session_data["pending_events"][event_id] = {
-                                    "event": event,
-                                    "event_data": event_data
-                                }
+                            event_data = self._store_pending_event(
+                                event,
+                                event_data,
+                                session_data,
+                            )
                         
                 except Exception as e:
                     event_data["error"] = str(e)
                 
                 # Capture and clean output
-                output = f.getvalue()
+                clean_output = self._clean_event_output(f.getvalue())
                 triggered = False
-                if output:
-                    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                    lines = output.splitlines()
-                    # Filter out technical debug lines
-                    filtered_lines = [l for l in lines if not l.strip().startswith("DEBUG:")]
-                    clean_output = ansi_escape.sub('', "\n".join(filtered_lines)).strip()
-                    if clean_output:
-                        event_data["output_text"] = clean_output
-                        triggered = True
+                if clean_output:
+                    event_data["output_text"] = clean_output
+                    triggered = True
 
                 # Mark as triggered if input required
                 if getattr(event, "needs_input", False):
