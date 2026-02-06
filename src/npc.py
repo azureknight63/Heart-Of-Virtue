@@ -294,9 +294,20 @@ class NPC:
         self.drop_inventory()
         return True
 
+    def reset_combat_moves(self):
+        """
+        Resets all move states to stage 0 with 0 beats remaining.
+        This ensures moves progress correctly when the NPC joins combat mid-fight.
+        Called by combat_engage() and when allies join mid-combat.
+        """
+        for move in self.known_moves:
+            move.current_stage = 0
+            move.beats_left = 0
+
     def combat_engage(self, player):
         """
-        Adds NPC to the proper combat lists and initializes
+        Adds NPC to the proper combat lists and initializes.
+        Resets all move states to ensure moves progress correctly from the start.
         """
         player.combat_list.append(self)
         player.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
@@ -304,6 +315,7 @@ class NPC:
             for ally in player.combat_list_allies:
                 ally.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
         self.in_combat = True
+        self.reset_combat_moves()
 
     def roll_loot(self):  # when the NPC dies, do a roll to see if any loot drops
         if self.current_room is None:

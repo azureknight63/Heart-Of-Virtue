@@ -195,7 +195,7 @@ class Ch01ChestRumblerBattle(Event):
 
 class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after opening the chest
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params, combat_effect=True)
 
     def check_combat_conditions(self):
         if len(self.player.combat_list) == 0:
@@ -268,7 +268,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
 class Ch01PostRumblerRep(Event):
     def __init__(self, player, tile, params=None, repeat=True,
                  name='Ch01_PostRumbler_Rep'):  # This event is to continue repeating until the player's health is low
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params, combat_effect=True)
         self.iteration = 2
 
     def check_combat_conditions(self):
@@ -316,7 +316,7 @@ class Ch01PostRumblerRep(Event):
 
 class Ch01PostRumbler2(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler2'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params, combat_effect=True)
 
     def check_combat_conditions(self):
         if self.player.get_hp_pcnt() < 0.3:
@@ -368,7 +368,7 @@ class Ch01PostRumbler2(Event):
 
 class Ch01PostRumbler3(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler3'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params, combat_effect=True)
         self.needs_input = True
         self.input_type = "choice"
         self.input_prompt = "Which should Jean choose?"
@@ -470,6 +470,7 @@ class Ch01PostRumbler3(Event):
             gorran = self.tile.spawn_npc("Gorran", delay=0)
             self.player.combat_list_allies.append(gorran)
             gorran.in_combat = True
+            gorran.reset_combat_moves()
 
             for x in range(0, 5):
                 rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
@@ -541,4 +542,7 @@ class AfterGorranIntro(Event):
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)
                 gorran.friend = True
+                # Reset moves if joining mid-combat
+                if self.player.in_combat:
+                    gorran.reset_combat_moves()
         self.player.teleport("verdette-caverns", (2, 1))
