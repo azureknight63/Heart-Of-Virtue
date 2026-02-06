@@ -2,7 +2,10 @@ import json
 import os
 import logging
 from typing import Any, Dict, Optional, List
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None
 from dotenv import load_dotenv
 
 # Ensure .env is loaded
