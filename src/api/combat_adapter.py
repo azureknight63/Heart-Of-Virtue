@@ -48,21 +48,25 @@ class CombatOutputCapture:
                 # Skip technical debug lines and animation errors
                 if clean_text.startswith("DEBUG:") or "Animation not found" in clean_text:
                     return
-                
+                trigger_animation = False
                 # Detect combat outcomes for animation metadata
                 if self.player and hasattr(self.player, '_pending_animation'):
                     if "struck" in clean_text and "damage" in clean_text:
                         self.player._pending_animation["outcome"] = "hit"
+                        trigger_animation = True
                     elif "parried" in clean_text:
                         self.player._pending_animation["outcome"] = "parry"
+                        trigger_animation = True
                     elif "missed" in clean_text or "just missed" in clean_text:
                         self.player._pending_animation["outcome"] = "miss"
+                        trigger_animation = True
                     
                 self.log_entries.append({
                     "round": self.current_round,
                     "message": clean_text,
                     "type": "combat",
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                    "trigger_animation": trigger_animation
                 })
     
     def flush(self):
@@ -416,6 +420,12 @@ class ApiCombatAdapter:
 
     def _handle_combined_selection(self, move_name: str, target_id: Optional[str]) -> Dict[str, Any]:
         """Handle player selecting a move and target in one command."""
+        if not isinstance(move_name, str) or not move_name.strip():
+            return {"error": "Invalid move name"}
+
+        if target_id is not None and not isinstance(target_id, str):
+            return {"error": "Invalid target"}
+
         if self.input_type != "move_selection":
             return {"error": "Not expecting move selection"}
 
@@ -460,7 +470,11 @@ class ApiCombatAdapter:
             if not target:
                 viable_targets = self._get_available_targets(selected_move)
                 if len(viable_targets) == 1:
-                    target_obj_id = viable_targets[0]["id"].replace("enemy_", "")
+                    single_target_id = viable_targets[0].get("id") if isinstance(viable_targets[0], dict) else None
+                    if not isinstance(single_target_id, str):
+                        return {"error": "Invalid target"}
+
+                    target_obj_id = single_target_id.replace("enemy_", "")
                     all_combatants = self.player.combat_list + self.player.combat_list_allies
                     for combatant in all_combatants:
                         if str(id(combatant)) == target_obj_id:
@@ -524,7 +538,11 @@ class ApiCombatAdapter:
             
             # Check if we can auto-select target (exactly one viable target)
             if len(viable_targets) == 1:
-                target_obj_id = viable_targets[0]["id"].replace("enemy_", "")
+                single_target_id = viable_targets[0].get("id") if isinstance(viable_targets[0], dict) else None
+                if not isinstance(single_target_id, str):
+                    return {"error": "Invalid target"}
+
+                target_obj_id = single_target_id.replace("enemy_", "")
                 target = None
                 all_combatants = self.player.combat_list + self.player.combat_list_allies
                 for combatant in all_combatants:
@@ -578,6 +596,9 @@ class ApiCombatAdapter:
         """Handle player selecting a target."""
         if self.input_type != "target_selection":
             return {"error": "Not expecting target selection"}
+
+        if not isinstance(target_id, str) or not target_id:
+            return {"error": "Invalid target"}
         
         # Reconstruct pending move
         if self.pending_move_index is None:
@@ -872,7 +893,7 @@ class ApiCombatAdapter:
         move_logs = [s["message"] for s in self.player.combat_log if s.get("type") in ("combat", "player_action")][-5:] # Last 5 relevant entries
         self.player.last_move_summary = " ".join(move_logs)
         
-        # Emit animation data to combat log if available
+        # Emit animation data to combat log if available (fallback when no impact line triggered)
         if hasattr(self.player, '_pending_animation'):
             animation_data = self.player._pending_animation
             # Add animation entry to log
@@ -938,8 +959,19 @@ class ApiCombatAdapter:
         # Check win/loss conditions
         # ONLY proceed to victory if:
         # 1. Player is alive
-        # 2. Enemy list is empty
+        # 2. Enemy list is empty AFTER evaluating all combat events (which might spawn reinforcements)
         # 3. NO narrative event just triggered (which might spawn more enemies after user input)
+        #
+        # The dual-evaluation strategy (once at loop start, once before victory) ensures:
+        # - Loop start: state-change events trigger (on-death effects, player state checks)
+        # - Victory check: reinforcement spawners get a final chance to inject enemies
+        # This prevents battles from ending prematurely when events need to add waves of reinforcements.
+        
+        # Evaluate all combat events one final time when enemies are defeated
+        # This allows events (like reinforcement spawners) to inject new enemies before victory
+        if len(self.player.combat_list) == 0:
+            self._evaluate_combat_events()
+        
         event_just_triggered = hasattr(self.player, 'combat_adapter_state') and 'events_triggered' in self.player.combat_adapter_state
         
         if len(self.player.combat_list) == 0 and not event_just_triggered:
@@ -1077,8 +1109,12 @@ class ApiCombatAdapter:
                         animation_data=animation_data
                     )
         
-        # Advance moves
-        for move in npc.known_moves:
+        # Advance moves (include dynamically selected current_move if not in known_moves)
+        moves_to_advance = list(getattr(npc, "known_moves", []))
+        if npc.current_move is not None and npc.current_move not in moves_to_advance:
+            moves_to_advance.append(npc.current_move)
+
+        for move in moves_to_advance:
             move.advance(npc)
     
     def _update_heat(self):
@@ -1218,7 +1254,40 @@ class ApiCombatAdapter:
         import threading
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
 
+    def _evaluate_combat_events(self):
+        """
+        Evaluate all active combat events when enemies are defeated.
+        
+        This allows events (like reinforcement spawners) to inject new enemies
+        before combat ends, preventing premature victory declarations.
+        
+        Each event's check_combat_conditions() is called safely with error
+        handling to prevent one failing event from crashing combat.
+        
+        Combat events check conditions and can trigger processes that might
+        add new enemies to combat_list, which should continue the battle
+        rather than declaring victory.
+        """
+        if len(self.player.combat_events) == 0:
+            return
+        
+        # Evaluate each combat event's conditions safely
+        for event in self.player.combat_events[:]:  # Use slice copy to avoid modification issues
+            try:
+                if hasattr(event, "check_combat_conditions"):
+                    event.check_combat_conditions()
+            except Exception as e:
+                # Log gracefully without crashing if event fails
+                event_name = getattr(event, "name", "UnknownEvent")
+                # Try to log via standard logging first, then fall back to silent failure
+                try:
+                    import logging
+                    logging.warning(f"Error evaluating combat event '{event_name}': {e}")
+                except Exception:
+                    pass  # Truly silent if logging unavailable
+
     def _handle_victory(self):
+
         """Handle combat victory."""
         self.player.in_combat = False
         self.player.fatigue = self.player.maxfatigue
@@ -1422,6 +1491,16 @@ class ApiCombatAdapter:
                     self.current_beat_state_index,
                     timestamp=entry.get("timestamp")
                 )
+                if entry.get("trigger_animation") and hasattr(self.player, '_pending_animation'):
+                    animation_data = self.player._pending_animation
+                    self._add_log_entry(
+                        current_beat,
+                        f"{animation_data.get('move_name', 'Move')} animation",
+                        "animation",
+                        beat_index=self.current_beat_state_index,
+                        animation_data=animation_data
+                    )
+                    delattr(self.player, '_pending_animation')
             
             # Clear capture for next time
             self.output_capture.clear()

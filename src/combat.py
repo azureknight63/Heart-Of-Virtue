@@ -15,6 +15,31 @@ from typing import Optional
 from combat_event_config import CombatEventConfig
 import importlib
 
+
+def _evaluate_combat_events(player):
+    """
+    Evaluate conditions for all active combat events.
+    
+    This function safely evaluates each event's check_combat_conditions() method,
+    handling errors gracefully to prevent one failing event from crashing the
+    entire combat loop. It's called both during normal combat flow and when
+    enemies are defeated (to allow reinforcement spawning).
+    
+    Args:
+        player: The Player instance with combat_events list
+    """
+    if not hasattr(player, "combat_events") or len(player.combat_events) == 0:
+        return
+    
+    for event in player.combat_events:
+        try:
+            if hasattr(event, "check_combat_conditions"):
+                event.check_combat_conditions()
+        except Exception as e:
+            event_name = getattr(event, "name", "UnknownEvent")
+            cprint(f"[Warning] Combat event '{event_name}' failed: {e}", "yellow")
+
+
 def combat(player, event_config: Optional[CombatEventConfig] = None):
     # If the player is in combat, they cannot move, interact, or do anything else
     """
@@ -232,18 +257,30 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
     battlefield_window.update_display()
 
     while True:  # combat will loop until there are no aggro enemies or the player is dead
-        #  Check for combat events and execute them once, if possible
+        # Check for combat events and execute them once, if possible.
+        # This happens at the start of each beat to allow events to trigger on deaths,
+        # player/enemy state changes, or other conditions.
         synchronize_distances()
-        if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example,
-            # an event is to fire upon player or enemy death
-            for event in player.combat_events:
-                event.check_combat_conditions()
+        _evaluate_combat_events(player)
 
         if not player.is_alive():
             player.death()
             break
 
         if len(player.combat_list) == 0:
+            # All enemies defeated. Before declaring victory, evaluate all combat events one final time.
+            # Some events (like reinforcement spawners) only trigger when combat_list is empty.
+            # These events might inject new enemies, which should continue combat rather than ending it.
+            # This final evaluation ensures battles fight to completion. The early evaluation in the
+            # loop start handles state-change events (e.g., on-death effects), while this one
+            # specifically handles reinforcement/spawning events.
+            _evaluate_combat_events(player)
+            
+            # If events injected new enemies, loop back to continue combat
+            if len(player.combat_list) > 0:
+                continue
+            
+            # True victory - no enemies remain and no events triggered
             print("Victory!")
             player.fatigue = player.maxfatigue
             gained_exp = ''
