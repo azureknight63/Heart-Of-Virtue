@@ -141,20 +141,7 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
 
         const entry = currentPending[currentIndex]
 
-        // If it's an animation entry, add it to displayed log immediately and move to next 
-        // without waiting, so the animation triggers alongside the text but without adding delay
-        if (entry.type === 'animation') {
-          setDisplayedLog(prev => {
-            if (prev.some(existing => existing.message === entry.message && existing.round === entry.round && existing.type === entry.type)) {
-              return prev
-            }
-            return [...prev, entry]
-          })
-
-          currentIndex++
-          processNextLine()
-          return
-        }
+        const isAnimationEntry = entry.type === 'animation'
 
         const msg = entry.message.toLowerCase()
 
@@ -176,23 +163,25 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
           onLogProgress(beatIndex)
         }
 
-        // Play SFX
-        if (msg.includes('attacks')) playSFX('attack_swipe')
-        else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
-        else if (msg.includes('miss')) playSFX('attack_miss')
-        else if (msg.includes('parr')) playSFX('attack_parry')
-        else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
-        else if (msg.includes('victory')) {
-          playBGM('fanfare')
-        }
+        // Play SFX (skip for animation-only entries)
+        if (!isAnimationEntry) {
+          if (msg.includes('attacks')) playSFX('attack_swipe')
+          else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
+          else if (msg.includes('miss')) playSFX('attack_miss')
+          else if (msg.includes('parr')) playSFX('attack_parry')
+          else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
+          else if (msg.includes('victory')) {
+            playBGM('fanfare')
+          }
 
-        if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
-          playSFX('low_health_warning')
+          if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
+            playSFX('low_health_warning')
+          }
         }
 
         currentIndex++
 
-        const nextDelay = msg.includes('victory') ? 2000 : delayPerLine
+        const nextDelay = isAnimationEntry ? 0 : (msg.includes('victory') ? 2000 : delayPerLine)
         if (isMounted) {
           timeoutId = setTimeout(processNextLine, nextDelay)
         }
