@@ -725,8 +725,7 @@ class GameService:
                 # If we resumed a move, the adapter state already contains the full battle_state
                 result["combat_state"] = adapter_state.get('battle_state') or adapter_state
             else:
-                from src.api.serializers.combat_state_serializer import CombatStateSerializer
-                # Fallback to direct serialization
+                # Fallback to direct serialization (CombatStateSerializer already imported at module level)
                 result["combat_state"] = CombatStateSerializer.serialize_combat_state(
                     player, combat_enemies,
                     current_turn_index=getattr(player, "combat_turn_index", 0),
@@ -1260,6 +1259,9 @@ class GameService:
             from src import functions
             functions.refresh_stat_bonuses(player)
             
+            # Extract item type for response (use maintype, type_s, or subtype in order of preference)
+            item_type = maintype or getattr(item, "type_s", None) or getattr(item, "subtype", "Unknown")
+            
             return {
                 "success": True,
                 "item_name": getattr(item, "name", "Unknown"),
@@ -1580,6 +1582,8 @@ class GameService:
             return result
 
         elif move_type == "target":
+            if not isinstance(target_id, str) or not target_id:
+                return {"error": "Invalid target"}
             command = {"type": "select_target", "target_id": target_id}
             return adapter.process_command(command)
         
@@ -1607,6 +1611,8 @@ class GameService:
             return adapter.process_command(command)
             
         elif move_type == "select_move_and_target":
+            if not isinstance(move_id, str) or not move_id:
+                return {"error": "Invalid move name"}
             command = {
                 "type": "select_move_and_target",
                 "move_name": move_id, # We passed move_name as move_id
