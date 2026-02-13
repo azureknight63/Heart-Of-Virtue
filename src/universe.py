@@ -181,6 +181,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         this_map: dict = {'name': map_name}
         # iterate coordinate keys
         for coord_str, tile_data in raw.items():
+            if coord_str == 'metadata':
+                this_map['metadata'] = tile_data
+                continue
             try:
                 x_str, y_str = coord_str.strip('()').split(',')
                 x = int(x_str)

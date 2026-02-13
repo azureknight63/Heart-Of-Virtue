@@ -208,6 +208,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
             
         if self._stage == 1:
             # Stage 1: Trigger the memory flash
+            self.delay_mode = "combat" # Wait to let combat log settle
             memory = Ch01_Memory_Amelia(player=self.player, tile=self.tile)
             memory.process()
             

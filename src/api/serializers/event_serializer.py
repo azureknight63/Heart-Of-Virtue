@@ -48,7 +48,12 @@ class EventSerializer:
             event_data["hidden"] = event.hidden
         if hasattr(event, "hide_factor"):
             event_data["hide_factor"] = event.hide_factor
-
+            
+        # Optional display delay configuration
+        if hasattr(event, "delay_mode") and event.delay_mode:
+            event_data["delay_mode"] = event.delay_mode
+            event_data["delay_duration"] = getattr(event, "delay_duration", 3000)
+            
         return event_data
 
     @staticmethod

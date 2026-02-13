@@ -908,29 +908,12 @@ class ApiCombatAdapter:
             delattr(self.player, '_pending_animation')
 
         # Move execution finished
-        result = self.get_combat_state()
         
-        # Emit final state update
-        if self.session_id:
-            try:
-                from flask import current_app
-                if hasattr(current_app, 'socketio'):
-                    room = f"combat_{self.session_id}"
-                    current_app.socketio.emit('combat:update', result, room=room)
-                    
-                    # If awaiting input, also emit turn notification
-                    if self.awaiting_input:
-                        current_app.socketio.emit('combat:turn', {
-                            'input_type': self.input_type,
-                            'available_options_count': len(self.available_options)
-                        }, room=room)
-            except: pass
-            
         # Check win/loss conditions
         if not self.player.is_alive():
             self.player.in_combat = False
             self._add_log_entry(
-                self.output_capture.current_round,
+                self.player.combat_beat,
                 "You have been defeated!",
                 "system"
             )
@@ -956,22 +939,19 @@ class ApiCombatAdapter:
             result["beat_states"] = beat_states
             return result
         
-        # Check win/loss conditions
-        # ONLY proceed to victory if:
-        # 1. Player is alive
-        # 2. Enemy list is empty AFTER evaluating all combat events (which might spawn reinforcements)
-        # 3. NO narrative event just triggered (which might spawn more enemies after user input)
-        #
-        # The dual-evaluation strategy (once at loop start, once before victory) ensures:
-        # - Loop start: state-change events trigger (on-death effects, player state checks)
-        # - Victory check: reinforcement spawners get a final chance to inject enemies
-        # This prevents battles from ending prematurely when events need to add waves of reinforcements.
-        
         # Evaluate all combat events one final time when enemies are defeated
         # This allows events (like reinforcement spawners) to inject new enemies before victory
         if len(self.player.combat_list) == 0:
-            self._evaluate_combat_events()
+            if self.on_event_callback:
+                # Use the bridge to GameService so results are consistent
+                new_events = self.on_event_callback(self.player)
+                if new_events:
+                    if not hasattr(self.player, "combat_adapter_state"):
+                        self.player.combat_adapter_state = {}
+                    existing = self.player.combat_adapter_state.get("events_triggered", [])
+                    self.player.combat_adapter_state["events_triggered"] = existing + new_events
         
+        # Check if events triggered (BEFORE calling get_combat_state which consumes them)
         event_just_triggered = hasattr(self.player, 'combat_adapter_state') and 'events_triggered' in self.player.combat_adapter_state
         
         if len(self.player.combat_list) == 0 and not event_just_triggered:
@@ -980,16 +960,35 @@ class ApiCombatAdapter:
             result["beat_states"] = beat_states
             return result
         
-        # Set up for next move selection
-        self.awaiting_input = True
-        self.input_type = "move_selection"
-        self.available_options = self._get_available_moves()
-        self.pending_move_index = None
-        # Start async suggestion fetch (non-blocking)
-        self._refresh_suggestions_async()
+        # Set up for next move selection if battle continues and no event is blocking
+        if not event_just_triggered:
+            self.awaiting_input = True
+            self.input_type = "move_selection"
+            self.available_options = self._get_available_moves()
+            self.pending_move_index = None
+            # Start async suggestion fetch (non-blocking)
+            self._refresh_suggestions_async()
         
+        # Final state capture (consumes events_triggered)
         result = self.get_combat_state()
         result["beat_states"] = beat_states
+        
+        # Emit final state update
+        if self.session_id:
+            try:
+                from flask import current_app
+                if hasattr(current_app, 'socketio'):
+                    room = f"combat_{self.session_id}"
+                    current_app.socketio.emit('combat:update', result, room=room)
+                    
+                    # If awaiting input, also emit turn notification
+                    if self.awaiting_input:
+                        current_app.socketio.emit('combat:turn', {
+                            'input_type': self.input_type,
+                            'available_options_count': len(self.available_options)
+                        }, room=room)
+            except: pass
+            
         return result
     
     def _process_initial_turns(self):
@@ -1508,9 +1507,6 @@ class ApiCombatAdapter:
     def get_combat_state(self) -> Dict[str, Any]:
         """
         Get the current combat state for the frontend.
-        
-        Returns:
-            Dictionary with complete combat state
         """
         # Serialize combat state
         battle_state = CombatStateSerializer.serialize_combat_state(

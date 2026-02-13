@@ -31,7 +31,8 @@ class Event:  # master class for all events
     params is a list of additional parameters, None if omitted.
 
     """
-    def __init__(self, name, player=None, tile=None, repeat=False, params=None, combat_effect: bool = False):
+    def __init__(self, name, player=None, tile=None, repeat=False, params=None, combat_effect: bool = False,
+                 delay_duration: int = 3000, delay_mode: str = 'combat'):
         self.name = name
         self.player = player
         self.tile = tile
@@ -41,6 +42,11 @@ class Event:  # master class for all events
         self.params = params
         self.referenceobj = None  # objects being referenced for special conditions can be put here
         self.combat_effect = combat_effect
+        self.delay_duration = delay_duration
+        self.delay_mode = delay_mode  # "exploration", "combat", or "both" (None means no delay)
+        self.completed = False
+        self.api_event_id = None
+        self.needs_input = False
 
     def pass_conditions_to_process(self):
         self.process()
