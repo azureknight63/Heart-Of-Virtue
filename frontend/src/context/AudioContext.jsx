@@ -30,6 +30,13 @@ const saveAudioPreferences = (preferences) => {
     }
 };
 
+const BGM_MAP = {
+    'adventure': '/assets/sounds/bgm_adventure.wav',
+    'battle': '/assets/sounds/bgm_battle.mp3',
+    'dark_grotto': '/assets/sounds/dark_grotto.mp3',
+    'dungeon': '/assets/sounds/bgm_dungeon.mp3'
+};
+
 export const AudioProvider = ({ children }) => {
     // Load initial preferences from localStorage
     const initialPrefs = loadAudioPreferences();
@@ -41,7 +48,8 @@ export const AudioProvider = ({ children }) => {
     const [currentBGM, setCurrentBGM] = useState(null);
 
     const bgmRef = useRef(new Audio());
-    const sfxPool = useRef({});
+    const trackProgress = useRef({}); // Stores currentTime for each track ID
+    const fadeIntervalRef = useRef(null);
 
     // Save preferences whenever they change
     useEffect(() => {
@@ -55,23 +63,74 @@ export const AudioProvider = ({ children }) => {
 
     useEffect(() => {
         bgmRef.current.loop = true;
-        bgmRef.current.volume = isMusicMuted ? 0 : musicVolume;
+        // Only update volume directly if not currently fading
+        if (!fadeIntervalRef.current) {
+            bgmRef.current.volume = isMusicMuted ? 0 : musicVolume;
+        }
     }, [musicVolume, isMusicMuted]);
 
     const playBGM = useCallback((trackName) => {
         if (currentBGM === trackName) return;
 
-        const path = `/assets/sounds/bgm_${trackName}.wav`;
-        bgmRef.current.src = path;
-        bgmRef.current.play().catch(e => console.warn("Audio play failed (user interaction needed):", e));
-        setCurrentBGM(trackName);
-    }, []);
+        const targetVolume = isMusicMuted ? 0 : musicVolume;
+        const fadeStep = 0.05;
+        const fadeInterval = 50;
+
+        // Clear any existing fade
+        if (fadeIntervalRef.current) {
+            clearInterval(fadeIntervalRef.current);
+        }
+
+        const switchTrack = () => {
+            // Save progress of current track
+            if (currentBGM) {
+                trackProgress.current[currentBGM] = bgmRef.current.currentTime;
+            }
+
+            const path = BGM_MAP[trackName] || `/assets/sounds/bgm_${trackName}.wav`;
+            bgmRef.current.src = path;
+
+            // Restore progress
+            const savedTime = trackProgress.current[trackName] || 0;
+            bgmRef.current.currentTime = savedTime;
+
+            bgmRef.current.play().catch(e => console.warn("Audio play failed (user interaction needed):", e));
+            setCurrentBGM(trackName);
+
+            // Fade In
+            bgmRef.current.volume = 0;
+            fadeIntervalRef.current = setInterval(() => {
+                const nextVolume = Math.min(bgmRef.current.volume + fadeStep, targetVolume);
+                bgmRef.current.volume = nextVolume;
+                if (nextVolume >= targetVolume) {
+                    clearInterval(fadeIntervalRef.current);
+                    fadeIntervalRef.current = null;
+                }
+            }, fadeInterval);
+        };
+
+        // Fade Out current track if playing
+        if (currentBGM && bgmRef.current.volume > 0) {
+            fadeIntervalRef.current = setInterval(() => {
+                const nextVolume = Math.max(bgmRef.current.volume - fadeStep, 0);
+                bgmRef.current.volume = nextVolume;
+                if (nextVolume <= 0) {
+                    clearInterval(fadeIntervalRef.current);
+                    switchTrack();
+                }
+            }, fadeInterval);
+        } else {
+            switchTrack();
+        }
+    }, [currentBGM, isMusicMuted, musicVolume]);
 
     const stopBGM = useCallback(() => {
+        if (currentBGM) {
+            trackProgress.current[currentBGM] = bgmRef.current.currentTime;
+        }
         bgmRef.current.pause();
-        bgmRef.current.currentTime = 0;
         setCurrentBGM(null);
-    }, []);
+    }, [currentBGM]);
 
     const playSFX = useCallback((sfxName) => {
         const path = `/assets/sounds/sfx_${sfxName}.wav`;

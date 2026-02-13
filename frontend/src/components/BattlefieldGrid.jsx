@@ -140,7 +140,7 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
 
       {/* Inner Torus (HP/Fatigue) */}
       <svg className="absolute inset-0 w-full h-full p-[2px]" viewBox="0 0 100 100" style={{ transform: 'rotate(0deg)' }}>
-        {/* Left Arc for HP (Green) 
+        {/* Left Arc for HP (Red) 
               M 50 95 A 45 45 0 0 1 50 5  (This draws left semi-circle from bottom to top)
           */}
         <path
@@ -153,7 +153,7 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
         <path
           d="M 50 95 A 45 45 0 0 1 50 5"
           fill="none"
-          stroke="#22c55e" /* HP Color (green-500) */
+          stroke="#ff4444" /* HP Color (red) - consistent with HeroPanel.jsx */
           strokeWidth="8"
           strokeDasharray={`${hpPct * 141.4} 141.4`}
           strokeDashoffset="0"

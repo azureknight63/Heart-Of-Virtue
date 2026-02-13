@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useAudio } from '../context/AudioContext'
 import LeftPanel from '../components/LeftPanel'
@@ -123,19 +123,76 @@ export default function GamePage() {
     };
   }, [inCombat, combat?.suggestions_loading]);
 
+  // Track processed events and delaying events to prevent duplicate bouncing/looping
+  const processedEventIds = useRef(new Set())
+  const delayingEventIdRef = useRef(null)
+
+
   // Process event queue
   useEffect(() => {
     console.log('[DEBUG] Event Queue Check:', {
       queueLength: eventQueue.length,
       hasCurrentEvent: !!currentEvent,
       isTyping: isInteractionTyping,
-      isDelayActive: isInteractionDelayActive
+      isDelayActive: isInteractionDelayActive,
+      isCombatLogProcessing: isCombatLogProcessing
     });
+
+    // Wait for combat log to finish processing before showing new events (unless it's a result event)
+    if (isCombatLogProcessing) {
+      return
+    }
 
     if (eventQueue.length > 0 && !currentEvent && !isInteractionTyping && !isInteractionDelayActive) {
       const nextEvent = eventQueue[0]
+
+      // Double check strictly if we just processed this ID to be safe
+      if (nextEvent.event_id && processedEventIds.current.has(nextEvent.event_id)) {
+        // If it's a repeating event, we might want to allow it, but for the "immediate bounce" bug,
+        // we should probably skip it if it was processed very recently. 
+        // For now, let's skip it and remove from queue.
+        console.log(`[DEBUG] Skipping recently processed event: ${nextEvent.name} (${nextEvent.event_id})`);
+        setEventQueue(prev => prev.slice(1));
+        return;
+      }
+
+      // Handle event delay if specified
+      const shouldDelay = nextEvent.delay_mode === 'both' || nextEvent.delay_mode === mode;
+
+      if (shouldDelay && nextEvent.delay_duration > 0 && delayingEventIdRef.current !== nextEvent.event_id) {
+        console.log(`[DEBUG] Delaying event display for ${nextEvent.delay_duration}ms (${nextEvent.delay_mode}):`, nextEvent.name);
+
+        // Track this event ID to prevent re-entering this block during delay
+        delayingEventIdRef.current = nextEvent.event_id;
+        setIsInteractionDelayActive(true);
+
+        setTimeout(() => {
+          console.log(`[DEBUG] Delay finished for:`, nextEvent.name);
+          setIsInteractionDelayActive(false);
+          // Mark as having completed its specific delay so it doesn't trigger again
+          setEventQueue(prev => {
+            if (prev.length > 0) {
+              const updated = [...prev];
+              // Double check it's still the same event at head of queue
+              if (updated[0].event_id === delayingEventIdRef.current) {
+                updated[0] = { ...updated[0], delay_mode: null };
+              }
+              return updated;
+            }
+            return prev;
+          });
+        }, nextEvent.delay_duration);
+        return;
+      }
+
       console.log('[DEBUG] Showing next event from queue:', nextEvent);
       setCurrentEvent(nextEvent)
+
+      // Reset delay tracking after dequeueing
+      if (nextEvent.event_id === delayingEventIdRef.current) {
+        delayingEventIdRef.current = null;
+      }
+
       setEventQueue(prev => {
         const newQueue = prev.slice(1);
         console.log('[DEBUG] Updated queue after dequeue:', newQueue.length);
@@ -148,7 +205,7 @@ export default function GamePage() {
         setEventHistory(prev => [...prev, text])
       }
     }
-  }, [eventQueue, currentEvent, isInteractionTyping, isInteractionDelayActive])
+  }, [eventQueue, currentEvent, isInteractionTyping, isInteractionDelayActive, isCombatLogProcessing, inCombat])
 
   // Handle interaction delay
   useEffect(() => {
@@ -210,6 +267,15 @@ export default function GamePage() {
 
       // Close current event
       setCurrentEvent(null)
+
+      // Track that this event input was processed
+      if (eventId && eventId !== 'combat_init') {
+        processedEventIds.current.add(eventId);
+        // Auto-expire from processed list after 5 seconds to allow repeating events later
+        setTimeout(() => {
+          processedEventIds.current.delete(eventId);
+        }, 5000);
+      }
 
       // If there's output text from processing, show it in a new event
       if (data.output_text && data.output_text.trim().length > 0) {
@@ -292,6 +358,23 @@ export default function GamePage() {
         setEventQueue(prev => {
           const newQueue = [...prev];
           displayableEvents.forEach(newEvent => {
+            // Check if this event (by ID or name) is already current
+            const isCurrent = currentEvent && (
+              (newEvent.event_id && newEvent.event_id === currentEvent.event_id) ||
+              (newEvent.id === currentEvent.id && newEvent.name === currentEvent.name)
+            );
+
+            if (isCurrent) {
+              console.log(`[DEBUG] Skipping event already currently displayed: ${newEvent.name}`);
+              return;
+            }
+
+            // Check if this event was recently processed
+            if (newEvent.event_id && processedEventIds.current.has(newEvent.event_id)) {
+              console.log(`[DEBUG] Skipping recently processed event: ${newEvent.name}`);
+              return;
+            }
+
             // Check if this event (by ID or name) is already in queue
             const existingIndex = newQueue.findIndex(e =>
               (e.event_id && e.event_id === newEvent.event_id) ||
@@ -301,7 +384,13 @@ export default function GamePage() {
             if (existingIndex >= 0) {
               // Update existing event with new data (prefer needs_input=true)
               console.log(`[DEBUG] Updating existing event in queue: ${newEvent.name}`);
+
+              // CRITICAL: Preserve local delay value if we've already set it to 0
+              const currentDelay = newQueue[existingIndex].delay;
               newQueue[existingIndex] = { ...newQueue[existingIndex], ...newEvent };
+              if (currentDelay === 0) {
+                newQueue[existingIndex].delay = 0;
+              }
             } else {
               console.log(`[DEBUG] Adding new event to queue: ${newEvent.name}`);
               newQueue.push(newEvent);
@@ -458,16 +547,17 @@ export default function GamePage() {
     }
   }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log])
 
-  // Manage BGM based on mode
+  // Manage BGM based on mode and location metadata
   useEffect(() => {
     if (mode === 'combat') {
       playBGM('battle')
       playSFX('combat_start')
     } else {
-      // Simple logic: play adventure for now. Could be dungeon based on location type later.
-      playBGM('adventure')
+      // Use the BGM defined in map metadata, fallback to adventure
+      const track = location?.bgm || 'adventure'
+      playBGM(track)
     }
-  }, [mode, playBGM, playSFX])
+  }, [mode, location?.bgm, playBGM, playSFX])
 
   // Check combat status on initial load only
   useEffect(() => {
