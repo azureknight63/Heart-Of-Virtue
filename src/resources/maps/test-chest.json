@@ -1,4 +1,7 @@
 {
+    "metadata": {
+        "bgm": "dark_grotto"
+    },
     "(1, 1)": {
         "id": "tile_1_1",
         "title": "TestChestRoom",
