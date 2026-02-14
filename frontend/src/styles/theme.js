@@ -23,6 +23,9 @@ export const colors = {
         bright: '#ffffff',
         highlight: '#ffeeaa',
         warning: '#ffcc88',
+        danger: '#ffaaaa',
+        success: '#ccffcc',
+        dim: '#666666',
     },
 
     bg: {
@@ -33,6 +36,16 @@ export const colors = {
         panelDeep: 'rgba(0, 0, 0, 0.9)',
         overlay: 'rgba(0, 0, 0, 0.75)',
         dialog: 'rgba(20, 10, 0, 0.4)',
+        error: '#7f1d1d',
+        success: '#064e3b',
+        highlight: 'rgba(255, 170, 0, 0.1)',
+        highlightLight: 'rgba(255, 170, 0, 0.05)',
+        positive: 'rgba(0, 255, 136, 0.1)',
+        positiveLight: 'rgba(0, 255, 136, 0.05)',
+        negative: 'rgba(255, 68, 68, 0.1)',
+        negativeLight: 'rgba(255, 68, 68, 0.05)',
+        terminal: 'rgba(0, 255, 136, 0.15)',
+        muted: 'rgba(255, 255, 255, 0.05)',
     },
 
     border: {
@@ -92,7 +105,7 @@ export const commonStyles = {
         color: colors.danger,
         fontSize: '13px',
         padding: '10px',
-        backgroundColor: 'rgba(255, 0, 0, 0.1)',
+        backgroundColor: 'rgba(255, 68, 68, 0.1)',
         borderRadius: '6px',
         border: `1px solid rgba(255, 68, 68, 0.3)`,
         fontFamily: fonts.main,
