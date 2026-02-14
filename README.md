@@ -177,3 +177,44 @@ print(adapter.debug_status())
 ```
 If `available` is False, the `reason` field will indicate the issue (missing key, connection error, etc.).
 
+## License
+
+This project uses a dual-license approach:
+
+### Code
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE-CODE)
+
+You are free to:
+- ✅ Use, modify, and distribute the code for **non-commercial purposes**
+- ✅ Learn from and build upon the codebase
+- ✅ Share your modifications
+
+You may NOT:
+- ❌ Use the code for commercial purposes without permission
+- ❌ Hold the author liable for any issues
+
+### Story, Lore & Creative Assets
+Licensed under [CC BY-NC-ND 4.0](LICENSE-ASSETS) (Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International)
+
+This applies to:
+- Character profiles and stories (`docs/lore/character-profiles/`)
+- World-building content and lore (`docs/lore/`)
+- Story content (`src/story/`)
+- Art, music, and sound assets (`frontend/public/assets/`)
+
+You are free to:
+- ✅ Share and redistribute the creative content for **non-commercial purposes**
+- ✅ Use the content for personal enjoyment and study
+
+You must:
+- 📌 Provide attribution to the original author
+
+You may NOT:
+- ❌ Use the content for commercial purposes
+- ❌ Create derivative works or adaptations
+- ❌ Remix or transform the creative content
+
+For full license texts, see [LICENSE-CODE](LICENSE-CODE) and [LICENSE-ASSETS](LICENSE-ASSETS).
+
+Copyright (c) 2025 Heart of Virtue
+
