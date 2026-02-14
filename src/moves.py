@@ -353,6 +353,9 @@ class Move:  # master class for all moves
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 """
@@ -1110,6 +1113,9 @@ class PowerStrike(Move):
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class Jab(Move):
@@ -1199,6 +1205,9 @@ class Jab(Move):
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 """
@@ -1590,6 +1599,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class Rest(Move):  # standard rest to restore fatigue.
@@ -2602,6 +2614,9 @@ class SpiderBite(Move):  # Poisonous attack
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
