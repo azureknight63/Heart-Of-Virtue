@@ -516,8 +516,8 @@ class ApiCombatAdapter:
         if not selected_move.viable():
             return {"error": "Move is not currently available"}
         
-        # Check if move is available
-        if self.player.fatigue < selected_move.fatigue_cost:
+        # Check if move is available (only check fatigue if move actually costs fatigue)
+        if selected_move.fatigue_cost > 0 and self.player.fatigue < selected_move.fatigue_cost:
             return {"error": "Not enough fatigue"}
         
         if selected_move.current_stage != 0:
@@ -1388,7 +1388,7 @@ class ApiCombatAdapter:
                 else:
                     move_data["available"] = False
                     move_data["reason"] = "Available next beat"
-            elif self.player.fatigue < move.fatigue_cost:
+            elif move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
                 move_data["available"] = False
                 move_data["reason"] = "Not enough fatigue"
             elif not is_viable:

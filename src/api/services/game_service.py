@@ -1505,6 +1505,25 @@ class GameService:
         # Check if player is in combat
         if not player.in_combat:
             return {"success": False, "error": "Not in combat"}
+        
+        # Check for blocking pending events - events that need input should block combat moves
+        # This prevents players from acting before event dialogs appear (e.g., rumbler announcement)
+        if session_data and session_data.get("pending_events"):
+            # Only block if there are events that actually need input (not stale/completed events)
+            blocking_events = [
+                e for e in session_data["pending_events"].values()
+                if e.get("event_data", {}).get("needs_input") and not e.get("event_data", {}).get("completed")
+            ]
+            if blocking_events:
+                return {
+                    "success": False,
+                    "error": "Event pending",
+                    "message": "Please resolve the current event before taking combat actions.",
+                    "pending_events_count": len(blocking_events)
+                }
+            # If no blocking events, clean up stale pending_events
+            else:
+                session_data["pending_events"] = {}
             
         # Ensure adapter exists
         if not hasattr(player, "_combat_adapter"):
@@ -1644,7 +1663,15 @@ class GameService:
                     "log": getattr(player, "combat_log", []),
                     "battle_state": None
                 }
-            
+        else:
+            # Refresh available_options if we're in move selection mode
+            # This ensures viable_targets are updated when enemies are added/removed mid-combat
+            adapter = player._combat_adapter
+            if adapter.input_type == "move_selection" and adapter.awaiting_input:
+                adapter.available_options = adapter._get_available_moves()
+                # Also refresh AI suggestions so they have updated target IDs
+                adapter._refresh_suggestions()
+        
         return player._combat_adapter.get_combat_state()
 
     def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:
