@@ -468,14 +468,25 @@ class Ch01PostRumbler3(Event):
                    "\ndifficult fight that remains.")
             time.sleep(1)
 
+            # Add Gorran as an ally
             gorran = self.tile.spawn_npc("Gorran", delay=0)
             self.player.combat_list_allies.append(gorran)
             gorran.in_combat = True
             gorran.reset_combat_moves()
+            
+            # Set up Gorran's combat lists
+            gorran.combat_list = self.player.combat_list  # Gorran targets enemies
+            gorran.combat_list_allies = self.player.combat_list_allies  # Gorran is allied with player's team
 
+            # Spawn new enemies and add them properly to combat
+            new_enemies = []
             for x in range(0, 5):
                 rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
-                rumbler.combat_engage(self.player)
+                new_enemies.append(rumbler)
+            
+            # Use add_enemies_to_combat to properly initialize battlefield positions
+            from functions import add_enemies_to_combat
+            add_enemies_to_combat(self.player, new_enemies)
 
             self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
 
