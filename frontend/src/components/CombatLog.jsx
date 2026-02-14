@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import { colors, spacing, fonts, shadows } from '../styles/theme'
+import GameText from './GameText'
 
 export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -44,49 +46,90 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
   return (
     <div
       ref={logRef}
-      className={`bg-[rgba(0,0,0,0.8)] border border-orange rounded flex flex-col ${className}`}
-      style={{ height: isCollapsed ? '32px' : allowResize ? `${height}px` : '100%' }}
+      style={{
+        height: isCollapsed ? '32px' : allowResize ? `${height}px` : '100%',
+        backgroundColor: colors.bg.panelHeavy,
+        border: `1px solid ${colors.border.main}`,
+        borderRadius: '4px',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: shadows.main,
+        overflow: 'hidden',
+        transition: 'height 0.3s ease',
+      }}
+      className={className}
     >
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="flex justify-between items-center px-3 py-1.5 bg-[rgba(0,0,0,0.6)] border-b border-orange/50 cursor-pointer hover:bg-[rgba(0,0,0,0.8)] transition-colors"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: `${spacing.xs} ${spacing.md}`,
+          backgroundColor: colors.bg.panel,
+          borderBottom: isCollapsed ? 'none' : `1px solid ${colors.border.light}`,
+          cursor: 'pointer',
+        }}
       >
-        <span className="text-orange font-bold text-xs tracking-wider uppercase">Combat Log</span>
-        <span className="text-[#ffaa00] text-xs">{isCollapsed ? '▶' : '▼'}</span>
+        <GameText variant="secondary" size="xs" weight="bold" style={{ tracking: 'wider', textTransform: 'uppercase' }}>
+          Combat Log
+        </GameText>
+        <GameText variant="secondary" size="xs">
+          {isCollapsed ? '▶' : '▼'}
+        </GameText>
       </div>
 
       {!isCollapsed && (
         <>
           <div
             ref={contentRef}
-            className="flex-1 overflow-y-auto p-2 text-sm space-y-1 font-mono"
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: spacing.sm,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              fontFamily: fonts.main,
+              scrollbarWidth: 'thin',
+              scrollbarColor: `${colors.border.main} transparent`
+            }}
           >
             {log?.length === 0 && (
-              <div className="text-gray-500 italic text-center py-2">Combat started...</div>
+              <GameText variant="muted" size="sm" align="center" style={{ fontStyle: 'italic', padding: spacing.sm }}>
+                Combat started...
+              </GameText>
             )}
-            {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => (
-              <div
-                key={idx}
-                className={`${entry.type === 'damage'
-                  ? 'text-red-400'
-                  : entry.type === 'heal'
-                    ? 'text-green-400'
-                    : entry.type === 'ability'
-                      ? 'text-cyan-400'
-                      : entry.type === 'info'
-                        ? 'text-gray-300'
-                        : 'text-yellow-300'
-                  }`}
-              >
-                <span className="opacity-50 mr-2">[{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>
-                <span dangerouslySetInnerHTML={{ __html: entry.message }} />
-              </div>
-            ))}
+            {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => {
+              let textColor = colors.text.main
+              if (entry.type === 'damage') textColor = colors.danger
+              else if (entry.type === 'heal') textColor = colors.success
+              else if (entry.type === 'ability') textColor = colors.accent
+              else if (entry.type === 'info') textColor = colors.text.muted
+              else if (entry.type === 'system') textColor = colors.gold
+
+              return (
+                <div key={idx} style={{ fontSize: '13px', lineHeight: '1.4' }}>
+                  <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
+                    [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
+                  </span>
+                  <span
+                    style={{ color: textColor }}
+                    dangerouslySetInnerHTML={{ __html: entry.message }}
+                  />
+                </div>
+              )
+            })}
           </div>
           {allowResize && (
             <div
               onMouseDown={handleMouseDown}
-              className="h-1.5 bg-gradient-to-r from-transparent via-orange/30 to-transparent cursor-ns-resize hover:via-orange/70 transition-colors"
+              style={{
+                height: '6px',
+                background: `linear-gradient(to right, transparent, ${colors.border.main}, transparent)`,
+                cursor: 'ns-resize',
+                opacity: 0.3,
+              }}
             ></div>
           )}
         </>

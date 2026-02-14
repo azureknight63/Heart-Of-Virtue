@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { colors, spacing } from '../styles/theme'
+import { colors, spacing, fonts, shadows } from '../styles/theme'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
+import GameText from './GameText'
 
 export default function HeroPanel({
   player,
@@ -98,7 +99,7 @@ export default function HeroPanel({
           pointerEvents: 'auto'
         }}>
           {player?.passives?.length > 0 && (
-            <div style={{ fontSize: '7px', color: colors.text.muted, marginBottom: '2px', fontWeight: 'bold' }}>PASSIVES</div>
+            <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>PASSIVES</GameText>
           )}
           <StatusEffectsIconPanel effects={player?.passives} vertical />
         </div>
@@ -117,7 +118,7 @@ export default function HeroPanel({
           pointerEvents: 'auto'
         }}>
           {player?.status_effects?.length > 0 && (
-            <div style={{ fontSize: '7px', color: colors.text.muted, marginBottom: '2px', fontWeight: 'bold' }}>STATUS</div>
+            <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>STATUS</GameText>
           )}
           <StatusEffectsIconPanel effects={player?.status_effects} vertical />
         </div>
@@ -162,7 +163,7 @@ export default function HeroPanel({
             height: '150px',
             borderRadius: '15px 0 0 15px',
             border: `2px solid ${colors.danger}`,
-            backgroundColor: 'rgba(255, 68, 68, 0.1)',
+            backgroundColor: colors.bg.negativeLight,
             boxShadow: `0 0 10px ${colors.danger}88, inset 0 0 8px ${colors.danger}44`,
             zIndex: 3,
             display: 'flex',
@@ -184,14 +185,14 @@ export default function HeroPanel({
               left: '50%',
               bottom: '-35px',
               transform: 'translateX(-50%)',
-              backgroundColor: '#1a1a1a',
+              backgroundColor: colors.bg.main,
               border: `1.5px solid ${colors.danger}`,
               borderRadius: '3px',
               padding: '4px 6px',
               color: colors.danger,
               fontSize: '8px',
               fontWeight: 'bold',
-              fontFamily: 'monospace',
+              fontFamily: fonts.main,
               whiteSpace: 'nowrap',
               boxShadow: `0 0 8px ${colors.danger}99`,
               zIndex: 20,
@@ -215,7 +216,7 @@ export default function HeroPanel({
             height: '150px',
             borderRadius: '0 15px 15px 0',
             border: `2px solid ${colors.secondary}`,
-            backgroundColor: 'rgba(255, 170, 0, 0.1)',
+            backgroundColor: colors.bg.highlightLight,
             boxShadow: `0 0 10px ${colors.secondary}88, inset 0 0 8px ${colors.secondary}44`,
             zIndex: 3,
             display: 'flex',
@@ -237,16 +238,16 @@ export default function HeroPanel({
               right: '50%',
               bottom: '-35px',
               transform: 'translateX(50%)',
-              backgroundColor: '#1a1a1a',
+              backgroundColor: colors.bg.main,
               border: `1.5px solid ${colors.secondary}`,
               borderRadius: '3px',
               padding: '4px 6px',
               color: colors.secondary,
               fontSize: '8px',
               fontWeight: 'bold',
-              fontFamily: 'monospace',
+              fontFamily: fonts.main,
               whiteSpace: 'nowrap',
-              boxShadow: `0 0 8px ${colors.secondary}99`,
+              boxShadow: shadows.glow,
               zIndex: 20,
             }}>
               Fatigue<br />{fatigue.current.toFixed(0)}/{fatigue.max}
@@ -289,7 +290,7 @@ export default function HeroPanel({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontFamily: 'monospace',
+                fontFamily: fonts.main,
                 zIndex: 5,
                 textAlign: 'center',
                 padding: '4px',

@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAudio } from '../context/AudioContext';
+import { colors, spacing, shadows, fonts } from '../styles/theme';
+import GamePanel from './GamePanel';
+import GameText from './GameText';
 
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover }) => {
     const { playSFX } = useAudio();
+    const [hoveredMoveIndex, setHoveredMoveIndex] = useState(null);
+
     const filteredMoves = moves.filter(move => {
         if (category === 'Miscellaneous') {
             return move.category === 'Miscellaneous' || move.category === 'Utility';
@@ -14,52 +19,57 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
     });
 
     return (
-        <div style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            backgroundColor: 'rgba(0, 0, 0, 0.9)',
-            border: '2px solid #ffaa00',
-            borderRadius: '8px',
-            padding: '16px',
-            zIndex: 100,
-            minWidth: '300px',
-            maxWidth: '400px',
-            color: '#fff',
-            fontFamily: 'monospace',
-            boxShadow: '0 0 20px rgba(255, 170, 0, 0.3)',
-        }}>
+        <GamePanel
+            glow
+            borderVariant="bright"
+            style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 100,
+                minWidth: '320px',
+                maxWidth: '450px',
+                backgroundColor: colors.bg.panelDeep,
+            }}
+        >
             <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: '16px',
-                borderBottom: '1px solid #444',
-                paddingBottom: '8px',
+                marginBottom: spacing.md,
+                borderBottom: `1px solid ${colors.border.light}`,
+                paddingBottom: spacing.sm,
             }}>
-                <h3 style={{ margin: 0, color: '#ffaa00', textTransform: 'uppercase' }}>{category} MOVES</h3>
+                <GameText variant="secondary" weight="bold" style={{ textTransform: 'uppercase' }}>
+                    {category} MOVES
+                </GameText>
                 <button
                     onClick={onClose}
                     style={{
                         background: 'none',
                         border: 'none',
-                        color: '#888',
+                        color: colors.text.muted,
                         cursor: 'pointer',
-                        fontSize: '16px',
+                        fontSize: '18px',
+                        padding: spacing.xs,
                     }}
                 >
                     ✕
                 </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
                 {filteredMoves.length === 0 ? (
-                    <div style={{ color: '#888', fontStyle: 'italic', textAlign: 'center' }}>No moves available in this category.</div>
+                    <GameText variant="muted" align="center" style={{ fontStyle: 'italic', padding: spacing.md }}>
+                        No moves available in this category.
+                    </GameText>
                 ) : (
                     filteredMoves.map((move, index) => {
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
+                        const isHovered = hoveredMoveIndex === index;
+
                         // Single target detection for hover effect
                         const firstTarget = move.viable_targets?.[0];
                         const singleTargetId = (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1 && firstTarget?.id?.startsWith('enemy_'))
@@ -76,60 +86,65 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                                         onMoveClick(move);
                                     }
                                 }}
-                                disabled={!isAvailable}
-                                title={!isAvailable ? reason : ''}
-                                style={{
-                                    backgroundColor: isAvailable ? 'rgba(255, 255, 255, 0.05)' : 'rgba(100, 100, 100, 0.05)',
-                                    border: `1px solid ${isAvailable ? '#444' : '#333'}`,
-                                    borderRadius: '4px',
-                                    padding: '10px',
-                                    textAlign: 'left',
-                                    cursor: isAvailable ? 'pointer' : 'not-allowed',
-                                    transition: 'all 0.2s ease',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                    opacity: isAvailable ? 1 : 0.5,
-                                }}
-                                onMouseEnter={(e) => {
+                                onMouseEnter={() => {
                                     if (isAvailable) {
-                                        e.currentTarget.style.backgroundColor = 'rgba(255, 170, 0, 0.1)';
-                                        e.currentTarget.style.borderColor = '#ffaa00';
+                                        setHoveredMoveIndex(index);
                                         if (singleTargetId && onTargetHover) {
                                             onTargetHover(singleTargetId);
                                         }
                                     }
                                 }}
-                                onMouseLeave={(e) => {
-                                    if (isAvailable) {
-                                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-                                        e.currentTarget.style.borderColor = '#444';
-                                        if (onTargetHover) {
-                                            onTargetHover(null);
-                                        }
+                                onMouseLeave={() => {
+                                    setHoveredMoveIndex(null);
+                                    if (onTargetHover) {
+                                        onTargetHover(null);
                                     }
+                                }}
+                                disabled={!isAvailable}
+                                title={!isAvailable ? reason : ''}
+                                style={{
+                                    backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                                    border: `1px solid ${isHovered ? colors.secondary : colors.border.light}`,
+                                    borderRadius: '4px',
+                                    padding: spacing.md,
+                                    textAlign: 'left',
+                                    cursor: isAvailable ? 'pointer' : 'not-allowed',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: spacing.xs,
+                                    opacity: isAvailable ? 1 : 0.6,
+                                    boxShadow: isHovered ? shadows.glow : 'none',
+                                    width: '100%',
                                 }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                    <span style={{ fontWeight: 'bold', color: isAvailable ? '#eee' : '#666' }}>{move.name}</span>
+                                    <GameText
+                                        variant={isHovered ? 'highlight' : (isAvailable ? 'bright' : 'dim')}
+                                        weight="bold"
+                                    >
+                                        {move.name}
+                                    </GameText>
                                     {move.fatigue_cost > 0 && (
-                                        <span style={{ fontSize: '10px', color: '#aaa' }}>
+                                        <GameText variant="muted" size="xs">
                                             Fatigue: {move.fatigue_cost}
-                                        </span>
+                                        </GameText>
                                     )}
                                 </div>
-                                <span style={{ fontSize: '12px', color: isAvailable ? '#888' : '#555' }}>{move.description}</span>
+                                <GameText variant={isAvailable ? 'muted' : 'dim'} size="sm">
+                                    {move.description}
+                                </GameText>
                                 {!isAvailable && reason && (
-                                    <span style={{ fontSize: '11px', color: '#ff6666', fontStyle: 'italic' }}>
+                                    <GameText variant="danger" size="xs" style={{ fontStyle: 'italic', marginTop: spacing.xs }}>
                                         ⚠ {reason}
-                                    </span>
+                                    </GameText>
                                 )}
                             </button>
                         );
                     })
                 )}
             </div>
-        </div>
+        </GamePanel>
     );
 };
 

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
-import { colors, spacing } from '../styles/theme'
+import GameText from './GameText'
+import { colors, spacing, fonts, shadows } from '../styles/theme'
 
 /**
  * VictoryDialog - Shown after combat victory
@@ -84,7 +85,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
         transform: 'translateX(-50%)',
         width: '100%',
         maxWidth: '800px',
-        backgroundColor: 'rgba(5, 15, 5, 0.95)',
+        backgroundColor: colors.bg.panelDeep,
         border: `2px solid ${colors.primary}`,
         borderBottom: 'none',
         borderRadius: '12px 12px 0 0',
@@ -97,13 +98,13 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
         animation: 'slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div style={{ color: colors.primary, fontWeight: 'bold', fontSize: '18px', fontFamily: 'monospace', textShadow: `0 0 10px ${colors.primary}88` }}>
+          <GameText variant="primary" size="lg" weight="bold" style={{ textShadow: `0 0 10px ${colors.primary}88` }}>
             ⚔️ VICTORY!
-          </div>
+          </GameText>
           {remainingPoints > 0 && (
-            <div style={{ color: colors.secondary, fontFamily: 'monospace', fontSize: '14px', animation: 'pulse 2s infinite' }}>
+            <GameText variant="secondary" size="sm" style={{ animation: 'pulse 2s infinite' }}>
               ⚠️ {remainingPoints} point{remainingPoints !== 1 ? 's' : ''} to allocate
-            </div>
+            </GameText>
           )}
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -150,39 +151,39 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
             <div style={{
               padding: '12px',
               backgroundColor: colors.bg.panelLight,
-              border: `1px solid ${colors.primary}33`,
+              border: `1px solid ${colors.border.light}`,
               borderRadius: '12px'
             }}>
-              <div style={{ color: colors.primary, fontWeight: 'bold', fontSize: '13px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <GameText variant="primary" size="xs" weight="bold" style={{ marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 📈 Experience Gained
-              </div>
+              </GameText>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {expEntries.length > 0 ? expEntries.map((e) => (
-                  <div key={e.category} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                    <span style={{ color: colors.text.muted, fontSize: '12px' }}>{e.category}</span>
-                    <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '12px' }}>+{e.amount}</span>
+                  <div key={e.category} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <GameText variant="muted" size="xs">{e.category}</GameText>
+                    <GameText variant="primary" size="xs" weight="bold">+{e.amount}</GameText>
                   </div>
-                )) : <div style={{ color: colors.text.muted, fontStyle: 'italic', fontSize: '12px' }}>None</div>}
+                )) : <GameText variant="muted" size="xs" style={{ fontStyle: 'italic' }}>None</GameText>}
               </div>
             </div>
 
             {/* Loot Section */}
             <div style={{
               padding: '12px',
-              backgroundColor: 'rgba(255, 170, 0, 0.05)',
-              border: `1px solid ${colors.secondary}33`,
+              backgroundColor: colors.bg.highlightLight,
+              border: `1px solid ${colors.border.light}`,
               borderRadius: '12px'
             }}>
-              <div style={{ color: colors.secondary, fontWeight: 'bold', fontSize: '13px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 🎁 Loot Collected
-              </div>
+              </GameText>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {drops.length > 0 ? drops.map((d, idx) => (
-                  <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
-                    <span style={{ color: colors.text.muted, fontSize: '12px' }}>{d.name}</span>
-                    <span style={{ color: colors.secondary, fontWeight: 'bold', fontSize: '12px' }}>x{d.quantity}</span>
+                  <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <GameText variant="muted" size="xs">{d.name}</GameText>
+                    <GameText variant="secondary" size="xs" weight="bold">x{d.quantity}</GameText>
                   </div>
-                )) : <div style={{ color: colors.text.muted, fontStyle: 'italic', fontSize: '12px' }}>None</div>}
+                )) : <GameText variant="muted" size="xs" style={{ fontStyle: 'italic' }}>None</GameText>}
               </div>
             </div>
           </div>
@@ -197,22 +198,22 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
             flexDirection: 'column',
             gap: '12px'
           }}>
-            <div style={{ color: colors.text.highlight, fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <GameText variant="accent" size="xs" weight="bold" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>
               ⭐ Level Ups & Growth
-            </div>
+            </GameText>
 
             {levelUps.map((lu, idx) => (
               <div key={idx} style={{
                 padding: '10px',
-                backgroundColor: 'rgba(0,0,0,0.3)',
+                backgroundColor: colors.bg.panelDeep,
                 borderRadius: '8px',
-                border: `1px solid ${colors.text.highlight}11`,
+                border: `1px solid ${colors.border.light}`,
                 textAlign: 'center'
               }}>
-                <div style={{ color: '#fff', fontSize: '15px', fontWeight: 'bold' }}>
-                  LEVEL {lu.old_level} → <span style={{ color: colors.primary }}>{lu.new_level}</span>
-                </div>
-                <div style={{ color: colors.text.muted, fontSize: '12px' }}>+{lu.points_awarded} Points awarded</div>
+                <GameText variant="bright" size="md" weight="bold">
+                  LEVEL {lu.old_level} → <GameText variant="primary">{lu.new_level}</GameText>
+                </GameText>
+                <GameText variant="muted" size="xs">+{lu.points_awarded} Points awarded</GameText>
               </div>
             ))}
 
@@ -235,11 +236,11 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
                       style={{
                         flex: 1,
                         padding: '10px',
-                        backgroundColor: '#1a1a1a',
+                        backgroundColor: colors.bg.main,
                         color: colors.text.highlight,
-                        border: `1px solid ${colors.text.highlight}55`,
+                        border: `1px solid ${colors.border.main}`,
                         borderRadius: '8px',
-                        fontFamily: 'monospace',
+                        fontFamily: fonts.main,
                         fontSize: '13px',
                         outline: 'none',
                       }}
@@ -267,11 +268,11 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
                       style={{
                         width: '70px',
                         padding: '10px',
-                        backgroundColor: '#1a1a1a',
+                        backgroundColor: colors.bg.main,
                         color: colors.text.highlight,
-                        border: `1px solid ${colors.text.highlight}55`,
+                        border: `1px solid ${colors.border.main}`,
                         borderRadius: '8px',
-                        fontFamily: 'monospace',
+                        fontFamily: fonts.main,
                         textAlign: 'center',
                         outline: 'none',
                       }}

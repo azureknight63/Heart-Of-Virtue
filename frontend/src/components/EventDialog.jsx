@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import GameText from './GameText'
+import GameInput from './GameInput'
 import TypewriterOutput from './TypewriterOutput'
-import { colors, spacing, commonStyles } from '../styles/theme'
+import { colors, spacing, commonStyles, fonts } from '../styles/theme'
 
 /**
  * EventDialog - Displays event output text and handles player input for events
@@ -178,9 +180,11 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
         }
     }
 
+    const dialogTitle = `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
+
     return (
         <BaseDialog
-            title={`✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`}
+            title={dialogTitle}
             onClose={handleGlobalInteraction}
             showCloseButton={!needsInput}
             zIndex={3000}
@@ -211,7 +215,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             }}
                             style={{
                                 background: 'rgba(0, 204, 102, 0.1)',
-                                border: '1px solid rgba(0, 204, 102, 0.4)',
+                                border: `1px solid ${colors.border.success}`,
                                 color: colors.primary,
                                 fontSize: '11px',
                                 fontWeight: 'bold',
@@ -225,7 +229,9 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                 gap: '6px'
                             }}
                         >
-                            {showHistory ? '↩ Back to Present' : `📜 View Log (${history.length})`}
+                            <GameText variant="primary" size="xs" weight="bold">
+                                {showHistory ? '↩ Back to Present' : `📜 View Log (${history.length})`}
+                            </GameText>
                         </button>
                     </div>
                 )}
@@ -239,16 +245,12 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             backgroundColor: 'rgba(0, 0, 0, 0.8)',
                             border: `2px dashed ${colors.primary}`,
                             borderRadius: '10px',
-                            color: '#88ffcc',
-                            fontFamily: 'monospace',
-                            fontSize: '15px',
-                            lineHeight: '1.8',
                             flex: 1, // Expand to fill available space
                             overflowY: 'auto',
                             boxShadow: 'inset 0 0 20px rgba(0,0,0,1)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '20px',
+                            gap: spacing.lg,
                             scrollbarWidth: 'thin',
                             scrollbarColor: `${colors.primary} rgba(0,0,0,0.5)`
                         }}
@@ -258,13 +260,17 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                     >
                         {history.map((text, idx) => (
                             <div key={idx} style={{
-                                paddingBottom: idx === history.length - 1 ? '0' : '20px',
-                                borderBottom: idx === history.length - 1 ? 'none' : '1px solid rgba(0, 204, 102, 0.2)',
+                                paddingBottom: idx === history.length - 1 ? '0' : spacing.lg,
+                                borderBottom: idx === history.length - 1 ? 'none' : `1px solid ${colors.border.light}`,
                                 whiteSpace: 'pre',
                                 opacity: idx === history.length - 1 ? 1 : 0.6
                             }}>
-                                <span style={{ color: colors.primary, marginRight: '10px', fontSize: '12px' }}>[{idx + 1}]</span>
-                                {text}
+                                <GameText variant="muted" size="xs" style={{ display: 'inline', marginRight: spacing.sm }}>
+                                    [{idx + 1}]
+                                </GameText>
+                                <GameText variant="success" size="md" style={{ display: 'inline' }}>
+                                    {text}
+                                </GameText>
                             </div>
                         ))}
                     </div>
@@ -278,14 +284,14 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                         }}
                         style={{
                             padding: '20px',
-                            fontSize: '16px',
                             flex: 1, // Expand to fill available space
                             maxHeight: '450px',
                             overflowY: 'auto',
-                            borderWidth: '2px',
-                            borderColor: colors.primary,
+                            border: `2px solid ${colors.primary}`,
                             color: '#88ffcc',
                             whiteSpace: /memory/i.test(event?.type || '') || /memory/i.test(event?.name || '') ? 'pre' : 'pre-wrap',
+                            fontSize: '16px',
+                            fontFamily: fonts.main,
                         }}
                     />
                 )}
@@ -299,16 +305,9 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                         marginTop: spacing.sm,
                     }}>
                         {/* Input Prompt */}
-                        <div style={{
-                            color: colors.primary,
-                            fontWeight: 'bold',
-                            fontSize: '14px',
-                            fontFamily: 'monospace',
-                            textAlign: 'center',
-                            marginBottom: spacing.xs,
-                        }}>
+                        <GameText variant="primary" size="sm" weight="bold" align="center" style={{ marginBottom: spacing.xs }}>
                             {inputPrompt}
-                        </div>
+                        </GameText>
 
                         {/* Choice Buttons */}
                         {inputType === 'choice' && inputOptions.length > 0 && (
@@ -319,7 +318,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             }}>
                                 {inputOptions.map((option, idx) => {
                                     const isSelected = selectedChoice === option.value
-                                    const keyBinding = idx < 9 ? `[${idx + 1}]` : ''
+                                    const keyBinding = idx < 9 ? `[${idx + 1}] ` : ''
 
                                     return (
                                         <GameButton
@@ -330,14 +329,11 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                             style={{
                                                 padding: '14px 20px',
                                                 fontSize: '15px',
-                                                borderColor: isSelected ? colors.primary : '#00cc66',
-                                                backgroundColor: isSelected ? 'rgba(0, 102, 51, 0.6)' : 'rgba(0, 50, 25, 0.4)',
-                                                color: '#88ffcc',
+                                                backgroundColor: isSelected ? 'rgba(0, 102, 51, 0.4)' : 'rgba(0, 50, 25, 0.2)',
                                                 opacity: isSubmitting ? 0.6 : 1,
-                                                cursor: isSubmitting ? 'not-allowed' : 'pointer',
                                             }}
                                         >
-                                            {keyBinding && <span style={{ color: colors.secondary, marginRight: '8px' }}>{keyBinding}</span>}
+                                            <span style={{ color: colors.secondary, marginRight: spacing.sm }}>{keyBinding}</span>
                                             {option.label}
                                         </GameButton>
                                     )
@@ -355,48 +351,33 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                     placeholder="Enter your text here..."
                                     maxLength={500}
                                     style={{
-                                        padding: '12px',
+                                        padding: spacing.md,
                                         backgroundColor: 'rgba(0, 0, 0, 0.7)',
                                         border: `2px solid ${colors.primary}`,
                                         borderRadius: '6px',
-                                        color: '#88ffcc',
-                                        fontFamily: 'monospace',
+                                        color: colors.primary,
+                                        fontFamily: fonts.main,
                                         fontSize: '14px',
                                         minHeight: '100px',
                                         resize: 'vertical',
                                         outline: 'none',
                                     }}
                                 />
-                                <div style={{
-                                    textAlign: 'right',
-                                    fontSize: '12px',
-                                    color: charCountColor,
-                                    fontFamily: 'monospace',
-                                }}>
+                                <GameText variant="muted" size="xs" align="right" style={{ color: charCountColor }}>
                                     {charCount}/{charLimit} characters
-                                </div>
+                                </GameText>
                             </div>
                         )}
 
                         {/* Number Input */}
                         {inputType === 'number' && (
                             <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
-                                <button
+                                <GameButton
                                     onClick={() => setNumberInput(prev => String(Math.max((parseInt(prev) || 0) - 1, event?.min_value || 0)))}
-                                    style={{
-                                        padding: '12px 20px',
-                                        backgroundColor: 'rgba(0, 50, 25, 0.6)',
-                                        border: `2px solid ${colors.primary}`,
-                                        borderRadius: '6px',
-                                        color: colors.primary,
-                                        fontFamily: 'monospace',
-                                        fontSize: '18px',
-                                        fontWeight: 'bold',
-                                        cursor: 'pointer',
-                                    }}
+                                    size="large"
                                 >
                                     -
-                                </button>
+                                </GameButton>
                                 <input
                                     ref={inputRef}
                                     type="number"
@@ -407,33 +388,23 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                     max={event?.max_value}
                                     style={{
                                         flex: 1,
-                                        padding: '12px',
+                                        padding: spacing.md,
                                         backgroundColor: 'rgba(0, 0, 0, 0.7)',
                                         border: `2px solid ${colors.primary}`,
                                         borderRadius: '6px',
-                                        color: '#88ffcc',
-                                        fontFamily: 'monospace',
+                                        color: colors.primary,
+                                        fontFamily: fonts.main,
                                         fontSize: '16px',
                                         textAlign: 'center',
                                         outline: 'none',
                                     }}
                                 />
-                                <button
+                                <GameButton
                                     onClick={() => setNumberInput(prev => String(Math.min((parseInt(prev) || 0) + 1, event?.max_value || 999)))}
-                                    style={{
-                                        padding: '12px 20px',
-                                        backgroundColor: 'rgba(0, 50, 25, 0.6)',
-                                        border: `2px solid ${colors.primary}`,
-                                        borderRadius: '6px',
-                                        color: colors.primary,
-                                        fontFamily: 'monospace',
-                                        fontSize: '18px',
-                                        fontWeight: 'bold',
-                                        cursor: 'pointer',
-                                    }}
+                                    size="large"
                                 >
                                     +
-                                </button>
+                                </GameButton>
                             </div>
                         )}
 
@@ -445,7 +416,9 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                 borderColor: validationSeverity === 'error' ? colors.danger : colors.warning,
                                 textAlign: 'center',
                             }}>
-                                {validationMessage}
+                                <GameText variant={validationSeverity === 'error' ? 'danger' : 'warning'} size="sm">
+                                    {validationMessage}
+                                </GameText>
                             </div>
                         )}
 
@@ -456,11 +429,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                 variant="primary"
                                 disabled={isSubmitting}
                                 style={{
-                                    padding: '14px 24px',
-                                    fontSize: '16px',
                                     marginTop: spacing.sm,
-                                    opacity: isSubmitting ? 0.6 : 1,
-                                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
                                 }}
                             >
                                 {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -469,15 +438,9 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
 
                         {/* Keyboard shortcuts hint */}
                         {inputType === 'choice' && inputOptions.length > 0 && (
-                            <div style={{
-                                textAlign: 'center',
-                                color: colors.text.muted,
-                                fontSize: '12px',
-                                fontStyle: 'italic',
-                                marginTop: spacing.xs,
-                            }}>
+                            <GameText variant="muted" size="xs" align="center" style={{ fontStyle: 'italic', marginTop: spacing.xs }}>
                                 Press 1-{Math.min(inputOptions.length, 9)} to select
-                            </div>
+                            </GameText>
                         )}
                     </div>
                 )}
@@ -497,20 +460,14 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             variant="secondary"
                             disabled={isSubmitting}
                             style={{
-                                padding: '10px 30px',
-                                opacity: isSubmitting ? 0.6 : 1,
-                                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                                padding: '10px 40px',
                             }}
                         >
                             {isSubmitting ? 'Closing...' : 'Close'}
                         </GameButton>
-                        <div style={{
-                            color: colors.text.muted,
-                            fontSize: '13px',
-                            fontStyle: 'italic',
-                        }}>
+                        <GameText variant="muted" size="sm" style={{ fontStyle: 'italic' }}>
                             or click anywhere to continue...
-                        </div>
+                        </GameText>
                     </div>
                 )}
             </div>
