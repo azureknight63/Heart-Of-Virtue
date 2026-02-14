@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import apiEndpoints from '../api/endpoints'
+import { useToast } from '../context/ToastContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
@@ -11,6 +12,7 @@ export default function SkillsPanel({ player, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedCategory, setSelectedCategory] = useState(null)
+  const { error: showError } = useToast()
 
   useEffect(() => {
     fetchSkills()
@@ -45,7 +47,7 @@ export default function SkillsPanel({ player, onClose }) {
       }
     } catch (err) {
       console.error('Failed to learn skill:', err)
-      alert(err.response?.data?.error || 'Failed to learn skill')
+      showError(err.response?.data?.error || 'Failed to learn skill')
     }
   }
 

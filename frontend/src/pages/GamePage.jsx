@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useAudio } from '../context/AudioContext'
+import { useToast } from '../context/ToastContext'
 import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
 import EventDialog from '../components/EventDialog'
@@ -15,6 +16,7 @@ export default function GamePage() {
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
   const { playBGM, playSFX } = useAudio()
   const { triggerTick } = useAutosave(player)
+  const { error: showError } = useToast()
 
   useEffect(() => {
     if (inCombat && combat) {
@@ -228,6 +230,10 @@ export default function GamePage() {
     if (eventQueue.length === 0) {
       setEventHistory([])
     }
+    // Refresh combat status to ensure viable_targets are updated (e.g., after enemies spawn mid-combat)
+    if (inCombat) {
+      fetchCombatStatus()
+    }
   }
 
   // Handle event input submission
@@ -260,7 +266,7 @@ export default function GamePage() {
       const data = await response.json()
 
       if (!data.success) {
-        alert(`Error: ${data.error}`)
+        showError(data.error || 'Event processing failed')
         return
       }
 
@@ -312,20 +318,38 @@ export default function GamePage() {
 
     } catch (err) {
       console.error('Error submitting event input:', err)
-      alert('Failed to submit input. Please try again.')
+      showError('Failed to submit input. Please try again.')
     }
   }
 
   // Handle suggested move click
   const handleSuggestedMoveClick = async (suggestion) => {
     try {
+      // Validate that the target_id from the suggestion exists in current combat state
+      // This guards against stale AI suggestions after enemies spawn/die
+      let targetId = suggestion.target_id
+      if (targetId && targetId.startsWith('enemy_')) {
+        const enemyIds = combat?.enemies?.map(e => e.id) || []
+        if (!enemyIds.includes(targetId)) {
+          console.warn('[DEBUG] Suggestion target_id stale, refreshing combat status...')
+          await fetchCombatStatus()
+          // Use first available enemy as fallback after refresh
+          targetId = combat?.enemies?.[0]?.id || targetId
+        }
+      }
+      
       await performAction('select_move_and_target', {
         move_name: suggestion.move_name,
-        target_id: suggestion.target_id
+        target_id: targetId
       })
       playSFX('ui_confirm')
     } catch (err) {
       console.error('Failed to execute suggested move:', err)
+      // If the move failed due to invalid target, refresh combat status to get updated targets
+      if (err?.response?.status === 400 || err?.message?.includes('target')) {
+        console.log('[DEBUG] Move failed, refreshing combat status to sync targets...')
+        await fetchCombatStatus()
+      }
     }
   }
 

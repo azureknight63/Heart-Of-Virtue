@@ -33,6 +33,10 @@ export default function InteractPanel({
     const [showQuantityInput, setShowQuantityInput] = useState(false)
     const [pendingAction, setPendingAction] = useState(null)
     const historyRef = useRef(null)
+    // Ref to track if we're currently syncing to prevent infinite loops
+    const isSyncingTarget = useRef(false)
+    // Ref to store previous selected target for comparison
+    const prevSelectedTargetRef = useRef(selectedTarget)
 
     useEffect(() => {
         if (location) {
@@ -45,7 +49,8 @@ export default function InteractPanel({
             setTargets(allTargets)
 
             // Update selected target if it's still in the room (to get updated count/desc)
-            if (selectedTarget) {
+            // Use ref to prevent infinite loop - only sync if not already syncing
+            if (selectedTarget && !isSyncingTarget.current) {
                 let updatedTarget = allTargets.find(t => t.id === selectedTarget.id)
 
                 // Fallback: if ID changed (e.g. server reloaded objects), try finding by name and type
@@ -63,7 +68,12 @@ export default function InteractPanel({
                         (updatedTarget.contents?.length !== selectedTarget.contents?.length)
 
                     if (hasChanged) {
+                        isSyncingTarget.current = true
                         setSelectedTarget(updatedTarget)
+                        // Reset the flag after the state update
+                        setTimeout(() => {
+                            isSyncingTarget.current = false
+                        }, 0)
                     }
                 } else {
                     // Target is gone! Clear it so we don't try to interact with it again
@@ -71,6 +81,8 @@ export default function InteractPanel({
                 }
             }
         }
+        // Update the ref for next comparison
+        prevSelectedTargetRef.current = selectedTarget
     }, [location, selectedTarget])
 
     // Automatically close the panel if there is nothing left to interact with

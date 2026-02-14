@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useApi'
 import { saves } from '../api/endpoints'
 import { useAudio } from '../context/AudioContext'
+import { useToast } from '../context/ToastContext'
 
 export default function MainMenuPage() {
     const navigate = useNavigate()
     const { logout } = useAuth()
+    const { warning: showWarning } = useToast()
     const {
         playBGM,
         playSFX,
@@ -139,7 +141,7 @@ export default function MainMenuPage() {
                 // For this implementation, let's treat 'local_autosave' as a special case if we had a sync endpoint.
                 // Assuming cloud is the primary source of truth now.
                 // If the user selects a local save, we warn them or just load if supported.
-                alert("Loading from Local Storage is currently being synchronized with the cloud. Please select a Cloud save for now.")
+                showWarning("Loading from Local Storage is currently being synchronized with the cloud. Please select a Cloud save for now.")
                 // In a full implementation, we'd POST the local data to a 'sync' endpoint.
             } else {
                 await saves.load(saveId)
