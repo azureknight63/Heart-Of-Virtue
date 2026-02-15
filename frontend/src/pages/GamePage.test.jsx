@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamePage from './GamePage';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
+import { useToast } from '../context/ToastContext';
 import { MemoryRouter } from 'react-router-dom';
 
 // Mock the hooks
@@ -18,6 +19,10 @@ vi.mock('../hooks/useApi', () => ({
 
 vi.mock('../context/AudioContext', () => ({
     useAudio: vi.fn(),
+}));
+
+vi.mock('../context/ToastContext', () => ({
+    useToast: vi.fn(),
 }));
 
 vi.mock('../components/RightPanel', () => ({
@@ -130,6 +135,12 @@ describe('GamePage', () => {
             playSFX: vi.fn(),
             playBGM: vi.fn(),
             stopBGM: vi.fn()
+        });
+
+        useToast.mockReturnValue({
+            error: vi.fn(),
+            success: vi.fn(),
+            info: vi.fn()
         });
     });
 
