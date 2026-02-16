@@ -86,23 +86,23 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
         width: '100%',
         maxWidth: '800px',
         backgroundColor: colors.bg.panelDeep,
-        border: `2px solid ${colors.primary}`,
+        border: `2px solid ${colors.secondary}`,
         borderBottom: 'none',
         borderRadius: '12px 12px 0 0',
-        padding: '12px 24px',
+        padding: `${spacing.md} ${spacing.lg}`,
         zIndex: 2500,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        boxShadow: `0 -4px 30px ${colors.primary}44`,
+        boxShadow: `0 -4px 30px ${colors.secondary}44`,
         animation: 'slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <GameText variant="primary" size="lg" weight="bold" style={{ textShadow: `0 0 10px ${colors.primary}88` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.lg }}>
+          <GameText variant="secondary" size="lg" weight="bold" style={{ textShadow: `0 0 10px ${colors.secondary}88` }}>
             ⚔️ VICTORY!
           </GameText>
           {remainingPoints > 0 && (
-            <GameText variant="secondary" size="sm" style={{ animation: 'pulse 2s infinite' }}>
+            <GameText variant="primary" size="sm" style={{ animation: 'pulse 2s infinite' }}>
               ⚠️ {remainingPoints} point{remainingPoints !== 1 ? 's' : ''} to allocate
             </GameText>
           )}
@@ -149,15 +149,15 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
             {/* EXP Section */}
             <div style={{
-              padding: '12px',
-              backgroundColor: colors.bg.panelLight,
+              padding: spacing.md,
+              backgroundColor: colors.bg.panelDeep,
               border: `1px solid ${colors.border.light}`,
               borderRadius: '12px'
             }}>
-              <GameText variant="primary" size="xs" weight="bold" style={{ marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <GameText variant="primary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
                 📈 Experience Gained
               </GameText>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
                 {expEntries.length > 0 ? expEntries.map((e) => (
                   <div key={e.category} style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <GameText variant="muted" size="xs">{e.category}</GameText>
@@ -169,15 +169,15 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
 
             {/* Loot Section */}
             <div style={{
-              padding: '12px',
-              backgroundColor: colors.bg.highlightLight,
+              padding: spacing.md,
+              backgroundColor: colors.bg.panelDeep,
               border: `1px solid ${colors.border.light}`,
               borderRadius: '12px'
             }}>
-              <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
                 🎁 Loot Collected
               </GameText>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
                 {drops.length > 0 ? drops.map((d, idx) => (
                   <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <GameText variant="muted" size="xs">{d.name}</GameText>
@@ -204,13 +204,13 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
 
             {levelUps.map((lu, idx) => (
               <div key={idx} style={{
-                padding: '10px',
-                backgroundColor: colors.bg.panelDeep,
+                padding: spacing.sm,
+                backgroundColor: colors.bg.main,
                 borderRadius: '8px',
                 border: `1px solid ${colors.border.light}`,
                 textAlign: 'center'
               }}>
-                <GameText variant="bright" size="md" weight="bold">
+                <GameText variant="success" size="md" weight="bold">
                   LEVEL {lu.old_level} → <GameText variant="primary">{lu.new_level}</GameText>
                 </GameText>
                 <GameText variant="muted" size="xs">+{lu.points_awarded} Points awarded</GameText>

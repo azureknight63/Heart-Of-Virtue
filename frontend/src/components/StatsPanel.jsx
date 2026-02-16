@@ -1,5 +1,8 @@
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import GameText from './GameText'
+import GamePanel from './GamePanel'
+import { colors, spacing, fonts, shadows } from '../styles/theme'
 
 /**
  * StatsPanel - Detailed view of character attributes, resistances, and status effects
@@ -18,9 +21,9 @@ export default function StatsPanel({ player, onClose }) {
   ]
 
   const getAttributeColor = (current, base) => {
-    if (current < base) return '#ff6666'
-    if (current > base) return '#00ff88'
-    return '#ffff00'
+    if (current < base) return colors.danger
+    if (current > base) return colors.success
+    return colors.gold
   }
 
   const resistance = player.resistance || {}
@@ -28,13 +31,13 @@ export default function StatsPanel({ player, onClose }) {
   const states = player.states || []
 
   const coreStats = [
-    { label: 'HP', val: `${player.hp}/${player.max_hp}`, color: '#ff6666', icon: '❤️' },
-    { label: 'Fatigue', val: `${player.fatigue}/${player.max_fatigue}`, color: '#ffff00', icon: '🔋' },
-    { label: 'Protection', val: player.protection || 0, color: '#00ccff', icon: '🛡️' },
+    { label: 'HP', val: `${player.hp}/${player.max_hp}`, color: colors.danger, icon: '❤️' },
+    { label: 'Fatigue', val: `${player.fatigue}/${player.max_fatigue}`, color: colors.gold, icon: '🔋' },
+    { label: 'Protection', val: player.protection || 0, color: colors.info, icon: '🛡️' },
     { label: 'Level', val: player.level || 1, color: '#cc88ff', icon: '⭐' },
-    { label: 'Attack', val: `${player.attack_damage_min}-${player.attack_damage_max}`, color: '#ffaa00', icon: '⚔️' },
-    { label: 'Accuracy', val: `${player.hit_accuracy}%`, color: '#00ffcc', icon: '🎯' },
-    { label: 'Evasion', val: `${player.evasion_chance}%`, color: '#cccccc', icon: '💨' },
+    { label: 'Attack', val: `${player.attack_damage_min}-${player.attack_damage_max}`, color: colors.secondary, icon: '⚔️' },
+    { label: 'Accuracy', val: `${player.hit_accuracy}%`, color: colors.primary, icon: '🎯' },
+    { label: 'Evasion', val: `${player.evasion_chance}%`, color: colors.text.muted, icon: '💨' },
   ]
 
   return (
@@ -45,43 +48,39 @@ export default function StatsPanel({ player, onClose }) {
       padding="16px"
       zIndex={2000}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
         {/* Core Stats Grid */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-          gap: '8px',
+          gap: spacing.xs,
         }}>
           {coreStats.map((stat, idx) => (
-            <div key={idx} style={{
-              backgroundColor: 'rgba(0,0,0,0.3)',
-              border: `1px solid ${stat.color}44`,
-              borderRadius: '8px',
-              padding: '8px',
+            <GamePanel key={idx} padding="sm" style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               gap: '2px',
-              fontFamily: 'monospace',
+              borderColor: colors.alpha.secondary[30],
             }}>
               <div style={{ fontSize: '16px' }}>{stat.icon}</div>
-              <div style={{ fontSize: '9px', color: '#888', textTransform: 'uppercase' }}>{stat.label}</div>
-              <div style={{ fontSize: '13px', fontWeight: 'bold', color: stat.color }}>{stat.val}</div>
-            </div>
+              <GameText variant="muted" size="xs" style={{ textTransform: 'uppercase' }}>{stat.label}</GameText>
+              <GameText weight="bold" style={{ color: stat.color }}>{stat.val}</GameText>
+            </GamePanel>
           ))}
         </div>
 
         {/* Attributes Section */}
-        <div style={{
-          backgroundColor: 'rgba(255, 170, 0, 0.05)',
-          border: '1px solid rgba(255, 170, 0, 0.2)',
-          borderRadius: '12px',
-          padding: '12px',
-        }}>
-          <div style={{ color: '#ffaa00', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+        <GamePanel
+          style={{
+            backgroundColor: colors.alpha.secondary[10],
+            borderColor: colors.alpha.secondary[30],
+          }}
+        >
+          <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
             Core Attributes
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
+          </GameText>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: spacing.xs }}>
             {attributes.map((attr) => {
               const current = player[attr.key] || 10
               const base = player[attr.key + '_base'] || 10
@@ -91,35 +90,35 @@ export default function StatsPanel({ player, onClose }) {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '6px 10px',
+                  padding: `${spacing.xs} ${spacing.sm}`,
                   backgroundColor: 'rgba(0,0,0,0.2)',
                   borderRadius: '8px',
-                  fontFamily: 'monospace',
+                  fontFamily: fonts.main,
                   cursor: 'help',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                     <span style={{ fontSize: '14px' }}>{attr.icon}</span>
-                    <span style={{ color: '#ccc', fontSize: '12px' }}>{attr.name}</span>
+                    <GameText size="sm">{attr.name}</GameText>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ color, fontWeight: 'bold', fontSize: '14px' }}>{current}</div>
-                    <div style={{ color: '#666', fontSize: '9px' }}>BASE: {base}</div>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+                    <GameText weight="bold" style={{ color }}>{current}</GameText>
+                    <GameText variant="dim" size="xs">BASE: {base}</GameText>
                   </div>
                 </div>
               )
             })}
           </div>
-        </div>
+        </GamePanel>
 
         {/* Resistances & Status Section */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: spacing.md }}>
           {/* Damage Resistances */}
           {Object.entries(resistance).filter(([_, v]) => v !== 1).length > 0 && (
-            <div style={{ padding: '10px', backgroundColor: 'rgba(0, 204, 255, 0.05)', border: '1px solid rgba(0, 204, 255, 0.2)', borderRadius: '12px' }}>
-              <div style={{ color: '#00ccff', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>
+            <GamePanel padding="md" style={{ backgroundColor: colors.alpha.info[10], borderColor: colors.alpha.info[30] }}>
+              <GameText variant="info" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
                 Resistances & Weaknesses
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              </GameText>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
                 {Object.entries(resistance)
                   .filter(([_, value]) => value !== 1)
                   .map(([type, value]) => (
@@ -128,42 +127,41 @@ export default function StatsPanel({ player, onClose }) {
                       backgroundColor: 'rgba(0,0,0,0.2)',
                       borderRadius: '6px',
                       fontSize: '10px',
-                      fontFamily: 'monospace',
-                      color: value > 1 ? '#ff6666' : '#00ccff',
+                      fontFamily: fonts.main,
+                      color: value > 1 ? colors.danger : colors.info,
                     }}>
                       {type.toUpperCase()}: {Math.round(value * 100)}%
                     </div>
                   ))}
               </div>
-            </div>
+            </GamePanel>
           )}
 
           {/* Active Effects */}
-          <div style={{ padding: '10px', backgroundColor: 'rgba(255, 68, 68, 0.05)', border: '1px solid rgba(255, 68, 68, 0.2)', borderRadius: '12px' }}>
-            <div style={{ color: '#ff4444', fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>
+          <GamePanel padding="md" style={{ backgroundColor: colors.alpha.danger[10], borderColor: colors.alpha.danger[30] }}>
+            <GameText variant="danger" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase' }}>
               Active Effects
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            </GameText>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
               {states.length > 0 ? states.map((state, idx) => (
                 <div key={idx} style={{
                   padding: '4px 8px',
                   backgroundColor: 'rgba(255, 0, 0, 0.1)',
                   borderRadius: '6px',
-                  fontSize: '11px',
-                  color: '#ff9999',
                   display: 'flex',
                   justifyContent: 'space-between',
+                  alignItems: 'center',
                 }}>
-                  <span>{state.name}</span>
-                  {state.steps_left && <span style={{ opacity: 0.6, fontSize: '10px' }}>{state.steps_left}T</span>}
+                  <GameText size="sm" style={{ color: '#ff9999' }}>{state.name}</GameText>
+                  {state.steps_left && <GameText variant="dim" size="xs">{state.steps_left}T</GameText>}
                 </div>
-              )) : <div style={{ color: '#666', fontStyle: 'italic', fontSize: '11px' }}>No active status effects</div>}
+              )) : <GameText variant="muted" size="sm" style={{ fontStyle: 'italic' }}>No active status effects</GameText>}
             </div>
-          </div>
+          </GamePanel>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '4px' }}>
-          <GameButton onClick={onClose} variant="secondary" style={{ padding: '8px 20px', fontSize: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: spacing.sm }}>
+          <GameButton onClick={onClose} variant="secondary" size="small">
             CLOSE SHEET
           </GameButton>
         </div>

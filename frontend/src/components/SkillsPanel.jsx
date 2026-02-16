@@ -3,6 +3,9 @@ import apiEndpoints from '../api/endpoints'
 import { useToast } from '../context/ToastContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import GameText from './GameText'
+import GamePanel from './GamePanel'
+import { colors, spacing, fonts, shadows } from '../styles/theme'
 
 /**
  * SkillsPanel - View and learn character skills categorized by discipline
@@ -56,8 +59,10 @@ export default function SkillsPanel({ player, onClose }) {
   if (loading) {
     return (
       <BaseDialog title="⚡ SKILLS" onClose={onClose} zIndex={2000}>
-        <div style={{ padding: '40px', textAlign: 'center', color: '#888', fontStyle: 'italic' }}>
-          Accessing ancient scrolls...
+        <div style={{ padding: spacing.xxl, textAlign: 'center' }}>
+          <GameText variant="muted" style={{ fontStyle: 'italic' }}>
+            Accessing ancient scrolls...
+          </GameText>
         </div>
       </BaseDialog>
     )
@@ -66,8 +71,10 @@ export default function SkillsPanel({ player, onClose }) {
   if (error || !skillsData) {
     return (
       <BaseDialog title="⚡ SKILLS" onClose={onClose} zIndex={2000}>
-        <div style={{ padding: '20px', color: '#ff4444', textAlign: 'center' }}>
-          ⚠️ {error || 'No skill data available'}
+        <div style={{ padding: spacing.xl, textAlign: 'center' }}>
+          <GameText variant="danger">
+            ⚠️ {error || 'No skill data available'}
+          </GameText>
         </div>
       </BaseDialog>
     )
@@ -84,23 +91,22 @@ export default function SkillsPanel({ player, onClose }) {
       padding="16px"
       zIndex={2000}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minHeight: '300px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, minHeight: '300px' }}>
         {/* Discipline Tabs */}
         <div style={{
           display: 'flex',
-          gap: '6px',
+          gap: spacing.xs,
           overflowX: 'auto',
-          paddingBottom: '6px',
-          borderBottom: '1px solid rgba(255, 255, 0, 0.1)',
+          paddingBottom: spacing.xs,
+          borderBottom: `1px solid ${colors.border.light}`,
         }}>
           {categories.map(cat => (
             <GameButton
               key={cat}
               onClick={() => setSelectedCategory(cat)}
               variant={selectedCategory === cat ? 'primary' : 'secondary'}
+              size="small"
               style={{
-                padding: '4px 10px',
-                fontSize: '11px',
                 whiteSpace: 'nowrap',
                 minWidth: '70px',
               }}
@@ -112,56 +118,54 @@ export default function SkillsPanel({ player, onClose }) {
 
         {/* XP Header */}
         {selectedCategory && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            backgroundColor: 'rgba(0, 255, 0, 0.05)',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: '1px solid rgba(0, 255, 0, 0.1)',
-          }}>
-            <div style={{ color: '#aaa', fontSize: '10px', textTransform: 'uppercase' }}>Available {selectedCategory} XP</div>
-            <div style={{ color: '#00ff88', fontSize: '16px', fontWeight: 'bold', fontFamily: 'monospace' }}>
+          <GamePanel
+            padding="sm"
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'rgba(0, 255, 136, 0.05)',
+              borderColor: `${colors.success}44`,
+            }}
+          >
+            <GameText variant="muted" size="xs" style={{ textTransform: 'uppercase' }}>Available {selectedCategory} XP</GameText>
+            <GameText variant="success" size="lg" weight="bold">
               {skill_exp[selectedCategory] || 0} XP
-            </div>
-          </div>
+            </GameText>
+          </GamePanel>
         )}
 
         {/* Skills Grid/List */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: '12px',
+          gap: spacing.md,
           overflowY: 'auto',
           maxHeight: '45vh',
-          padding: '4px',
+          padding: spacing.xs,
         }}>
           {selectedCategory && skill_tree[selectedCategory]?.map((skill, idx) => (
-            <div key={idx} style={{
+            <GamePanel key={idx} padding="md" style={{
               backgroundColor: skill.is_known ? 'rgba(0, 255, 136, 0.05)' : 'rgba(0,0,0,0.2)',
-              border: `1px solid ${skill.is_known ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-              borderRadius: '10px',
-              padding: '12px',
+              borderColor: skill.is_known ? `${colors.success}66` : colors.border.light,
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: spacing.sm,
               transition: 'all 0.2s',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{
-                    color: skill.is_known ? '#00ff88' : '#ffeeaa',
-                    fontWeight: 'bold',
-                    fontSize: '14px',
-                    fontFamily: 'monospace'
-                  }}>
+                  <GameText
+                    variant={skill.is_known ? 'success' : 'primary'}
+                    weight="bold"
+                    size="md"
+                  >
                     {skill.name}
-                  </span>
+                  </GameText>
                   {skill.is_known && (
-                    <span style={{ color: '#00ff88', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                    <GameText variant="success" size="xs" weight="bold" style={{ textTransform: 'uppercase' }}>
                       ✓ Learned
-                    </span>
+                    </GameText>
                   )}
                 </div>
                 {!skill.is_known && (
@@ -169,40 +173,36 @@ export default function SkillsPanel({ player, onClose }) {
                     onClick={() => handleLearn(skill.name, selectedCategory)}
                     disabled={!skill.can_learn}
                     variant={skill.can_learn ? 'primary' : 'secondary'}
-                    style={{ padding: '4px 10px', fontSize: '10px' }}
+                    size="small"
                   >
                     LEARN ({skill.required_exp})
                   </GameButton>
                 )}
               </div>
 
-              <div style={{
-                color: '#888',
-                fontSize: '12px',
-                lineHeight: '1.4',
-                fontStyle: 'italic',
-                flex: 1,
-              }}>
+              <GameText variant="muted" size="sm" style={{ fontStyle: 'italic', flex: 1, lineHeight: '1.4' }}>
                 {skill.description}
-              </div>
+              </GameText>
 
               {!skill.is_known && !skill.can_learn && (
-                <div style={{ color: '#ff4444', fontSize: '10px', fontFamily: 'monospace' }}>
+                <GameText variant="danger" size="xs">
                   Requires {skill.required_exp} {selectedCategory} XP
-                </div>
+                </GameText>
               )}
-            </div>
+            </GamePanel>
           ))}
 
           {selectedCategory && (!skill_tree[selectedCategory] || skill_tree[selectedCategory].length === 0) && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: '#666', fontStyle: 'italic' }}>
-              No skills currently available in this discipline.
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: spacing.xxl }}>
+              <GameText variant="muted" style={{ fontStyle: 'italic' }}>
+                No skills currently available in this discipline.
+              </GameText>
             </div>
           )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '4px' }}>
-          <GameButton onClick={onClose} variant="secondary" style={{ padding: '8px 20px', fontSize: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: spacing.sm }}>
+          <GameButton onClick={onClose} variant="secondary" size="small">
             CLOSE BOOK
           </GameButton>
         </div>

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
+import { colors, spacing, shadows, fonts } from '../styles/theme';
+import GameText from './GameText';
 
 // Helper to calculate torus path
 const describeArc = (x, y, radius, startAngle, endAngle) => {
@@ -25,15 +26,13 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
   const getGlowStyle = (move) => {
     if (!move) return {}; // No glow
     const cat = move.category || "Miscellaneous";
-    // red=Attack, blue=Maneuver, white=Misc, purple=Special, teal=Supernatural
-    // Also ensuring border color matches the glow
     switch (cat) {
-      case "Attack": return { boxShadow: "0 0 15px 5px rgba(220, 38, 38, 0.6)", borderColor: "#ef4444" }; // Red
-      case "Maneuver": return { boxShadow: "0 0 15px 5px rgba(37, 99, 235, 0.6)", borderColor: "#3b82f6" }; // Blue
-      case "Special": return { boxShadow: "0 0 15px 5px rgba(147, 51, 234, 0.6)", borderColor: "#a855f7" }; // Purple
-      case "Supernatural": return { boxShadow: "0 0 15px 5px rgba(13, 148, 136, 0.6)", borderColor: "#14b8a6" }; // Teal
+      case "Attack": return { boxShadow: `0 0 15px 5px ${colors.alpha.danger[60]}`, borderColor: colors.danger };
+      case "Maneuver": return { boxShadow: `0 0 15px 5px ${colors.alpha.primary[60]}`, borderColor: colors.primary };
+      case "Special": return { boxShadow: `0 0 15px 5px ${colors.alpha.special[60]}`, borderColor: colors.special };
+      case "Supernatural": return { boxShadow: `0 0 15px 5px ${colors.alpha.info[60]}`, borderColor: colors.info };
       case "Miscellaneous":
-      default: return { boxShadow: "0 0 15px 5px rgba(255, 255, 255, 0.6)", borderColor: "#ffffff" }; // White
+      default: return { boxShadow: `0 0 15px 5px ${colors.text.bright}99`, borderColor: colors.text.bright };
     }
   };
 
@@ -74,8 +73,12 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
   // Normal: border-l-[6px] border-r-[6px] border-b-[8px]
   // Full: Reduce to ~33% size
   const triangleClass = isFullMode
-    ? "absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent border-b-yellow-400 filter drop-shadow-sm opacity-90"
-    : "absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent border-b-yellow-400 filter drop-shadow opacity-90";
+    ? "absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90"
+    : "absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent filter drop-shadow opacity-90";
+
+  const triangleStyle = {
+    borderBottomColor: colors.secondary
+  };
 
   // Animation styling
   const getAnimationStyle = () => {
@@ -127,16 +130,19 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
   };
 
   return (
-    <div className="relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu bg-gray-900 border-2"
+    <div className="relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-2"
       style={{
         ...glowStyle,
         ...getAnimationStyle(),
-        // If no move prepared, default border color is handled by className or style override
-        borderColor: glowStyle.borderColor || '#4b5563'
+        backgroundColor: colors.bg.panelDeep,
+        borderColor: glowStyle.borderColor || colors.border.main
       }}
     >
       {/* Background fill for circle */}
-      <div className={`absolute inset-0 rounded-full opacity-80 ${isPlayer ? 'bg-cyan-900' : 'bg-red-900'}`}></div>
+      <div
+        className="absolute inset-0 rounded-full opacity-80"
+        style={{ backgroundColor: isPlayer ? colors.alpha.primary[20] : colors.alpha.danger[20] }}
+      ></div>
 
       {/* Inner Torus (HP/Fatigue) */}
       <svg className="absolute inset-0 w-full h-full p-[2px]" viewBox="0 0 100 100" style={{ transform: 'rotate(0deg)' }}>
@@ -193,7 +199,7 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
         style={{ transform: `rotate(${facing}deg)` }}
       >
         {/* Triangle positioned at top center */}
-        <div className={triangleClass} />
+        <div className={triangleClass} style={triangleStyle} />
       </div>
 
       {/* Content Label - Hide on full mode if obscured/too small */}
@@ -220,19 +226,19 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
         <div className="absolute inset-[-12px] pointer-events-none z-20">
           <svg className="w-full h-full animate-[spin_4s_linear_infinite]" viewBox="0 0 100 100">
             {/* Outer circle */}
-            <circle cx="50" cy="50" r="45" fill="none" stroke="#ffaa00" strokeWidth="2" strokeDasharray="10 5" opacity="0.8" />
+            <circle cx="50" cy="50" r="45" fill="none" stroke={colors.secondary} strokeWidth="2" strokeDasharray="10 5" opacity="0.8" />
 
             {/* Reticle lines */}
-            <line x1="50" y1="5" x2="50" y2="20" stroke="#ffaa00" strokeWidth="3" />
-            <line x1="50" y1="80" x2="50" y2="95" stroke="#ffaa00" strokeWidth="3" />
-            <line x1="5" y1="50" x2="20" y2="50" stroke="#ffaa00" strokeWidth="3" />
-            <line x1="80" y1="50" x2="95" y2="50" stroke="#ffaa00" strokeWidth="3" />
+            <line x1="50" y1="5" x2="50" y2="20" stroke={colors.secondary} strokeWidth="3" />
+            <line x1="50" y1="80" x2="50" y2="95" stroke={colors.secondary} strokeWidth="3" />
+            <line x1="5" y1="50" x2="20" y2="50" stroke={colors.secondary} strokeWidth="3" />
+            <line x1="80" y1="50" x2="95" y2="50" stroke={colors.secondary} strokeWidth="3" />
           </svg>
 
           {/* Inner pulsating crosshair */}
-          <div className="absolute inset-0 flex items-center justify-center animate-pulse">
-            <div className="w-[110%] h-[1px] bg-[#ffaa00] opacity-60" />
-            <div className="w-[1px] h-[110%] bg-[#ffaa00] opacity-60 absolute" />
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+            <div style={{ width: '110%', height: '1px', backgroundColor: colors.secondary, opacity: 0.6 }} />
+            <div style={{ width: '1px', height: '110%', backgroundColor: colors.secondary, opacity: 0.6, position: 'absolute' }} />
           </div>
         </div>
       )}
@@ -326,21 +332,31 @@ export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, disp
   const renderGrid = () => {
     if (tab === 'enemies') {
       return (
-        <div className="p-4 overflow-y-auto h-full">
-          <div className="space-y-2">
+        <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
             {combat.enemies?.map((enemy, idx) => (
-              <div key={idx} className="bg-[rgba(255,68,68,0.1)] border border-red-600 rounded p-2">
-                <div className="flex justify-between items-start">
+              <div key={idx} style={{
+                backgroundColor: colors.alpha.danger[10],
+                border: `1px solid ${colors.alpha.danger[40]}`,
+                borderRadius: '4px',
+                padding: spacing.sm
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                   <div>
-                    <div className="text-orange font-bold text-sm">{enemy.name}</div>
-                    <div className="text-xs text-orange mt-1">HP: {enemy.hp} / {enemy.max_hp}</div>
+                    <GameText variant="secondary" weight="bold" size="sm">{enemy.name}</GameText>
+                    <GameText variant="secondary" size="xs" style={{ marginTop: spacing.xs }}>
+                      HP: {enemy.hp} / {enemy.max_hp}
+                    </GameText>
                   </div>
                   <StatusEffectsIconPanel effects={enemy.status_effects} />
                 </div>
-                <div className="hp-bar mt-1">
+                <div className="hp-bar" style={{ marginTop: spacing.xs }}>
                   <div
-                    className="h-full bg-gradient-to-r from-[#ff4444] to-[#ffaa44]"
-                    style={{ width: `${(enemy.hp / enemy.max_hp) * 100}%` }}
+                    style={{
+                      height: '100%',
+                      background: `linear-gradient(to right, ${colors.danger}, ${colors.secondary})`,
+                      width: `${(enemy.hp / enemy.max_hp) * 100}%`
+                    }}
                   ></div>
                 </div>
               </div>
@@ -418,25 +434,24 @@ export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, disp
     })
 
     return (
-      <div className="relative w-full h-full bg-gray-950 overflow-hidden">
+      <div style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden' }}>
         {/* Grid Background Layer */}
-        <div
-          className="absolute inset-0 grid gap-px p-2"
-          style={{
-            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-            gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))` // Explicit rows for sizing
-          }}
-        >
-          {Array(totalCells).fill(null).map((_, idx) => {
-            // Just render empty cells for the grid lines
-            return (
-              <div key={idx} className="bg-[rgba(255,255,255,0.03)] rounded-sm"></div>
-            )
-          })}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'grid',
+          gap: '1px',
+          padding: spacing.sm,
+          gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`
+        }}>
+          {Array(totalCells).fill(null).map((_, idx) => (
+            <div key={idx} style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }}></div>
+          ))}
         </div>
 
         {/* Entity Layer (Overlay) */}
-        <div className="absolute inset-0 p-2 pointer-events-none">
+        <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
           {entitiesToRender.map((item, idx) => {
             const entityId = item.entity.id;
 
@@ -489,8 +504,13 @@ export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, disp
             return (
               <div
                 key={`${item.entity.id || idx}-${item.isPlayer ? 'player' : 'enemy'}`}
-                className="absolute flex items-center justify-center transition-all duration-500 ease-in-out will-change-[top,left]"
                 style={{
+                  position: 'absolute',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.5s ease-in-out',
+                  willChange: 'top, left',
                   ...item.style,
                   ...transformStyle
                 }}

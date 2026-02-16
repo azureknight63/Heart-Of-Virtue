@@ -230,7 +230,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             }}
                         >
                             <GameText variant="primary" size="xs" weight="bold">
-                                {showHistory ? '↩ Back to Present' : `📜 View Log (${history.length})`}
+                                {showHistory ? '↩ Back' : `📜 Log (${history.length})`}
                             </GameText>
                         </button>
                     </div>
@@ -241,18 +241,15 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                     <div
                         onClick={(e) => e.stopPropagation()}
                         style={{
-                            padding: '20px',
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            border: `2px dashed ${colors.primary}`,
+                            padding: spacing.md,
+                            backgroundColor: colors.bg.panelDeep,
+                            border: `2px dashed ${colors.border.light}`,
                             borderRadius: '10px',
-                            flex: 1, // Expand to fill available space
+                            flex: 1,
                             overflowY: 'auto',
-                            boxShadow: 'inset 0 0 20px rgba(0,0,0,1)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: spacing.lg,
-                            scrollbarWidth: 'thin',
-                            scrollbarColor: `${colors.primary} rgba(0,0,0,0.5)`
+                            gap: spacing.md,
                         }}
                         ref={(el) => {
                             if (el) el.scrollTop = el.scrollHeight;
@@ -283,15 +280,14 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             if (needsInput) setShowInput(true)
                         }}
                         style={{
-                            padding: '20px',
-                            flex: 1, // Expand to fill available space
+                            padding: spacing.lg,
+                            flex: 1,
                             maxHeight: '450px',
                             overflowY: 'auto',
-                            border: `2px solid ${colors.primary}`,
-                            color: '#88ffcc',
+                            border: `2px solid ${colors.secondary}`,
+                            color: colors.success,
                             whiteSpace: /memory/i.test(event?.type || '') || /memory/i.test(event?.name || '') ? 'pre' : 'pre-wrap',
                             fontSize: '16px',
-                            fontFamily: fonts.main,
                         }}
                     />
                 )}
@@ -352,10 +348,10 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                     maxLength={500}
                                     style={{
                                         padding: spacing.md,
-                                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                                        border: `2px solid ${colors.primary}`,
+                                        backgroundColor: colors.bg.panelDeep,
+                                        border: `2px solid ${colors.border.light}`,
                                         borderRadius: '6px',
-                                        color: colors.primary,
+                                        color: colors.text.main,
                                         fontFamily: fonts.main,
                                         fontSize: '14px',
                                         minHeight: '100px',
@@ -389,10 +385,10 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                                     style={{
                                         flex: 1,
                                         padding: spacing.md,
-                                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                                        border: `2px solid ${colors.primary}`,
+                                        backgroundColor: colors.bg.panelDeep,
+                                        border: `2px solid ${colors.border.light}`,
                                         borderRadius: '6px',
-                                        color: colors.primary,
+                                        color: colors.text.main,
                                         fontFamily: fonts.main,
                                         fontSize: '16px',
                                         textAlign: 'center',

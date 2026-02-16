@@ -1,16 +1,26 @@
+import { colors, spacing, fonts } from '../styles/theme'
+import GameText from './GameText'
+
 export default function LoadingScreen() {
   return (
-    <div className="w-screen h-screen bg-dark-900 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-lime mb-8 animate-pulse-glow">
+    <div style={{
+      width: '100vw',
+      height: '100vh',
+      backgroundColor: colors.bg.main,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <GameText variant="primary" weight="bold" style={{ fontSize: '3rem', marginBottom: spacing.xl, animation: 'pulse-glow 2s infinite' }}>
           Heart of Virtue
-        </h1>
-        <div className="flex justify-center items-center gap-2 mb-8">
-          <div className="w-3 h-3 bg-lime rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-          <div className="w-3 h-3 bg-lime rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-          <div className="w-3 h-3 bg-lime rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+        </GameText>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xl }}>
+          <div style={{ width: '12px', height: '12px', backgroundColor: colors.secondary, borderRadius: '50%', animation: 'bounce 1s infinite', animationDelay: '0s' }}></div>
+          <div style={{ width: '12px', height: '12px', backgroundColor: colors.secondary, borderRadius: '50%', animation: 'bounce 1s infinite', animationDelay: '0.2s' }}></div>
+          <div style={{ width: '12px', height: '12px', backgroundColor: colors.secondary, borderRadius: '50%', animation: 'bounce 1s infinite', animationDelay: '0.4s' }}></div>
         </div>
-        <p className="text-cyan text-sm">Initializing game world...</p>
+        <GameText variant="info" size="sm">Initializing game world...</GameText>
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { colors } from '../styles/theme'
+import { colors, spacing, shadows, fonts } from '../styles/theme'
 
 export default function StatusEffectsIconPanel({ effects = [], vertical = false }) {
     const [hoveredEffect, setHoveredEffect] = useState(null)
@@ -25,11 +25,11 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
 
     const getEffectColor = (type) => {
         switch (type?.toLowerCase()) {
-            case 'buff': return colors.primary
+            case 'buff': return colors.success
             case 'debuff': return colors.danger
-            case 'ailment': return '#ffaa00'
-            case 'passive': return colors.text.highlight
-            default: return colors.text.highlight
+            case 'ailment': return colors.gold
+            case 'passive': return colors.info
+            default: return colors.primary
         }
     }
 
@@ -37,9 +37,9 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
         <div style={{
             display: 'flex',
             flexDirection: vertical ? 'column' : 'row',
-            gap: '4px',
+            gap: spacing.xs,
             justifyContent: 'center',
-            marginBottom: vertical ? '0' : '8px',
+            marginBottom: vertical ? '0' : spacing.sm,
             position: 'relative',
             zIndex: 100
         }}>
@@ -74,17 +74,18 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                             bottom: '100%',
                             left: '50%',
                             transform: 'translateX(-50%)',
-                            marginBottom: '8px',
-                            backgroundColor: '#1a1a1a',
+                            marginBottom: spacing.sm,
+                            backgroundColor: colors.bg.panelDeep,
                             border: `1.5px solid ${getEffectColor(effect.type)}`,
                             borderRadius: '6px',
-                            padding: '8px',
+                            padding: spacing.sm,
                             width: '180px',
                             boxShadow: `0 4px 15px rgba(0, 0, 0, 0.8), 0 0 10px ${getEffectColor(effect.type)}44`,
-                            color: '#fff',
+                            color: colors.text.main,
                             zIndex: 110,
                             pointerEvents: 'none',
-                            textAlign: 'left'
+                            textAlign: 'left',
+                            fontFamily: fonts.main,
                         }}>
                             <div style={{
                                 fontWeight: 'bold',

@@ -15,6 +15,51 @@ export const colors = {
     warning: '#ffaa00',
     danger: '#ff4444',
     info: '#00ccff',
+    special: '#a855f7',
+
+    // Pre-computed Alpha Variants (Performance Optimization)
+    alpha: {
+        primary: {
+            10: '#00ff881A',
+            20: '#00ff8833',
+            30: '#00ff884D',
+            40: '#00ff8866',
+            60: '#00ff8899',
+            80: '#00ff88CC',
+        },
+        secondary: {
+            10: '#ffaa001A',
+            20: '#ffaa0033',
+            30: '#ffaa004D',
+            40: '#ffaa0066',
+            60: '#ffaa0099',
+            80: '#ffaa00CC',
+        },
+        danger: {
+            10: '#ff44441A',
+            20: '#ff444433',
+            30: '#ff44444D',
+            40: '#ff444466',
+            60: '#ff444499',
+            80: '#ff4444CC',
+        },
+        info: {
+            10: '#00ccff1A',
+            20: '#00ccff33',
+            30: '#00ccff4D',
+            40: '#00ccff66',
+            60: '#00ccff99',
+            80: '#00ccffCC',
+        },
+        special: {
+            10: '#a855f71A',
+            20: '#a855f733',
+            30: '#a855f74D',
+            40: '#a855f766',
+            60: '#a855f799',
+            80: '#a855f7CC',
+        },
+    },
 
     // Neutral / Background Colors
     text: {

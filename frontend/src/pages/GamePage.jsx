@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
+import { colors, spacing, fonts } from '../styles/theme'
+import GameText from '../components/GameText'
 import { useAudio } from '../context/AudioContext'
 import { useToast } from '../context/ToastContext'
 import LeftPanel from '../components/LeftPanel'
@@ -312,8 +314,17 @@ export default function GamePage() {
   // Loading state
   if ((playerLoading && !player) || (worldLoading && !location)) {
     return (
-      <div className="w-screen h-screen bg-dark-900 flex items-center justify-center">
-        <p className="text-lime animate-pulse-glow">Loading your adventure...</p>
+      <div style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: colors.bg.main,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <GameText variant="primary" size="lg" style={{ animation: 'pulse-glow 2s infinite' }}>
+          Loading your adventure...
+        </GameText>
       </div>
     )
   }
@@ -361,7 +372,15 @@ export default function GamePage() {
   }
 
   return (
-    <div className="w-screen h-screen bg-dark-900 flex gap-2.5 p-2.5 overflow-hidden">
+    <div style={{
+      width: '100vw',
+      height: '100vh',
+      backgroundColor: colors.bg.main,
+      display: 'flex',
+      gap: spacing.md,
+      padding: spacing.sm,
+      overflow: 'hidden'
+    }}>
       {/* Left Panel - Narrative & Controls */}
       <LeftPanel
         player={player}

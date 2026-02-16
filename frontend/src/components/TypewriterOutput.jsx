@@ -1,6 +1,6 @@
 import React from 'react'
 import useTypewriter from '../hooks/useTypewriter'
-import { colors } from '../styles/theme'
+import { colors, spacing, fonts } from '../styles/theme'
 
 /**
  * TypewriterOutput - Reusable component for displaying text with a typewriter effect
@@ -27,12 +27,12 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
         <div
             onClick={finishImmediately}
             style={{
-                padding: '12px',
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                border: `1px solid ${colors.secondary}`,
+                padding: spacing.md,
+                backgroundColor: colors.bg.panelDeep,
+                border: `1px solid ${colors.border.light}`,
                 borderRadius: '8px',
-                color: colors.gold,
-                fontFamily: 'monospace',
+                color: colors.text.main,
+                fontFamily: fonts.main,
                 fontSize: '14px',
                 lineHeight: '1.6',
                 whiteSpace: 'pre-wrap',
@@ -45,7 +45,7 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
             {formatter ? formatter(displayedText) : displayedText}
             {!isComplete && (
                 <span style={{
-                    borderRight: `3px solid ${colors.primary}`,
+                    borderRight: `3px solid ${colors.secondary}`,
                     marginLeft: '4px',
                     animation: 'blink 1s step-end infinite'
                 }}>&nbsp;</span>
