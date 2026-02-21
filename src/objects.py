@@ -275,14 +275,19 @@ class Container(Object):
             self.description = f"A {self.nickname}. It's empty. Very sorry."
 
     def unlock(self):
-        """Optimized unlock method with early return and f-string formatting"""
+        """Optimized unlock method with early return and f-string formatting. Supports both direct object reference and nickname-based key matching."""
         if self.state != "closed":
             print("Jean can't unlock something that's already open!")
             return
 
-        # Use any() for more efficient key search
+        # Search for a matching key (either by direct object reference or by nickname)
         matching_key = next((key for key in self.player.inventory
-                           if hasattr(key, "lock") and key.lock == self), None)
+                           if hasattr(key, "lock") and (
+                               key.lock == self or 
+                               (hasattr(key, "lock_nickname") and 
+                                hasattr(self, "nickname") and 
+                                key.lock_nickname == self.nickname)
+                           )), None)
 
         if matching_key:
             self.locked = False

@@ -301,7 +301,7 @@ class Ch01PostRumblerRep(Event):
             # Set up event dialog to announce the new enemies
             self.needs_input = True
             self.input_type = "choice"
-            self.input_prompt = f"The ground quivers as {len(new_enemies)} more rock creatures emerge!"
+            self.input_prompt = "Continue"
             self.input_options = [{"value": "continue", "label": "Continue"}]
             self.description = f"{len(new_enemies)} additional Rock Rumblers join the fray!"
             
@@ -370,10 +370,9 @@ class Ch01PostRumbler2(Event):
 class Ch01PostRumbler3(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_PostRumbler3'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params, combat_effect=True)
-        self.needs_input = True
         self.input_type = "choice"
         self.input_prompt = "Which should Jean choose?"
-        self.description = "Jean would like to thank the strange rock-man, but he's not out of danger just yet."
+        self.description = "Jean must decide his next move quickly."
         self.input_options = [
             {"value": "a", "label": "I'm not some filthy coward! (Help rock-man)"},
             {"value": "b", "label": "It can't be helped. I must survive! (Make a break for it)"},
@@ -381,9 +380,8 @@ class Ch01PostRumbler3(Event):
         ]
 
     def check_combat_conditions(self):
-        # This event is added manually, so it runs when it's the player's turn or start of beat
-        if len(self.player.combat_list) == 0:
-            self.pass_conditions_to_process()
+        # This event is added manually by Ch01PostRumbler2, so it triggers immediately
+        self.pass_conditions_to_process()
 
     def process(self, user_input=None):
         if not user_input:
@@ -392,6 +390,7 @@ class Ch01PostRumbler3(Event):
                    "\nWhile he wouldn't feel right abandoning the rock-man to an ill fate, now"
                    "\nis the perfect time to make a break for the hole that was opened in the"
                    "\nchamber wall. There isn't enough time to consider alternatives.")
+            self.needs_input = True
             return
 
         self.needs_input = False

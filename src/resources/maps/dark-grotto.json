@@ -131,7 +131,7 @@
                         "opened"
                     ],
                     "revealed": false,
-                    "locked": false,
+                    "locked": true,
                     "state": "closed",
                     "merchant": "",
                     "allowed_item_types": [
@@ -143,28 +143,22 @@
                     "inventory": [
                         {
                             "__class__": "Gold",
+                            "__module": "items",
+                            "props": {
+                                "amt": 75
+                            }
+                        },
+                        {
+                            "__class__": "Consumable",
                             "__module__": "items",
                             "props": {
-                                "amt": 68,
-                                "maintype": "Gold",
-                                "name": "Gold",
-                                "description": "A small pouch containing 68 gold pieces.",
-                                "value": 68,
-                                "type": "Currency",
-                                "subtype": "Gold",
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "merchandise": false,
-                                "discovery_message": "a small pouch of gold.",
-                                "announce": "There's a small pouch of gold on the ground.",
-                                "interactions": [],
-                                "skills": null,
-                                "owner": null,
-                                "equip_states": [],
-                                "add_resistance": {},
-                                "add_status_resistance": {},
-                                "gives_exp": false,
-                                "count": 68
+                                "name": "Dried Rations",
+                                "description": "Preserved travel rations, still edible despite their age.",
+                                "value": 5,
+                                "weight": 0.5,
+                                "maintype": "Consumable",
+                                "subtype": "Food",
+                                "count": 3
                             }
                         }
                     ],
@@ -225,7 +219,34 @@
         ],
         "block_exit": [],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Key",
+                "__module__": "items",
+                "props": {
+                    "name": "Iron Key",
+                    "description": "A simple iron key, tarnished with age. It bears the faint inscription 'A.T.' on the bow.",
+                    "value": 0,
+                    "weight": 0.1,
+                    "maintype": "Special",
+                    "subtype": "Key",
+                    "lock_nickname": "wooden chest",
+                    "hidden": true,
+                    "hide_factor": 0,
+                    "discovery_message": "a hidden iron key!",
+                    "merchandise": false,
+                    "interactions": [
+                        "drop"
+                    ],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false
+                }
+            }
+        ],
         "npcs": [],
         "objects": [],
         "symbol": ""
@@ -711,36 +732,58 @@
             "southwest"
         ],
         "events": [],
-        "items": [
+        "items": [],
+        "npcs": [],
+        "objects": [
             {
-                "__class__": "Gold",
-                "__module__": "items",
+                "__class__": "Container",
+                "__module__": "objects",
                 "props": {
-                    "amt": 1,
-                    "maintype": "Gold",
-                    "name": "Gold",
-                    "description": "A small pouch containing 1 gold piece.",
-                    "value": 1,
-                    "type": "Currency",
-                    "subtype": "Gold",
-                    "hidden": false,
+                    "nickname": "steel lockbox",
+                    "name": "Steel Lockbox",
+                    "description": "A small steel lockbox, partially buried in rubble. Its surface is etched with protective runes.",
+                    "idle_message": "A steel lockbox is partially hidden among the rocks.",
+                    "locked": false,
+                    "state": "closed",
+                    "hidden": true,
                     "hide_factor": 0,
-                    "merchandise": false,
-                    "discovery_message": "a small pouch of gold.",
-                    "announce": "There's a small pouch of gold on the ground.",
-                    "interactions": [],
-                    "skills": null,
-                    "owner": null,
-                    "equip_states": [],
-                    "add_resistance": {},
-                    "add_status_resistance": {},
-                    "gives_exp": false,
-                    "count": 12
+                    "discovery_message": "a hidden steel lockbox!",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "merchant": "",
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "DullMedallion",
+                            "__module__": "items",
+                            "props": {
+                                "enchantment_level": 2
+                            }
+                        }
+                    ],
+                    "keywords": [
+                        "open",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "announce": "A steel lockbox is partially hidden among the rocks."
                 }
             }
         ],
-        "npcs": [],
-        "objects": [],
         "symbol": ""
     },
     "(5, 4)": {
@@ -872,6 +915,35 @@
                                 "add_status_resistance": {},
                                 "gives_exp": false,
                                 "count": 133
+                            }
+                        },
+                        {
+                            "__class__": "Book",
+                            "__module__": "items",
+                            "props": {
+                                "name": "Tattered Journal",
+                                "description": "A water-stained leather journal, its pages brittle and faded. The merchant's final thoughts are barely legible.",
+                                "value": 0,
+                                "weight": 0.5,
+                                "maintype": "Book",
+                                "subtype": "Book",
+                                "discovery_message": "a tattered journal!",
+                                "text": "Day 12: The vein of crystals in this cavern is richer than I hoped! The luminescent stones fetch a fine price in Thornhaven. I'll fill my pack and make my fortune.\n\nDay 14: Tremors today. The Rock Rumblers are migrating through these tunnels. I hid while they passed, but the shaking caused a collapse behind me. No way back.\n\nDay 18: Found a wooden chest near the eastern alcove, left by some previous soul. Locked tight. I managed to hide the key beneath some loose stones near the altar—a natural landmark in this wretched cave. If anyone finds this, search there.\n\nDay 24: Hunger gnaws. I spotted another cache in the southern alcove, but I'm too weak to reach it. The Rumblers' cave-in has left me stranded.\n\nDay 29: The cold is unbearable. I won't last much longer. To whoever reads this: the chest holds supplies. The key is beneath the altar stones. Search carefully, and may the Three guide you better than they did me.\n\n— Aldric, Gem Prospector of Thornhaven",
+                                "merchandise": false,
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "type": "Book",
+                                "interactions": [
+                                    "drop",
+                                    "read"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "announce": "There's a Tattered Journal here."
                             }
                         },
                         {

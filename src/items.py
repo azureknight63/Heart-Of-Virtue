@@ -781,10 +781,11 @@ class Commodity(Special):
 class Key(Special):
     lock: Optional[Any]
 
-    def __init__(self, lock: Optional[Any] = None, merchandise: bool = False) -> None:
+    def __init__(self, lock: Optional[Any] = None, lock_nickname: Optional[str] = None, merchandise: bool = False) -> None:
         """
         Keys just sort of sit in inventory. They are "used" when the player uses 'unlock' on their paired lock
         :param lock: Any object that has an 'unlock' method
+        :param lock_nickname: Optional nickname to match against a container's nickname (for JSON-based key-lock pairing)
         """
 
         super().__init__(name="Key",
@@ -792,6 +793,7 @@ class Key(Special):
                          value=0, weight=0, maintype="Special", subtype="Key", merchandise=merchandise)
 
         self.lock = lock  # Any object that has an 'unlock' method
+        self.lock_nickname = lock_nickname  # Optional nickname for matching keys to containers
         self.interactions = ["drop"]
 
 
