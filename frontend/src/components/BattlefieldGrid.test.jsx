@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
@@ -32,8 +33,8 @@ describe('BattlefieldGrid', () => {
         // Check if enemy marker exists (G for Goblin)
         expect(screen.getByText('G')).toBeDefined();
 
-        // Check for some grid cells
-        const cells = container.querySelectorAll('.bg-\\[rgba\\(255\\,255\\,255\\,0\\.03\\)\\]');
+        // Check for grid cells by style attribute
+        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
         // Normal mode is 15x15 = 225 cells
         expect(cells.length).toBe(225);
     });
@@ -42,7 +43,7 @@ describe('BattlefieldGrid', () => {
         const { container } = render(<BattlefieldGrid combat={mockCombat} tab="map" zoom="full" />);
 
         // Full mode is 13x13 = 169 cells
-        const cells = container.querySelectorAll('.bg-\\[rgba\\(255\\,255\\,255\\,0\\.03\\)\\]');
+        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
         expect(cells.length).toBe(169);
     });
 
@@ -50,7 +51,7 @@ describe('BattlefieldGrid', () => {
         render(<BattlefieldGrid combat={mockCombat} tab="enemies" zoom={1} />);
 
         expect(screen.getByText('Goblin')).toBeDefined();
-        expect(screen.getByText(/HP: 50 /)).toBeDefined();
+        expect(screen.getByText(/HP: 50 \/ 50/)).toBeDefined();
     });
 
     it('handles missing position data gracefully', () => {

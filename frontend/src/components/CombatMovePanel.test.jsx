@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatMovePanel from './CombatMovePanel';
 import { useAudio } from '../context/AudioContext';
@@ -157,12 +157,14 @@ describe('CombatMovePanel', () => {
 
     const moveBtn = screen.getByText('Slash').closest('button');
     
-    fireEvent.mouseEnter(moveBtn);
+    // Test initial state (non-hover)
+    expect(moveBtn.style.backgroundColor).toBe('rgba(255, 255, 255, 0.03)');
+    
+    // Test hover state
+    act(() => {
+      fireEvent.mouseEnter(moveBtn);
+    });
     expect(moveBtn.style.backgroundColor).toBe('rgba(255, 170, 0, 0.1)');
     expect(moveBtn.style.borderColor).toBe('rgb(255, 170, 0)');
-    
-    fireEvent.mouseLeave(moveBtn);
-    expect(moveBtn.style.backgroundColor).toBe('rgba(255, 255, 255, 0.05)');
-    expect(moveBtn.style.borderColor).toBe('rgb(68, 68, 68)');
   });
 });

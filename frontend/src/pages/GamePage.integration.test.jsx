@@ -22,6 +22,14 @@ vi.mock('../context/AudioContext', () => ({
     useAudio: vi.fn(),
 }));
 
+vi.mock('../context/ToastContext', () => ({
+    useToast: () => ({
+        showError: vi.fn(),
+        showSuccess: vi.fn(),
+        showInfo: vi.fn(),
+    }),
+}));
+
 // Mock the API
 vi.mock('../api/endpoints', () => ({
     player: {

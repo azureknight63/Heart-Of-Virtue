@@ -20,16 +20,17 @@ describe('SuggestedMovesPanel', () => {
 
     it('does not render when not player turn', () => {
         const { container } = render(<SuggestedMovesPanel isPlayerTurn={false} suggestions={mockSuggestions} />);
-        // Component renders but is hidden with opacity 0
-        const panel = container.querySelector('[style*="opacity"]');
-        expect(panel?.style.opacity).toBe('0');
+        // Component returns null when not player turn, so container should be empty
+        expect(container.firstChild).toBeNull();
     });
 
     it('does not render when no suggestions', () => {
         const { container } = render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={[]} />);
-        // Component renders but is hidden with opacity 0
+        // Component still renders when suggestions are empty, but panel is initially hidden (opacity 0)
+        // The panel has opacity style that changes after timeout
         const panel = container.querySelector('[style*="opacity"]');
-        expect(panel?.style.opacity).toBe('0');
+        expect(panel).toBeDefined();
+        expect(panel.style.opacity).toBe('0');
     });
 
     it('renders suggestions after delay', async () => {

@@ -43,6 +43,16 @@ vi.mock('../context/AudioContext', () => {
     };
 });
 
+// Mock ToastContext
+vi.mock('../context/ToastContext', () => ({
+    useToast: () => ({
+        showError: vi.fn(),
+        showSuccess: vi.fn(),
+        showInfo: vi.fn(),
+    }),
+    ToastProvider: ({ children }) => <div>{children}</div>,
+}));
+
 // Mock saves API
 vi.mock('../api/endpoints', () => ({
     saves: {
