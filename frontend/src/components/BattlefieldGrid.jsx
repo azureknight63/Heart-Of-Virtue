@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';

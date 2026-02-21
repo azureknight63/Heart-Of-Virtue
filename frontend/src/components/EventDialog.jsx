@@ -182,13 +182,17 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
 
     const dialogTitle = `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
 
+    // Use wider dialog for memory events due to pre-formatted text
+    const isMemoryEvent = /memory/i.test(event?.type || '') || /memory/i.test(event?.name || '')
+    const dialogMaxWidth = isMemoryEvent ? '1200px' : '800px'
+
     return (
         <BaseDialog
             title={dialogTitle}
             onClose={handleGlobalInteraction}
             showCloseButton={!needsInput}
             zIndex={3000}
-            maxWidth="800px"
+            maxWidth={dialogMaxWidth}
             width="90%"
             allowInternalScroll={false}
         >
