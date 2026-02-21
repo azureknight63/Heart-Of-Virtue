@@ -262,7 +262,6 @@ class StMichael(Shrine):
     def __init__(self, player, tile, params=None, repeat=False, name='Shrine of St Michael the Archangel'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         # Declare input requirements for API mode
-        self.needs_input = True
         self.input_type = "choice"
         self.input_prompt = "Selection:"
         # Generate weapon choices at init time
@@ -322,6 +321,10 @@ class StMichael(Shrine):
         
         for i, choice in enumerate(self.available_choices):
             print("{}: {}".format(i, choice[0]))
+
+        if user_input is None:
+            self.needs_input = True
+            return
 
         selection = user_input
         if selection is None:
@@ -453,7 +456,6 @@ class WhisperingStatue(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='The Whispering Statue'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
         # Declare input requirements for API mode
-        self.needs_input = True
         self.input_type = "choice"
         self.input_prompt = "I have a mouth but never speak. I have a bed but never sleep. I run but have no legs. What am I?"
         self.input_options = [
@@ -476,6 +478,13 @@ class WhisperingStatue(Event):
         return self.input_options
 
     def process(self, user_input=None):
+        if user_input is None:
+            # First pass: show description and prompt, then request input
+            cprint(self.description, "cyan")
+            cprint(self.input_prompt, "yellow")
+            self.needs_input = True
+            return
+
         # Try to get input, but handle cases where input() is mocked or unavailable
         choice = user_input  # Use provided input if available (from API)
         if choice is None:
