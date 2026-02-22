@@ -136,8 +136,10 @@ class TestAdvanceMoveValidation:
             player.combat_position, enemy.combat_position
         )
         
-        # Execute advance
-        advance.execute(player)
+        # Execute advance (simulate one beat of movement)
+        advance.current_stage = 1  # execute stage
+        advance.beats_left = 1
+        advance.beat_update(player)
         
         # Verify movement toward target
         if player.combat_position is not None:
@@ -279,8 +281,10 @@ class TestBullChargeMoveValidation:
             player.combat_position, enemy.combat_position
         )
         
-        # Execute charge
-        bull_charge.execute(player)
+        # Execute charge (simulate one beat of movement)
+        bull_charge.current_stage = 1  # execute stage
+        bull_charge.beats_left = 1
+        bull_charge.beat_update(player)
         
         # Verify significant movement
         if player.combat_position is not None:
@@ -334,7 +338,10 @@ class TestTacticalRetreatMoveValidation:
             player.combat_position, enemy.combat_position
         )
         
-        tactical_retreat.execute(player)
+        # Execute retreat (simulate one beat of movement)
+        tactical_retreat.current_stage = 1  # execute stage
+        tactical_retreat.beats_left = 1
+        tactical_retreat.beat_update(player)
         
         if player.combat_position is not None:
             final_distance = positions.distance_from_coords(
@@ -404,7 +411,10 @@ class TestFlankingManeuverMoveValidation:
         
         monkeypatch.setattr(random, 'randint', lambda a, b: 3)
         
-        flanking.execute(player)
+        # Execute flanking (simulate one beat of movement)
+        flanking.current_stage = 1  # execute stage
+        flanking.beats_left = 1
+        flanking.beat_update(player)
         
         if player.combat_position is not None:
             # Calculate angle to target
@@ -447,7 +457,11 @@ class TestMoveIntegration:
             player.combat_position, enemy.combat_position
         )
         
-        advance.execute(player)
+        # Execute advance (simulate one beat of movement)
+        advance.current_stage = 1  # execute stage
+        advance.beats_left = 1
+        advance.beat_update(player)
+        
         after_advance_distance = positions.distance_from_coords(
             player.combat_position, enemy.combat_position
         )
@@ -461,7 +475,10 @@ class TestMoveIntegration:
                 withdraw = move
                 break
         
-        withdraw.execute(player)
+        # Execute withdraw (simulate one beat of movement)
+        withdraw.current_stage = 1  # execute stage
+        withdraw.beats_left = 1
+        withdraw.beat_update(player)
         after_withdraw_distance = positions.distance_from_coords(
             player.combat_position, enemy.combat_position
         )
@@ -629,7 +646,10 @@ class TestMoveEdgeCases:
         
         initial_pos = (player.combat_position.x, player.combat_position.y)
         
-        flanking.execute(player)
+        # Execute flanking (simulate one beat of movement)
+        flanking.current_stage = 1  # execute stage
+        flanking.beats_left = 1
+        flanking.beat_update(player)
         
         if player.combat_position is not None:
             # Position should have changed

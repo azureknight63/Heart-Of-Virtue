@@ -60,19 +60,19 @@ def test_available_moves_filters_passives(adapter, player):
 def test_refresh_suggestions_count(adapter, player):
     # Base count is 1
     with patch.object(adapter.strategist, 'get_suggestions', return_value=[]) as mock_get:
-        adapter._refresh_suggestions()
+        adapter.refresh_suggestions()
         mock_get.assert_called_with(ANY, max_suggestions=1)
 
     # Add Strategic Insight (increases count by 1)
     player.known_moves.append(MockMove("Strategic Insight", passive=True))
     with patch.object(adapter.strategist, 'get_suggestions', return_value=[]) as mock_get:
-        adapter._refresh_suggestions()
+        adapter.refresh_suggestions()
         mock_get.assert_called_with(ANY, max_suggestions=2)
 
     # Add Master Tactician (increases count by 1 more)
     player.known_moves.append(MockMove("Master Tactician", passive=True))
     with patch.object(adapter.strategist, 'get_suggestions', return_value=[]) as mock_get:
-        adapter._refresh_suggestions()
+        adapter.refresh_suggestions()
         mock_get.assert_called_with(ANY, max_suggestions=3)
 
 def test_handle_combined_selection(adapter, player):
