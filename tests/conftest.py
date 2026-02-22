@@ -1,5 +1,11 @@
 # Ensure src.functions is imported under its canonical package path so coverage hooks it.
 import sys, os, pathlib
+
+# Disable LLM and reduce delays for tests
+os.environ["MYNX_LLM_ENABLED"] = "0"
+os.environ["MYNX_FALLBACK_DELAY"] = "0"
+# Prevent CombatStrategist from making discovery requests
+os.environ["MYNX_LLM_PROVIDER"] = "none" 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

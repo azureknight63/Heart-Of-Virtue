@@ -41,7 +41,7 @@ def player():
 
 @pytest.fixture
 def adapter(player):
-    with patch('ai.combat_strategist.CombatStrategist') as mock_strat_cls:
+    with patch('src.api.combat_adapter.CombatStrategist') as mock_strat_cls:
         mock_strat = mock_strat_cls.return_value
         mock_strat.get_suggestions.return_value = [
             {"move_name": "Slash", "score": 90, "reasoning": "Strong attack."}

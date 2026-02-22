@@ -40,7 +40,7 @@ class TestCreateApp:
         assert app.config['DEBUG'] is False
 
     @patch('src.api.app.universe_module.Universe')
-    @patch('src.api.app.universe_module.Player')
+    @patch('src.player.Player')
     def test_create_app_universe_initialization_dev(self, mock_player, mock_universe):
         """Test universe initialization in development mode."""
         # Mock the player and universe
@@ -81,7 +81,7 @@ startmap = test_map
             # Set environment variable
             with patch.dict(os.environ, {'CONFIG_FILE': config_path}):
                 with patch('src.api.app.universe_module.Universe') as mock_universe:
-                    with patch('src.api.app.universe_module.Player') as mock_player:
+                    with patch('src.player.Player') as mock_player:
                         mock_player_instance = MagicMock()
                         mock_player.return_value = mock_player_instance
                         mock_universe_instance = MagicMock()
@@ -104,7 +104,7 @@ startmap = test_map
         """Test handling of missing config file."""
         with patch.dict(os.environ, {'CONFIG_FILE': '/nonexistent/path.ini'}):
             with patch('src.api.app.universe_module.Universe') as mock_universe:
-                with patch('src.api.app.universe_module.Player') as mock_player:
+                with patch('src.player.Player') as mock_player:
                     mock_player_instance = MagicMock()
                     mock_player.return_value = mock_player_instance
                     mock_universe_instance = MagicMock()
@@ -199,5 +199,4 @@ class TestAppEndpoints:
         data = response.get_json()
         assert 'success' in data
         assert data['success'] is False
-        assert 'error' in data</content>
-<parameter name="filePath">c:\Users\azure\Desktop\dev\Heart-Of-Virtue\Alpha\tests\api\test_app.py
+        assert 'error' in data
