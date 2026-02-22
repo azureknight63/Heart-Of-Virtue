@@ -10,6 +10,7 @@ import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
 import EventManager from '../components/EventManager'
 import CombatManager from '../components/CombatManager'
+import GameOverScreen from '../components/GameOverScreen'
 
 export default function GamePage() {
   // API hooks
@@ -33,32 +34,11 @@ export default function GamePage() {
   // Core game state
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
+  const [displayedLogCount, setDisplayedLogCount] = useState(0)
 
-  // Event management hook
-  const {
-    currentEvent,
-    eventHistory,
-    eventQueue,
-    isEventDialogActive,
-    isInteractionDelayActive,
-    setEventQueue,
-    setCurrentEvent,
-    setIsInteractionDelayActive,
-    handleEventsTriggered,
-    handleEventClose,
-    handleEventInput
-  } = useEventManager({
-    mode,
-    isInteractionTyping,
-    isCombatLogProcessing: false, // Will be set from combat coordinator
-    inCombat,
-    onEventProcessed: () => {
-      // Refresh combat status to ensure viable_targets are updated
-      if (inCombat) {
-        fetchCombatStatus()
-      }
-    }
-  })
+  // Game over state (triggered by narrative events that kill the player)
+  const [showGameOver, setShowGameOver] = useState(false)
+  const [gameOverMessage, setGameOverMessage] = useState('')
 
   // Combat coordination hook
   const {
@@ -82,14 +62,38 @@ export default function GamePage() {
   } = useCombatCoordinator({
     combat,
     inCombat,
-    displayedLogCount: 0, // Will be tracked via callback
+    displayedLogCount,
     performAction,
     fetchCombatStatus,
     playSFX
   })
 
-  // Track displayed log count for combat coordinator
-  const [displayedLogCount, setDisplayedLogCount] = useState(0)
+  // Event management hook
+  const {
+    currentEvent,
+    eventHistory,
+    eventQueue,
+    isEventDialogActive,
+    isInteractionDelayActive,
+    setEventQueue,
+    setCurrentEvent,
+    setIsInteractionDelayActive,
+    handleEventsTriggered,
+    handleEventClose,
+    handleEventInput
+  } = useEventManager({
+    mode,
+    isInteractionTyping,
+    isCombatLogProcessing,
+    inCombat,
+    combat,
+    onEventProcessed: () => {
+      // Refresh combat status to ensure viable_targets are updated
+      if (inCombat) {
+        fetchCombatStatus()
+      }
+    }
+  })
 
   /**
    * Combined refetch function for all game state
@@ -211,6 +215,13 @@ export default function GamePage() {
     const result = await handleEventInput(eventId, userInput, showError)
 
     if (result.success) {
+      // Check if the player died during event processing
+      if (result.is_game_over) {
+        setGameOverMessage(result.output_text || '')
+        setShowGameOver(true)
+        return
+      }
+
       // Check if event triggered combat
       if (result.combat_started) {
         setCombatDialogShown(true)
@@ -435,6 +446,9 @@ export default function GamePage() {
         onVictoryClose={handleVictoryClose}
         onDefeatClose={handleDefeatClose}
       />
+
+      {/* Game Over Screen - shown when Jean dies via narrative event */}
+      {showGameOver && <GameOverScreen message={gameOverMessage} />}
     </div>
   )
 }

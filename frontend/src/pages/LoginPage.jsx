@@ -56,10 +56,10 @@ export default function LoginPage() {
       <div style={{ width: '100%', maxWidth: '28rem' }}>
         <GamePanel padding="xxl" borderVariant="success" className="animate-fade-in">
           <div style={{ textAlign: 'center', marginBottom: spacing.xxl }}>
-            <GameText variant="primary" size="xxl" weight="bold" as="h1" style={{ marginBottom: spacing.xs }}>
+            <GameText variant="primary" size="xxl" weight="bold" as="h1" style={{ textAlign: 'center', marginBottom: spacing.xs }}>
               Heart of Virtue
             </GameText>
-            <GameText variant="accent" size="sm">
+            <GameText variant="accent" size="sm" style={{ textAlign: 'center' }}>
               Enter the world of heroism and virtue
             </GameText>
           </div>
@@ -104,6 +104,7 @@ export default function LoginPage() {
                   backgroundColor: colors.bg.error,
                   border: `1px solid ${colors.border.danger}`,
                   borderRadius: '0.25rem',
+                  textAlign: 'center',
                 }}>
                   <GameText variant="danger" size="sm">
                     {error}
@@ -193,6 +194,7 @@ export default function LoginPage() {
                   backgroundColor: colors.bg.error,
                   border: `1px solid ${colors.border.danger}`,
                   borderRadius: '0.25rem',
+                  textAlign: 'center',
                 }}>
                   <GameText variant="danger" size="sm">
                     {error}

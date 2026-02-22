@@ -213,6 +213,7 @@ export default function MainMenuPage() {
                     variant="primary"
                     size="xxl"
                     weight="bold"
+                    align="center"
                     style={{
                         marginBottom: spacing.xxl,
                         letterSpacing: '0.1em',
@@ -241,8 +242,8 @@ export default function MainMenuPage() {
             {showSettings && (
                 <BaseDialog title="Settings" onClose={() => setShowSettings(false)} maxWidth="500px">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xl }}>
-                        <div>
-                            <GameText variant="accent" size="md" weight="bold" style={{ marginBottom: spacing.sm }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <GameText variant="accent" size="md" weight="bold" style={{ marginBottom: spacing.sm, textAlign: 'center' }}>
                                 Audio Settings
                             </GameText>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
