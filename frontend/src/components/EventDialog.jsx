@@ -183,8 +183,11 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
     const dialogTitle = `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
 
     // Use wider dialog for memory events due to pre-formatted text
-    const isMemoryEvent = /memory/i.test(event?.type || '') || /memory/i.test(event?.name || '')
-    const dialogMaxWidth = isMemoryEvent ? '1200px' : '800px'
+    const isMemoryEvent = /memory|flash/i.test(event?.type || '') ||
+        /memory|flash/i.test(event?.name || '') ||
+        /MEMORY STIRS/i.test(eventText)
+    const dialogMaxWidth = isMemoryEvent ? '900px' : '800px'
+    const dialogWidth = isMemoryEvent ? '95%' : '90%'
 
     return (
         <BaseDialog
@@ -193,7 +196,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
             showCloseButton={!needsInput}
             zIndex={3000}
             maxWidth={dialogMaxWidth}
-            width="90%"
+            width={dialogWidth}
             allowInternalScroll={false}
         >
             <div
@@ -290,7 +293,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             overflowY: 'auto',
                             border: `2px solid ${colors.secondary}`,
                             color: colors.success,
-                            whiteSpace: /memory/i.test(event?.type || '') || /memory/i.test(event?.name || '') ? 'pre' : 'pre-wrap',
+                            whiteSpace: isMemoryEvent ? 'pre' : 'pre-wrap',
                             fontSize: '16px',
                         }}
                     />

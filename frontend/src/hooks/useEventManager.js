@@ -52,6 +52,7 @@ export function useEventManager({
     isInteractionTyping,
     isCombatLogProcessing,
     inCombat,
+    combat,
     onEventProcessed
 }) {
     // Event state
@@ -188,11 +189,32 @@ export function useEventManager({
                 return
             }
 
-            // Handle event delay if specified
-            const shouldDelay = nextEvent.delay_mode === 'both' || nextEvent.delay_mode === mode
+            // Handle event delay (Memory flash and combat death/end events get 3s by default)
+            const eventText = nextEvent.output_text || nextEvent.message || nextEvent.description || ''
+            const isMemoryEvent = /memory|flash/i.test(nextEvent.type || '') ||
+                /memory|flash/i.test(nextEvent.name || '') ||
+                /MEMORY STIRS/i.test(eventText)
 
-            if (shouldDelay && nextEvent.delay_duration > 0 && delayingEventIdRef.current !== nextEvent.event_id) {
-                console.log(`[DEBUG] Delaying event display for ${nextEvent.delay_duration}ms (${nextEvent.delay_mode}):`, nextEvent.name)
+            // Combat death or end events: in combat mode and keywords/no enemies
+            const isCombatDeathOrEndEvent = mode === 'combat' && (
+                (combat?.enemies && combat.enemies.length === 0) ||
+                /defeat|victory|slain|fallen|died/i.test(eventText)
+            )
+
+            // Determine final delay settings
+            let delayDuration = nextEvent.delay_duration || 0
+            let delayMode = nextEvent.delay_mode || null
+
+            // Apply special 3s delay for story-critical transitions
+            if (isMemoryEvent || isCombatDeathOrEndEvent) {
+                delayDuration = Math.max(delayDuration, 3000)
+                if (!delayMode) delayMode = 'both'
+            }
+
+            const shouldDelay = delayMode === 'both' || delayMode === mode
+
+            if (shouldDelay && delayDuration > 0 && delayingEventIdRef.current !== nextEvent.event_id) {
+                console.log(`[DEBUG] Delaying event display for ${delayDuration}ms (${delayMode}):`, nextEvent.name)
 
                 // Track this event ID to prevent re-entering this block during delay
                 delayingEventIdRef.current = nextEvent.event_id
@@ -207,13 +229,14 @@ export function useEventManager({
                             const updated = [...prev]
                             // Double check it's still the same event at head of queue
                             if (updated[0].event_id === delayingEventIdRef.current) {
-                                updated[0] = { ...updated[0], delay_mode: null }
+                                // Clear delay so it proceeds to display
+                                updated[0] = { ...updated[0], delay_mode: null, delay_duration: 0 }
                             }
                             return updated
                         }
                         return prev
                     })
-                }, nextEvent.delay_duration)
+                }, delayDuration)
                 return
             }
 
@@ -237,7 +260,7 @@ export function useEventManager({
                 setEventHistory(prev => [...prev, text])
             }
         }
-    }, [eventQueue, currentEvent, isInteractionTyping, isInteractionDelayActive, isCombatLogProcessing, mode])
+    }, [eventQueue, currentEvent, isInteractionTyping, isInteractionDelayActive, isCombatLogProcessing, mode, combat])
 
     /**
      * Handle interaction delay timer
@@ -323,7 +346,7 @@ export function useEventManager({
                 const resultEvent = {
                     name: 'Event Result',
                     output_text: data.output_text,
-                    needs_input: data.needs_input || false
+                    needs_input: false
                 }
                 setCurrentEvent(resultEvent)
             }

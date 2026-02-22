@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import apiEndpoints from '../api/endpoints'
 
 // Helper to transform combat data
@@ -165,7 +165,7 @@ export const useCombat = () => {
   const [loading, setLoading] = useState(false)
   const [inCombat, setInCombat] = useState(false)
 
-  const fetchCombatStatus = async () => {
+  const fetchCombatStatus = useCallback(async () => {
     try {
       setLoading(true)
       const response = await apiEndpoints.combat.getStatus()
@@ -178,9 +178,9 @@ export const useCombat = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const performAction = async (action, target) => {
+  const performAction = useCallback(async (action, target) => {
     try {
       setLoading(true)
       const response = await apiEndpoints.combat.performAction(action, target)
@@ -195,7 +195,7 @@ export const useCombat = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   return { combat, loading, inCombat, fetchCombatStatus, performAction }
 }
