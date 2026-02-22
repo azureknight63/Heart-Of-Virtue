@@ -478,24 +478,22 @@ class WhisperingStatue(Event):
         return self.input_options
 
     def process(self, user_input=None):
+        # Determine if we are in API mode (user_input provided) or CLI mode (user_input is None)
         if user_input is None:
-            # First pass: show description and prompt, then request input
-            cprint(self.description, "cyan")
-            cprint(self.input_prompt, "yellow")
-            self.needs_input = True
-            return
-
-        # Try to get input, but handle cases where input() is mocked or unavailable
-        choice = user_input  # Use provided input if available (from API)
-        if choice is None:
-            # If no input provided, we might be in a CLI session
-            # Print the riddle first if not already shown via description
+            # CLI mode: get input interactively
             cprint(self.description, "cyan")
             cprint(self.input_prompt, "yellow")
             try:
                 choice = input(colored("\nYour answer (1-3): ", "white"))
             except (EOFError, OSError, ValueError):
                 choice = "1"
+        else:
+            # API mode: use provided input
+            choice = user_input
+
+        # If still no choice, default to "1"
+        if not choice:
+            choice = "1"
         
         if not choice:
             choice = "1"

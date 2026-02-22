@@ -32,7 +32,7 @@ class Event:  # master class for all events
 
     """
     def __init__(self, name, player=None, tile=None, repeat=False, params=None, combat_effect: bool = False,
-                 delay_duration: int = 3000, delay_mode: str = 'combat'):
+                 delay_duration: int = 3000, delay_mode: Optional[str] = "combat"):
         self.name = name
         self.player = player
         self.tile = tile

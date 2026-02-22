@@ -246,6 +246,10 @@ def submit_event_input():
         if not result.get("success"):
             return jsonify(result), 400
 
+        # Detect player death caused by event processing
+        if getattr(player, "hp", 1) <= 0:
+            result["is_game_over"] = True
+
         return jsonify(result), 200
 
     except Exception as e:
