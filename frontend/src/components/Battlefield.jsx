@@ -84,6 +84,8 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
       <div className="flex-1 overflow-hidden rounded border border-[#333] bg-[rgba(0,0,0,0.3)] relative">
         <BattlefieldGrid
           combat={displayState}
+          allBeatStates={combat?.beat_states}
+          currentBeatIndex={currentLogIndex}
           combatLog={combat?.log || []}
           tab={selectedTab}
           zoom={zoom}

@@ -247,11 +247,31 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
   );
 };
 
-export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, displayedLogCount = 0, hoveredTargetId = null }) {
+export default function BattlefieldGrid({
+  combat,
+  allBeatStates,
+  currentBeatIndex,
+  combatLog,
+  tab,
+  zoom = 1,
+  displayedLogCount = 0,
+  hoveredTargetId = null
+}) {
   const [activeAnimation, setActiveAnimation] = useState(null);
   const [animationPhase, setAnimationPhase] = useState(null);
   const [lastProcessedLogIndex, setLastProcessedLogIndex] = useState(0);
   const [animationQueue, setAnimationQueue] = useState([]);
+
+  // Interaction state
+  const [hoveredEntity, setHoveredEntity] = useState(null);
+  const [selectedEntity, setSelectedEntity] = useState(null);
+
+  // Clear selection on click outside (this will be handled by a wrapper div)
+  const handleGridClick = (e) => {
+    if (e.target === e.currentTarget) {
+      setSelectedEntity(null);
+    }
+  };
 
   // Animation registry - maps animation types to configurations
   const animationConfigs = {
@@ -333,7 +353,7 @@ export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, disp
   const renderGrid = () => {
     if (tab === 'enemies') {
       return (
-        <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%' }}>
+        <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%', backgroundColor: colors.bg.main }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
             {combat.enemies?.map((enemy, idx) => (
               <div key={idx} style={{
@@ -368,74 +388,84 @@ export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, disp
     }
 
     // Map constants
-    const MAP_SIZE = 13 // Coordinates 0-12 (12x12 grid for small battles)
-    const VIEW_SIZE = 15 // Base view size (Normal mode)
+    const MAP_SIZE = 13 // Coordinates 0-12
+    const VIEW_SIZE = 15 // Base view size
     const isFullMode = zoom === 'full'
 
-    // Helper to get position safely
-    const getPos = (entity) => {
-      // Handle both backend structure (entity.position) and potential missing data
-      return entity?.position || { x: 6, y: 6 } // Center of 12x12 grid
-    }
-
+    const getPos = (entity) => entity?.position || { x: 6, y: 6 }
     const playerPos = getPos(combat?.player)
 
     // Calculate Grid & Viewport
     let gridCols, leftX, topY
-
     if (isFullMode) {
-      // Full Map Mode: Show entire grid
       gridCols = MAP_SIZE
       leftX = 0
-      topY = MAP_SIZE - 1 // Top row is Y=12
+      topY = MAP_SIZE - 1
     } else {
-      // Normal Mode: 15x15 centered on player
       gridCols = VIEW_SIZE
       const halfView = Math.floor(gridCols / 2)
-
-      leftX = playerPos.x - halfView
-      leftX = Math.max(0, Math.min(MAP_SIZE - gridCols, leftX))
-
-      topY = playerPos.y + halfView
-      topY = Math.min(MAP_SIZE - 1, Math.max(gridCols - 1, topY))
+      leftX = Math.max(0, Math.min(MAP_SIZE - gridCols, playerPos.x - halfView))
+      topY = Math.min(MAP_SIZE - 1, Math.max(gridCols - 1, playerPos.y + halfView))
     }
 
-    // Helper to calculate style position % for any entity
-    const getEntityStyle = (entity) => {
-      const p = getPos(entity)
-      // Check if in view
-      if (p.x < leftX || p.x >= leftX + gridCols || p.y > topY || p.y <= topY - gridCols) {
-        return null // Out of view
-      }
-
-      const col = p.x - leftX
-      const row = topY - p.y // Y is inverted (topY is highest)
-
+    const getEntityStyle = (pos, baseZ = 20) => {
+      if (!pos || pos.x < leftX || pos.x >= leftX + gridCols || pos.y > topY || pos.y <= topY - gridCols) return null
+      const col = pos.x - leftX
+      const row = topY - pos.y
       return {
-        left: `${(col / gridCols) * 100}%`,
-        top: `${(row / gridCols) * 100}%`,
+        left: 0,
+        top: 0,
+        transform: `translate(${col * 100}%, ${row * 100}%)`,
         width: `${(1 / gridCols) * 100}%`,
-        height: `${(1 / gridCols) * 100}%`
+        height: `${(1 / gridCols) * 100}%`,
+        zIndex: baseZ
       }
     }
 
-    const totalCells = gridCols * gridCols
+    // --- Breadcrumbs Calculation ---
+    const breadcrumbs = []
+    if (allBeatStates && currentBeatIndex !== undefined) {
+      const historyLength = 4
+      const startIdx = Math.max(0, currentBeatIndex - historyLength)
 
-    // Gather all entities to render
+      for (let i = startIdx; i < currentBeatIndex; i++) {
+        const beatState = allBeatStates[i]
+        if (!beatState) continue
+
+        const opacity = 0.2 + ((i - startIdx) / historyLength) * 0.4 // 0.2 to 0.6 fading
+
+        // Player breadcrumb
+        if (beatState.player) {
+          const style = getEntityStyle(getPos(beatState.player), 5)
+          if (style) breadcrumbs.push({ style, color: colors.primary, opacity, id: `p-${i}` })
+        }
+
+        // Enemy breadcrumbs
+        beatState.enemies?.forEach(enemy => {
+          const style = getEntityStyle(getPos(enemy), 5)
+          if (style) breadcrumbs.push({ style, color: colors.danger, opacity, id: `${enemy.id}-${i}` })
+        })
+      }
+    }
+
+    // --- Entity Gathering ---
     const entitiesToRender = []
     if (combat?.player) {
-      const style = getEntityStyle(combat.player)
+      const style = getEntityStyle(getPos(combat.player))
       if (style) entitiesToRender.push({ entity: combat.player, style, isPlayer: true })
     }
     combat?.enemies?.forEach(enemy => {
-      if (enemy.hp === undefined || enemy.hp > 0 || ((enemy.health?.current ?? 0) > 0)) {
-        const style = getEntityStyle(enemy)
+      if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0) > 0) {
+        const style = getEntityStyle(getPos(enemy))
         if (style) entitiesToRender.push({ entity: enemy, style, isPlayer: false })
       }
     })
 
     return (
-      <div style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden' }}>
+      <div
+        onClick={handleGridClick}
+        style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden' }}
+      >
         {/* Grid Background Layer */}
         <div style={{
           position: 'absolute',
@@ -444,89 +474,202 @@ export default function BattlefieldGrid({ combat, combatLog, tab, zoom = 1, disp
           gap: '1px',
           padding: spacing.sm,
           gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`
+          gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
+          pointerEvents: 'none'
         }}>
-          {Array(totalCells).fill(null).map((_, idx) => (
+          {Array(gridCols * gridCols).fill(null).map((_, idx) => (
             <div key={idx} style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }}></div>
           ))}
         </div>
 
-        {/* Entity Layer (Overlay) */}
+        {/* Breadcrumb Layer */}
+        <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
+          {breadcrumbs.map(bc => (
+            <div
+              key={bc.id}
+              style={{
+                position: 'absolute',
+                ...bc.style,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 5
+              }}
+            >
+              <div
+                style={{
+                  width: '30%',
+                  height: '30%',
+                  borderRadius: '50%',
+                  backgroundColor: bc.color,
+                  opacity: bc.opacity,
+                  filter: 'blur(1px)'
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Entity Layer */}
         <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
           {entitiesToRender.map((item, idx) => {
             const entityId = item.entity.id;
-
-            // Determine animation state for this entity
             let animState = null;
             if (activeAnimation && animationPhase) {
               if (activeAnimation.source_id === entityId) {
-                animState = {
-                  isSource: true,
-                  isTarget: false,
-                  phase: animationPhase,
-                  outcome: activeAnimation.outcome
-                };
+                animState = { isSource: true, isTarget: false, phase: animationPhase, outcome: activeAnimation.outcome };
               } else if (activeAnimation.target_id === entityId) {
-                animState = {
-                  isSource: false,
-                  isTarget: true,
-                  phase: animationPhase,
-                  outcome: activeAnimation.outcome
-                };
+                animState = { isSource: false, isTarget: true, phase: animationPhase, outcome: activeAnimation.outcome };
               }
             }
 
-            // Calculate translation for strike phase
             let transformStyle = {};
             if (animState?.isSource && animState.phase === 'strike' && activeAnimation.target_id) {
-              // Find target position
               const target = entitiesToRender.find(e => e.entity.id === activeAnimation.target_id);
               if (target) {
-                const sourcePos = getPos(item.entity);
-                const targetPos = getPos(target.entity);
-
-                // Calculate directional vector (40% of the distance)
-                const dx = (targetPos.x - sourcePos.x) * 40;
-                const dy = (sourcePos.y - targetPos.y) * 40;
-
+                const sPos = getPos(item.entity);
+                const tPos = getPos(target.entity);
                 transformStyle = {
-                  transform: `translate(${dx}px, ${dy}px)`,
+                  transform: `translate(${(tPos.x - sPos.x) * 40}px, ${(sPos.y - tPos.y) * 40}px)`,
                   transition: 'transform 0.2s cubic-bezier(0.1, 0.7, 1.0, 0.1)',
                   zIndex: 100
                 };
               }
             } else if (animState?.isSource && animState.phase === 'return') {
-              transformStyle = {
-                transform: 'translate(0, 0)',
-                transition: 'transform 0.2s ease-in-out'
-              };
+              transformStyle = { transform: 'translate(0, 0)', transition: 'transform 0.2s ease-in-out' };
             }
 
             return (
               <div
                 key={`${item.entity.id || idx}-${item.isPlayer ? 'player' : 'enemy'}`}
+                onMouseEnter={() => setHoveredEntity(item.entity)}
+                onMouseLeave={() => setHoveredEntity(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedEntity(item.entity);
+                }}
                 style={{
                   position: 'absolute',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'all 0.5s ease-in-out',
-                  willChange: 'top, left',
+                  transition: 'transform 0.5s ease-in-out',
+                  willChange: 'transform',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto',
                   ...item.style,
-                  ...transformStyle
+                  zIndex: (hoveredEntity?.id === entityId || selectedEntity?.id === entityId) ? 50 : (item.style.zIndex || 20)
                 }}
               >
-                <CombatantMarker
-                  entity={item.entity}
-                  isPlayer={item.isPlayer}
-                  isFullMode={isFullMode}
-                  isHovered={hoveredTargetId === item.entity.id}
-                  animationState={animState}
-                />
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: animState?.phase === 'strike' ? 100 : 1,
+                  ...transformStyle
+                }}>
+                  <CombatantMarker
+                    entity={item.entity}
+                    isPlayer={item.isPlayer}
+                    isFullMode={isFullMode}
+                    isHovered={hoveredTargetId === entityId || hoveredEntity?.id === entityId}
+                    animationState={animState}
+                  />
+                </div>
+
+                {/* Hover Tooltip */}
+                {hoveredEntity?.id === entityId && !selectedEntity && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 z-[100] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="bg-black/90 border border-orange/40 rounded px-2 py-1 shadow-2xl backdrop-blur-md min-w-[120px]">
+                      <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1">
+                        {item.entity.name}
+                      </div>
+                      <div className="text-orange/80 text-[9px] flex justify-between gap-2">
+                        <span>Prep:</span>
+                        <span className="font-mono">{item.entity.prepared_move?.name || '---'}</span>
+                      </div>
+                    </div>
+                    {/* Tooltip arrow */}
+                    <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-black/90 absolute left-1/2 -translate-x-1/2 top-full" />
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+
+        {/* Selected Entity Details Panel */}
+        {selectedEntity && (
+          <div
+            className="absolute top-4 right-4 z-[150] w-[200px] animate-in slide-in-from-right-4 fade-in duration-300 pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-black/95 border-2 border-orange/50 rounded-lg p-3 shadow-2xl backdrop-blur-xl">
+              <div className="flex justify-between items-start mb-3 border-b border-white/10 pb-2">
+                <GameText weight="bold" size="sm" variant="secondary">{selectedEntity.name}</GameText>
+                <button
+                  onClick={() => setSelectedEntity(null)}
+                  className="text-white/40 hover:text-white transition-colors"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {/* HP Section */}
+                <div>
+                  <div className="flex justify-between text-[10px] mb-1">
+                    <span className="text-white/60">INTEGRITY (HP)</span>
+                    <span className="text-red-400 font-mono">{selectedEntity.hp || selectedEntity.health?.current}/{selectedEntity.max_hp || selectedEntity.health?.max}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-red-900/30 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-red-500 transition-all duration-500"
+                      style={{ width: `${((selectedEntity.hp || selectedEntity.health?.current) / (selectedEntity.max_hp || selectedEntity.health?.max)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Fatigue Section */}
+                <div>
+                  <div className="flex justify-between text-[10px] mb-1">
+                    <span className="text-white/60">STAMINA (FAT)</span>
+                    <span className="text-orange-400 font-mono">{selectedEntity.fatigue || 0}/{selectedEntity.maxfatigue || 100}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-orange-900/30 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-orange-500 transition-all duration-500"
+                      style={{ width: `${(selectedEntity.fatigue / (selectedEntity.maxfatigue || 100)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Status Effects */}
+                <div>
+                  <div className="text-[10px] text-white/60 mb-1.5 uppercase tracking-wider">Status Effects</div>
+                  <div className="flex flex-wrap gap-1">
+                    <StatusEffectsIconPanel effects={selectedEntity.status_effects} />
+                    {(!selectedEntity.status_effects || selectedEntity.status_effects.length === 0) && (
+                      <span className="text-[10px] text-white/30 italic">None active</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Current Move */}
+                <div className="pt-2 border-t border-white/10">
+                  <div className="text-[10px] text-white/60 mb-1">CURRENT ACTION</div>
+                  <div className="text-orange text-xs font-bold">
+                    {selectedEntity.current_move?.name || selectedEntity.prepared_move?.name || 'Idle'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
