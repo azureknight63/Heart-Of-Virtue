@@ -153,7 +153,6 @@ def create_app(config_class=None):
     app.session_manager = session_manager
     app.game_service = game_service
     app.socketio = socketio
-    app.socketio = socketio
 
     # Register blueprints
     from src.api.routes import (

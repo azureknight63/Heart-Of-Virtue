@@ -7,16 +7,18 @@ import * as api from '../api/endpoints';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave, useAuth } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
 
-// Mock the hooks first
-vi.mock('../hooks/useApi', () => ({
-    usePlayer: vi.fn(),
-    useWorld: vi.fn(),
-    useCombat: vi.fn(),
-    useExploration: vi.fn(),
-    useExits: vi.fn(),
-    useAutosave: vi.fn(),
-    useAuth: vi.fn(),
-}));
+// Mock only the hooks we need to stub (useExploration, useExits, useAutosave, useAuth)
+// Keep usePlayer, useWorld, useCombat real so they call the mocked APIs
+vi.mock('../hooks/useApi', async () => {
+    const actual = await vi.importActual('../hooks/useApi');
+    return {
+        ...actual,
+        useExploration: vi.fn(),
+        useExits: vi.fn(),
+        useAutosave: vi.fn(),
+        useAuth: vi.fn(),
+    };
+});
 
 vi.mock('../context/AudioContext', () => ({
     useAudio: vi.fn(),
@@ -53,41 +55,7 @@ describe('Tactical AI Integration Tests', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Setup hook mocks
-        usePlayer.mockReturnValue({
-            player: {
-                name: 'Jean',
-                level: 1,
-                hp: 80,
-                max_hp: 100,
-                mp: 30,
-                max_mp: 50,
-                map_name: 'forest_path',
-            },
-            loading: false,
-            refetch: vi.fn()
-        });
-
-        useWorld.mockReturnValue({
-            location: {
-                name: 'Forest Path',
-                description: 'A peaceful forest path',
-                x: 10,
-                y: 10,
-            },
-            loading: false,
-            moveToLocation: vi.fn(),
-            refetch: vi.fn()
-        });
-
-        useCombat.mockReturnValue({
-            combat: null,
-            inCombat: false,
-            loading: false,
-            fetchCombatStatus: vi.fn(),
-            performAction: vi.fn()
-        });
-
+        // Setup stubbed hook mocks (these are manually controlled)
         useExploration.mockReturnValue({
             exploredTiles: new Map(),
             setExploredTiles: vi.fn(),
@@ -103,6 +71,10 @@ describe('Tactical AI Integration Tests', () => {
 
         useAutosave.mockReturnValue({
             triggerTick: vi.fn()
+        });
+
+        useAuth.mockReturnValue({
+            logout: vi.fn()
         });
 
         useAudio.mockReturnValue({
