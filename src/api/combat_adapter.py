@@ -334,7 +334,7 @@ class ApiCombatAdapter:
             self.input_type = "move_selection"
             self.available_options = self._get_available_moves()
             # Start async suggestion fetch (non-blocking)
-            self._refresh_suggestions_async()
+            self.refresh_suggestions()
             
             result = self.get_combat_state()
             
@@ -967,7 +967,7 @@ class ApiCombatAdapter:
             self.available_options = self._get_available_moves()
             self.pending_move_index = None
             # Start async suggestion fetch (non-blocking)
-            self._refresh_suggestions_async()
+            self.refresh_suggestions()
         
         # Final state capture (consumes events_triggered)
         result = self.get_combat_state()
@@ -1129,38 +1129,7 @@ class ApiCombatAdapter:
                 amt = 0.001
             self.player.heat -= amt
     
-    def _refresh_suggestions(self):
-        """Fetch tactical suggestions from the strategist (synchronous version)."""
-        try:
-            # Calculate allowed suggestions count
-            count = getattr(self.player, "base_suggested_move_count", 1)
-            for m in self.player.known_moves:
-                if m.name in ["Strategic Insight", "Master Tactician"]:
-                    count += 1
-            
-            # Ensure combat_log exists
-            if not hasattr(self.player, 'combat_log'):
-                self.player.combat_log = []
-
-            # Gather context
-            # Gather context from serializers imported at top level
-            ctx = {
-                "player": CombatantSerializer.serialize_combatant(self.player),
-                "enemies": [CombatantSerializer.serialize_combatant(e, reference=self.player) for e in self.player.combat_list],
-                "history": [entry["message"] for entry in self.player.combat_log[-20:]], # Last 20 messages
-                "last_move": self.player.last_move_summary or "None",
-                "available_moves": self.available_options
-            }
-            
-            # Fetch from strategist
-            self.player.suggested_moves = self.strategist.get_suggestions(ctx, max_suggestions=count)
-            
-        except Exception as e:
-            # Fallback when logger is not defined or other errors occur
-            print(f"Error in _refresh_suggestions: {e}")
-            self.player.suggested_moves = []
-    
-    def _refresh_suggestions_async(self):
+    def refresh_suggestions(self):
         """Fetch tactical suggestions asynchronously without blocking combat."""
         import logging
         logger = logging.getLogger(__name__)

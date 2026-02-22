@@ -1642,7 +1642,7 @@ class GameService:
         else:
             return {"error": f"Unknown move type: {move_type}"}
             
-    def get_combat_status(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_combat_status(self, player: "player_module.Player", session_data: Dict = None) -> Dict[str, Any]:
         """Get current combat status."""
         if not hasattr(player, "_combat_adapter"):
             # If player is in combat, try to re-initialize the adapter
@@ -1656,7 +1656,7 @@ class GameService:
                 player._combat_adapter = ApiCombatAdapter(player, on_event_callback=event_callback)
                 # Synchronize initial state for the new adapter
                 player._combat_adapter.available_options = player._combat_adapter._get_available_moves()
-                player._combat_adapter._refresh_suggestions()
+                player._combat_adapter.refresh_suggestions()
             else:
                 return {
                     "combat_active": getattr(player, "in_combat", False),
@@ -1664,13 +1664,33 @@ class GameService:
                     "battle_state": None
                 }
         else:
+            adapter = player._combat_adapter
+            
+            # Resume logic: If battle is active but not awaiting input, check why
+            # This handles cases where combat was paused for narrative events
+            if player.in_combat and not adapter.awaiting_input:
+                blocking_events = session_data.get("pending_events", {}) if session_data else {}
+                if not blocking_events:
+                    # No pending events, we should be resuming or finishing
+                    if len(player.combat_list) == 0:
+                        # All enemies defeated after event finished - trigger victory
+                        adapter._handle_victory()
+                    elif hasattr(player, "current_move") and player.current_move:
+                        # Resume the current move if it was interrupted
+                        return adapter._execute_move(player.current_move)
+                    else:
+                        # Otherwise, reset to move selection
+                        adapter.awaiting_input = True
+                        adapter.input_type = "move_selection"
+                        adapter.available_options = adapter._get_available_moves()
+                        adapter.refresh_suggestions()
+            
             # Refresh available_options if we're in move selection mode
             # This ensures viable_targets are updated when enemies are added/removed mid-combat
-            adapter = player._combat_adapter
             if adapter.input_type == "move_selection" and adapter.awaiting_input:
                 adapter.available_options = adapter._get_available_moves()
                 # Also refresh AI suggestions so they have updated target IDs
-                adapter._refresh_suggestions()
+                adapter.refresh_suggestions()
         
         return player._combat_adapter.get_combat_state()
 
