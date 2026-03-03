@@ -1,7 +1,9 @@
 import json
 import os
 import logging
-from typing import Any, Dict, Optional, List
+import threading
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 try:
     import requests
 except ImportError:
@@ -11,11 +13,12 @@ from dotenv import load_dotenv
 # Ensure .env is loaded
 load_dotenv()
 
-# We intentionally import requests lazily inside provider code paths so tests don't require it
-
 AI_DIR = os.path.dirname(__file__)
 MYNX_JSON_PATH = os.path.join(AI_DIR, "npc", "animal", "mynx.json")
 
+# Disk cache for the ranked free-model list (survives process restarts)
+_MODEL_CACHE_FILE = os.path.join(AI_DIR, ".model_cache.json")
+_CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
 logger = logging.getLogger(__name__)
 
@@ -76,36 +79,71 @@ class GenericLLMClient:
         - OPENROUTER_SITE_TITLE="Your Site"   (optional ranking metadata)
 
     Defaults:
-      - model: 'llama3.1:7b' for ollama, 'google/gemini-flash-1.5:free' for openrouter (if unset)
+      - model: 'llama3.1:7b' for ollama, first free OpenRouter model for openrouter (if unset)
     """
+
+    # Ordered list of stable free OpenRouter models to use as fallbacks when
+    # the dynamic cache is empty or all discovered models fail.
+    # Gemini is listed first as it tends to be the most reliable.
+    STABLE_FREE_FALLBACKS: List[str] = [
+        "google/gemini-flash-1.5:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "meta-llama/llama-3.2-3b-instruct:free",
+        "mistralai/mistral-small-3.1-24b-instruct:free",
+    ]
+
+    # --- Class-level shared state (process-wide) ---
+    _free_models_cache: List[str] = []
+    # Maps model_id -> datetime at which the failure penalty expires.
+    _failed_models: Dict[str, datetime] = {}
+    _discovery_done: bool = False
+    # Lock protecting all mutations of _failed_models (called from multiple threads).
+    _state_lock = threading.Lock()
+    # In-flight guard: only one discovery fetch runs at a time.
+    # All other threads wait on this event rather than launching duplicate fetches.
+    _discovery_event: threading.Event = threading.Event()
+    _discovery_event.set()  # Initially "done" so the first caller proceeds immediately.
+
+    # -----------------------------------------------
 
     def __init__(self):
         self.enabled = os.getenv("MYNX_LLM_ENABLED", "0") in ("1", "true", "True")
         self.provider = os.getenv("MYNX_LLM_PROVIDER", "").strip().lower() or "ollama"
-        # Choose a sensible default model per provider if user did not specify
-        default_model = "llama3.1:7b" if self.provider == "ollama" else "google/gemini-flash-1.5:free"
         self.model = os.getenv("MYNX_LLM_MODEL", "").strip() or "auto"
-        logger.info(f"DEBUG: Initializing GenericLLMClient (Provider: {self.provider}, Model: {self.model}, Enabled: {self.enabled})")
+        logger.info(f"Initializing GenericLLMClient (Provider: {self.provider}, Model: {self.model}, Enabled: {self.enabled})")
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip()
 
         # OpenRouter specific configuration
         self._openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self._openrouter_site = os.getenv("OPENROUTER_SITE", "").strip() or None
         self._openrouter_site_title = os.getenv("OPENROUTER_SITE_TITLE", "").strip() or None
-        self._free_models_cache: List[str] = []
-        self._failed_models = set() # Track models that failed during this session
 
         # Probe availability lazily; we don't want to fail import-time
         self._available: Optional[bool] = None
         self._unavailable_reason: Optional[str] = None
-        
-        # Discover models
+
+        # Discover models (singleton: discovery only runs once per process)
         if self.enabled:
             if self.provider == "ollama" and not os.getenv("MYNX_LLM_MODEL"):
                 self._discover_ollama_model()
             elif self.provider == "openrouter":
-                self._discover_openrouter_model()
+                if not GenericLLMClient._discovery_done:
+                    self._discover_openrouter_model()
                 self._validate_and_fallback_openrouter()
+
+    @classmethod
+    def reset_class_state(cls) -> None:
+        """Reset all class-level shared state. Intended for use in tests only."""
+        with cls._state_lock:
+            cls._free_models_cache = []
+            cls._failed_models = {}
+            cls._discovery_done = False
+        # Ensure the event is set so tests don't deadlock waiting on a discovery
+        cls._discovery_event.set()
+
+    # ------------------------------------------------------------------
+    # Model discovery
+    # ------------------------------------------------------------------
 
     def _discover_ollama_model(self):
         """Try to find an available Ollama model if the default is missing."""
@@ -126,101 +164,291 @@ class GenericLLMClient:
         except Exception:
             pass
 
-    def _discover_openrouter_model(self):
-        """Fetch list of free models from OpenRouter to use as fallbacks."""
-        if not self._openrouter_api_key:
-            return
-        
+    # ------------------------------------------------------------------
+    # Disk cache helpers (Chester-style)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _read_disk_cache() -> Optional[List[str]]:
+        """Read and validate the on-disk model cache. Returns model list or None."""
         try:
-            r = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                models = data.get("data", [])
-                free_models = []
-                for m in models:
-                    pricing = m.get("pricing", {})
-                    # Look for truly free models (0 cost for prompt and completion)
-                    try:
-                        p_val = float(pricing.get("prompt", 1))
-                        c_val = float(pricing.get("completion", 1))
-                        if p_val == 0 and c_val == 0:
-                            free_models.append(m.get("id"))
-                    except (ValueError, TypeError):
-                        continue
-                
-                self._free_models_cache = free_models
-                logger.info(f"DEBUG: Discovered {len(free_models)} free OpenRouter models.")
-                
-                # If current model is generic or unset, pick the best available free model
-                if self.model in ["auto", "free", ""] or not self.model:
-                    # Preference order for selection
-                    prefs = ["llama-3.3-70b", "llama-3.2-3b", "mistral-small-3.1-24b", "gemini-2.0-flash-exp", "gemini-flash-1.5"]
-                    selected = None
-                    for pref in prefs:
-                        for m_id in free_models:
-                            if pref in m_id.lower():
-                                selected = m_id
-                                break
-                        if selected: break
-                    
-                    self.model = selected or (free_models[0] if free_models else "meta-llama/llama-3.3-70b-instruct:free")
+            with open(_MODEL_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            fetched_at = data.get("fetched_at", 0)
+            models = data.get("models", [])
+            if not isinstance(models, list) or not models:
+                return None
+            if not all(isinstance(m, str) and m for m in models):
+                return None
+            age_seconds = (datetime.now().timestamp() - fetched_at)
+            if age_seconds > _CACHE_TTL_SECONDS:
+                return None
+            return models
+        except Exception:
+            return None
+
+    @staticmethod
+    def _write_disk_cache(models: List[str]) -> None:
+        """Atomically write the ranked model list to disk."""
+        payload = json.dumps({"fetched_at": datetime.now().timestamp(), "models": models}, indent=2)
+        tmp = _MODEL_CACHE_FILE + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, _MODEL_CACHE_FILE)  # atomic on POSIX and Windows
         except Exception as e:
-            logger.warning(f"DEBUG: Failed to discover OpenRouter models: {e}")
+            logger.warning(f"Failed to write model cache: {e}")
+
+    # ------------------------------------------------------------------
+    # Model ranking (Chester-style)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_free_text_model(m: dict) -> bool:
+        """Return True if the model has zero-cost prompt+completion AND text-only output."""
+        pricing = m.get("pricing", {})
+        try:
+            if float(pricing.get("prompt", 1)) != 0:
+                return False
+            if float(pricing.get("completion", 1)) != 0:
+                return False
+        except (ValueError, TypeError):
+            return False
+        output_mods = m.get("architecture", {}).get("output_modalities", [])
+        if output_mods and not all(mod == "text" for mod in output_mods):
+            return False
+        return True
+
+    @classmethod
+    def _rank_models(cls, all_models: List[dict], priority_ids: set) -> List[str]:
+        """Filter to free text-only models, deduplicate, rank, and return IDs.
+
+        Ranking axes (same priority order as Chester's modelManager.js):
+          1. Priority category (roleplay/gaming) tagged first
+          2. Recency (newer created timestamp = more maintained)
+          3. Context window size (smallest = fastest / lightest)
+          4. Stable alphabetical tiebreaker
+        """
+        seen: set = set()
+        eligible = []
+        for m in all_models:
+            mid = m.get("id")
+            if not mid or mid in seen:
+                continue
+            if not cls._is_free_text_model(m):
+                continue
+            seen.add(mid)
+            eligible.append(m)
+
+        eligible.sort(key=lambda m: (
+            0 if m["id"] in priority_ids else 1,   # 1. priority category first
+            -(m.get("created") or 0),               # 2. newest first (negate for DESC)
+            m.get("context_length") or float("inf"),# 3. smallest context first
+            m["id"],                                # 4. stable tiebreaker
+        ))
+        return [m["id"] for m in eligible]
+
+    @classmethod
+    def _fetch_and_rank_models(cls, api_key: str) -> List[str]:
+        """Fetch all free OpenRouter models, merge with gaming category, rank, cache."""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": os.getenv("OPENROUTER_SITE", ""),
+            "X-Title": os.getenv("OPENROUTER_SITE_TITLE", ""),
+        }
+
+        def fetch(url):
+            r = requests.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            return r.json().get("data", [])
+
+        # Fetch the gaming/roleplay category and all models in parallel via threads
+        priority_raw: List[dict] = []
+        all_raw: List[dict] = []
+        errors: List[str] = []
+
+        def fetch_priority():
+            try:
+                # Try 'gaming' first; fall back to 'roleplay'
+                for cat in ("gaming", "roleplay"):
+                    data = fetch(f"https://openrouter.ai/api/v1/models?category={cat}")
+                    if data:
+                        priority_raw.extend(data)
+                        return
+            except Exception as e:
+                errors.append(str(e))
+
+        def fetch_all():
+            try:
+                all_raw.extend(fetch("https://openrouter.ai/api/v1/models"))
+            except Exception as e:
+                errors.append(str(e))
+
+        t1 = threading.Thread(target=fetch_priority, daemon=True)
+        t2 = threading.Thread(target=fetch_all, daemon=True)
+        t1.start(); t2.start()
+        t1.join(timeout=12); t2.join(timeout=12)
+
+        if not all_raw:
+            raise RuntimeError(f"Failed to fetch OpenRouter models: {'; '.join(errors)}")
+
+        priority_ids = {m.get("id") for m in priority_raw if m.get("id")}
+        # Priority models lead the merged list so deduplication in _rank_models
+        # always retains the priority copy when IDs overlap.
+        merged = priority_raw + all_raw
+        ranked = cls._rank_models(merged, priority_ids)
+
+        if not ranked:
+            raise RuntimeError("No suitable free text-only models found on OpenRouter.")
+
+        cls._write_disk_cache(ranked)
+        logger.info(f"Discovered and ranked {len(ranked)} free OpenRouter models.")
+        return ranked
+
+    # ------------------------------------------------------------------
+    # Model discovery — with in-flight lock to prevent concurrent storms
+    # ------------------------------------------------------------------
+
+    def _discover_openrouter_model(self):
+        """Populate the class-level free-model cache (disk → memory → network).
+
+        Uses a threading.Event to coalesce concurrent callers: the first caller
+        does the work; all others wait for it to finish instead of launching
+        duplicate network requests.
+        """
+        if not self._openrouter_api_key:
+            GenericLLMClient._discovery_done = True
+            return
+
+        # If a discovery is already in-flight, wait for it then return.
+        if not GenericLLMClient._discovery_event.is_set():
+            logger.info("Discovery already in-flight, waiting...")
+            GenericLLMClient._discovery_event.wait(timeout=20)
+            return
+
+        # We're the first caller — take the lock.
+        GenericLLMClient._discovery_event.clear()
+        try:
+            # 1. Try the in-memory list (already populated by a previous instance)
+            if GenericLLMClient._free_models_cache:
+                self._select_model_from_cache(GenericLLMClient._free_models_cache)
+                return
+
+            # 2. Try the disk cache
+            cached = self._read_disk_cache()
+            if cached:
+                logger.info(f"Loaded {len(cached)} models from disk cache.")
+                GenericLLMClient._free_models_cache = cached
+                self._select_model_from_cache(cached)
+                GenericLLMClient._discovery_done = True
+                return
+
+            # 3. Fetch from network
+            ranked = self._fetch_and_rank_models(self._openrouter_api_key)
+            GenericLLMClient._free_models_cache = ranked
+            self._select_model_from_cache(ranked)
+            GenericLLMClient._discovery_done = True
+
+            # Kick off a nightly refresh background thread (idempotent)
+            self._start_nightly_refresh()
+
+        except Exception as e:
+            logger.warning(f"Failed to discover OpenRouter models: {e}")
+            # Mark done so we don't retry on every instantiation; rely on STABLE_FREE_FALLBACKS
+            GenericLLMClient._discovery_done = True
+        finally:
+            # Always release the event so waiting threads unblock
+            GenericLLMClient._discovery_event.set()
+
+    def _select_model_from_cache(self, models: List[str]) -> None:
+        """Pick a primary model from the ranked list when model is set to auto."""
+        if self.model not in ("auto", "free", "") and self.model:
+            return  # User explicitly specified a model; respect it
+        self.model = models[0] if models else self.STABLE_FREE_FALLBACKS[0]
+
+    @classmethod
+    def _start_nightly_refresh(cls) -> None:
+        """Schedule a background thread that refreshes the model cache every 24 hours."""
+        if getattr(cls, "_nightly_refresh_started", False):
+            return
+        cls._nightly_refresh_started = True
+
+        def _refresh_loop():
+            import time
+            while True:
+                time.sleep(_CACHE_TTL_SECONDS)
+                try:
+                    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+                    if not api_key:
+                        continue
+                    ranked = cls._fetch_and_rank_models(api_key)
+                    with cls._state_lock:
+                        cls._free_models_cache = ranked
+                    logger.info("Nightly model refresh complete.")
+                except Exception as e:
+                    logger.warning(f"Nightly model refresh failed: {e}")
+
+        t = threading.Thread(target=_refresh_loop, daemon=True, name="llm-model-refresh")
+        t.start()
+        logger.info("Nightly model refresh thread started.")
+
+
+    # ------------------------------------------------------------------
+    # Validation / fallback selection
+    # ------------------------------------------------------------------
 
     def _validate_and_fallback_openrouter(self):
         """Test the current model and fallback through others until one works."""
         if not self.enabled or not self._openrouter_api_key:
             return
 
-        logger.info(f"DEBUG: Validating OpenRouter model: {self.model}")
-        
-        # We perform a tiny test chat to verify connectivity and availability
-        def test_one(m_id):
-            if m_id in self._failed_models: return False
+        logger.info(f"Validating OpenRouter model: {self.model}")
+
+        # Tiny test chat to verify connectivity and availability (short timeout)
+        def test_one(m_id: str) -> bool:
+            if self._is_model_failed(m_id):
+                return False
             try:
-                # Use internal chat with no fallback for the test itself
-                res = self._openrouter_chat_single(m_id, "System", "Say OK", False)
+                res = self._openrouter_chat_single(m_id, "System", "Say OK", False, timeout=5)
                 return res is not None and "ok" in str(res).lower()
             except Exception:
                 return False
 
         if test_one(self.model):
-            logger.info(f"DEBUG: Primary model {self.model} verified.")
+            logger.info(f"Primary model {self.model} verified.")
             self._available = True
             return
 
-        logger.warning(f"DEBUG: Primary model {self.model} failed. Searching for fallback...")
-        self._failed_models.add(self.model)
+        logger.warning(f"Primary model {self.model} failed. Searching for fallback...")
+        self._mark_model_failed(self.model, duration_minutes=30)
 
-        # Gather fallbacks
-        candidates = []
-        if self._free_models_cache:
-            candidates.extend([m for m in self._free_models_cache if m != self.model])
-        
-        stable = [
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "meta-llama/llama-3.2-3b-instruct:free",
-            "mistralai/mistral-small-3.1-24b-instruct:free",
-            "google/gemini-flash-1.5:free"
-        ]
-        for s in stable:
+        # Build candidate list: dynamic free cache first, then static stable list
+        candidates: List[str] = []
+        if GenericLLMClient._free_models_cache:
+            candidates.extend([m for m in GenericLLMClient._free_models_cache if m != self.model])
+        for s in self.STABLE_FREE_FALLBACKS:
             if s not in candidates and s != self.model:
                 candidates.append(s)
 
-        for cand in candidates:
-            if cand in self._failed_models: continue
-            logger.info(f"DEBUG: Testing fallback: {cand}")
+        for cand in candidates[:5]:  # Try at most 5 fallbacks during validation
+            if self._is_model_failed(cand):
+                continue
+            logger.info(f"Testing fallback: {cand}")
             if test_one(cand):
-                logger.info(f"DEBUG: Found working fallback: {cand}")
+                logger.info(f"Found working fallback: {cand}")
                 self.model = cand
                 self._available = True
                 return
             else:
-                self._failed_models.add(cand)
+                self._mark_model_failed(cand, duration_minutes=15)
 
-        logger.error("DEBUG: All OpenRouter models failed validation. Disabling LLM.")
+        logger.error("All OpenRouter models failed validation. Disabling LLM.")
         self._available = False
         self.enabled = False
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def available(self) -> bool:
         if not self.enabled:
@@ -228,10 +456,10 @@ class GenericLLMClient:
             return False
         if self._available is not None:
             return self._available
-        
-        logger.info(f"DEBUG: Probing availability for {self.provider}")
-        # Reset reason before probe
+
+        logger.info(f"Probing availability for {self.provider}")
         self._unavailable_reason = None
+
         if self.provider == "ollama":
             try:
                 import requests  # type: ignore
@@ -245,22 +473,18 @@ class GenericLLMClient:
                 self._available = False
                 self._unavailable_reason = f"Failed connecting to Ollama at {self.base_url}: {e}"
             return self._available
+
         if self.provider == "openrouter":
             if not self._openrouter_api_key:
                 self._available = False
                 self._unavailable_reason = "Missing OPENROUTER_API_KEY."
-                return self._available
-            # Verify openai SDK importable OR be ready to fallback
-            try:
-                from openai import OpenAI as _OpenAIClass  # type: ignore  # noqa: F401
-                if getattr(_OpenAIClass, "_is_stub", False):
-                    self._available = True
-                else:
-                    self._available = True
-            except Exception as e:
-                self._available = True
-                self._unavailable_reason = f"openai SDK import failed; will use direct HTTP fallback: {e}"
+                return False
+            # Availability was already confirmed (or denied) during _validate_and_fallback_openrouter.
+            # If we reach here it means the openrouter path was skipped (e.g. disabled at init time),
+            # so we mark as available and let the actual request determine if things work.
+            self._available = True
             return True
+
         self._available = False
         self._unavailable_reason = f"Unknown provider '{self.provider}'."
         return False
@@ -285,11 +509,11 @@ class GenericLLMClient:
             res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
         else:
             return None
-            
+
         if not res:
             return None
-            
-        # If the model ignored our 'plain-text' request and returned JSON anyway, 
+
+        # If the model ignored our 'plain-text' request and returned JSON anyway,
         # try to extract the 'description' field.
         if isinstance(res, str) and (res.strip().startswith("{") or "```json" in res.lower()):
             obj = _JSONTools.try_parse_json(res)
@@ -297,31 +521,34 @@ class GenericLLMClient:
                 desc = obj.get("description") or obj.get("action") or obj.get("text")
                 if desc:
                     return _JSONTools.sanitize_text(str(desc))
-        
+
         return str(res)
 
     def generate_structured(self, system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
         if not self.available():
-            logger.warning("DEBUG: generate_structured called but LLM is not available.")
+            logger.warning("generate_structured called but LLM is not available.")
             return None
-            
-        logger.info(f"DEBUG: generate_structured using provider: {self.provider}")
+
+        logger.info(f"generate_structured using provider: {self.provider}")
         if self.provider == "ollama":
             res = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
         elif self.provider == "openrouter":
             res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
         else:
-            logger.error(f"DEBUG: generate_structured encountered unknown provider: {self.provider}")
+            logger.error(f"generate_structured encountered unknown provider: {self.provider}")
             return None
-        
+
         if res is None:
-            logger.warning(f"DEBUG: generate_structured received None from provider {self.provider}")
+            logger.warning(f"generate_structured received None from provider {self.provider}")
         elif not isinstance(res, dict):
-            logger.warning(f"DEBUG: generate_structured received non-dict from provider {self.provider}: {type(res)}")
-            
+            logger.warning(f"generate_structured received non-dict from provider {self.provider}: {type(res)}")
+
         return res
 
-    # Provider-specific implementation: Ollama (local)
+    # ------------------------------------------------------------------
+    # Provider: Ollama (local)
+    # ------------------------------------------------------------------
+
     def _ollama_chat(self, system_prompt: str, user_prompt: str, structured: bool) -> Optional[Any]:
         import requests  # type: ignore
         url = self.base_url + "/api/chat"
@@ -388,83 +615,82 @@ class GenericLLMClient:
         except Exception:
             return None
 
-    # Provider-specific implementation: OpenRouter (remote API)
-    def _openrouter_chat(self, system_prompt: str, user_prompt: str, structured: bool) -> Optional[Any]:
-        sdk_client = None
-        sdk_is_stub = False
+    # ------------------------------------------------------------------
+    # Provider: OpenRouter (remote API)
+    # ------------------------------------------------------------------
+
+    def _get_sdk_client(self) -> Optional[Any]:
+        """Return an OpenAI SDK client configured for OpenRouter, or None if unavailable/stubbed."""
         try:
             from openai import OpenAI  # type: ignore
             if getattr(OpenAI, "_is_stub", False):
-                sdk_is_stub = True
-            else:
-                sdk_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
+                return None
+            return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
         except Exception:
-            sdk_client = None
+            return None
 
+    def _build_openrouter_headers(self) -> Dict[str, str]:
+        """Build extra HTTP headers for OpenRouter ranking metadata."""
+        headers: Dict[str, str] = {}
+        if self._openrouter_site:
+            headers["HTTP-Referer"] = self._openrouter_site
+        if self._openrouter_site_title:
+            headers["X-Title"] = self._openrouter_site_title
+        return headers
+
+    def _openrouter_chat(self, system_prompt: str, user_prompt: str, structured: bool) -> Optional[Any]:
         if not self._openrouter_api_key:
             return None
 
-        headers = {}
-        if self._openrouter_site:
-            headers["HTTP-Referer"] = self._openrouter_site
-        if self._openrouter_site_title:
-            headers["X-Title"] = self._openrouter_site_title
-
-        # Prepare models to try
-        models_to_try = [self.model]
-        if self._free_models_cache:
-            # Add fallbacks that aren't the primary model
-            models_to_try.extend([m for m in self._free_models_cache if m != self.model][:3])
-        
-        # Ensure stable fallbacks are in the list
-        stable_fallbacks = [
-            "meta-llama/llama-3.3-70b-instruct:free", 
-            "meta-llama/llama-3.2-3b-instruct:free",
-            "mistralai/mistral-small-3.1-24b-instruct:free",
-            "google/gemini-flash-1.5:free"
-        ]
-        for fallback in stable_fallbacks:
+        # Build the ordered list of models to try
+        models_to_try: List[str] = [self.model]
+        if GenericLLMClient._free_models_cache:
+            models_to_try.extend(
+                [m for m in GenericLLMClient._free_models_cache if m != self.model][:5]
+            )
+        for fallback in self.STABLE_FREE_FALLBACKS:
             if fallback not in models_to_try:
                 models_to_try.append(fallback)
 
+        attempts = 0
+        max_attempts = 3  # Primary + up to 2 fallbacks per request
+
         for model_id in models_to_try:
-            if model_id in self._failed_models:
+            if self._is_model_failed(model_id):
                 continue
-            
-            # Use single-shot chat helper
-            res = self._openrouter_chat_single(model_id, system_prompt, user_prompt, structured)
+
+            attempts += 1
+            if attempts > max_attempts:
+                logger.warning(f"Reached max attempts ({max_attempts}) for LLM request. Stopping.")
+                break
+
+            # Use a shorter timeout for fallback attempts to fail fast
+            timeout = 20 if attempts == 1 else 10
+            res = self._openrouter_chat_single(model_id, system_prompt, user_prompt, structured, timeout=timeout)
             if res is not None:
                 if model_id != self.model:
-                    logger.info(f"DEBUG: Successfully used fallback model: {model_id}")
+                    logger.info(f"Successfully used fallback model: {model_id}")
                 return res
-            
-            # If we failed, mark it
-            logger.warning(f"DEBUG: Model {model_id} failed, marking as unusable for this session.")
-            self._failed_models.add(model_id)
-        
+
+            logger.warning(f"Model {model_id} failed, marking as unusable.")
+            self._mark_model_failed(model_id)
+
         return None
 
-    def _openrouter_chat_single(self, model_id: str, system_prompt: str, user_prompt: str, structured: bool) -> Optional[Any]:
+    def _openrouter_chat_single(
+        self,
+        model_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        structured: bool,
+        timeout: int = 20,
+    ) -> Optional[Any]:
         """Attempt a single chat completion with exactly one model, no fallbacks."""
-        sdk_client = None
-        sdk_is_stub = False
-        try:
-            from openai import OpenAI  # type: ignore
-            if getattr(OpenAI, "_is_stub", False):
-                sdk_is_stub = True
-            else:
-                sdk_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=self._openrouter_api_key)
-        except Exception:
-            sdk_client = None
+        sdk_client = self._get_sdk_client()
+        extra_headers = self._build_openrouter_headers()
 
-        headers = {}
-        if self._openrouter_site:
-            headers["HTTP-Referer"] = self._openrouter_site
-        if self._openrouter_site_title:
-            headers["X-Title"] = self._openrouter_site_title
-            
         # Try SDK first if available
-        if sdk_client and not sdk_is_stub:
+        if sdk_client is not None:
             try:
                 completion = sdk_client.chat.completions.create(
                     model=model_id,
@@ -472,40 +698,34 @@ class GenericLLMClient:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    extra_headers=headers or None,
+                    extra_headers=extra_headers or None,
                     temperature=0.2,
                     top_p=0.9,
                     max_tokens=1024 if structured else 256,
                 )
-                
-                msg = completion.choices[0].message
-                content = getattr(msg, "content", None)
-                if not content and isinstance(msg, dict):
-                    content = msg.get("content")
-                
+
+                content = getattr(completion.choices[0].message, "content", None)
+
                 if content:
-                    logger.info(f"DEBUG: SDK request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
+                    logger.info(f"SDK request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
                     if structured:
                         return _JSONTools.try_parse_json(str(content))
                     return _JSONTools.sanitize_text(str(content))
                 else:
-                    logger.warning(f"DEBUG: SDK request for {model_id} returned NO CONTENT.")
+                    logger.warning(f"SDK request for {model_id} returned no content.")
             except Exception as e:
-                logger.warning(f"DEBUG: SDK request failed for {model_id}: {str(e)[:200]}")
-                # Fall through to requests path for this model
-        
-        # Try direct requests path
+                logger.warning(f"SDK request failed for {model_id}: {str(e)[:200]}")
+                # Fall through to the direct HTTP path
+
+        # Direct HTTP fallback
         try:
             import requests
             http_headers = {
                 "Authorization": f"Bearer {self._openrouter_api_key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                **extra_headers,
             }
-            if self._openrouter_site:
-                http_headers["HTTP-Referer"] = self._openrouter_site
-            if self._openrouter_site_title:
-                http_headers["X-Title"] = self._openrouter_site_title
 
             payload = {
                 "model": model_id,
@@ -517,22 +737,28 @@ class GenericLLMClient:
                 "top_p": 0.9,
                 "max_tokens": 1024 if structured else 256,
             }
-            
+
             resp = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions", 
-                json=payload, 
-                headers=http_headers, 
-                timeout=20
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=payload,
+                headers=http_headers,
+                timeout=timeout,
             )
-            
+
+            if resp.status_code == 429:
+                logger.warning(f"OpenRouter returned 429 Rate Limit for {model_id}")
+                # Short penalty — don't let the caller overwrite with a longer one
+                self._mark_model_failed(model_id, duration_minutes=2)
+                return None
+
             if resp.status_code == 200:
                 data = resp.json()
-                logger.debug(f"DEBUG: HTTP 200 Response Data from {model_id}: {data}")
+                logger.debug(f"HTTP 200 response from {model_id}: {data}")
                 content = None
                 if isinstance(data, dict):
-                    # Check for errors in the 200 response (some providers do this)
+                    # Some providers embed errors inside a 200 payload
                     if "error" in data:
-                        logger.warning(f"DEBUG: OpenRouter returned error in 200 payload for {model_id}: {data['error']}")
+                        logger.warning(f"OpenRouter returned error in 200 payload for {model_id}: {data['error']}")
                         return None
 
                     choices = data.get("choices")
@@ -541,23 +767,53 @@ class GenericLLMClient:
                         if isinstance(first, dict):
                             msg = first.get("message")
                             if isinstance(msg, dict):
-                                content = msg.get("content")
+                                # Fall back to 'reasoning' for thinking-mode models
+                                content = msg.get("content") or msg.get("reasoning")
                             if not content:
-                                content = first.get("text") or first.get("content")
-                
+                                content = first.get("text") or first.get("content") or first.get("reasoning")
+
                 if content:
-                    logger.info(f"DEBUG: HTTP request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
+                    logger.info(f"HTTP request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
                     if structured:
                         return _JSONTools.try_parse_json(str(content))
                     return _JSONTools.sanitize_text(str(content))
                 else:
-                    logger.warning(f"DEBUG: HTTP request for {model_id} returned NO CONTENT in choices.")
-            
-            logger.warning(f"DEBUG: HTTP request failed for {model_id} with {resp.status_code}: {resp.text[:500]}")
+                    logger.warning(f"HTTP request for {model_id} returned no content in choices.")
+
+            logger.warning(f"HTTP request failed for {model_id} with {resp.status_code}: {resp.text[:500]}")
         except Exception as e:
-            logger.error(f"DEBUG: HTTP request exception for {model_id}: {e}", exc_info=True)
-        
+            logger.error(f"HTTP request exception for {model_id}: {e}", exc_info=True)
+
         return None
+
+    # ------------------------------------------------------------------
+    # Model failure tracking (thread-safe)
+    # ------------------------------------------------------------------
+
+    def _is_model_failed(self, model_id: str) -> bool:
+        """Return True if model_id is currently within its failure penalty window."""
+        with GenericLLMClient._state_lock:
+            expiry = GenericLLMClient._failed_models.get(model_id)
+            if expiry is None:
+                return False
+            if datetime.now() > expiry:
+                del GenericLLMClient._failed_models[model_id]
+                return False
+            return True
+
+    def _mark_model_failed(self, model_id: str, duration_minutes: int = 10) -> None:
+        """Mark a model as failed for a specified duration.
+
+        If the model is already penalized, the penalty is only extended — never
+        shortened. This prevents a generic 10-minute caller penalty from clobbering
+        a deliberate 2-minute 429 penalty set by the inner request method.
+        """
+        with GenericLLMClient._state_lock:
+            new_expiry = datetime.now() + timedelta(minutes=duration_minutes)
+            existing = GenericLLMClient._failed_models.get(model_id)
+            if existing is None or new_expiry > existing:
+                GenericLLMClient._failed_models[model_id] = new_expiry
+                logger.info(f"Model {model_id} marked as failed until {new_expiry.strftime('%H:%M:%S')}")
 
 
 class MynxLLMAdapter(GenericLLMClient):
