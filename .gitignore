@@ -80,3 +80,4 @@ frontend/coverage*
 frontend/test_report.txt
 .kilocode/
 .kilocodemodes
+ai/.model_cache.json
