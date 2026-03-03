@@ -120,13 +120,13 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         else:
             if npc.current_move is None:
                 if not npc.friend:
-                    npc.target = player.combat_list_allies[
-                        random.randint(0, len(
-                            player.combat_list_allies) - 1)]  # select a random target from the player's party
+                    if player.combat_list_allies:
+                        npc.target = player.combat_list_allies[
+                            random.randint(0, len(player.combat_list_allies) - 1)]
                 else:
-                    npc.target = player.combat_list[
-                        random.randint(0, len(
-                            player.combat_list) - 1)]  # select a random target from the enemy's party
+                    if player.combat_list:
+                        npc.target = player.combat_list[
+                            random.randint(0, len(player.combat_list) - 1)]
                 npc.select_move()
                 npc.current_move.target = npc.target
                 if (npc.current_move is not None and hasattr(npc.current_move, "cast") and
@@ -170,7 +170,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         for each_ally in player.combat_list_allies:
             remove_these = []
             for each_enemy in each_ally.combat_proximity:  # Remove any dead enemies
-                if not each_enemy.is_alive:
+                if not each_enemy.is_alive():
                     remove_these.append(each_enemy)
             for each_enemy in remove_these:
                 del each_ally.combat_proximity[each_enemy]
@@ -178,7 +178,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 remove_these = []
                 for each_ally_in_prox in each_enemy.combat_proximity:  # Remove any dead allies from combat proximity;
                     # this will only work for allies who can die, excluding Jean
-                    if not each_ally.is_alive:
+                    if not each_ally_in_prox.is_alive():
                         remove_these.append(each_ally_in_prox)
                 for each_ally_that_died in remove_these:
                     del each_enemy.combat_proximity[each_ally_that_died]
@@ -348,7 +348,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 selected_move = input("Selection: ")
             try:
                 selected_move = int(selected_move)
-            except SyntaxError:
+            except ValueError:
                 cprint("Invalid selection.", "red", attrs=['bold'])
             for i, move in enumerate(viable_moves):
                 if i == selected_move:
@@ -364,12 +364,12 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                             if player.current_move.name == "Shoot Bow":  # if the player is shooting his bow,
                                 # overwrite max to include decaying range
                                 range_max = player.eq_weapon.range_base + (100 / player.eq_weapon.range_decay)
+                            dead_in_prox = [e for e in player.combat_proximity if not e.is_alive()]
+                            for e in dead_in_prox:
+                                del player.combat_proximity[e]
                             for enemy, distance in player.combat_proximity.items():
-                                if enemy.is_alive:
-                                    if range_min <= distance <= range_max:
-                                        acceptable_targets.append((enemy, distance))
-                                else:
-                                    del player.combat_proximity[enemy]
+                                if range_min <= distance <= range_max:
+                                    acceptable_targets.append((enemy, distance))
                             if not player.current_move.verbose_targeting:
                                 if len(acceptable_targets) > 1:
                                     acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets
@@ -477,9 +477,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         # print("### CURRENT BEAT: "+str(beat))
 
     #  AFTER COMBAT LOOP (VICTORY, ESCAPE, OR DEFEAT)
-    for status in player.states:
-        if not status.persistent:
-            player.states.remove(status)
+    player.states = [s for s in player.states if s.persistent]
     
     # Close battlefield window
     battlefield_window.close()

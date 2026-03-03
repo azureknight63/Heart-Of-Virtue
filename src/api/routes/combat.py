@@ -1,6 +1,9 @@
 """Combat system routes."""
 
+import logging
 from flask import Blueprint, request, jsonify
+
+logger = logging.getLogger(__name__)
 
 combat_bp = Blueprint("combat", __name__)
 
@@ -14,6 +17,8 @@ def get_session_and_player(request):
         return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
 
     session_id = auth_header[7:]
+    if not session_id:
+        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
     session_manager = current_app.session_manager
     session = session_manager.get_session(session_id)
 
@@ -81,15 +86,8 @@ def start_combat():
         return jsonify({"success": True, **result}), 201
 
     except Exception as e:
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
+        logger.exception("Unhandled error in start_combat")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @combat_bp.route("/move", methods=["POST"])
@@ -149,15 +147,8 @@ def execute_move():
         return jsonify({"success": True, **result}), 200
 
     except Exception as e:
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
+        logger.exception("Unhandled error in execute_move")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @combat_bp.route("/status", methods=["GET"])
@@ -190,15 +181,9 @@ def get_combat_status():
         return jsonify({"success": True, **status}), 200
 
     except Exception as e:
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
+        logger.exception("Unhandled error in get_combat_status")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+
 @combat_bp.route("/log", methods=["GET"])
 def get_combat_log():
     """Get full combat log.
@@ -221,12 +206,5 @@ def get_combat_log():
         return jsonify({"success": True, "log": log}), 200
 
     except Exception as e:
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": str(e),
-                }
-            ),
-            500,
-        )
+        logger.exception("Unhandled error in get_combat_log")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500

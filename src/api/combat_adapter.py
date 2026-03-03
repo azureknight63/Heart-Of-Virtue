@@ -15,10 +15,14 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from unittest.mock import patch
+import re
 import random
 
 if TYPE_CHECKING:
     from player import Player
+
+# Compiled once at module level for performance
+_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])')
 
 import positions  # type: ignore
 from src.api.serializers.combat import CombatStateSerializer, CombatantSerializer
@@ -40,9 +44,7 @@ class CombatOutputCapture:
         """Capture text output."""
         if text and text.strip():
             # Clean ANSI codes
-            import re
-            ansi_escape = re.compile(r'\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])')
-            clean_text = ansi_escape.sub('', text).strip()
+            clean_text = _ANSI_ESCAPE.sub('', text).strip()
             
             if clean_text:
                 # Skip technical debug lines and animation errors
