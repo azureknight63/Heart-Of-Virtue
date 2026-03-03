@@ -10,7 +10,7 @@ export const INVENTORY_TABS = [
     { key: 'boots', icon: '🥾', title: 'Boots', matches: ['boots', 'feet'] },
     { key: 'gloves', icon: '🧤', title: 'Gloves', matches: ['gloves', 'hands'] },
     { key: 'accessories', icon: '💍', title: 'Acc', matches: ['accessory', 'ring', 'neck'] },
-    { key: 'consumables', icon: '🧪', title: 'Cons.', matches: ['consumable', 'potion', 'food', 'scroll'] },
+    { key: 'consumables', icon: '🧪', title: 'Consumables', matches: ['consumable', 'potion', 'food', 'scroll'] },
     { key: 'special', icon: '🔑', title: 'Misc.', matches: [] },
 ]
 
@@ -57,4 +57,34 @@ export const getRarityColor = (rarity) => {
         case 'artifact': return '#e6cc80'
         default: return '#ffffff'
     }
+}
+
+/**
+ * getItemIcon - Returns appropriate emoji for item subtype
+ */
+export const getItemIcon = (item) => {
+    const subtype = (item.subtype || '').toLowerCase()
+    const maintype = (item.maintype || item.type || '').toLowerCase()
+
+    if (subtype.includes('sword')) return '⚔️'
+    if (subtype.includes('axe')) return '🪓'
+    if (subtype.includes('bow')) return '🏹'
+    if (subtype.includes('dagger')) return '🗡️'
+    if (subtype.includes('mace') || subtype.includes('hammer')) return '🔨'
+    if (subtype.includes('shield')) return '🛡️'
+    if (subtype.includes('potion')) return '🧪'
+    if (subtype.includes('food')) return '🍎'
+    if (subtype.includes('scroll')) return '📜'
+    if (subtype.includes('ring') || subtype.includes('neck') || maintype === 'accessory') return '💍'
+    if (subtype.includes('helm') || subtype.includes('head')) return '⛑️'
+    if (subtype.includes('chest') || subtype.includes('armor')) return '👕'
+    if (subtype.includes('boot') || subtype.includes('feet')) return '🥾'
+    if (subtype.includes('glove') || subtype.includes('hand')) return '🧤'
+
+    // Fallbacks based on main type
+    if (maintype === 'weapon') return '⚔️'
+    if (maintype === 'armor') return '🛡️'
+    if (maintype === 'consumable') return '🧪'
+
+    return '📦'
 }

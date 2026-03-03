@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import DOMPurify from 'dompurify'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
 
@@ -13,12 +14,17 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
     if (allowResize) setIsResizing(true)
   }
 
+  // Use a ref so the mousemove handler always reads the *current* height
+  // without being stale and without needing height in the effect deps.
+  const heightRef = useRef(height)
+  useEffect(() => { heightRef.current = height }, [height])
+
   useEffect(() => {
     const handleMouseUp = () => setIsResizing(false)
     const handleMouseMove = (e) => {
       if (!isResizing) return
       const delta = e.clientY - (logRef.current?.getBoundingClientRect().bottom || 0)
-      setHeight(Math.max(50, Math.min(400, height - delta)))
+      setHeight(Math.max(50, Math.min(400, heightRef.current - delta)))
     }
 
     document.addEventListener('mouseup', handleMouseUp)
@@ -27,21 +33,14 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
       document.removeEventListener('mouseup', handleMouseUp)
       document.removeEventListener('mousemove', handleMouseMove)
     }
-  }, [isResizing, height])
+  }, [isResizing]) // height intentionally omitted — read via heightRef
 
-  // Auto-scroll to bottom when log updates
+  // Auto-scroll to bottom when log updates or it becomes the player's turn
   useEffect(() => {
     if (contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight
     }
-  }, [log])
-
-  // Auto-scroll to bottom when it becomes player's turn
-  useEffect(() => {
-    if (isMyTurn && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight
-    }
-  }, [isMyTurn])
+  }, [log, isMyTurn])
 
   return (
     <div
@@ -115,7 +114,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
                   </span>
                   <span
                     style={{ color: textColor }}
-                    dangerouslySetInnerHTML={{ __html: entry.message }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.message) }}
                   />
                 </div>
               )
