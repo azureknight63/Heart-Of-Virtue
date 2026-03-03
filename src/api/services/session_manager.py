@@ -78,6 +78,7 @@ class MinimalPlayer:
         self.reputation = {}  # Empty reputation dict for API operations
         self.completed_dialogues = []  # Track completed dialogues
         self.dialogue_contexts = {}  # Store active dialogue contexts
+        self.combat_log = []  # List of combat messages
         
         # Default prayer messages (subset of Player messages)
         self.prayer_msg = [

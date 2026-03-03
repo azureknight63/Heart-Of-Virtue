@@ -1502,7 +1502,7 @@ class ApiCombatAdapter:
             "combat_active": self.player.in_combat,
             "battle_state": battle_state,
             "beat_states": [battle_state],  # Initial state as a single beat state
-            "log": self.player.combat_log,
+            "log": getattr(self.player, "combat_log", []),
             "suggested_moves": getattr(self.player, "suggested_moves", []),
             "suggestions_loading": getattr(self.player, "suggestions_loading", False),
             "last_move_outcome": getattr(self.player, "last_move_summary", ""),

@@ -729,6 +729,7 @@ _PLAYER_REQUIRED_DEFAULTS = {
     'preferences': lambda: {"arrow": "Wooden Arrow"},
     'resistance': dict,
     'status_resistance': dict,
+    'combat_log': list,
 }
 
 def _patch_player_integrity(obj: Any):
