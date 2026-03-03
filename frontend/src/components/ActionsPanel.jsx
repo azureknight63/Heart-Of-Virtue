@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAudio } from '../context/AudioContext'
 import apiEndpoints from '../api/endpoints'
@@ -30,6 +30,17 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
   const [hoveredCommand, setHoveredCommand] = useState(null)
   const { playSFX } = useAudio()
   const navigate = useNavigate()
+  const timerRef = useRef(null)
+
+  // Helper to show a timed action message without leaking setTimeout callbacks
+  const setTimedMessage = (msg, delay = 2000) => {
+    setActionMessage(msg)
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => setActionMessage(''), delay)
+  }
+
+  // Clean up any pending timer when the component unmounts
+  useEffect(() => () => clearTimeout(timerRef.current), [])
 
   // Fetch available commands from backend
   useEffect(() => {
@@ -68,25 +79,21 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
         if (response.data) {
           const data = response.data
           if (data.messages && data.messages.length > 0) {
-            setActionMessage(data.messages.join(' '))
-            setTimeout(() => setActionMessage(''), 5000)
+            setTimedMessage(data.messages.join(' '), 5000)
           } else {
-            setActionMessage('Search complete.')
-            setTimeout(() => setActionMessage(''), 2000)
+            setTimedMessage('Search complete.', 2000)
           }
           // Refresh room data to show newly discovered items
           if (onRefetch) {
             onRefetch()
           }
         } else {
-          setActionMessage('Search failed.')
-          setTimeout(() => setActionMessage(''), 2000)
+          setTimedMessage('Search failed.', 2000)
         }
       } else if (command.name === 'Menu') {
-        setActionMessage('Opening menu...')
-        setTimeout(() => {
-          navigate('/menu')
-        }, 300)
+        setTimedMessage('Opening menu...', 300)
+        clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(() => navigate('/menu'), 300)
       } else if (command.name === 'Save') {
         setActionMessage('Saving game...')
         const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
@@ -94,22 +101,18 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
 
         if (response.data && response.data.success) {
           const data = response.data
-          setActionMessage(data.message || 'Game saved successfully!')
-          setTimeout(() => setActionMessage(''), 3000)
+          setTimedMessage(data.message || 'Game saved successfully!', 3000)
         } else {
           const errorMsg = response.data?.error || 'Save failed.'
-          setActionMessage(errorMsg)
-          setTimeout(() => setActionMessage(''), 3000)
+          setTimedMessage(errorMsg, 3000)
         }
       } else {
         // Default behavior for other commands
-        setActionMessage(`${command.name}...`)
-        setTimeout(() => setActionMessage(''), 1500)
+        setTimedMessage(`${command.name}...`, 1500)
       }
     } catch (err) {
       console.error('Error executing command:', err)
-      setActionMessage('Command failed.')
-      setTimeout(() => setActionMessage(''), 2000)
+      setTimedMessage('Command failed.', 2000)
     }
   }
 
@@ -182,7 +185,7 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
                 const textColor = isDebug ? '#999' : colors.gold
 
                 return (
-                  <div key={idx} style={{ position: 'relative' }}>
+                  <div key={command.name} style={{ position: 'relative' }}>
                     <button
                       onClick={() => handleAction(command)}
                       onMouseEnter={() => setHoveredCommand(idx)}
@@ -262,7 +265,7 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
 }
 
 function isDebugMode() {
-  // Simple check for debug commands existence
-  return true; // For now assuming we show them if returned
+  // Show debug label when running in development mode
+  return import.meta.env.DEV;
 }
 
