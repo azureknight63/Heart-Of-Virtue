@@ -142,7 +142,8 @@ class TestGameServiceCombatMethods:
 
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, _ = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         result = game_service.get_combat_status(player)
     
@@ -186,7 +187,8 @@ class TestGameServiceCombatMethods:
         """Test defend action when not in combat."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, _ = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         result = game_service.defend(player)
 
@@ -196,7 +198,8 @@ class TestGameServiceCombatMethods:
         """Test using item in combat when not in combat."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, _ = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         result = game_service.use_item_in_combat(player, 0)
 
@@ -206,7 +209,8 @@ class TestGameServiceCombatMethods:
         """Test fleeing when not in combat."""
         game_service = app.game_service
         session_manager = app.session_manager
-        _, player = session_manager.create_session("testplayer")
+        session_id, _ = session_manager.create_session("testplayer")
+        player = session_manager.get_player(session_id)
 
         result = game_service.flee_combat(player)
 
