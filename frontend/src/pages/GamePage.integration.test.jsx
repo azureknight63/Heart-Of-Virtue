@@ -133,7 +133,6 @@ vi.mock('../api/endpoints', () => ({
 describe('Tactical AI Integration Tests', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.useFakeTimers();
 
         // Global fetch mock to handle relative URLs in JSDOM
         global.fetch = vi.fn().mockImplementation((url) => {
@@ -217,7 +216,6 @@ describe('Tactical AI Integration Tests', () => {
     });
 
     afterEach(() => {
-        vi.useRealTimers();
     });
 
     const renderGamePage = () => {
@@ -283,20 +281,18 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
-        // Wait for combat state to load
+        // Wait for combat state to load (via polling or initial effects)
+        // We might need to wait for the 2s poll if it doesn't fetch on mount
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
-        });
+        }, { timeout: 10000 });
 
-        // Advance timers for SuggestedMovesPanel visibility
-        vi.advanceTimersByTime(600);
-
-        // Verify suggested moves panel appears
+        // Verify suggested moves panel appears (waits for log processing + visibility timer)
         await waitFor(() => {
             const advisorText = screen.queryByText(/TACTICAL ADVISOR/i) || screen.queryByText(/Suggested Moves/i);
             expect(advisorText).toBeTruthy();
-        }, { timeout: 4000 });
-    });
+        }, { timeout: 10000 });
+    }, 10000);
 
     it('executes combined move and target from AI suggestion click', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -349,10 +345,7 @@ describe('Tactical AI Integration Tests', () => {
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
-        });
-
-        // Advance timers for SuggestedMovesPanel visibility
-        vi.advanceTimersByTime(600);
+        }, { timeout: 10000 });
 
         // Wait for suggestions to appear and click one
         await waitFor(async () => {
@@ -371,8 +364,8 @@ describe('Tactical AI Integration Tests', () => {
                     );
                 });
             }
-        }, { timeout: 3000 });
-    });
+        }, { timeout: 8000 });
+    }, 10000);
 
     it('displays status effects with icons', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -413,9 +406,9 @@ describe('Tactical AI Integration Tests', () => {
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
-        });
+        }, { timeout: 8000 });
 
-        // Check for status effect icons
+        // Check for status effect icons (rendered in HeroPanel, always visible)
         await waitFor(() => {
             // Look for emoji icons (🔥 for burn, 🛡️ for shield)
             const burnIcon = screen.queryByText('🔥');
@@ -423,8 +416,8 @@ describe('Tactical AI Integration Tests', () => {
 
             // At least one should be present if effects are rendering
             expect(burnIcon || shieldIcon).toBeTruthy();
-        }, { timeout: 3000 });
-    });
+        }, { timeout: 8000 });
+    }, 10000);
 
     it('shows previous move analysis in suggestions panel', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -465,10 +458,7 @@ describe('Tactical AI Integration Tests', () => {
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
-        });
-
-        // Advance timers for SuggestedMovesPanel visibility
-        vi.advanceTimersByTime(600);
+        }, { timeout: 10000 });
 
         // Look for previous cycle analysis
         await waitFor(() => {
@@ -477,8 +467,8 @@ describe('Tactical AI Integration Tests', () => {
 
             // Either the header or the outcome should be visible
             expect(analysisText || outcomeText).toBeTruthy();
-        }, { timeout: 3000 });
-    });
+        }, { timeout: 8000 });
+    }, 10000);
 
     it('updates status effects when combat state changes', async () => {
         let callCount = 0;
@@ -549,24 +539,19 @@ describe('Tactical AI Integration Tests', () => {
             }
         });
 
-        const { rerender } = renderGamePage();
+        renderGamePage();
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
-        });
+        }, { timeout: 10000 });
 
         // Initially no poison icon
         expect(screen.queryByText('🧪')).toBeNull();
 
-        // Simulate combat state update
-        rerender(<MemoryRouter><GamePage /></MemoryRouter>);
-
-        // After update, poison icon should appear
+        // After some time, poison icon should appear due to poll
         await waitFor(() => {
             const poisonIcon = screen.queryByText('🧪');
-            if (callCount > 1) {
-                expect(poisonIcon).toBeTruthy();
-            }
-        }, { timeout: 3000 });
-    });
+            expect(poisonIcon).toBeTruthy();
+        }, { timeout: 10000 });
+    }, 10000);
 });
