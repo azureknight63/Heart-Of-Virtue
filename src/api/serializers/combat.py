@@ -193,6 +193,7 @@ class CombatantSerializer:
             "max_hp": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
             "fatigue": getattr(combatant, "fatigue", 0),
             "max_fatigue": getattr(combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)),
+            "maxfatigue": getattr(combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)),
             "heat": getattr(combatant, "heat", 1.0) if is_player else 1.0,
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
             "attributes": CombatantSerializer._serialize_base_attributes(combatant),

@@ -10,7 +10,7 @@ describe('BattlefieldGrid', () => {
             hp: 100,
             max_hp: 100,
             fatigue: 0,
-            maxfatigue: 100,
+            max_fatigue: 100,
             position: { x: 6, y: 6, facing: 0 },
             current_move: { category: 'Attack' }
         },

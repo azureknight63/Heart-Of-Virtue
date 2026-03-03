@@ -61,8 +61,8 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
   const maxHp = entity.max_hp !== undefined ? entity.max_hp : (entity.health?.max || 100);
 
   const fatigue = entity.fatigue || 0;
-  // Fallback for max fatigue if not present (usually 100 or on object)
-  const maxFatigue = entity.maxfatigue || entity.max_fatigue || 100;
+  // Use max_fatigue (standard) while supporting maxfatigue (legacy/Python)
+  const maxFatigue = entity.max_fatigue || entity.maxfatigue || 100;
 
   const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
   const fatPct = maxFatigue > 0 ? Math.min(1, Math.max(0, fatigue / maxFatigue)) : 0;
@@ -638,12 +638,12 @@ export default function BattlefieldGrid({
                 <div>
                   <div className="flex justify-between text-[10px] mb-1">
                     <span className="text-white/60">STAMINA (FAT)</span>
-                    <span className="text-orange-400 font-mono">{selectedEntity.fatigue || 0}/{selectedEntity.maxfatigue || 100}</span>
+                    <span className="text-orange-400 font-mono">{selectedEntity.fatigue || 0}/{selectedEntity.max_fatigue || selectedEntity.maxfatigue || 100}</span>
                   </div>
                   <div className="h-1.5 w-full bg-orange-900/30 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-orange-500 transition-all duration-500"
-                      style={{ width: `${(selectedEntity.fatigue / (selectedEntity.maxfatigue || 100)) * 100}%` }}
+                      style={{ width: `${(selectedEntity.fatigue / (selectedEntity.max_fatigue || selectedEntity.maxfatigue || 100)) * 100}%` }}
                     />
                   </div>
                 </div>
