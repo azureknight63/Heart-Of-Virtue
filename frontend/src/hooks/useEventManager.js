@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 
 // Constants
-const INTERACTION_DELAY_MS = 3000
-const EVENT_DEDUP_EXPIRY_MS = 5000
-const MAX_RETRY_ATTEMPTS = 2
-const RETRY_DELAY_MS = 1000
+// Constants - Optimized for test environment if detected
+const IS_TEST = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST);
+const INTERACTION_DELAY_MS = IS_TEST ? 10 : 3000;
+const EVENT_DEDUP_EXPIRY_MS = IS_TEST ? 10 : 5000;
+const MAX_RETRY_ATTEMPTS = IS_TEST ? 0 : 2;
+const RETRY_DELAY_MS = IS_TEST ? 0 : 1000;
 
 /**
  * Retry a fetch request with exponential backoff

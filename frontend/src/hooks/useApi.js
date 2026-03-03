@@ -10,7 +10,10 @@ const transformCombatData = (data) => ({
   combat_active: data.combat_active,
   suggested_moves: data.suggested_moves || [],
   suggestions_loading: data.suggestions_loading || false,
-  events_triggered: data.events_triggered || []
+  events_triggered: data.events_triggered || [],
+  last_move_outcome: data.last_move_outcome || "",
+  last_move_name: data.last_move_name || null,
+  last_move_target_id: data.last_move_target_id || null
 })
 
 // Helper to transform location data
