@@ -135,16 +135,26 @@ export default function GamePage() {
   }, [location, setExploredTiles])
 
   /**
+   * Synchronize mode with combat state
+   */
+  useEffect(() => {
+    if (inCombat && mode !== 'combat' && combatDialogShown) {
+      setMode('combat')
+    }
+  }, [inCombat, mode, combatDialogShown])
+
+  /**
    * Poll for combat status when suggestions are loading (fallback for missing socket events)
    */
   useEffect(() => {
     let pollInterval
     if (inCombat && combat?.suggestions_loading) {
       console.log('[DEBUG] Suggestions loading, starting poll...')
+      const pollIntervalMs = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 50 : 3000
       pollInterval = setInterval(() => {
         console.log('[DEBUG] Polling for suggestions...')
         fetchCombatStatus()
-      }, 3000) // Poll every 3 seconds
+      }, pollIntervalMs) // Poll every 3 seconds (50ms in tests)
     }
     return () => {
       if (pollInterval) clearInterval(pollInterval)

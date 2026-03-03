@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { colors, spacing, shadows, fonts } from '../styles/theme'
 
 export default function StatusEffectsIconPanel({ effects = [], vertical = false }) {
-    const [hoveredEffect, setHoveredEffect] = useState(null)
+    const [hoveredEffectName, setHoveredEffectName] = useState(null)
 
     if (!effects || effects.length === 0) return null
 
@@ -46,8 +46,8 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
             {effects.map((effect, idx) => (
                 <div
                     key={`${effect.name}-${idx}`}
-                    onMouseEnter={() => setHoveredEffect(effect)}
-                    onMouseLeave={() => setHoveredEffect(null)}
+                    onMouseEnter={() => setHoveredEffectName(effect.name)}
+                    onMouseLeave={() => setHoveredEffectName(null)}
                     style={{
                         width: '24px',
                         height: '24px',
@@ -62,13 +62,13 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                         position: 'relative',
                         boxShadow: `0 0 4px ${getEffectColor(effect.type)}44`,
                         transition: 'all 0.2s ease',
-                        transform: hoveredEffect === effect ? 'scale(1.1)' : 'scale(1)',
+                        transform: hoveredEffectName === effect.name ? 'scale(1.1)' : 'scale(1)',
                     }}
                 >
                     {getEffectIcon(effect.name)}
 
                     {/* Tooltip */}
-                    {hoveredEffect === effect && (
+                    {hoveredEffectName === effect.name && (
                         <div style={{
                             position: 'absolute',
                             bottom: '100%',

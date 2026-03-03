@@ -154,6 +154,10 @@ export default function HeroPanel({
           onMouseEnter={() => setHoveredBar('hp')}
           onMouseLeave={() => setHoveredBar(null)}
           onClick={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            setFocusedBar(focusedBar === 'hp' ? null : 'hp');
+          }}
           style={{
             position: 'absolute',
             left: '-75px',
@@ -170,7 +174,9 @@ export default function HeroPanel({
             flexDirection: 'column-reverse',
             overflow: 'visible',
             cursor: 'pointer',
-          }}>
+          }}
+          data-testid="hp-bar"
+        >
           <div style={{
             width: '100%',
             height: `${(hp.current / hp.max) * 100}%`,
@@ -202,11 +208,14 @@ export default function HeroPanel({
           )}
         </div>
 
-        {/* Fatigue Bar - Right Side Curved */}
         <div
           onMouseEnter={() => setHoveredBar('fatigue')}
           onMouseLeave={() => setHoveredBar(null)}
           onClick={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue');
+          }}
           style={{
             position: 'absolute',
             right: '-75px',
@@ -223,7 +232,9 @@ export default function HeroPanel({
             flexDirection: 'column-reverse',
             overflow: 'visible',
             cursor: 'pointer',
-          }}>
+          }}
+          data-testid="fatigue-bar"
+        >
           <div style={{
             width: '100%',
             height: `${(fatigue.current / fatigue.max) * 100}%`,
@@ -303,6 +314,6 @@ export default function HeroPanel({
           )
         })}
       </div>
-    </div>
+    </div >
   )
 }

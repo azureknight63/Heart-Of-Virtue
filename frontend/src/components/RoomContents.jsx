@@ -75,9 +75,9 @@ export default function RoomContents({ location, onInteract }) {
         flexDirection: 'column',
         gap: spacing.md,
       }}>
-        <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
+        <div className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
           {roomDescriptionText}
-        </p>
+        </div>
 
         {/* Content descriptions immediately following */}
         {hasContentDescriptions && (
