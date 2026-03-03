@@ -32,22 +32,61 @@ vi.mock('../context/ToastContext', () => ({
     }),
 }));
 
-// Mock the API
+// Create mock functions that can be referenced from both default and named exports
+const getStatusMock = vi.fn();
+const performActionMock = vi.fn();
+const getFullStateMock = vi.fn();
+const getCurrentLocationMock = vi.fn();
+const getCommandsMock = vi.fn();
+const listSavesMock = vi.fn();
+const loginMock = vi.fn();
+const logoutMock = vi.fn();
+const registerMock = vi.fn();
+
+// Mock the API with both default and named exports to match the real module structure
 vi.mock('../api/endpoints', () => ({
+    default: {
+        player: {
+            getFullState: getFullStateMock,
+            getSkills: vi.fn(),
+        },
+        world: {
+            getCurrentLocation: getCurrentLocationMock,
+            getCommands: getCommandsMock,
+        },
+        combat: {
+            getStatus: getStatusMock,
+            performAction: performActionMock,
+        },
+        saves: {
+            list: listSavesMock,
+        },
+        auth: {
+            login: loginMock,
+            logout: logoutMock,
+            register: registerMock,
+        },
+    },
+    // Named exports (also used by some imports)
     player: {
-        getFullState: vi.fn(),
+        getFullState: getFullStateMock,
         getSkills: vi.fn(),
     },
     world: {
-        getCurrentLocation: vi.fn(),
-        getCommands: vi.fn(),
+        getCurrentLocation: getCurrentLocationMock,
+        getCommands: getCommandsMock,
     },
     combat: {
-        getStatus: vi.fn(),
-        performAction: vi.fn(),
+        getStatus: getStatusMock,
+        performAction: performActionMock,
     },
     saves: {
-        list: vi.fn(),
+        list: listSavesMock,
+    },
+    auth: {
+        login: loginMock,
+        logout: logoutMock,
+        register: registerMock,
     },
 }));
 

@@ -180,7 +180,7 @@ describe('MainMenuPage', () => {
         fireEvent.click(screen.getAllByText(/Load Game/i)[0]);
 
         await waitFor(() => screen.getByText(/New Save/i));
-        const newSaveSlot = screen.getByText(/New Save/i).closest('.save-slot');
+        const newSaveSlot = screen.getByText(/New Save/i).closest('div');
         const deleteNewButton = within(newSaveSlot).getByText(/Delete/i);
 
         fireEvent.click(deleteNewButton);
