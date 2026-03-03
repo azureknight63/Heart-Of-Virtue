@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
-import { INVENTORY_TABS, categorizeItems, getRarityColor } from '../utils/itemUtils'
+import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon } from '../utils/itemUtils'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -11,7 +11,7 @@ import { INVENTORY_TABS, categorizeItems, getRarityColor } from '../utils/itemUt
 export default function InventoryDialog({ items, player, onClose, onRefetch, combatMode = false }) {
   const [activeTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
   const [selectedItem, setSelectedItem] = useState(null)
-  const [localInventory, setLocalInventory] = useState(items || [])
+  const [localInventory, setLocalInventory] = useState(items || player?.inventory || [])
   const [sortStates, setSortStates] = useState({
     value: 'off',    // 'off', 'asc', 'desc'
     weight: 'off',
@@ -24,7 +24,8 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
   // Synchronize local inventory with props
   useEffect(() => {
     if (items) setLocalInventory(items)
-  }, [items])
+    else if (player?.inventory) setLocalInventory(player.inventory)
+  }, [items, player?.inventory])
 
   // Sorting logic
   const toggleSort = (key) => {
@@ -113,6 +114,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                 <button
                   key={btn.key}
                   onClick={() => toggleSort(btn.key)}
+                  title={`Sort by ${btn.label}`}
                   style={{
                     background: sortStates[btn.key] !== 'off' ? 'rgba(0, 255, 136, 0.2)' : 'rgba(0,0,0,0.3)',
                     border: `1px solid ${sortStates[btn.key] !== 'off' ? colors.primary : colors.border.main}`,
@@ -150,6 +152,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
+                    title={tab.title}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -267,12 +270,45 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
 
           {/* Footer / Info */}
           <div style={{
-            textAlign: 'center',
-            color: colors.text.muted,
-            fontSize: '12px',
-            fontStyle: 'italic',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: spacing.md,
+            paddingTop: spacing.sm,
+            borderTop: `1px solid ${colors.border.main}44`,
           }}>
-            Tip: Left-click on an item to see details and actions.
+            <div style={{
+              color: colors.text.muted,
+              fontSize: '12px',
+              fontStyle: 'italic',
+            }}>
+              Tip: Left-click on an item to see details.
+            </div>
+
+            <button
+              onClick={onClose}
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                border: `1px solid ${colors.border.main}`,
+                color: colors.text.main,
+                padding: '6px 20px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontFamily: 'monospace',
+                fontSize: '13px',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+                e.target.style.borderColor = colors.primary
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
+                e.target.style.borderColor = colors.border.main
+              }}
+            >
+              Close
+            </button>
           </div>
         </div>
       </BaseDialog>
@@ -346,7 +382,7 @@ function ItemCard({ item, onClick, isShop }) {
 
       <div style={{ fontSize: '10px', color: colors.text.muted, display: 'flex', justifyContent: 'space-between' }}>
         <span>{item.subtype || item.maintype}</span>
-        {item.damage && <span style={{ color: colors.danger }}>⚔️{item.damage}</span>}
+        {item.damage && <span style={{ color: colors.danger }}>{getItemIcon(item)}{item.damage}</span>}
         {item.protection && <span style={{ color: colors.text.highlight }}>🛡️{item.protection}</span>}
       </div>
 

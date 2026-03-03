@@ -3,6 +3,7 @@ import apiEndpoints from '../api/endpoints'
 import { useAuth } from '../hooks/useApi'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
+import { colors, spacing } from '../styles/theme'
 
 export default function DefeatDialog({ endState, onLoadedSave }) {
   const { logout } = useAuth()
@@ -61,7 +62,9 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
     try {
       setLoading(true)
       await apiEndpoints.saves.load(selectedSaveId)
-      await onLoadedSave()
+      if (typeof onLoadedSave === 'function') {
+        await onLoadedSave()
+      }
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Failed to load save.')
     } finally {
@@ -81,16 +84,16 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
       zIndex={2500}
       showCloseButton={false}
     >
-      <div style={{ color: '#ffe6e6', marginBottom: '8px' }}>{message}</div>
-      <div style={{ color: '#cccccc', marginBottom: '16px' }}>Reload a save or start over.</div>
+      <div style={{ color: colors.text.danger, marginBottom: spacing.sm }}>{message}</div>
+      <div style={{ color: colors.text.muted, marginBottom: spacing.lg }}>Reload a save or start over.</div>
 
-      <div style={{ border: '1px solid #cc0000', borderRadius: '10px', padding: '12px', marginBottom: '16px' }}>
-        <div style={{ color: '#ff7777', fontWeight: 'bold', marginBottom: '8px' }}>Load save</div>
+      <div style={{ border: `1px solid ${colors.border.danger}`, borderRadius: '10px', padding: spacing.md, marginBottom: spacing.lg }}>
+        <div style={{ color: colors.text.danger, fontWeight: 'bold', marginBottom: spacing.sm }}>Load save</div>
 
-        {loading && <div style={{ color: '#cccccc' }}>Loading…</div>}
+        {loading && <div style={{ color: colors.text.muted }}>Loading…</div>}
 
         {!loading && saveOptions.length === 0 && (
-          <div style={{ color: '#cccccc' }}>No saves found.</div>
+          <div style={{ color: colors.text.muted }}>No saves found.</div>
         )}
 
         {!loading && saveOptions.length > 0 && (
@@ -99,10 +102,10 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
               value={selectedSaveId}
               onChange={(e) => setSelectedSaveId(e.target.value)}
               style={{
-                padding: '8px',
-                backgroundColor: '#220000',
-                color: '#ff7777',
-                border: '1px solid #cc0000',
+                padding: spacing.sm,
+                backgroundColor: colors.bg.main,
+                color: colors.text.danger,
+                border: `1px solid ${colors.border.danger}`,
                 borderRadius: '6px',
                 minWidth: '320px',
               }}
@@ -124,7 +127,7 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
           </div>
         )}
 
-        {error && <div style={{ marginTop: '10px', color: '#ff7777' }}>{error}</div>}
+        {error && <div style={{ marginTop: spacing.sm, color: colors.text.danger }}>{error}</div>}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -132,7 +135,7 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
           onClick={handleStartOver}
           disabled={loading}
           variant="secondary"
-          style={{ border: '1px solid #cc0000', color: '#ff7777' }}
+          style={{ border: `1px solid ${colors.border.danger}`, color: colors.text.danger }}
         >
           START OVER
         </GameButton>

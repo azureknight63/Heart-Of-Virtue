@@ -102,7 +102,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
             ⚔️ VICTORY!
           </GameText>
           {remainingPoints > 0 && (
-            <GameText variant="primary" size="sm" style={{ animation: 'pulse 2s infinite' }}>
+            <GameText variant="primary" size="sm" style={{ animation: 'victory-pulse 2s infinite' }}>
               ⚠️ {remainingPoints} point{remainingPoints !== 1 ? 's' : ''} to allocate
             </GameText>
           )}
@@ -117,10 +117,6 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
             </GameButton>
           )}
         </div>
-        <style>{`
-                    @keyframes slideUp { from { transform: translate(-50%, 100%); } to { transform: translate(-50%, 0); } }
-                    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-                `}</style>
       </div>
     )
   }

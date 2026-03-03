@@ -25,6 +25,7 @@ export default function TypewriterOutput({ text, speed = 30, style = {}, onCompl
 
     return (
         <div
+            data-testid="event-text-container"
             onClick={finishImmediately}
             style={{
                 padding: spacing.md,

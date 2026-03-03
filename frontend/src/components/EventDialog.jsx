@@ -201,6 +201,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
         >
             <div
                 ref={dialogRef}
+                className="event-dialog-body"
                 tabIndex={-1}
                 onClick={handleGlobalInteraction}
                 style={{
