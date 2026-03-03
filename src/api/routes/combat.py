@@ -185,7 +185,7 @@ def get_combat_status():
 
         game_service = current_app.game_service
 
-        status = game_service.get_combat_status(player, session_data=session.data)
+        status = game_service.get_combat_status(player, session_id=session.session_id, session_data=session.data)
 
         return jsonify({"success": True, **status}), 200
 

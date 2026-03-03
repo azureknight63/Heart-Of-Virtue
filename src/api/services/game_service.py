@@ -1642,21 +1642,23 @@ class GameService:
         else:
             return {"error": f"Unknown move type: {move_type}"}
             
-    def get_combat_status(self, player: "player_module.Player", session_data: Dict = None) -> Dict[str, Any]:
+    def get_combat_status(self, player: "player_module.Player", session_id: str = None, session_data: Dict = None) -> Dict[str, Any]:
         """Get current combat status."""
         if not hasattr(player, "_combat_adapter"):
             # If player is in combat, try to re-initialize the adapter
             if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
                 from src.api.combat_adapter import ApiCombatAdapter
-                
+
                 # Ensure the new adapter has the event callback
                 def event_callback(p):
                     return self.trigger_combat_events(p)
-                
-                player._combat_adapter = ApiCombatAdapter(player, on_event_callback=event_callback)
+
+                player._combat_adapter = ApiCombatAdapter(player, session_id=session_id, on_event_callback=event_callback)
                 # Synchronize initial state for the new adapter
                 player._combat_adapter.available_options = player._combat_adapter._get_available_moves()
-                player._combat_adapter.refresh_suggestions()
+                # Kick off suggestions once for the re-initialized adapter
+                if not getattr(player, "suggestions_loading", False):
+                    player._combat_adapter.refresh_suggestions()
             else:
                 return {
                     "combat_active": getattr(player, "in_combat", False),
@@ -1665,7 +1667,7 @@ class GameService:
                 }
         else:
             adapter = player._combat_adapter
-            
+
             # Resume logic: If battle is active but not awaiting input, check why
             # This handles cases where combat was paused for narrative events
             if player.in_combat and not adapter.awaiting_input:
@@ -1683,15 +1685,30 @@ class GameService:
                         adapter.awaiting_input = True
                         adapter.input_type = "move_selection"
                         adapter.available_options = adapter._get_available_moves()
-                        adapter.refresh_suggestions()
-            
-            # Refresh available_options if we're in move selection mode
-            # This ensures viable_targets are updated when enemies are added/removed mid-combat
+                        if session_id:
+                            adapter.session_id = session_id
+                        # Only start a suggestion fetch if one isn't already running
+                        if not getattr(player, "suggestions_loading", False):
+                            adapter.refresh_suggestions()
+
+            # Refresh available_options if we're in move selection mode.
+            # This ensures viable_targets are updated when enemies are added/removed mid-combat.
+            # DO NOT call refresh_suggestions() here — it is polled every 3 s and repeatedly
+            # calling refresh_suggestions() resets suggestions_loading and clears suggested_moves,
+            # creating an infinite loop where suggestions never land.
+            # Suggestions are already kicked off by _execute_move() after each player action.
             if adapter.input_type == "move_selection" and adapter.awaiting_input:
                 adapter.available_options = adapter._get_available_moves()
-                # Also refresh AI suggestions so they have updated target IDs
-                adapter.refresh_suggestions()
-        
+                if session_id:
+                    adapter.session_id = session_id
+                # Only start a fetch if suggestions haven't been generated yet this turn
+                # (i.e., still empty AND not currently loading).
+                if (
+                    not getattr(player, "suggestions_loading", False)
+                    and not getattr(player, "suggested_moves", [])
+                ):
+                    adapter.refresh_suggestions()
+
         return player._combat_adapter.get_combat_state()
 
     def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:
