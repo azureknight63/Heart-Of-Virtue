@@ -26,7 +26,7 @@ describe('BattlefieldGrid', () => {
     };
 
     it('renders grid and combatants in normal mode', () => {
-        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="map" zoom={1} />);
+        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
 
         // Check if player marker exists (J for Jean)
         expect(screen.getByText('J')).toBeDefined();
@@ -40,7 +40,7 @@ describe('BattlefieldGrid', () => {
     });
 
     it('renders entire grid in full mode', () => {
-        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="map" zoom="full" />);
+        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom="full" />);
 
         // Full mode is 13x13 = 169 cells
         const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
@@ -59,7 +59,7 @@ describe('BattlefieldGrid', () => {
             player: { name: 'Jean', hp: 100, max_hp: 100 },
             enemies: []
         };
-        render(<BattlefieldGrid combat={incompleteCombat} tab="map" zoom={1} />);
+        render(<BattlefieldGrid combat={incompleteCombat} tab="overview" zoom={1} />);
         expect(screen.getByText('J')).toBeDefined();
     });
 
@@ -75,7 +75,7 @@ describe('BattlefieldGrid', () => {
                 }
             ]
         };
-        render(<BattlefieldGrid combat={combatWithDeadEnemy} tab="map" zoom={1} />);
+        render(<BattlefieldGrid combat={combatWithDeadEnemy} tab="overview" zoom={1} />);
         expect(screen.queryByText('D')).toBeNull();
     });
 
@@ -87,7 +87,7 @@ describe('BattlefieldGrid', () => {
                 { name: 'Orc', hp: 100, max_hp: 100, position: { x: 5, y: 5 }, current_move: { category: 'Miscellaneous' } }
             ]
         };
-        render(<BattlefieldGrid combat={multiMoveCombat} tab="map" zoom={1} />);
+        render(<BattlefieldGrid combat={multiMoveCombat} tab="overview" zoom={1} />);
 
         // We can't easily check box-shadow styles in JSDOM sometimes, 
         // but we can check if the components render without crashing.

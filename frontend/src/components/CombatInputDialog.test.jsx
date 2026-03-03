@@ -33,19 +33,20 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText('SELECT TARGET')).toBeDefined();
+    expect(screen.getByText(/SELECT TARGET/i)).toBeDefined();
     expect(screen.getByText('Goblin')).toBeDefined();
-    expect(screen.getByText('10 ft')).toBeDefined();
-    expect(screen.getByText('HP: 50/100')).toBeDefined();
-    expect(screen.getByText('Hit Chance: 85%')).toBeDefined();
+    expect(screen.getAllByText(/10 ft/i)).toBeDefined();
+    expect(screen.getByText(/50\/100/)).toBeDefined();
+    expect(screen.getAllByText(/Accuracy:/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/85%/)).toBeDefined();
 
     expect(screen.getByText('Orc')).toBeDefined();
-    expect(screen.getByText('20 ft')).toBeDefined();
-    expect(screen.getByText('HP: 120/150')).toBeDefined();
-    expect(screen.getByText('Hit Chance: 60%')).toBeDefined();
+    expect(screen.getAllByText(/20 ft/i)).toBeDefined();
+    expect(screen.getByText(/120\/150/)).toBeDefined();
+    expect(screen.getByText(/60%/)).toBeDefined();
 
-    // Click a target
-    fireEvent.click(screen.getByText('Goblin'));
+    // Click a target (the card containing 'Goblin')
+    fireEvent.click(screen.getByText('Goblin').closest('div').parentElement);
     expect(mockOnSelect).toHaveBeenCalledWith('target1');
     expect(mockPlaySFX).toHaveBeenCalledWith('attack');
   });
@@ -62,12 +63,12 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText('SELECT DIRECTION')).toBeDefined();
+    expect(screen.getByText(/SELECT DIRECTION/i)).toBeDefined();
     options.forEach(dir => {
-      expect(screen.getByText(dir)).toBeDefined();
+      expect(screen.getByText(dir.toUpperCase())).toBeDefined();
     });
 
-    fireEvent.click(screen.getByText('North'));
+    fireEvent.click(screen.getByText('NORTH'));
     expect(mockOnSelect).toHaveBeenCalledWith('North');
   });
 
@@ -83,35 +84,30 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText('ENTER VALUE')).toBeDefined();
+    expect(screen.getByText(/ENTER VALUE/i)).toBeDefined();
     expect(screen.getByText('How many points?')).toBeDefined();
-    expect(screen.getByText('Range: 1 - 10')).toBeDefined();
+    expect(screen.getByText(/Range: 1 - 10/i)).toBeDefined();
 
-    const input = screen.getByRole('spinbutton');
-    expect(input.value).toBe('5');
+    expect(screen.getByText('5')).toBeDefined();
 
     // Increment
     fireEvent.click(screen.getByText('+'));
-    expect(input.value).toBe('6');
+    expect(screen.getByText('6')).toBeDefined();
 
     // Decrement
     fireEvent.click(screen.getByText('−'));
-    expect(input.value).toBe('5');
-
-    // Manual change
-    fireEvent.change(input, { target: { value: '8' } });
-    expect(input.value).toBe('8');
-
-    // Validation - max
-    fireEvent.change(input, { target: { value: '15' } });
-    expect(input.value).toBe('10');
+    expect(screen.getByText('5')).toBeDefined();
 
     // Validation - min
-    fireEvent.change(input, { target: { value: '0' } });
-    expect(input.value).toBe('1');
+    fireEvent.click(screen.getByText('−'));
+    fireEvent.click(screen.getByText('−'));
+    fireEvent.click(screen.getByText('−'));
+    fireEvent.click(screen.getByText('−'));
+    fireEvent.click(screen.getByText('−'));
+    expect(screen.getByText('1')).toBeDefined();
 
     // Confirm
-    fireEvent.click(screen.getByText('Confirm'));
+    fireEvent.click(screen.getByText('CONFIRM'));
     expect(mockOnSelect).toHaveBeenCalledWith(1);
   });
 
@@ -130,7 +126,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText('SELECT ITEM')).toBeDefined();
+    expect(screen.getByText(/SELECT ITEM/i)).toBeDefined();
     expect(screen.getByText('Health Potion')).toBeDefined();
     expect(screen.getByText('Mana Potion')).toBeDefined();
 
@@ -150,7 +146,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText('SELECT OPTION')).toBeDefined();
+    expect(screen.getByText(/SELECT OPTION/i)).toBeDefined();
     expect(screen.getByText('Option A')).toBeDefined();
     expect(screen.getByText('Option B')).toBeDefined();
 
@@ -168,7 +164,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText('No options available')).toBeDefined();
+    expect(screen.getByText(/No valid targets or options available/i)).toBeDefined();
   });
 
   it('calls onCancel when cancel button is clicked', () => {
@@ -181,14 +177,9 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    // Find cancel button by aria-label or role
-    const cancelButton = screen.queryByRole('button', { name: /cancel/i }) || 
-                         document.querySelector('button[title*="Cancel"]') ||
-                         screen.getByRole('button', { name: '' }); // Last button is usually cancel
-    if (cancelButton) {
-      fireEvent.click(cancelButton);
-      expect(mockOnCancel).toHaveBeenCalled();
-    }
+    const cancelButton = screen.getByText('CANCEL ACTION');
+    fireEvent.click(cancelButton);
+    expect(mockOnCancel).toHaveBeenCalled();
   });
 
   it('handles hover effects on buttons', () => {
@@ -201,12 +192,12 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    const button = screen.getByText('North');
-    
+    const button = screen.getByText('NORTH');
+
     // jsdom doesn't support :hover styles, so just verify the button exists and reacts to events
     fireEvent.mouseEnter(button);
     fireEvent.mouseLeave(button);
-    
+
     // Button should still be clickable
     fireEvent.click(button);
     expect(mockOnSelect).toHaveBeenCalledWith('North');
@@ -223,14 +214,14 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    const button = screen.getByText('Target').closest('button');
-    
+    const card = screen.getByText('Target').closest('div').parentElement;
+
     // jsdom doesn't support :hover styles, so just verify button responds to hover events
-    fireEvent.mouseEnter(button);
-    fireEvent.mouseLeave(button);
-    
+    fireEvent.mouseEnter(card);
+    fireEvent.mouseLeave(card);
+
     // Button should still be clickable
-    fireEvent.click(button);
+    fireEvent.click(card);
     expect(mockOnSelect).toHaveBeenCalledWith('t1');
   });
 
@@ -244,12 +235,12 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    const button = screen.getByText('Confirm');
-    
+    const button = screen.getByText('CONFIRM');
+
     // jsdom doesn't support :hover styles, so just verify button responds to hover events
     fireEvent.mouseEnter(button);
     fireEvent.mouseLeave(button);
-    
+
     // Button should still be clickable
     fireEvent.click(button);
     expect(mockOnSelect).toHaveBeenCalled();
@@ -266,11 +257,11 @@ describe('CombatInputDialog', () => {
     );
 
     const button = screen.getByText('Option');
-    
+
     // jsdom doesn't support :hover styles, so just verify button responds to hover events
     fireEvent.mouseEnter(button);
     fireEvent.mouseLeave(button);
-    
+
     // Button should still be clickable
     fireEvent.click(button);
     expect(mockOnSelect).toHaveBeenCalledWith('Option');

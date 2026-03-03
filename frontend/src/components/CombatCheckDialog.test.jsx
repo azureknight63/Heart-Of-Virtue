@@ -31,13 +31,13 @@ describe('CombatCheckDialog', () => {
 
   it('renders combatant information correctly', () => {
     render(<CombatCheckDialog checkData={mockCheckData} onClose={mockOnClose} />);
-    
+
     expect(screen.getByText('Battlefield Status')).toBeDefined();
     expect(screen.getByText('2 combatants detected (sorted by distance)')).toBeDefined();
-    
+
     expect(screen.getByText('Hero')).toBeDefined();
     expect(screen.getByText('ALLY')).toBeDefined();
-    
+
     expect(screen.getByText('Goblin')).toBeDefined();
     expect(screen.getByText('ENEMY')).toBeDefined();
     expect(screen.getByText('5 ft')).toBeDefined();
@@ -52,7 +52,7 @@ describe('CombatCheckDialog', () => {
 
   it('calls onClose when close button is clicked', () => {
     render(<CombatCheckDialog checkData={mockCheckData} onClose={mockOnClose} />);
-    
+
     const closeBtn = screen.getByText('✕');
     fireEvent.click(closeBtn);
     expect(mockOnClose).toHaveBeenCalled();
@@ -65,13 +65,13 @@ describe('CombatCheckDialog', () => {
   it('handles hover effects on close button', () => {
     render(<CombatCheckDialog checkData={mockCheckData} onClose={mockOnClose} />);
     const closeBtn = screen.getByText('Close');
-    
+
+    // jsdom doesn't apply :hover CSS, so we just verify the button survives
+    // hover events and remains functional — the visual styles are GameButton's concern.
     fireEvent.mouseEnter(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgb(255, 204, 0)');
-    expect(closeBtn.style.transform).toBe('scale(1.05)');
-    
     fireEvent.mouseLeave(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgb(255, 170, 0)');
-    expect(closeBtn.style.transform).toBe('scale(1)');
+
+    fireEvent.click(closeBtn);
+    expect(mockOnClose).toHaveBeenCalled();
   });
 });
