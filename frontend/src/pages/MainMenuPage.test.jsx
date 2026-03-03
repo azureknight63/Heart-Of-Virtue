@@ -180,7 +180,10 @@ describe('MainMenuPage', () => {
         fireEvent.click(screen.getAllByText(/Load Game/i)[0]);
 
         await waitFor(() => screen.getByText(/New Save/i));
-        const newSaveSlot = screen.getByText(/New Save/i).closest('div');
+        // The text is inside a p inside a div inside another div (the slot)
+        const newSaveText = screen.getByText(/New Save/i);
+        // Find the slot by going up to the div that has the buttons
+        const newSaveSlot = newSaveText.closest('div[style*="justify-content: space-between"]');
         const deleteNewButton = within(newSaveSlot).getByText(/Delete/i);
 
         fireEvent.click(deleteNewButton);

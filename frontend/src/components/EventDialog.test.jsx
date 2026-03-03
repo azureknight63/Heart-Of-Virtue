@@ -192,21 +192,39 @@ describe('EventDialog', () => {
     const textarea = screen.getByPlaceholderText(/Enter your text here/i);
     fireEvent.focus(textarea);
     fireEvent.blur(textarea);
-    // jsdom doesn't reliably handle inline border styles, so just verify textarea exists
 
     fireEvent.change(textarea, { target: { value: 'A'.repeat(501) } });
     expect(screen.getByText(/501\/500/)).toBeDefined();
+  });
 
-    // Test too long text validation
+  it('validates text too long', () => {
+    const textEvent = { ...mockEvent, input_type: 'text' };
+    render(<EventDialog event={textEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    const textarea = screen.getByPlaceholderText(/Enter your text here/i);
+    fireEvent.change(textarea, { target: { value: 'A'.repeat(501) } });
     fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
     expect(screen.getByText(/Input too long/i)).toBeDefined();
+  });
 
-    // Test short text warning
+  it('validates text too short warning', () => {
+    const textEvent = { ...mockEvent, input_type: 'text' };
+    render(<EventDialog event={textEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    const textarea = screen.getByPlaceholderText(/Enter your text here/i);
     fireEvent.change(textarea, { target: { value: 'Hi' } });
-    fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Submit|Submitting/i }));
     expect(screen.getByText(/Input seems short/i)).toBeDefined();
+  });
 
-    // Test empty text validation
+  it('validates empty text', () => {
+    const textEvent = { ...mockEvent, input_type: 'text' };
+    render(<EventDialog event={textEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    const textarea = screen.getByPlaceholderText(/Enter your text here/i);
     fireEvent.change(textarea, { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
     expect(screen.getByText(/Input cannot be empty/i)).toBeDefined();
@@ -223,20 +241,16 @@ describe('EventDialog', () => {
     });
 
     // The keydown listener is on dialogRef.current (event-dialog-body)
-    const dialogBody = screen.getByRole('dialog').querySelector('.event-dialog-body');
+    const dialogBody = document.querySelector('.event-dialog-body');
 
     fireEvent.keyDown(dialogBody, { key: '1' });
     expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 'touch');
-
-    // Test Enter key - should not submit if NOTHING is selected (re-render to clear state or just use a fresh render)
-    // Actually, let's just test that Enter DOES submit if something IS selected, 
-    // and that it DOESN'T if nothing is selected.
   });
 
   it('handles Enter key without selection', () => {
     render(<EventDialog event={mockEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
     act(() => { vi.advanceTimersByTime(5000); });
-    const dialogBody = screen.getByRole('dialog').querySelector('.event-dialog-body');
+    const dialogBody = document.querySelector('.event-dialog-body');
 
     // Press Enter without selecting anything
     fireEvent.keyDown(dialogBody, { key: 'Enter' });

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage';
@@ -8,7 +8,6 @@ import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave, 
 import { useAudio } from '../context/AudioContext';
 
 // Mock only the hooks we need to stub (useExploration, useExits, useAutosave, useAuth)
-// Keep usePlayer, useWorld, useCombat real so they call the mocked APIs
 vi.mock('../hooks/useApi', async () => {
     const actual = await vi.importActual('../hooks/useApi');
     return {
@@ -32,69 +31,163 @@ vi.mock('../context/ToastContext', () => ({
     }),
 }));
 
-// Create mock functions that can be referenced from both default and named exports
-const getStatusMock = vi.fn();
-const performActionMock = vi.fn();
-const getFullStateMock = vi.fn();
-const getCurrentLocationMock = vi.fn();
-const getCommandsMock = vi.fn();
-const listSavesMock = vi.fn();
-const loginMock = vi.fn();
-const logoutMock = vi.fn();
-const registerMock = vi.fn();
+vi.mock('../hooks/useCombatCoordinator', () => ({
+    useCombatCoordinator: vi.fn(() => ({
+        combatDialogShown: true,
+        showVictoryDialog: false,
+        showDefeatDialog: false,
+        endState: null,
+        isCombatLogProcessing: false,
+        currentLogIndex: 0,
+        hoveredTargetId: null,
+        setCombatDialogShown: vi.fn(),
+        setShowVictoryDialog: vi.fn(),
+        setShowDefeatDialog: vi.fn(),
+        setEndState: vi.fn(),
+        setIsCombatLogProcessing: vi.fn(),
+        setCurrentLogIndex: vi.fn(),
+        setHoveredTargetId: vi.fn(),
+        handleSuggestedMoveClick: vi.fn(),
+        handleCombatAction: vi.fn(),
+        handleInteractionComplete: vi.fn()
+    }))
+}));
+
+const {
+    mockGetStatus,
+    mockPerformAction,
+    mockGetFullState,
+    mockGetCurrentLocation,
+    mockGetCommands,
+    mockListSaves,
+    mockLogin,
+    mockLogout,
+    mockRegister,
+    mockGetTilesBatch,
+    mockGetExploredTiles
+} = vi.hoisted(() => ({
+    mockGetStatus: vi.fn(),
+    mockPerformAction: vi.fn(),
+    mockGetFullState: vi.fn(),
+    mockGetCurrentLocation: vi.fn(),
+    mockGetCommands: vi.fn(),
+    mockListSaves: vi.fn(),
+    mockLogin: vi.fn(),
+    mockLogout: vi.fn(),
+    mockRegister: vi.fn(),
+    mockGetTilesBatch: vi.fn(),
+    mockGetExploredTiles: vi.fn()
+}));
 
 // Mock the API with both default and named exports to match the real module structure
 vi.mock('../api/endpoints', () => ({
     default: {
         player: {
-            getFullState: getFullStateMock,
+            getFullState: mockGetFullState,
             getSkills: vi.fn(),
         },
         world: {
-            getCurrentLocation: getCurrentLocationMock,
-            getCommands: getCommandsMock,
+            getCurrentLocation: mockGetCurrentLocation,
+            getCommands: mockGetCommands,
+            getTilesBatch: mockGetTilesBatch,
+            getExploredTiles: mockGetExploredTiles,
         },
         combat: {
-            getStatus: getStatusMock,
-            performAction: performActionMock,
+            getStatus: mockGetStatus,
+            performAction: mockPerformAction,
         },
         saves: {
-            list: listSavesMock,
+            list: mockListSaves,
         },
         auth: {
-            login: loginMock,
-            logout: logoutMock,
-            register: registerMock,
+            login: mockLogin,
+            logout: mockLogout,
+            register: mockRegister,
         },
     },
-    // Named exports (also used by some imports)
+    // Named exports
     player: {
-        getFullState: getFullStateMock,
+        getFullState: mockGetFullState,
         getSkills: vi.fn(),
     },
     world: {
-        getCurrentLocation: getCurrentLocationMock,
-        getCommands: getCommandsMock,
+        getCurrentLocation: mockGetCurrentLocation,
+        getCommands: mockGetCommands,
+        getTilesBatch: mockGetTilesBatch,
+        getExploredTiles: mockGetExploredTiles,
     },
     combat: {
-        getStatus: getStatusMock,
-        performAction: performActionMock,
+        getStatus: mockGetStatus,
+        performAction: mockPerformAction,
     },
     saves: {
-        list: listSavesMock,
+        list: mockListSaves,
     },
     auth: {
-        login: loginMock,
-        logout: logoutMock,
-        register: registerMock,
+        login: mockLogin,
+        logout: mockLogout,
+        register: mockRegister,
     },
 }));
 
 describe('Tactical AI Integration Tests', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.useFakeTimers();
 
-        // Setup stubbed hook mocks (these are manually controlled)
+        // Global fetch mock to handle relative URLs in JSDOM
+        global.fetch = vi.fn().mockImplementation((url) => {
+            if (url.includes('/api/world/events/pending')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([])
+                });
+            }
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({})
+            });
+        });
+
+        // Setup default successful responses for mandatory APIs
+        mockGetFullState.mockResolvedValue({
+            data: {
+                success: true,
+                player: { name: 'Jean', hp: 100, max_hp: 100 }
+            }
+        });
+        mockGetCurrentLocation.mockResolvedValue({
+            data: {
+                success: true,
+                room: { name: 'Test Room', description: 'Test', x: 0, y: 0, exits: [] }
+            }
+        });
+        mockGetCommands.mockResolvedValue({
+            data: {
+                success: true,
+                commands: []
+            }
+        });
+        mockGetTilesBatch.mockResolvedValue({
+            data: {
+                success: true,
+                tiles: []
+            }
+        });
+        mockGetExploredTiles.mockResolvedValue({
+            data: {
+                success: true,
+                explored_tiles: []
+            }
+        });
+        mockGetStatus.mockResolvedValue({
+            data: {
+                success: false,
+                combat_active: false,
+                battle_state: null
+            }
+        });
+
         useExploration.mockReturnValue({
             exploredTiles: new Map(),
             setExploredTiles: vi.fn(),
@@ -123,6 +216,10 @@ describe('Tactical AI Integration Tests', () => {
         });
     });
 
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     const renderGamePage = () => {
         return render(
             <MemoryRouter>
@@ -139,23 +236,14 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        {
-                            name: 'Jean',
-                            hp: 80,
-                            max_hp: 100,
-                            is_player: true,
-                            x: 2,
-                            y: 2,
-                        },
-                        {
-                            name: 'Rat',
-                            hp: 10,
-                            max_hp: 10,
-                            is_player: false,
-                            x: 2,
-                            y: 3,
-                        },
+                        { id: 'player_1', name: 'Jean', hp: 80, max_hp: 100, is_player: true, x: 2, y: 2 },
+                        { id: 'enemy_123', name: 'Rat', hp: 10, max_hp: 10, is_player: false, x: 2, y: 3 },
                     ],
+                    player: {
+                        name: 'Jean',
+                        hp: 80,
+                        max_hp: 100
+                    },
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -173,45 +261,41 @@ describe('Tactical AI Integration Tests', () => {
                         },
                     ],
                 },
+                suggested_moves: [
+                    {
+                        move_name: 'Slash',
+                        target_id: 'enemy_123',
+                        score: 95,
+                        reasoning: 'High damage potential against low HP enemy.',
+                    },
+                    {
+                        move_name: 'Dodge',
+                        target_id: null,
+                        score: 60,
+                        reasoning: 'Conserve stamina for later.',
+                    },
+                ],
                 log: [
-                    { message: 'Combat started!', type: 'system' },
+                    { message: 'Combat started!', type: 'system', round: 1 },
                 ],
             },
         });
 
-        api.player.getFullState.mockResolvedValue({
-            data: {
-                player: {
-                    name: 'Jean',
-                    hp: 80,
-                    max_hp: 100,
-                    in_combat: true,
-                },
-            },
-        });
-
-        api.world.getCurrentLocation.mockResolvedValue({
-            data: { location: { name: 'Test Room' } },
-        });
-
-        api.world.getCommands.mockResolvedValue({
-            data: { commands: [] },
-        });
-
-        const { container } = render(<GamePage />);
+        renderGamePage();
 
         // Wait for combat state to load
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
         });
 
+        // Advance timers for SuggestedMovesPanel visibility
+        vi.advanceTimersByTime(600);
+
         // Verify suggested moves panel appears
         await waitFor(() => {
-            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i);
-            if (advisorText) {
-                expect(advisorText).toBeDefined();
-            }
-        }, { timeout: 3000 });
+            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i) || screen.queryByText(/Suggested Moves/i);
+            expect(advisorText).toBeTruthy();
+        }, { timeout: 4000 });
     });
 
     it('executes combined move and target from AI suggestion click', async () => {
@@ -221,9 +305,10 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { name: 'Jean', hp: 100, max_hp: 100, is_player: true },
-                        { name: 'Enemy', hp: 50, max_hp: 50, is_player: false },
+                        { id: 'player_1', name: 'Jean', hp: 100, max_hp: 100, is_player: true },
+                        { id: 'enemy_456', name: 'Enemy', hp: 50, max_hp: 50, is_player: false },
                     ],
+                    player: { name: 'Jean', hp: 100, max_hp: 100 },
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -235,6 +320,14 @@ describe('Tactical AI Integration Tests', () => {
                         },
                     ],
                 },
+                suggested_moves: [
+                    {
+                        move_name: 'Attack',
+                        target_id: 'enemy_456',
+                        score: 85,
+                        reasoning: 'Standard attack.',
+                    },
+                ],
                 log: [],
             },
         });
@@ -252,23 +345,14 @@ describe('Tactical AI Integration Tests', () => {
             },
         });
 
-        api.player.getFullState.mockResolvedValue({
-            data: { player: { name: 'Jean', in_combat: true } },
-        });
-
-        api.world.getCurrentLocation.mockResolvedValue({
-            data: { location: { name: 'Test Room' } },
-        });
-
-        api.world.getCommands.mockResolvedValue({
-            data: { commands: [] },
-        });
-
-        render(<GamePage />);
+        renderGamePage();
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
         });
+
+        // Advance timers for SuggestedMovesPanel visibility
+        vi.advanceTimersByTime(600);
 
         // Wait for suggestions to appear and click one
         await waitFor(async () => {
@@ -297,27 +381,27 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        {
-                            name: 'Jean',
-                            hp: 75,
-                            max_hp: 100,
-                            is_player: true,
-                            active_effects: [
-                                {
-                                    name: 'Burn',
-                                    type: 'ailment',
-                                    description: 'Taking fire damage',
-                                    duration_remaining: 3,
-                                },
-                                {
-                                    name: 'Shield',
-                                    type: 'buff',
-                                    description: 'Increased protection',
-                                    duration_remaining: 5,
-                                },
-                            ],
-                        },
+                        { id: 'player_1', name: 'Jean', hp: 75, max_hp: 100, is_player: true },
                     ],
+                    player: {
+                        name: 'Jean',
+                        hp: 75,
+                        max_hp: 100,
+                        status_effects: [
+                            {
+                                name: 'Burn',
+                                type: 'ailment',
+                                description: 'Taking fire damage',
+                                duration_remaining: 3,
+                            },
+                            {
+                                name: 'Shield',
+                                type: 'buff',
+                                description: 'Increased protection',
+                                duration_remaining: 5,
+                            },
+                        ]
+                    },
                     input_type: 'move_selection',
                     awaiting_input: true,
                 },
@@ -325,19 +409,7 @@ describe('Tactical AI Integration Tests', () => {
             },
         });
 
-        api.player.getFullState.mockResolvedValue({
-            data: { player: { name: 'Jean', in_combat: true } },
-        });
-
-        api.world.getCurrentLocation.mockResolvedValue({
-            data: { location: { name: 'Test Room' } },
-        });
-
-        api.world.getCommands.mockResolvedValue({
-            data: { commands: [] },
-        });
-
-        render(<GamePage />);
+        renderGamePage();
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
@@ -361,9 +433,10 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { name: 'Jean', hp: 90, max_hp: 100, is_player: true },
-                        { name: 'Enemy', hp: 30, max_hp: 50, is_player: false },
+                        { id: 'player_1', name: 'Jean', hp: 90, max_hp: 100, is_player: true },
+                        { id: 'enemy_789', name: 'Enemy', hp: 30, max_hp: 50, is_player: false },
                     ],
+                    player: { name: 'Jean', hp: 90, max_hp: 100 },
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -374,29 +447,28 @@ describe('Tactical AI Integration Tests', () => {
                             reasoning: 'Finish the enemy.',
                         },
                     ],
-                    last_move_outcome: 'Your previous attack dealt 20 damage.',
                 },
+                last_move_outcome: 'Your previous attack dealt 20 damage.',
+                suggested_moves: [
+                    {
+                        move_name: 'Slash',
+                        target_id: 'enemy_789',
+                        score: 90,
+                        reasoning: 'Finish the enemy.',
+                    },
+                ],
                 log: [],
             },
         });
 
-        api.player.getFullState.mockResolvedValue({
-            data: { player: { name: 'Jean', in_combat: true } },
-        });
-
-        api.world.getCurrentLocation.mockResolvedValue({
-            data: { location: { name: 'Test Room' } },
-        });
-
-        api.world.getCommands.mockResolvedValue({
-            data: { commands: [] },
-        });
-
-        render(<GamePage />);
+        renderGamePage();
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
         });
+
+        // Advance timers for SuggestedMovesPanel visibility
+        vi.advanceTimersByTime(600);
 
         // Look for previous cycle analysis
         await waitFor(() => {
@@ -426,9 +498,14 @@ describe('Tactical AI Integration Tests', () => {
                                     hp: 100,
                                     max_hp: 100,
                                     is_player: true,
-                                    active_effects: [],
                                 },
                             ],
+                            player: {
+                                name: 'Jean',
+                                hp: 100,
+                                max_hp: 100,
+                                status_effects: []
+                            },
                             input_type: 'move_selection',
                             awaiting_input: true,
                         },
@@ -448,16 +525,21 @@ describe('Tactical AI Integration Tests', () => {
                                     hp: 95,
                                     max_hp: 100,
                                     is_player: true,
-                                    active_effects: [
-                                        {
-                                            name: 'Poison',
-                                            type: 'ailment',
-                                            description: 'Losing HP over time',
-                                            duration_remaining: 4,
-                                        },
-                                    ],
                                 },
                             ],
+                            player: {
+                                name: 'Jean',
+                                hp: 95,
+                                max_hp: 100,
+                                status_effects: [
+                                    {
+                                        name: 'Poison',
+                                        type: 'ailment',
+                                        description: 'Losing HP over time',
+                                        duration_remaining: 4,
+                                    },
+                                ],
+                            },
                             input_type: 'move_selection',
                             awaiting_input: true,
                         },
@@ -467,19 +549,7 @@ describe('Tactical AI Integration Tests', () => {
             }
         });
 
-        api.player.getFullState.mockResolvedValue({
-            data: { player: { name: 'Jean', in_combat: true } },
-        });
-
-        api.world.getCurrentLocation.mockResolvedValue({
-            data: { location: { name: 'Test Room' } },
-        });
-
-        api.world.getCommands.mockResolvedValue({
-            data: { commands: [] },
-        });
-
-        const { rerender } = render(<GamePage />);
+        const { rerender } = renderGamePage();
 
         await waitFor(() => {
             expect(api.combat.getStatus).toHaveBeenCalled();
@@ -489,7 +559,7 @@ describe('Tactical AI Integration Tests', () => {
         expect(screen.queryByText('🧪')).toBeNull();
 
         // Simulate combat state update
-        rerender(<GamePage />);
+        rerender(<MemoryRouter><GamePage /></MemoryRouter>);
 
         // After update, poison icon should appear
         await waitFor(() => {
