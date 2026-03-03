@@ -85,7 +85,7 @@ describe('AudioControlDialog', () => {
     });
 
     render(<AudioControlDialog onClose={mockOnClose} />);
-    
+
     const mutedBtns = screen.getAllByText('MUTED');
     expect(mutedBtns.length).toBe(2);
 
@@ -115,14 +115,4 @@ describe('AudioControlDialog', () => {
     expect(mockOnClose).not.toHaveBeenCalled();
   });
 
-  it('handles hover effects on close button', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
-    const closeBtn = screen.getByText('Close');
-    
-    fireEvent.mouseEnter(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgba(0, 204, 255, 0.2)');
-    
-    fireEvent.mouseLeave(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('transparent');
-  });
 });

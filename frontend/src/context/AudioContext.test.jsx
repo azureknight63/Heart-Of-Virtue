@@ -1,5 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.unmock('./AudioContext');
 import { AudioProvider, useAudio } from './AudioContext';
 import React from 'react';
 

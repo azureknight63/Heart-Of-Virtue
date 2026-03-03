@@ -33,7 +33,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText(/SELECT TARGET/i)).toBeDefined();
+    expect(screen.getByText((content) => content.includes('SELECT TARGET'))).toBeDefined();
     expect(screen.getByText('Goblin')).toBeDefined();
     expect(screen.getAllByText(/10 ft/i)).toBeDefined();
     expect(screen.getByText(/50\/100/)).toBeDefined();
@@ -63,7 +63,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText(/SELECT DIRECTION/i)).toBeDefined();
+    expect(screen.getByText((content) => content.includes('SELECT DIRECTION'))).toBeDefined();
     options.forEach(dir => {
       expect(screen.getByText(dir.toUpperCase())).toBeDefined();
     });
@@ -84,7 +84,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText(/ENTER VALUE/i)).toBeDefined();
+    expect(screen.getByText((content) => content.includes('ENTER VALUE'))).toBeDefined();
     expect(screen.getByText('How many points?')).toBeDefined();
     expect(screen.getByText(/Range: 1 - 10/i)).toBeDefined();
 
@@ -126,7 +126,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText(/SELECT ITEM/i)).toBeDefined();
+    expect(screen.getByText((content) => content.includes('SELECT ITEM'))).toBeDefined();
     expect(screen.getByText('Health Potion')).toBeDefined();
     expect(screen.getByText('Mana Potion')).toBeDefined();
 
@@ -146,7 +146,7 @@ describe('CombatInputDialog', () => {
       />
     );
 
-    expect(screen.getByText(/SELECT OPTION/i)).toBeDefined();
+    expect(screen.getByText((content) => content.includes('SELECT OPTION'))).toBeDefined();
     expect(screen.getByText('Option A')).toBeDefined();
     expect(screen.getByText('Option B')).toBeDefined();
 

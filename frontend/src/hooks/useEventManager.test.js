@@ -5,6 +5,19 @@ import { useEventManager } from './useEventManager'
 // Mock fetch globally
 global.fetch = vi.fn()
 
+// Mock useToast from ToastContext
+vi.mock('../context/ToastContext', () => ({
+    useToast: () => ({
+        error: vi.fn(),
+        success: vi.fn(),
+        info: vi.fn(),
+        warning: vi.fn(),
+        showError: vi.fn(),
+        showSuccess: vi.fn(),
+        showInfo: vi.fn(),
+    })
+}))
+
 describe('useEventManager', () => {
     beforeEach(() => {
         vi.clearAllMocks()

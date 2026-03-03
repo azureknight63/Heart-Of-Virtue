@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SkillsPanel from './SkillsPanel';
 import apiEndpoints from '../api/endpoints';
+import { ToastProvider, useToast } from '../context/ToastContext';
 
 // Mock apiEndpoints
 vi.mock('../api/endpoints', () => ({
@@ -11,6 +12,16 @@ vi.mock('../api/endpoints', () => ({
       learnSkill: vi.fn(),
     },
   },
+}));
+
+vi.mock('../context/ToastContext', () => ({
+  ToastProvider: ({ children }) => <div>{children}</div>,
+  useToast: vi.fn(() => ({
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn()
+  }))
 }));
 
 describe('SkillsPanel', () => {
@@ -59,13 +70,21 @@ describe('SkillsPanel', () => {
 
   it('renders loading state initially', async () => {
     apiEndpoints.player.getSkills.mockReturnValue(new Promise(() => { })); // Never resolves
-    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => { }} />
+      </ToastProvider>
+    );
     expect(screen.getByText(/Accessing ancient scrolls/i)).toBeDefined();
   });
 
   it('renders error state if fetch fails', async () => {
     apiEndpoints.player.getSkills.mockRejectedValue(new Error('Fetch failed'));
-    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => { }} />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/Failed to load skills/i)).toBeDefined();
@@ -80,7 +99,11 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => { }} />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/⚡ ABILITIES & SKILLS/i)).toBeDefined();
@@ -106,7 +129,11 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => { }} />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getAllByText(/Combat/i).length).toBeGreaterThan(0);
@@ -147,7 +174,11 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => { }} />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/Power Strike/i)).toBeDefined();
@@ -171,8 +202,13 @@ describe('SkillsPanel', () => {
       },
     });
 
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
+    const mockError = vi.fn();
+    useToast.mockReturnValue({
+      error: mockError,
+      success: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn()
+    });
 
     apiEndpoints.player.learnSkill.mockRejectedValue({
       response: {
@@ -182,7 +218,11 @@ describe('SkillsPanel', () => {
       },
     });
 
-    render(<SkillsPanel player={mockPlayer} onClose={() => { }} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => { }} />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/Power Strike/i)).toBeDefined();
@@ -191,11 +231,8 @@ describe('SkillsPanel', () => {
     fireEvent.click(screen.getByText(/LEARN \(100\)/i));
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith('Not enough skill points');
+      expect(mockError).toHaveBeenCalledWith('Not enough skill points');
     });
-
-    consoleSpy.mockRestore();
-    alertSpy.mockRestore();
   });
 
   it('calls onClose when close button is clicked', async () => {
@@ -207,7 +244,11 @@ describe('SkillsPanel', () => {
     });
 
     const mockOnClose = vi.fn();
-    render(<SkillsPanel player={mockPlayer} onClose={mockOnClose} />);
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={mockOnClose} />
+      </ToastProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/✕/i)).toBeDefined();

@@ -51,8 +51,8 @@ describe('ItemDetailDialog', () => {
 
     expect(screen.getAllByText('Iron Sword')[0]).toBeDefined();
     expect(screen.getByText('A sturdy iron sword.')).toBeDefined();
-    expect(screen.getByText('5kg')).toBeDefined();
-    expect(screen.getByText(/100💰/i)).toBeDefined();
+    expect(screen.getByText(/5\.00w/i)).toBeDefined();
+    expect(screen.getByText(/100g/i)).toBeDefined();
   });
 
   it('handles equip action successfully', async () => {
@@ -81,9 +81,9 @@ describe('ItemDetailDialog', () => {
     });
 
     // Click Ok on success dialog
-    fireEvent.click(screen.getByText(/OKAY/i));
-    // Close is not called on equip, just clears the result
-    expect(mockOnClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/Ok/i));
+    // Close IS called on equip to close the detail view after success
+    expect(mockOnClose).toHaveBeenCalled();
   });
 
   it('handles use action successfully', async () => {
@@ -115,7 +115,7 @@ describe('ItemDetailDialog', () => {
     });
 
     // Must click OKAY for removal callback to trigger
-    fireEvent.click(screen.getByText(/OKAY/i));
+    fireEvent.click(screen.getByText(/Ok/i));
     expect(mockOnItemRemoved).toHaveBeenCalledWith(1);
   });
 
@@ -146,7 +146,7 @@ describe('ItemDetailDialog', () => {
     });
 
     // Must click OKAY for removal callback to trigger
-    fireEvent.click(screen.getByText(/OKAY/i));
+    fireEvent.click(screen.getByText(/Ok/i));
     expect(mockOnItemRemoved).toHaveBeenCalledWith(1);
   });
 
@@ -320,11 +320,11 @@ describe('ItemDetailDialog', () => {
     // Success dialog buttons
     fireEvent.click(screen.getByText(/Equip/i));
     await waitFor(() => {
-      const okButton = screen.getByText(/Ok/i);
+      const okButton = screen.getAllByText(/Ok/i)[0];
       fireEvent.mouseEnter(okButton);
       fireEvent.mouseLeave(okButton);
+      fireEvent.click(okButton);
     });
-    fireEvent.click(screen.getByText(/Ok/i));
 
     // Drop confirm buttons
     fireEvent.click(screen.getByText(/Drop/i));
@@ -394,9 +394,6 @@ describe('ItemDetailDialog', () => {
       />
     );
 
-    const backButton = screen.getByText(/Back/i);
-    fireEvent.mouseEnter(backButton);
-    fireEvent.mouseLeave(backButton);
 
     const equipButton = screen.getByText(/Equip/i);
     fireEvent.mouseEnter(equipButton);

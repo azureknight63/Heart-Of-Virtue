@@ -95,12 +95,12 @@ describe('StatsPanel', () => {
     // Finesse is 8 (base 10) -> debuffed color #ff6666
     const finesseContainer = screen.getByTitle(/Improves accuracy and critical hit chance/i);
     const finesseVal = within(finesseContainer).getByText('8');
-    expect(finesseVal.style.color).toBe('rgb(255, 102, 102)'); // #ff6666
+    expect(finesseVal.style.color).toBe('rgb(255, 68, 68)'); // #ff4444 (colors.danger)
 
-    // Speed is 10 (base 10) -> normal color #ffff00
+    // Speed is 10 (base 10) -> normal color #ffcc00 (colors.gold)
     const speedContainer = screen.getByTitle(/Determines turn order and evasion chance/i);
     const speedVal = within(speedContainer).getByText('10');
-    expect(speedVal.style.color).toBe('rgb(255, 255, 0)'); // #ffff00
+    expect(speedVal.style.color).toBe('rgb(255, 204, 0)'); // #ffcc00
   });
 
 

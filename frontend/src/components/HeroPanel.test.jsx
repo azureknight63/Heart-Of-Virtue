@@ -149,17 +149,18 @@ describe('HeroPanel', () => {
     const button = screen.getByText(/ATTRIBUTES/i);
 
     fireEvent.mouseEnter(button);
-    // Check if style changes
-    expect(button.style.color).toBe('rgb(0, 255, 136)'); // #00ff88
+    // Check if style changes - uses #00ffaa on hover
+    expect(button.style.color).toBe('rgb(0, 255, 170)');
 
     fireEvent.mouseLeave(button);
-    expect(button.style.color).toBe('rgb(0, 170, 85)'); // #00aa55
+    // Returns to colors.primary #00ff88
+    expect(button.style.color).toBe('rgb(0, 255, 136)');
   });
 
   it('handles bar hover and focus states', () => {
     render(<HeroPanel {...mockProps} />);
-    const hpBar = screen.getByText(/ATTRIBUTES/i).parentElement.querySelector('div[style*="rgb(255, 68, 68)"]');
-    const fatigueBar = screen.getByText(/ATTRIBUTES/i).parentElement.querySelector('div[style*="rgb(255, 170, 0)"]');
+    const hpBar = screen.getByTestId('hp-bar');
+    const fatigueBar = screen.getByTestId('fatigue-bar');
 
     // HP Bar
     fireEvent.mouseEnter(hpBar);
@@ -190,14 +191,14 @@ describe('HeroPanel', () => {
 
   it('renders HP and Fatigue values correctly', () => {
     render(<HeroPanel {...mockProps} />);
-    const hpBar = screen.getByText(/ATTRIBUTES/i).parentElement.querySelector('div[style*="rgb(255, 68, 68)"]');
+    const hpBar = screen.getByTestId('hp-bar');
     fireEvent.mouseEnter(hpBar);
 
     // The text is split by <br />, so we check for parts
     expect(screen.getByText(/HP/i)).toBeDefined();
     expect(screen.getByText(/80\/100/i)).toBeDefined();
 
-    const fatigueBar = screen.getByText(/ATTRIBUTES/i).parentElement.querySelector('div[style*="rgb(255, 170, 0)"]');
+    const fatigueBar = screen.getByTestId('fatigue-bar');
     fireEvent.mouseEnter(fatigueBar);
     expect(screen.getByText(/Fatigue/i)).toBeDefined();
     expect(screen.getByText(/120\/150/i)).toBeDefined();
@@ -205,11 +206,11 @@ describe('HeroPanel', () => {
 
   it('uses default values if player is missing', () => {
     render(<HeroPanel {...mockProps} player={null} />);
-    const hpBar = screen.getByText(/ATTRIBUTES/i).parentElement.querySelector('div[style*="rgb(255, 68, 68)"]');
+    const hpBar = screen.getByTestId('hp-bar');
     fireEvent.mouseEnter(hpBar);
     expect(screen.getByText(/100\/100/i)).toBeDefined();
 
-    const fatigueBar = screen.getByText(/ATTRIBUTES/i).parentElement.querySelector('div[style*="rgb(255, 170, 0)"]');
+    const fatigueBar = screen.getByTestId('fatigue-bar');
     fireEvent.mouseEnter(fatigueBar);
     expect(screen.getByText(/150\/150/i)).toBeDefined();
   });

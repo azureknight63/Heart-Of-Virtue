@@ -14,13 +14,12 @@ describe('RoomContents Regression', () => {
     it('should not render clickable links in the room description but should in announce messages', () => {
         const { container } = render(<RoomContents location={mockLocation} onInteract={vi.fn()} />)
 
-        // Find the room description paragraph
-        // It's the first <p> tag
-        const descriptionP = container.querySelector('p')
-        expect(descriptionP.textContent).toBe('This is a room with a depression.')
+        // Find the room description element
+        const descriptionElement = screen.getByText('This is a room with a depression.')
+        expect(descriptionElement).toBeDefined()
 
         // Check if there are any spans (links) inside the description
-        const linksInDescription = descriptionP.querySelectorAll('span')
+        const linksInDescription = descriptionElement.querySelectorAll('span')
         expect(linksInDescription.length).toBe(0)
 
         // Now check for the announce message

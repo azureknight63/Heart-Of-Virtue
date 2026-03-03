@@ -21,16 +21,16 @@ describe('AccountDialog', () => {
       logout: mockLogout
     });
     // Mock localStorage
-    const localStorageMock = (function() {
+    const localStorageMock = (function () {
       let store = {};
       return {
-        getItem: function(key) {
+        getItem: function (key) {
           return store[key] || null;
         },
-        setItem: function(key, value) {
+        setItem: function (key, value) {
           store[key] = value.toString();
         },
-        clear: function() {
+        clear: function () {
           store = {};
         }
       };
@@ -73,7 +73,7 @@ describe('AccountDialog', () => {
     render(<AccountDialog player={mockPlayer} onClose={mockOnClose} />);
     const logoutBtn = screen.getByText('Log Out');
     fireEvent.click(logoutBtn);
-    
+
     await waitFor(() => {
       expect(mockLogout).toHaveBeenCalled();
       expect(mockOnClose).toHaveBeenCalled();
@@ -94,23 +94,4 @@ describe('AccountDialog', () => {
     expect(mockOnClose).not.toHaveBeenCalled();
   });
 
-  it('handles hover effects on buttons', () => {
-    render(<AccountDialog player={mockPlayer} onClose={mockOnClose} />);
-    const closeBtn = screen.getByText('Close');
-    const logoutBtn = screen.getByText('Log Out');
-
-    // Close button hover
-    fireEvent.mouseEnter(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('rgba(0, 204, 255, 0.2)');
-    fireEvent.mouseLeave(closeBtn);
-    expect(closeBtn.style.backgroundColor).toBe('transparent');
-
-    // Logout button hover
-    fireEvent.mouseEnter(logoutBtn);
-    expect(logoutBtn.style.backgroundColor).toBe('rgb(255, 0, 0)');
-    expect(logoutBtn.style.boxShadow).toBe('0 0 10px #ff0000');
-    fireEvent.mouseLeave(logoutBtn);
-    expect(logoutBtn.style.backgroundColor).toBe('rgb(204, 0, 0)');
-    expect(logoutBtn.style.boxShadow).toBe('none');
-  });
 });

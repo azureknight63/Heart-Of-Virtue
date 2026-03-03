@@ -32,7 +32,7 @@ vi.mock('../context/ToastContext', () => ({
 }));
 
 vi.mock('../hooks/useCombatCoordinator', () => ({
-    useCombatCoordinator: vi.fn(() => ({
+    useCombatCoordinator: vi.fn(({ performAction }) => ({
         combatDialogShown: true,
         showVictoryDialog: false,
         showDefeatDialog: false,
@@ -47,8 +47,15 @@ vi.mock('../hooks/useCombatCoordinator', () => ({
         setIsCombatLogProcessing: vi.fn(),
         setCurrentLogIndex: vi.fn(),
         setHoveredTargetId: vi.fn(),
-        handleSuggestedMoveClick: vi.fn(),
-        handleCombatAction: vi.fn(),
+        handleSuggestedMoveClick: vi.fn((suggestion) => {
+            return performAction('select_move_and_target', {
+                move_name: suggestion.move_name,
+                target_id: suggestion.target_id
+            });
+        }),
+        handleCombatAction: vi.fn((action, target) => {
+            return performAction(action, target);
+        }),
         handleInteractionComplete: vi.fn()
     }))
 }));
@@ -152,7 +159,10 @@ describe('Tactical AI Integration Tests', () => {
         mockGetFullState.mockResolvedValue({
             data: {
                 success: true,
-                player: { name: 'Jean', hp: 100, max_hp: 100 }
+                status: { name: 'Jean', hp: 100, max_hp: 100, fatigue: 0, max_fatigue: 150 },
+                stats: { strength: 10, finesse: 10, speed: 10, endurance: 10 },
+                skills: { offensive: [], defensive: [] },
+                inventory: { items: [] }
             }
         });
         mockGetCurrentLocation.mockResolvedValue({
@@ -411,11 +421,12 @@ describe('Tactical AI Integration Tests', () => {
         // Check for status effect icons (rendered in HeroPanel, always visible)
         await waitFor(() => {
             // Look for emoji icons (🔥 for burn, 🛡️ for shield)
-            const burnIcon = screen.queryByText('🔥');
-            const shieldIcon = screen.queryByText('🛡️');
+            // Use queryAllByText because emojis may appear in both HeroPanel and BattlefieldGrid
+            const burnIcons = screen.queryAllByText('🔥');
+            const shieldIcons = screen.queryAllByText('🛡️');
 
             // At least one should be present if effects are rendering
-            expect(burnIcon || shieldIcon).toBeTruthy();
+            expect(burnIcons.length + shieldIcons.length).toBeGreaterThan(0);
         }, { timeout: 8000 });
     }, 10000);
 
@@ -462,12 +473,14 @@ describe('Tactical AI Integration Tests', () => {
 
         // Look for previous cycle analysis
         await waitFor(() => {
+            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i);
             const analysisText = screen.queryByText(/ANALYSIS OF PREVIOUS CYCLE/i);
             const outcomeText = screen.queryByText(/previous attack dealt 20 damage/i);
 
-            // Either the header or the outcome should be visible
+            // Header and either analysis label or outcome should be visible
+            expect(advisorText).toBeTruthy();
             expect(analysisText || outcomeText).toBeTruthy();
-        }, { timeout: 8000 });
+        }, { timeout: 10000 });
     }, 10000);
 
     it('updates status effects when combat state changes', async () => {
@@ -481,6 +494,7 @@ describe('Tactical AI Integration Tests', () => {
                     data: {
                         success: true,
                         combat_active: true,
+                        suggestions_loading: true, // Trigger poll
                         battle_state: {
                             combatants: [
                                 {
@@ -508,6 +522,7 @@ describe('Tactical AI Integration Tests', () => {
                     data: {
                         success: true,
                         combat_active: true,
+                        suggestions_loading: false, // End poll
                         battle_state: {
                             combatants: [
                                 {

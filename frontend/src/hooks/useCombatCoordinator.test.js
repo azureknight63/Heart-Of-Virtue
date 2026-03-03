@@ -100,18 +100,24 @@ describe('useCombatCoordinator', () => {
                 log: []
             }
 
-            const { result } = renderHook(() =>
-                useCombatCoordinator({
+            const { result, rerender } = renderHook(
+                ({ inCombat }) => useCombatCoordinator({
                     ...defaultParams,
                     combat,
-                    inCombat: false
-                })
+                    inCombat
+                }),
+                { initialProps: { inCombat: true } }
             )
 
+            // 1. Set processing to true while still in combat
             act(() => {
                 result.current.setIsCombatLogProcessing(true)
             })
 
+            // 2. Combat ends
+            rerender({ inCombat: false })
+
+            // 3. Victory dialog should NOT show because processing is true
             expect(result.current.showVictoryDialog).toBe(false)
         })
 
