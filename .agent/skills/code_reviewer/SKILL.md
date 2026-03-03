@@ -1,6 +1,6 @@
 ---
 name: code_reviewer
-description: Performs a comprehensive code review of code changes (diffs or file sets), grading them on DRY, clean coding, maintainability, stability, and performance. Adaptable to any provided diff, file set, or git changes.
+description: Performs a comprehensive code review of code changes (diffs or file sets), grading them on DRY, clean coding, maintainability, stability, performance, and security. Adaptable to any provided diff, file set, or git changes.
 ---
 
 # Code Reviewer Skill
@@ -9,7 +9,7 @@ This skill allows the Antigravity agent to perform a high-quality code review of
 
 ## Capabilities
 - Analyzes code changes from various sources: direct diff strings, specific files/directories, git ranges, or staged changes.
-- Grades code across five key dimensions: DRY, Clean Code, Maintainability, Stability, and Performance.
+- Grades code across six key dimensions: DRY, Clean Code, Maintainability, Stability, Performance, and Security.
 - Provides actionable feedback and refactoring suggestions tailored to the provided changes.
 
 ## Instructions for the Agent
@@ -48,6 +48,7 @@ Review the code changes specifically for:
 - **Maintainability**: Is the code modular? How hard will it be to change this in 6 months? Are there proper comments for complex logic?
 - **Stability**: Are there potential null pointer exceptions? Missing error boundaries? Unhandled promise rejections? Edge cases in logic?
 - **Performance**: Are there expensive operations inside loops? Unnecessary re-renders? Suboptimal data structures?
+- **Security**: Are there injection vulnerabilities (SQL, XSS, command)? Sensitive data exposed in logs or responses? Improper input validation or sanitization? Insecure direct object references? Missing authentication or authorization checks?
 
 ### 3. Structure the Response
 
@@ -64,6 +65,7 @@ Your response should be formatted as follows:
 | **Maintainability** | [Grade] | [Brief explanation] |
 | **Stability** | [Grade] | [Brief explanation] |
 | **Performance** | [Grade] | [Brief explanation] |
+| **Security** | [Grade] | [Brief explanation] |
 
 ### 🔍 Detailed Feedback
 - **[File Name]**:
