@@ -141,12 +141,12 @@ class Enflamed(State):  # target is engulfed in flames, taking damage every few 
         self.tick += 1
         if self.tick % self.execute_on == 0:
             damage = int(target.maxhp * (random.uniform(0.015, 0.035) + (self.tick * 0.003)))
-            cprint("{} shudders in pain from being poisoned, suffering {} damage!".format(target.name, damage), "red")
+            cprint("{} writhes in the flames, suffering {} damage!".format(target.name, damage), "red")
             target.hp -= damage
 
     def compound(self, target):
-        #  Increases the strength and duration of the poison by 25% every time it's inflicted
-        cprint("{}'s poisoning has gotten worse!".format(target.name), "magenta")
+        #  Increases the strength and duration of the flames by 25% every time it's inflicted
+        cprint("{}'s flames have grown fiercer!".format(target.name), "magenta")
         self.tick *= 1.25
         self.tick = int(self.tick)
         self.beats_max *= 1.1
