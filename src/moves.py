@@ -1926,27 +1926,31 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
             return hit_chance
             
         range_min = self.mvrange[0]
-        effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        effective_range = self.get_effective_range_max(self.user)
+        if effective_range is None:
+            return hit_chance
         range_max = effective_range
-        
+
         if enemy not in self.user.combat_proximity:
             return hit_chance
-            
+
         target_distance = self.user.combat_proximity[enemy]
-        close_range_distraction = 0  # all enemies will be checked;
-        # if any are closer than the weapon's min range, accuracy is halved
+        close_range_distraction = 0  # if any enemy is within minimum range, accuracy is halved
         for e, dist in self.user.combat_proximity.items():
-            if e != self.user:
+            if e != self.user and dist < range_min:
                 close_range_distraction = 1
                 break
         if range_min <= target_distance <= range_max:  # check if target is still in range
             hit_chance = (98 - enemy.finesse) + self.user.finesse
             hit_chance -= close_range_distraction * (hit_chance / 2)
-            if target_distance > self.user.eq_weapon.range_base:
-                accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
+            wpn_range_base = getattr(self.user.eq_weapon, 'range_base', 0)
+            if target_distance > wpn_range_base:
+                accuracy_decay = (target_distance - wpn_range_base) * self.decay
                 hit_chance -= accuracy_decay
-            if hit_chance < 2:  # Minimum value for hit chance
+            if hit_chance < 2:    # Minimum hit chance
                 hit_chance = 2
+            if hit_chance > 100:  # Maximum hit chance
+                hit_chance = 100
         for state in self.user.states:
             if state.name == "Hawkeye":
                 hit_chance *= 1.4
