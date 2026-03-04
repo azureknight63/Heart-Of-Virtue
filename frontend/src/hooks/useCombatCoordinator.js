@@ -84,9 +84,9 @@ export function useCombatCoordinator({
                 const enemyIds = combat?.enemies?.map(e => e.id) || []
                 if (!enemyIds.includes(targetId)) {
                     console.warn('[DEBUG] Suggestion target_id stale, refreshing combat status...')
-                    await fetchCombatStatus()
-                    // Use first available enemy as fallback after refresh
-                    targetId = combat?.enemies?.[0]?.id || targetId
+                    const freshCombat = await fetchCombatStatus()
+                    // Use first available enemy from the freshly fetched state
+                    targetId = freshCombat?.enemies?.[0]?.id || targetId
                 }
             }
 
