@@ -74,6 +74,11 @@ class Move:  # master class for all moves
         """Called on every beat while the move is active (beats_left > 0)."""
         pass
 
+    def get_effective_range_max(self, user):
+        """Override in moves that compute range dynamically (e.g. ranged weapons with decay).
+        Return a float/int to override mvrange[1] during target selection, or None to use mvrange[1]."""
+        return None
+
     def can_use_coordinates(self, user):
         """Check if 2D coordinate-based movement is available for this move."""
         if not (hasattr(user, 'combat_position') and user.combat_position is not None):
@@ -1905,6 +1910,14 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         self.decay = 0.05
         self.evaluate()
 
+    def get_effective_range_max(self, user):
+        """Return the effective maximum range, accounting for weapon range and decay."""
+        wpn = getattr(user, 'eq_weapon', None)
+        decay = getattr(wpn, 'range_decay', 0) if wpn else 0
+        if wpn and decay:
+            return getattr(wpn, 'range_base', 0) + (100 / decay)
+        return None
+
     def calculate_hit_chance(self, enemy):  # estimate the hit chance for enemy and return as a string (ex "48%")
         hit_chance = 2
         
@@ -1953,8 +1966,8 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
             has_bow = True
 
         range_min = self.mvrange[0]
-        if hasattr(self.user.eq_weapon, "range_base"):
-            effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        effective_range = self.get_effective_range_max(self.user)
+        if effective_range is not None:
             range_max = effective_range
             for enemy, distance in self.user.combat_proximity.items():
                 if range_min <= distance <= range_max:
