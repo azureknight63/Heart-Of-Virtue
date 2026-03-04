@@ -12,6 +12,7 @@ import skilltree  # type: ignore
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
 import positions  # type: ignore
+from combatant import Combatant
 
 
 def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
@@ -86,7 +87,7 @@ def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
     return output
 
 
-class Player:
+class Player(Combatant):
     def __init__(self):
         self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
         # Equip starting gear
@@ -128,84 +129,9 @@ class Player:
         self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rating
         self.faith_base = 10
-        # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half."
-        # 2.0 means "double damage/chance."
-        # Negative values mean the damage is absorbed (heals instead of damages.) Status resistances cannot be negative.
-        self.resistance = {
-            "fire": 1.0,
-            "ice": 1.0,
-            "shock": 1.0,
-            "earth": 1.0,
-            "light": 1.0,
-            "dark": 1.0,
-            "piercing": 1.0,
-            "slashing": 1.0,
-            "crushing": 1.0,
-            "spiritual": 1.0,
-            "pure": 1.0
-        }
-        self.resistance_base = {
-            "fire": 1.0,
-            "ice": 1.0,
-            "shock": 1.0,
-            "earth": 1.0,
-            "light": 1.0,
-            "dark": 1.0,
-            "piercing": 1.0,
-            "slashing": 1.0,
-            "crushing": 1.0,
-            "spiritual": 1.0,
-            "pure": 1.0
-        }
-        self.status_resistance = {
-            "generic": 1.0,  # Default status type for all states
-            "stun": 1.0,  # Unable to move; typically short duration
-            "poison": 1.0,  # Drains Health every combat turn/game tick; persists
-            "inflamed": 1.0,  # Fire damage over time
-            "sloth": 1.0,  # Drains Fatigue every combat turn
-            "apathy": 1.0,  # Drains HEAT every combat turn
-            "blind": 1.0,  # Miss physical attacks more frequently; persists
-            "incoherence": 1.0,  # Miracles fail more frequently; persists
-            "mute": 1.0,  # Cannot use Miracles; persists
-            "enraged": 1.0,  # Double physical damage given and taken
-            "enchanted": 1.0,  # Double magical damage given and taken
-            "ethereal": 1.0,  # Immune to physical damage but take 3x magical damage; persists
-            "berserk": 1.0,  # Auto attack, 1.5x physical damage
-            "slow": 1.0,  # All move times are doubled
-            "sleep": 1.0,  # Unable to move; removed upon physical damage
-            "confusion": 1.0,  # Uses random moves on random targets; removed upon physical damage
-            "cursed": 1.0,  # Makes luck 1, chance of using a random move with a random target; persists
-            "stop": 1.0,  # Unable to move; not removed with damage
-            "stone": 1.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
-            "frozen": 1.0,  # Unable to move; removed with Fire magic;
-            # permanent death if allowed to persist after battle
-            "doom": 1.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
-            "death": 1.0
-        }
-        self.status_resistance_base = {
-            "generic": 1.0,
-            "stun": 1.0,
-            "poison": 1.0,
-            "inflamed": 1.0,
-            "sloth": 1.0,
-            "apathy": 1.0,
-            "blind": 1.0,
-            "incoherence": 1.0,
-            "mute": 1.0,
-            "enraged": 1.0,
-            "enchanted": 1.0,
-            "ethereal": 1.0,
-            "berserk": 1.0,
-            "slow": 1.0,
-            "sleep": 1.0,
-            "confusion": 1.0,
-            "cursed": 1.0,
-            "stop": 1.0,
-            "stone": 1.0,
-            "frozen": 1.0,
-            "doom": 1.0,
-            "death": 1.0
-        }
+        # Resistance dicts are defined canonically in Combatant (combatant.py).
+        # This also fixes the "inflamed" → "enflamed" key to match State.statustype.
+        self._init_resistances()
         self.weight_tolerance = 20.00
         self.weight_tolerance_base = 20.00
         self.weight_current = 0.00
@@ -437,13 +363,6 @@ maintenant et à l'heure de notre mort. Amen.""",
                 cprint(f" - {name}: {err}", 'red')
         # Small pause for readability in interactive sessions
         time.sleep(0.1)
-
-    def cycle_states(self):
-        """
-        Loop through all of the states on the player and process the effects of each one
-        """
-        for state in self.states:
-            state.process(self)
 
     def apply_state(self, state):
         player_has_state = False
@@ -843,9 +762,6 @@ maintenant et à l'heure de notre mort. Amen.""",
             self.heat = 10
         if self.heat < 0.5:
             self.heat = 0.5
-
-    def is_alive(self):
-        return self.hp > 0
 
     def refresh_enemy_list_and_prox(self):
         for enemy in self.combat_list:
@@ -1923,12 +1839,3 @@ he lets out a barely audible whisper:""", "red")
                 self.combat_list_allies[party_size].name, "cyan") + colored(" follow Jean.", "green")
             print(output)
 
-    def get_equipped_items(self):
-        """
-        Returns a list of all items in the player's inventory that are currently equipped.
-        """
-        equipped_items = []
-        for item in self.inventory:
-            if hasattr(item, "isequipped") and item.isequipped:
-                equipped_items.append(item)
-        return equipped_items
