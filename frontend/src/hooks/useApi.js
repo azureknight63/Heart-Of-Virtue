@@ -176,6 +176,7 @@ export const useCombat = () => {
       const transformed = transformCombatData(data)
       setCombat(transformed)
       setInCombat(data.combat_active)
+      return transformed
     } catch (err) {
       console.error('Combat status error:', err)
     } finally {
