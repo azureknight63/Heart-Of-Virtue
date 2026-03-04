@@ -1,5 +1,4 @@
 import sys
-sys.path.insert(0, 'c:/Users/azure/PycharmProjects/Heart-Of-Virtue')
 
 from src.functions import check_for_combat
 
