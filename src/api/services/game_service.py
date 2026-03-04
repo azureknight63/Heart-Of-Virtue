@@ -2197,6 +2197,10 @@ class GameService:
         player.combat_list = enemies
         player.combat_list_allies = [player]  # Player is always in allies list
         player.in_combat = True
+
+        # Initialize last move tracking for "DO IT AGAIN" button
+        player.last_move_name = None
+        player.last_move_target_id = None
         
         # Create or get combat adapter
         from src.api.combat_adapter import ApiCombatAdapter

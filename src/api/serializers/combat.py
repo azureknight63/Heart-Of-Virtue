@@ -50,6 +50,8 @@ class CombatStateSerializer:
             "suggested_moves": getattr(player, "suggested_moves", []),
             "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
+            "last_move_name": getattr(player, "last_move_name", None),
+            "last_move_target_id": getattr(player, "last_move_target_id", None),
             "player_consumables": CombatStateSerializer._get_consumables(player)
         }
 
