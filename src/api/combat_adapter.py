@@ -113,6 +113,7 @@ class ApiCombatAdapter:
         self.player.suggestions_loading = False
         self._suggestion_thread = None
         self._suggestion_generation = 0  # Generation counter for race condition prevention
+        self._suggestion_lock = threading.Lock()  # Guards generation counter and result writes
         
         # Suppress terminal animations in API mode
         try:
@@ -283,7 +284,7 @@ class ApiCombatAdapter:
                     try:
                         enemy.player_ref = self.player
                     except Exception:
-                        pass
+                        logger.warning("Could not set player_ref on enemy %s", getattr(enemy, 'name', enemy))
                     for move in enemy.known_moves:
                         move.current_stage = 0
                         move.beats_left = 0
@@ -295,7 +296,8 @@ class ApiCombatAdapter:
                     enemy.in_combat = True
                     try:
                         enemy.player_ref = self.player
-                    except: pass
+                    except Exception:
+                        logger.warning("Could not set player_ref on enemy %s", getattr(enemy, 'name', enemy))
             
             # Initialize combat lists for all participants (Enemies and Allies)
             # This ensures collision detection works correctly for everyone
@@ -989,10 +991,11 @@ class ApiCombatAdapter:
                             'input_type': self.input_type,
                             'available_options_count': len(self.available_options)
                         }, room=room)
-            except: pass
-            
+            except Exception as e:
+                logger.warning("Failed to emit socket update after process_move: %s", e)
+
         return result
-    
+
     def _process_initial_turns(self):
         """Process NPC turns if they go first."""
         # Simple speed check - if any enemy is faster, they go first
@@ -1141,8 +1144,9 @@ class ApiCombatAdapter:
         self.player.suggested_moves = []  # Clear previous suggestions while loading
         
         # Increment generation counter to invalidate any in-flight requests
-        self._suggestion_generation += 1
-        current_gen = self._suggestion_generation
+        with self._suggestion_lock:
+            self._suggestion_generation += 1
+            current_gen = self._suggestion_generation
         
         # Get flask app to pass to the thread
         try:
@@ -1186,7 +1190,9 @@ class ApiCombatAdapter:
                     suggestions = self.strategist.get_suggestions(ctx, max_suggestions=count)
                     
                     # Store results (only if this generation is still current)
-                    if current_gen == self._suggestion_generation:
+                    with self._suggestion_lock:
+                        is_current = current_gen == self._suggestion_generation
+                    if is_current:
                         self.player.suggested_moves = suggestions
                         self.player.suggestions_loading = False
                         logger.info(f"DEBUG: Async suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)")
@@ -1210,7 +1216,9 @@ class ApiCombatAdapter:
                                 
                 except Exception as e:
                     logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
-                    if current_gen == self._suggestion_generation:
+                    with self._suggestion_lock:
+                        is_current = current_gen == self._suggestion_generation
+                    if is_current:
                         self.player.suggested_moves = []
                         self.player.suggestions_loading = False
                         logger.info(f"DEBUG: Reset suggestions_loading after error (Gen: {current_gen})")
@@ -1247,14 +1255,8 @@ class ApiCombatAdapter:
                 if hasattr(event, "check_combat_conditions"):
                     event.check_combat_conditions()
             except Exception as e:
-                # Log gracefully without crashing if event fails
                 event_name = getattr(event, "name", "UnknownEvent")
-                # Try to log via standard logging first, then fall back to silent failure
-                try:
-                    import logging
-                    logging.warning(f"Error evaluating combat event '{event_name}': {e}")
-                except Exception:
-                    pass  # Truly silent if logging unavailable
+                logger.warning("Error evaluating combat event '%s': %s", event_name, e)
 
     def _handle_victory(self):
 
