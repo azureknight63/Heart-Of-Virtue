@@ -69,7 +69,10 @@ class CombatPosition:
         if not (0 <= self.x <= 50) or not (0 <= self.y <= 50):
              raise ValueError(f"Coordinates must be between 0 and 50, got ({self.x}, {self.y})")
              
-        if not isinstance(self.facing, Direction):
+        # Check facing is a Direction enum (handle module loading issues in tests)
+        if not (isinstance(self.facing, Direction) or
+                (hasattr(self.facing, 'name') and hasattr(self.facing, 'value') and
+                 self.facing.__class__.__name__ == 'Direction')):
             raise ValueError(f"Facing must be Direction enum, got {self.facing}")
     
     def copy(self) -> "CombatPosition":

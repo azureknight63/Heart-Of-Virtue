@@ -1,5 +1,6 @@
 # Ensure src.functions is imported under its canonical package path so coverage hooks it.
 import sys, os, pathlib
+import builtins
 
 # Disable LLM and reduce delays for tests
 os.environ["MYNX_LLM_ENABLED"] = "0"
@@ -14,6 +15,26 @@ if str(PROJECT_ROOT) not in sys.path:
 # the shim loop's silent failures leave gaps, without breaking `src.*` imports.
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(1, str(SRC_DIR))
+
+# Install import hook FIRST to catch all imports
+_original_import = builtins.__import__
+def _synchronized_import(name, *args, **kwargs):
+    """Ensure both src.x and bare x imports use the same module object."""
+    # Get the module (could be newly loaded or from sys.modules)
+    result = _original_import(name, *args, **kwargs)
+
+    # If importing src.x, make sure bare x also points to the same object
+    if name.startswith('src.'):
+        bare_name = name[4:]
+        if bare_name and '.' not in bare_name:
+            sys.modules[bare_name] = sys.modules[name]
+    # If importing bare x, make sure src.x also points to the same object
+    elif not name.startswith('src.') and '.' not in name and f'src.{name}' in sys.modules:
+        sys.modules[f'src.{name}'] = sys.modules[name]
+
+    return result
+
+builtins.__import__ = _synchronized_import
 
 import src.functions as _functions  # noqa: F401
 # Alias plain module name used elsewhere to canonical module for consistent coverage
@@ -52,8 +73,9 @@ for _name in _core_order:
         _mod = __import__(f'src.{_name}', fromlist=['*'])
         sys.modules[_name] = _mod
         # Ensure src.* also points to the same module object
+        # CRITICAL: Both names MUST reference the exact same module object
         sys.modules[f'src.{_name}'] = _mod
-    except Exception:
+    except Exception as _e:
         pass
 
 # Additional optional shims (idempotent)
@@ -83,6 +105,19 @@ def pytest_configure(config):
         "markers", "tkinter_test: mark test as tkinter-related (skipped for web app iteration)"
     )
 
+    # Final consistency pass: ensure all src.* imports resolve to the same module as bare imports
+    for key in list(sys.modules.keys()):
+        if key.startswith('src.') and key != 'src':
+            bare_name = key[4:]  # Remove 'src.' prefix
+            if bare_name and '.' not in bare_name:
+                # Prioritize the full module object
+                full_mod = sys.modules[key]
+                sys.modules[bare_name] = full_mod
+                # ALSO ensure that any re-imports will use the same object
+                # by checking both in sys.modules
+                if f'src.{bare_name}' in sys.modules and sys.modules[f'src.{bare_name}'] is not full_mod:
+                    sys.modules[f'src.{bare_name}'] = full_mod
+
 
 def pytest_collection_modifyitems(config, items):
     """Skip tkinter tests to speed up web app iteration cycle."""
@@ -110,3 +145,23 @@ def pytest_collection_modifyitems(config, items):
 
 
 import pytest
+
+def isinstance_by_class_name(obj, *class_names):
+    """
+    Check if obj's class name matches any of the given class_names.
+    This is more reliable than isinstance() when modules are loaded via different paths.
+    Example: isinstance_by_class_name(move, 'Attack', 'Slash')
+    """
+    obj_class_name = obj.__class__.__name__
+    for name in class_names:
+        if isinstance(name, str):
+            if obj_class_name == name:
+                return True
+        else:
+            # If name is a class, also check __name__
+            if obj_class_name == getattr(name, '__name__', None):
+                return True
+    return False
+
+# Monkey-patch isinstance for test convenience (optional, can be used via explicit function call)
+# Actually, don't do this - it might break other code. Users should use the function explicitly.

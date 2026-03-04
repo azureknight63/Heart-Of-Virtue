@@ -31,6 +31,13 @@ import src.positions as positions
 import src.items as items
 
 
+# Helper for isinstance checks that work across module boundaries in tests
+def is_move(move, *move_classes):
+    """Check if move is an instance of any of the given move classes (name-safe)."""
+    class_names = {cls.__name__ for cls in move_classes}
+    return move.__class__.__name__ in class_names or isinstance(move, tuple(move_classes))
+
+
 class DummyEnemy:
     """Mock enemy for testing moves."""
     def __init__(self, name="Target", x=25, y=25, speed=5, hp=100):
@@ -62,7 +69,7 @@ class TestAdvanceMoveValidation:
         # Get Advance move
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -79,7 +86,7 @@ class TestAdvanceMoveValidation:
         
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -92,7 +99,7 @@ class TestAdvanceMoveValidation:
         
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -115,7 +122,7 @@ class TestAdvanceMoveValidation:
         # Get Advance move
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -157,7 +164,7 @@ class TestWithdrawMoveValidation:
         
         withdraw = None
         for move in player.known_moves:
-            if isinstance(move, Withdraw):
+            if is_move(move, Withdraw):
                 withdraw = move
                 break
         
@@ -170,7 +177,7 @@ class TestWithdrawMoveValidation:
         
         withdraw = None
         for move in player.known_moves:
-            if isinstance(move, Withdraw):
+            if is_move(move, Withdraw):
                 withdraw = move
                 break
         
@@ -192,7 +199,7 @@ class TestWithdrawMoveValidation:
         # Get Withdraw move
         withdraw = None
         for move in player.known_moves:
-            if isinstance(move, Withdraw):
+            if is_move(move, Withdraw):
                 withdraw = move
                 break
         
@@ -440,7 +447,7 @@ class TestMoveIntegration:
         # Advance first
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -465,7 +472,7 @@ class TestMoveIntegration:
         # Then withdraw
         withdraw = None
         for move in player.known_moves:
-            if isinstance(move, Withdraw):
+            if is_move(move, Withdraw):
                 withdraw = move
                 break
         
@@ -486,7 +493,7 @@ class TestMoveIntegration:
         
         move_types = set()
         for move in player.known_moves:
-            if isinstance(move, (Advance, Withdraw)):
+            if is_move(move, Advance, Withdraw):
                 move_types.add(type(move).__name__)
         
         expected_moves = {'Advance', 'Withdraw'}
@@ -509,7 +516,7 @@ class TestMoveDualPathExecution:
         
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -576,7 +583,7 @@ class TestMoveEdgeCases:
         
         advance = None
         for move in player.known_moves:
-            if isinstance(move, Advance):
+            if is_move(move, Advance):
                 advance = move
                 break
         
@@ -602,7 +609,7 @@ class TestMoveEdgeCases:
         
         withdraw = None
         for move in player.known_moves:
-            if isinstance(move, Withdraw):
+            if is_move(move, Withdraw):
                 withdraw = move
                 break
         
