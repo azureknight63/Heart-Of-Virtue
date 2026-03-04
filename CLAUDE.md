@@ -111,6 +111,39 @@ Active work extracting the Python combat system into a stateless REST API consum
 
 Uncommitted changes currently in: `combat_adapter.py`, `moves.py`, `states.py`.
 
+## Code Review Gate
+
+After any task that introduces code changes, run a self-graded review before closing out. Grade each dimension A–F, correct deficiencies, and ask for clarification where needed. Repeat until every dimension reaches A or above.
+
+### Confidence filter
+Before grading, score each potential issue 0–100. Only count issues with confidence ≥ 80 toward a grade — don't let unverified nitpicks drag a dimension down.
+
+- **0–24**: False positive or pre-existing. Ignore.
+- **25–49**: Possible issue but unverified. Flag for awareness only; does not affect grade.
+- **50–74**: Real but minor. Mention; does not fail a dimension alone.
+- **75–100**: Verified, impactful, or explicitly required by this file. Counts toward grade.
+
+### Dimensions
+
+| Dimension | What to check |
+|---|---|
+| **Correctness** | Does the change solve the stated problem? Logic errors, null/undefined handling, race conditions, memory leaks, edge cases, regressions |
+| **Architecture** | Follows rules in this file — engine/API separation, no duplication of Combatant logic, adapter pattern respected, GameService/SessionManager boundaries |
+| **Convention** | Naming, error handling style, docstrings on public methods, no stray `###DEBUG###`, import grouping, logging patterns, platform compatibility |
+| **Code Quality** | DRY — no repeated logic that belongs in a shared location; clean, purposeful code; missing critical error handling; adequate test coverage for changed behavior |
+| **Simplicity** | Minimum complexity for the task; no premature abstraction, no speculative features, no backwards-compat shims for unused code |
+| **Security** | No new vulnerabilities; inputs validated at system boundaries; no secrets in code; SQL/XSS/injection safe |
+| **Maintainability** | Readable at a glance; low cognitive load; names convey intent; changes are localized and don't create hidden coupling; future modifications are not made harder |
+| **Stability** | Graceful error recovery in hot paths; no unhandled exceptions that crash the game loop; silent failures logged; degraded-mode behavior is acceptable |
+| **AI-friendliness** | Structure is navigable without global context; naming makes intent clear without requiring comments to decode; logic is locally coherent rather than scattered across distant files |
+| **Performance** | No unnecessary computation in hot paths (especially combat loop); efficient data structures; no repeated work that could be cached; no obvious memory leaks |
+
+### Rules
+- Report issues grouped by severity: **Critical** (must fix) then **Important** (should fix).
+- Do not suggest `/commit` until all dimensions are at A.
+- If a dimension can't reach A without a decision from the user, stop and ask — don't invent a resolution.
+- For trivial changes (config edits, comment fixes), briefly confirm all dimensions are N/A or A and move on without a full table.
+
 ## Session Workflow
 
 At the end of every task, suggest the appropriate overhead steps before moving on. The goal is to ship and maintain a complete game — treat housekeeping as part of the work, not an afterthought.
