@@ -499,7 +499,7 @@ class ApiCombatAdapter:
             f"{self.player.name} uses {selected_move.name}!",
             "player_action"
         )
-        
+
         return self._execute_move(selected_move)
     
     def _handle_move_selection(self, move_index: int) -> Dict[str, Any]:
