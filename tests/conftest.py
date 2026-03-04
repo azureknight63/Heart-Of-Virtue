@@ -5,7 +5,7 @@ import sys, os, pathlib
 os.environ["MYNX_LLM_ENABLED"] = "0"
 os.environ["MYNX_FALLBACK_DELAY"] = "0"
 # Prevent CombatStrategist from making discovery requests
-os.environ["MYNX_LLM_PROVIDER"] = "none" 
+os.environ["MYNX_LLM_PROVIDER"] = "none"
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / 'src'
 if str(PROJECT_ROOT) not in sys.path:
@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # the shim loop's silent failures leave gaps, without breaking `src.*` imports.
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(1, str(SRC_DIR))
+
 import src.functions as _functions  # noqa: F401
 # Alias plain module name used elsewhere to canonical module for consistent coverage
 sys.modules.setdefault('functions', _functions)
@@ -43,9 +44,15 @@ _core_order = [
 ]
 for _name in _core_order:
     if _name in sys.modules:
+        # Even if already loaded, ensure the full path points to the same object
+        if _name in sys.modules and f'src.{_name}' in sys.modules:
+            sys.modules[f'src.{_name}'] = sys.modules[_name]
         continue
     try:
-        sys.modules[_name] = __import__(f'src.{_name}', fromlist=['*'])
+        _mod = __import__(f'src.{_name}', fromlist=['*'])
+        sys.modules[_name] = _mod
+        # Ensure src.* also points to the same module object
+        sys.modules[f'src.{_name}'] = _mod
     except Exception:
         pass
 
@@ -56,6 +63,17 @@ for _mod in ("combat", "skilltree", "events", "shop_conditions"):
             sys.modules[_mod] = __import__(f"src.{_mod}", fromlist=['*'])
         except Exception:
             pass
+
+# Final reconciliation: ensure both import names point to the same module object.
+# This handles cases where modules were imported via different paths (src.x vs x).
+for key in list(sys.modules.keys()):
+    if key.startswith('src.'):
+        bare_name = key[4:]
+        if bare_name and '.' not in bare_name and bare_name not in sys.modules:
+            sys.modules[bare_name] = sys.modules[key]
+        elif bare_name in sys.modules and sys.modules[bare_name] is not sys.modules[key]:
+            # Prioritize the full path import to ensure consistency with test imports
+            sys.modules[bare_name] = sys.modules[key]
 
 
 # Skip tkinter tests during web app implementation

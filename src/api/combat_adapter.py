@@ -946,6 +946,11 @@ class ApiCombatAdapter:
         # Evaluate all combat events one final time when enemies are defeated
         # This allows events (like reinforcement spawners) to inject new enemies before victory
         if len(self.player.combat_list) == 0:
+            # All enemies defeated — the move is done regardless of remaining cooldown beats.
+            # Clearing current_move prevents initialize_combat(reinit=True), called later by
+            # story events like Ch01PostRumbler, from re-executing a stale attack against the
+            # newly spawned reinforcements.
+            self.player.current_move = None
             if self.on_event_callback:
                 # Use the bridge to GameService so results are consistent
                 new_events = self.on_event_callback(self.player)
