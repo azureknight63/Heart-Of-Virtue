@@ -7,26 +7,35 @@ os.environ["MYNX_FALLBACK_DELAY"] = "0"
 # Prevent CombatStrategist from making discovery requests
 os.environ["MYNX_LLM_PROVIDER"] = "none" 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+SRC_DIR = PROJECT_ROOT / 'src'
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+# Add src/ so that bare module names (e.g. `import loot_tables`) resolve when
+# the shim loop's silent failures leave gaps, without breaking `src.*` imports.
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(1, str(SRC_DIR))
 import src.functions as _functions  # noqa: F401
 # Alias plain module name used elsewhere to canonical module for consistent coverage
 sys.modules.setdefault('functions', _functions)
 
-# Ordered shims: prerequisites first to satisfy transitive imports (states -> objects -> loot_tables -> npc)
+# Ordered shims: prerequisites first to satisfy transitive imports.
+# Order matters: each module must come after all of its own bare-name imports.
+# Modules with circular deps (objects, actions, tiles) are shimmed best-effort;
+# failures are silently ignored and the sys.path fallback above handles them.
 _core_order = [
     'animations',
     'genericng',
-    'enchant_tables',
-    'states',          # needed by objects
-    'items',
-    'objects',         # needed by npc
-    'loot_tables',     # needed early to avoid nested failures in npc import
+    'items',           # enchant_tables and loot_tables both need items
+    'states',          # enchant_tables needs states
+    'enchant_tables',  # loot_tables needs enchant_tables
+    'objects',         # needed by npc (may fail: circular dep on player)
+    'loot_tables',     # needed by npc; needs items + enchant_tables
     'actions',
     'tiles',
     'universe',
     'positions',       # needed by moves and player for coordinate-based combat (before moves)
     'moves',           # moves before npc so npc can attach move instances
+    'combatant',       # base class for Player and NPC; must precede both
     'npc',
     'skilltree',       # needed by player
     'switch',          # needed by player
