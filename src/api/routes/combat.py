@@ -56,7 +56,7 @@ def start_combat():
     try:
         session_manager, session, player, error = get_session_and_player(request)
         if error:
-            return error[0], error[1]
+            return error
 
         data = request.get_json()
         if not data or "enemy_id" not in data:

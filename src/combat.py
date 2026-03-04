@@ -361,9 +361,9 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                             target = None
                             acceptable_targets = []
                             range_min, range_max = player.current_move.mvrange
-                            if player.current_move.name == "Shoot Bow":  # if the player is shooting his bow,
-                                # overwrite max to include decaying range
-                                range_max = player.eq_weapon.range_base + (100 / player.eq_weapon.range_decay)
+                            effective_max = player.current_move.get_effective_range_max(player)
+                            if effective_max is not None:
+                                range_max = effective_max
                             dead_in_prox = [e for e in player.combat_proximity if not e.is_alive()]
                             for e in dead_in_prox:
                                 del player.combat_proximity[e]
