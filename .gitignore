@@ -82,3 +82,5 @@ frontend/test_report.txt
 .kilocodemodes
 ai/.model_cache.json
 .mcp.json
+.claude/settings.json
+.claude/settings.local.json
