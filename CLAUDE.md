@@ -102,14 +102,42 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 - `Combatant` base class owns shared resistance/status-effect logic for Player and NPC. Do not duplicate this in subclasses.
 - `GameService` + `SessionManager` abstract the game loop for stateless API calls
 
+### GameService patterns (critical gotchas)
+- `GameService.__init__` is `pass` — no `self.universe`. Universe lives on `player.universe`.
+- To access universe data from a service method, use the static helpers: `self._story(player)` (returns `player.universe.story` or `{}`) and `self._game_tick(player)` (returns `player.universe.game_tick` or `0`). Never reference `self.universe.*` directly.
+- Routes must not reach into player internals. Use `game_service.some_method(player)` — not `getattr(player, "attribute", default)` in routes. Player attribute traps: `player.attack` is a combat action method (not a stat); `player.health` doesn't exist (it's `player.hp`); `player.stamina`, `player.defense`, `player.accuracy`, `player.evasion` are also absent. When in doubt, add a method to GameService.
+- `player.reputation` doesn't exist initially. Methods that write to it initialize `player.reputation = {}` first. Read-only uses should do `getattr(player, 'reputation', {})`.
+
 ## Current Branch: `web-api`
 
-Active work extracting the Python combat system into a stateless REST API consumed by React. Key recent changes:
+Active work extracting the Python combat system into a stateless REST API consumed by React. Key completed work:
 - `Combatant` base class introduced (eliminates Player/NPC resistance duplication)
-- `Move.get_effective_range_max()` for dynamic ranged weapon range calculation
-- `fetchCombatStatus` hook refactored to return transformed combat data
+- Blueprint URL prefixes fixed (reputation, npc, quests, quest-chains were all misrouted)
+- `GameService._story(player)` / `_game_tick(player)` helpers added (universe attribute fix)
+- Automated bug-hunt harness live in `tools/` with 11 scenarios
 
-Uncommitted changes currently in: `combat_adapter.py`, `moves.py`, `states.py`.
+## Bug-Hunt Harness
+
+An automated in-process harness that plays the game via Flask test client and reports bugs.
+
+```bash
+# Run all scenarios
+python tools/bug_hunt.py
+
+# Run one scenario
+python tools/bug_hunt.py --scenario phase3
+
+# Machine-readable output (for CI / Option B)
+python tools/bug_hunt.py --headless --output bugs.json
+```
+
+Scenarios live in `tools/harness/scenarios/`. Each extends `Scenario` (ABC) and implements `run(client) -> List[BugReport]`. Available helpers on the base class:
+- `_check_status(resp, expected, ...)` — flags wrong HTTP status
+- `_check_no_crash(resp, ...)` — flags 5xx only (use for bad-input probes)
+- `_check_fields(data, fields, ...)` — flags missing JSON fields
+- `_bug(...)` — construct a raw BugReport
+
+Fix-agent prompt is at `tools/harness/prompts/bug_hunt_prompt.txt`. GitHub Actions stub at `.github/workflows/bug-hunt.yml`.
 
 ## Code Review Gate
 
