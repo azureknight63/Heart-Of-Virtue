@@ -158,3 +158,31 @@ def test_ch01_event_flow_api(app, client, authenticated_session):
         events = _trigger_tile_events(client, session_id)
         assert events
 
+
+@pytest.mark.integration
+def test_ch01_memory_amelia(app, client, authenticated_session):
+    """Ch01_Memory_Amelia is a MemoryFlash (no player input, no branching).
+
+    Exercise it by calling process() directly and assert it completes without
+    raising.  A second call with user_input='continue' drives it to completion.
+    """
+    session_id, player, session_manager = authenticated_session
+
+    with app.app_context():
+        from src.story.ch01 import Ch01_Memory_Amelia
+
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        assert tile is not None
+
+        event = Ch01_Memory_Amelia(player, tile, repeat=False)
+
+        # First pass: display memory content, set needs_input flag
+        event.process()
+        assert event.needs_input is True
+        assert event.input_prompt == "The memory fades..."
+
+        # Second pass: acknowledge — event completes cleanly
+        event.process(user_input="continue")
+        assert event.needs_input is False
+        assert event.completed is True
+
