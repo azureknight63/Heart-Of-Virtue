@@ -13,6 +13,7 @@ from .combat_edge import CombatEdgeScenario
 from .inventory_actions import InventoryActionsScenario
 from .quest_writes import QuestWritesScenario
 from .phase3_reads import Phase3ReadsScenario
+from .ch01_events import Ch01EventsScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -28,6 +29,7 @@ _ALL_SCENARIOS = [
     InventoryActionsScenario(),
     QuestWritesScenario(),
     Phase3ReadsScenario(),
+    Ch01EventsScenario(),
 ]
 
 
