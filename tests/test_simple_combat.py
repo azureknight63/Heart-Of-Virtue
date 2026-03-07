@@ -2,7 +2,10 @@
 Simple test to verify combat adapter initialization
 """
 import sys
-sys.path.insert(0, 'c:/Users/azure/PycharmProjects/Heart-Of-Virtue')
+import pathlib
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 # Mock the player and NPC
 class MockMove:

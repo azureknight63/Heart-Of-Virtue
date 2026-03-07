@@ -29,7 +29,7 @@ def _synchronized_import(name, *args, **kwargs):
         if bare_name and '.' not in bare_name:
             sys.modules[bare_name] = sys.modules[name]
     # If importing bare x, make sure src.x also points to the same object
-    elif not name.startswith('src.') and '.' not in name and f'src.{name}' in sys.modules:
+    elif not name.startswith('src.') and '.' not in name and f'src.{name}' in sys.modules and name in sys.modules:
         sys.modules[f'src.{name}'] = sys.modules[name]
 
     return result
