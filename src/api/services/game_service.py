@@ -131,8 +131,18 @@ class GameService:
     ) -> Dict[str, Any]:
         event_id = getattr(event, "api_event_id", None)
         if not event_id:
-            event_id = str(uuid.uuid4())
-            event.api_event_id = event_id
+            # Deduplicate by event name: if an event with the same name is already
+            # pending, reuse its UUID rather than creating a second blocking entry.
+            event_name = event_data.get("name") or getattr(event, "name", None)
+            if event_name and session_data is not None:
+                for existing_id, existing in session_data.get("pending_events", {}).items():
+                    if existing.get("event_data", {}).get("name") == event_name:
+                        event_id = existing_id
+                        event.api_event_id = event_id
+                        break
+            if not event_id:
+                event_id = str(uuid.uuid4())
+                event.api_event_id = event_id
 
         event_data["event_id"] = event_id
 

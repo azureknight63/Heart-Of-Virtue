@@ -7,6 +7,7 @@ from .combat import CombatScenario
 from .inventory import InventoryScenario
 from .player import PlayerScenario
 from .saves import SavesScenario
+from .phase3 import Phase3Scenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -16,6 +17,7 @@ _ALL_SCENARIOS = [
     InventoryScenario(),
     PlayerScenario(),
     SavesScenario(),
+    Phase3Scenario(),
 ]
 
 

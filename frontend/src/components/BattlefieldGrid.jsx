@@ -22,8 +22,23 @@ const ANIMATION_CONFIGS = {
       { name: 'expand', duration: 200 },
       { name: 'contract', duration: 200 }
     ]
+  },
+  death: {
+    duration: 700,
+    phases: [
+      { name: 'explode', duration: 400 },
+      { name: 'fade', duration: 300 }
+    ]
   }
 };
+
+// Fragment definitions for the death burst — module-level, never recreated
+const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
+  angle: i * 30,
+  distance: 42 + (i % 3) * 12,
+  size: i % 3 === 0 ? 5 : i % 3 === 1 ? 3 : 4,
+  color: ['#ffffff', '#aaddff', '#88ccff', '#ffeedd'][i % 4],
+}));
 
 // ---------------------------------------------------------------------------
 // Pure helpers — module level, stable references, never re-created
@@ -459,6 +474,86 @@ const SelectedEntityPanel = ({ entity, onClose }) => {
 };
 
 // ---------------------------------------------------------------------------
+// DeathBurst — fragment particle explosion rendered at a dying entity's cell
+// ---------------------------------------------------------------------------
+const DeathBurst = () => {
+  const [phase, setPhase] = useState(0); // 0=hidden, 1=burst, 2=fade
+
+  useEffect(() => {
+    let raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => setPhase(1));
+      return () => cancelAnimationFrame(raf2);
+    });
+    const fadeTimer = setTimeout(() => setPhase(2), 350);
+    return () => {
+      cancelAnimationFrame(raf1);
+      clearTimeout(fadeTimer);
+    };
+  }, []);
+
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full overflow-visible"
+      viewBox="-100 -100 200 200"
+      style={{ pointerEvents: 'none' }}
+    >
+      {/* Central flash */}
+      <circle
+        cx="0" cy="0" r="28" fill="white"
+        style={{
+          opacity: phase === 1 ? 0.9 : 0,
+          transition: phase === 1 ? 'opacity 0.12s ease-in' : 'opacity 0.3s ease-out',
+        }}
+      />
+      {/* Fragment particles */}
+      {DEATH_FRAGMENTS.map((f, i) => {
+        const rad = (f.angle - 90) * Math.PI / 180;
+        const tx = phase >= 1 ? Math.cos(rad) * f.distance : 0;
+        const ty = phase >= 1 ? Math.sin(rad) * f.distance : 0;
+        return (
+          <circle
+            key={i}
+            cx="0" cy="0"
+            r={f.size}
+            fill={f.color}
+            style={{
+              transform: `translate(${tx}px, ${ty}px)`,
+              opacity: phase === 0 ? 0 : phase === 1 ? 1 : 0,
+              transition: phase === 1
+                ? 'transform 0.4s cubic-bezier(0.1, 0.7, 1, 0.1), opacity 0.1s'
+                : 'opacity 0.3s ease-in',
+            }}
+          />
+        );
+      })}
+    </svg>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// DeathAnimationLayer — renders burst effects at positions of dying entities
+// ---------------------------------------------------------------------------
+const DeathAnimationLayer = ({ dyingEntities, getEntityStyle }) => {
+  if (dyingEntities.length === 0) return null;
+  return (
+    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 150 }}>
+      {dyingEntities.map((dying) => {
+        const style = getEntityStyle(dying.position, 150);
+        if (!style) return null;
+        return (
+          <div
+            key={dying.id}
+            style={{ position: 'absolute', ...style, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <DeathBurst />
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // BattlefieldGrid — main exported component
 // ---------------------------------------------------------------------------
 export default function BattlefieldGrid({
@@ -475,6 +570,7 @@ export default function BattlefieldGrid({
   const [animationPhase, setAnimationPhase] = useState(null);
   const [lastProcessedLogIndex, setLastProcessedLogIndex] = useState(0);
   const [animationQueue, setAnimationQueue] = useState([]);
+  const [dyingEntities, setDyingEntities] = useState([]);
   // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
   const animationCancelRef = useRef(false);
 
@@ -497,19 +593,52 @@ export default function BattlefieldGrid({
     if (!log) return;
     if (displayedLogCount > lastProcessedLogIndex) {
       const newEntries = log.slice(lastProcessedLogIndex, displayedLogCount);
-      const animations = newEntries.filter((e) => e.animation).map((e) => e.animation);
+      const animations = [];
+      const killedIds = new Set(); // guard against duplicate death animations in one batch
+
+      newEntries.forEach((entry) => {
+        if (!entry.animation) return;
+        const anim = entry.animation;
+        animations.push(anim);
+
+        // Detect a killing blow — chain a death animation immediately after the attack
+        if (anim.target_id && allBeatStates && !killedIds.has(anim.target_id)) {
+          const beatIdx = entry.beat_index ?? 0;
+          const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
+          const stateAt = allBeatStates[beatIdx];
+          const wasAlive = stateBefore?.enemies?.some(
+            (en) => en.id === anim.target_id && (en.hp ?? en.health?.current ?? 1) > 0
+          );
+          const isNowDead = !stateAt?.enemies?.some(
+            (en) => en.id === anim.target_id && (en.hp ?? en.health?.current ?? 0) > 0
+          );
+          if (wasAlive && isNowDead) {
+            const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
+            if (lastKnown?.position) {
+              animations.push({ type: 'death', target_id: anim.target_id, position: lastKnown.position });
+              killedIds.add(anim.target_id);
+            }
+          }
+        }
+      });
+
       if (animations.length > 0) {
         setAnimationQueue((prev) => [...prev, ...animations]);
       }
       setLastProcessedLogIndex(displayedLogCount);
     }
-  }, [combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount]);
+  }, [combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount, allBeatStates]);
 
   // Run one animation at a time from the queue
   const playAnimation = useCallback((animData) => {
     const config = ANIMATION_CONFIGS[animData.type] || ANIMATION_CONFIGS.pulse;
     setActiveAnimation({ ...animData, config });
     setAnimationPhase(config.phases[0].name);
+
+    // Register the entity as dying so DeathAnimationLayer can render the burst
+    if (animData.type === 'death' && animData.position) {
+      setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position }]);
+    }
 
     let currentPhaseIndex = 0;
 
@@ -518,6 +647,9 @@ export default function BattlefieldGrid({
       if (currentPhaseIndex >= config.phases.length) {
         setActiveAnimation(null);
         setAnimationPhase(null);
+        if (animData.type === 'death') {
+          setDyingEntities((prev) => prev.filter((d) => d.id !== animData.target_id));
+        }
         return;
       }
       const phase = config.phases[currentPhaseIndex];
@@ -651,6 +783,8 @@ export default function BattlefieldGrid({
         onClearHover={() => setHoveredEntity(null)}
         onSelectEntity={setSelectedEntity}
       />
+
+      <DeathAnimationLayer dyingEntities={dyingEntities} getEntityStyle={getEntityStyle} />
 
       {selectedEntity && (
         <SelectedEntityPanel
