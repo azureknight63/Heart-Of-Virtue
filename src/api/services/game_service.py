@@ -3461,8 +3461,8 @@ class GameService:
             location_id,
             location_id,  # location_name
             all_npcs,
-            self.universe.game_tick,
-            player.story,
+            self._game_tick(player),
+            self._story(player),
         )
 
         return {
@@ -3498,14 +3498,14 @@ class GameService:
 
         is_available, availability_reason = NPCAvailabilitySerializer.is_available(
             npc_data,
-            self.universe.game_tick,
-            player.story,
+            self._game_tick(player),
+            self._story(player),
         )
 
         availability_info = NPCAvailabilitySerializer.serialize(
             npc_data,
-            self.universe.game_tick,
-            player.story,
+            self._game_tick(player),
+            self._story(player),
         )
 
         return {
@@ -3538,7 +3538,7 @@ class GameService:
             "data": {
                 "npc_id": npc_id,
                 "moved_to": new_location_id,
-                "game_tick": self.universe.game_tick,
+                "game_tick": self._game_tick(player),
             },
         }
 
@@ -3623,9 +3623,9 @@ class GameService:
         # Get available choices for initial node
         available_choices = DialogueNodeSerializer.get_available_choices(
             initial_node,
-            player_story=player.story,
-            player_reputation=player.reputation,
-            player_level=player.level,
+            player_story=self._story(player),
+            player_reputation=getattr(player, 'reputation', {}),
+            player_level=getattr(player, 'level', 1),
             player_completed_dialogues=getattr(player, "completed_dialogues", [])
         )
 
@@ -3673,9 +3673,9 @@ class GameService:
 
         available_choices = DialogueNodeSerializer.get_available_choices(
             node,
-            player_story=player.story,
-            player_reputation=player.reputation,
-            player_level=player.level,
+            player_story=self._story(player),
+            player_reputation=getattr(player, 'reputation', {}),
+            player_level=getattr(player, 'level', 1),
             player_completed_dialogues=getattr(player, "completed_dialogues", [])
         )
 
@@ -3719,9 +3719,9 @@ class GameService:
 
         available_choices = DialogueNodeSerializer.get_available_choices(
             next_node,
-            player_story=player.story,
-            player_reputation=player.reputation,
-            player_level=player.level,
+            player_story=self._story(player),
+            player_reputation=getattr(player, 'reputation', {}),
+            player_level=getattr(player, 'level', 1),
             player_completed_dialogues=getattr(player, "completed_dialogues", [])
         )
 
