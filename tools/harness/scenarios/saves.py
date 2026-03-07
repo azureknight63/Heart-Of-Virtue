@@ -78,17 +78,10 @@ class SavesScenario(Scenario):
 
         # POST /api/saves/bad_id/load — must not 500 ------------------------
         resp = client.post("/api/saves/harness_bad_id/load")
-        if resp.status_code == 500:
-            bugs.append(self._bug(
-                title="Load save with invalid ID returns 500",
-                severity=BugSeverity.HIGH,
-                category=BugCategory.CRASH,
-                endpoint="/api/saves/harness_bad_id/load",
-                method="POST",
-                expected="HTTP 401 or 404 (graceful rejection)",
-                actual="HTTP 500 (unhandled exception)",
-                response=resp,
-            ))
+        bug = self._check_no_crash(resp, "/api/saves/harness_bad_id/load", "POST",
+                                   "Load save with invalid ID")
+        if bug:
+            bugs.append(bug)
 
         # POST /api/game/new — does NOT require cloud auth ------------------
         resp = client.post("/api/game/new")

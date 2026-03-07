@@ -88,6 +88,39 @@ class Scenario(ABC):
             request_body=request_body,
         )
 
+    def _check_no_crash(
+        self,
+        response,
+        endpoint: str,
+        method: str,
+        context: str,
+        request_body: dict = None,
+    ) -> Optional[BugReport]:
+        """Return a HIGH BugReport if the response is a 5xx server crash.
+
+        Use this for endpoints where any non-5xx response (including 400/404)
+        is acceptable — the only bug we're hunting is an unhandled exception.
+        """
+        if response.status_code < 500:
+            return None
+        try:
+            body = json.loads(response.data)
+        except Exception:
+            body = {"_raw": response.data.decode("utf-8", errors="replace")}
+        return BugReport(
+            title=f"{context}: server crash (HTTP {response.status_code})",
+            severity=BugSeverity.HIGH,
+            category=BugCategory.CRASH,
+            scenario=self.name,
+            endpoint=endpoint,
+            method=method,
+            expected="HTTP 4xx (graceful rejection)",
+            actual=f"HTTP {response.status_code} (server error)",
+            request_body=request_body or {},
+            response_status=response.status_code,
+            response_body=body,
+        )
+
     def _check_fields(
         self,
         data: dict,

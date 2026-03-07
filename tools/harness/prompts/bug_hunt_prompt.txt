@@ -36,15 +36,23 @@ Read the `triage` field on each bug:
 ### triage == "fix_agent"
 - Spawn a fix subagent in an isolated worktree (isolation: "worktree").
 - The fix agent must:
-  1. Read the Issue carefully.
-  2. Find and fix the root cause in the API layer (not the game engine).
-  3. Write or extend a pytest unit test that would have caught this bug.
-  4. Run `pytest -q` (never `python -m pytest -q` — it bypasses pytest.ini
+  1. **Verify branch before touching anything.**
+     Run `git branch --show-current` and `git status`.
+     - The current branch must NOT be `web-api` or `master`.
+     - If it is, STOP immediately — do not proceed. Add a comment to the
+       Issue: "Fix agent aborted: worktree is on protected branch {branch}.
+       Needs manual investigation." and exit.
+     - Confirm the worktree directory is isolated (should be under `.claude/`).
+  2. Read the Issue carefully.
+  3. Find and fix the root cause in the API layer (not the game engine).
+  4. Write or extend a pytest unit test that would have caught this bug.
+  5. Run `pytest -q` (never `python -m pytest -q` — it bypasses pytest.ini
      ignore rules and lets terminal-mode battlefield/map tests run).
      ALL tests must pass.
-  5. Apply the CLAUDE.md code-review gate (all dimensions A).
-  6. Commit and push the branch.
-  7. Create a PR that references the Issue ("Closes #<issue_number>").
+  6. Apply the CLAUDE.md code-review gate (all dimensions A).
+  7. Commit and push the branch.
+  8. Create a PR targeting `web-api` (NOT `master`) that references the Issue
+     ("Closes #<issue_number>").
 - If the fix agent cannot achieve passing tests or all-A review, it must
   add a comment to the Issue explaining the blocker and stop — do NOT create
   a broken PR.

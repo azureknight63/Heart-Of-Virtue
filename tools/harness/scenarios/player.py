@@ -4,7 +4,7 @@ from typing import List
 
 from .base import Scenario
 from ..client import GameClient
-from ..reporter import BugReport, BugSeverity, BugCategory
+from ..reporter import BugReport, BugSeverity
 
 
 class PlayerScenario(Scenario):
@@ -66,17 +66,9 @@ class PlayerScenario(Scenario):
         # POST /api/skills/learn — unknown skill should 400/404, not 500 ----
         body = {"skill_name": "harness_nonexistent_skill", "category": "combat"}
         resp = client.post("/api/skills/learn", json=body)
-        if resp.status_code == 500:
-            bugs.append(self._bug(
-                title="Learn unknown skill returns 500",
-                severity=BugSeverity.HIGH,
-                category=BugCategory.CRASH,
-                endpoint="/api/skills/learn",
-                method="POST",
-                expected="HTTP 400 (graceful rejection of unknown skill)",
-                actual="HTTP 500 (unhandled exception)",
-                response=resp,
-                request_body=body,
-            ))
+        bug = self._check_no_crash(resp, "/api/skills/learn", "POST",
+                                   "Learn unknown skill", request_body=body)
+        if bug:
+            bugs.append(bug)
 
         return bugs
