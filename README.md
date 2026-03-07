@@ -216,5 +216,5 @@ You may NOT:
 
 For full license texts, see [LICENSE-CODE](LICENSE-CODE) and [LICENSE-ASSETS](LICENSE-ASSETS).
 
-Copyright (c) 2025 Heart of Virtue
+Copyright (c) 2025 Alexander Egbert
 
