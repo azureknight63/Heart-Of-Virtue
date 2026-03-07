@@ -65,10 +65,22 @@ class GameService:
 
     def __init__(self):
         """Initialize GameService.
-        
+
         No longer holds stateful universe reference.
         """
         pass
+
+    @staticmethod
+    def _story(player):
+        """Get the story-gate dict from player's universe, or empty dict."""
+        u = getattr(player, 'universe', None)
+        return getattr(u, 'story', {}) if u else {}
+
+    @staticmethod
+    def _game_tick(player):
+        """Get the current game tick from player's universe, or 0."""
+        u = getattr(player, 'universe', None)
+        return getattr(u, 'game_tick', 0) if u else 0
 
     def _get_event_target_modules(self, event, include_animations: bool = True) -> List[str]:
         modules = [
@@ -685,9 +697,22 @@ class GameService:
         updated_event_data = EventSerializer.serialize_with_input(event)
         
         if updated_event_data.get("needs_input") and not getattr(event, "completed", False):
-            # Update stored event data and keep it in session
-            updated_event_data["event_id"] = event_id
-            pending["event_data"] = updated_event_data
+            # This event has transitioned to a new stage (still needs_input but not completed).
+            # Assign a NEW UUID so the frontend does not treat the new stage as the
+            # same interaction that was "recently processed" and silently skip it.
+            # Without a fresh ID the frontend's deduplication would suppress stage 2+,
+            # leaving pending_events populated and blocking all combat moves.
+            old_event_id = event_id
+            new_event_id = str(uuid.uuid4())
+            event.api_event_id = new_event_id
+            updated_event_data["event_id"] = new_event_id
+            # Move the session entry from the old id to the new id
+            if "pending_events" in session_data:
+                session_data["pending_events"].pop(old_event_id, None)
+                session_data["pending_events"][new_event_id] = {
+                    "event": event,
+                    "event_data": updated_event_data,
+                }
             result["event"] = updated_event_data
             result["needs_input"] = True
         else:
@@ -715,7 +740,17 @@ class GameService:
         if getattr(player, "in_combat", False):
             result["combat_started"] = True
             if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
+                adapter = player._combat_adapter
+                # If the event is fully resolved, refresh available_options so the frontend
+                # gets move options targeting the current (post-reinforcement) enemy list.
+                # Without this, the adapter holds stale viable_targets from before the event
+                # fired, causing 400s when the frontend auto-selects a dead enemy's ID.
+                if not result.get("needs_input", False):
+                    adapter.awaiting_input = True
+                    adapter.input_type = "move_selection"
+                    adapter.available_options = adapter._get_available_moves()
+                    adapter.pending_move_index = None
+                adapter_state = adapter.get_combat_state()
                 result["combat_state"] = adapter_state.get("battle_state") or adapter_state
             return result
         
@@ -3398,8 +3433,8 @@ class GameService:
 
         status = NPCStatusSerializer.serialize(
             npc_data,
-            self.universe.game_tick,
-            player.story,
+            self._game_tick(player),
+            self._story(player),
         )
 
         return {
