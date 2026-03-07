@@ -15,6 +15,8 @@ class InventoryScenario(Scenario):
         bugs = []
 
         # GET /api/inventory ------------------------------------------------
+        # The API returns a rich inventory object: {items: [...], item_count, slots_*,
+        # weight_*, ...}.  We check the outer wrapper and the items list inside it.
         resp = client.get("/api/inventory")
         bug = self._check_status(resp, 200, "/api/inventory", "GET", "Get inventory")
         if bug:
@@ -25,15 +27,32 @@ class InventoryScenario(Scenario):
                 data, ["success", "inventory"],
                 "/api/inventory", "GET", "Inventory response", resp,
             )
-            if not isinstance(data.get("inventory"), list):
+            inv = data.get("inventory", {})
+            if isinstance(inv, dict):
+                bugs += self._check_fields(
+                    inv, ["items", "item_count", "slots_total"],
+                    "/api/inventory", "GET", "Inventory object", resp,
+                )
+                if not isinstance(inv.get("items"), list):
+                    bugs.append(self._bug(
+                        title="Inventory: 'inventory.items' is not a list",
+                        severity=BugSeverity.MEDIUM,
+                        category=BugCategory.WRONG_RESPONSE,
+                        endpoint="/api/inventory",
+                        method="GET",
+                        expected='"inventory.items" is a JSON array',
+                        actual=f'"inventory.items" is {type(inv.get("items")).__name__}',
+                        response=resp,
+                    ))
+            else:
                 bugs.append(self._bug(
-                    title="Inventory: 'inventory' field is not a list",
+                    title="Inventory: 'inventory' field is not an object",
                     severity=BugSeverity.MEDIUM,
                     category=BugCategory.WRONG_RESPONSE,
                     endpoint="/api/inventory",
                     method="GET",
-                    expected='"inventory" is a JSON array',
-                    actual=f'"inventory" is {type(data.get("inventory")).__name__}',
+                    expected='"inventory" is a JSON object with items, item_count, ...',
+                    actual=f'"inventory" is {type(inv).__name__}',
                     response=resp,
                 ))
 
@@ -49,21 +68,24 @@ class InventoryScenario(Scenario):
                 "/api/equipment", "GET", "Equipment response", resp,
             )
 
-        # GET /api/player ---------------------------------------------------
-        resp = client.get("/api/player")
-        bug = self._check_status(resp, 200, "/api/player", "GET", "Get player status")
+        # GET /api/status — player status (hp, name, level, ...) ------------
+        # Note: the player status endpoint is /api/status, not /api/player.
+        # /api/player is a reputation endpoint due to a blueprint prefix bug
+        # tracked separately.
+        resp = client.get("/api/status")
+        bug = self._check_status(resp, 200, "/api/status", "GET", "Get player status")
         if bug:
             bugs.append(bug)
         else:
             data = client.parse(resp)
             bugs += self._check_fields(
-                data, ["success", "player"],
-                "/api/player", "GET", "Player status response", resp,
+                data, ["success", "status"],
+                "/api/status", "GET", "Player status response", resp,
             )
-            player = data.get("player", {})
+            status = data.get("status", {})
             bugs += self._check_fields(
-                player, ["hp", "max_hp", "name"],
-                "/api/player", "GET", "Player object", resp,
+                status, ["hp", "max_hp", "name"],
+                "/api/status", "GET", "Player status object", resp,
             )
 
         # Pickup non-existent item — should 400/404, not 500 ----------------

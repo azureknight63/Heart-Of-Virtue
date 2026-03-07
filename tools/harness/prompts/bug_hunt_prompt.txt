@@ -39,7 +39,9 @@ Read the `triage` field on each bug:
   1. Read the Issue carefully.
   2. Find and fix the root cause in the API layer (not the game engine).
   3. Write or extend a pytest unit test that would have caught this bug.
-  4. Run `pytest -q` — ALL tests must pass.
+  4. Run `pytest -q` (never `python -m pytest -q` — it bypasses pytest.ini
+     ignore rules and lets terminal-mode battlefield/map tests run).
+     ALL tests must pass.
   5. Apply the CLAUDE.md code-review gate (all dimensions A).
   6. Commit and push the branch.
   7. Create a PR that references the Issue ("Closes #<issue_number>").
