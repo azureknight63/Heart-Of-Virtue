@@ -5,6 +5,8 @@ from .auth import AuthScenario
 from .world import WorldScenario
 from .combat import CombatScenario
 from .inventory import InventoryScenario
+from .player import PlayerScenario
+from .saves import SavesScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -12,6 +14,8 @@ _ALL_SCENARIOS = [
     WorldScenario(),
     CombatScenario(),
     InventoryScenario(),
+    PlayerScenario(),
+    SavesScenario(),
 ]
 
 
