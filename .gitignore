@@ -84,4 +84,4 @@ ai/.model_cache.json
 .mcp.json
 .claude/settings.json
 .claude/settings.local.json
-bugs_run.json
+bugs_*.json
