@@ -55,7 +55,7 @@ def test_turn_direction_calculation_north():
     target = MockCombatant("Target", x=25, y=10)
     
     direction = turn._calculate_direction_to_target(target)
-    assert direction == Direction.N
+    assert direction.value == Direction.N.value
 
 
 def test_turn_direction_calculation_east():
@@ -70,7 +70,7 @@ def test_turn_direction_calculation_east():
     target = MockCombatant("Target", x=40, y=25)
     
     direction = turn._calculate_direction_to_target(target)
-    assert direction == Direction.E
+    assert direction.value == Direction.E.value
 
 
 def test_turn_direction_calculation_southeast():
@@ -85,7 +85,7 @@ def test_turn_direction_calculation_southeast():
     target = MockCombatant("Target", x=35, y=35)
     
     direction = turn._calculate_direction_to_target(target)
-    assert direction == Direction.SE
+    assert direction.value == Direction.SE.value
 
 
 def test_turn_direction_calculation_same_position():
@@ -100,7 +100,7 @@ def test_turn_direction_calculation_same_position():
     target = MockCombatant("Target", x=25, y=25)
     
     direction = turn._calculate_direction_to_target(target)
-    assert direction == Direction.W  # Should maintain current facing
+    assert direction.value == Direction.W.value  # Should maintain current facing
 
 
 def test_turn_execute_updates_facing():
@@ -115,7 +115,7 @@ def test_turn_execute_updates_facing():
     
     turn.execute(player)
     
-    assert player.combat_position.facing == Direction.S
+    assert player.combat_position.facing.value == Direction.S.value
 
 
 def test_turn_execute_without_target_direction():
@@ -131,7 +131,7 @@ def test_turn_execute_without_target_direction():
     turn.execute(player)
     
     # Should not crash and facing should remain unchanged
-    assert player.combat_position.facing == Direction.N
+    assert player.combat_position.facing.value == Direction.N.value
 
 
 def test_turn_cast_calls_super():

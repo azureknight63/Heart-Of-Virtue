@@ -46,3 +46,4 @@ Slimes are viscous, gelatinous creatures that ooze through caverns, dungeons, an
 - Code: `src/npc.py` (see `class Slime`)
 - Moves: `src/moves.py` (`NpcAttack`, `Advance`, `Dodge`)
 - Spawner: `src/story/effects.py` (`NPCSpawnerEvent`)
+

@@ -68,7 +68,7 @@ SKILL_CATEGORIES = {
         ("Parry", moves.Parry),
         ("Bull Charge", moves.BullCharge),
         ("Whirl Attack", moves.WhirlAttack),
-        ("Knockback/Stun Spin", moves.KnockbackStunSpin),
+        ("Vertigo Spin", moves.VertigoSpin),
         ("Quick Swap", moves.QuickSwap),
     ],
     "Bow": [
@@ -87,7 +87,7 @@ SKILL_CATEGORIES = {
         ("Parry", moves.Parry),
         ("Power Strike", moves.PowerStrike),
         ("Bull Charge", moves.BullCharge),
-        ("Knockback/Stun Spin", moves.KnockbackStunSpin),
+        ("Vertigo Spin", moves.VertigoSpin),
         ("Whirl Attack", moves.WhirlAttack),
         ("Quick Swap", moves.QuickSwap),
     ],

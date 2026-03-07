@@ -52,8 +52,8 @@ class CombatPosition:
     """Represents a combatant's position and facing direction on the battlefield.
     
     Attributes:
-        x: Horizontal coordinate (0-50, left to right)
-        y: Vertical coordinate (0-50, front to back)
+        x: Horizontal coordinate (0-width, left to right)
+        y: Vertical coordinate (0-height, front to back)
         facing: Direction the combatant is facing (affects attack angle calculations)
     """
     x: int
@@ -61,12 +61,18 @@ class CombatPosition:
     facing: Direction = Direction.N
     
     def __post_init__(self):
-        """Validate coordinates are within grid bounds."""
-        if not (0 <= self.x <= 50):
-            raise ValueError(f"X coordinate must be 0-50, got {self.x}")
-        if not (0 <= self.y <= 50):
-            raise ValueError(f"Y coordinate must be 0-50, got {self.y}")
-        if not isinstance(self.facing, Direction):
+        """Validate coordinates and facing."""
+        if not isinstance(self.x, int) or not isinstance(self.y, int):
+            raise ValueError(f"Coordinates must be integers, got ({self.x}, {self.y})")
+        
+        # Grid bounds validation (0-50)
+        if not (0 <= self.x <= 50) or not (0 <= self.y <= 50):
+             raise ValueError(f"Coordinates must be between 0 and 50, got ({self.x}, {self.y})")
+             
+        # Check facing is a Direction enum (handle module loading issues in tests)
+        if not (isinstance(self.facing, Direction) or
+                (hasattr(self.facing, 'name') and hasattr(self.facing, 'value') and
+                 self.facing.__class__.__name__ == 'Direction')):
             raise ValueError(f"Facing must be Direction enum, got {self.facing}")
     
     def copy(self) -> "CombatPosition":
@@ -89,39 +95,110 @@ class CombatScenario:
     seed: Optional[int] = None  # For reproducible positioning
 
 
-# Predefined combat scenarios
+def get_combat_scenario(
+    scenario_type: str,
+    grid_width: int,
+    grid_height: int,
+    seed: Optional[int] = None
+) -> CombatScenario:
+    """Generate a combat scenario for the given grid dimensions.
+    
+    Dynamically scales zones based on grid size.
+    
+    Args:
+        scenario_type: "standard", "pincer", "melee", "boss_arena", "custom"
+        grid_width: Width of the battlefield
+        grid_height: Height of the battlefield
+        seed: Optional random seed
+        
+    Returns:
+        Configured CombatScenario
+    """
+    scenario_type = scenario_type.lower()
+    
+    if scenario_type == "standard":
+        # Allies left, Enemies right
+        # Gap should scale with grid size to maintain melee possibility on small grids
+        gap = max(4, int(grid_width * 0.2))
+        ally_x_max = max(1, int(grid_width * 0.20))
+        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.4)) 
+        enemy_x_max = min(grid_width, enemy_x_min + max(2, int(grid_width * 0.2)))
+        
+        y_buffer = int(grid_height * 0.2)
+        y_min = y_buffer
+        y_max = grid_height - y_buffer
+        
+        return CombatScenario(
+            scenario_type="standard",
+            ally_spawn_zone=((0, y_min), (ally_x_max, y_max)),
+            enemy_spawn_zones=[((enemy_x_min, y_min), (enemy_x_max, y_max))],
+            formation_type="spread",
+            min_spacing=max(1, int(grid_width/20)),
+            seed=seed
+        )
+        
+    elif scenario_type == "pincer":
+        # Allies in center, enemies on left and right edges
+        center_x = grid_width // 2
+        center_y = grid_height // 2
+        center_w = max(2, int(grid_width * 0.15))
+        center_h = max(2, int(grid_height * 0.15))
+        
+        ally_zone = (
+            (center_x - center_w, center_y - center_h),
+            (center_x + center_w, center_y + center_h)
+        )
+        
+        flank_width = max(2, int(grid_width * 0.15))
+        left_flank = ((0, 0), (flank_width, grid_height))
+        right_flank = ((grid_width - flank_width, 0), (grid_width, grid_height))
+        
+        return CombatScenario(
+            scenario_type="pincer",
+            ally_spawn_zone=ally_zone,
+            enemy_spawn_zones=[left_flank, right_flank],
+            formation_type="cluster",
+            min_spacing=1,
+            seed=seed
+        )
+        
+    elif scenario_type in ["melee", "random"]:
+        # Everyone scattered everywhere
+        full_map = ((0, 0), (grid_width, grid_height))
+        return CombatScenario(
+            scenario_type="melee",
+            ally_spawn_zone=full_map,
+            enemy_spawn_zones=[full_map],
+            formation_type="random",
+            min_spacing=int(min(3, grid_width/5)),
+            seed=seed
+        )
+        
+    elif scenario_type == "boss_arena":
+        # Standard but allies start further back, and gap is smaller for tactical reasons
+        gap = 1 # Force melee range for boss arena on small grids
+        ally_x_max = max(1, int(grid_width * 0.15))
+        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.3)) 
+        
+        return CombatScenario(
+            scenario_type="boss_arena",
+            ally_spawn_zone=((0, 0), (ally_x_max, grid_height)),
+            enemy_spawn_zones=[((enemy_x_min, int(grid_height*0.3)), (grid_width, int(grid_height*0.7)))],
+            formation_type="spread",
+            min_spacing=max(1, int(grid_width/15)),
+            seed=seed
+        )
+        
+    else:
+        raise ValueError(f"Unknown combat scenario type: {scenario_type}")
+
+
+# Predefined scenarios for a standard 50x50 grid (mainly for testing/backward compatibility)
 COMBAT_SCENARIOS = {
-    "standard": CombatScenario(
-        scenario_type="standard",
-        ally_spawn_zone=((10, 15), (20, 35)),
-        enemy_spawn_zones=[((35, 15), (45, 35))],
-        formation_type="spread",
-        min_spacing=2
-    ),
-    "pincer": CombatScenario(
-        scenario_type="pincer",
-        ally_spawn_zone=((20, 20), (30, 30)),
-        enemy_spawn_zones=[
-            ((5, 10), (15, 20)),    # Left flank
-            ((5, 30), (15, 40))     # Right flank
-        ],
-        formation_type="cluster",
-        min_spacing=1
-    ),
-    "melee": CombatScenario(
-        scenario_type="melee",
-        ally_spawn_zone=((0, 0), (50, 50)),
-        enemy_spawn_zones=[((0, 0), (50, 50))],
-        formation_type="random",
-        min_spacing=2
-    ),
-    "boss_arena": CombatScenario(
-        scenario_type="boss_arena",
-        ally_spawn_zone=((15, 40), (35, 50)),
-        enemy_spawn_zones=[((20, 5), (30, 15))],
-        formation_type="spread",
-        min_spacing=3
-    ),
+    "standard": get_combat_scenario("standard", 50, 50),
+    "pincer": get_combat_scenario("pincer", 50, 50),
+    "melee": get_combat_scenario("melee", 50, 50),
+    "boss_arena": get_combat_scenario("boss_arena", 50, 50),
 }
 
 
@@ -290,24 +367,32 @@ def random_position_in_zone(
     return CombatPosition(x=x, y=y)
 
 
-def clamp_position(pos: CombatPosition) -> CombatPosition:
-    """Clamp position to grid bounds (0-50 for both x and y).
+def clamp_position(
+    pos: CombatPosition,
+    max_w: int = 50,
+    max_h: int = 50
+) -> CombatPosition:
+    """Clamp position to grid bounds.
     
     Args:
         pos: Position to clamp
+        max_w: Grid width
+        max_h: Grid height
     
     Returns:
         New CombatPosition with clamped coordinates
     """
-    x = max(0, min(50, pos.x))
-    y = max(0, min(50, pos.y))
+    x = max(0, min(max_w, pos.x))
+    y = max(0, min(max_h, pos.y))
     return CombatPosition(x=x, y=y, facing=pos.facing)
 
 
 def move_toward(
     current: CombatPosition,
     target: CombatPosition,
-    distance: int
+    distance: int,
+    max_w: int = 50,
+    max_h: int = 50
 ) -> CombatPosition:
     """Move from current position toward target by specified distance.
     
@@ -318,6 +403,8 @@ def move_toward(
         current: Starting position
         target: Target position
         distance: How many grid squares to move (each ≈ 1 foot)
+        max_w: Grid width limit
+        max_h: Grid height limit
     
     Returns:
         New CombatPosition after movement (stops at or before target)
@@ -339,17 +426,68 @@ def move_toward(
     new_x = current.x + (dx * actual_distance)
     new_y = current.y + (dy * actual_distance)
     
+    
     # Clamp to grid bounds
-    new_x = max(0, min(50, new_x))
-    new_y = max(0, min(50, new_y))
+    new_x = max(0, min(max_w, new_x))
+    new_y = max(0, min(max_h, new_y))
     
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
+
+def move_toward_constrained(
+    current: CombatPosition,
+    target: CombatPosition,
+    distance: int,
+    occupied: List[CombatPosition],
+    max_w: int = 50,
+    max_h: int = 50
+) -> CombatPosition:
+    """Move toward target but ensure destination is not occupied.
+    
+    If ideal destination is occupied, tries successively shorter distances.
+    
+    Args:
+        current: Starting position
+        target: Target position
+        distance: Maximum distance to move
+        occupied: List of positions occupied by other units
+        max_w: Grid width limit
+        max_h: Grid height limit
+    
+    Returns:
+        New valid CombatPosition
+    """
+    if not occupied:
+        return move_toward(current, target, distance, max_w, max_h)
+        
+    test_dist = distance
+    while test_dist > 0:
+        new_pos = move_toward(current, target, test_dist, max_w, max_h)
+        
+        # Check if new_pos is occupied (unless it's our current pos)
+        if new_pos.x == current.x and new_pos.y == current.y:
+            return current
+            
+        has_collision = False
+        for occ in occupied:
+            if occ.x == new_pos.x and occ.y == new_pos.y:
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return new_pos
+            
+        test_dist -= 1
+        
+    return current.copy()
 
 
 def move_away_from(
     current: CombatPosition,
     threat: CombatPosition,
-    distance: int
+    distance: int,
+    max_w: int = 50,
+    max_h: int = 50
 ) -> CombatPosition:
     """Move from current position away from a threat by specified distance.
     
@@ -357,6 +495,8 @@ def move_away_from(
         current: Starting position
         threat: Position to move away from
         distance: How many grid squares to move
+        max_w: Grid width limit
+        max_h: Grid height limit
     
     Returns:
         New CombatPosition after movement away
@@ -369,23 +509,72 @@ def move_away_from(
             CombatPosition(current.x, current.y + distance, current.facing),
             CombatPosition(current.x, current.y - distance, current.facing),
         ]
-        return clamp_position(random.choice(directions))
+        return clamp_position(random.choice(directions), max_w, max_h)
     
     # Calculate direction away from threat (opposite of toward threat)
     dx = 0 if current.x == threat.x else (1 if current.x > threat.x else -1)
     dy = 0 if current.y == threat.y else (1 if current.y > threat.y else -1)
     
     # Move away, clamping the coordinates before creating the position
-    new_x = max(0, min(50, current.x + (dx * distance)))
-    new_y = max(0, min(50, current.y + (dy * distance)))
+    new_x = max(0, min(max_w, current.x + (dx * distance)))
+    new_y = max(0, min(max_h, current.y + (dy * distance)))
     
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
+def move_away_constrained(
+    current: CombatPosition,
+    threat: CombatPosition,
+    distance: int,
+    occupied: List[CombatPosition],
+    max_w: int = 50,
+    max_h: int = 50
+) -> CombatPosition:
+    """Move away from threat but ensure destination is not occupied.
+    
+    If ideal destination is occupied, tries successively shorter distances.
+    
+    Args:
+        current: Starting position
+        threat: Position to move away from
+        distance: Maximum distance to move
+        occupied: List of positions occupied by other units
+        max_w: Grid width limit
+        max_h: Grid height limit
+    
+    Returns:
+        New valid CombatPosition
+    """
+    if not occupied:
+        return move_away_from(current, threat, distance, max_w, max_h)
+        
+    test_dist = distance
+    while test_dist > 0:
+        new_pos = move_away_from(current, threat, test_dist, max_w, max_h)
+        
+        # Check if new_pos is occupied (unless it's our current pos)
+        if new_pos.x == current.x and new_pos.y == current.y:
+            return current
+            
+        has_collision = False
+        for occ in occupied:
+            if occ.x == new_pos.x and occ.y == new_pos.y:
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return new_pos
+            
+        test_dist -= 1
+        
+    return current.copy()
 
 
 def move_to_flank(
     current: CombatPosition,
     target: CombatPosition,
-    distance: int = 3
+    distance: int = 3,
+    max_w: int = 50,
+    max_h: int = 50
 ) -> CombatPosition:
     """Move to a flanking position (90° perpendicular to target's facing).
     
@@ -393,6 +582,8 @@ def move_to_flank(
         current: Starting position
         target: Target position to flank
         distance: How many squares away from target to position
+        max_w: Grid width limit
+        max_h: Grid height limit
     
     Returns:
         New CombatPosition at flanking angle
@@ -407,10 +598,47 @@ def move_to_flank(
     offset_y = math.sin(flank_rad) * distance
     
     # Clamp coordinates before creating the position
-    new_x = max(0, min(50, int(round(target.x + offset_x))))
-    new_y = max(0, min(50, int(round(target.y + offset_y))))
+    new_x = max(0, min(max_w, int(round(target.x + offset_x))))
+    new_y = max(0, min(max_h, int(round(target.y + offset_y))))
     
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
+def move_to_flank_constrained(
+    current: CombatPosition,
+    target: CombatPosition,
+    distance: int,
+    occupied: List[CombatPosition],
+    max_w: int = 50,
+    max_h: int = 50
+) -> CombatPosition:
+    """Move to flank but avoid occupied squares.
+    
+    Tries both left (+90°) and right (-90°) flanking positions.
+    """
+    if not occupied:
+        return move_to_flank(current, target, distance, max_w, max_h)
+        
+    options = [90, -90]
+    for angle_offset in options:
+        target_facing_angle = target.facing.value
+        flank_angle = (target_facing_angle + angle_offset) % 360
+        flank_rad = math.radians(flank_angle)
+        offset_x = math.cos(flank_rad) * distance
+        offset_y = math.sin(flank_rad) * distance
+        
+        new_x = max(0, min(max_w, int(round(target.x + offset_x))))
+        new_y = max(0, min(max_h, int(round(target.y + offset_y))))
+        
+        has_collision = False
+        for occ in occupied:
+            if occ.x == new_x and occ.y == new_y:
+                has_collision = True
+                break
+        
+        if not has_collision:
+            return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+            
+    return current.copy()
 
 
 def turn_toward(
@@ -482,7 +710,10 @@ def recalculate_proximity_dict(
 def initialize_combat_positions(
     allies: List[Any],
     enemies: List[Any],
-    scenario_type: str = "standard"
+    scenario_type: str = "standard",
+    grid_width: int = 50,
+    grid_height: int = 50,
+    seed: Optional[int] = None
 ) -> None:
     """Initialize combat positions for all combatants based on scenario.
     
@@ -493,14 +724,11 @@ def initialize_combat_positions(
         allies: List of allied units (player party)
         enemies: List of enemy units
         scenario_type: Name of scenario ("standard", "pincer", "melee", "boss_arena", "custom")
-    
-    Raises:
-        ValueError: If scenario_type is not recognized
+        grid_width: Width of the battlefield
+        grid_height: Height of the battlefield
+        seed: Optional random seed
     """
-    if scenario_type not in COMBAT_SCENARIOS:
-        raise ValueError(f"Unknown scenario type: {scenario_type}")
-    
-    scenario = COMBAT_SCENARIOS[scenario_type]
+    scenario = get_combat_scenario(scenario_type, grid_width, grid_height, seed)
     
     # Spawn allies in their zone
     _spawn_units_in_zone(
@@ -508,6 +736,8 @@ def initialize_combat_positions(
         zone=scenario.ally_spawn_zone,
         formation_type=scenario.formation_type,
         min_spacing=scenario.min_spacing,
+        grid_width=grid_width,
+        grid_height=grid_height,
         seed=scenario.seed
     )
     
@@ -525,6 +755,8 @@ def initialize_combat_positions(
             zone=zone,
             formation_type=scenario.formation_type,
             min_spacing=scenario.min_spacing,
+            grid_width=grid_width,
+            grid_height=grid_height,
             seed=scenario.seed
         )
     
@@ -552,6 +784,8 @@ def _spawn_units_in_zone(
     zone: Tuple[Tuple[int, int], Tuple[int, int]],
     formation_type: str = "spread",
     min_spacing: int = 1,
+    grid_width: int = 50,
+    grid_height: int = 50,
     seed: Optional[int] = None
 ) -> None:
     """Spawn units within a zone using the specified formation.
@@ -578,7 +812,13 @@ def _spawn_units_in_zone(
             )
         elif formation_type == "cluster":
             # Cluster units tightly in center of zone
-            position = _find_clustered_position(zone, spawned, min_spacing)
+            position = _find_clustered_position(
+                zone, 
+                spawned, 
+                min_spacing,
+                grid_width=grid_width,
+                grid_height=grid_height
+            )
         else:  # "random"
             # Random placement with minimum spacing
             position = _find_random_position(zone, spawned, min_spacing)
@@ -620,7 +860,9 @@ def _find_spaced_position(
 def _find_clustered_position(
     zone: Tuple[Tuple[int, int], Tuple[int, int]],
     occupied: List[CombatPosition],
-    min_spacing: int
+    min_spacing: int,
+    grid_width: int = 50,
+    grid_height: int = 50
 ) -> CombatPosition:
     """Find position clustered near other units in zone.
     
@@ -646,7 +888,7 @@ def _find_clustered_position(
                 x = cluster_center.x + dx
                 y = cluster_center.y + dy
                 
-                if not (0 <= x <= 50 and 0 <= y <= 50):
+                if not (0 <= x <= grid_width and 0 <= y <= grid_height):
                     continue
                 
                 # Check if position is in zone and has spacing
@@ -706,7 +948,7 @@ def _calculate_center_position(
     ]
     
     if not valid_positions:
-        return CombatPosition(x=25, y=25)  # Grid center as fallback
+        return CombatPosition(x=12//2, y=12//2)  # Use small grid center as safe default if no units
     
     avg_x = sum(p.x for p in valid_positions) // len(valid_positions)
     avg_y = sum(p.y for p in valid_positions) // len(valid_positions)

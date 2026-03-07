@@ -127,7 +127,7 @@ class Poisoned(State):
 class Enflamed(State):  # target is engulfed in flames, taking damage every few beats; COMBAT ONLY
     def __init__(self, target):
         duration = random.randint(21,60)
-        super().__init__(name="Enflamed", target=target, beats_max=duration, steps_max=0, compounding=True, world=True, statustype="enflamed", persistent=False)
+        super().__init__(name="Enflamed", target=target, beats_max=duration, steps_max=0, compounding=True, world=False, statustype="enflamed", persistent=False)
         self.tick = 0  # increases at each effect cycle
         self.execute_on = 3  # when the tick is a multiple of this number, execute the effect
 
@@ -141,12 +141,12 @@ class Enflamed(State):  # target is engulfed in flames, taking damage every few 
         self.tick += 1
         if self.tick % self.execute_on == 0:
             damage = int(target.maxhp * (random.uniform(0.015, 0.035) + (self.tick * 0.003)))
-            cprint("{} shudders in pain from being poisoned, suffering {} damage!".format(target.name, damage), "red")
+            cprint("{} writhes in the flames, suffering {} damage!".format(target.name, damage), "red")
             target.hp -= damage
 
     def compound(self, target):
-        #  Increases the strength and duration of the poison by 25% every time it's inflicted
-        cprint("{}'s poisoning has gotten worse!".format(target.name), "magenta")
+        #  Increases the strength and duration of the flames by 25% every time it's inflicted
+        cprint("{}'s flames have grown fiercer!".format(target.name), "magenta")
         self.tick *= 1.25
         self.tick = int(self.tick)
         self.beats_max *= 1.1
@@ -203,9 +203,9 @@ class Disoriented(State):
 
     def on_removal(self, target):
         cprint("{} regains their bearings!".format(target.name), "green")
-        # Restore stat reductions
-        target.finesse = min(target.finesse + self.sub_finesse, getattr(target, 'base_finesse', target.finesse + self.sub_finesse))
-        target.protection = min(target.protection + self.sub_protection, getattr(target, 'base_protection', target.protection + self.sub_protection))
+        # Undo the reductions applied at on_application
+        target.finesse += self.sub_finesse
+        target.protection += self.sub_protection
         functions.refresh_stat_bonuses(target)
 
 

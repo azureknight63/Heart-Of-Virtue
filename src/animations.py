@@ -14,6 +14,19 @@ from asciimatics.exceptions import ResizeScreenError
 
 from PIL import Image
 
+# API mode flag - when True, terminal animations are suppressed
+_API_MODE = False
+
+def set_api_mode(enabled: bool):
+    """Enable/disable API mode to suppress terminal animations.
+    
+    Args:
+        enabled: If True, terminal animations will be skipped (for web app).
+                 If False, animations will play normally (for CLI mode).
+    """
+    global _API_MODE
+    _API_MODE = enabled
+
 
 def count_gif_frames(gif_path):
     with Image.open(gif_path) as img:
@@ -158,6 +171,10 @@ def animate_to_main_screen(animation, rawtext=""):
     filename of a gif in resources/animations, as a string
     :param rawtext: Text to display with the animation, if any. You can pass in colored text (color will be stripped)
     """
+    # Skip animations in API mode (web app)
+    if _API_MODE:
+        return
+    
     # Import here to avoid circular import: functions imports moves, and moves imports animations.
     from functions import clean_string
     import sys

@@ -69,8 +69,8 @@ try:
     assert player.combat_position.y == 25, "Player should be at y=25"
     assert ally.combat_position.x == 25, "Ally should be at x=25"
     assert ally.combat_position.y == 25, "Ally should be at y=25"
-    assert player.combat_position.facing == Direction.E, "Player should face East"
-    assert ally.combat_position.facing == Direction.N, "Ally should face North"
+    assert player.combat_position.facing.value == Direction.E.value, "Player should face East"
+    assert ally.combat_position.facing.value == Direction.N.value, "Ally should face North"
     
     print("\n✅ SCENARIO 1 PASSED: Basic position swap works correctly\n")
     

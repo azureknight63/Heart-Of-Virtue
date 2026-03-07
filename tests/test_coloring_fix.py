@@ -28,12 +28,9 @@ def test_column_calculation():
         calculated_col = grid_x * 2 + 2
         status = "✓" if calculated_col == expected_col else "✗"
         print(f"  {status} grid_x={grid_x}: calculated={calculated_col}, expected={expected_col}")
-        if calculated_col != expected_col:
-            print(f"    ERROR: Column calculation mismatch!")
-            return False
+        assert calculated_col == expected_col, f"Column calculation mismatch for grid_x={grid_x}!"
     
     print("✓ All column calculations passed!")
-    return True
 
 def test_display_length_calculation():
     """Test that display length is correctly calculated"""
@@ -62,12 +59,9 @@ def test_display_length_calculation():
         
         status = "✓" if display_len == expected_len else "✗"
         print(f"  {status} alive={is_alive}, health={health_pct*100:.0f}%: calculated={display_len}, expected={expected_len}")
-        if display_len != expected_len:
-            print(f"    ERROR: Display length mismatch!")
-            return False
+        assert display_len == expected_len, f"Display length mismatch for alive={is_alive}, health={health_pct}!"
     
     print("✓ All display length calculations passed!")
-    return True
 
 def test_window_setup():
     """Test that the window initializes without errors"""
@@ -96,29 +90,13 @@ def test_window_setup():
         print(f"  Movement history: {len(window.movement_history)}")
         
         window.close()
-        return True
     except Exception as e:
         print(f"✗ Error during window test: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise e
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("Battlefield Coloring Fix Verification")
-    print("=" * 60)
-    
-    results = []
-    results.append(("Column calculation", test_column_calculation()))
-    results.append(("Display length calculation", test_display_length_calculation()))
-    results.append(("Window initialization", test_window_setup()))
-    
-    print("\n" + "=" * 60)
-    print("Test Results:")
-    print("=" * 60)
-    for test_name, passed in results:
-        status = "PASS" if passed else "FAIL"
-        print(f"  {status}: {test_name}")
-    
-    all_passed = all(result for _, result in results)
-    print("\n" + ("All tests passed! ✓" if all_passed else "Some tests failed! ✗"))
+    # This allows running the file directly if needed, though pytest is preferred
+    import pytest
+    pytest.main([__file__])

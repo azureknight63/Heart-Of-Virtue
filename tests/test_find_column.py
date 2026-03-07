@@ -8,9 +8,18 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+import pytest
+import tkinter as tk
+
+# Skip test if tkinter is not available
+try:
+    test_window = tk.Tk()
+    test_window.destroy()
+except tk.TclError:
+    pytest.skip("Tkinter not available")
+
 from src.combat_battlefield import CombatBattlefieldWindow
 from src.positions import CombatPosition, Direction
-import tkinter as tk
 
 window = CombatBattlefieldWindow("Debug Test")
 window.create_window()

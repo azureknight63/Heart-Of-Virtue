@@ -44,3 +44,4 @@ When the correct three minerals are placed in the correct order, the luminous ve
 | Recent Past | The Onset of Corruption. The Mind-Eater's influence begins to subtly affect the world, and the pools—already weakened by stagnation—are breached by the Slime Infestation. | Dissolving Stone: The slimy green water actively corrodes the rock it touches, creating pitted, unnaturally soft stone and sharp, sickly-colored mineral deposits where the corruption is highest. |
 | Current Event (Jean's Arrival) | The Cleansing and the Fragment. Jean defeats the King Slime, purging the current wave of infestation from the central pool. | The Unblemished Gift: The defeat of the King Slime leaves behind the unique, razor-sharp mineral fragment, proving that the pools are still a source of powerful, pure essence once the corruption is removed. |
 
+

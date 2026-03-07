@@ -75,12 +75,12 @@ class TestCombatPosition:
         pos = CombatPosition(x=25, y=25, facing=Direction.N)
         assert pos.x == 25
         assert pos.y == 25
-        assert pos.facing == Direction.N
+        assert pos.facing.value == Direction.N.value
 
     def test_position_default_facing(self):
         """Test default facing is North."""
         pos = CombatPosition(x=10, y=20)
-        assert pos.facing == Direction.N
+        assert pos.facing.value == Direction.N.value
 
     def test_position_copy(self):
         """Test position copy creates independent instance."""

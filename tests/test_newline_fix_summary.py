@@ -76,9 +76,6 @@ The final paragraph wraps everything up. It should maintain proper spacing. And 
     print(f"✓ Created {len(pages)} page(s)")
     print(f"✓ Found {page_content.count(chr(10))} newline characters")
     print(f"✓ Found {page_content.count(chr(10)*2)} paragraph breaks")
-    
-    return True
-
 
 def test_real_book_file_newlines(tmp_path):
     """Test with a real book file that has paragraph structure like Jambo's book."""
@@ -129,15 +126,9 @@ Follow these lessons for success. Your business will thrive. Good luck!"""
     print(f"\n✓ Real book file test passed!")
     print(f"✓ File content loaded with {loaded_text.count(chr(10))} newlines")
     print(f"✓ Pagination preserved {paragraph_breaks} paragraph breaks")
-    
-    return True
 
 
 if __name__ == "__main__":
-    # Can be run directly for manual verification
-    test_comprehensive_newline_preservation()
-    print("\n" + "="*80)
-    import tempfile
-    import pathlib
-    with tempfile.TemporaryDirectory() as tmpdir:
-        test_real_book_file_newlines(pathlib.Path(tmpdir))
+    # This allows running the file directly if needed, though pytest is preferred
+    import pytest
+    pytest.main([__file__])

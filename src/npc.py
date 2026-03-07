@@ -16,11 +16,13 @@ import importlib.util
 import re
 import positions  # type: ignore
 from npc_ai_config import NPCAIConfig  # type: ignore
+from combatant import Combatant
 
 loot = loot_tables.Loot()  # initialize a loot object to access the loot table
 
 
-class NPC:
+class NPC(Combatant):
+    alert_message = "appears!"
     def __init__(self, name, description, damage, aggro, exp_award,
                  inventory: list[Item]=None, maxhp=100, protection=0, speed=10, finesse=10,
                  awareness=10, maxfatigue=100, endurance=10, strength=10, charisma=10, intelligence=10,
@@ -45,84 +47,8 @@ class NPC:
         self.speed_base = speed
         self.finesse = finesse
         self.finesse_base = finesse
-        # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half."
-        # 2.0 means "double damage/change."
-        # Negative values mean the damage is absorbed (heals instead of damages.) Status resistances cannot be negative.
-        self.resistance = {
-            "fire": 1.0,
-            "ice": 1.0,
-            "shock": 1.0,
-            "earth": 1.0,
-            "light": 1.0,
-            "dark": 1.0,
-            "piercing": 1.0,
-            "slashing": 1.0,
-            "crushing": 1.0,
-            "spiritual": 1.0,
-            "pure": 1.0
-        }
-        self.resistance_base = {
-            "fire": 1.0,
-            "ice": 1.0,
-            "shock": 1.0,
-            "earth": 1.0,
-            "light": 1.0,
-            "dark": 1.0,
-            "piercing": 1.0,
-            "slashing": 1.0,
-            "crushing": 1.0,
-            "spiritual": 1.0,
-            "pure": 1.0
-        }
-        self.status_resistance = {
-            "generic": 1.0,  # Default status type for all states
-            "stun": 1.0,  # Unable to move; typically short duration
-            "poison": 1.0,  # Drains Health every combat turn/game tick; persists
-            "enflamed": 1.0,
-            "sloth": 1.0,  # Drains Fatigue every combat turn
-            "apathy": 1.0,  # Drains HEAT every combat turn
-            "blind": 1.0,  # Miss physical attacks more frequently; persists
-            "incoherence": 1.0,  # Miracles fail more frequently; persists
-            "mute": 1.0,  # Cannot use Miracles; persists
-            "enraged": 1.0,  # Double physical damage given and taken
-            "enchanted": 1.0,  # Double magical damage given and taken
-            "ethereal": 1.0,  # Immune to physical damage but take 3x magical damage; persists
-            "berserk": 1.0,  # Auto attack, 1.5x physical damage
-            "slow": 1.0,  # All move times are doubled
-            "sleep": 1.0,  # Unable to move; removed upon physical damage
-            "confusion": 1.0,  # Uses random moves on random targets; removed upon physical damage
-            "cursed": 1.0,  # Makes luck 1, chance of using a random move with a random target; persists
-            "stop": 1.0,  # Unable to move; not removed with damage
-            "stone": 1.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
-            "frozen": 1.0,  # Unable to move; removed with Fire magic; permanent death if allowed
-            # to persist after battle
-            "doom": 1.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
-            "death": 1.0
-        }
-        self.status_resistance_base = {
-            "generic": 1.0,
-            "stun": 1.0,
-            "poison": 1.0,
-            "enflamed": 1.0,
-            "sloth": 1.0,
-            "apathy": 1.0,
-            "blind": 1.0,
-            "incoherence": 1.0,
-            "mute": 1.0,
-            "enraged": 1.0,
-            "enchanted": 1.0,
-            "ethereal": 1.0,
-            "berserk": 1.0,
-            "slow": 1.0,
-            "sleep": 1.0,
-            "confusion": 1.0,
-            "cursed": 1.0,
-            "stop": 1.0,
-            "stone": 1.0,
-            "frozen": 1.0,
-            "doom": 1.0,
-            "death": 1.0
-        }
+        # Resistance dicts are defined canonically in Combatant (combatant.py).
+        self._init_resistances()
         self.awareness = awareness  # used when a player enters the room to see if npc spots the player
         self.aggro = aggro
         self.exp_award = exp_award
@@ -162,21 +88,12 @@ class NPC:
             "personal": "it", "possessive": "its", "reflexive": "itself", "intensive": "itself"
         }
         self.player_ref = None  # Will be set during combat initialization for config access
-
-    def is_alive(self):
-        return self.hp > 0
+        self.ai_config = None # Initialized during combat
 
     def die(self):
         really_die = self.before_death()
         if really_die:
             print(colored(self.name, "magenta") + " exploded into fragments of light!")
-
-    def cycle_states(self):
-        """
-        Loop through all the states on the NPC and process the effects of each one
-        """
-        for state in self.states:
-            state.process(self)
 
     def refresh_moves(self):
         available_moves = self.known_moves[:]
@@ -189,10 +106,27 @@ class NPC:
 
     def select_move(self):
         available_moves = self.refresh_moves()
+        
+        # Initialize AI config if we have a player reference (combat started)
+        if (not hasattr(self, 'ai_config') or self.ai_config is None) and hasattr(self, 'player_ref') and self.player_ref:
+            try:
+                from npc_ai_config import NPCAIConfig
+                self.ai_config = NPCAIConfig(self.player_ref)
+            except ImportError:
+                pass
+
         #  simple random selection; if you want something more complex, overwrite this for the specific NPC
         weighted_moves = []
         for move in available_moves:
-            for weight in range(move.weight):
+            # Calculate tactical weight modifications
+            weight = move.weight
+            if hasattr(self, 'ai_config') and self.ai_config:
+                 weight += self.ai_config.get_weighted_move_bonus(self, move.name)
+            
+            # Ensure at least 1 weight for viable moves
+            weight = max(1, weight)
+            
+            for _ in range(weight):
                 weighted_moves.append(move)
 
         #  add additional rest moves if fatigue is low to make it a more likely choice
@@ -200,8 +134,16 @@ class NPC:
             for i in range(0, 5):
                 weighted_moves.append(moves.NpcRest(self))
 
+        if not weighted_moves:
+            # Fallback if no moves generated
+            return
+
         num_choices = len(weighted_moves) - 1
-        while self.current_move is None:
+        max_attempts = 20 # Prevent infinite loops
+        attempts = 0
+        
+        while self.current_move is None and attempts < max_attempts:
+            attempts += 1
             choice = random.randint(0, num_choices)
             if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
@@ -211,10 +153,22 @@ class NPC:
                     player = self.player_ref
                     if hasattr(player, 'combat_debug_manager') and player.combat_debug_manager:
                         if player.combat_debug_manager.should_debug_ai_decisions():
+                            # Gather debug info
+                            flank_bonus = 0
+                            retreat_prio = 0
+                            if hasattr(self, 'ai_config') and self.ai_config:
+                                flank_bonus = self.ai_config.get_weighted_move_bonus(self, self.current_move.name)
+                                retreat_prio = self.ai_config.calculate_retreat_priority(self, [])
+                                
                             player.combat_debug_manager.display_ai_debug_info(
                                 self,
                                 f"Selected {self.current_move.name}",
-                                {"fatigue_cost": self.current_move.fatigue_cost}
+                                {
+                                    "fatigue_cost": self.current_move.fatigue_cost,
+                                    "original_weight": weighted_moves[choice].weight,
+                                    "ai_bonus": flank_bonus,
+                                    "retreat_priority": retreat_prio
+                                }
                             )
 
     def add_move(self, move, weight=1):
@@ -236,6 +190,17 @@ class NPC:
                 if quantity > 0:
                     self.current_room.spawn_item(item.__class__.__name__, amt=quantity, hidden=1,
                                                  hfactor=random.randint(20, 60))
+                    # In API combat mode, record drops for victory summary
+                    if hasattr(self, "player_ref") and self.player_ref and hasattr(self.player_ref, "_combat_adapter"):
+                        if not hasattr(self.player_ref, "combat_drops"):
+                            self.player_ref.combat_drops = []
+                        item_name = getattr(item, "name", item.__class__.__name__)
+                        self.player_ref.combat_drops.append({
+                            "name": item_name,
+                            "quantity": int(quantity),
+                            "source": getattr(self, "name", "Unknown"),
+                            "kind": "inventory",
+                        })
             self.inventory = []
 
     def before_death(self):  # Overwrite for each NPC if they are supposed to do something special before dying
@@ -244,9 +209,20 @@ class NPC:
         self.drop_inventory()
         return True
 
+    def reset_combat_moves(self):
+        """
+        Resets all move states to stage 0 with 0 beats remaining.
+        This ensures moves progress correctly when the NPC joins combat mid-fight.
+        Called by combat_engage() and when allies join mid-combat.
+        """
+        for move in self.known_moves:
+            move.current_stage = 0
+            move.beats_left = 0
+
     def combat_engage(self, player):
         """
-        Adds NPC to the proper combat lists and initializes
+        Adds NPC to the proper combat lists and initializes.
+        Resets all move states to ensure moves progress correctly from the start.
         """
         player.combat_list.append(self)
         player.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
@@ -254,6 +230,7 @@ class NPC:
             for ally in player.combat_list_allies:
                 ally.combat_proximity[self] = int(self.default_proximity * random.uniform(0.75, 1.25))
         self.in_combat = True
+        self.reset_combat_moves()
 
     def roll_loot(self):  # when the NPC dies, do a roll to see if any loot drops
         if self.current_room is None:
@@ -274,17 +251,18 @@ class NPC:
                 else:
                     drop = self.current_room.spawn_item(item, dropcount)
                 cprint("{} dropped {} x {}!".format(self.name, drop.name, dropcount), 'cyan', attrs=['bold'])
+                # In API combat mode, record drops for victory summary
+                if hasattr(self, "player_ref") and self.player_ref and hasattr(self.player_ref, "_combat_adapter"):
+                    if not hasattr(self.player_ref, "combat_drops"):
+                        self.player_ref.combat_drops = []
+                    drop_name = getattr(drop, "name", str(drop))
+                    self.player_ref.combat_drops.append({
+                        "name": drop_name,
+                        "quantity": int(dropcount),
+                        "source": getattr(self, "name", "Unknown"),
+                        "kind": "loot",
+                    })
                 break  # only one item in the loot table will drop
-
-    def get_equipped_items(self):
-        """
-        Returns a list of all items in the npc's inventory that are currently equipped.
-        """
-        equipped_items = []
-        for item in self.inventory:
-            if hasattr(item, "isequipped") and item.isequipped:
-                equipped_items.append(item)
-        return equipped_items
 
 """ Merchants """
 
@@ -1556,7 +1534,13 @@ class Mynx(Friend):
                     print(f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}")
         # Deterministic stub fallback responses (legacy behavior for tests / offline mode)
         if p in ("pet", "stroke", "scritch"):
-            text = f"{self.name} leans into the hand, purring a soft chitter and nudging the wrist with its head."
+            variations = [
+                f"{self.name} leans into the hand, purring a soft chitter and nudging the wrist with its head.",
+                f"{self.name} rolls onto its back, exposing its belly and chirruping happily as you scritch it.",
+                f"{self.name} closes its eyes, leaning heavily into your palm with a contented rumble.",
+                f"{self.name} brushes its cheek against your fingers, its tail curling around your wrist affectionately."
+            ]
+            text = random.choice(variations)
             structured_obj = {
                 "action": "groom",
                 "intensity": "gentle",
@@ -1564,50 +1548,56 @@ class Mynx(Friend):
                 "duration_seconds": 2,
                 "audible": "soft purr/chitter"
             }
-            # record fallback in history
-            try:
-                self._append_llm_history(p, text)
-            except Exception:
-                pass
         elif p in ("feed", "offer food", "give food"):
-            text = f"{self.name} eyes the offered morsel, snatches it with a quick paw, and tucks it into its tail-fur triumphantly."
+            variations = [
+                f"{self.name} eyes the offered morsel, snatches it with a quick paw, and tucks it into its tail-fur triumphantly.",
+                f"{self.name} sniffs the food cautiously, then delicately takes it from your hand, chittering a thank-you.",
+                f"{self.name} pounces on the snack, carrying it a few paces away to gobble it down with happy chirps.",
+                f"{self.name} stands on its hind legs to reach the food, batting at it playfully before taking a nibble."
+            ]
+            text = random.choice(variations)
             structured_obj = {
-                "action": "take_food",  # legacy test expectation; synonym of 'steal_food'
+                "action": "take_food",
                 "intensity": "medium",
                 "description": text,
                 "duration_seconds": 3,
                 "audible": "happy chitter"
             }
-            try:
-                self._append_llm_history(p, text)
-            except Exception:
-                pass
         elif p in ("play", "toy", "tease"):
-            text = f"{self.name} bats the object with nimble paws, then darts back and forth in a brief, jubilant display."
+            variations = [
+                f"{self.name} bats the object with nimble paws, then darts back and forth in a brief, jubilant display.",
+                f"{self.name} crouches low, tail twitching, then pounces at the object with a playful yip.",
+                f"{self.name} stands on its hind legs, swatting at the air as if chasing an invisible butterfly.",
+                f"{self.name} circles you rapidly, occasionally stopping to tap your boot before darting away."
+            ]
+            text = random.choice(variations)
             structured_obj = {
-                "action": "play",  # legacy test expectation; synonym of 'playful_tussle'
+                "action": "play",
                 "intensity": "high",
                 "description": text,
                 "duration_seconds": 4,
                 "audible": "rapid chitters"
             }
-            try:
-                self._append_llm_history(p, text)
-            except Exception:
-                pass
         else:
-            text = f"{self.name} pads forward on silent paws, head cocked, whiskers twitching as it studies you."
+            variations = [
+                f"{self.name} pads forward on silent paws, head cocked, whiskers twitching as it studies you.",
+                f"{self.name} tilts its head, watching your every move with bright, intelligent eyes.",
+                f"{self.name} flickers its tufted tail, chapping its teeth together in a curious greeting.",
+                f"{self.name} sits back on its haunches, grooming its spotted fur while keeping one eye on you."
+            ]
+            text = random.choice(variations)
             structured_obj = {
-                "action": "investigate",  # legacy test expectation; synonym of 'investigate_object'
+                "action": "investigate",
                 "intensity": "low",
                 "description": text,
                 "duration_seconds": 3,
                 "audible": "soft chitter"
             }
-            try:
-                self._append_llm_history(p, text)
-            except Exception:
-                pass
+
+        try:
+            self._append_llm_history(p, text)
+        except Exception:
+            pass
         self._llm_last_response = structured_obj
         if structured:
             return structured_obj

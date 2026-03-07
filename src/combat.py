@@ -11,9 +11,40 @@ from coordinate_config import CoordinateSystemConfig
 from combat_battlefield import CombatBattlefieldWindow
 
 
-def combat(player):
+from typing import Optional
+from combat_event_config import CombatEventConfig
+import importlib
+
+
+def _evaluate_combat_events(player):
+    """
+    Evaluate conditions for all active combat events.
+    
+    This function safely evaluates each event's check_combat_conditions() method,
+    handling errors gracefully to prevent one failing event from crashing the
+    entire combat loop. It's called both during normal combat flow and when
+    enemies are defeated (to allow reinforcement spawning).
+    
+    Args:
+        player: The Player instance with combat_events list
+    """
+    if not hasattr(player, "combat_events") or len(player.combat_events) == 0:
+        return
+    
+    for event in player.combat_events:
+        try:
+            if hasattr(event, "check_combat_conditions"):
+                event.check_combat_conditions()
+        except Exception as e:
+            event_name = getattr(event, "name", "UnknownEvent")
+            cprint(f"[Warning] Combat event '{event_name}' failed: {e}", "yellow")
+
+
+def combat(player, event_config: Optional[CombatEventConfig] = None):
+    # If the player is in combat, they cannot move, interact, or do anything else
     """
     :param player:
+    :param event_config: Optional configuration for parameterized combat events.
     :attr player.combat_list: A list of enemies to engage in this combat loop.
     :return: Nothing is returned - this is simply a branch from the main game loop to handle combat.
     """
@@ -33,6 +64,51 @@ def combat(player):
     player.combat_debug_manager = debug_manager
     player.combat_coordinate_config = coordinate_config
     
+    # Handle parameterized event configuration
+    grid_width, grid_height = (50, 50) # Default fallback
+    scenario_type = "standard"
+    
+    if event_config:
+        # Override enemies if specified
+        if event_config.enemy_list:
+            player.combat_list = []
+            try:
+                npc_module = importlib.import_module("npc")
+                for enemy_name, count in event_config.enemy_list:
+                    if hasattr(npc_module, enemy_name):
+                        enemy_class = getattr(npc_module, enemy_name)
+                        for _ in range(count):
+                            player.combat_list.append(enemy_class())
+                    else:
+                        print(f"Error: Unknown enemy type '{enemy_name}'")
+            except ImportError:
+                print("Error: Could not import npc module for enemy generation")
+
+        # Override allies if specified (not fully implemented in player structure yet, but placeholder)
+        if event_config.ally_list:
+            # Logic for adding allies would go here
+            pass
+
+        # Set grid size
+        if event_config.grid_size_override:
+            grid_width, grid_height = event_config.grid_size_override
+        else:
+            combatant_count = len(player.combat_list) + len(player.combat_list_allies)
+            grid_width, grid_height = coordinate_config.get_dynamic_grid_size(combatant_count)
+            
+        scenario_type = event_config.scenario_type
+        
+    else:
+        # Standard combat initialization
+        combatant_count = len(player.combat_list) + len(player.combat_list_allies)
+        grid_width, grid_height = coordinate_config.get_dynamic_grid_size(combatant_count)
+        
+        # Determine scenario type based on combat situation
+        if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
+            scenario_type = "pincer"  # Ambush scenario
+        elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+            scenario_type = "boss_arena"  # Single vs single
+
     # Set player reference on all combatants for config access
     for npc in player.combat_list + player.combat_list_allies:
         npc.player_ref = player
@@ -44,13 +120,13 @@ def combat(player):
         else:
             if npc.current_move is None:
                 if not npc.friend:
-                    npc.target = player.combat_list_allies[
-                        random.randint(0, len(
-                            player.combat_list_allies) - 1)]  # select a random target from the player's party
+                    if player.combat_list_allies:
+                        npc.target = player.combat_list_allies[
+                            random.randint(0, len(player.combat_list_allies) - 1)]
                 else:
-                    npc.target = player.combat_list[
-                        random.randint(0, len(
-                            player.combat_list) - 1)]  # select a random target from the enemy's party
+                    if player.combat_list:
+                        npc.target = player.combat_list[
+                            random.randint(0, len(player.combat_list) - 1)]
                 npc.select_move()
                 npc.current_move.target = npc.target
                 if (npc.current_move is not None and hasattr(npc.current_move, "cast") and
@@ -94,7 +170,7 @@ def combat(player):
         for each_ally in player.combat_list_allies:
             remove_these = []
             for each_enemy in each_ally.combat_proximity:  # Remove any dead enemies
-                if not each_enemy.is_alive:
+                if not each_enemy.is_alive():
                     remove_these.append(each_enemy)
             for each_enemy in remove_these:
                 del each_ally.combat_proximity[each_enemy]
@@ -102,7 +178,7 @@ def combat(player):
                 remove_these = []
                 for each_ally_in_prox in each_enemy.combat_proximity:  # Remove any dead allies from combat proximity;
                     # this will only work for allies who can die, excluding Jean
-                    if not each_ally.is_alive:
+                    if not each_ally_in_prox.is_alive():
                         remove_these.append(each_ally_in_prox)
                 for each_ally_that_died in remove_these:
                     del each_enemy.combat_proximity[each_ally_that_died]
@@ -146,19 +222,13 @@ def combat(player):
     for enemy in player.combat_list:
         check_for_dead_enemy(enemy, True)
 
-    # Initialize combat positions using coordinate system
-    # Determine scenario type based on combat situation
-    scenario_type = "standard"
-    if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
-        scenario_type = "pincer"  # Ambush scenario
-    elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
-        scenario_type = "boss_arena"  # Single vs single
-    
     try:
         positions.initialize_combat_positions(
             allies=player.combat_list_allies,
             enemies=player.combat_list,
-            scenario_type=scenario_type
+            scenario_type=scenario_type,
+            grid_width=grid_width,
+            grid_height=grid_height
         )
     except Exception as e:
         # Graceful fallback: if initialization fails, continue with old system
@@ -187,18 +257,30 @@ def combat(player):
     battlefield_window.update_display()
 
     while True:  # combat will loop until there are no aggro enemies or the player is dead
-        #  Check for combat events and execute them once, if possible
+        # Check for combat events and execute them once, if possible.
+        # This happens at the start of each beat to allow events to trigger on deaths,
+        # player/enemy state changes, or other conditions.
         synchronize_distances()
-        if len(player.combat_events) > 0:  # first check combat events. This is higher in case, for example,
-            # an event is to fire upon player or enemy death
-            for event in player.combat_events:
-                event.check_combat_conditions()
+        _evaluate_combat_events(player)
 
         if not player.is_alive():
             player.death()
             break
 
         if len(player.combat_list) == 0:
+            # All enemies defeated. Before declaring victory, evaluate all combat events one final time.
+            # Some events (like reinforcement spawners) only trigger when combat_list is empty.
+            # These events might inject new enemies, which should continue combat rather than ending it.
+            # This final evaluation ensures battles fight to completion. The early evaluation in the
+            # loop start handles state-change events (e.g., on-death effects), while this one
+            # specifically handles reinforcement/spawning events.
+            _evaluate_combat_events(player)
+            
+            # If events injected new enemies, loop back to continue combat
+            if len(player.combat_list) > 0:
+                continue
+            
+            # True victory - no enemies remain and no events triggered
             print("Victory!")
             player.fatigue = player.maxfatigue
             gained_exp = ''
@@ -266,7 +348,7 @@ def combat(player):
                 selected_move = input("Selection: ")
             try:
                 selected_move = int(selected_move)
-            except SyntaxError:
+            except ValueError:
                 cprint("Invalid selection.", "red", attrs=['bold'])
             for i, move in enumerate(viable_moves):
                 if i == selected_move:
@@ -279,15 +361,15 @@ def combat(player):
                             target = None
                             acceptable_targets = []
                             range_min, range_max = player.current_move.mvrange
-                            if player.current_move.name == "Shoot Bow":  # if the player is shooting his bow,
-                                # overwrite max to include decaying range
-                                range_max = player.eq_weapon.range_base + (100 / player.eq_weapon.range_decay)
+                            effective_max = player.current_move.get_effective_range_max(player)
+                            if effective_max is not None:
+                                range_max = effective_max
+                            dead_in_prox = [e for e in player.combat_proximity if not e.is_alive()]
+                            for e in dead_in_prox:
+                                del player.combat_proximity[e]
                             for enemy, distance in player.combat_proximity.items():
-                                if enemy.is_alive:
-                                    if range_min <= distance <= range_max:
-                                        acceptable_targets.append((enemy, distance))
-                                else:
-                                    del player.combat_proximity[enemy]
+                                if range_min <= distance <= range_max:
+                                    acceptable_targets.append((enemy, distance))
                             if not player.current_move.verbose_targeting:
                                 if len(acceptable_targets) > 1:
                                     acceptable_targets.sort(key=lambda tup: tup[1])  # sort acceptable_targets
@@ -395,9 +477,7 @@ def combat(player):
         # print("### CURRENT BEAT: "+str(beat))
 
     #  AFTER COMBAT LOOP (VICTORY, ESCAPE, OR DEFEAT)
-    for status in player.states:
-        if not status.persistent:
-            player.states.remove(status)
+    player.states = [s for s in player.states if s.persistent]
     
     # Close battlefield window
     battlefield_window.close()

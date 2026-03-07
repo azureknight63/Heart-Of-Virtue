@@ -1,5 +1,6 @@
 import os
 import types
+from unittest.mock import patch
 from ai.llm_client import MynxLLMAdapter
 
 
@@ -58,13 +59,15 @@ def test_openrouter_plain_generation(monkeypatch):
     # Monkeypatch openai.OpenAI to our dummy class
     import openai  # type: ignore
     dummy_instance = _DummyOpenAI(base_url="", api_key="")
+    dummy_instance._response_text = "OK"  # For validation test
 
     def _factory(**kwargs):  # mimic call signature used in adapter
         return dummy_instance
 
     monkeypatch.setattr(openai, "OpenAI", _factory)
 
-    adapter = MynxLLMAdapter()
+    with patch.object(MynxLLMAdapter, '_validate_and_fallback_openrouter'):
+        adapter = MynxLLMAdapter()
     assert adapter.available() is True
     out = adapter.generate_plain("The player wiggles a ribbon.")
     assert out is not None
@@ -95,7 +98,8 @@ def test_openrouter_structured_generation(monkeypatch):
 
     monkeypatch.setattr(openai, "OpenAI", _factory)
 
-    adapter = MynxLLMAdapter()
+    with patch.object(MynxLLMAdapter, '_validate_and_fallback_openrouter'):
+        adapter = MynxLLMAdapter()
     assert adapter.available() is True
     obj = adapter.generate_structured("The player holds out a strange herb.")
     assert isinstance(obj, dict)

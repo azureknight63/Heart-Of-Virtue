@@ -256,6 +256,13 @@ def transfer_gold(from_inventory: list, to_inventory: list, amt: int) -> None:
         if gold_item_to.amt < 0:
             gold_item_to.amt = 0
 
+        # Sync count and update description
+        for item in [gold_item_from, gold_item_to]:
+            if hasattr(item, 'count'):
+                item.count = item.amt
+            if hasattr(item, 'stack_grammar') and callable(item.stack_grammar):
+                item.stack_grammar()
+
 
 def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: Item, qty: int=1) -> None:
     """
@@ -298,7 +305,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
 
     # If the item isn't in the source inventory, nothing to do
     if item not in from_inventory:
-        print(f"{RED}Error: Item not found in source inventory.{RESET}")
+        print(f"{RED}Error: Item {getattr(item, 'name', 'Unknown')} not found in source inventory.{RESET}")
         return
 
     # Handle stackable items
@@ -330,6 +337,8 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
                         except Exception:
                             pass
             setattr(new_item, 'count', qty)
+            if hasattr(new_item, "stack_grammar") and callable(new_item.stack_grammar):
+                new_item.stack_grammar()
             _set_merch_flag(new_item, target, source)
             to_inventory.append(new_item)
             # If source stack was reduced to zero for some reason, remove it

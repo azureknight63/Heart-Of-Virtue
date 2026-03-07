@@ -38,7 +38,7 @@ class TestCoordinateSystemBasics:
         pos = CombatPosition(x=25, y=25, facing=Direction.N)
         assert pos.x == 25
         assert pos.y == 25
-        assert pos.facing == Direction.N
+        assert pos.facing.value == Direction.N.value
     
     def test_position_boundary_min(self):
         """Test position at minimum boundary (0,0)"""

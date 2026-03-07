@@ -30,13 +30,7 @@ import random
 class TestBowAndArrows:
     """Test suite for bow and arrow mechanics with coordinate system."""
     
-    def __init__(self):
-        self.passed = 0
-        self.failed = 0
-        self.player = None
-        self.enemies = []
-    
-    def setup_player(self):
+    def setup_method(self):
         """Initialize player with bow and arrows."""
         self.player = Player()
         self.player.name = "Jean"
@@ -66,6 +60,7 @@ class TestBowAndArrows:
         # Set combat position
         self.player.combat_position = CombatPosition(x=15, y=25, facing=Direction.E)
         self.player.combat_proximity = {}
+        self.enemies = []
     
     def create_enemy(self, name: str, x: int, y: int, distance: float = None):
         """Create an enemy at specified coordinates."""
@@ -92,98 +87,41 @@ class TestBowAndArrows:
         self.enemies.append(enemy)
         return enemy
     
-    def test(self, name: str, condition: bool, details: str = ""):
-        """Record test result."""
-        status = "[PASS]" if condition else "[FAIL]"
-        print(f"{status} | {name}")
-        if details and not condition:
-            print(f"       {details}")
-        if condition:
-            self.passed += 1
-        else:
-            self.failed += 1
-    
     def test_bow_initialization(self):
         """Test that bow is correctly initialized and equipped."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Bow Initialization")
-        print("="*70)
-        
-        self.setup_player()
-        
-        self.test(
-            "Player has bow equipped",
-            self.player.eq_weapon is not None and self.player.eq_weapon.subtype == "Bow"
-        )
-        
-        self.test(
-            "Player has arrows in inventory",
-            any(arrow.subtype == "Arrow" for arrow in self.player.inventory)
-        )
+        assert self.player.eq_weapon is not None and self.player.eq_weapon.subtype == "Bow"
+        assert any(arrow.subtype == "Arrow" for arrow in self.player.inventory)
         
         arrow_count = sum(arrow.count for arrow in self.player.inventory if arrow.subtype == "Arrow")
-        self.test(
-            "Player has minimum 20 arrows",
-            arrow_count >= 20,
-            f"Expected ≥20 arrows, got {arrow_count}"
-        )
+        assert arrow_count >= 20, f"Expected ≥20 arrows, got {arrow_count}"
         
-        self.test(
-            "Multiple arrow types available",
-            len([a for a in self.player.inventory if a.subtype == "Arrow"]) >= 3,
+        assert len([a for a in self.player.inventory if a.subtype == "Arrow"]) >= 3, \
             f"Expected ≥3 arrow types, got {len([a for a in self.player.inventory if a.subtype == 'Arrow'])}"
-        )
     
     def test_bow_viability(self):
         """Test that ShootBow is viable only when conditions are met."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Bow Viability")
-        print("="*70)
-        
-        self.setup_player()
         shoot_bow = ShootBow(self.player)
         self.player.known_moves = [shoot_bow]
         
         # Test 1: No enemies in range
-        self.test(
-            "Bow not viable with no enemies",
-            not shoot_bow.viable(),
-            "Player should have no enemies in combat_proximity"
-        )
+        assert not shoot_bow.viable(), "Player should have no enemies in combat_proximity"
         
         # Test 2: Enemy at close range (below minimum range)
         close_enemy = self.create_enemy("Close Enemy", x=16, y=25, distance=2)
-        self.test(
-            "Bow not viable at close range (< 6 feet)",
-            not shoot_bow.viable(),
-            f"Close enemy at {close_enemy.combat_position.x}, {close_enemy.combat_position.y}"
-        )
+        assert not shoot_bow.viable(), f"Close enemy at {close_enemy.combat_position.x}, {close_enemy.combat_position.y}"
         
         # Test 3: Enemy at valid range
         self.enemies = []
         self.player.combat_proximity = {}
         medium_enemy = self.create_enemy("Medium Enemy", x=20, y=25, distance=10)
-        self.test(
-            "Bow viable with enemy in range (6-50 feet)",
-            shoot_bow.viable(),
-            f"Medium enemy at {medium_enemy.combat_position.x}, {medium_enemy.combat_position.y}, distance=10"
-        )
+        assert shoot_bow.viable(), f"Medium enemy at {medium_enemy.combat_position.x}, {medium_enemy.combat_position.y}, distance=10"
         
         # Test 4: No arrows in inventory
         self.player.inventory = []
-        self.test(
-            "Bow not viable without arrows",
-            not shoot_bow.viable(),
-            "Removed all arrows from inventory"
-        )
+        assert not shoot_bow.viable(), "Removed all arrows from inventory"
     
     def test_range_calculations(self):
         """Test range calculations at various distances."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Range Calculations")
-        print("="*70)
-        
-        self.setup_player()
         shoot_bow = ShootBow(self.player)
         
         # Test distances from player at (15, 25)
@@ -215,19 +153,10 @@ class TestBowAndArrows:
             range_min, range_max = shoot_bow.mvrange
             in_range = range_min <= actual_dist <= range_max or actual_dist < 6
             
-            self.test(
-                f"Distance calculation: {desc}",
-                abs(actual_dist - expected_dist) < 1,
-                f"Expected {expected_dist}±1, got {actual_dist:.1f}"
-            )
+            assert abs(actual_dist - expected_dist) < 1, f"Distance calculation: {desc} - Expected {expected_dist}±1, got {actual_dist:.1f}"
     
     def test_bow_hit_chance_calculation(self):
         """Test hit chance calculations at various ranges and with modifiers."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Hit Chance Calculation")
-        print("="*70)
-        
-        self.setup_player()
         shoot_bow = ShootBow(self.player)
         self.player.known_moves = [shoot_bow]
         
@@ -241,31 +170,12 @@ class TestBowAndArrows:
         mid_hit = shoot_bow.calculate_hit_chance(mid_enemy)
         far_hit = shoot_bow.calculate_hit_chance(far_enemy)
         
-        self.test(
-            "Hit chance calculated for close range",
-            close_hit > 0,
-            f"Close hit chance: {close_hit}"
-        )
-        
-        self.test(
-            "Hit chance decreases with distance",
-            close_hit >= mid_hit >= far_hit,
-            f"Close: {close_hit}, Mid: {mid_hit}, Far: {far_hit}"
-        )
-        
-        self.test(
-            "Hit chance minimum is 2%",
-            far_hit >= 2,
-            f"Far hit chance: {far_hit}"
-        )
+        assert close_hit > 0, f"Close hit chance: {close_hit}"
+        assert close_hit >= mid_hit >= far_hit, f"Close: {close_hit}, Mid: {mid_hit}, Far: {far_hit}"
+        assert far_hit >= 2, f"Far hit chance: {far_hit}"
     
     def test_bow_multi_target_scenario(self):
         """Test bow behavior with multiple enemies at various distances."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Multi-Target Scenario")
-        print("="*70)
-        
-        self.setup_player()
         shoot_bow = ShootBow(self.player)
         self.player.known_moves = [shoot_bow]
         
@@ -275,18 +185,10 @@ class TestBowAndArrows:
         enemy2 = self.create_enemy("Enemy_B", x=25, y=28, distance=11)     # 11 feet away
         enemy3 = self.create_enemy("Enemy_C", x=30, y=25, distance=15)     # 15 feet away
         
-        self.test(
-            "Multiple enemies in combat_proximity",
-            len(self.player.combat_proximity) == 3,
-            f"Expected 3 enemies, got {len(self.player.combat_proximity)}"
-        )
+        assert len(self.player.combat_proximity) == 3, f"Expected 3 enemies, got {len(self.player.combat_proximity)}"
         
         # Check that bow is viable with multiple targets
-        self.test(
-            "Bow viable with multiple enemies",
-            shoot_bow.viable(),
-            "Should be able to shoot with multiple enemies"
-        )
+        assert shoot_bow.viable(), "Should be able to shoot with multiple enemies"
         
         # Verify each enemy has hit chance calculated
         hit_chances = {
@@ -296,20 +198,10 @@ class TestBowAndArrows:
         }
         
         for name, chance in hit_chances.items():
-            self.test(
-                f"Hit chance for {name}",
-                0 < chance <= 100,
-                f"Hit chance should be 0-100%, got {chance}%"
-            )
+            assert 0 < chance <= 100, f"Hit chance for {name} should be 0-100%, got {chance}%"
     
     def test_arrow_types_and_damage(self):
         """Test different arrow types have different properties."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Arrow Types and Damage")
-        print("="*70)
-        
-        self.setup_player()
-        
         # Test arrow properties
         arrow_types = [
             (WoodenArrow(), "Wooden"),
@@ -319,31 +211,12 @@ class TestBowAndArrows:
         ]
         
         for arrow, name in arrow_types:
-            self.test(
-                f"{name}Arrow has power attribute",
-                hasattr(arrow, 'power') and arrow.power > 0,
-                f"Arrow: {arrow}, Power: {getattr(arrow, 'power', 'N/A')}"
-            )
-            
-            self.test(
-                f"{name}Arrow has range modifiers",
-                hasattr(arrow, 'range_base_modifier') and hasattr(arrow, 'range_decay_modifier'),
-                f"Missing range modifiers for {name}Arrow"
-            )
-            
-            self.test(
-                f"{name}Arrow is subtype 'Arrow'",
-                arrow.subtype == "Arrow",
-                f"Subtype: {getattr(arrow, 'subtype', 'N/A')}"
-            )
+            assert hasattr(arrow, 'power') and arrow.power > 0, f"{name}Arrow has power attribute - Arrow: {arrow}, Power: {getattr(arrow, 'power', 'N/A')}"
+            assert hasattr(arrow, 'range_base_modifier') and hasattr(arrow, 'range_decay_modifier'), f"Missing range modifiers for {name}Arrow"
+            assert arrow.subtype == "Arrow", f"{name}Arrow is subtype 'Arrow' - Subtype: {getattr(arrow, 'subtype', 'N/A')}"
     
     def test_coordinate_positioning_with_bow(self):
         """Test bow mechanics with precise coordinate positioning."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Coordinate Positioning with Bow")
-        print("="*70)
-        
-        self.setup_player()
         shoot_bow = ShootBow(self.player)
         
         # Test from player at (15, 25) facing East (90°)
@@ -365,82 +238,22 @@ class TestBowAndArrows:
             dy = y - self.player.combat_position.y
             distance = ((dx**2 + dy**2)**0.5)
             
-            self.test(
-                f"Enemy positioned: {desc} at ({x}, {y}), distance {distance:.1f}ft",
-                enemy.combat_position.x == x and enemy.combat_position.y == y,
-                f"Expected ({x}, {y}), got ({enemy.combat_position.x}, {enemy.combat_position.y})"
-            )
+            assert enemy.combat_position.x == x and enemy.combat_position.y == y, \
+                f"Enemy positioned: {desc} at ({x}, {y}), distance {distance:.1f}ft - Expected ({x}, {y}), got ({enemy.combat_position.x}, {enemy.combat_position.y})"
     
     def test_fatigue_costs(self):
         """Test fatigue costs for bow attacks."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Fatigue Costs")
-        print("="*70)
-        
-        self.setup_player()
         shoot_bow = ShootBow(self.player)
         
-        self.test(
-            "ShootBow has fatigue_cost > 0",
-            shoot_bow.fatigue_cost > 0,
-            f"Fatigue cost: {shoot_bow.fatigue_cost}"
-        )
-        
-        self.test(
-            "Fatigue cost is reasonable (10-150)",
-            10 <= shoot_bow.fatigue_cost <= 150,
-            f"Fatigue cost: {shoot_bow.fatigue_cost}"
-        )
-        
-        self.test(
-            "Player has enough fatigue",
-            self.player.fatigue >= shoot_bow.fatigue_cost,
-            f"Player fatigue: {self.player.fatigue}, Cost: {shoot_bow.fatigue_cost}"
-        )
-    
-    def run_all_tests(self):
-        """Run all test groups."""
-        print("\n" + "="*70)
-        print("BOW AND ARROW COMBAT SYSTEM TEST SUITE")
-        print("="*70)
-        
-        self.test_bow_initialization()
-        self.test_bow_viability()
-        self.test_range_calculations()
-        self.test_bow_hit_chance_calculation()
-        self.test_bow_multi_target_scenario()
-        self.test_arrow_types_and_damage()
-        self.test_coordinate_positioning_with_bow()
-        self.test_fatigue_costs()
-        
-        # Print summary
-        total = self.passed + self.failed
-        print("\n" + "="*70)
-        print("TEST SUMMARY")
-        print("="*70)
-        print(f"Passed: {self.passed}/{total}")
-        print(f"Failed: {self.failed}/{total}")
-        
-        if self.failed == 0:
-            print("\n[SUCCESS] ALL TESTS PASSED!")
-        else:
-            print(f"\n[FAILURE] {self.failed} TEST(S) FAILED")
-        
-        print("="*70)
-        
-        return self.failed == 0
+        assert shoot_bow.fatigue_cost > 0, f"ShootBow has fatigue_cost > 0 - Fatigue cost: {shoot_bow.fatigue_cost}"
+        assert 10 <= shoot_bow.fatigue_cost <= 150, f"Fatigue cost is reasonable (10-150) - Fatigue cost: {shoot_bow.fatigue_cost}"
+        assert self.player.fatigue >= shoot_bow.fatigue_cost, f"Player has enough fatigue - Player fatigue: {self.player.fatigue}, Cost: {shoot_bow.fatigue_cost}"
 
 
 class TestSpecialAbilities:
     """Test suite for special abilities with coordinate system."""
     
-    def __init__(self):
-        self.passed = 0
-        self.failed = 0
-        self.player = None
-        self.enemies = []
-    
-    def setup_player(self):
+    def setup_method(self):
         """Initialize player."""
         self.player = Player()
         self.player.name = "Jean"
@@ -454,84 +267,15 @@ class TestSpecialAbilities:
         self.player.finesse = 10
         self.player.combat_position = CombatPosition(x=15, y=25, facing=Direction.N)
     
-    def test(self, name: str, condition: bool, details: str = ""):
-        """Record test result."""
-        status = "[PASS]" if condition else "[FAIL]"
-        print(f"{status} | {name}")
-        if details and not condition:
-            print(f"       {details}")
-        if condition:
-            self.passed += 1
-        else:
-            self.failed += 1
-    
     def test_special_ability_positioning(self):
         """Test that special abilities work with coordinate positioning."""
-        print("\n" + "="*70)
-        print("TEST GROUP: Special Ability Positioning")
-        print("="*70)
-        
-        self.setup_player()
-        
-        self.test(
-            "Player has combat_position",
-            self.player.combat_position is not None,
-            "combat_position should be set"
-        )
-        
-        self.test(
-            "Combat position has x, y coordinates",
-            hasattr(self.player.combat_position, 'x') and hasattr(self.player.combat_position, 'y'),
-            "Position should have x and y"
-        )
-        
-        self.test(
-            "Combat position has facing direction",
-            hasattr(self.player.combat_position, 'facing'),
-            "Position should have facing"
-        )
-        
-        self.test(
-            "Facing direction is Direction enum",
-            isinstance(self.player.combat_position.facing, Direction),
-            f"Expected Direction enum, got {type(self.player.combat_position.facing)}"
-        )
-    
-    def run_all_tests(self):
-        """Run all test groups."""
-        print("\n" + "="*70)
-        print("SPECIAL ABILITIES COORDINATE SYSTEM TEST SUITE")
-        print("="*70)
-        
-        self.test_special_ability_positioning()
-        
-        # Print summary
-        total = self.passed + self.failed
-        print("\n" + "="*70)
-        print("TEST SUMMARY")
-        print("="*70)
-        print(f"Passed: {self.passed}/{total}")
-        print(f"Failed: {self.failed}/{total}")
-        
-        if self.failed == 0:
-            print("\n[SUCCESS] ALL TESTS PASSED!")
-        else:
-            print(f"\n[FAILURE] {self.failed} TEST(S) FAILED")
-        
-        print("="*70)
-        
-        return self.failed == 0
+        assert self.player.combat_position is not None, "combat_position should be set"
+        assert hasattr(self.player.combat_position, 'x') and hasattr(self.player.combat_position, 'y'), "Position should have x and y"
+        assert hasattr(self.player.combat_position, 'facing'), "Position should have facing"
+        assert isinstance(self.player.combat_position.facing, Direction), f"Expected Direction enum, got {type(self.player.combat_position.facing)}"
 
 
 if __name__ == "__main__":
-    # Run bow and arrow tests
-    bow_tests = TestBowAndArrows()
-    bow_success = bow_tests.run_all_tests()
-    
-    # Run special abilities tests
-    ability_tests = TestSpecialAbilities()
-    ability_success = ability_tests.run_all_tests()
-    
-    # Exit with appropriate code
-    overall_success = bow_success and ability_success
-    sys.exit(0 if overall_success else 1)
+    # This allows running the file directly if needed, though pytest is preferred
+    import pytest
+    pytest.main([__file__])

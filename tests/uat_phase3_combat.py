@@ -1,7 +1,7 @@
 """
 User Acceptance Test (UAT) for Phase 3 Advanced Combat Moves
 
-This script tests Turn, WhirlAttack, FeintAndPivot, and KnockbackStunSpin
+This script tests Turn, WhirlAttack, FeintAndPivot, and VertigoSpin
 in an actual combat scenario to verify they work correctly with positioning,
 damage calculation, and status effects.
 """
@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
 
 from src.player import Player
 from src.npc import NPC
-from src.moves import Turn, WhirlAttack, FeintAndPivot, KnockbackStunSpin
+from src.moves import Turn, WhirlAttack, FeintAndPivot, VertigoSpin
 from src.positions import CombatPosition, Direction
 from src.items import Shortsword, LeatherArmor
 from neotermcolor import colored, cprint
@@ -129,7 +129,7 @@ def test_turn_move(player, enemies):
     turn.execute(player)
     
     cprint(f"\nResult:", "green")
-    assert player.combat_position.facing == Direction.E, "Turn should change facing"
+    assert player.combat_position.facing.value == Direction.E.value, "Turn should change facing"
     assert player.fatigue == initial_fatigue, "Turn should cost 0 fatigue"
     cprint(f"[OK] Facing changed to: {player.combat_position.facing.name}", "green")
     cprint(f"[OK] Fatigue unchanged: {player.fatigue}", "green")
@@ -222,11 +222,11 @@ def test_feint_and_pivot(player, enemies):
     cprint(f"[OK] New facing: {player.combat_position.facing.name}", "green")
 
 
-def test_knockback_stun_spin(player, enemies):
-    """Test the KnockbackStunSpin move."""
-    print_section("TEST 4: KNOCKBACK/STUN SPIN")
+def test_vertigo_spin(player, enemies):
+    """Test the VertigoSpin move."""
+    print_section("TEST 4: VERTIGO SPIN")
     
-    cprint("\nTesting KnockbackStunSpin - should damage, rotate facing, and apply Disoriented.", "green")
+    cprint("\nTesting VertigoSpin - should damage, rotate facing, and apply Disoriented.", "green")
     
     # Reset player to known state
     player.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
@@ -241,14 +241,14 @@ def test_knockback_stun_spin(player, enemies):
     initial_target_facing = target.combat_position.facing
     initial_target_states = len(target.states)
     
-    # Create and execute KnockbackStunSpin
-    spin = KnockbackStunSpin(player)
+    # Create and execute VertigoSpin
+    spin = VertigoSpin(player)
     spin.target = target
     spin.viable = lambda: True
     
     cprint(f"\nTarget: {target.name} at ({target.combat_position.x}, {target.combat_position.y})", "yellow")
     cprint(f"Target initial facing: {initial_target_facing.name}", "yellow")
-    cprint(f"Executing KnockbackStunSpin...", "yellow")
+    cprint(f"Executing VertigoSpin...", "yellow")
     spin.execute(player)
     
     cprint(f"\nResult:", "green")
@@ -324,10 +324,10 @@ def test_integration_scenario(player, enemies):
     feint.execute(player)
     cprint(f"Remaining fatigue: {player.fatigue}", "cyan")
     
-    # Round 4: KnockbackStunSpin to disable enemy
-    cprint("\n[ROUND 4] Execute KnockbackStunSpin to stun enemy", "yellow")
+    # Round 4: VertigoSpin to disable enemy
+    cprint("\n[ROUND 4] Execute VertigoSpin to stun enemy", "yellow")
     if enemies[1].is_alive:
-        spin = KnockbackStunSpin(player)
+        spin = VertigoSpin(player)
         spin.target = enemies[1]
         spin.viable = lambda: True
         spin.execute(player)
@@ -360,7 +360,7 @@ def run_all_tests():
         test_feint_and_pivot(player, enemies)
         
         player, enemies = setup_combat_scenario()
-        test_knockback_stun_spin(player, enemies)
+        test_vertigo_spin(player, enemies)
         
         player, enemies = setup_combat_scenario()
         test_integration_scenario(player, enemies)

@@ -130,6 +130,10 @@ _\\|//__( | )______)_/
         player.universe.testing_mode = testing_mode
         player.universe.game_config = config
         
+        # Apply starting experience if configured
+        if config.starting_exp > 0:
+            player.apply_starting_experience(config.starting_exp)
+        
         starting_map = next((map_item for map_item in player.universe.maps if
                             map_item.get('name') == starting_map_name), player.universe.starting_map_default)
 
@@ -137,8 +141,6 @@ _\\|//__( | )______)_/
             print(f"\n\n###\nTest Mode: {testing_mode}")
             print(f"Start Map: {starting_map_name}")
             print(f"Start Position: {startposition}\n###\n\n")
-            player.skill_exp['Basic'] = 9999
-            player.skill_exp['Unarmed'] = 9999
 
         player.map = starting_map
         player.location_x, player.location_y = startposition

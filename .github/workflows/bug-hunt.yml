@@ -1,0 +1,96 @@
+# Heart of Virtue — Automated Bug Hunt (Option B)
+#
+# This workflow is the Option B upgrade path for the manual bug-hunt loop.
+# Currently it runs the harness only (discovery phase) and uploads the report.
+#
+# To enable full autonomous fix-and-PR mode, uncomment the "Claude Bug Hunt"
+# step below and configure ANTHROPIC_API_KEY in repo secrets.
+
+name: Bug Hunt
+
+on:
+  # Run on a schedule (every Monday at 03:00 UTC).
+  schedule:
+    - cron: "0 3 * * 1"
+
+  # Allow manual trigger from GitHub Actions UI.
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario to run (leave blank for all)"
+        required: false
+        default: ""
+      full_autonomous:
+        description: "Enable autonomous fix-and-PR mode (requires ANTHROPIC_API_KEY)"
+        type: boolean
+        default: false
+
+jobs:
+  bug-hunt:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create branches
+      issues: write        # create/comment on issues
+      pull-requests: write # open PRs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ------------------------------------------------------------------
+      # Phase 1: Discovery — run the harness, produce a JSON report.
+      # This runs regardless of whether full autonomous mode is enabled.
+      # ------------------------------------------------------------------
+      - name: Run exploration harness
+        id: harness
+        run: |
+          SCENARIO_FLAG=""
+          if [ -n "${{ github.event.inputs.scenario }}" ]; then
+            SCENARIO_FLAG="--scenario ${{ github.event.inputs.scenario }}"
+          fi
+          python tools/bug_hunt.py --headless --output /tmp/bugs.json $SCENARIO_FLAG
+        continue-on-error: true  # don't fail the workflow on bugs found (exit 1)
+        env:
+          MYNX_LLM_ENABLED: "0"
+          MYNX_LLM_PROVIDER: "none"
+
+      - name: Upload bug report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bug-report-${{ github.run_id }}
+          path: /tmp/bugs.json
+          if-no-files-found: warn
+
+      # ------------------------------------------------------------------
+      # Phase 2 (Option B): Autonomous fix-and-PR via Claude Code CLI.
+      # Uncomment when:
+      #   1. ANTHROPIC_API_KEY is set in repo secrets.
+      #   2. You have verified the harness output is stable.
+      #   3. You are ready to allow autonomous PR creation.
+      #
+      # The prompt lives at tools/harness/prompts/bug_hunt_prompt.txt.
+      # ------------------------------------------------------------------
+
+      # - name: Claude Bug Hunt & Fix
+      #   if: github.event.inputs.full_autonomous == 'true'
+      #   run: |
+      #     pip install claude-code-sdk
+      #     claude \
+      #       -p "$(cat tools/harness/prompts/bug_hunt_prompt.txt)" \
+      #       --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Agent,mcp__github__*" \
+      #       --output-format json \
+      #       --no-interactive
+      #   env:
+      #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     MYNX_LLM_ENABLED: "0"
+      #     MYNX_LLM_PROVIDER: "none"

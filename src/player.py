@@ -12,6 +12,7 @@ import skilltree  # type: ignore
 from neotermcolor import colored, cprint
 from universe import tile_exists as tile_exists
 import positions  # type: ignore
+from combatant import Combatant
 
 
 def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
@@ -86,9 +87,20 @@ def generate_output_grid(data, rows=0, cols=0, border="*", data_color="green",
     return output
 
 
-class Player:
+class Player(Combatant):
     def __init__(self):
         self.inventory = [items.Gold(15), items.TatteredCloth(), items.ClothHood(), items.JeanWeddingBand()]
+        # Equip starting gear
+        for item in self.inventory:
+            if item.name in ["Tattered Cloth", "Cloth Hood"]:
+                item.isequipped = True
+                if "equip" in item.interactions:
+                    item.interactions.remove("equip")
+                if "unequip" not in item.interactions:
+                    item.interactions.append("unequip")
+        
+        # Note: refresh_stat_bonuses is called at the end of __init__ after all base stats are defined
+        self.username = None
         self.name = "Jean"
         self.name_long = "Jean Claire"
         self.pronouns = {
@@ -97,6 +109,9 @@ class Player:
         self.hp = 100
         self.maxhp = 100
         self.maxhp_base = 100
+        self.base_suggested_move_count = 1
+        self.last_move_data = {}  # Stores { "name": ..., "target_id": ..., "params": ... }
+        self.last_move_summary = "" # Text summary of the last move outcome
         self.fatigue = 150  # cannot perform moves without enough of this stuff
         self.maxfatigue = 150
         self.maxfatigue_base = 150
@@ -114,84 +129,9 @@ class Player:
         self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rating
         self.faith_base = 10
-        # A note about resistances: 1.0 means "no effect." 0.5 means "damage/chance reduced by half."
-        # 2.0 means "double damage/chance."
-        # Negative values mean the damage is absorbed (heals instead of damages.) Status resistances cannot be negative.
-        self.resistance = {
-            "fire": 1.0,
-            "ice": 1.0,
-            "shock": 1.0,
-            "earth": 1.0,
-            "light": 1.0,
-            "dark": 1.0,
-            "piercing": 1.0,
-            "slashing": 1.0,
-            "crushing": 1.0,
-            "spiritual": 1.0,
-            "pure": 1.0
-        }
-        self.resistance_base = {
-            "fire": 1.0,
-            "ice": 1.0,
-            "shock": 1.0,
-            "earth": 1.0,
-            "light": 1.0,
-            "dark": 1.0,
-            "piercing": 1.0,
-            "slashing": 1.0,
-            "crushing": 1.0,
-            "spiritual": 1.0,
-            "pure": 1.0
-        }
-        self.status_resistance = {
-            "generic": 1.0,  # Default status type for all states
-            "stun": 1.0,  # Unable to move; typically short duration
-            "poison": 1.0,  # Drains Health every combat turn/game tick; persists
-            "inflamed": 1.0,  # Fire damage over time
-            "sloth": 1.0,  # Drains Fatigue every combat turn
-            "apathy": 1.0,  # Drains HEAT every combat turn
-            "blind": 1.0,  # Miss physical attacks more frequently; persists
-            "incoherence": 1.0,  # Miracles fail more frequently; persists
-            "mute": 1.0,  # Cannot use Miracles; persists
-            "enraged": 1.0,  # Double physical damage given and taken
-            "enchanted": 1.0,  # Double magical damage given and taken
-            "ethereal": 1.0,  # Immune to physical damage but take 3x magical damage; persists
-            "berserk": 1.0,  # Auto attack, 1.5x physical damage
-            "slow": 1.0,  # All move times are doubled
-            "sleep": 1.0,  # Unable to move; removed upon physical damage
-            "confusion": 1.0,  # Uses random moves on random targets; removed upon physical damage
-            "cursed": 1.0,  # Makes luck 1, chance of using a random move with a random target; persists
-            "stop": 1.0,  # Unable to move; not removed with damage
-            "stone": 1.0,  # Unable to move; immune to damage; permanent death if allowed to persist after battle
-            "frozen": 1.0,  # Unable to move; removed with Fire magic;
-            # permanent death if allowed to persist after battle
-            "doom": 1.0,  # Death after n turns/ticks; persists; lifted with purification magic ONLY
-            "death": 1.0
-        }
-        self.status_resistance_base = {
-            "generic": 1.0,
-            "stun": 1.0,
-            "poison": 1.0,
-            "inflamed": 1.0,
-            "sloth": 1.0,
-            "apathy": 1.0,
-            "blind": 1.0,
-            "incoherence": 1.0,
-            "mute": 1.0,
-            "enraged": 1.0,
-            "enchanted": 1.0,
-            "ethereal": 1.0,
-            "berserk": 1.0,
-            "slow": 1.0,
-            "sleep": 1.0,
-            "confusion": 1.0,
-            "cursed": 1.0,
-            "stop": 1.0,
-            "stone": 1.0,
-            "frozen": 1.0,
-            "doom": 1.0,
-            "death": 1.0
-        }
+        # Resistance dicts are defined canonically in Combatant (combatant.py).
+        # This also fixes the "inflamed" → "enflamed" key to match State.statustype.
+        self._init_resistances()
         self.weight_tolerance = 20.00
         self.weight_tolerance_base = 20.00
         self.weight_current = 0.00
@@ -211,10 +151,13 @@ class Player:
         self.prev_location_x, self.prev_location_y = (0, 0)  # Track previous position for map display
         self.current_room = None
         self.victory = False
+        # API-safe leveling/attribute spending
+        self.pending_attribute_points = 0
         self.known_moves = [  # this should contain ALL known moves, regardless of whether they are
             # viable (moves will check their own conditions)
             moves.Check(self), moves.Wait(self), moves.Rest(self), moves.Turn(self),
-            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self), moves.ShootBow(self),
+            moves.UseItem(self), moves.Advance(self), moves.Withdraw(self), moves.Attack(self),
+            moves.Dodge(self), moves.Parry(self), moves.Jab(self),
         ]
         self.current_move = None
         self.heat = 1.0
@@ -223,6 +166,7 @@ class Player:
         self.in_combat = False
         self.combat_events = []  # list of pending events in combat. If non-empty, combat will be paused
         # while an event happens
+        self.combat_log = []  # List of combat messages
         self.combat_list = []  # populated by enemies currently being encountered. Should be empty outside of combat
         self.combat_list_allies = [self]  # friendly NPCs in combat that either help the player or just stand
         # there looking pretty
@@ -245,6 +189,7 @@ class Player:
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
+        self.explored_tiles = {}  # key: "x,y", value: {items, npcs, objects, exits}
         self.combat_idle_msg = [
             'Jean breathes heavily. ',
             'Jean swallows forcefully. ',
@@ -304,7 +249,7 @@ class Player:
             "that came with it.",
             'In spite of himself, Jean wonders just what, exactly, this is supposed to accomplish.',
             'Jean makes the sign of the cross.',
-            """Jean prays quietly, 
+            """Jean prays quietly,
             
 Je vous salue, Marie, pleine de grâce, Le Seigneur est avec vous.
 Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.
@@ -318,6 +263,23 @@ maintenant et à l'heure de notre mort. Amen.""",
             "An intense groaning makes its way through Jean's stomache.",
             "The smell of fresh, sweet lillies dances in Jean's memory. \nThey were Regina's favorite.",
         ]
+
+        # Apply stat bonuses from equipped items now that all base stats are initialized
+        functions.refresh_stat_bonuses(self)
+        
+        # Ensure player starts at full health and fatigue
+        self.hp = self.maxhp
+        self.fatigue = self.maxfatigue
+
+    def apply_starting_experience(self, exp_value: int):
+        """Apply starting experience to all skill categories if exp_value > 0.
+        
+        Args:
+            exp_value: The experience value to set for each skill category
+        """
+        if exp_value > 0 and hasattr(self, 'skilltree') and hasattr(self, 'skill_exp'):
+            for category in self.skilltree.subtypes.keys():
+                self.skill_exp[category] = exp_value
 
     def refresh_merchants(self, phrase: str = ''):
         """Debug command: iterate all maps and force every Merchant to run update_goods().
@@ -402,13 +364,6 @@ maintenant et à l'heure de notre mort. Amen.""",
         # Small pause for readability in interactive sessions
         time.sleep(0.1)
 
-    def cycle_states(self):
-        """
-        Loop through all of the states on the player and process the effects of each one
-        """
-        for state in self.states:
-            state.process(self)
-
     def apply_state(self, state):
         player_has_state = False
         if hasattr(state, "target"):
@@ -442,6 +397,9 @@ maintenant et à l'heure de notre mort. Amen.""",
             for item in remove_existing_gold_objects:
                 self.inventory.remove(item)
             gold_objects[0].amt = amt
+            gold_objects[0].count = amt
+            if hasattr(gold_objects[0], 'stack_grammar') and callable(gold_objects[0].stack_grammar):
+                gold_objects[0].stack_grammar()
             self.inventory.append(gold_objects[0])
 
     def combat_idle(self):
@@ -507,8 +465,61 @@ maintenant et à l'heure de notre mort. Amen.""",
 
         if self.level < 100:
             self.exp += amt
+
+        # In API mode (frontend), do not prompt for input during level-up.
+        if hasattr(self, '_combat_adapter'):
+            events = []
+            while self.exp >= self.exp_to_level:
+                events.append(self._level_up_api())
+            return events
+
         while self.exp >= self.exp_to_level:
             self.level_up()
+
+        return None
+
+    def _level_up_api(self):
+        """API-safe level up that mirrors terminal behavior without blocking for input.
+
+        Returns a dict describing the level-up event for frontend display.
+        """
+        old_level = int(getattr(self, 'level', 1) or 1)
+
+        # Level up bookkeeping (match terminal behavior)
+        self.level += 1
+        self.exp -= self.exp_to_level
+        self.exp_to_level = self.level * (150 - self.intelligence)
+
+        # Apply random bonus increases to base stats
+        bonuses = {}
+        attributes = [
+            ("strength_base", "Strength"),
+            ("finesse_base", "Finesse"),
+            ("speed_base", "Speed"),
+            ("endurance_base", "Endurance"),
+            ("charisma_base", "Charisma"),
+            ("intelligence_base", "Intelligence"),
+        ]
+
+        for attr, _label in attributes:
+            bonus = random.randint(0, 2)
+            if bonus:
+                setattr(self, attr, getattr(self, attr) + bonus)
+                bonuses[attr] = bonus
+
+        # Award attribute points to distribute (same range as terminal mode)
+        points = random.randint(6, 9)
+        if not hasattr(self, 'pending_attribute_points'):
+            self.pending_attribute_points = 0
+        self.pending_attribute_points += points
+
+        return {
+            "level_up": True,
+            "old_level": old_level,
+            "new_level": int(self.level),
+            "points_awarded": int(points),
+            "bonuses": bonuses,
+        }
 
     def learn_skill(self, skill):
         success = True
@@ -631,6 +642,9 @@ maintenant et à l'heure de notre mort. Amen.""",
                 try:
                     self.inventory.remove(item)
                     current_tile.items_here.append(item)
+                    # Update item description if it's stackable
+                    if hasattr(item, 'stack_grammar'):
+                        item.stack_grammar()
                 except ValueError:
                     continue
                 msg = random.choice(phrases).format(item=getattr(item, 'name', str(item)))
@@ -748,9 +762,6 @@ maintenant et à l'heure de notre mort. Amen.""",
             self.heat = 10
         if self.heat < 0.5:
             self.heat = 0.5
-
-    def is_alive(self):
-        return self.hp > 0
 
     def refresh_enemy_list_and_prox(self):
         for enemy in self.combat_list:
@@ -915,7 +926,6 @@ he lets out a barely audible whisper:""", "red")
 
     def print_status(self):
         functions.refresh_stat_bonuses(self)
-        self.fatigue = self.maxfatigue
         self.refresh_protection_rating()
         cprint("=====\nStatus\n=====\n"
                "{}".format(self.name_long), "cyan")
@@ -1010,7 +1020,7 @@ he lets out a barely audible whisper:""", "red")
 
         functions.await_input()
 
-    def equip_item(self, phrase=''):
+    def equip_item(self, phrase='', item_object=None):
 
         def confirm(thing):
             check = input(colored("Equip {}? (y/n)".format(thing.name), "cyan"))
@@ -1019,9 +1029,9 @@ he lets out a barely audible whisper:""", "red")
             else:
                 return False
 
-        target_item = None
+        target_item = item_object
         candidates = []
-        if phrase != '':  # equip the indicated item, if possible
+        if phrase != '' and target_item is None:  # equip the indicated item, if possible
             lower_phrase = phrase.lower()
             for item in self.inventory:
                 if hasattr(item, "isequipped"):
@@ -1029,12 +1039,16 @@ he lets out a barely audible whisper:""", "red")
                     if lower_phrase in search_item:
                         candidates.append(item)
             if target_item is None:
+                to_remove = []
                 for i, item in enumerate(self.current_room.items_here):
                     if hasattr(item, "isequipped"):
                         search_item = item.name.lower() + ' ' + item.announce.lower()
                         if lower_phrase in search_item:
-                            candidates.append(self.current_room.items_here.pop(i))
-        else:  # open the menu
+                            candidates.append(item)
+                            to_remove.append(item)
+                for item in to_remove:
+                    self.current_room.items_here.remove(item)
+        elif phrase == '' and target_item is None:  # open the menu
             target_item = self.equip_item_menu()
 
         if len(candidates) == 1:
@@ -1046,6 +1060,35 @@ he lets out a barely audible whisper:""", "red")
         if target_item is not None:
             if hasattr(target_item, "isequipped"):
                 if target_item not in self.inventory:  # if the player equips an item from the ground or via an event,
+                    # Check weight limit before picking up
+                    capacity = getattr(self, "weight_tolerance", getattr(self, "carrying_capacity", None))
+                    if capacity is not None and hasattr(self, "weight_current"):
+                         if self.weight_current + getattr(target_item, "weight", 0) > capacity:
+                             cprint("It's too heavy to carry!", "red")
+                             # Put it back in the room if it was previously in current_room.items_here
+                             # (though if passed directly as item_object it might not have been removed yet)
+                             if target_item in candidates: # Was popped in candidates logic
+                                self.current_room.items_here.append(target_item)
+                             return
+                    
+                    # Ensure it is removed from the room if it's there
+                    if target_item in self.current_room.items_here:
+                        try:
+                            self.current_room.items_here.remove(target_item)
+                        except ValueError:
+                            pass
+                    
+                    # Handle removal from container if applicable
+                    if hasattr(target_item, "_parent_container"):
+                        container = target_item._parent_container
+                        if hasattr(container, "inventory") and target_item in container.inventory:
+                            try:
+                                container.inventory.remove(target_item)
+                                if hasattr(container, "refresh_description"):
+                                    container.refresh_description()
+                            except (ValueError, AttributeError):
+                                pass
+
                     # add to inventory
                     self.inventory.append(target_item)
                 if target_item.isequipped:
@@ -1096,7 +1139,10 @@ he lets out a barely audible whisper:""", "red")
                             # before and it has a subtype, open an exp category
                             self.skill_exp[target_item.subtype] = 0
                             if self.testing_mode:  # noqa
-                                self.skill_exp[target_item.subtype] = 9999
+                                if self.game_config and hasattr(self.game_config, 'starting_exp') and self.game_config.starting_exp > 0:
+                                    self.skill_exp[target_item.subtype] = self.game_config.starting_exp
+                                else:
+                                    self.skill_exp[target_item.subtype] = 9999
                     functions.refresh_stat_bonuses(self)
                     self.refresh_protection_rating()
 
@@ -1225,10 +1271,10 @@ he lets out a barely audible whisper:""", "red")
                         if i == int(inventory_selection):
                             # Prevent using merchandise items until purchased
                             if getattr(item, 'merchandise', False):
-                                cprint("You must purchase {} before using or equipping it.".format(item.name), "red")
+                                cprint("{} must purchase {} before using or equipping it.".format(self.name, item.name), "red")
                                 break
                             if "use" in item.interactions and hasattr(item, "use"):
-                                print("Jean used {}!".format(item.name))
+                                print("{} used {}!".format(self.name, item.name))
                                 item.use(self)
                             elif "prefer" in item.interactions and hasattr(item, "prefer"):
                                 item.prefer(self)
@@ -1280,7 +1326,7 @@ he lets out a barely audible whisper:""", "red")
             # Restore previous position if move failed
             self.prev_location_x = self.location_x
             self.prev_location_y = self.location_y
-            cprint("You cannot go that way.", "red")
+            cprint("{} cannot go that way.".format(self.name), "red")
             time.sleep(1)
         else:
             print(tile.intro_text())
@@ -1376,6 +1422,11 @@ he lets out a barely audible whisper:""", "red")
                         break
 
     def search(self):
+        """
+        Searches the current room for hidden NPCs, items, and objects.
+        Reveals any hidden entities if the player's search ability exceeds their hide factor.
+        Prints discovery messages for found entities, or a message if nothing is found.
+        """
         print("Jean searches around the area...")
         search_ability = int(((self.finesse * 2) + (self.intelligence * 3) + self.faith) * random.uniform(0.5, 1.5))
         time.sleep(5)
@@ -1402,14 +1453,23 @@ he lets out a barely audible whisper:""", "red")
             print("...but he couldn't find anything of interest.")
 
     def menu(self):
+        """
+        Opens the main menu for the player to save, load, or exit the game.
+        Executes an autosave before opening the menu.
+        """
         functions.autosave(self)
         self.main_menu = True
 
     def save(self):
+        """
+        Opens the save menu for the player to save his progress.
+        """
         functions.save_select(self)
 
     def stack_inv_items(self):
-        # Alias call to functions.stack_inv_items to keep player code cleaner
+        """
+        Alias call to functions.stack_inv_items to keep player code cleaner
+        """
         stack_inv_items(self)
 
     def commands(self):
@@ -1779,12 +1839,3 @@ he lets out a barely audible whisper:""", "red")
                 self.combat_list_allies[party_size].name, "cyan") + colored(" follow Jean.", "green")
             print(output)
 
-    def get_equipped_items(self):
-        """
-        Returns a list of all items in the player's inventory that are currently equipped.
-        """
-        equipped_items = []
-        for item in self.inventory:
-            if hasattr(item, "isequipped") and item.isequipped:
-                equipped_items.append(item)
-        return equipped_items

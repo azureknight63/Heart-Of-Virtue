@@ -23,6 +23,7 @@ class GameConfig:
     use_colour: bool = True
     enable_animations: bool = True
     animation_speed: float = 1.0
+    starting_exp: int = 0
     
     # === [game] section: Debug settings ===
     debug_mode: bool = False
@@ -188,6 +189,7 @@ class ConfigManager:
         self.config.use_colour = section.getboolean('use_colour', fallback=True)
         self.config.enable_animations = section.getboolean('enable_animations', fallback=True)
         self.config.animation_speed = section.getfloat('animation_speed', fallback=1.0)
+        self.config.starting_exp = section.getint('starting_exp', fallback=0)
         
         # Debug settings
         self.config.debug_mode = section.getboolean('debug_mode', fallback=False)

@@ -1,0 +1,588 @@
+diff --git a/frontend/src/components/EventDialog.jsx b/frontend/src/components/EventDialog.jsx
+index c5cfed1..fd46264 100644
+--- a/frontend/src/components/EventDialog.jsx
++++ b/frontend/src/components/EventDialog.jsx
+@@ -6,10 +6,11 @@ import GameButton from './GameButton'
+  * EventDialog - Displays event output text and handles player input for events
+  * Supports choice selection, text input, and number input with keyboard shortcuts
+  */
+-export default function EventDialog({ event, onClose, onSubmitInput }) {
++export default function EventDialog({ event, history = [], onClose, onSubmitInput }) {
+     const [displayedText, setDisplayedText] = useState('')
+     const [isComplete, setIsComplete] = useState(false)
+     const [showInput, setShowInput] = useState(false)
++    const [showHistory, setShowHistory] = useState(false)
+     const [textInput, setTextInput] = useState('')
+     const [numberInput, setNumberInput] = useState('')
+     const [validationMessage, setValidationMessage] = useState('')
+@@ -235,39 +236,107 @@ export default function EventDialog({ event, onClose, onSubmitInput }) {
+                     height: '100%',
+                 }}
+             >
+-                {/* Event Text Output */}
+-                <div
+-                    data-testid="event-text-container"
+-                    onClick={(e) => {
+-                        e.stopPropagation();
+-                        finishImmediately();
+-                    }}
+-                    style={{
+-                        padding: '16px',
+-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+-                        border: '2px solid #00cc66',
+-                        borderRadius: '8px',
+-                        color: '#88ffcc',
+-                        fontFamily: 'monospace',
+-                        fontSize: '16px',
+-                        lineHeight: '1.8',
+-                        whiteSpace: 'pre-wrap',
+-                        minHeight: '120px',
+-                        maxHeight: '400px',
+-                        overflowY: 'auto',
+-                        boxShadow: 'inset 0 0 15px rgba(0,0,0,0.9)',
+-                        cursor: isComplete ? 'default' : 'pointer',
+-                    }}
+-                >
+-                    {displayedText}
+-                    {!isComplete && (
+-                        <span style={{
+-                            borderRight: '3px solid #00cc66',
+-                            marginLeft: '4px',
+-                            animation: 'blink 1s step-end infinite'
+-                        }}>&nbsp;</span>
+-                    )}
+-                </div>
++                {/* Event History Toggle (only if multiple messages) */}
++                {history.length > 1 && (
++                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-8px' }}>
++                        <button
++                            onClick={(e) => {
++                                e.stopPropagation();
++                                setShowHistory(!showHistory);
++                            }}
++                            style={{
++                                background: 'rgba(0, 204, 102, 0.1)',
++                                border: '1px solid rgba(0, 204, 102, 0.4)',
++                                color: '#00ff88',
++                                fontSize: '11px',
++                                fontWeight: 'bold',
++                                cursor: 'pointer',
++                                padding: '4px 12px',
++                                borderRadius: '4px',
++                                textTransform: 'uppercase',
++                                transition: 'all 0.2s ease',
++                                display: 'flex',
++                                alignItems: 'center',
++                                gap: '6px'
++                            }}
++                        >
++                            {showHistory ? '↩ Back to Present' : `📜 View Log (${history.length})`}
++                        </button>
++                    </div>
++                )}
++
++                {/* Event Text Output / History View */}
++                {showHistory ? (
++                    <div
++                        onClick={(e) => e.stopPropagation()}
++                        style={{
++                            padding: '20px',
++                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
++                            border: '2px dashed #00cc66',
++                            borderRadius: '10px',
++                            color: '#88ffcc',
++                            fontFamily: 'monospace',
++                            fontSize: '15px',
++                            lineHeight: '1.8',
++                            height: '350px',
++                            overflowY: 'auto',
++                            boxShadow: 'inset 0 0 20px rgba(0,0,0,1)',
++                            display: 'flex',
++                            flexDirection: 'column',
++                            gap: '20px',
++                            scrollbarWidth: 'thin',
++                            scrollbarColor: '#00cc66 rgba(0,0,0,0.5)'
++                        }}
++                        ref={(el) => {
++                            if (el) el.scrollTop = el.scrollHeight;
++                        }}
++                    >
++                        {history.map((text, idx) => (
++                            <div key={idx} style={{
++                                paddingBottom: idx === history.length - 1 ? '0' : '20px',
++                                borderBottom: idx === history.length - 1 ? 'none' : '1px solid rgba(0, 204, 102, 0.2)',
++                                whiteSpace: 'pre-wrap',
++                                opacity: idx === history.length - 1 ? 1 : 0.6
++                            }}>
++                                <span style={{ color: '#00ff88', marginRight: '10px', fontSize: '12px' }}>[{idx + 1}]</span>
++                                {text}
++                            </div>
++                        ))}
++                    </div>
++                ) : (
++                    <div
++                        data-testid="event-text-container"
++                        onClick={(e) => {
++                            e.stopPropagation();
++                            finishImmediately();
++                        }}
++                        style={{
++                            padding: '16px',
++                            backgroundColor: 'rgba(0, 0, 0, 0.7)',
++                            border: '2px solid #00cc66',
++                            borderRadius: '8px',
++                            color: '#88ffcc',
++                            fontFamily: 'monospace',
++                            fontSize: '16px',
++                            lineHeight: '1.8',
++                            whiteSpace: 'pre-wrap',
++                            minHeight: '120px',
++                            maxHeight: '400px',
++                            overflowY: 'auto',
++                            boxShadow: 'inset 0 0 15px rgba(0,0,0,0.9)',
++                            cursor: isComplete ? 'default' : 'pointer',
++                        }}
++                    >
++                        {displayedText}
++                        {!isComplete && (
++                            <span style={{
++                                borderRight: '3px solid #00cc66',
++                                marginLeft: '4px',
++                                animation: 'blink 1s step-end infinite'
++                            }}>&nbsp;</span>
++                        )}
++                    </div>
++                )}
+ 
+                 {/* Input Section */}
+                 {showInput && needsInput && (
+diff --git a/frontend/src/components/InteractPanel.jsx b/frontend/src/components/InteractPanel.jsx
+index 9d25373..be5b6fd 100644
+--- a/frontend/src/components/InteractPanel.jsx
++++ b/frontend/src/components/InteractPanel.jsx
+@@ -11,12 +11,15 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
+     const [targets, setTargets] = useState([])
+     const [selectedTarget, setSelectedTarget] = useState(initialTarget || null)
+     const [interactionOutput, setInteractionOutput] = useState(null)
++    const [interactionHistory, setInteractionHistory] = useState([])
++    const [showHistory, setShowHistory] = useState(false)
+     const [loading, setLoading] = useState(false)
+     const [isLocked, setIsLocked] = useState(false)
+     const [error, setError] = useState(null)
+     const [quantity, setQuantity] = useState(1)
+     const [showQuantityInput, setShowQuantityInput] = useState(false)
+     const [pendingAction, setPendingAction] = useState(null)
++    const historyRef = useRef(null)
+ 
+     useEffect(() => {
+         if (location) {
+@@ -49,16 +52,19 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
+                     if (hasChanged) {
+                         setSelectedTarget(updatedTarget)
+                     }
+-                } else if (!interactionOutput) {
+-                    // Only clear if we're not showing an interaction result
++                } else {
++                    // Target is gone! Clear it so we don't try to interact with it again
+                     setSelectedTarget(null)
+                 }
+             }
+         }
+-    }, [location, interactionOutput, selectedTarget])
++    }, [location, selectedTarget])
+ 
+     const handleTargetClick = (target) => {
+         setSelectedTarget(target)
++        setInteractionOutput(null)
++        setInteractionHistory([])
++        setShowHistory(false)
+         setError(null)
+         setShowQuantityInput(false)
+     }
+@@ -85,7 +91,9 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
+             const data = response.data
+ 
+             if (data.success) {
+-                setInteractionOutput(data.message || 'Action completed.')
++                const message = data.message || 'Action completed.'
++                setInteractionOutput(message)
++                setInteractionHistory(prev => [...prev, message])
+ 
+                 // Check if this action should lock the panel (e.g. item moved)
+                 const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
+@@ -135,7 +143,7 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
+                     onInteractionComplete()
+                 }
+             } else {
+-                setError(data.error || 'Interaction failed')
++                setError(data.error || data.message || 'Interaction failed')
+             }
+         } catch (err) {
+             console.error('Interaction error:', err)
+@@ -148,6 +156,8 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
+     const handleBack = () => {
+         setSelectedTarget(null)
+         setInteractionOutput(null)
++        setInteractionHistory([])
++        setShowHistory(false)
+         setError(null)
+         setIsLocked(false)
+     }
+@@ -402,33 +412,106 @@ export default function InteractPanel({ location, onClose, onEventsTriggered, on
+                             gap: '10px',
+                         }}>
+                             {selectedTarget.keywords && selectedTarget.keywords.length > 0 ? (
+-                                selectedTarget.keywords.map((keyword, idx) => (
+-                                    <GameButton
+-                                        key={idx}
+-                                        onClick={() => handleActionClick(keyword)}
+-                                        disabled={loading || isLocked}
+-                                        variant="primary"
+-                                        style={{
+-                                            flex: '1 0 120px',
+-                                            textTransform: 'uppercase',
+-                                            fontSize: '13px',
+-                                            padding: '12px',
+-                                            opacity: (loading || isLocked) ? 0.6 : 1,
+-                                        }}
+-                                    >
+-                                        {keyword}
+-                                    </GameButton>
+-                                ))
++                                selectedTarget.keywords
++                                    .filter(keyword => !selectedTarget.action_aliases?.includes(keyword))
++                                    .map((keyword, idx) => (
++                                        <GameButton
++                                            key={idx}
++                                            onClick={() => handleActionClick(keyword)}
++                                            disabled={loading || isLocked}
++                                            variant="primary"
++                                            style={{
++                                                flex: '1 0 120px',
++                                                textTransform: 'uppercase',
++                                                fontSize: '13px',
++                                                padding: '12px',
++                                                opacity: (loading || isLocked) ? 0.6 : 1,
++                                            }}
++                                        >
++                                            {keyword}
++                                        </GameButton>
++                                    ))
+                             ) : (
+                                 <div style={{ color: '#666', fontSize: '13px', fontStyle: 'italic', width: '100%', textAlign: 'center', padding: '10px' }}>
+                                     No actions available for this target.
+                                 </div>
+                             )}
+                         </div>
++                    </div>
++                )}
+ 
+-                        {/* Interaction Output */}
+-                        {interactionOutput && (
+-                            <TypewriterOutput text={interactionOutput} />
++                {/* Interaction Output & History */}
++                {(interactionOutput || interactionHistory.length > 0) && (
++                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
++                        {/* History Toggle Header */}
++                        {interactionHistory.length > 1 && (
++                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
++                                <div style={{ color: '#888', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
++                                    {showHistory ? 'Interaction History' : 'Last Message'}
++                                </div>
++                                <button
++                                    onClick={() => setShowHistory(!showHistory)}
++                                    style={{
++                                        background: 'none',
++                                        border: 'none',
++                                        color: '#ffaa00',
++                                        fontSize: '10px',
++                                        fontWeight: 'bold',
++                                        cursor: 'pointer',
++                                        padding: '4px 8px',
++                                        borderRadius: '4px',
++                                        backgroundColor: 'rgba(255, 170, 0, 0.1)',
++                                        textTransform: 'uppercase',
++                                        transition: 'all 0.2s ease',
++                                        display: 'flex',
++                                        alignItems: 'center',
++                                        gap: '4px'
++                                    }}
++                                >
++                                    {showHistory ? '↩ Hide History' : `📜 View History (${interactionHistory.length})`}
++                                </button>
++                            </div>
++                        )}
++
++                        {showHistory ? (
++                            <div
++                                ref={(el) => {
++                                    if (el) el.scrollTop = el.scrollHeight;
++                                }}
++                                style={{
++                                    padding: '16px',
++                                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
++                                    border: '1px solid rgba(255, 170, 0, 0.3)',
++                                    borderRadius: '8px',
++                                    color: '#ffcc88',
++                                    fontFamily: 'monospace',
++                                    fontSize: '14px',
++                                    lineHeight: '1.6',
++                                    maxHeight: '300px',
++                                    overflowY: 'auto',
++                                    boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
++                                    display: 'flex',
++                                    flexDirection: 'column',
++                                    gap: '12px',
++                                    scrollbarWidth: 'thin',
++                                    scrollbarColor: '#ffaa00 rgba(0,0,0,0.2)'
++                                }}
++                            >
++                                {interactionHistory.map((msg, idx) => (
++                                    <div key={idx} style={{
++                                        paddingBottom: idx === interactionHistory.length - 1 ? '0' : '12px',
++                                        borderBottom: idx === interactionHistory.length - 1 ? 'none' : '1px solid rgba(255, 170, 0, 0.1)',
++                                        whiteSpace: 'pre-wrap',
++                                        opacity: idx === interactionHistory.length - 1 ? 1 : 0.7
++                                    }}>
++                                        {msg}
++                                    </div>
++                                ))}
++                            </div>
++                        ) : (
++                            interactionOutput && (
++                                <TypewriterOutput text={interactionOutput} />
++                            )
+                         )}
+                     </div>
+                 )}
+diff --git a/frontend/src/components/InteractPanel.test.jsx b/frontend/src/components/InteractPanel.test.jsx
+index c6f8266..fa42b19 100644
+--- a/frontend/src/components/InteractPanel.test.jsx
++++ b/frontend/src/components/InteractPanel.test.jsx
+@@ -125,7 +125,7 @@ describe('InteractPanel', () => {
+   it('calls onClose when close button is clicked', () => {
+     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+ 
+-    fireEvent.click(screen.getByText(/Close/i));
++    fireEvent.click(screen.getByText('✕'));
+     expect(mockOnClose).toHaveBeenCalled();
+   });
+ 
+@@ -170,7 +170,7 @@ describe('InteractPanel', () => {
+     const emptyLocation = { ...mockLocation, npcs: [], objects: [], items: [] };
+     render(<InteractPanel location={emptyLocation} onClose={mockOnClose} />);
+ 
+-    expect(screen.getByText(/Nothing to interact with here./i)).toBeDefined();
++    expect(screen.getByText(/There is nothing here to interact with./i)).toBeDefined();
+   });
+ 
+   it('handles cancel in quantity input', () => {
+@@ -211,7 +211,7 @@ describe('InteractPanel', () => {
+       npcs: [],
+     };
+ 
+-    rerender(<InteractPanel location={newLocation} onClose={newLocation} />); // Just pass something else for location
++    rerender(<InteractPanel location={newLocation} onClose={mockOnClose} />); // Use the original mockOnClose
+ 
+     expect(screen.queryByText(/A stern guard./i)).toBeNull();
+   });
+diff --git a/frontend/src/components/RoomContents.jsx b/frontend/src/components/RoomContents.jsx
+index 189cda4..efbae7d 100644
+--- a/frontend/src/components/RoomContents.jsx
++++ b/frontend/src/components/RoomContents.jsx
+@@ -17,29 +17,54 @@ export default function RoomContents({ location, onInteract }) {
+   const renderTextWithLinks = (text, preferredEntity = null) => {
+     if (!text) return null
+ 
+-    // Sort entities by name length descending to avoid partial matches
+-    const sortedEntities = [...allEntities].sort((a, b) => b.name.length - a.name.length)
++    // Create a mapping of all matchable terms (names and aliases) to their entities
++    const termMap = []
++    allEntities.forEach(entity => {
++      // Add the name
++      termMap.push({ term: entity.name, entity })
++      // Add aliases if they exist
++      if (entity.aliases && Array.isArray(entity.aliases)) {
++        entity.aliases.forEach(alias => {
++          termMap.push({ term: alias, entity })
++        })
++      }
++    })
++
++    // Sort terms by length descending to avoid partial matches
++    termMap.sort((a, b) => b.term.length - a.term.length)
+ 
+-    // Create a regex that matches any of the entity names
+-    const names = sortedEntities.map(e => e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+-    if (names.length === 0) return text
++    // Create a regex that matches any of the terms
++    const terms = termMap.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
++    if (terms.length === 0) return text
+ 
+-    const regex = new RegExp(`(${names.join('|')})`, 'gi')
++    const regex = new RegExp(`(${terms.join('|')})`, 'gi')
+     const parts = text.split(regex)
+ 
+     return parts.map((part, i) => {
+-      // Find the entity for this part. If it matches the preferredEntity's name, use that specific one.
++      // Find the entity for this part.
+       let entity = null
+-      if (preferredEntity && preferredEntity.name.toLowerCase() === part.toLowerCase()) {
+-        entity = preferredEntity
+-      } else {
+-        entity = sortedEntities.find(e => e.name.toLowerCase() === part.toLowerCase())
++
++      // 1. Check if it matches preferredEntity's name or aliases
++      if (preferredEntity) {
++        const isMatch = part.toLowerCase() === preferredEntity.name.toLowerCase() ||
++          (preferredEntity.aliases && preferredEntity.aliases.some(a => a.toLowerCase() === part.toLowerCase()))
++        if (isMatch) {
++          entity = preferredEntity
++        }
++      }
++
++      // 2. Otherwise search in termMap
++      if (!entity) {
++        const match = termMap.find(t => t.term.toLowerCase() === part.toLowerCase())
++        if (match) {
++          entity = match.entity
++        }
+       }
+ 
+       if (entity) {
+         const description = entity.description || `Interact with ${entity.name}`
+-        const truncatedDesc = description.length > 150 
+-          ? `${description.substring(0, 147)}...` 
++        const truncatedDesc = description.length > 150
++          ? `${description.substring(0, 147)}...`
+           : description
+ 
+         return (
+@@ -122,9 +147,9 @@ export default function RoomContents({ location, onInteract }) {
+         flexDirection: 'column',
+         gap: '10px',
+       }}>
+-        {/* Main room description */}
++        {/* Main room description - no links to avoid confusion with non-interactable flavor text */}
+         <p className="text-lg text-[#00ddaa]" style={{ lineHeight: '1.6' }}>
+-          {renderTextWithLinks(roomDescriptionText)}
++          {roomDescriptionText}
+         </p>
+ 
+         {/* Content descriptions immediately following */}
+diff --git a/frontend/src/hooks/useApi.js b/frontend/src/hooks/useApi.js
+index d3decd8..f16a12d 100644
+--- a/frontend/src/hooks/useApi.js
++++ b/frontend/src/hooks/useApi.js
+@@ -12,10 +12,24 @@ const transformCombatData = (data) => ({
+ 
+ // Helper to transform location data
+ const transformLocationData = (room) => {
+-  const transformed = { ...room }
+-  if (transformed.exits && typeof transformed.exits === 'object') {
+-    transformed.exits = Object.keys(transformed.exits)
++  console.log('[useWorld] Transform input:', room);
++
++  // Create a completely new object with new array references
++  // This ensures React's shallow comparison detects changes
++  const transformed = {
++    ...room,
++    // Always create new array references to trigger React re-renders
++    exits: Array.isArray(room.exits)
++      ? [...room.exits]
++      : (room.exits && typeof room.exits === 'object' ? Object.keys(room.exits) : []),
++    items: room.items ? [...room.items] : [],
++    npcs: room.npcs ? [...room.npcs] : [],
++    objects: room.objects ? [...room.objects] : [],
++    // Add timestamp to guarantee unique object reference
++    _fetchedAt: Date.now()
+   }
++
++  console.log('[useWorld] Transform output:', transformed);
+   return transformed
+ }
+ 
+@@ -196,6 +210,7 @@ export const useWorld = () => {
+       setLoading(true)
+       const response = await apiEndpoints.world.getCurrentLocation()
+       const room = transformLocationData(response.data.room)
++      console.log(`[useWorld] Fetched location (${room.x}, ${room.y}). Exits:`, room.exits);
+       setLocation(room)
+       setError(null)
+ 
+diff --git a/frontend/src/pages/GamePage.jsx b/frontend/src/pages/GamePage.jsx
+index 2d28bbf..c702fff 100644
+--- a/frontend/src/pages/GamePage.jsx
++++ b/frontend/src/pages/GamePage.jsx
+@@ -19,6 +19,7 @@ export default function GamePage() {
+   // Event handling state
+   const [eventQueue, setEventQueue] = useState([])
+   const [currentEvent, setCurrentEvent] = useState(null)
++  const [eventHistory, setEventHistory] = useState([])
+ 
+   // Combat log display progress (for map synchronization)
+   const [currentLogIndex, setCurrentLogIndex] = useState(0)
+@@ -73,12 +74,14 @@ export default function GamePage() {
+       const tileKey = `${location.x},${location.y}`
+       setExploredTiles(prev => {
+         const newMap = new Map(prev)
+-        // Store tile data with items, NPCs, and objects
++        // Store tile data with items, NPCs, objects, and EXITS
+         newMap.set(tileKey, {
+           items: location.items || [],
+           npcs: location.npcs || [],
+-          objects: location.objects || []
++          objects: location.objects || [],
++          exits: location.exits || []
+         })
++        console.log(`[GamePage] Updating exploredTiles for ${tileKey}. Exits:`, location.exits);
+         return newMap
+       })
+     }
+@@ -90,12 +93,22 @@ export default function GamePage() {
+       const nextEvent = eventQueue[0]
+       setCurrentEvent(nextEvent)
+       setEventQueue(prev => prev.slice(1))
++
++      // Add to history
++      const text = nextEvent.output_text || nextEvent.message || nextEvent.description || ''
++      if (text.trim()) {
++        setEventHistory(prev => [...prev, text])
++      }
+     }
+   }, [eventQueue, currentEvent])
+ 
+   // Handle event close
+   const handleEventClose = () => {
+     setCurrentEvent(null)
++    // Clear history if we're actually closing the dialog and no more events are pending
++    if (eventQueue.length === 0) {
++      setEventHistory([])
++    }
+   }
+ 
+   // Handle event input submission
+@@ -147,6 +160,7 @@ export default function GamePage() {
+           needs_input: false
+         }
+         setCurrentEvent(resultEvent)
++        setEventHistory(prev => [...prev, data.output_text])
+       }
+ 
+       // If event still needs input (persistent), add back to front of queue
+@@ -267,6 +281,7 @@ export default function GamePage() {
+         }
+ 
+         setCurrentEvent(alertEvent)
++        setEventHistory(prev => [...prev, dialogDescription])
+         setCombatDialogShown(true)
+       } else {
+         // Dialog already shown, just ensure mode is correct
+@@ -410,6 +425,7 @@ export default function GamePage() {
+       {currentEvent && (
+         <EventDialog
+           event={currentEvent}
++          history={eventHistory}
+           onClose={handleEventClose}
+           onSubmitInput={handleEventInput}
+         />
