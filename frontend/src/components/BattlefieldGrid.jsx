@@ -41,6 +41,21 @@ const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Grid / camera constants — module level
+// ---------------------------------------------------------------------------
+const MAP_SIZE = 13;   // grid coordinates 0–12
+const VIEW_SIZE = 15;  // viewport cell count in zoomed mode
+const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
+const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
+const CAMERA_EPSILON = 0.004; // settle threshold (cells)
+
+/** Snap a float camera origin to the nearest valid integer cell. */
+const computeSnapOrigin = (cam, cols) => ({
+  leftX: Math.round(Math.max(0, Math.min(MAP_SIZE - cols, cam.x))),
+  topY:  Math.round(Math.min(MAP_SIZE - 1, Math.max(cols - 1, cam.y))),
+});
+
+// ---------------------------------------------------------------------------
 // Pure helpers — module level, stable references, never re-created
 // ---------------------------------------------------------------------------
 
@@ -351,10 +366,13 @@ const EntityLayer = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'transform 0.5s ease-in-out',
+            opacity: item.isDying ? 0 : 1,
+            transition: item.isDying
+              ? 'opacity 0.65s ease-out, transform 0.5s ease-in-out'
+              : 'transform 0.5s ease-in-out',
             willChange: 'transform',
-            cursor: 'pointer',
-            pointerEvents: 'auto',
+            cursor: item.isDying ? 'default' : 'pointer',
+            pointerEvents: item.isDying ? 'none' : 'auto',
             ...item.style,
             zIndex: isHighlighted ? 50 : (item.style.zIndex || 20)
           }}
@@ -577,6 +595,17 @@ export default function BattlefieldGrid({
   const [hoveredEntity, setHoveredEntity] = useState(null);
   const [selectedEntity, setSelectedEntity] = useState(null);
 
+  // Smooth camera — zoomed mode only. All mutable values live in refs so the
+  // RAF loop never needs to be recreated and only drives a React re-render
+  // when the integer snap cell actually changes (i.e. Jean crosses a cell
+  // boundary), keeping frame-level CPU cost off the React scheduler.
+  const cameraRef    = useRef(null); // { x: float, y: float } — current smooth position
+  const targetCamRef = useRef(null); // { x: float, y: float } — desired position
+  const snapCellRef  = useRef(null); // { leftX, topY } — last committed integer snap
+  const contentDivRef = useRef(null); // wrapper div that receives the sub-cell CSS transform
+  const cameraRafRef  = useRef(null);
+  const [snapState, setSnapState] = useState(null); // triggers re-render on cell boundary cross
+
   const handleGridClick = (e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);
   };
@@ -615,7 +644,7 @@ export default function BattlefieldGrid({
           if (wasAlive && isNowDead) {
             const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
             if (lastKnown?.position) {
-              animations.push({ type: 'death', target_id: anim.target_id, position: lastKnown.position });
+              animations.push({ type: 'death', target_id: anim.target_id, position: lastKnown.position, entity: lastKnown });
               killedIds.add(anim.target_id);
             }
           }
@@ -636,8 +665,9 @@ export default function BattlefieldGrid({
     setAnimationPhase(config.phases[0].name);
 
     // Register the entity as dying so DeathAnimationLayer can render the burst
+    // and EntityLayer can fade out the marker
     if (animData.type === 'death' && animData.position) {
-      setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position }]);
+      setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position, entity: animData.entity }]);
     }
 
     let currentPhaseIndex = 0;
@@ -673,6 +703,92 @@ export default function BattlefieldGrid({
     }
   }, [activeAnimation, animationQueue, playAnimation]);
 
+  // Compute player position before camera effect (needed for camera target calculation)
+  const playerPos = getPos(combat?.player);
+
+  // Smooth camera RAF loop — reads only refs, drives contentDivRef transform
+  // directly (no React state per frame). setSnapState is called only when the
+  // integer cell boundary changes (~once per combat beat at most).
+  const animateCamera = useCallback(() => {
+    const cam = cameraRef.current;
+    const tgt = targetCamRef.current;
+    if (!cam || !tgt || !contentDivRef.current) {
+      cameraRafRef.current = null;
+      return;
+    }
+
+    const dx = tgt.x - cam.x;
+    const dy = tgt.y - cam.y;
+
+    if (Math.abs(dx) < CAMERA_EPSILON && Math.abs(dy) < CAMERA_EPSILON) {
+      // Settled — snap to exact target and clear the transform offset
+      cameraRef.current = { x: tgt.x, y: tgt.y };
+      cameraRafRef.current = null;
+      contentDivRef.current.style.transform = '';
+      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE);
+      if (!snapCellRef.current || snap.leftX !== snapCellRef.current.leftX || snap.topY !== snapCellRef.current.topY) {
+        snapCellRef.current = snap;
+        setSnapState({ ...snap });
+      }
+      return;
+    }
+
+    // Lerp one step toward target
+    cameraRef.current = { x: cam.x + dx * CAMERA_LERP, y: cam.y + dy * CAMERA_LERP };
+    const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE);
+
+    // Sub-cell offset: shift the content div to cover the fractional remainder
+    // fracX > 0 ⇒ shift right (snap over-stepped left);  fracY < 0 ⇒ shift up
+    const fracX = (snap.leftX - cameraRef.current.x) / VIEW_SIZE * 100;
+    const fracY = (cameraRef.current.y - snap.topY) / VIEW_SIZE * 100;
+    contentDivRef.current.style.transform = `translate(${fracX.toFixed(3)}%, ${fracY.toFixed(3)}%)`;
+
+    if (!snapCellRef.current || snap.leftX !== snapCellRef.current.leftX || snap.topY !== snapCellRef.current.topY) {
+      snapCellRef.current = snap;
+      setSnapState({ ...snap });
+    }
+
+    cameraRafRef.current = requestAnimationFrame(animateCamera);
+    // No deps — all state accessed via refs; setSnapState is a stable setter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update camera target whenever Jean moves or zoom changes
+  useEffect(() => {
+    if (zoom === 'full') {
+      // Full map — no camera animation; clear any residual transform
+      if (cameraRafRef.current) { cancelAnimationFrame(cameraRafRef.current); cameraRafRef.current = null; }
+      if (contentDivRef.current) contentDivRef.current.style.transform = '';
+      cameraRef.current = null;
+      snapCellRef.current = null;
+      setSnapState(null);
+      return;
+    }
+
+    const tgtX = Math.max(0, Math.min(MAP_SIZE - VIEW_SIZE, playerPos.x - HALF_VIEW));
+    const tgtY = Math.min(MAP_SIZE - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
+    targetCamRef.current = { x: tgtX, y: tgtY };
+
+    if (!cameraRef.current) {
+      // First mount in zoomed mode — snap immediately, no animation
+      cameraRef.current = { x: tgtX, y: tgtY };
+      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE);
+      snapCellRef.current = snap;
+      setSnapState(snap);
+      return;
+    }
+
+    // Start the RAF loop if it is not already running
+    if (!cameraRafRef.current) {
+      cameraRafRef.current = requestAnimationFrame(animateCamera);
+    }
+  }, [zoom, playerPos.x, playerPos.y, animateCamera]);
+
+  // Cancel camera RAF on unmount
+  useEffect(() => () => {
+    if (cameraRafRef.current) cancelAnimationFrame(cameraRafRef.current);
+  }, []);
+
   // -------------------------------------------------------------------------
   // Enemies tab: flat list view
   // -------------------------------------------------------------------------
@@ -683,22 +799,21 @@ export default function BattlefieldGrid({
   // -------------------------------------------------------------------------
   // Overview tab: isometric battlefield grid
   // -------------------------------------------------------------------------
-  const MAP_SIZE = 13; // grid coordinates 0–12
-  const VIEW_SIZE = 15; // viewport size in viewport mode
   const isFullMode = zoom === 'full';
 
-  const playerPos = getPos(combat?.player);
-
-  let gridCols, leftX, topY;
+  // Derive integer snap origin from smooth camera state; fall back to a
+  // player-centred instant snap on first render before the RAF has run.
+  const gridCols = isFullMode ? MAP_SIZE : VIEW_SIZE;
+  let leftX, topY;
   if (isFullMode) {
-    gridCols = MAP_SIZE;
     leftX = 0;
     topY = MAP_SIZE - 1;
+  } else if (snapState) {
+    leftX = snapState.leftX;
+    topY  = snapState.topY;
   } else {
-    gridCols = VIEW_SIZE;
-    const halfView = Math.floor(gridCols / 2);
-    leftX = Math.max(0, Math.min(MAP_SIZE - gridCols, playerPos.x - halfView));
-    topY = Math.min(MAP_SIZE - 1, Math.max(gridCols - 1, playerPos.y + halfView));
+    leftX = Math.max(0, Math.min(MAP_SIZE - VIEW_SIZE, playerPos.x - HALF_VIEW));
+    topY  = Math.min(MAP_SIZE - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
   }
 
   /** Convert a world grid position to the absolute-CSS style needed by the layers. */
@@ -735,17 +850,27 @@ export default function BattlefieldGrid({
     }
   }
 
-  // Collect visible, living entities
+  // Collect visible entities: living combatants + any currently in a death animation
+  const dyingIds = new Set(dyingEntities.map((d) => d.id));
   const entitiesToRender = [];
   if (combat?.player) {
     const style = getEntityStyle(getPos(combat.player));
     if (style) entitiesToRender.push({ entity: combat.player, style, isPlayer: true });
   }
   combat?.enemies?.forEach((enemy) => {
+    if (dyingIds.has(enemy.id)) return; // rendered below from snapshot
     if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0) > 0) {
       const style = getEntityStyle(getPos(enemy));
       if (style) entitiesToRender.push({ entity: enemy, style, isPlayer: false });
     }
+  });
+  // Dying enemies: rendered from their last-known snapshot so the marker is
+  // visible during the fade-out, regardless of whether the entity still
+  // appears in combat.enemies (backend may drop it on defeat).
+  dyingEntities.forEach((dying) => {
+    if (!dying.entity) return;
+    const style = getEntityStyle(dying.position);
+    if (style) entitiesToRender.push({ entity: dying.entity, style, isPlayer: false, isDying: true });
   });
 
   // Pre-compute background cell array — avoids reallocating on every render
@@ -756,36 +881,46 @@ export default function BattlefieldGrid({
       onClick={handleGridClick}
       style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden' }}
     >
-      {/* Background grid */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'grid', gap: '1px', padding: spacing.sm,
-        gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
-        pointerEvents: 'none'
-      }}>
-        {gridBgCells.map((_, i) => (
-          <div key={i} style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }} />
-        ))}
+      {/*
+        contentDivRef receives a sub-cell CSS transform each RAF frame,
+        smoothly sliding the grid between integer snap positions without
+        triggering a React re-render. The outer container clips the overflow
+        so the edges of the map never become visible.
+      */}
+      <div ref={contentDivRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
+        {/* Background grid */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'grid', gap: '1px', padding: spacing.sm,
+          gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
+          pointerEvents: 'none'
+        }}>
+          {gridBgCells.map((_, i) => (
+            <div key={i} style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }} />
+          ))}
+        </div>
+
+        <BreadcrumbLayer breadcrumbs={breadcrumbs} />
+
+        <EntityLayer
+          entitiesToRender={entitiesToRender}
+          activeAnimation={activeAnimation}
+          animationPhase={animationPhase}
+          hoveredEntity={hoveredEntity}
+          selectedEntity={selectedEntity}
+          hoveredTargetId={hoveredTargetId}
+          isFullMode={isFullMode}
+          onHoverEntity={setHoveredEntity}
+          onClearHover={() => setHoveredEntity(null)}
+          onSelectEntity={setSelectedEntity}
+        />
+
+        <DeathAnimationLayer dyingEntities={dyingEntities} getEntityStyle={getEntityStyle} />
       </div>
 
-      <BreadcrumbLayer breadcrumbs={breadcrumbs} />
-
-      <EntityLayer
-        entitiesToRender={entitiesToRender}
-        activeAnimation={activeAnimation}
-        animationPhase={animationPhase}
-        hoveredEntity={hoveredEntity}
-        selectedEntity={selectedEntity}
-        hoveredTargetId={hoveredTargetId}
-        isFullMode={isFullMode}
-        onHoverEntity={setHoveredEntity}
-        onClearHover={() => setHoveredEntity(null)}
-        onSelectEntity={setSelectedEntity}
-      />
-
-      <DeathAnimationLayer dyingEntities={dyingEntities} getEntityStyle={getEntityStyle} />
-
+      {/* SelectedEntityPanel lives outside contentDivRef — it is screen-fixed
+          relative to the grid container and must not be translated with the map. */}
       {selectedEntity && (
         <SelectedEntityPanel
           entity={selectedEntity}
