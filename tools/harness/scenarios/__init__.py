@@ -14,6 +14,7 @@ from .inventory_actions import InventoryActionsScenario
 from .quest_writes import QuestWritesScenario
 from .phase3_reads import Phase3ReadsScenario
 from .ch01_events import Ch01EventsScenario
+from .ch01_wrong_choice import Ch01WrongChoiceScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -30,6 +31,7 @@ _ALL_SCENARIOS = [
     QuestWritesScenario(),
     Phase3ReadsScenario(),
     Ch01EventsScenario(),
+    Ch01WrongChoiceScenario(),
 ]
 
 
