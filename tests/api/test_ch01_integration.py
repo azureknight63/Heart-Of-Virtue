@@ -126,6 +126,9 @@ def test_ch01_event_flow_api(app, client, authenticated_session):
 
         events = _trigger_combat_events(app, player, session.data)
         assert events
+        # Save session to persist pending events for API calls
+        session_manager.save_session(session.session_id)
+
         post_event = events[0]
         post_event_id = post_event.get("event_id")
         assert post_event_id
@@ -136,6 +139,7 @@ def test_ch01_event_flow_api(app, client, authenticated_session):
         rep_event = Ch01PostRumblerRep(player, tile, repeat=True)
         rep_event.process()
         rep_event_id = _queue_pending_event(session.data, rep_event)
+        session_manager.save_session(session.session_id)
         _submit_event_input(client, session_id, rep_event_id, "continue")
 
         player.hp = max(1, int(player.maxhp * 0.2))
@@ -144,6 +148,7 @@ def test_ch01_event_flow_api(app, client, authenticated_session):
 
         choice_event = Ch01PostRumbler3(player, tile, repeat=False)
         choice_event_id = _queue_pending_event(session.data, choice_event)
+        session_manager.save_session(session.session_id)
         _submit_event_input(client, session_id, choice_event_id, "a")
 
         player.in_combat = False

@@ -129,3 +129,52 @@ def api_client():
     """Create a Flask test client (when routes are implemented)."""
     # TODO: Implement when app factory is complete
     pass
+
+
+# Patch terminal output functions for tests to avoid encoding issues on Windows
+@pytest.fixture(autouse=True)
+def patch_terminal_output(monkeypatch):
+    """Patch terminal output functions to prevent UnicodeEncodeError on Windows.
+
+    Story events call cprint(), print_slow(), input_with_timeout() etc. which can fail
+    with UnicodeEncodeError when trying to print Unicode characters to a Windows console.
+    This fixture replaces those functions with no-ops for testing purposes.
+    """
+    import io
+
+    # Create a dummy StringIO to capture output (or discard it)
+    dummy_output = io.StringIO()
+
+    def mock_cprint(*args, **kwargs):
+        """Mock cprint that discards output."""
+        pass
+
+    def mock_print_slow(text, *args, **kwargs):
+        """Mock print_slow that discards output."""
+        pass
+
+    def mock_input_with_timeout(*args, **kwargs):
+        """Mock input_with_timeout that returns a default value."""
+        return kwargs.get('default', 'continue')
+
+    def mock_input_prompt(*args, **kwargs):
+        """Mock input_prompt that returns a default value."""
+        return 'continue'
+
+    # Patch functions in the game engine modules
+    monkeypatch.setattr('builtins.print', lambda *args, **kwargs: None)
+
+    try:
+        import interface
+        monkeypatch.setattr(interface, 'cprint', mock_cprint, raising=False)
+        monkeypatch.setattr(interface, 'print_slow', mock_print_slow, raising=False)
+        monkeypatch.setattr(interface, 'input_with_timeout', mock_input_with_timeout, raising=False)
+        monkeypatch.setattr(interface, 'input_prompt', mock_input_prompt, raising=False)
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from neotermcolor import cprint
+        monkeypatch.setattr('neotermcolor.cprint', mock_cprint, raising=False)
+    except (ImportError, AttributeError):
+        pass
