@@ -606,7 +606,13 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
             suggestions={combat?.suggested_moves || []}
             suggestionsLoading={combat?.battle_state?.suggestions_loading || combat?.suggestions_loading || false}
             lastOutcome={combat?.last_move_outcome || ""}
-            lastMoveViable={Array.isArray(combat?.available_options) && combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available)}
+            lastMoveViable={
+              Array.isArray(combat?.available_options) &&
+              combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available) &&
+              // Also verify the target is still alive in combat
+              (combat?.last_move_target_id && Array.isArray(combat?.enemies) &&
+               combat.enemies.some(e => `enemy_${e.id}` === combat.last_move_target_id))
+            }
             isPlayerTurn={isMyTurn}
             onTargetHover={onTargetHover}
             onSuggestClick={(s) => {
