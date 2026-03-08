@@ -35,8 +35,8 @@ describe('BattlefieldGrid', () => {
 
         // Check for grid cells by style attribute
         const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        // Normal mode is 9x9 = 81 cells
-        expect(cells.length).toBe(81);
+        // Normal mode is 15x15 = 225 cells
+        expect(cells.length).toBe(225);
     });
 
     it('renders entire grid in full mode', () => {

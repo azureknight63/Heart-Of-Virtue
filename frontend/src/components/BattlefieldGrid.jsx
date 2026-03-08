@@ -44,15 +44,15 @@ const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
 // Grid / camera constants — module level
 // ---------------------------------------------------------------------------
 const MAP_SIZE = 13;   // grid coordinates 0–12
-const VIEW_SIZE = 9;   // viewport cell count in zoomed mode
+const VIEW_SIZE = 15;  // viewport cell count in zoomed mode
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
 const CAMERA_EPSILON = 0.004; // settle threshold (cells)
 
 /** Snap a float camera origin to the nearest valid integer cell. */
 const computeSnapOrigin = (cam, cols) => ({
-  leftX: Math.round(Math.max(0, Math.min(MAP_SIZE - cols, cam.x))),
-  topY:  Math.round(Math.min(MAP_SIZE - 1, Math.max(cols - 1, cam.y))),
+  leftX: Math.round(Math.max(MAP_SIZE - cols, Math.min(0, cam.x))),
+  topY:  Math.round(Math.max(MAP_SIZE - 1, Math.min(cols - 1, cam.y))),
 });
 
 // ---------------------------------------------------------------------------
@@ -765,8 +765,8 @@ export default function BattlefieldGrid({
       return;
     }
 
-    const tgtX = Math.max(0, Math.min(MAP_SIZE - VIEW_SIZE, playerPos.x - HALF_VIEW));
-    const tgtY = Math.min(MAP_SIZE - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
+    const tgtX = Math.max(MAP_SIZE - VIEW_SIZE, Math.min(0, playerPos.x - HALF_VIEW));
+    const tgtY = Math.max(MAP_SIZE - 1, Math.min(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
     targetCamRef.current = { x: tgtX, y: tgtY };
 
     if (!cameraRef.current) {
