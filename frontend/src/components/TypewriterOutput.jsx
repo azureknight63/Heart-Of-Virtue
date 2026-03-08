@@ -1,13 +1,38 @@
-import React from 'react'
+import React, { useRef, useEffect } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import { colors, spacing, fonts } from '../styles/theme'
 
+const DAMAGE_PATTERN = /Jean suffers \d+ damage!/gi
+
 /**
  * TypewriterOutput - Reusable component for displaying text with a typewriter effect
+ *
+ * @param {Function} [onDamageHit] - Called each time a "Jean suffers N damage!" line
+ *                                   becomes fully visible in the typewriter output.
+ *                                   Multiple hits in one stage stagger 300 ms apart.
  */
-export default function TypewriterOutput({ text, speed = 30, style = {}, onComplete, formatter }) {
+export default function TypewriterOutput({ text, speed = 30, style = {}, onComplete, formatter, onDamageHit }) {
     const { displayedText, isComplete, finishImmediately } = useTypewriter(text, speed)
     const bottomRef = React.useRef(null)
+    const triggeredDamageCount = useRef(0)
+
+    // Reset damage tracker whenever a new text block starts
+    useEffect(() => {
+        triggeredDamageCount.current = 0
+    }, [text])
+
+    // Fire onDamageHit each time a new damage line appears in the scrolling text
+    useEffect(() => {
+        if (!onDamageHit) return
+        const matches = displayedText.match(DAMAGE_PATTERN) || []
+        const newHits = matches.length - triggeredDamageCount.current
+        if (newHits > 0) {
+            for (let i = 0; i < newHits; i++) {
+                setTimeout(() => onDamageHit(), i * 300)
+            }
+            triggeredDamageCount.current = matches.length
+        }
+    }, [displayedText, onDamageHit])
 
     React.useEffect(() => {
         if (!isComplete) {

@@ -511,3 +511,34 @@ body {
 .duration-500 {
   animation-duration: 500ms;
 }
+
+/* Earthbound-style damage effects */
+@keyframes screen-shake {
+  0%   { transform: translateX(0); }
+  18%  { transform: translateX(-10px); }
+  36%  { transform: translateX(10px); }
+  54%  { transform: translateX(-7px); }
+  72%  { transform: translateX(5px); }
+  90%  { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes damage-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
+body.damage-shake {
+  animation: screen-shake 0.42s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+body.damage-flash-active::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: #cc0000;
+  z-index: 99998;
+  pointer-events: none;
+  animation: damage-flash 0.42s ease-out forwards;
+}

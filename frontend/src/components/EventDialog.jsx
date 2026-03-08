@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
@@ -23,6 +23,21 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
+
+    // Earthbound-style damage effect: shake screen + red flash
+    const handleDamageHit = useCallback(() => {
+        document.body.classList.add('damage-shake', 'damage-flash-active')
+        setTimeout(() => {
+            document.body.classList.remove('damage-shake', 'damage-flash-active')
+        }, 500)
+    }, [])
+
+    // Remove body classes if dialog unmounts mid-animation
+    useEffect(() => {
+        return () => {
+            document.body.classList.remove('damage-shake', 'damage-flash-active')
+        }
+    }, [])
 
     // Extract event data
     const eventText = event?.output_text || event?.message || event?.description || ''
@@ -287,6 +302,7 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
                             setIsComplete(true)
                             if (needsInput) setShowInput(true)
                         }}
+                        onDamageHit={handleDamageHit}
                         style={{
                             padding: spacing.lg,
                             flex: 1,

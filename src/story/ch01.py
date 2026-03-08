@@ -6,6 +6,11 @@ from neotermcolor import cprint, colored
 import time
 import random
 
+from events import Event, dialogue
+import objects as objects
+from functions import print_slow, await_input
+from story.effects import MemoryFlash
+
 SKULL_ART = '''
                .o oOOOOOOOo                                            OOOo
                 Ob.OOOOOOOo  OOOo.      oOOo.                      .adOOOOOOO
@@ -27,11 +32,6 @@ SKULL_ART = '''
                                               :
                                               .
 '''
-
-from events import Event, dialogue
-import objects as objects
-from functions import print_slow, await_input
-from story.effects import MemoryFlash
 
 
 class Ch01_Memory_Amelia(MemoryFlash):
@@ -402,17 +402,14 @@ class Ch01PostRumbler3(Event):
             {"value": "c", "label": "I need more time to think! (Consider alternatives)"}
         ]
         self._choice = None  # Saved initial choice (a/b/c) for multi-stage narrative
+        self._stage = 1
 
     def check_combat_conditions(self):
-        # Fire only after Jean has defeated the Rumblers spawned during Gorran's intervention
-        if len(self.player.combat_list) <= 1:
+        # Fire only after Jean has defeated all enemies (combat_list empty)
+        if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
-        # Track which stage we're in for multi-stage narrative
-        if not hasattr(self, '_stage'):
-            self._stage = 1
-
         # Stage 1: Show the choice prompt
         if self._stage == 1:
             cprint("\nWiping sweat from his brow, Jean looks up to see the rock-man surrounded by the beasts, "
