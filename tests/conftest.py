@@ -112,6 +112,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "tkinter_test: mark test as tkinter-related (skipped for web app iteration)"
     )
+    config.addinivalue_line(
+        "markers", "integration: mark test as an integration test"
+    )
 
     # Final consistency pass: ensure all src.* imports resolve to the same module as bare imports
     for key in list(sys.modules.keys()):

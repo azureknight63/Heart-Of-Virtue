@@ -32,8 +32,12 @@ def _submit_event_input(client, session_id, event_id, user_input):
         {"event_id": event_id, "user_input": user_input},
         session_id,
     )
-    assert response.status_code == 200
     data = json.loads(response.data)
+    if response.status_code != 200:
+        error_msg = data.get("error", "Unknown error")
+        print(f"Event input failed: {response.status_code} - {error_msg}")
+        print(f"  event_id={event_id}, user_input={user_input}")
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {data.get('error')}"
     assert data.get("success") is True
     return data
 
@@ -134,7 +138,9 @@ def test_ch01_event_flow_api(app, client, authenticated_session):
         assert post_event_id
         result = _submit_event_input(client, session_id, post_event_id, "continue")
         if result.get("needs_input"):
-            _submit_event_input(client, session_id, post_event_id, "continue")
+            # Event transitioned to next stage with new event_id
+            next_event_id = result.get("event", {}).get("event_id", post_event_id)
+            _submit_event_input(client, session_id, next_event_id, "continue")
 
         rep_event = Ch01PostRumblerRep(player, tile, repeat=True)
         rep_event.process()
