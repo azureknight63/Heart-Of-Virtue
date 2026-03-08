@@ -1193,7 +1193,14 @@ class ApiCombatAdapter:
                     
                     # Fetch from strategist (this is the slow part)
                     suggestions = self.strategist.get_suggestions(ctx, max_suggestions=count)
-                    
+
+                    # Filter out suggestions for moves that are not currently available
+                    available_move_names = {
+                        m["name"] for m in self._get_available_moves()
+                        if m.get("available", True)
+                    }
+                    suggestions = [s for s in suggestions if s.get("move_name") in available_move_names]
+
                     # Store results (only if this generation is still current)
                     with self._suggestion_lock:
                         is_current = current_gen == self._suggestion_generation

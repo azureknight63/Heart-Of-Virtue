@@ -6,6 +6,28 @@ from neotermcolor import cprint, colored
 import time
 import random
 
+SKULL_ART = '''
+               .o oOOOOOOOo                                            OOOo
+                Ob.OOOOOOOo  OOOo.      oOOo.                      .adOOOOOOO
+                OboO"""""""""""".OOo. .oOOOOOo.    OOOo.oOOOOOo.."""""""""\'OO
+                OOP.oOOOOOOOOOOO "POOOOOOOOOOOo.   `"OOOOOOOOOP,OOOOOOOOOOOB\'
+                `O\'OOOO\'     `OOOOo"OOOOOOOOOOO` .adOOOOOOOOO"oOOO\'    `OOOOo
+                .OOOO\'            `OOOOOOOOOOOOOOOOOOOOOOOOOO\'            `OO
+                OOOOO                 \'"OOOOOOOOOOOOOOOO"`                oOO
+               oOOOOOba.                .adOOOOOOOOOOba               .adOOOOo.
+              oOOOOOOOOOOOOOba.    .adOOOOOOOOOO@^OOOOOOOba.     .adOOOOOOOOOOOO
+             OOOOOOOOOOOOOOOOO.OOOOOOOOOOOOOO"`  \'"OOOOOOOOOOOOO.OOOOOOOOOOOOOO
+             "OOOO"       "YOoOOOOOOOOOOOOO"`  .   \'"OOOOOOOOOOOOoOY"     "OOO"
+                Y           \'OOOOOOOOOOOOOO: .oOOo. :OOOOOOOOOOO?\'         :`
+                :            .oO%OOOOOOOOOOo.OOOOOO.oOOOOOOOOOOOO?         .
+                .            oOOP"%OOOOOOOOoOOOOOOO?oOOOOO?OOOO"OOo
+                                 \'%o  OOOO"%OOOO%"%OOOOO"OOOOOO"OOO\':
+                                      `$"  `OOOO\' `O"Y \' `OOOO\'  o             .
+                .                  .     OP"          : o     .
+                                              :
+                                              .
+'''
+
 from events import Event, dialogue
 import objects as objects
 from functions import print_slow, await_input
@@ -379,10 +401,12 @@ class Ch01PostRumbler3(Event):
             {"value": "b", "label": "It can't be helped. I must survive! (Make a break for it)"},
             {"value": "c", "label": "I need more time to think! (Consider alternatives)"}
         ]
+        self._choice = None  # Saved initial choice (a/b/c) for multi-stage narrative
 
     def check_combat_conditions(self):
-        # This event is added manually by Ch01PostRumbler2, so it triggers immediately
-        self.pass_conditions_to_process()
+        # Fire only after Jean has defeated the Rumblers spawned during Gorran's intervention
+        if len(self.player.combat_list) <= 1:
+            self.pass_conditions_to_process()
 
     def process(self, user_input=None):
         # Track which stage we're in for multi-stage narrative
@@ -402,16 +426,22 @@ class Ch01PostRumbler3(Event):
 
         choice_input = user_input.lower() if user_input else ""
 
+        # At stage 2, record the player's actual choice (a/b/c) for use in later stages
+        if self._stage == 2:
+            self._choice = choice_input
+
         # Wrong choices (b or c) - multi-stage defeat narrative
-        if choice_input == "b" or choice_input == "c":
+        if self._choice in ("b", "c"):
             # Stage 2: Show Jean's response to the wrong choice
             if self._stage == 2:
-                if choice_input == "b":
+                if self._choice == "b":
                     cprint("Jean swallows hard and begins sprinting toward the hole in the chamber wall.")
-                elif choice_input == "c":
+                else:
                     cprint("Unsure of what to do, Jean stands frozen, glancing between the rock-man and his"
                            "\navenue of escape.")
                 self.needs_input = True
+                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_prompt = "Continue"
                 self._stage = 3
                 return
 
@@ -422,6 +452,8 @@ class Ch01PostRumbler3(Event):
                        "\nquickly to the ground. The other beasts pile on and begin slashing and biting"
                        "\nmercilessly.")
                 self.needs_input = True
+                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_prompt = "Continue"
                 self._stage = 4
                 return
 
@@ -433,6 +465,8 @@ class Ch01PostRumbler3(Event):
                        "\nJumping around the snapping jaws and swinging tails of the other beasts,"
                        "\nHe manages to make it back to the long bridge connecting the two spires.")
                 self.needs_input = True
+                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_prompt = "Continue"
                 self._stage = 5
                 return
 
@@ -447,6 +481,8 @@ class Ch01PostRumbler3(Event):
                        "\nruthlessly into his shoulders, picking him up off of the"
                        "\nbridge.")
                 self.needs_input = True
+                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_prompt = "Continue"
                 self._stage = 6
                 return
 
@@ -465,10 +501,12 @@ class Ch01PostRumbler3(Event):
                        "\nquickly, smashes Jean's body against the wall of rock.")
                 cprint("Jean suffers " + str(random.randint(30, 90)) + " damage!", "red")
                 self.needs_input = True
+                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_prompt = "Continue"
                 self._stage = 7
                 return
 
-            # Stage 7: Continued pummeling
+            # Stage 7: Continued pummeling and death
             elif self._stage == 7:
                 cprint("Jean screams in pain, his mace arm swinging uselessly by"
                        "\nhis side, broken.")
@@ -479,6 +517,8 @@ class Ch01PostRumbler3(Event):
                 cprint("Jean suffers " + str(random.randint(10, 60)) + " damage!", "red")
                 cprint("Jean suffers " + str(random.randint(30, 90)) + " damage!", "red")
                 cprint("Jean suffers " + str(random.randint(85, 155)) + " damage!", "red")
+                cprint(SKULL_ART, "red")
+                cprint("Jean has died.", "red")
                 self.player.hp = 0
                 self.needs_input = False
                 self.completed = True
