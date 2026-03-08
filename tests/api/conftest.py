@@ -68,20 +68,34 @@ for _mod_name in ("combat", "events", "shop_conditions"):
 
 import pytest
 
-# Pre-load src.api.config before src.api.app so Python's import machinery has
-# the submodule cached in sys.modules before app.py's top-level import runs.
-# Without this, the _synchronized_import hook in tests/conftest.py can corrupt
-# the src.api package reference, making src.api.config unreachable.
+# Pre-load src.api.* submodules so that create_app()'s lazy internal imports
+# (src.api.routes, src.api.handlers, src.api.sockets — all inside the function
+# body) are already cached in sys.modules before create_app() is called.
+# Without this, the _synchronized_import hook in tests/conftest.py intercepts
+# those lazy imports at fixture-execution time and can raise ModuleNotFoundError
+# on a partially-initialised src.api package.
+#
+# The reconciliation loops in tests/conftest.py now exclude 'api' from the
+# src.X → X alias pass, so loading src.api here no longer corrupts the
+# sys.modules['api'] entry that pytest uses to collect tests/api/*.
 import importlib as _il
-# Prime src.api and its direct submodules before the hook can corrupt them.
-# The _synchronized_import hook in tests/conftest.py intercepts lazy sub-package
-# imports inside create_app and can raise ModuleNotFoundError on a
-# partially-initialised src.api package.  Loading src.api.app here (which has
-# no lazy top-level imports) ensures src.api is fully registered in sys.modules
-# so all subsequent src.api.* imports resolve correctly.
-_il.import_module("src.api.config")
-_il.import_module("src.api.services")
-_il.import_module("src.api.app")
+
+for _api_mod in (
+    "src.api.config",
+    "src.api.services",
+    "src.api.middleware",
+    "src.api.handlers",
+    "src.api.handlers.error_handler",
+    "src.api.serializers",
+    "src.api.routes",
+    "src.api.sockets",
+    "src.api.app",
+):
+    if _api_mod not in sys.modules:
+        try:
+            _il.import_module(_api_mod)
+        except Exception as _e:
+            print(f"WARNING: could not pre-load {_api_mod}: {_e}")
 
 from src.api.app import create_app
 from src.api.config import TestingConfig
