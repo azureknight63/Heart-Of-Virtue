@@ -833,7 +833,7 @@ export default function BattlefieldGrid({
   // Build breadcrumb trail from beat history
   const breadcrumbs = [];
   if (allBeatStates && currentBeatIndex !== undefined) {
-    const historyLength = 4;
+    const historyLength = 10;
     const startIdx = Math.max(0, currentBeatIndex - historyLength);
     for (let i = startIdx; i < currentBeatIndex; i++) {
       const beatState = allBeatStates[i];
