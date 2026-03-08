@@ -1677,10 +1677,35 @@ class GameService:
         elif move_type == "select_move_and_target":
             if not isinstance(move_id, str) or not move_id:
                 return {"error": "Invalid move name"}
+
+            # Handle "DO IT AGAIN" (repeat_last) special case
+            actual_move_id = move_id
+            actual_target_id = target_id
+
+            if move_id == "repeat_last":
+                # Look up the last move and target from player state
+                actual_move_id = getattr(player, "last_move_name", None)
+                actual_target_id = getattr(player, "last_move_target_id", None)
+
+                if not actual_move_id:
+                    return {"error": "No previous move to repeat"}
+                if not actual_target_id:
+                    return {"error": "No valid target for repeat move"}
+
+                # Check if the target is still alive
+                target_enemy = None
+                for enemy in player.combat_list:
+                    if f"enemy_{id(enemy)}" == actual_target_id and enemy.is_alive():
+                        target_enemy = enemy
+                        break
+
+                if not target_enemy:
+                    return {"error": "Previous target is no longer available"}
+
             command = {
                 "type": "select_move_and_target",
-                "move_name": move_id, # We passed move_name as move_id
-                "target_id": target_id
+                "move_name": actual_move_id,
+                "target_id": actual_target_id
             }
             return adapter.process_command(command)
             
