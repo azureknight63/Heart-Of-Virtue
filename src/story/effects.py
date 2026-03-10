@@ -482,8 +482,7 @@ class PulsingGlandEvent(NPCSpawnerEvent):
             "A gland on the wall convulses and ruptures — "
             "a slime drops wetly from the burst sac."
         )
-        import time as _time
-        _time.sleep(0.5)
+        time.sleep(0.5)
         self._do_spawn()
         self.has_run = True
 

@@ -890,8 +890,12 @@ class GeminateGeode(Object):
     the EnchantedGolemitePauldron. One-use; removes itself after success.
     """
 
-    _INGREDIENTS = ("AzuriteGem", "AmberStone", "PaleGreyFragment")
-    _INGREDIENT_NAMES = ("Azure Crystal", "Amber Stone", "Pale Grey Fragment")
+    # Each entry is (ClassName, display_name) — kept together so they can't drift apart
+    _INGREDIENT_DEFS = (
+        ("AzuriteGem",       "Azure Crystal"),
+        ("AmberStone",       "Amber Stone"),
+        ("PaleGreyFragment", "Pale Grey Fragment"),
+    )
 
     def __init__(self, player: Player, tile: MapTile, params=None):
         super().__init__(
@@ -924,7 +928,7 @@ class GeminateGeode(Object):
         if player is not None:
             self.player = player
         missing = [
-            name for cls, name in zip(self._INGREDIENTS, self._INGREDIENT_NAMES)
+            name for cls, name in self._INGREDIENT_DEFS
             if not self._has_ingredient(cls)
         ]
         if missing:
@@ -945,7 +949,7 @@ class GeminateGeode(Object):
             "Still luminous."
         )
         time.sleep(1)
-        for cls in self._INGREDIENTS:
+        for cls, _name in self._INGREDIENT_DEFS:
             self._remove_ingredient(cls)
         if self.tile:
             self.tile.spawn_item("EnchantedGolemitePauldron")

@@ -31,9 +31,6 @@ class GrondelithEntry(MapTile):
         ))
         self.symbol = '▽'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithRitualChamber(MapTile):
     """Small side chamber off the descent path. Covered in Golemite ritual markings."""
@@ -47,9 +44,6 @@ class GrondelithRitualChamber(MapTile):
             "texture of the stone around it."
         ))
         self.symbol = '□'
-
-    def modify_player(self, the_player):
-        pass
 
 
 class GrondelithAtrium(MapTile):
@@ -66,9 +60,6 @@ class GrondelithAtrium(MapTile):
         ))
         self.symbol = '≈'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithAlcove(MapTile):
     """Quiet west-wing alcove. Worn smooth by generations of Golemite prayer."""
@@ -82,9 +73,6 @@ class GrondelithAlcove(MapTile):
             "placed here by those who had lost someone."
         ))
         self.symbol = '○'
-
-    def modify_player(self, the_player):
-        pass
 
 
 class GrondelithPoolEast(MapTile):
@@ -100,9 +88,6 @@ class GrondelithPoolEast(MapTile):
         ))
         self.symbol = '≈'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithHighBasin(MapTile):
     """Easternmost atrium alcove. Highest point of the complex; the oldest pool."""
@@ -115,9 +100,6 @@ class GrondelithHighBasin(MapTile):
             "oldest spring. The stone shelf edge is worn smooth from long use."
         ))
         self.symbol = '○'
-
-    def modify_player(self, the_player):
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +119,6 @@ class GrondelithChannelEntry(MapTile):
         ))
         self.symbol = '%'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithCrevice(MapTile):
     """Narrow hidden passage between the Corrupted Channels and the Luminous Grotto."""
@@ -152,9 +131,6 @@ class GrondelithCrevice(MapTile):
         ))
         self.symbol = '─'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithChannelNorth(MapTile):
     """Northern channel branch. Stone bridge over slime; eastern pocket ahead."""
@@ -166,9 +142,6 @@ class GrondelithChannelNorth(MapTile):
             "To the east, a sealed chamber echoes with something feeding."
         ))
         self.symbol = '%'
-
-    def modify_player(self, the_player):
-        pass
 
 
 class GrondelithNorthPocket(MapTile):
@@ -183,9 +156,6 @@ class GrondelithNorthPocket(MapTile):
         ))
         self.symbol = '!'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithDeepWest(MapTile):
     """Main spine of the deep channels. Acid pitting, bats, the rumbling grows louder."""
@@ -198,9 +168,6 @@ class GrondelithDeepWest(MapTile):
             "disturbed by movement. The rumbling from the south is unmistakable now."
         ))
         self.symbol = '%'
-
-    def modify_player(self, the_player):
-        pass
 
 
 class GrondelithDeepEast(MapTile):
@@ -215,9 +182,6 @@ class GrondelithDeepEast(MapTile):
         ))
         self.symbol = '%'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithDeepPocket(MapTile):
     """Far eastern dead-end. Collapsed ceiling; older, drier corruption sealing off the space."""
@@ -230,9 +194,6 @@ class GrondelithDeepPocket(MapTile):
             "stone exposes raw mineral beneath."
         ))
         self.symbol = '!'
-
-    def modify_player(self, the_player):
-        pass
 
 
 class GrondelithNarrowPass(MapTile):
@@ -247,9 +208,6 @@ class GrondelithNarrowPass(MapTile):
         ))
         self.symbol = '%'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithFloodedPass(MapTile):
     """Flooded loop passage. Second Elder Slime encounter. Stone islands over dissolved floor."""
@@ -262,9 +220,6 @@ class GrondelithFloodedPass(MapTile):
             "wreckage below."
         ))
         self.symbol = '%'
-
-    def modify_player(self, the_player):
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -286,9 +241,6 @@ class GrondelithGrotto(MapTile):
         ))
         self.symbol = '✦'
 
-    def modify_player(self, the_player):
-        pass
-
 
 # ---------------------------------------------------------------------------
 # Zone 4: Boss Approach + Arena
@@ -306,9 +258,6 @@ class GrondelithApproach(MapTile):
         ))
         self.symbol = '▼'
 
-    def modify_player(self, the_player):
-        pass
-
 
 class GrondelithArena(MapTile):
     """
@@ -324,6 +273,3 @@ class GrondelithArena(MapTile):
             "a mountain of corrupted mass, slowly rising."
         ))
         self.symbol = '@'
-
-    def modify_player(self, the_player):
-        pass
