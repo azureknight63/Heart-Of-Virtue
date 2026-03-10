@@ -5,6 +5,7 @@ from src.events import Event, dialogue
 from src.functions import print_slow, await_input
 import time
 from src import items
+from src.story.effects import MemoryFlash
 
 
 class AfterDefeatingLurker(Event):
@@ -227,4 +228,206 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
 
 
         #  Remove this event from the tile
+        self.tile.remove_event(self.name)
+
+
+class AfterDefeatingKingSlime(Event):
+    """
+    Fires once KingSlime is absent from the arena tile.
+    Cleanses the pool description, spawns MineralFragment, then triggers the
+    memory flash when Jean picks it up. Gorran teleports to the arena afterward.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterDefeatingKingSlime'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        king_still_alive = any(
+            n.__class__.__name__ == "KingSlime"
+            for n in self.tile.npcs_here
+        )
+        if not king_still_alive:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(1)
+        print_slow(
+            "The churning stills. A deep, resonant silence settles over the cavern.",
+            delay=0.04
+        )
+        time.sleep(1)
+        print_slow(
+            "Then — gradually — the green recedes. Ripple by ripple, the corruption dissolves "
+            "outward from the center, the thick slime thinning and clearing until clean, "
+            "luminescent blue water fills the chamber.",
+            delay=0.03
+        )
+        time.sleep(1.5)
+        print_slow(
+            "The central stone island is exactly what it always was. "
+            "The light here is steady and quiet, blue-white, older than the corruption that hid it.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "On the island, something catches the light. "
+            "Impossibly sharp. Impossibly beautiful.",
+            delay=0.04
+        )
+        time.sleep(0.5)
+
+        # Update the arena tile description to reflect the cleansed state
+        self.tile.spawn_object(
+            "TileDescription", self.player, self.tile,
+            description=(
+                "The circular cavern is still. The pool that filled it — wall to wall with "
+                "pulsating corruption — is gone. Clean, luminescent blue water rests in its place, "
+                "glowing faintly from below. The single stone island at the centre is bare and quiet. "
+                "The arena smells of minerals and cold water."
+            )
+        )
+
+        # Spawn the MineralFragment on this tile
+        self.tile.spawn_item("MineralFragment")
+
+        # Set the story flag so AfterKingSlimeReturn can fire later
+        self.player.universe.story["king_slime_defeated"] = "1"
+
+        # Teleport Gorran from the atrium (2,1) to the arena (2,6)
+        current_map = self.player.universe.current_map
+        atrium_coords = (2, 1)
+        if atrium_coords in current_map.tiles:
+            atrium_tile = current_map.tiles[atrium_coords]
+            for npc in list(atrium_tile.npcs_here):
+                if npc.__class__.__name__ == "Gorran":
+                    atrium_tile.npcs_here.remove(npc)
+                    npc.tile = self.tile
+                    self.tile.npcs_here.append(npc)
+                    break
+
+        self.tile.remove_event(self.name)
+
+
+class Ch02KingSlimeMemoryFlash(MemoryFlash):
+    """
+    Memory flash triggered when Jean picks up the MineralFragment after
+    defeating King Slime. The razor edge cuts Jean's finger; the sharp pain
+    unlocks a violent, fragmented memory of the explosion.
+    Called from the MineralFragment item's on_pickup hook via the story system.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch02KingSlimeMemoryFlash'):
+        memory_lines = [
+            ("The edge catches Jean's finger.", 1.5),
+            ("", 0.5),
+            ("Pain — sudden, immediate, real.", 1.5),
+            ("", 0.5),
+            ("Then —", 1.0),
+            ("", 0.3),
+            ("BOOM.", 2.0),
+            ("", 0.5),
+            ("A sound that is not a sound. A pressure that moves through bone.", 2.0),
+            ("", 0.5),
+            ("Screams. Human screams, many of them, very close.", 2.0),
+            ("A blinding flash of white — then nothing.", 1.5),
+            ("Then swirling debris. Dust and fire and cold air rushing in.", 2.0),
+            ("", 0.5),
+            ("Being thrown. The sensation of the ground disappearing.", 1.5),
+            ("", 0.5),
+            ("And where something warm should have been, in Jean's arms —", 2.0),
+            ("emptiness.", 3.0),
+        ]
+        aftermath = [
+            "Silence.",
+            "",
+            "Jean is standing on the stone island. The water around it is blue.",
+            "The fragment is in their hand, still sharp, still bright.",
+            "",
+            "The bleeding finger is real. Everything else is gone.",
+        ]
+        super().__init__(
+            player=player,
+            tile=tile,
+            memory_lines=memory_lines,
+            aftermath_text=aftermath,
+            repeat=repeat,
+            name=name
+        )
+
+    def check_conditions(self):
+        # This event is triggered manually from MineralFragment pickup — never fires on its own
+        pass
+
+
+class AfterKingSlimeReturn(Event):
+    """
+    Fires once when Jean re-enters any Grondia tile after king_slime_defeated is set.
+    Votha Krr eats the mineral fragment and sends Jean toward the Echoing Caves.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterKingSlimeReturn'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, 'story', {})
+        if story.get("king_slime_defeated") == "1" and not story.get("votha_krr_response_given"):
+            self.pass_conditions_to_process()
+
+    def process(self):
+        # Check if Jean actually has the MineralFragment
+        has_fragment = any(
+            i.__class__.__name__ == "MineralFragment"
+            for i in self.player.inventory
+        )
+        if not has_fragment:
+            return
+
+        time.sleep(1)
+        print_slow(
+            "Votha Krr rises from his throne as Jean enters. His deep-set eyes take in the "
+            "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.",
+            delay=0.03
+        )
+        time.sleep(1.5)
+
+        dialogue("Votha Krr",
+                 "The pools are clean, little one. You have done well.",
+                 "green")
+        time.sleep(0.5)
+
+        print_slow(
+            "Before Jean can respond, the Elder leans forward and, with a deliberate precision "
+            "that borders on ceremony, plucks the mineral fragment from Jean's hand. "
+            "He regards it for a single moment — then places it in his mouth.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "A soft, contented rumble escapes him. The fragment is gone.",
+            delay=0.04
+        )
+
+        # Remove the MineralFragment from inventory
+        for item in list(self.player.inventory):
+            if item.__class__.__name__ == "MineralFragment":
+                self.player.inventory.remove(item)
+                break
+
+        time.sleep(1.5)
+        dialogue("Votha Krr",
+                 "The corruption is gone. But I sense... a great disturbance within you. "
+                 "A sorrow that is not of this stone. "
+                 "The world outside these stones holds many shards. "
+                 "Some bring strength, some bring pain. "
+                 "Sometimes, the deepest truths are found in the broken places.",
+                 "green")
+        time.sleep(1)
+        dialogue("Votha Krr",
+                 "To mend what is broken, one must first understand the cracks. "
+                 "Go now. Seek the Echoing Caves to the west, beyond the river. "
+                 "There, the earth sings the songs of lost things. "
+                 "Perhaps you will find a different kind of strength there... "
+                 "or, at the very least, a clearer path.",
+                 "green")
+        time.sleep(0.5)
+        await_input()
+
+        self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)

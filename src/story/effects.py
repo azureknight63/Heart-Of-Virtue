@@ -452,6 +452,42 @@ class NPCSpawnerEvent(Event):
         except Exception:
             return
 
+class PulsingGlandEvent(NPCSpawnerEvent):
+    """
+    One-shot event representing a bursting gland in the Corrupted Channels.
+    Unlike NPCSpawnerEvent, it does NOT fire on map entry — it fires only when
+    the player walks onto the tile where it lives. Prints a flavored burst message
+    before spawning one Slime, then removes itself.
+    """
+
+    def __init__(self, player=None, tile=None, params=None, repeat=False,
+                 npc_cls=None, count=None, name="PulsingGlandEvent"):
+        # Always spawn exactly 1 Slime; inherit all other NPCSpawnerEvent behaviour
+        super().__init__(player=player, tile=tile, params=params, repeat=False,
+                         npc_cls=npc_cls, count=count, name=name)
+        if not self.npc_cls:
+            # Default gland type is Slime
+            self.npc_cls = "Slime"
+        if self.count is None or self.count < 1:
+            self.count = 1
+
+    def evaluate_for_map_entry(self, player):
+        """Suppress the map-entry pre-spawn. Fire only on tile entry via evaluate_events."""
+        pass
+
+    def process(self):
+        if self.has_run and not self.repeat:
+            return
+        print(
+            "A gland on the wall convulses and ruptures — "
+            "a slime drops wetly from the burst sac."
+        )
+        import time as _time
+        _time.sleep(0.5)
+        self._do_spawn()
+        self.has_run = True
+
+
 class WhisperingStatue(Event):
     def __init__(self, player, tile, params=None, repeat=False, name='The Whispering Statue'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)

@@ -429,7 +429,13 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "AfterKingSlimeReturn",
+                "__module__": "story.ch02",
+                "props": {}
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -789,13 +795,46 @@
         "title": "GrondelithEntrance",
         "description": "The chamber opens into a wide basin of mineral pools ringed by towering crystalline spires.\n        Pools of clear, mineral-rich water sit in carved basins, reflecting fractured light across the walls.\n        Fine, glittering detritus collects on shallow ledges and the air tastes faintly metallic, sharp and\n        mineral. The constant, gentle tinkle of water and the resonant ring of shifting crystals fills the space\n        with a slow, crystalline music.",
         "exits": [
-            "northeast"
+            "northeast",
+            "southwest"
         ],
         "block_exit": [],
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": [],
+        "objects": [
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Passage to the Mineral Pools",
+                    "description": "A descending passage carved into the southwest wall, leading toward the Grondelith Mineral Pools.",
+                    "idle_message": "A descending passage leads southwest toward the Grondelith Mineral Pools.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a descending passage!",
+                    "announce": "A descending passage leads southwest toward the Grondelith Mineral Pools.",
+                    "keywords": [
+                        "enter",
+                        "go",
+                        "descend",
+                        "pools",
+                        "passage"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondelith-mineral-pools",
+                    "teleport_tile": [
+                        2,
+                        0
+                    ],
+                    "persist": true
+                }
+            }
+        ],
         "symbol": ""
     },
     "(10, 9)": {

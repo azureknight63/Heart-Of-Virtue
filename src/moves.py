@@ -2291,6 +2291,76 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
         print(self.stage_announce[1])
 
 
+class SlimeVolley(NpcAttack):
+    """
+    Telegraphed directional surge used by ElderSlime. The extended prep phase gives
+    the player time to Dodge; if unparried, deals significantly amplified damage.
+    Subclasses NpcAttack so all hit/miss/parry logic is inherited unchanged.
+    """
+    _DAMAGE_MULTIPLIER = 2.2
+    _EXTRA_PREP_BEATS = 4
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Slime Volley"
+        # Override the prep announcement with a clear telegraph
+        self.stage_announce[0] = colored(
+            f"{npc.name} draws back, compressing into a tight, trembling mass — coiling. "
+            f"Now is the time to get clear.",
+            "yellow")
+
+    def evaluate(self):
+        super().evaluate()
+        self.power *= self._DAMAGE_MULTIPLIER
+        self.stage_beat[0] += self._EXTRA_PREP_BEATS
+
+    def refresh_announcements(self, npc):
+        target_name = self.target.name if self.target else "its target"
+        self.stage_announce[0] = colored(
+            f"{npc.name} draws back, compressing into a tight, trembling mass — coiling. "
+            f"Now is the time to get clear.",
+            "yellow")
+        self.stage_announce[1] = colored(
+            f"{npc.name} erupts outward with a sound like a wave breaking on stone! "
+            f"A crashing surge of corrupted slime strikes {target_name}!",
+            "red")
+        self.stage_announce[2] = f"{npc.name} trembles, spent by the effort."
+
+
+class TidalSurge(NpcAttack):
+    """
+    Boss-tier telegraphed surge used by KingSlime. Same two-turn structure as
+    SlimeVolley but with dramatically higher damage multiplier and longer prep.
+    """
+    _DAMAGE_MULTIPLIER = 2.5
+    _EXTRA_PREP_BEATS = 5
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Tidal Surge"
+        self.stage_announce[0] = colored(
+            f"{npc.name}'s entire mass draws inward — the pool around it recedes with a "
+            f"terrifying suction. The arena floor shudders. It is about to surge.",
+            "yellow")
+
+    def evaluate(self):
+        super().evaluate()
+        self.power *= self._DAMAGE_MULTIPLIER
+        self.stage_beat[0] += self._EXTRA_PREP_BEATS
+
+    def refresh_announcements(self, npc):
+        target_name = self.target.name if self.target else "its target"
+        self.stage_announce[0] = colored(
+            f"{npc.name}'s entire mass draws inward — the pool recedes with a terrifying "
+            f"suction. The arena floor shudders. It is about to surge.",
+            "yellow")
+        self.stage_announce[1] = colored(
+            f"{npc.name} erupts — a solid wall of corrupted mass crashes across the stone "
+            f"and slams into {target_name}!",
+            "red")
+        self.stage_announce[2] = f"{npc.name} settles back, the surge spent."
+
+
 class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
     def __init__(self, npc):
         description = ""
