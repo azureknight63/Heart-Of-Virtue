@@ -881,3 +881,90 @@ class MarketGong(Object):
 
     def use(self):
         self.strike()
+
+
+class GeminateGeode(Object):
+    """
+    Puzzle object in the Luminous Grotto. Accepts three mineral fragments in the
+    correct sequence (Azure Crystal → Amber Stone → Pale Grey Fragment) and rewards
+    the EnchantedGolemitePauldron. One-use; removes itself after success.
+    """
+
+    # Each entry is (ClassName, display_name) — kept together so they can't drift apart
+    _INGREDIENT_DEFS = (
+        ("AzuriteGem",       "Azure Crystal"),
+        ("AmberStone",       "Amber Stone"),
+        ("PaleGreyFragment", "Pale Grey Fragment"),
+    )
+
+    def __init__(self, player: Player, tile: MapTile, params=None):
+        super().__init__(
+            name="Geode",
+            description=(
+                "A large hollow geode resting on a natural stone pedestal. "
+                "Three shallow depressions are carved into its rim, each shaped to receive "
+                "a single fragment. The vein colours above the depressions match the ritual "
+                "sequence from the Atrium etching: blue, amber, grey."
+            ),
+            idle_message="A hollow geode rests on a stone pedestal here, waiting.",
+            discovery_message=" a hollow geode resting on a stone pedestal!",
+            player=player, tile=tile,
+            aliases=["geode", "hollow geode", "pedestal", "stone pedestal"],
+        )
+        self.keywords.extend(["place", "insert", "solve", "use", "examine"])
+        self.action_aliases.extend(["examine", "use"])
+
+    def _has_ingredient(self, cls_name: str) -> bool:
+        return any(item.__class__.__name__ == cls_name for item in self.player.inventory)
+
+    def _remove_ingredient(self, cls_name: str) -> None:
+        for item in list(self.player.inventory):
+            if item.__class__.__name__ == cls_name:
+                self.player.inventory.remove(item)
+                return
+
+    def place(self, player=None):
+        """Attempt to solve the puzzle by placing the three mineral fragments."""
+        if player is not None:
+            self.player = player
+        missing = [
+            name for cls, name in self._INGREDIENT_DEFS
+            if not self._has_ingredient(cls)
+        ]
+        if missing:
+            print(f"The depressions wait. Jean is missing: {', '.join(missing)}.")
+            print("The ritual carving in the Atrium showed the sequence clearly.")
+            return
+        # All three fragments present — solve the puzzle
+        print("\nJean places the blue crystal in the first depression. The vein above it pulses.")
+        time.sleep(1)
+        print("The amber stone settles into the second. A harmonic hum begins, low and resonant.")
+        time.sleep(1)
+        print("The pale grey fragment locks into the third.")
+        time.sleep(0.5)
+        print("\nA sound like a struck bell fills the chamber — the geode cracks open.")
+        time.sleep(1)
+        print(
+            "Inside: a stone pauldron, inlaid with the same tricolor veins as the walls. "
+            "Still luminous."
+        )
+        time.sleep(1)
+        for cls, _name in self._INGREDIENT_DEFS:
+            self._remove_ingredient(cls)
+        if self.tile:
+            self.tile.spawn_item("EnchantedGolemitePauldron")
+        if self.tile and self in self.tile.objects_here:
+            self.tile.objects_here.remove(self)
+        functions.await_input()
+
+    def insert(self, player=None):
+        self.place(player)
+
+    def solve(self, player=None):
+        self.place(player)
+
+    def use(self, player=None):
+        self.place(player)
+
+    def examine(self):
+        print(self.description)

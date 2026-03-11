@@ -1,0 +1,840 @@
+{
+    "metadata": {
+        "bgm": "mineral_pools"
+    },
+    "(2, 0)": {
+        "id": "tile_2_0",
+        "title": "GrondelithEntry",
+        "description": "The path descends here, carved smooth by centuries of Golemite feet. The air changes abruptly — cool and damp, carrying a mineral freshness that feels almost ceremonial. Far below, a faint blue luminescence pulses steadily from the pools.",
+        "exits": [
+            "west",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Path to Grondia",
+                    "description": "An ascending passage leads back northeast toward Grondia.",
+                    "idle_message": "An ascending passage leads back toward Grondia.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a passage back to Grondia!",
+                    "announce": "An ascending passage leads back toward Grondia.",
+                    "keywords": [
+                        "enter",
+                        "go",
+                        "leave",
+                        "exit"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia",
+                    "teleport_tile": [7, 9],
+                    "persist": true,
+                    "is_shop_exit": false
+                }
+            }
+        ]
+    },
+    "(1, 0)": {
+        "id": "tile_1_0",
+        "title": "GrondelithRitualChamber",
+        "description": "A small chamber off the descent path, its angles too precise to be natural. Every surface is covered in careful Golemite markings — row upon row of etched script in a language Jean cannot read. At the chamber's centre, a shallow carved basin sits worn smooth. It was regularly used; that much is clear from the texture of the stone around it.",
+        "exits": [
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Dense Golemite script covers every wall. Near the basin's rim, three symbols repeat in an unbroken sequence: a blue-veined crystal, a deep amber stone, a pale grey shard. The same sequence, carved dozens of times — a ritual repeated across generations.",
+                    "idle_message": "There appears to be words inscribed on the walls.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "some words etched into the wall!",
+                    "announce": "There appears to be words inscribed on the walls.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "The same three symbols repeat on every surface — blue-veined crystal, deep amber stone, pale grey shard. Over and over. The sequence never varies. Whatever this ritual was, it was important enough to be carved here by many hands, across many years."
+                }
+            }
+        ]
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "GrondelithAtrium",
+        "description": "A vaulted natural cathedral stops Jean mid-step. Dozens of spring-fed pools fill the basin below, their water a luminous, milky blue — almost alive — flowing in precise, swirling channels carved into polished stone over countless generations. Golemite tools line the walls in careful rows: stone picks, broad chisels, flat-headed rammers. All recently used. All reverently set aside. This place was tended. This place was loved.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "HealingSpring",
+                "__module__": "objects",
+                "props": {
+                    "name": "HealingSpring",
+                    "description": "One of the spring-fed pools that forms the heart of the Grondelith complex. The water is impossibly clear and cool — it smells of minerals and something older. Drinking from it restores Jean's health.",
+                    "idle_message": "One of the atrium's sacred springs burbles quietly here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a healing spring!",
+                    "announce": "One of the atrium's sacred springs burbles quietly here.",
+                    "keywords": [
+                        "drink",
+                        "clean",
+                        "wash"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "An etching above the spring. You think you can READ it.",
+                    "idle_message": "There appears to be some words inscribed above the spring.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "some words etched into the wall!",
+                    "announce": "There appears to be some words inscribed above the spring.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Three symbols are etched in careful sequence: a blue-veined crystal, a deep amber stone, a pale grey shard. The symbols are clean and deliberate — different in style from the dense script elsewhere, as though this inscription was meant to be read by someone who could not read the rest."
+                }
+            }
+        ]
+    },
+    "(1, 1)": {
+        "id": "tile_1_1",
+        "title": "GrondelithAlcove",
+        "description": "A quiet alcove barely touched by visitors. The stone is worn perfectly smooth — polished by generations of Golemite hands in prayer or grief. A shallow basin holds a thin film of pristine water. Along the basin's lip, small smooth stones are laid in careful rows, featureless from decades of water — grief stones, placed here by those who had lost someone.",
+        "exits": [
+            "north",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "AzuriteGem",
+                "__module__": "items",
+                "props": {}
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 1)": {
+        "id": "tile_3_1",
+        "title": "GrondelithPoolEast",
+        "description": "The main atrium opens into a wider basin to the east. The central pool here is the largest in the complex — impossibly clear, with a mineral sandy floor visible ten feet down. The silence is complete except for a faint trickle from a spring above. On the far wall, more tool racks. Near them, etchings that record dates or intervals — the marks of Golemite years, counting an unbroken history of tending.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Old marks etched into the stone. You think you can READ them.",
+                    "idle_message": "There appears to be some marks etched into the far wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "some marks etched into the wall!",
+                    "announce": "There appears to be some marks etched into the far wall.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "The marks are tally counts, grouped in clusters of varying size. Dates, perhaps, or harvests — or both. The earliest marks are nearly worn away. The most recent are sharp-cut and still pale. Whoever was keeping this record stopped recently."
+                }
+            }
+        ]
+    },
+    "(4, 1)": {
+        "id": "tile_4_1",
+        "title": "GrondelithHighBasin",
+        "description": "The easternmost reach of the atrium. A natural stone shelf lifts the floor several feet, and a smaller basin sits here, fed by a trickle from above. The water is marginally clearer than the rest — the oldest pool, fed by the oldest spring. The stone shelf edge is worn smooth from long use.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "AmberStone",
+                "__module__": "items",
+                "props": {}
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "GrondelithChannelEntry",
+        "description": "The colour changes here. The milky-blue water turns a sickly iridescent green; thick slime coats the walls and floor, and the air turns greasy and sour. On the west wall, barely visible beneath a coat of goop, a narrow crevice breathes a ghost of clean air — as though something pristine holds the corruption at bay from the other side.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "PulsingGlandEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "PulsingGlandEvent_2_2_a",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": "Slime",
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "PulsingGlandEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "PulsingGlandEvent_2_2_b",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": "Slime",
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 2)": {
+        "id": "tile_1_2",
+        "title": "GrondelithCrevice",
+        "description": "A gap barely wide enough to squeeze through. The slime here is thin — reluctant, almost repelled. Beyond: cold, clean air, sharp with minerals. Silence. Whatever is inside, the corruption has not reached it.",
+        "exits": [
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 2)": {
+        "id": "tile_3_2",
+        "title": "GrondelithChannelNorth",
+        "description": "A narrow stone walkway bridges a channel of slime too thick to be called liquid. The stone underfoot has a faint give — the corruption eating through from below. To the east, a sealed chamber echoes with something feeding.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 2)": {
+        "id": "tile_4_2",
+        "title": "GrondelithNorthPocket",
+        "description": "A sealed pocket of concentrated corruption. Every surface is sheeted in thick slime. A stone shelf juts from the east wall above the slime line, its surface worn smooth — this pocket was once a workroom or storage area, before the infestation claimed it.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 4,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "items",
+                "props": {
+                    "amt": 100
+                }
+            },
+            {
+                "__class__": "Antidote",
+                "__module__": "items",
+                "props": {
+                    "count": 3
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 3)": {
+        "id": "tile_2_3",
+        "title": "GrondelithDeepWest",
+        "description": "The corruption grows denser. The walls show deep acid pitting — stone dissolved rather than worn. A walkway above a near-stationary pool connects to the passages east and south. From the ceiling, a leathery chittering — something nesting above, disturbed by movement. The rumbling from the south is unmistakable now.",
+        "exits": [
+            "north",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent_slime",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent_bats",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:CaveBat"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "PulsingGlandEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "PulsingGlandEvent_2_3",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": "Slime",
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 3)": {
+        "id": "tile_3_3",
+        "title": "GrondelithDeepEast",
+        "description": "The eastern branch of the channels opens into a wider cavern. The slime here is layered and old — it has been feeding on the stone for longer. The walls show dissolution down to raw mineral. Near the far wall, something large and deliberate shifts in the muck.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent_elderslime",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:ElderSlime"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent_slime",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "PulsingGlandEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "PulsingGlandEvent_3_3",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": "Slime",
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 3)": {
+        "id": "tile_4_3",
+        "title": "GrondelithDeepPocket",
+        "description": "A low chamber where the ceiling has partially collapsed. The rubble is coated in old, dry slime — this back pocket was sealed off from the main infestation early, and the corruption here is older, quieter, more settled. The collapsed stone exposes raw mineral beneath.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "PaleGreyFragment",
+                "__module__": "items",
+                "props": {}
+            },
+            {
+                "__class__": "Restorative",
+                "__module__": "items",
+                "props": {
+                    "count": 2
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 4)": {
+        "id": "tile_2_4",
+        "title": "GrondelithNarrowPass",
+        "description": "The main passage narrows here — the walls close to arm's width for a stretch of twenty feet, the slime coating them making passage distinctly unpleasant. The south end opens abruptly into a larger space where the rumbling is now overwhelming.",
+        "exits": [
+            "north",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "PulsingGlandEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "PulsingGlandEvent_2_4_a",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": "Slime",
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "PulsingGlandEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "PulsingGlandEvent_2_4_b",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": "Slime",
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 4)": {
+        "id": "tile_3_4",
+        "title": "GrondelithFloodedPass",
+        "description": "The floor has dissolved here — slime ate through the stone, leaving a flooded passage crossed by a series of irregular stone islands. The walls show the water line from before the dissolution: a clean band of stone above, corrupted wreckage below.",
+        "exits": [
+            "north",
+            "west"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent_elderslime",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:ElderSlime"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent_slime",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "items",
+                "props": {
+                    "amt": 75
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 3)": {
+        "id": "tile_1_3",
+        "title": "GrondelithGrotto",
+        "description": "The sourness of the channels disappears the moment Jean steps through. The air is cold and clean — sharp with minerals, with something older underneath. Mineral veins run through every surface, pulsing with a tricolor glow: blue-white, amber-gold, pale silver-grey. The light is steady and quiet.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Words carved finely into the stone near the pedestal. You think you can READ them.",
+                    "idle_message": "There appears to be some words inscribed near the pedestal.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "some words etched near the pedestal!",
+                    "announce": "There appears to be some words inscribed near the pedestal.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "The vein colours above the three depressions match the sequence from the Atrium etching exactly — blue, then amber, then grey. Whatever this opens, the order matters."
+                }
+            },
+            {
+                "__class__": "GeminateGeode",
+                "__module__": "objects",
+                "props": {
+                    "name": "Geode",
+                    "description": "A large hollow geode resting on a natural stone pedestal. Three shallow depressions are carved into its rim, each shaped to receive a single fragment. The vein colours above the depressions match the ritual sequence from the Atrium etching: blue, amber, grey.",
+                    "idle_message": "A hollow geode rests on a stone pedestal here, waiting.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a hollow geode resting on a stone pedestal!",
+                    "announce": "A hollow geode rests on a stone pedestal here, waiting.",
+                    "keywords": [
+                        "place",
+                        "insert",
+                        "solve",
+                        "use",
+                        "examine"
+                    ],
+                    "action_aliases": [
+                        "examine",
+                        "use"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(2, 5)": {
+        "id": "tile_2_5",
+        "title": "GrondelithApproach",
+        "description": "The cavern narrows again. The rumbling is a physical presence now — coming up through Jean's boots in slow, rhythmic pulses, each one slightly stronger than the last. The green slime on the walls shudders with each pulse, as if breathing. The passage south opens into a vast space full of pulsing verdant light.",
+        "exits": [
+            "north",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:Slime"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 6)": {
+        "id": "tile_2_6",
+        "title": "GrondelithArena",
+        "description": "A circular cavern cathedral-wide. An immense pool of pulsating green slime fills the chamber from wall to wall, leaving only a single island of clean stone at the centre. Something colossal shifts beneath the surface — a mountain of corrupted mass, slowly rising.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {
+                        "__class_type__": "npc:KingSlime"
+                    },
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "AfterDefeatingKingSlime",
+                "__module__": "story.ch02",
+                "props": {
+                    "name": "AfterDefeatingKingSlime",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    }
+}

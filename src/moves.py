@@ -2291,6 +2291,103 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
         print(self.stage_announce[1])
 
 
+class TelegraphedSurge(NpcAttack):
+    """
+    Base for telegraphed charge attacks that give the player a wind-up warning
+    and deal amplified damage if the hit lands. Subclasses set class-level
+    constants and supply flavour text; the mechanics are shared here.
+
+    Subclass interface:
+        _DAMAGE_MULTIPLIER  float  — final power = NpcAttack power × this
+        _EXTRA_PREP_BEATS   int    — extra beats added to prep phase (dodge window)
+        _prep_text(npc)     str    — yellow telegraph line shown during wind-up
+        _hit_text(npc, target_name)  str  — red line shown on impact
+        _recoil_text(npc)   str    — plain line shown after surge
+    """
+    _DAMAGE_MULTIPLIER = 1.0
+    _EXTRA_PREP_BEATS = 0
+
+    def _prep_text(self, npc):
+        return f"{npc.name} coils in preparation — now is the time to get clear."
+
+    def _hit_text(self, npc, target_name):
+        return f"{npc.name} surges outward and strikes {target_name}!"
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} recoils, spent by the effort."
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
+
+    def evaluate(self):
+        super().evaluate()
+        self.power *= self._DAMAGE_MULTIPLIER
+        self.stage_beat[0] += self._EXTRA_PREP_BEATS
+
+    def refresh_announcements(self, npc):
+        target_name = self.target.name if self.target else "its target"
+        self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
+        self.stage_announce[1] = colored(self._hit_text(npc, target_name), "red")
+        self.stage_announce[2] = self._recoil_text(npc)
+
+
+class SlimeVolley(TelegraphedSurge):
+    """
+    Telegraphed directional surge used by ElderSlime. The extended prep phase gives
+    the player time to Dodge; if unparried, deals significantly amplified damage.
+    """
+    _DAMAGE_MULTIPLIER = 2.2
+    _EXTRA_PREP_BEATS = 4
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Slime Volley"
+
+    def _prep_text(self, npc):
+        return (
+            f"{npc.name} draws back, compressing into a tight, trembling mass — coiling. "
+            f"Now is the time to get clear."
+        )
+
+    def _hit_text(self, npc, target_name):
+        return (
+            f"{npc.name} erupts outward with a sound like a wave breaking on stone! "
+            f"A crashing surge of corrupted slime strikes {target_name}!"
+        )
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} trembles, spent by the effort."
+
+
+class TidalSurge(TelegraphedSurge):
+    """
+    Boss-tier telegraphed surge used by KingSlime. Same two-turn structure as
+    SlimeVolley but with dramatically higher damage multiplier and longer prep.
+    """
+    _DAMAGE_MULTIPLIER = 2.5
+    _EXTRA_PREP_BEATS = 5
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Tidal Surge"
+
+    def _prep_text(self, npc):
+        return (
+            f"{npc.name}'s entire mass draws inward — the pool around it recedes with a "
+            f"terrifying suction. The arena floor shudders. It is about to surge."
+        )
+
+    def _hit_text(self, npc, target_name):
+        return (
+            f"{npc.name} erupts — a solid wall of corrupted mass crashes across the stone "
+            f"and slams into {target_name}!"
+        )
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} settles back, the surge spent."
+
+
 class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
     def __init__(self, npc):
         description = ""

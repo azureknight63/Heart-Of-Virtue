@@ -1829,4 +1829,63 @@ class CaveBat(NPC):
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Dodge(self), 2)
 
+class ElderSlime(NPC):
+    """
+    Mid-tier threat in the Grondelith Mineral Pools. Larger and slower than a Slime,
+    but capable of a devastating telegraphed directional surge (SlimeVolley).
+    Players who learn to read the charge can Dodge and avoid the worst of it.
+    """
+    def __init__(self):
+        description = (
+            "A vastly larger cousin of the common slime — slow, deliberate, and heavy. "
+            "It watches Jean with something that might be intelligence."
+        )
+        super().__init__(name="Elder Slime " + genericng.generate(2, 4), description=description,
+                         maxhp=70, damage=28, protection=12, awareness=20, speed=8, aggro=True,
+                         exp_award=45,
+                         idle_message=" shifts slowly in the muck.",
+                         alert_message=" fixes Jean with a cold, deliberate focus!")
+        self.resistance_base["slashing"] = 0.65
+        self.resistance_base["piercing"] = 0.65
+        self.resistance_base["crushing"] = 1.25
+        self.resistance_base["fire"] = 1.4
+        self.resistance_base["earth"] = 0.85
+        self.status_resistance_base["poison"] = 1.0
+        self.status_resistance_base["slimed"] = 1.0
+        self.add_move(moves.NpcAttack(self), 3)
+        self.add_move(moves.SlimeVolley(self), 4)
+        self.add_move(moves.Advance(self), 3)
+        self.add_move(moves.NpcIdle(self), 2)
+
+
+class KingSlime(NPC):
+    """
+    Chapter 1 boss. The final corruption of the Grondelith Mineral Pools.
+    Uses the same telegraphed surge mechanic as ElderSlime (TidalSurge) but at
+    boss scale — the player has learned the tell from two prior encounters.
+    """
+    def __init__(self):
+        description = (
+            "A colossal mass of pulsating green slime, its body studded with mineral fragments "
+            "it has consumed over centuries. It moves with a slow, terrible certainty."
+        )
+        super().__init__(name="King Slime", description=description,
+                         maxhp=200, damage=50, protection=15, awareness=30, speed=6, aggro=True,
+                         exp_award=500,
+                         idle_message=" pulses at the centre of the pool.",
+                         alert_message=" rears upward with a deep, resonant churn!")
+        self.resistance_base["slashing"] = 0.65
+        self.resistance_base["piercing"] = 0.65
+        self.resistance_base["crushing"] = 1.2
+        self.resistance_base["fire"] = 1.5
+        self.resistance_base["earth"] = 0.9
+        self.status_resistance_base["poison"] = 1.0
+        self.status_resistance_base["slimed"] = 1.0
+        self.loot = loot.lev1
+        self.add_move(moves.NpcAttack(self), 5)
+        self.add_move(moves.TidalSurge(self), 3)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.NpcIdle(self), 1)
+
+
 # Agent Support: This is the end of the file npc.py
