@@ -367,7 +367,7 @@ maintenant et à l'heure de notre mort. Amen.""",
     def apply_state(self, state):
         player_has_state = False
         if hasattr(state, "target"):
-                    state.target = self
+            state.target = self
         for player_state in self.states:
             if player_state.name == state.name:
                 player_has_state = True
@@ -422,9 +422,6 @@ maintenant et à l'heure de notre mort. Amen.""",
         EXP is always added to the "Basic" subtype regardless of the subtype declared.
         """
 
-        # self.skill_exp["Basic"] += amt
-        # if exp_type != "Basic":
-
         if exp_type not in self.skill_exp:
             self.skill_exp[exp_type] = 0
         self.skill_exp[exp_type] += amt
@@ -448,20 +445,6 @@ maintenant et à l'heure de notre mort. Amen.""",
                     cprint(f"Jean may spend some of his earned exp to learn a new {exp_type} skill. "
                            f"Type SKILL to open the skill menu for details.", "magenta")
                 break
-
-        # remove = []
-        # for k, v in self.skilltree.subtypes.items():
-        #     if k == exp_type or k == "Basic":
-        #         for skill, values in v.items():
-        #             values[1] += amt
-        #             if values[1] >= values[0]:
-        #                 self.learn_skill(skill)
-        #                 remove.append(skill)
-        # for ability in remove:
-        #     for k,v in self.skilltree.subtypes.items():
-        #         if ability in v:
-        #             v.pop(ability)
-        #             break
 
         if self.level < 100:
             self.exp += amt
@@ -605,20 +588,20 @@ maintenant et à l'heure de notre mort. Amen.""",
         except SyntaxError:
             cprint("Oops, something went wrong. \n\n" + traceback.format_exc())
 
-    def vars(self):  # print all variables
+    def print_story_vars(self):  # print all story variables (debug)
         print(self.universe.story)
 
     def alter(self, phrase=''):
         params = phrase.split(" ")
-        self.universe.story[params[0]] = params[1]
-        if self.universe.story[params[0]]:
-            try:
-                self.universe.story[params[0]] = params[1]
-                print("### SUCCESS: " + params[0] + " changed to " + params[1] + " ###")
-            except SyntaxError:
-                print("### ERR IN SETTING VAR; BAD ARGUMENTS: " + params[0] + " " + params[1] + " ###")
-        else:
-            print("### ERR IN SETTING VAR; NO ENTRY: " + params[0] + " " + params[1] + " ###")
+        if len(params) < 2:
+            print("### ERR IN SETTING VAR; BAD ARGUMENTS: " + phrase + " ###")
+            return
+        key, value = params[0], params[1]
+        if key not in self.universe.story:
+            print("### ERR IN SETTING VAR; NO ENTRY: " + key + " " + value + " ###")
+            return
+        self.universe.story[key] = value
+        print("### SUCCESS: " + key + " changed to " + value + " ###")
 
     def drop_merchandise_items(self):
         """Drop all merchandise items in current location with individual messages."""
@@ -764,9 +747,7 @@ maintenant et à l'heure de notre mort. Amen.""",
             self.heat = 0.5
 
     def refresh_enemy_list_and_prox(self):
-        for enemy in self.combat_list:
-            if not enemy.is_alive():
-                self.combat_list.remove(enemy)
+        self.combat_list = [e for e in self.combat_list if e.is_alive()]
         remove_these = []  # since you can't mutate a dict while iterating over it, delegate this iteration to a
         # list and THEN remove the enemy
         for enemy in self.combat_proximity:
@@ -1024,7 +1005,7 @@ he lets out a barely audible whisper:""", "red")
 
         def confirm(thing):
             check = input(colored("Equip {}? (y/n)".format(thing.name), "cyan"))
-            if check.lower() == ('y' or 'yes'):
+            if check.lower() in ('y', 'yes'):
                 return True
             else:
                 return False
@@ -1371,6 +1352,9 @@ he lets out a barely audible whisper:""", "red")
     def flee(self, tile):
         """Moves the player randomly to an adjacent tile"""
         available_moves = tile.adjacent_moves()
+        if not available_moves:
+            cprint("There's nowhere for Jean to run!", "red")
+            return
         r = random.randint(0, len(available_moves) - 1)
         self.do_action(available_moves[r])
 
@@ -1485,7 +1469,7 @@ he lets out a barely audible whisper:""", "red")
             hp_string = colored("HP: ", "red") + "["
             for bar in range(0, hp_pcnt):
                 hp_string += colored("█", "red")
-            for blank in range(hp_pcnt + 1, 10):
+            for blank in range(hp_pcnt, 10):
                 hp_string += " "
             hp_string += "]   "
         else:
@@ -1497,7 +1481,7 @@ he lets out a barely audible whisper:""", "red")
             fat_string = colored("FP: ", "green") + "["
             for bar in range(0, fat_pcnt):
                 fat_string += colored("█", "green")
-            for blank in range(fat_pcnt + 1, 10):
+            for blank in range(fat_pcnt, 10):
                 fat_string += " "
             fat_string += "]"
         else:
@@ -1628,17 +1612,17 @@ he lets out a barely audible whisper:""", "red")
         self.weight_current = round(self.weight_current, 2)
 
     def take(self, phrase=''):
-            """Open the room take interface or delegate phrase-based shortcuts.
+        """Open the room take interface or delegate phrase-based shortcuts.
 
-            This delegates interactive UI to `RoomTakeInterface` (in `interface.py`) while
-            preserving the helper methods `_take_all_items`, `_take_specific_item`, and
-            `_take_item` which the interface uses.
-            """
-            # Import here to avoid circular import issues at module import time
-            from interface import RoomTakeInterface
-            iface = RoomTakeInterface(self)
-            # If phrase is provided, pass it through (interface supports 'all' and name shortcuts)
-            iface.run(phrase)
+        This delegates interactive UI to `RoomTakeInterface` (in `interface.py`) while
+        preserving the helper methods `_take_all_items`, `_take_specific_item`, and
+        `_take_item` which the interface uses.
+        """
+        # Import here to avoid circular import issues at module import time
+        from interface import RoomTakeInterface
+        iface = RoomTakeInterface(self)
+        # If phrase is provided, pass it through (interface supports 'all' and name shortcuts)
+        iface.run(phrase)
 
     def add_items_to_inventory(self, items_received: list):
         """Add a list of items to the player's inventory, checking weight limits."""
@@ -1821,7 +1805,10 @@ he lets out a barely audible whisper:""", "red")
         party_size = len(self.combat_list_allies) - 1
         for friend in self.combat_list_allies:
             if friend.current_room != self.current_room:
-                friend.current_room.npcs_here.remove(friend)
+                try:
+                    friend.current_room.npcs_here.remove(friend)
+                except ValueError:
+                    pass
                 friend.current_room = self.current_room
                 friend.current_room.npcs_here.append(friend)
         if party_size == 1:
