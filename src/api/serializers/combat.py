@@ -26,6 +26,7 @@ class CombatStateSerializer:
         enemies: List["NPC"],
         current_turn_index: int = 0,
         round_number: int = 1,
+        allies: List["NPC"] = None,
     ) -> Dict[str, Any]:
         """
         Serialize entire battle state.
@@ -35,18 +36,26 @@ class CombatStateSerializer:
             enemies: List of enemy NPCs
             current_turn_index: Index of current combatant
             round_number: Current battle round
+            allies: List of allied NPCs (party members, excluding the player)
 
         Returns:
             Dict with full combat state
         """
+        allies = allies or []
+        serialized_allies = [CombatantSerializer.serialize_combatant(a, reference=player) for a in allies]
         return {
             "status": "active",
             "round": round_number,
             "current_turn_index": current_turn_index,
             "player": CombatantSerializer.serialize_combatant(player),
+            "allies": serialized_allies,
             "enemies": [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
             "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
-            "combatants": [CombatantSerializer.serialize_combatant(player)] + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
+            "combatants": (
+                [CombatantSerializer.serialize_combatant(player)]
+                + serialized_allies
+                + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies]
+            ),
             "suggested_moves": getattr(player, "suggested_moves", []),
             "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),

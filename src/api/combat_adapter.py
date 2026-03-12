@@ -1486,12 +1486,13 @@ class ApiCombatAdapter:
         """
         Get the current combat state for the frontend.
         """
-        # Serialize combat state
+        # Serialize combat state (allies excludes the player who is always index 0)
         battle_state = CombatStateSerializer.serialize_combat_state(
             self.player,
             self.player.combat_list,
             current_turn_index=0,  # Not used in API version
-            round_number=getattr(self.player, "combat_beat", 0)
+            round_number=getattr(self.player, "combat_beat", 0),
+            allies=self.player.combat_list_allies[1:],
         )
         
         # Add API-specific fields
