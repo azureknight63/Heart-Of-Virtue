@@ -1,9 +1,14 @@
+import inspect
+import json
+import os
+import importlib.util
 import random
+import re
 import time
-import genericng as genericng  # type: ignore
-import moves as moves  # type: ignore
-import functions as functions  # type: ignore
-import loot_tables as loot_tables  # type: ignore
+import genericng  # type: ignore
+import moves  # type: ignore
+import functions  # type: ignore
+import loot_tables  # type: ignore
 from items import (Item, Shortsword, Gold, Restorative, Draught, Antidote, Rock, Spear, Fists, Key, Special, Consumable, Accessory,
                        Gloves, Helm, Boots, Armor, Weapon, Arrow)  # type: ignore
 import items as items_module  # type: ignore  # added for unique item registry management
@@ -11,10 +16,6 @@ from objects import Container  # type: ignore
 from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition  # type: ignore
 from neotermcolor import colored, cprint
 from pathlib import Path
-import os
-import importlib.util
-import re
-import positions  # type: ignore
 from npc_ai_config import NPCAIConfig  # type: ignore
 from combatant import Combatant
 
@@ -264,7 +265,8 @@ class NPC(Combatant):
                     })
                 break  # only one item in the loot table will drop
 
-""" Merchants """
+# --- Merchants ---
+
 
 class Merchant(NPC):
     def __init__(self, name: str, description: str, damage: int, aggro: bool, exp_award: int,
@@ -670,7 +672,6 @@ class Merchant(NPC):
         if all_full():
             return
 
-        import inspect
         # Build candidate classes (exclude Item itself & unique factories)
         try:
             unique_factories = set(items_module.unique_item_factories)  # type: ignore[attr-defined]
@@ -746,7 +747,6 @@ class Merchant(NPC):
                     continue
                 try:
                     for t in allowed:
-                        debug_item_class = item.__class__
                         if isinstance(item, t):
                             elig.append(ct)
                             break
@@ -784,9 +784,8 @@ class Merchant(NPC):
                 placed = True
             if not placed:
                 continue
-            if placed:
-                # Successfully placed, so we don't need it to appear in the room
-                self._remove_placed_item_from_room(spawned)
+            # Successfully placed, so we don't need it to appear in the room
+            self._remove_placed_item_from_room(spawned)
         return
 
     def _update_shop_conditions(self):
@@ -894,8 +893,9 @@ class MiloCurioDealer(Merchant):
             stock_count=30,
             base_gold=self.base_gold
         )
-        self.shop.exit_message = ("Milo nods as you leave his shop, "
-                                  "already looking for new curiosities to add to his collection.")
+        if self.shop:
+            self.shop.exit_message = ("Milo nods as you leave his shop, "
+                                      "already looking for new curiosities to add to his collection.")
     def talk(self, player):  # noqa
         print("Milo grins: 'Looking for something rare, friend? I've got just the thing!'")
     def trade(self, player):
@@ -960,7 +960,7 @@ class JamboHealsU(Merchant):
         self.shop.run()
 
 
-""" Friends """
+# --- Friends ---
 
 
 class Friend(NPC):
@@ -1066,9 +1066,8 @@ class Mynx(Friend):
             root = Path(__file__).resolve().parent.parent  # project root
             jean_path = root / 'ai' / 'player' / 'jean.json'
             if jean_path.exists():
-                import json as _json
                 with open(jean_path, 'r', encoding='utf-8') as f:
-                    self._jean_advisor = _json.load(f)
+                    self._jean_advisor = json.load(f)
             else:
                 self._jean_advisor = {
                     'character_name': 'Jean',
@@ -1165,7 +1164,6 @@ class Mynx(Friend):
         allowed_names: iterable of permitted entity names (case sensitive as provided) including the mynx's name.
         """
         try:
-            import re
             if not text:
                 return text
             allowed = set(allowed_names or [])
@@ -1307,12 +1305,7 @@ class Mynx(Friend):
                     target = 'mynx'
                 else:
                     # look for any other roster names; if a roster name (other NPC) appears, prefer neutral
-                    found_other = False
-                    for nm in roster_set:
-                        if nm.lower() != self.name.lower() and nm.lower() in lowered:
-                            found_other = True
-                            break
-                    target = 'neutral' if found_other else 'neutral'
+                    target = 'neutral'
 
                 # replace gendered pronouns in this sentence according to target
                 def repl_gendered_local(m):
@@ -1651,7 +1644,6 @@ class Mynx(Friend):
           - Ensure terminal period.
         """
         try:
-            import re as _re
             if not isinstance(text, str):
                 return None
             raw = text.strip()
@@ -1659,7 +1651,7 @@ class Mynx(Friend):
                 return None
             if '"' in raw or ("'" in raw and (' says ' in raw or raw.count('"') >= 2)):
                 return None
-            sentences = [s.strip() for s in _re.split(r"[.!?]", raw) if s.strip()]
+            sentences = [s.strip() for s in re.split(r"[.!?]", raw) if s.strip()]
             if not sentences:
                 return None
             if len(sentences) > 2:
@@ -1668,7 +1660,7 @@ class Mynx(Friend):
             allowed = set(roster or []) | {self.name, 'Jean'}
             pronoun = self.pronouns.get('personal', 'it') if hasattr(self, 'pronouns') else 'it'
             poss_adj = (self.pronouns.get('possessive_adjective') or self.pronouns.get('possessive') or 'its') if hasattr(self, 'pronouns') else 'its'
-            pattern = _re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
+            pattern = re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
             def fix_token(m):
                 base = m.group(1)
                 possessive = m.group(2)
@@ -1713,7 +1705,7 @@ friendly enough to Jean.
         self.pronouns = {"personal": "he", "possessive": "his", "reflexive": "himself", "intensive": "himself"}
 
     def before_death(self):
-        print(colored(self.name, "yellow", attrs="bold") + " quaffs one of his potions!")
+        print(colored(self.name, "yellow", attrs=["bold"]) + " quaffs one of his potions!")
         self.fatigue /= 2
         self.hp = self.maxhp
         return False
