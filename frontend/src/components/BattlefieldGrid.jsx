@@ -741,6 +741,12 @@ export default function BattlefieldGrid({
     const style = getEntityStyle(getPos(combat.player));
     if (style) entitiesToRender.push({ entity: combat.player, style, isPlayer: true });
   }
+  combat?.allies?.forEach((ally) => {
+    if (ally.hp === undefined || ally.hp > 0 || (ally.health?.current ?? 0) > 0) {
+      const style = getEntityStyle(getPos(ally));
+      if (style) entitiesToRender.push({ entity: ally, style, isPlayer: true });
+    }
+  });
   combat?.enemies?.forEach((enemy) => {
     if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0) > 0) {
       const style = getEntityStyle(getPos(enemy));
