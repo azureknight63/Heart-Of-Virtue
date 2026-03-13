@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
@@ -12,7 +12,7 @@ import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
  * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
  * Provides target selection, detailed item/object info, and action execution
  */
-export default function InteractPanel({
+function InteractPanel({
     location,
     onInteractionComplete,
     onEventsTriggered,
@@ -545,3 +545,5 @@ export default function InteractPanel({
         </BaseDialog>
     )
 }
+
+export default React.memo(InteractPanel)
