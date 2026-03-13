@@ -533,11 +533,6 @@ maintenant et à l'heure de notre mort. Amen.""",
         return skill
         # if not success, Jean already knows the skill so no need to do anything!
 
-    def get_hp_pcnt(self):  # returns the player's remaining HP as a decimal
-        curr = float(self.hp)
-        maxhp = float(self.maxhp)
-        return curr / maxhp
-
     def supersaiyan(self):  # makes player super strong! Debug only
         self.strength_base = 1000
         self.strength = 1000

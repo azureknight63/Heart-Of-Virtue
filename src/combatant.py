@@ -85,3 +85,7 @@ class Combatant:
     def refresh_moves(self):
         """Return the subset of known_moves that are currently viable."""
         return [move for move in self.known_moves if move.viable()]
+
+    def get_hp_pcnt(self):
+        """Return remaining HP as a decimal fraction (0.0–1.0)."""
+        return float(self.hp) / float(self.maxhp)
