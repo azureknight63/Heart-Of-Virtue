@@ -1875,3 +1875,126 @@ class Book(Special):
             if not getattr(self.event, 'repeat', False):
                 self.event = None
             functions.await_input()
+
+
+# ---------------------------------------------------------------------------
+# Grondelith Mineral Pools — puzzle ingredients, quest items, and rewards
+# ---------------------------------------------------------------------------
+
+class AzuriteGem(Special):
+    """Puzzle ingredient #1. Found in the Sacred Atrium of the Grondelith Mineral Pools."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Azure Crystal",
+            description=(
+                "A smooth crystal threaded with vivid blue veins, still faintly luminous "
+                "with mineral essence. It feels cool and slightly damp, as though newly lifted "
+                "from the pools."
+            ),
+            value=0,
+            weight=0.1,
+            maintype="Special",
+            subtype="Ingredient",
+            discovery_message="a blue-veined crystal!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "There's an Azure Crystal here."
+
+
+class AmberStone(Special):
+    """Puzzle ingredient #2. Found in the Sacred Atrium of the Grondelith Mineral Pools."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Amber Stone",
+            description=(
+                "A deep amber mineral fragment, warm to the touch — warm as freshly struck flint. "
+                "Its colour shifts slightly depending on the angle of the light."
+            ),
+            value=0,
+            weight=0.1,
+            maintype="Special",
+            subtype="Ingredient",
+            discovery_message="a warm amber stone!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "There's an Amber Stone here."
+
+
+class PaleGreyFragment(Special):
+    """Puzzle ingredient #3. Found deep in the Corrupted Channels."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Pale Grey Fragment",
+            description=(
+                "A smooth, pale-grey mineral shard, surprisingly light for its size. "
+                "Its surface is uniformly matte — it absorbs light rather than reflecting it."
+            ),
+            value=0,
+            weight=0.1,
+            maintype="Special",
+            subtype="Ingredient",
+            discovery_message="a pale grey mineral fragment!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "There's a Pale Grey Fragment here."
+
+
+class MineralFragment(Special):
+    """
+    Quest item. Retrieved from the King Slime's body. Triggers a memory flash
+    in the AfterDefeatingKingSlime story event.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Rare Mineral Fragment",
+            description=(
+                "An impossibly pristine mineral fragment. Each edge is razor-sharp — "
+                "unnaturally so. It was inside the King Slime; how long, it's impossible to say. "
+                "Something about it feels significant."
+            ),
+            value=0,
+            weight=0.2,
+            maintype="Special",
+            subtype="Quest",
+            discovery_message="a pristine mineral fragment, each edge razor-sharp!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "A pristine mineral fragment catches the light here."
+
+
+class EnchantedGolemitePauldron(Armor):
+    """
+    Reward for solving the Luminous Grotto puzzle. Carved Golemite stone inlaid
+    with luminous mineral veins. High protection; lighter than it looks.
+    """
+
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
+        super().__init__(
+            name="Golemite Blessed Pauldron",
+            description=(
+                "A shoulder-guard carved from Golemite stone and inlaid with luminous mineral "
+                "veins that pulse faintly — blue, amber, then grey, in slow rotation. "
+                "It is lighter than it looks. The veins absorb and dissipate slime-type impacts "
+                "with unusual efficiency."
+            ),
+            value=600,
+            protection=20,
+            isequipped=False,
+            str_req=8,
+            str_mod=0.6,
+            weight=3.0,
+            maintype="Armor",
+            subtype="Pauldron",
+            discovery_message="a glowing stone pauldron!",
+            merchandise=merchandise,
+            enchantment_level=enchantment_level,
+        )
+        self.add_resistance = {"crushing": 0.25}  # mineral veins dissipate crushing/slime impacts

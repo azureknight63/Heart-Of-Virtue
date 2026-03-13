@@ -425,7 +425,16 @@ class GameService:
         player.location_x = new_x
         player.location_y = new_y
         player.current_room = new_tile
-        
+
+        # Move any party members to the new room (mirrors game.py terminal behaviour)
+        if len(getattr(player, "combat_list_allies", [])) > 1:
+            import io, contextlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    player.recall_friends()
+                except Exception:
+                    pass
+
         # Record exploration of the new tile
         self._record_exploration(player, new_tile)
 
@@ -1843,6 +1852,16 @@ class GameService:
             "max_weight": max_weight,
             "weight_pct": weight_pct,
             "state": "normal",  # TODO: Get actual status effects
+            "party_members": [
+                {
+                    "name": getattr(a, "name", "Unknown"),
+                    "hp": getattr(a, "hp", 0),
+                    "max_hp": getattr(a, "maxhp", 0),
+                    "level": getattr(a, "level", 1),
+                    "description": getattr(a, "description", "").strip(),
+                }
+                for a in getattr(player, "combat_list_allies", [])[1:]
+            ],
         }
 
     def get_player_stats(self, player: "player_module.Player") -> Dict[str, Any]:
@@ -2265,7 +2284,9 @@ class GameService:
         
         # Set combat lists on player (required by adapter)
         player.combat_list = enemies
-        player.combat_list_allies = [player]  # Player is always in allies list
+        # Preserve existing party members (e.g. Gorran already recruited) — only player is reset
+        existing_allies = [a for a in getattr(player, "combat_list_allies", []) if a is not player]
+        player.combat_list_allies = [player] + existing_allies
         player.in_combat = True
 
         # Initialize last move tracking for "DO IT AGAIN" button
