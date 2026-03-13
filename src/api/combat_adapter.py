@@ -460,7 +460,8 @@ class ApiCombatAdapter:
         # If move is targeted, find target
         if selected_move.targeted:
             target = None
-            
+            viable_targets = self._get_available_targets(selected_move)
+
             if target_id:
                 # Try to find the specified target
                 target_obj_id = target_id.replace("enemy_", "")
@@ -469,10 +470,9 @@ class ApiCombatAdapter:
                     if str(id(combatant)) == target_obj_id:
                         target = combatant
                         break
-            
+
             # If no specific target found, try to auto-resolve if there's only one viable target
             if not target:
-                viable_targets = self._get_available_targets(selected_move)
                 if len(viable_targets) == 1:
                     single_target_id = viable_targets[0].get("id") if isinstance(viable_targets[0], dict) else None
                     if not isinstance(single_target_id, str):
@@ -484,9 +484,15 @@ class ApiCombatAdapter:
                         if str(id(combatant)) == target_obj_id:
                             target = combatant
                             break
-            
+                elif len(viable_targets) > 1:
+                    # Multiple viable targets — request target selection
+                    self.input_type = "target_selection"
+                    self.available_options = viable_targets
+                    self.pending_move_index = self.player.known_moves.index(selected_move) if selected_move in self.player.known_moves else -1
+                    return self.get_combat_state()
+
             if not target:
-                return {"error": "Target required but none specified, and multiple or zero targets are viable."}
+                return {"error": "No viable targets available for this move."}
             
             selected_move.target = target
         else:

@@ -94,16 +94,6 @@ class MapTile:
                 actions.Save(),
             ]
 
-        debug_moves = [  # these are the moves available to the player if debugging is enabled
-            actions.Teleport(),
-            actions.Showvar(),
-            actions.Alter(),
-            actions.Supersaiyan(),
-            actions.TestEvent(),
-            actions.SpawnObj(),
-            actions.RefreshMerchants()
-        ]
-
         for move in default_moves:
             moves.append(move)
 
@@ -115,8 +105,17 @@ class MapTile:
             # Fallback to universe.testing_mode for backward compatibility
             debug_enabled = True
 
-        # Only include debug commands if debug mode is enabled
+        # Only instantiate debug commands if debug mode is enabled
         if debug_enabled:
+            debug_moves = [
+                actions.Teleport(),
+                actions.Showvar(),
+                actions.Alter(),
+                actions.Supersaiyan(),
+                actions.TestEvent(),
+                actions.SpawnObj(),
+                actions.RefreshMerchants()
+            ]
             for move in debug_moves:
                 # noinspection PyTypeChecker
                 moves.append(move)

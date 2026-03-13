@@ -201,7 +201,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     tile_cls = getattr(tiles_mod, 'MapTile')
                 except Exception:
                     from tiles import MapTile as tile_cls  # fallback
-            tile_instance = tile_cls(self, this_map, x, y, description=description)
+            tile_instance = tile_cls(self, this_map, x, y)
+            # Override description from JSON only if one was provided (tile subclasses
+            # may hardcode their own description via super().__init__; respect that as default)
+            if description:
+                tile_instance.description = description
             # block exits & symbol
             if 'block_exit' in tile_data and isinstance(tile_data['block_exit'], list):
                 tile_instance.block_exit = list(tile_data['block_exit'])
