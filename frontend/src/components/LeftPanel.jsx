@@ -125,7 +125,7 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
     if (pendingLogEntries.length > 0) {
       setIsProcessingLog(true)
 
-      const delayPerLine = 800 // ms per line
+      const delayPerLine = 400 // ms per line
       let currentIndex = 0
       const currentPending = pendingLogEntries // capture for closure
 

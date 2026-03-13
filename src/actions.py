@@ -138,7 +138,7 @@ class Alter(Action):  # change a switch/variable
 
 class Showvar(Action):  # list all switches/vars
     def __init__(self):
-        super().__init__(method=Player.vars, name="Showvar", hotkey=('sv', 'showvar'), debug=True, color='silver')
+        super().__init__(method=Player.print_story_vars, name="Showvar", hotkey=('sv', 'showvar'), debug=True, color='silver')
 
 
 class Supersaiyan(Action):
