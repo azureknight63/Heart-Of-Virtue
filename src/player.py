@@ -1505,13 +1505,6 @@ he lets out a barely audible whisper:""", "red")
 
         print(hp_string + fat_string)
 
-    def refresh_moves(self):
-        available_moves = []
-        for move in self.known_moves:
-            if move.viable():
-                available_moves.append(move)
-        return available_moves
-
     def refresh_protection_rating(self):
         self.protection = (self.endurance / 10)  # base level of protection from player stats
         for item in self.inventory:
