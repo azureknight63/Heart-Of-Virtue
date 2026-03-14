@@ -220,7 +220,7 @@ class Ch01PostRumbler(Event):  # Occurs when Jean beats the first rumbler after 
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params, combat_effect=True)
 
     def check_combat_conditions(self):
-        if len(self.player.combat_list) == 0:
+        if not self.player.combat_list:
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
@@ -295,7 +295,7 @@ class Ch01PostRumblerRep(Event):
         self.iteration = 2
 
     def check_combat_conditions(self):
-        if len(self.player.combat_list) == 0:
+        if not self.player.combat_list:
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
@@ -353,7 +353,8 @@ class Ch01PostRumbler2(Event):
 
         for event in list(self.player.combat_events):
             if event.name == 'Ch01_PostRumbler_Rep':
-                self.player.combat_events.remove(event)  # Remove the repeating event
+                if event in self.player.combat_events:
+                    self.player.combat_events.remove(event)  # Remove the repeating event
         
         cprint(
             "\nSuddenly, a loud 'crack' thunders through the chamber. A nearby wall splits open and a massive figure "
@@ -406,7 +407,7 @@ class Ch01PostRumbler3(Event):
 
     def check_combat_conditions(self):
         # Fire only after Jean has defeated all enemies (combat_list empty)
-        if len(self.player.combat_list) == 0:
+        if not self.completed and not self.player.combat_list:
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
@@ -519,6 +520,9 @@ class Ch01PostRumbler3(Event):
                 self.player.hp = 0
                 self.needs_input = False
                 self.completed = True
+                # Remove from combat_events since this is non-repeating (matches Ch01PostRumbler pattern)
+                if self in self.player.combat_events:
+                    self.player.combat_events.remove(self)
                 return
 
         # Correct choice (a) - virtuous path with ally
@@ -560,6 +564,9 @@ class Ch01PostRumbler3(Event):
             self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
             self.needs_input = False
             self.completed = True
+            # Remove from combat_events since this is non-repeating (matches Ch01PostRumbler pattern)
+            if self in self.player.combat_events:
+                self.player.combat_events.remove(self)
 
 
 class AfterTheRumblerFight(Event):
