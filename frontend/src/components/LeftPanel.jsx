@@ -17,10 +17,6 @@ import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 
 function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
-  // Don't render if player data hasn't loaded yet
-  if (!player) {
-    return null
-  }
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
@@ -420,6 +416,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     } catch (err) {
       console.error('Failed to send input:', err)
     }
+  }
+
+  // Don't render if player data hasn't loaded yet
+  if (!player) {
+    return null
   }
 
   return (
