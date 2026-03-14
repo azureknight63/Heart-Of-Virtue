@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
@@ -10,7 +10,7 @@ import { colors, spacing, commonStyles, fonts } from '../styles/theme'
  * EventDialog - Displays event output text and handles player input for events
  * Supports choice selection, text input, and number input with keyboard shortcuts
  */
-export default function EventDialog({ event, history = [], onClose, onSubmitInput }) {
+function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const [isComplete, setIsComplete] = useState(false)
     const [showInput, setShowInput] = useState(false)
     const [showHistory, setShowHistory] = useState(false)
@@ -494,3 +494,5 @@ export default function EventDialog({ event, history = [], onClose, onSubmitInpu
         </BaseDialog>
     )
 }
+
+export default React.memo(EventDialog)

@@ -65,7 +65,6 @@ combat.log
 test_res.txt
 logs/
 /logs/*.log
-frontend/src/test/
 
 # --- Project Specific ---
 .gemini

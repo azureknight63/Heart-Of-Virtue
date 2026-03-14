@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
@@ -16,11 +16,7 @@ import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 
-export default function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
-  // Don't render if player data hasn't loaded yet
-  if (!player) {
-    return null
-  }
+function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
@@ -71,12 +67,13 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
   const [isProcessingLog, setIsProcessingLog] = useState(false)
   const [displayedLog, setDisplayedLog] = useState([])
 
-  // Memoize pending log entries
-  const pendingLogEntries = (combat?.log && displayedLog)
-    ? combat.log.filter(entry =>
+  // Memoize pending log entries — avoids expensive nested filter/some on every render
+  const pendingLogEntries = useMemo(() => {
+    if (!combat?.log || !displayedLog) return []
+    return combat.log.filter(entry =>
       !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round && existing.type === entry.type)
     )
-    : []
+  }, [combat?.log, displayedLog])
 
   // Determine if we are effectively busy
   const isBusyProcessing = isProcessingLog || pendingLogEntries.length > 0
@@ -221,7 +218,10 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
   }, [displayedLog, onDisplayedLogCountChange])
 
   // Check for move categories - handle both direct API response and transformed state
-  const rawMoves = combat?.available_options || combat?.battle_state?.available_options || []
+  const rawMoves = useMemo(
+    () => combat?.available_options || combat?.battle_state?.available_options || [],
+    [combat?.available_options, combat?.battle_state?.available_options]
+  )
 
   // Track the most recent set of moves we've received
   useEffect(() => {
@@ -235,22 +235,34 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
   }, [combat?.input_type, rawMoves])
 
   // Use current moves if we're in move selection, otherwise use cached moves for the buttons
-  const movesForButtons = (combat?.input_type === 'move_selection' && rawMoves.length > 0)
-    ? rawMoves
-    : lastKnownMoves
+  const movesForButtons = useMemo(
+    () => (combat?.input_type === 'move_selection' && rawMoves.length > 0) ? rawMoves : lastKnownMoves,
+    [combat?.input_type, rawMoves, lastKnownMoves]
+  )
 
-  const availableMoves = Array.isArray(movesForButtons)
-    ? movesForButtons.filter(move => {
-      const name = move.name || ''
-      return name !== 'UseItem' && name !== 'Use Item'
-    })
-    : []
+  const availableMoves = useMemo(
+    () => Array.isArray(movesForButtons)
+      ? movesForButtons.filter(move => {
+          const name = move.name || ''
+          return name !== 'UseItem' && name !== 'Use Item'
+        })
+      : [],
+    [movesForButtons]
+  )
 
-  const hasOffensiveMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Offensive') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Offensive')))
-  const hasManeuverMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Maneuver') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Maneuver')))
-  const hasSpecialMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Special' || m.category === 'Spiritual' || m.category === 'Supernatural') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Special')))
-  const hasDefensiveMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Defensive') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Defensive')))
-  const hasMiscellaneousMoves = mode === 'combat' && (availableMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility') || (mode === 'combat' && lastKnownMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility')))
+  const {
+    hasOffensiveMoves,
+    hasManeuverMoves,
+    hasSpecialMoves,
+    hasDefensiveMoves,
+    hasMiscellaneousMoves,
+  } = useMemo(() => ({
+    hasOffensiveMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Offensive') || lastKnownMoves.some(m => m.category === 'Offensive')),
+    hasManeuverMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Maneuver') || lastKnownMoves.some(m => m.category === 'Maneuver')),
+    hasSpecialMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Special' || m.category === 'Spiritual' || m.category === 'Supernatural') || lastKnownMoves.some(m => m.category === 'Special')),
+    hasDefensiveMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Defensive') || lastKnownMoves.some(m => m.category === 'Defensive')),
+    hasMiscellaneousMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility') || lastKnownMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility')),
+  }), [mode, availableMoves, lastKnownMoves])
 
   // Auto-scaling logic for HeroPanel
   const heroContainerRef = useRef(null)
@@ -404,6 +416,11 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
     } catch (err) {
       console.error('Failed to send input:', err)
     }
+  }
+
+  // Don't render if player data hasn't loaded yet
+  if (!player) {
+    return null
   }
 
   return (
@@ -730,3 +747,5 @@ export default function LeftPanel({ player, location, mode, combat, isEventDialo
     </div>
   )
 }
+
+export default React.memo(LeftPanel)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
@@ -81,7 +81,7 @@ const describeArc = (x, y, radius, startAngle, endAngle) => {
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
-const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = false, animationState = null }) => {
+const CombatantMarker = React.memo(({ entity, isPlayer, isFullMode = false, isHovered = false, animationState = null }) => {
   const getGlowStyle = (move) => {
     if (!move) return {};
     const cat = move.category || 'Miscellaneous';
@@ -228,12 +228,12 @@ const CombatantMarker = ({ entity, isPlayer, isFullMode = false, isHovered = fal
       )}
     </div>
   );
-};
+});
 
 // ---------------------------------------------------------------------------
 // EnemiesList — flat list view used when tab === 'enemies'
 // ---------------------------------------------------------------------------
-const EnemiesList = ({ enemies }) => (
+const EnemiesList = React.memo(({ enemies }) => (
   <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%', backgroundColor: colors.bg.main }}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
       {enemies?.map((enemy, idx) => {
@@ -273,12 +273,12 @@ const EnemiesList = ({ enemies }) => (
       })}
     </div>
   </div>
-);
+));
 
 // ---------------------------------------------------------------------------
 // BreadcrumbLayer — ghost dots showing recent movement history
 // ---------------------------------------------------------------------------
-const BreadcrumbLayer = ({ breadcrumbs }) => (
+const BreadcrumbLayer = React.memo(({ breadcrumbs }) => (
   <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
     {breadcrumbs.map((bc) => (
       <div
@@ -305,12 +305,12 @@ const BreadcrumbLayer = ({ breadcrumbs }) => (
       </div>
     ))}
   </div>
-);
+));
 
 // ---------------------------------------------------------------------------
 // EntityLayer — renders all live combatants with interactions and animations
 // ---------------------------------------------------------------------------
-const EntityLayer = ({
+const EntityLayer = React.memo(({
   entitiesToRender,
   activeAnimation,
   animationPhase,
@@ -415,12 +415,12 @@ const EntityLayer = ({
       );
     })}
   </div>
-);
+));
 
 // ---------------------------------------------------------------------------
 // SelectedEntityPanel — detailed stats card shown when a combatant is clicked
 // ---------------------------------------------------------------------------
-const SelectedEntityPanel = ({ entity, onClose }) => {
+const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
   const hp = entity.hp ?? entity.health?.current ?? 0;
   const maxHp = entity.max_hp ?? entity.health?.max ?? 1;
   const maxFatigue = entity.max_fatigue || entity.maxfatigue || 100;
@@ -489,7 +489,7 @@ const SelectedEntityPanel = ({ entity, onClose }) => {
       </div>
     </div>
   );
-};
+});
 
 // ---------------------------------------------------------------------------
 // DeathBurst — fragment particle explosion rendered at a dying entity's cell
@@ -551,7 +551,7 @@ const DeathBurst = () => {
 // ---------------------------------------------------------------------------
 // DeathAnimationLayer — renders burst effects at positions of dying entities
 // ---------------------------------------------------------------------------
-const DeathAnimationLayer = ({ dyingEntities, getEntityStyle }) => {
+const DeathAnimationLayer = React.memo(({ dyingEntities, getEntityStyle }) => {
   if (dyingEntities.length === 0) return null;
   return (
     <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 150 }}>
@@ -569,12 +569,12 @@ const DeathAnimationLayer = ({ dyingEntities, getEntityStyle }) => {
       })}
     </div>
   );
-};
+});
 
 // ---------------------------------------------------------------------------
 // BattlefieldGrid — main exported component
 // ---------------------------------------------------------------------------
-export default function BattlefieldGrid({
+function BattlefieldGrid({
   combat,
   allBeatStates,
   currentBeatIndex,
@@ -606,9 +606,12 @@ export default function BattlefieldGrid({
   const cameraRafRef  = useRef(null);
   const [snapState, setSnapState] = useState(null); // triggers re-render on cell boundary cross
 
-  const handleGridClick = (e) => {
+  const handleGridClick = useCallback((e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);
-  };
+  }, []);
+
+  const handleClearHover = useCallback(() => setHoveredEntity(null), []);
+  const handleCloseSelectedEntity = useCallback(() => setSelectedEntity(null), []);
 
   // Set/clear the unmount guard
   useEffect(() => {
@@ -790,19 +793,10 @@ export default function BattlefieldGrid({
   }, []);
 
   // -------------------------------------------------------------------------
-  // Enemies tab: flat list view
-  // -------------------------------------------------------------------------
-  if (tab === 'enemies') {
-    return <EnemiesList enemies={combat.enemies} />;
-  }
-
-  // -------------------------------------------------------------------------
-  // Overview tab: isometric battlefield grid
+  // Viewport computations — done unconditionally (before any early return) so
+  // the hooks below are always called in the same order.
   // -------------------------------------------------------------------------
   const isFullMode = zoom === 'full';
-
-  // Derive integer snap origin from smooth camera state; fall back to a
-  // player-centred instant snap on first render before the RAF has run.
   const gridCols = isFullMode ? MAP_SIZE : VIEW_SIZE;
   let leftX, topY;
   if (isFullMode) {
@@ -817,7 +811,7 @@ export default function BattlefieldGrid({
   }
 
   /** Convert a world grid position to the absolute-CSS style needed by the layers. */
-  const getEntityStyle = (pos, baseZ = 20) => {
+  const getEntityStyle = useCallback((pos, baseZ = 20) => {
     if (!pos || pos.x < leftX || pos.x >= leftX + gridCols || pos.y > topY || pos.y <= topY - gridCols) return null;
     const col = pos.x - leftX;
     const row = topY - pos.y;
@@ -828,59 +822,70 @@ export default function BattlefieldGrid({
       height: `${(1 / gridCols) * 100}%`,
       zIndex: baseZ
     };
-  };
+  }, [leftX, topY, gridCols]);
 
-  // Build breadcrumb trail from beat history
-  const breadcrumbs = [];
-  if (allBeatStates && currentBeatIndex !== undefined) {
-    const historyLength = 10;
-    const startIdx = Math.max(0, currentBeatIndex - historyLength);
-    for (let i = startIdx; i < currentBeatIndex; i++) {
-      const beatState = allBeatStates[i];
-      if (!beatState) continue;
-      const opacity = 0.2 + ((i - startIdx) / historyLength) * 0.4;
-      if (beatState.player) {
-        const style = getEntityStyle(getPos(beatState.player), 5);
-        if (style) breadcrumbs.push({ style, color: colors.primary, opacity, id: `p-${i}` });
+  // Memoized breadcrumb trail — only recomputed when beat history or viewport changes
+  const breadcrumbs = useMemo(() => {
+    const result = [];
+    if (allBeatStates && currentBeatIndex !== undefined) {
+      const historyLength = 10;
+      const startIdx = Math.max(0, currentBeatIndex - historyLength);
+      for (let i = startIdx; i < currentBeatIndex; i++) {
+        const beatState = allBeatStates[i];
+        if (!beatState) continue;
+        const opacity = 0.2 + ((i - startIdx) / historyLength) * 0.4;
+        if (beatState.player) {
+          const style = getEntityStyle(getPos(beatState.player), 5);
+          if (style) result.push({ style, color: colors.primary, opacity, id: `p-${i}` });
+        }
+        beatState.enemies?.forEach((enemy) => {
+          const style = getEntityStyle(getPos(enemy), 5);
+          if (style) result.push({ style, color: colors.danger, opacity, id: `${enemy.id}-${i}` });
+        });
       }
-      beatState.enemies?.forEach((enemy) => {
-        const style = getEntityStyle(getPos(enemy), 5);
-        if (style) breadcrumbs.push({ style, color: colors.danger, opacity, id: `${enemy.id}-${i}` });
-      });
     }
-  }
+    return result;
+  }, [allBeatStates, currentBeatIndex, getEntityStyle]);
 
-  // Collect visible entities: living combatants + any currently in a death animation
-  const dyingIds = new Set(dyingEntities.map((d) => d.id));
-  const entitiesToRender = [];
-  if (combat?.player) {
-    const style = getEntityStyle(getPos(combat.player));
-    if (style) entitiesToRender.push({ entity: combat.player, style, isPlayer: true });
-  }
-  combat?.allies?.forEach((ally) => {
-    if (ally.hp === undefined || ally.hp > 0 || (ally.health?.current ?? 0) > 0) {
-      const style = getEntityStyle(getPos(ally));
-      if (style) entitiesToRender.push({ entity: ally, style, isPlayer: true });
+  // Memoized entity list — only recomputed when combatants or viewport changes
+  const entitiesToRender = useMemo(() => {
+    const dyingIds = new Set(dyingEntities.map((d) => d.id));
+    const result = [];
+    if (combat?.player) {
+      const style = getEntityStyle(getPos(combat.player));
+      if (style) result.push({ entity: combat.player, style, isPlayer: true });
     }
-  });
-  combat?.enemies?.forEach((enemy) => {
-    if (dyingIds.has(enemy.id)) return; // rendered below from snapshot
-    if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0) > 0) {
-      const style = getEntityStyle(getPos(enemy));
-      if (style) entitiesToRender.push({ entity: enemy, style, isPlayer: false });
-    }
-  });
-  // Dying enemies: rendered from their last-known snapshot so the marker is
-  // visible during the fade-out, regardless of whether the entity still
-  // appears in combat.enemies (backend may drop it on defeat).
-  dyingEntities.forEach((dying) => {
-    if (!dying.entity) return;
-    const style = getEntityStyle(dying.position);
-    if (style) entitiesToRender.push({ entity: dying.entity, style, isPlayer: false, isDying: true });
-  });
+    combat?.allies?.forEach((ally) => {
+      if (ally.hp === undefined || ally.hp > 0 || (ally.health?.current ?? 0) > 0) {
+        const style = getEntityStyle(getPos(ally));
+        if (style) result.push({ entity: ally, style, isPlayer: true });
+      }
+    });
+    combat?.enemies?.forEach((enemy) => {
+      if (dyingIds.has(enemy.id)) return;
+      if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0) > 0) {
+        const style = getEntityStyle(getPos(enemy));
+        if (style) result.push({ entity: enemy, style, isPlayer: false });
+      }
+    });
+    // Dying enemies rendered from last-known snapshot during fade-out
+    dyingEntities.forEach((dying) => {
+      if (!dying.entity) return;
+      const style = getEntityStyle(dying.position);
+      if (style) result.push({ entity: dying.entity, style, isPlayer: false, isDying: true });
+    });
+    return result;
+  }, [combat?.player, combat?.allies, combat?.enemies, dyingEntities, getEntityStyle]);
 
-  // Pre-compute background cell array — avoids reallocating on every render
-  const gridBgCells = Array.from({ length: gridCols * gridCols });
+  // Memoized background cell array — avoids reallocating on every render
+  const gridBgCells = useMemo(() => Array.from({ length: gridCols * gridCols }), [gridCols]);
+
+  // -------------------------------------------------------------------------
+  // Enemies tab: flat list view
+  // -------------------------------------------------------------------------
+  if (tab === 'enemies') {
+    return <EnemiesList enemies={combat.enemies} />;
+  }
 
   return (
     <div
@@ -918,7 +923,7 @@ export default function BattlefieldGrid({
           hoveredTargetId={hoveredTargetId}
           isFullMode={isFullMode}
           onHoverEntity={setHoveredEntity}
-          onClearHover={() => setHoveredEntity(null)}
+          onClearHover={handleClearHover}
           onSelectEntity={setSelectedEntity}
         />
 
@@ -930,9 +935,11 @@ export default function BattlefieldGrid({
       {selectedEntity && (
         <SelectedEntityPanel
           entity={selectedEntity}
-          onClose={() => setSelectedEntity(null)}
+          onClose={handleCloseSelectedEntity}
         />
       )}
     </div>
   );
 }
+
+export default React.memo(BattlefieldGrid);

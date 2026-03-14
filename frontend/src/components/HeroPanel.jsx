@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
 
-export default function HeroPanel({
+function HeroPanel({
   player,
   inCombat,
   hasSpecialMoves,
@@ -317,3 +317,5 @@ export default function HeroPanel({
     </div >
   )
 }
+
+export default React.memo(HeroPanel)

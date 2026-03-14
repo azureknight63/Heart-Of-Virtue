@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
@@ -8,7 +8,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
     const { playSFX } = useAudio();
     const [hoveredMoveIndex, setHoveredMoveIndex] = useState(null);
 
-    const filteredMoves = moves.filter(move => {
+    const filteredMoves = useMemo(() => moves.filter(move => {
         if (category === 'Miscellaneous') {
             return move.category === 'Miscellaneous' || move.category === 'Utility';
         }
@@ -16,7 +16,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
             return move.category === 'Special' || move.category === 'Spiritual' || move.category === 'Supernatural';
         }
         return move.category === category;
-    });
+    }), [moves, category]);
 
     return (
         <GamePanel
@@ -148,4 +148,4 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
     );
 };
 
-export default CombatMovePanel;
+export default React.memo(CombatMovePanel);
