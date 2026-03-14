@@ -882,7 +882,8 @@ class ApiCombatAdapter:
                 beat_state = CombatStateSerializer.serialize_combat_state(
                     self.player,
                     self.player.combat_list,
-                    round_number=self.player.combat_beat
+                    round_number=self.player.combat_beat,
+                    allies=self.player.combat_list_allies[1:],
                 )
                 
                 # Add log to beat state (snapshot of log at this point)
