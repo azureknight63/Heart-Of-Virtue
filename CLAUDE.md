@@ -141,7 +141,9 @@ Fix-agent prompt is at `tools/harness/prompts/bug_hunt_prompt.txt`. GitHub Actio
 
 ## Code Review Gate
 
-After any task that introduces code changes, run a self-graded review before closing out. Grade each dimension A–F, correct deficiencies, and ask for clarification where needed. Repeat until every dimension reaches A or above.
+**Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
+
+The code_reviewer skill automatically analyzes code changes and grades them. For non-trivial changes, the agent should review the feedback and correct any issues until all dimensions reach A or above.
 
 ### Confidence filter
 Before grading, score each potential issue 0–100. Only count issues with confidence ≥ 80 toward a grade — don't let unverified nitpicks drag a dimension down.
@@ -177,6 +179,7 @@ Before grading, score each potential issue 0–100. Only count issues with confi
 At the end of every task, suggest the appropriate overhead steps before moving on. The goal is to ship and maintain a complete game — treat housekeeping as part of the work, not an afterthought.
 
 Standard closing checklist (use judgment on which apply):
+- **`code_reviewer` skill** — use the skill to review all code changes (mandatory for any non-trivial changes)
 - **`/commit`** — if there are uncommitted changes worth preserving
 - **`/revise-claude-md`** — if the session revealed something about the project that isn't in CLAUDE.md (new patterns, gotchas, decisions made)
 - **Tests** — remind to run `pytest -q` or `cd frontend && npm test` if the changes touch testable code

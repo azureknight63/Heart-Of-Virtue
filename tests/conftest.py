@@ -16,6 +16,12 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(1, str(SRC_DIR))
 
+# Bare module names that must NOT be aliased from src.* because they collide
+# with directories/packages outside src/.  'api' refers to the tests/api/ test
+# package; aliasing src.api with it would break pytest discovery and make
+# src/api/ modules unreachable.
+_NO_BARE_ALIAS = frozenset({'api'})
+
 # Install import hook FIRST to catch all imports
 _original_import = builtins.__import__
 def _synchronized_import(name, *args, **kwargs):
@@ -26,10 +32,11 @@ def _synchronized_import(name, *args, **kwargs):
     # If importing src.x, make sure bare x also points to the same object
     if name.startswith('src.'):
         bare_name = name[4:]
-        if bare_name and '.' not in bare_name:
+        if bare_name and '.' not in bare_name and bare_name not in _NO_BARE_ALIAS:
             sys.modules[bare_name] = sys.modules[name]
     # If importing bare x, make sure src.x also points to the same object
-    elif not name.startswith('src.') and '.' not in name and f'src.{name}' in sys.modules and name in sys.modules:
+    # (but skip blacklisted names like 'api' which collide with test packages)
+    elif not name.startswith('src.') and '.' not in name and name not in _NO_BARE_ALIAS and f'src.{name}' in sys.modules and name in sys.modules:
         sys.modules[f'src.{name}'] = sys.modules[name]
 
     return result
@@ -91,11 +98,12 @@ for _mod in ("combat", "skilltree", "events", "shop_conditions"):
 for key in list(sys.modules.keys()):
     if key.startswith('src.'):
         bare_name = key[4:]
-        if bare_name and '.' not in bare_name and bare_name not in sys.modules:
-            sys.modules[bare_name] = sys.modules[key]
-        elif bare_name in sys.modules and sys.modules[bare_name] is not sys.modules[key]:
-            # Prioritize the full path import to ensure consistency with test imports
-            sys.modules[bare_name] = sys.modules[key]
+        if bare_name and '.' not in bare_name and bare_name not in _NO_BARE_ALIAS:
+            if bare_name not in sys.modules:
+                sys.modules[bare_name] = sys.modules[key]
+            elif sys.modules[bare_name] is not sys.modules[key]:
+                # Prioritize the full path import to ensure consistency with test imports
+                sys.modules[bare_name] = sys.modules[key]
 
 
 # Skip tkinter tests during web app implementation
@@ -104,12 +112,15 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "tkinter_test: mark test as tkinter-related (skipped for web app iteration)"
     )
+    config.addinivalue_line(
+        "markers", "integration: mark test as an integration test"
+    )
 
     # Final consistency pass: ensure all src.* imports resolve to the same module as bare imports
     for key in list(sys.modules.keys()):
         if key.startswith('src.') and key != 'src':
             bare_name = key[4:]  # Remove 'src.' prefix
-            if bare_name and '.' not in bare_name:
+            if bare_name and '.' not in bare_name and bare_name not in _NO_BARE_ALIAS:
                 # Prioritize the full module object
                 full_mod = sys.modules[key]
                 sys.modules[bare_name] = full_mod

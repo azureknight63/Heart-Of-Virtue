@@ -192,8 +192,12 @@ class Move:  # master class for all moves
         self.stage_beat[2] += 10  # add stagger time to the user
         if self.target.name == "Jean":
             self.target.change_heat(1.4)
-            _ensure_weapon_exp(self.user)
-            self.target.combat_exp[self.user.eq_weapon.subtype] += 15
+            # Credit parry experience based on target's weapon if available, otherwise "Basic"
+            if hasattr(self.target, 'eq_weapon') and self.target.eq_weapon:
+                _ensure_weapon_exp(self.target)
+                self.target.combat_exp[self.target.eq_weapon.subtype] += 15
+            else:
+                self.target.combat_exp["Basic"] += 15
         if self.user.name == "Jean":
             self.user.change_heat(0.75)
 
@@ -260,7 +264,7 @@ class Move:  # master class for all moves
         # Special case for Unarmed: don't require an actual weapon equipped
         if "Unarmed" in allowed_subtypes:
             has_weapon = True  # Unarmed is always available
-        elif self.user.eq_weapon:
+        elif hasattr(self.user, 'eq_weapon') and self.user.eq_weapon:
             if len(subtypes) > 0:
                 if self.user.eq_weapon.subtype in allowed_subtypes:
                     has_weapon = True
@@ -364,8 +368,9 @@ class Move:  # master class for all moves
             damage /= 2
             glance = True
         damage = int(damage)
-        _ensure_weapon_exp(player)
-        player.combat_exp[player.eq_weapon.subtype] += 5
+        if hasattr(player, 'eq_weapon') and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
@@ -1440,7 +1445,10 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
                          target=None, user=player, category="Offensive")
         self.power = 0
         self.evaluate()
-        self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+        if hasattr(player, 'eq_weapon') and player.eq_weapon:
+            self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+        else:
+            self.base_damage_type = "crushing"  # default for unarmed
         self.animations = default_animations.copy()
         self.animations["e"] = "hit.gif"
 
@@ -1721,7 +1729,8 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
             damage /= 2
             glance = True
         damage = int(damage)
-        player.combat_exp[player.eq_weapon.subtype] += 10
+        if hasattr(player, 'eq_weapon') and player.eq_weapon:
+            player.combat_exp[player.eq_weapon.subtype] += 10
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
                 self.parry()

@@ -54,20 +54,22 @@ def test_gorran_rescue_updates_battlefield_positions():
     with patch('story.ch01.cprint'), \
          patch('story.ch01.time.sleep'), \
          patch('functions.add_enemies_to_combat') as mock_add_enemies:
-        
-        # Simulate user choosing option 'a' (help Gorran)
+
+        # Stage 1: show narrative, advance to stage 2
+        event.process(user_input=None)
+        # Stage 2: submit choice 'a' (help Gorran)
         event.process(user_input='a')
-        
+
         # Verify Gorran was added to allies
         assert mock_gorran in player.combat_list_allies
         assert mock_gorran.in_combat == True
-        
+
         # Verify add_enemies_to_combat was called with the new enemies
         mock_add_enemies.assert_called_once()
         call_args = mock_add_enemies.call_args
         assert call_args[0][0] == player  # First arg is player
         assert len(call_args[0][1]) == 5  # Second arg is list of 5 enemies
-        
+
         # Verify all rumblers are in the list passed to add_enemies_to_combat
         enemies_added = call_args[0][1]
         for rumbler in mock_rumblers:
@@ -104,10 +106,12 @@ def test_gorran_rescue_sets_combat_lists():
     with patch('story.ch01.cprint'), \
          patch('story.ch01.time.sleep'), \
          patch('functions.add_enemies_to_combat'):
-        
-        # Simulate user choosing option 'a' (help Gorran)
+
+        # Stage 1: show narrative, advance to stage 2
+        event.process(user_input=None)
+        # Stage 2: submit choice 'a' (help Gorran)
         event.process(user_input='a')
-        
+
         # Verify Gorran's combat lists are set correctly
         assert mock_gorran.combat_list == player.combat_list  # Gorran targets enemies
         assert mock_gorran.combat_list_allies == player.combat_list_allies  # Gorran is allied with player
@@ -133,13 +137,19 @@ def test_gorran_rescue_coward_choice():
          patch('story.ch01.time.sleep'), \
          patch('story.ch01.random.randint', return_value=50), \
          patch('functions.add_enemies_to_combat') as mock_add_enemies:
-        
-        # Simulate user choosing option 'b' (flee)
-        event.process(user_input='b')
-        
+
+        # Drive through all 7 stages of the defeat narrative
+        event.process(user_input=None)       # stage 1 → show narrative
+        event.process(user_input='b')        # stage 2 → save choice, show response
+        event.process(user_input='continue') # stage 3 → rock-man's defeat
+        event.process(user_input='continue') # stage 4 → escape attempt
+        event.process(user_input='continue') # stage 5 → bridge (false hope)
+        event.process(user_input='continue') # stage 6 → monster attack
+        event.process(user_input='continue') # stage 7 → death
+
         # Verify add_enemies_to_combat was NOT called
         mock_add_enemies.assert_not_called()
-        
+
         # Verify player took damage (hp set to 0 in the bad ending)
         assert player.hp == 0
 

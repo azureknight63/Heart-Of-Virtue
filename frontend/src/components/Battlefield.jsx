@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 import BattlefieldGrid from './BattlefieldGrid'
 
@@ -8,6 +8,11 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
   // Display state - synchronized with combat log progress
   const [displayState, setDisplayState] = useState(combat)
+
+  // Accumulated beat states across multiple actions so trails persist across turns
+  const [accBeatStates, setAccBeatStates] = useState([])
+  const baseOffsetRef = useRef(0)
+  const prevBeatStatesRef = useRef(null)
 
   useEffect(() => {
     // When combat data first loads, initialize to the first beat state (or current state if no beats)
@@ -19,6 +24,25 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
       setDisplayState(combat)
     }
   }, [combat])
+
+  // Accumulate beat states so breadcrumb trails survive across player turns
+  useEffect(() => {
+    const incoming = combat?.beat_states
+    if (!incoming || incoming === prevBeatStatesRef.current) return
+    prevBeatStatesRef.current = incoming
+
+    if (!combat?.combat_active) {
+      // Combat ended — reset accumulation
+      setAccBeatStates([])
+      baseOffsetRef.current = 0
+      return
+    }
+
+    setAccBeatStates(prev => {
+      baseOffsetRef.current = prev.length
+      return [...prev, ...incoming]
+    })
+  }, [combat?.beat_states, combat?.combat_active])
 
   // Separate effect for log progress - this updates the map as log displays
   useEffect(() => {
@@ -84,8 +108,8 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
       <div className="flex-1 overflow-hidden rounded border border-[#333] bg-[rgba(0,0,0,0.3)] relative">
         <BattlefieldGrid
           combat={displayState}
-          allBeatStates={combat?.beat_states}
-          currentBeatIndex={currentLogIndex}
+          allBeatStates={accBeatStates}
+          currentBeatIndex={baseOffsetRef.current + (currentLogIndex ?? 0)}
           combatLog={combat?.log || []}
           tab={selectedTab}
           zoom={zoom}

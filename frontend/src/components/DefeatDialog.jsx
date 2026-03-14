@@ -5,6 +5,28 @@ import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
 
+const SKULL_ART = `
+               .o oOOOOOOOo                                            OOOo
+                Ob.OOOOOOOo  OOOo.      oOOo.                      .adOOOOOOO
+                OboO"""""""""""".OOo. .oOOOOOo.    OOOo.oOOOOOo.."""""""""'OO
+                OOP.oOOOOOOOOOOO "POOOOOOOOOOOo.   \`"OOOOOOOOOP,OOOOOOOOOOOB'
+                \`O'OOOO'     \`OOOOo"OOOOOOOOOOO\` .adOOOOOOOOO"oOOO'    \`OOOOo
+                .OOOO'            \`OOOOOOOOOOOOOOOOOOOOOOOOOO'            \`OO
+                OOOOO                 '"OOOOOOOOOOOOOOOO"\`                oOO
+               oOOOOOba.                .adOOOOOOOOOOba               .adOOOOo.
+              oOOOOOOOOOOOOOba.    .adOOOOOOOOOO@^OOOOOOOba.     .adOOOOOOOOOOOO
+             OOOOOOOOOOOOOOOOO.OOOOOOOOOOOOOO"\`  '"OOOOOOOOOOOOO.OOOOOOOOOOOOOO
+             "OOOO"       "YOoOOOOOOOOOOOOO"\`  .   '"OOOOOOOOOOOOoOY"     "OOO"
+                Y           'OOOOOOOOOOOOOO: .oOOo. :OOOOOOOOOOO?'         :\`
+                :            .oO%OOOOOOOOOOo.OOOOOO.oOOOOOOOOOOOO?         .
+                .            oOOP"%OOOOOOOOoOOOOOOO?oOOOOO?OOOO"OOo
+                                 '%o  OOOO"%OOOO%"%OOOOO"OOOOOO"OOO':
+                                      \`$"  \`OOOO' \`O"Y ' \`OOOO'  o             .
+                .                  .     OP"          : o     .
+                                              :
+                                              .
+`
+
 export default function DefeatDialog({ endState, onLoadedSave }) {
   const { logout } = useAuth()
   const [loading, setLoading] = useState(false)
@@ -84,6 +106,16 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
       zIndex={2500}
       showCloseButton={false}
     >
+      <pre style={{
+        color: colors.text.danger,
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        lineHeight: '1.2',
+        whiteSpace: 'pre',
+        overflowX: 'auto',
+        textAlign: 'center',
+        marginBottom: spacing.sm,
+      }}>{SKULL_ART}</pre>
       <div style={{ color: colors.text.danger, marginBottom: spacing.sm }}>{message}</div>
       <div style={{ color: colors.text.muted, marginBottom: spacing.lg }}>Reload a save or start over.</div>
 

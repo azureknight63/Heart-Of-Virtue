@@ -68,20 +68,34 @@ for _mod_name in ("combat", "events", "shop_conditions"):
 
 import pytest
 
-# Pre-load src.api.config before src.api.app so Python's import machinery has
-# the submodule cached in sys.modules before app.py's top-level import runs.
-# Without this, the _synchronized_import hook in tests/conftest.py can corrupt
-# the src.api package reference, making src.api.config unreachable.
+# Pre-load src.api.* submodules so that create_app()'s lazy internal imports
+# (src.api.routes, src.api.handlers, src.api.sockets — all inside the function
+# body) are already cached in sys.modules before create_app() is called.
+# Without this, the _synchronized_import hook in tests/conftest.py intercepts
+# those lazy imports at fixture-execution time and can raise ModuleNotFoundError
+# on a partially-initialised src.api package.
+#
+# The reconciliation loops in tests/conftest.py now exclude 'api' from the
+# src.X → X alias pass, so loading src.api here no longer corrupts the
+# sys.modules['api'] entry that pytest uses to collect tests/api/*.
 import importlib as _il
-# Prime src.api and its direct submodules before the hook can corrupt them.
-# The _synchronized_import hook in tests/conftest.py intercepts lazy sub-package
-# imports inside create_app and can raise ModuleNotFoundError on a
-# partially-initialised src.api package.  Loading src.api.app here (which has
-# no lazy top-level imports) ensures src.api is fully registered in sys.modules
-# so all subsequent src.api.* imports resolve correctly.
-_il.import_module("src.api.config")
-_il.import_module("src.api.services")
-_il.import_module("src.api.app")
+
+for _api_mod in (
+    "src.api.config",
+    "src.api.services",
+    "src.api.middleware",
+    "src.api.handlers",
+    "src.api.handlers.error_handler",
+    "src.api.serializers",
+    "src.api.routes",
+    "src.api.sockets",
+    "src.api.app",
+):
+    if _api_mod not in sys.modules:
+        try:
+            _il.import_module(_api_mod)
+        except Exception as _e:
+            print(f"WARNING: could not pre-load {_api_mod}: {_e}")
 
 from src.api.app import create_app
 from src.api.config import TestingConfig
@@ -115,3 +129,52 @@ def api_client():
     """Create a Flask test client (when routes are implemented)."""
     # TODO: Implement when app factory is complete
     pass
+
+
+# Patch terminal output functions for tests to avoid encoding issues on Windows
+@pytest.fixture(autouse=True)
+def patch_terminal_output(monkeypatch):
+    """Patch terminal output functions to prevent UnicodeEncodeError on Windows.
+
+    Story events call cprint(), print_slow(), input_with_timeout() etc. which can fail
+    with UnicodeEncodeError when trying to print Unicode characters to a Windows console.
+    This fixture replaces those functions with no-ops for testing purposes.
+    """
+    import io
+
+    # Create a dummy StringIO to capture output (or discard it)
+    dummy_output = io.StringIO()
+
+    def mock_cprint(*args, **kwargs):
+        """Mock cprint that discards output."""
+        pass
+
+    def mock_print_slow(text, *args, **kwargs):
+        """Mock print_slow that discards output."""
+        pass
+
+    def mock_input_with_timeout(*args, **kwargs):
+        """Mock input_with_timeout that returns a default value."""
+        return kwargs.get('default', 'continue')
+
+    def mock_input_prompt(*args, **kwargs):
+        """Mock input_prompt that returns a default value."""
+        return 'continue'
+
+    # Patch functions in the game engine modules
+    monkeypatch.setattr('builtins.print', lambda *args, **kwargs: None)
+
+    try:
+        import interface
+        monkeypatch.setattr(interface, 'cprint', mock_cprint, raising=False)
+        monkeypatch.setattr(interface, 'print_slow', mock_print_slow, raising=False)
+        monkeypatch.setattr(interface, 'input_with_timeout', mock_input_with_timeout, raising=False)
+        monkeypatch.setattr(interface, 'input_prompt', mock_input_prompt, raising=False)
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from neotermcolor import cprint
+        monkeypatch.setattr('neotermcolor.cprint', mock_cprint, raising=False)
+    except (ImportError, AttributeError):
+        pass

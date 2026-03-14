@@ -70,12 +70,12 @@ class TestPlayerCore:
             with patch('random.randint', return_value=50): # hit_chance = (98-10)+10 = 98. 50 < 98 is a hit.
                 with patch('random.uniform', return_value=1.0):
                     with patch('functions.check_for_combat', return_value=[]):
-                        with patch('player.combat') as mock_combat_module:
+                        with patch('combat.combat') as mock_combat_module:
                             player.attack()
                             assert target.hp < 100
                             assert target.in_combat is True
                             assert player.combat_list == [target]
-                            mock_combat_module.combat.assert_called_once_with(player)
+                            mock_combat_module.assert_called_once_with(player)
 
     def test_testevent(self, player):
         player.current_room = MagicMock()
@@ -126,14 +126,15 @@ class TestPlayerCore:
     def test_gain_exp_skill_announcement(self, player):
         player.skill_exp = {"Dagger": 0}
         player.known_moves = []
-        
+
         # Mock skilltree
         skill = MagicMock()
         skill.name = "Slash"
         player.skilltree = MagicMock()
         player.skilltree.subtypes = {"Dagger": {skill: 10}}
-        
-        with patch('player.cprint') as mock_cprint:
+
+        # Mock cprint by patching the import in the _leveling module
+        with patch('player._leveling.cprint') as mock_cprint:
             player.gain_exp(15, "Dagger")
             assert player.skill_exp["Dagger"] == 15
             mock_cprint.assert_called()
@@ -195,9 +196,9 @@ class TestPlayerCore:
         player.location_x = 0
         player.location_y = 0
         player.map = {}
-        
-        with patch('player.tile_exists', return_value=None):
-            with patch('player.time.sleep'): # Avoid sleeping in tests
+
+        with patch('player._movement.tile_exists', return_value=None):
+            with patch('time.sleep'): # Avoid sleeping in tests
                 player.move(1, 0)
                 assert player.location_x == 0
                 assert player.location_y == 0
@@ -206,8 +207,8 @@ class TestPlayerCore:
         player.universe = MagicMock()
         player.map = {}
         tile = MagicMock()
-        
-        with patch('player.tile_exists', return_value=tile):
+
+        with patch('player._movement.tile_exists', return_value=tile):
             player.move_north()
             assert player.location_y == -1
             player.move_south()
@@ -425,19 +426,19 @@ class TestPlayerCore:
         player.location_x = 0
         player.location_y = 0
         player.map = {}
-        
+
         # Mock tile_exists to return a tile
         tile = MagicMock()
         tile.intro_text.return_value = "A room"
-        
-        with patch('player.tile_exists', return_value=tile):
+
+        with patch('player._movement.tile_exists', return_value=tile):
             player.move(1, 0)
             assert player.location_x == 1
             assert player.location_y == 0
             assert player.universe.game_tick == 1
-            
+
         # Move to non-existent tile
-        with patch('player.tile_exists', return_value=None):
+        with patch('player._movement.tile_exists', return_value=None):
             player.move(1, 0)
             assert player.location_x == 1 # Stayed at 1 because move failed and it reverted
             assert player.location_y == 0
@@ -509,21 +510,21 @@ class TestPlayerCore:
         item1.name = "Herb"
         item1.count = 1
         item1.stack_key.return_value = ("Herb",)
-        
+
         item2 = MagicMock()
         item2.name = "Herb"
         item2.count = 2
         item2.stack_key.return_value = ("Herb",)
-        
+
         player.inventory = [item1, item2]
-        
-        with patch('player.stack_inv_items') as mock_stack:
+
+        with patch('player._inventory.stack_inv_items') as mock_stack:
             player.stack_inv_items()
             mock_stack.assert_called_once_with(player)
 
-    @patch('player.input', side_effect=['1', '2', '2', '3']) # Select Strength (1), then 2 points, then Finesse (2), then 3 points
-    @patch('player.time.sleep')
-    @patch('player.random.randint', side_effect=[1, 1, 1, 1, 1, 1, 5, 1, 2]) # Random bonuses (6x1), then 5 points to distribute, then selection 1, then 2 points
+    @patch('builtins.input', side_effect=['1', '2', '2', '3']) # Select Strength (1), then 2 points, then Finesse (2), then 3 points
+    @patch('time.sleep')
+    @patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 5, 1, 2]) # Random bonuses (6x1), then 5 points to distribute, then selection 1, then 2 points
     def test_level_up_interactive(self, mock_randint, mock_sleep, mock_input, player):
         # Initial stats
         player.strength_base = 10
@@ -581,7 +582,7 @@ class TestPlayerCore:
         assert item.isequipped is True
         assert item not in player.current_room.items_here
 
-    @patch('player.input', return_value='y')
+    @patch('builtins.input', return_value='y')
     def test_equip_item_already_equipped_remove(self, mock_input, player):
         item = MagicMock()
         item.name = "Iron Sword"
@@ -644,7 +645,7 @@ class TestPlayerCore:
         player.death()
         mock_await.assert_called_once()
 
-    @patch('player.tile_exists')
+    @patch('player._movement.tile_exists')
     @patch('functions.print_items_in_room')
     @patch('functions.print_objects_in_room')
     @patch('functions.advise_player_actions')
@@ -676,7 +677,7 @@ class TestPlayerCore:
             player.look()
             player.current_room.intro_text.assert_called_once()
 
-    @patch('player.input', return_value='0')
+    @patch('builtins.input', return_value='0')
     @patch('functions.await_input')
     def test_view_interactive(self, mock_await, mock_input, player):
         npc = MagicMock()
@@ -730,11 +731,11 @@ class TestPlayerCore:
         player.search()
         assert npc.hidden is False
 
-    @patch('player.input', return_value='0')
-    @patch('player.combat')
+    @patch('builtins.input', return_value='0')
+    @patch('combat.combat')
     @patch('functions.check_for_combat', return_value=[])
-    @patch('player.random.randint', return_value=50)
-    @patch('player.random.uniform', return_value=1.0)
+    @patch('random.randint', return_value=50)
+    @patch('random.uniform', return_value=1.0)
     def test_attack_interactive(self, mock_uniform, mock_randint, mock_check, mock_combat_mod, mock_input, player):
         npc = MagicMock()
         npc.name = "Goblin"
@@ -762,7 +763,7 @@ class TestPlayerCore:
         # damage = (20 - 5) * 1.0 = 15
         assert npc.hp == 5
         assert player.combat_exp["Basic"] == 10
-        mock_combat_mod.combat.assert_called_once_with(player)
+        mock_combat_mod.assert_called_once_with(player)
 
     @patch('player.random.uniform', return_value=1.0)
     @patch('player.random.randint', return_value=50)
@@ -790,15 +791,15 @@ class TestPlayerCore:
         player.finesse = 10
         player.combat_exp = {"Basic": 0}
 
-        with patch('player.combat') as mock_combat_mod:
+        with patch('combat.combat') as mock_combat_mod:
             player.attack(phrase="green")
             assert npc.hp == 5
-            mock_combat_mod.combat.assert_called_once_with(player)
+            mock_combat_mod.assert_called_once_with(player)
 
     def test_teleport_success(self, player):
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = "Welcome to the new area!"
-        
+
         target_map_name = "New Map"
         target_map = {'name': target_map_name}
         player.universe = MagicMock()
@@ -806,11 +807,11 @@ class TestPlayerCore:
         player.universe.game_tick = 0
         player.location_x = 0
         player.location_y = 0
-        
-        with patch('player.tile_exists', return_value=mock_tile), \
+
+        with patch('player._movement.tile_exists', return_value=mock_tile), \
              patch('player.Player.drop_merchandise_items') as mock_drop:
             player.teleport(target_map_name, (5, 10))
-            
+
             assert player.map == target_map
             assert player.location_x == 5
             assert player.location_y == 10
@@ -824,8 +825,8 @@ class TestPlayerCore:
         player.universe.maps = [target_map]
         player.location_x = 0
         player.location_y = 0
-        
-        with patch('player.tile_exists', return_value=None), \
+
+        with patch('player._movement.tile_exists', return_value=None), \
              patch('player.Player.drop_merchandise_items'):
             player.teleport(target_map_name, (5, 10))
             # Should not change location
@@ -928,11 +929,11 @@ class TestPlayerCore:
         item2.name = "My Sword"
         
         player.inventory = [item1, item2]
-        
-        with patch('player.tile_exists', return_value=mock_tile), \
+
+        with patch('player._inventory.tile_exists', return_value=mock_tile), \
              patch('time.sleep'):
             player.drop_merchandise_items()
-            
+
             assert item1 not in player.inventory
             assert item1 in mock_tile.items_here
             assert item2 in player.inventory
@@ -1061,15 +1062,15 @@ class TestPlayerCore:
         state.name = "Poisoned"
         state.steps_left = 5
         player.states = [state]
-        
-        with patch('player.functions.refresh_stat_bonuses'), \
+
+        with patch('functions.refresh_stat_bonuses'), \
              patch('player.Player.refresh_protection_rating'), \
-             patch('player.generate_output_grid', return_value="GRID"), \
+             patch('player._ui.generate_output_grid', return_value="GRID"), \
              patch('builtins.print') as mock_print, \
-             patch('player.cprint') as mock_cprint, \
+             patch('player._ui.cprint') as mock_cprint, \
              patch('functions.await_input'):
             player.print_status()
-            
+
             assert mock_print.called
             assert mock_cprint.called
 
@@ -1113,15 +1114,15 @@ class TestPlayerCore:
         mock_tile = MagicMock()
         mock_tile.npcs_here = [m1, m2, m3, MagicMock()] # One non-merchant
         player.universe.maps = [{(0, 0): mock_tile}, "not a dict"] # One invalid map
-        
-        with patch('player.cprint'), patch('time.sleep'):
+
+        with patch('functions.cprint'), patch('time.sleep'):
             player.refresh_merchants(phrase="M")
             m1.update_goods.assert_called_once()
             m2.initialize_shop.assert_called_once()
             m2.update_goods.assert_called_once()
             m3.update_goods.assert_called_once()
 
-    def test_level_up_interactive(self, player):
+    def test_level_up_interactive_2(self, player):
         player.level = 1
         player.exp = 200
         player.exp_to_level = 100
@@ -1132,15 +1133,15 @@ class TestPlayerCore:
         player.endurance_base = 10
         player.charisma_base = 10
         player.intelligence_base = 10
-        
+
         # random.randint(0, 2) called 6 times for bonuses, then random.randint(6, 9) for points
-        with patch('player.random.randint', side_effect=[1, 1, 1, 1, 1, 1, 8]), \
+        with patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 8]), \
              patch('builtins.input', side_effect=["1", "5", "1", "3"]), \
-             patch('player.cprint'), \
+             patch('functions.cprint'), \
              patch('builtins.print'), \
              patch('time.sleep'):
             player.level_up()
-            
+
             # Initial strength 10 + 1 (bonus) + 5 (allocated) + 3 (allocated) = 19
             assert player.strength_base == 19
             assert player.level == 2
@@ -1201,41 +1202,41 @@ class TestPlayerCore:
         mock_item.interactions = ["use"]
         mock_item.merchandise = False
         mock_item.__class__ = items.Restorative
-        
+
         player.inventory = [mock_item]
-        
+
         # Inputs:
         # "c" (select Consumables)
         # "0" (select Potion)
         # "x" (exit)
         with patch('builtins.input', side_effect=["c", "0", "x"]), \
-             patch('player.cprint'), \
+             patch('functions.cprint'), \
              patch('builtins.print'), \
-             patch('player.functions.is_input_integer', side_effect=lambda x: x.isdigit()):
+             patch('functions.is_input_integer', side_effect=lambda x: x.isdigit()):
             player.use_item()
             mock_item.use.assert_called_once_with(player)
 
-    def test_add_items_to_inventory(self, player):
+    def test_add_items_to_inventory_2(self, player):
         player.weight_tolerance = 100
         player.weight_current = 90
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         item1 = MagicMock()
         item1.name = "Heavy Rock"
         item1.weight = 20
         # Remove count to test the branch where it doesn't exist
         if hasattr(item1, 'count'):
             del item1.count
-        
+
         item2 = MagicMock()
         item2.name = "Light Feather"
         item2.weight = 1
         item2.count = 1
-        
-        with patch('player.stack_inv_items'):
+
+        with patch('functions.stack_inv_items'):
             player.add_items_to_inventory([item1, item2])
-            
+
             assert item1 not in player.inventory
             assert item1 in player.current_room.items_here
             assert item2 in player.inventory
@@ -1256,8 +1257,8 @@ class TestPlayerCore:
         action.name = "Look"
         action.hotkey = "L"
         player.current_room.available_actions.return_value = [action]
-        
-        with patch('player.cprint'), patch('functions.await_input'):
+
+        with patch('functions.cprint'), patch('functions.await_input'):
             player.commands()
             player.current_room.available_actions.assert_called_once()
 
