@@ -18,10 +18,10 @@ export default function GameButton({
 
     const variants = {
         primary: {
-            color: '#000000',
+            color: colors.text.inverse,
             backgroundColor: colors.primary,
             borderColor: colors.primary,
-            hoverBg: '#00ffaa',
+            hoverBg: colors.primaryHover,
             hoverShadow: `0 0 12px ${colors.primary}aa`,
         },
         secondary: {
@@ -32,17 +32,17 @@ export default function GameButton({
             hoverShadow: 'none',
         },
         danger: {
-            color: '#ffffff',
+            color: colors.text.bright,
             backgroundColor: colors.danger,
             borderColor: colors.danger,
-            hoverBg: '#ff2222',
+            hoverBg: colors.dangerHover,
             hoverShadow: `0 0 12px ${colors.danger}aa`,
         },
         warning: {
-            color: '#000000',
+            color: colors.text.inverse,
             backgroundColor: colors.secondary,
             borderColor: colors.secondary,
-            hoverBg: '#ffbb00',
+            hoverBg: colors.secondaryHover,
             hoverShadow: `0 0 10px ${colors.secondary}aa`,
         },
     }
