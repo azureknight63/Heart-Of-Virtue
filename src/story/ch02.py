@@ -12,7 +12,7 @@ class AfterDefeatingLurker(Event):
     """
     Jean defeats the Lurker. Gorram opens another passageway
     """
-    def __init__(self, player, tile, params=None, repeat=False, name='AfterGorranIntro'):
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterDefeatingLurker'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
 
     def check_conditions(self):
@@ -219,7 +219,7 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                      "You are a guest of our city. You may find the merchants of the Eastern Gate "
                      "to be of great help. As for me, I must return to my duties. "
                      "Return to me when you have dealt with the slimes, and perhaps we can discover "
-                     "the trajectory of your future."
+                     "the trajectory of your future.",
                      "green")
 
 
