@@ -59,8 +59,7 @@ class Event:  # master class for all events
                 self.player.combat_events.remove(self)
 
     def check_conditions(self):
-        if True:
-            self.pass_conditions_to_process()
+        self.pass_conditions_to_process()
 
     def process(self):
         """
