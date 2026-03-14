@@ -34,6 +34,15 @@ def _synchronized_import(name, *args, **kwargs):
         bare_name = name[4:]
         if bare_name and '.' not in bare_name and bare_name not in _NO_BARE_ALIAS:
             sys.modules[bare_name] = sys.modules[name]
+        # Also sync any player submodules that were loaded as side effects.
+        # e.g. 'from src.player import Player' loads src.player._movement, but
+        # does NOT create player._movement — breaking mock.patch('player._movement.*').
+        if bare_name == 'player' or name == 'src.player':
+            for _key in list(sys.modules.keys()):
+                if _key.startswith('src.player.'):
+                    _sub = _key[4:]  # e.g. 'player._movement'
+                    if _sub not in sys.modules or sys.modules[_sub] is not sys.modules[_key]:
+                        sys.modules[_sub] = sys.modules[_key]
     # If importing bare x, make sure src.x also points to the same object
     # (but skip blacklisted names like 'api' which collide with test packages)
     elif not name.startswith('src.') and '.' not in name and name not in _NO_BARE_ALIAS and f'src.{name}' in sys.modules and name in sys.modules:
@@ -92,6 +101,18 @@ for _mod in ("combat", "skilltree", "events", "shop_conditions"):
             sys.modules[_mod] = __import__(f"src.{_mod}", fromlist=['*'])
         except Exception:
             pass
+
+# Sync player package submodules: 'src.player._x' → 'player._x'.
+# The reconciliation loop above skips names containing '.' (submodules), so
+# after any test imports 'from src.player import Player', the src.player.*
+# submodules exist but player.* do not.  Patches targeting 'player._movement'
+# etc. then hit a freshly-imported module object that differs from the one the
+# Player class methods actually live in, making the patch ineffective.
+for _key in list(sys.modules.keys()):
+    if _key.startswith('src.player.'):
+        _bare = _key[4:]  # e.g. 'player._movement'
+        if _bare not in sys.modules or sys.modules[_bare] is not sys.modules[_key]:
+            sys.modules[_bare] = sys.modules[_key]
 
 # Final reconciliation: ensure both import names point to the same module object.
 # This handles cases where modules were imported via different paths (src.x vs x).

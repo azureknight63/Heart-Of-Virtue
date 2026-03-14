@@ -1,6 +1,5 @@
 import sys
 import os
-import importlib
 from pathlib import Path
 
 # Add src to path
@@ -13,29 +12,6 @@ import pytest
 from unittest.mock import MagicMock, patch
 from player import Player, generate_output_grid
 import items
-
-
-# Fixture to reload player submodules before each test for proper patch isolation
-@pytest.fixture(autouse=True)
-def reload_player_modules():
-    """Reload player submodules to isolate test patches.
-
-    When running in the full test suite, modules get pre-loaded by conftest.
-    This can interfere with mock.patch() if patches are applied before the module
-    namespace has been freshly set up. Reloading ensures each test starts with
-    a clean import state for the player package submodules.
-    """
-    # Only reload if player is already in sys.modules (i.e., running in full suite)
-    if 'player' in sys.modules:
-        try:
-            # Reload just the submodules that are patched in tests
-            for submod_name in ['_movement', '_inventory', '_leveling', '_ui']:
-                full_name = f'player.{submod_name}'
-                if full_name in sys.modules:
-                    importlib.reload(sys.modules[full_name])
-        except Exception:
-            pass
-    yield
 
 class TestPlayerCore:
     @pytest.fixture
