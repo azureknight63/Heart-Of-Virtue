@@ -5,17 +5,22 @@
 
 export const colors = {
     // Brand Colors
-    primary: '#00ff88',    // Lime Green
-    secondary: '#ffaa00',  // Orange
-    accent: '#00ccff',     // Cyan
-    gold: '#ffcc00',       // Gold
+    primary: '#00ff88',       // Lime Green
+    primaryDark: '#00cc66',   // Darker lime for active/hover states
+    primaryHover: '#00ffaa',  // Lighter lime for hover effects
+    secondary: '#ffaa00',     // Orange
+    secondaryHover: '#ffbb00', // Lighter orange for hover effects
+    accent: '#00ccff',        // Cyan
+    gold: '#ffcc00',          // Gold
 
     // Semantic Colors
     success: '#00ff88',
     warning: '#ffaa00',
     danger: '#ff4444',
+    dangerDark: '#cc0000',    // Darker danger for muted/active states
+    dangerHover: '#ff2222',   // Brighter danger for hover effects
     info: '#00ccff',
-    special: '#a855f7',
+    special: '#9944ff',       // Purple for special/supernatural moves
 
     // Pre-computed Alpha Variants (Performance Optimization)
     alpha: {
@@ -52,12 +57,12 @@ export const colors = {
             80: '#00ccffCC',
         },
         special: {
-            10: '#a855f71A',
-            20: '#a855f733',
-            30: '#a855f74D',
-            40: '#a855f766',
-            60: '#a855f799',
-            80: '#a855f7CC',
+            10: '#9944ff1A',
+            20: '#9944ff33',
+            30: '#9944ff4D',
+            40: '#9944ff66',
+            60: '#9944ff99',
+            80: '#9944ffCC',
         },
     },
 
@@ -66,6 +71,7 @@ export const colors = {
         main: '#e0e0e0',
         muted: '#888888',
         bright: '#ffffff',
+        inverse: '#000000',   // Black text for use on bright/light backgrounds
         highlight: '#ffeeaa',
         warning: '#ffcc88',
         danger: '#ffaaaa',
@@ -75,6 +81,7 @@ export const colors = {
 
     bg: {
         main: '#0a0a0a',
+        input: '#1a1a2e',     // Input field background
         panel: 'rgba(0, 0, 0, 0.3)',
         panelLight: 'rgba(0, 0, 0, 0.2)',
         panelHeavy: 'rgba(0, 0, 0, 0.7)',

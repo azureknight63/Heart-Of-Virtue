@@ -1,4 +1,5 @@
 import { useAuth } from '../hooks/useApi'
+import { colors } from '../styles/theme'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
@@ -16,16 +17,16 @@ export default function AccountDialog({ player, onClose }) {
       {/* Content */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{ marginBottom: '15px' }}>
-          <div style={{ color: '#00ccff', fontSize: '12px', marginBottom: '5px' }}>
+          <div style={{ color: colors.accent, fontSize: '12px', marginBottom: '5px' }}>
             USERNAME
           </div>
           <div
             style={{
-              color: '#00ff88',
+              color: colors.primary,
               fontSize: '16px',
-              backgroundColor: 'rgba(0, 100, 50, 0.2)',
+              backgroundColor: colors.bg.positive,
               padding: '10px',
-              borderLeft: '3px solid #00ff88',
+              borderLeft: `3px solid ${colors.primary}`,
               borderRadius: '4px',
             }}
           >
@@ -34,16 +35,16 @@ export default function AccountDialog({ player, onClose }) {
         </div>
 
         <div style={{ marginBottom: '15px' }}>
-          <div style={{ color: '#00ccff', fontSize: '12px', marginBottom: '5px' }}>
+          <div style={{ color: colors.accent, fontSize: '12px', marginBottom: '5px' }}>
             ACCOUNT STATUS
           </div>
           <div
             style={{
-              color: '#ffaa00',
+              color: colors.secondary,
               fontSize: '14px',
-              backgroundColor: 'rgba(100, 50, 0, 0.2)',
+              backgroundColor: colors.bg.highlight,
               padding: '10px',
-              borderLeft: '3px solid #ffaa00',
+              borderLeft: `3px solid ${colors.secondary}`,
               borderRadius: '4px',
             }}
           >

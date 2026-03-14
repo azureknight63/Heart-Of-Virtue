@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { colors } from '../styles/theme'
 import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
@@ -427,17 +428,17 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-lime rounded-lg retro-glow" style={{ overflow: 'visible', position: 'relative' }}>
       {/* Header */}
       <div style={{
-        backgroundColor: '#00ff88',
-        color: '#000000',
+        backgroundColor: colors.primary,
+        color: colors.text.inverse,
         padding: '10px 15px',
         fontWeight: 'bold',
         textAlign: 'center',
         fontSize: '14px',
-        borderBottom: '2px solid #00ff88',
+        borderBottom: `2px solid ${colors.primary}`,
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        boxShadow: '0 0 10px rgba(0, 255, 136, 0.5)',
+        boxShadow: `0 0 10px ${colors.primary}80`,
         flexShrink: 0,
       }}>
         <span>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
@@ -446,9 +447,9 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onClick={() => setShowAudio(true)}
             style={{
               padding: '4px 8px',
-              backgroundColor: '#00cc66',
-              color: '#000000',
-              border: '1px solid #000000',
+              backgroundColor: colors.primaryDark,
+              color: colors.text.inverse,
+              border: `1px solid ${colors.text.inverse}`,
               borderRadius: '4px',
               cursor: 'pointer',
               fontSize: '12px',
@@ -457,11 +458,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               transition: 'all 0.2s',
             }}
             onMouseEnter={(e) => {
-              e.target.style.backgroundColor = '#00ff88'
-              e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.8)'
+              e.target.style.backgroundColor = colors.primary
+              e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
             }}
             onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#00cc66'
+              e.target.style.backgroundColor = colors.primaryDark
               e.target.style.boxShadow = 'none'
             }}
             title="Audio Settings"
@@ -472,9 +473,9 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onClick={() => setShowAccount(true)}
             style={{
               padding: '4px 12px',
-              backgroundColor: '#00cc66',
-              color: '#000000',
-              border: '1px solid #000000',
+              backgroundColor: colors.primaryDark,
+              color: colors.text.inverse,
+              border: `1px solid ${colors.text.inverse}`,
               borderRadius: '4px',
               cursor: 'pointer',
               fontSize: '12px',
@@ -483,11 +484,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               transition: 'all 0.2s',
             }}
             onMouseEnter={(e) => {
-              e.target.style.backgroundColor = '#00ff88'
-              e.target.style.boxShadow = '0 0 8px rgba(0, 255, 136, 0.8)'
+              e.target.style.backgroundColor = colors.primary
+              e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
             }}
             onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#00cc66'
+              e.target.style.backgroundColor = colors.primaryDark
               e.target.style.boxShadow = 'none'
             }}
           >
@@ -512,7 +513,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             overflowY: 'auto',
             maxHeight: '40%',
             minHeight: '80px',
-            borderBottom: '1px solid rgba(0, 255, 136, 0.1)',
+            borderBottom: `1px solid ${colors.primary}1A`,
             paddingBottom: '10px'
           }}>
             <RoomContents location={location} onInteract={handleOpenInteract} />

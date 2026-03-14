@@ -15,7 +15,7 @@ export default function GameInput({
 }) {
     const inputStyle = {
         width: '100%',
-        backgroundColor: '#1a1a2e',
+        backgroundColor: colors.bg.input,
         border: `2px solid ${error ? colors.danger : colors.primary}`,
         color: error ? colors.danger : colors.primary,
         borderRadius: '4px',
