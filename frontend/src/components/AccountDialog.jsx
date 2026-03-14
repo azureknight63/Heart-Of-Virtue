@@ -1,5 +1,5 @@
 import { useAuth } from '../hooks/useApi'
-import { colors, spacing } from '../styles/theme'
+import { colors } from '../styles/theme'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
@@ -15,7 +15,7 @@ export default function AccountDialog({ player, onClose }) {
   return (
     <BaseDialog title="⚔️ Account Details" onClose={onClose}>
       {/* Content */}
-      <div style={{ marginBottom: spacing.xl }}>
+      <div style={{ marginBottom: '20px' }}>
         <div style={{ marginBottom: '15px' }}>
           <div style={{ color: colors.accent, fontSize: '12px', marginBottom: '5px' }}>
             USERNAME
@@ -25,7 +25,7 @@ export default function AccountDialog({ player, onClose }) {
               color: colors.primary,
               fontSize: '16px',
               backgroundColor: colors.bg.positive,
-              padding: spacing.md,
+              padding: '10px',
               borderLeft: `3px solid ${colors.primary}`,
               borderRadius: '4px',
             }}
@@ -43,7 +43,7 @@ export default function AccountDialog({ player, onClose }) {
               color: colors.secondary,
               fontSize: '14px',
               backgroundColor: colors.bg.highlight,
-              padding: spacing.md,
+              padding: '10px',
               borderLeft: `3px solid ${colors.secondary}`,
               borderRadius: '4px',
             }}
