@@ -519,6 +519,9 @@ class Ch01PostRumbler3(Event):
                 self.player.hp = 0
                 self.needs_input = False
                 self.completed = True
+                # Remove from combat_events since this is non-repeating (matches Ch01PostRumbler pattern)
+                if self in self.player.combat_events:
+                    self.player.combat_events.remove(self)
                 return
 
         # Correct choice (a) - virtuous path with ally
@@ -560,6 +563,9 @@ class Ch01PostRumbler3(Event):
             self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
             self.needs_input = False
             self.completed = True
+            # Remove from combat_events since this is non-repeating (matches Ch01PostRumbler pattern)
+            if self in self.player.combat_events:
+                self.player.combat_events.remove(self)
 
 
 class AfterTheRumblerFight(Event):
