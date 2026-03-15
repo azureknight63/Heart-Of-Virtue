@@ -43,7 +43,8 @@ class AfterDefeatingLurker(Event):
               "if he has any.")
         time.sleep(4)
         print("Immediately on passing under the shelf, Jean's greying whiskers were blasted by a cool "
-              "breeze of unknown origin. It had the dank smell of the cavern to which Jean was just "
+              "breeze. He turned his head slightly, reading the flow — east to west, coming up from somewhere "
+              "deeper in. It had the dank smell of the cavern to which Jean was just "
               "starting to grow accustomed, but also, something more. Or, rather, a lot of things more. "
               "There was a mixture of scents; some familiar, and some entirely alien. "
               "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
@@ -112,8 +113,10 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "The halls are vast and echo with the sound of their footsteps. "
                   "The walls are adorned with intricate carvings and murals, \ndepicting scenes from Grondia's history "
                   "much like the ones on the walls outside. \n"
-                  "Jean feels a sense of awe and reverence for this place, realizing that it is a testament to the \n"
-                  "Grondites' strength and resilience.")
+                  "Jean's first thought is not of the carvings. It is of the air — steady, slow-moving, \n"
+                  "cool at his feet and perceptibly warmer at his shoulders. Convection, working the way \n"
+                  "it's supposed to, on a scale he has never encountered. He wants to find where it rises. \n"
+                  "Then Gorran makes a sound and Jean remembers to look at the walls.")
             time.sleep(4)
             print("Gorran leads Jean to a large chamber at the heart of the Citadel where a group of Grondite elders \n"
                   "are gathered. They are seated on stone thrones, their faces lined with age and wisdom. \n"
@@ -159,29 +162,51 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "really know how to answer any of those questions. He furrows his brow, troubled by this sudden \n"
                   "consternation. He takes a deep breath, trying to gather his thoughts.")
             time.sleep(3)
-            dialogue("Jean", "I am Jean. Jean... Claire. I'm on a journey - I think. But I'm "
-                    "not sure where I'm going or why. I just know that I need to keep moving forward, "
-                    "to find something... or someone.", "cyan")
-            time.sleep(2)
-            print("Elder Votha Krr nods slowly, his expression thoughtful.")
+            dialogue("Jean", "I am Jean. Jean Claire.", "cyan")
             time.sleep(1)
-            dialogue("Votha Krr", "In that case, perhaps you can help us with something while you "
-                     "work out your own path. I hope that is not too forward of me to ask. We are, you see, "
-                     "in dire need of assistance. Our people rely on the sustenance provided by the unique "
+            print("He stops there. Votha Krr waits, unhurried as erosion.")
+            time.sleep(2)
+            dialogue("Jean", "As for the rest — I can fight. I'm good with my hands. "
+                    "I can figure out what's broken and fix it. "
+                    "That's... that's what I do.", "cyan")
+            time.sleep(2)
+            print("Votha Krr does not nod. He regards Jean with those deep-set eyes — "
+                  "patient, unhurried, the way a canyon regards a river.")
+            time.sleep(3)
+            dialogue("Votha Krr", "You know who you are in your hands. That is not a small thing. "
+                     "Many who arrive in this world know far less.", "green")
+            time.sleep(1)
+            print("He tilts his great head, just slightly.")
+            time.sleep(1)
+            dialogue("Votha Krr", "But I notice you did not answer where you are going.", "green")
+            time.sleep(2)
+            print("Jean opens his mouth. Closes it. The chamber is very quiet.")
+            time.sleep(2)
+            dialogue("Jean", "No. I didn't.", "cyan")
+            time.sleep(2)
+            print("Something passes across Votha Krr's expression — not pity, not recognition. "
+                  "Something older than both.")
+            time.sleep(2)
+            dialogue("Votha Krr", "Then perhaps that is a question for the road.", "green")
+            time.sleep(2)
+            print("He settles back in his throne, the stone of him indistinguishable from the stone beneath him.")
+            time.sleep(1)
+            dialogue("Votha Krr", "Since you are a man who knows what to do with his hands — "
+                     "and since you find yourself without a direction — allow me to offer you one. "
+                     "Our people rely on the sustenance provided by the unique "
                      "mineral formations found in the sacred Grondelith Mineral Pools to the southwest.", "green")
             time.sleep(2)
             print("Votha Krr's expression darkens, and he continues.")
             time.sleep(1)
-            dialogue("Votha Krr", "However, the pools have become infested by a colony of slimes. "
+            dialogue("Votha Krr", "The pools have become infested by a colony of slimes. "
                      "These slimes are not only consuming the minerals, but are also corrupting the pools themselves, "
                      "rendering them toxic to our people. We have tried to eradicate the slimes ourselves, "
-                     "but unfortunately, the corruption infects our kind like a disease, and so it is much "
-                     "too dangerous for me to send my people to deal with them. I have been worrying about "
-                     "this for some time now, and I fear that if we do not act soon, the pools will be lost to us "
+                     "but the corruption infects our kind like a disease — it is much too dangerous for me to "
+                     "send my people. I fear that if we do not act soon, the pools will be lost to us "
                      "and our people will begin to starve.", "green")
             time.sleep(2)
             dialogue("Jean", "And you think me, being a creature of flesh, would not be affected by "
-                             "the corruption? ","cyan")
+                             "the corruption?", "cyan")
             time.sleep(1)
             dialogue("Votha Krr", "Ah, well, your kind is not immune to the corruption, "
                      "but it does not affect you in the same way it does us. You see, our bodies are made of "
@@ -191,13 +216,25 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                      "as we surely would.", "green")
             dialogue("Jean", "Wait, \"my kind?\" There are others here like me?", "cyan")
             dialogue("Votha Krr", "Oh yes, indeed! We have traded, formed treaties, and even in times of war, "
-                    "allied with fleshlings like yourself. I believe you call yourselves... ahhhh... humans.",
+                     "allied with fleshlings like yourself. I believe you call yourselves... ahhhh... humans.",
                      "green")
             time.sleep(1)
-            print("The last word rumbled from Votha like a landslide, reverberating into Jean's chest. ")
+            print("The last word rumbled from Votha like a landslide, reverberating into Jean's chest.")
+            time.sleep(2)
+            print("Jean is quiet, but his mind is already moving — tracing the shape of the problem. "
+                  "An infestation with a center. Corrupted channels. A source.")
+            time.sleep(2)
+            dialogue("Jean", "Is it centralized? Or spread through the whole system?", "cyan")
             time.sleep(1)
-            dialogue("Jean", "Alright, I'll help you if I can. I'm not sure what else to do, anyway.",
-                     "cyan")
+            dialogue("Votha Krr", "There is a heart to it. One great slime at the center of the corruption — "
+                     "the others follow where it leads. Remove the heart, and the rest will dissipate.", "green")
+            time.sleep(1)
+            print("Jean nods slowly. He's had that kind of job before. Somewhere, in some life, he's gone "
+                  "after the source and let the symptoms take care of themselves.")
+            time.sleep(1)
+            print("He doesn't ask himself why he's so sure of that.")
+            time.sleep(2)
+            dialogue("Jean", "Alright. I'll take a look at it.", "cyan")
             time.sleep(1)
             dialogue("Votha Krr", "Thank you, Jean. I will be forever grateful for your assistance. "
                      "The Grondelith Mineral Pools are located to the southwest of here. Take these supplies; I "
@@ -214,13 +251,18 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
         await_input()
 
         if not self.player.skip_dialog:
-            print("With that, Votha Krr slowly got to his feet, his massive form towering over Jean. \n")
+            print("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.\n")
             dialogue("Votha Krr", "May the earth guide your steps, Jean. "
-                     "You are a guest of our city. You may find the merchants of the Eastern Gate "
-                     "to be of great help. As for me, I must return to my duties. "
-                     "Return to me when you have dealt with the slimes, and perhaps we can discover "
-                     "the trajectory of your future."
-                     "green")
+                     "You are a guest of our city. The merchants of the Eastern Gate "
+                     "will have what you need for the road. "
+                     "Return to me when you have dealt with the slimes.", "green")
+            time.sleep(1)
+            print("He pauses. Those deep-set eyes hold Jean's for a moment longer than necessary.")
+            time.sleep(1)
+            dialogue("Votha Krr", "And when you return — perhaps we will speak again "
+                     "of where you are going.", "green")
+            time.sleep(1)
+            print("He says it the same way he said it the first time. Like a door left open.")
 
 
 

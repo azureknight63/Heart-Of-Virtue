@@ -72,9 +72,11 @@ class Ch01_Memory_Amelia(MemoryFlash):
             "Who was that? Regina? The name echoes in his mind,",
             "familiar yet distant, like a half-remembered dream.",
             "",
-            "He shakes his head, trying to clear the fog.",
-            "There's no time to dwell on these strange visions.",
-            "Not here. Not now.",
+            "He forces himself to breathe. Slow. Steady.",
+            "There's a draft here — coming from the east, faint but constant.",
+            "Something about tracing it to its source steadies him. He doesn't ask why.",
+            "",
+            "Not now. Keep moving.",
         ]
         
         super().__init__(
@@ -398,9 +400,9 @@ class Ch01PostRumbler3(Event):
         self.input_prompt = "Which should Jean choose?"
         self.description = "Jean must decide his next move quickly."
         self.input_options = [
-            {"value": "a", "label": "I'm not some filthy coward! (Help rock-man)"},
-            {"value": "b", "label": "It can't be helped. I must survive! (Make a break for it)"},
-            {"value": "c", "label": "I need more time to think! (Consider alternatives)"}
+            {"value": "a", "label": "A man doesn't leave someone to die. (Stand with the rock-man)"},
+            {"value": "b", "label": "I can't help anyone if I'm dead. (Make a break for it)"},
+            {"value": "c", "label": "There has to be another way out. (Think it through)"}
         ]
         self._choice = None  # Saved initial choice (a/b/c) for multi-stage narrative
         self._stage = 1
@@ -413,11 +415,10 @@ class Ch01PostRumbler3(Event):
     def process(self, user_input=None):
         # Stage 1: Show the choice prompt
         if self._stage == 1:
-            cprint("\nWiping sweat from his brow, Jean looks up to see the rock-man surrounded by the beasts, "
-                   "\nswinging wildly with a large stone column it had picked up from the floor."
-                   "\nWhile he wouldn't feel right abandoning the rock-man to an ill fate, now"
-                   "\nis the perfect time to make a break for the hole that was opened in the"
-                   "\nchamber wall. There isn't enough time to consider alternatives.")
+            cprint("\nJean wipes the blood from his lip and steadies his breathing."
+                   "\nThe rock-man is still standing — swinging a stone column like it weighs nothing,"
+                   "\nsurrounded on three sides."
+                   "\nThe hole in the chamber wall is open. Jean could make it in ten seconds flat.")
             self.needs_input = True
             self._stage = 2
             return
@@ -625,8 +626,10 @@ class AfterGorranIntro(Event):
         time.sleep(1)
         print("Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is "
               "much too small for him to\npass through. Gorran waves an arm toward it and, miraculously, "
-              "the opening widens with a loud rumble. Gorran walks through and\n"
-              "Jean, with trepidation, follows.")
+              "the opening widens with a loud rumble. Gorran walks through.\n"
+              "Jean pauses at the threshold. A faint current of air presses against his face — cooler than the chamber,"
+              "\ncarrying the mineral smell of deeper stone. He notes which way it's moving before he steps inside."
+              "\nThen, with trepidation, he follows.")
         await_input()
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
