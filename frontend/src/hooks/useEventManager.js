@@ -343,14 +343,22 @@ export function useEventManager({
                 }, EVENT_DEDUP_EXPIRY_MS)
             }
 
-            // If there's output text from processing, show it in a new event
+            // If there's output text from processing, either merge it into the
+            // next stage or show it as a standalone "Event Result" frame.
             if (data.output_text && data.output_text.trim().length > 0) {
-                const resultEvent = {
-                    name: 'Event Result',
-                    output_text: data.output_text,
-                    needs_input: false
+                if (data.needs_input && data.event) {
+                    // Merge narrative output into the next stage so the player
+                    // sees the text and the Continue/choice prompt in one dialog
+                    // instead of an extra intermediate frame.
+                    data.event.output_text = data.output_text.trim()
+                } else {
+                    const resultEvent = {
+                        name: 'Event Result',
+                        output_text: data.output_text,
+                        needs_input: false
+                    }
+                    setCurrentEvent(resultEvent)
                 }
-                setCurrentEvent(resultEvent)
             }
 
             // If event still needs input (persistent), add back to front of queue
