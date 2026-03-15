@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import apiClient from '../api/client'
 
 // Constants
 // Constants - Optimized for test environment if detected
@@ -140,15 +141,8 @@ export function useEventManager({
         const fetchPendingEvents = async () => {
             try {
                 const data = await fetchWithRetry(async () => {
-                    const response = await fetch('/api/world/events/pending', {
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-                        }
-                    })
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-                    }
-                    return await response.json()
+                    const response = await apiClient.get('/world/events/pending')
+                    return response.data
                 })
 
                 if (data.success && data.events && data.events.length > 0) {
@@ -307,23 +301,11 @@ export function useEventManager({
     const handleEventInput = async (eventId, userInput, showError) => {
         try {
             const data = await fetchWithRetry(async () => {
-                const response = await fetch('/api/world/events/input', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-                    },
-                    body: JSON.stringify({
-                        event_id: eventId,
-                        user_input: userInput
-                    })
+                const response = await apiClient.post('/world/events/input', {
+                    event_id: eventId,
+                    user_input: userInput
                 })
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-                }
-
-                return await response.json()
+                return response.data
             })
 
             if (!data.success) {
@@ -343,14 +325,24 @@ export function useEventManager({
                 }, EVENT_DEDUP_EXPIRY_MS)
             }
 
-            // If there's output text from processing, show it in a new event
-            if (data.output_text && data.output_text.trim().length > 0) {
-                const resultEvent = {
-                    name: 'Event Result',
-                    output_text: data.output_text,
-                    needs_input: false
+            // If there's output text from processing, either merge it into the
+            // next stage or show it as a standalone "Event Result" frame.
+            const trimmedOutput = data.output_text ? data.output_text.trim() : ''
+            if (trimmedOutput.length > 0) {
+                if (data.needs_input && data.event) {
+                    // Merge narrative output into the next stage so the player
+                    // sees the text and the Continue/choice prompt in one dialog
+                    // instead of an extra intermediate frame.
+                    // Spread to avoid mutating the API response object.
+                    data.event = { ...data.event, output_text: trimmedOutput }
+                } else {
+                    const resultEvent = {
+                        name: 'Event Result',
+                        output_text: trimmedOutput,
+                        needs_input: false
+                    }
+                    setCurrentEvent(resultEvent)
                 }
-                setCurrentEvent(resultEvent)
             }
 
             // If event still needs input (persistent), add back to front of queue
