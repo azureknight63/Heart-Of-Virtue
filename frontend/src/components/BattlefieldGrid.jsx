@@ -43,16 +43,15 @@ const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
 // ---------------------------------------------------------------------------
 // Grid / camera constants — module level
 // ---------------------------------------------------------------------------
-const MAP_SIZE = 13;   // grid coordinates 0–12
-const VIEW_SIZE = 9;   // viewport cell count in zoomed mode (must be < MAP_SIZE to actually zoom in)
+const VIEW_SIZE = 9;   // viewport cell count in zoomed mode; must be < any expected map size
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
 const CAMERA_EPSILON = 0.004; // settle threshold (cells)
 
 /** Snap a float camera origin to the nearest valid integer cell. */
-const computeSnapOrigin = (cam, cols) => ({
-  leftX: Math.round(Math.max(0, Math.min(MAP_SIZE - cols, cam.x))),
-  topY:  Math.round(Math.min(MAP_SIZE - 1, Math.max(cols - 1, cam.y))),
+const computeSnapOrigin = (cam, cols, mapSz) => ({
+  leftX: Math.round(Math.max(0, Math.min(mapSz - cols, cam.x))),
+  topY:  Math.round(Math.min(mapSz - 1, Math.max(cols - 1, cam.y))),
 });
 
 // ---------------------------------------------------------------------------
@@ -582,7 +581,8 @@ function BattlefieldGrid({
   tab,
   zoom = 1,
   displayedLogCount = 0,
-  hoveredTargetId = null
+  hoveredTargetId = null,
+  mapSize = null,
 }) {
   const [activeAnimation, setActiveAnimation] = useState(null);
   const [animationPhase, setAnimationPhase] = useState(null);
@@ -605,6 +605,21 @@ function BattlefieldGrid({
   const contentDivRef = useRef(null); // wrapper div that receives the sub-cell CSS transform
   const cameraRafRef  = useRef(null);
   const [snapState, setSnapState] = useState(null); // triggers re-render on cell boundary cross
+
+  // Resolve effective map size: API value → bounding box of entity positions → 9
+  const resolvedMapSize = useMemo(() => {
+    if (mapSize && mapSize > 0) return mapSize;
+    let maxCoord = 8; // floor at 9×9
+    const entities = [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])];
+    for (const e of entities) {
+      if (e?.position) maxCoord = Math.max(maxCoord, e.position.x, e.position.y);
+    }
+    return Math.min(100, maxCoord + 1);
+  }, [mapSize, combat?.player, combat?.allies, combat?.enemies]);
+
+  // Keep a ref so the RAF loop can read the latest value without being recreated
+  const mapSizeRef = useRef(resolvedMapSize);
+  useEffect(() => { mapSizeRef.current = resolvedMapSize; }, [resolvedMapSize]);
 
   const handleGridClick = useCallback((e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);
@@ -728,7 +743,7 @@ function BattlefieldGrid({
       cameraRef.current = { x: tgt.x, y: tgt.y };
       cameraRafRef.current = null;
       contentDivRef.current.style.transform = '';
-      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE);
+      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, mapSizeRef.current);
       if (!snapCellRef.current || snap.leftX !== snapCellRef.current.leftX || snap.topY !== snapCellRef.current.topY) {
         snapCellRef.current = snap;
         setSnapState({ ...snap });
@@ -738,7 +753,7 @@ function BattlefieldGrid({
 
     // Lerp one step toward target
     cameraRef.current = { x: cam.x + dx * CAMERA_LERP, y: cam.y + dy * CAMERA_LERP };
-    const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE);
+    const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, mapSizeRef.current);
 
     // Sub-cell offset: shift the content div to cover the fractional remainder
     // fracX > 0 ⇒ shift right (snap over-stepped left);  fracY < 0 ⇒ shift up
@@ -768,14 +783,14 @@ function BattlefieldGrid({
       return;
     }
 
-    const tgtX = Math.max(0, Math.min(MAP_SIZE - VIEW_SIZE, playerPos.x - HALF_VIEW));
-    const tgtY = Math.min(MAP_SIZE - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
+    const tgtX = Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW));
+    const tgtY = Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
     targetCamRef.current = { x: tgtX, y: tgtY };
 
     if (!cameraRef.current) {
       // First mount in zoomed mode — snap immediately, no animation
       cameraRef.current = { x: tgtX, y: tgtY };
-      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE);
+      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, resolvedMapSize);
       snapCellRef.current = snap;
       setSnapState(snap);
       return;
@@ -785,7 +800,7 @@ function BattlefieldGrid({
     if (!cameraRafRef.current) {
       cameraRafRef.current = requestAnimationFrame(animateCamera);
     }
-  }, [zoom, playerPos.x, playerPos.y, animateCamera]);
+  }, [zoom, playerPos.x, playerPos.y, animateCamera, resolvedMapSize]);
 
   // Cancel camera RAF on unmount
   useEffect(() => () => {
@@ -797,17 +812,17 @@ function BattlefieldGrid({
   // the hooks below are always called in the same order.
   // -------------------------------------------------------------------------
   const isFullMode = zoom === 'full';
-  const gridCols = isFullMode ? MAP_SIZE : VIEW_SIZE;
+  const gridCols = isFullMode ? resolvedMapSize : VIEW_SIZE;
   let leftX, topY;
   if (isFullMode) {
     leftX = 0;
-    topY = MAP_SIZE - 1;
+    topY = resolvedMapSize - 1;
   } else if (snapState) {
     leftX = snapState.leftX;
     topY  = snapState.topY;
   } else {
-    leftX = Math.max(0, Math.min(MAP_SIZE - VIEW_SIZE, playerPos.x - HALF_VIEW));
-    topY  = Math.min(MAP_SIZE - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
+    leftX = Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW));
+    topY  = Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
   }
 
   /** Convert a world grid position to the absolute-CSS style needed by the layers. */

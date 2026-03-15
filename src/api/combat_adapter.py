@@ -247,7 +247,8 @@ class ApiCombatAdapter:
                 coord_config = CoordinateSystemConfig(self.player)
                 total_combatants = len(self.player.combat_list_allies) + len(self.player.combat_list)
                 grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
-                
+                self.player.combat_grid_size = (grid_w, grid_h)
+
                 positions.initialize_combat_positions(
                     allies=self.player.combat_list_allies,
                     enemies=self.player.combat_list,
@@ -1522,8 +1523,10 @@ class ApiCombatAdapter:
             # Clear check_data after including it once
             del self.player.combat_adapter_state['check_data']
 
+        grid_size = getattr(self.player, "combat_grid_size", (13, 13))
         result: Dict[str, Any] = {
             "combat_active": self.player.in_combat,
+            "map_size": grid_size[0],
             "battle_state": battle_state,
             "beat_states": [battle_state],  # Initial state as a single beat state
             "log": getattr(self.player, "combat_log", []),

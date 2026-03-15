@@ -115,6 +115,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           zoom={zoom}
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
+          mapSize={combat?.map_size}
         />
       </div>
 
