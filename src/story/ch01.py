@@ -69,7 +69,7 @@ class Ch01_Memory_Amelia(MemoryFlash):
             "Jean gasps, stumbling backward. His chest feels tight,",
             "his breath coming in short, sharp bursts.",
             "",
-            "Who was that? Regina? The name echoes in his mind,",
+            "Who was that? Amelia? The name echoes in his mind,",
             "familiar yet distant, like a half-remembered dream.",
             "",
             "He forces himself to breathe. Slow. Steady.",
