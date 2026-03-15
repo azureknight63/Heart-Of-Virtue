@@ -19,37 +19,37 @@ from neotermcolor import colored
 
 # Fires at any point during a normal combat beat
 _COMBAT_GENERAL = [
-    "Gorran shifts his weight, silently repositioning so Jean is not flanked.",
-    "Between strikes, his eyes sweep the room — counting, measuring.",
-    "A low, grinding sound issues from his chest. It might be concentration.",
-    "He doesn't look at Jean, but his footing adjusts the moment Jean moves.",
+    "Gorran's eyes sweep the room between strikes — counting, measuring.",
+    "A low, grinding sound issues from Gorran's chest. It might be concentration.",
+    "Gorran doesn't look at Jean. His attention is on the next threat.",
     "Gorran braces. The stone floor under his feet gives a faint crack.",
-    "He makes a sound — short, clipped — that might be satisfaction.",
+    "Gorran makes a sound — short, clipped — that might be satisfaction.",
     "The stone of Gorran's forearms is darker where it's taken hits. He doesn't check it.",
-    "For a half-second Gorran is perfectly still. Then he moves again.",
-    "Without announcement, Gorran puts himself between Jean and the nearest enemy.",
-    "He exhales — a pressured, grinding sound — and resets his stance.",
+    "For a half-second Gorran is perfectly still. Then he's back in it.",
+    "Gorran exhales — a pressured, grinding sound — and settles his weight.",
     "Gorran catches Jean's eye for a half-second. Something passes between them that isn't language.",
-    "He moves through the fight the way stone moves downhill: with momentum, not urgency.",
+    "Gorran fights the way stone moves downhill: with momentum, not urgency.",
     "Gorran doesn't celebrate when a blow lands. He is already looking for the next one.",
-    "He advances half a step. It's not a move. It's a warning.",
     "A short, deep rumble from Gorran. Whatever it means, it doesn't sound worried.",
+    "Gorran's attention is on the fight — not the nearest enemy, but the whole room.",
+    "A low sound from Gorran, rhythmic, almost deliberate. He might be counting.",
+    "Gorran's jaw is set. Whatever he's thinking, he keeps it to himself.",
 ]
 
 # Fires when Jean's HP drops below 40 %
 _COMBAT_JEAN_HURT = [
     "Gorran's attention snaps to Jean. He hasn't stopped fighting, but now he's watching.",
-    "A short, urgent sound from Gorran. He steps to Jean's side.",
-    "He doesn't speak. He places himself closer. That's all.",
-    "Gorran angles in front of Jean without being asked.",
-    "Two short rumbles from Gorran — low, clipped. He's closer now than he was a moment ago.",
+    "A short, urgent sound from Gorran. His eyes are on Jean now.",
+    "Gorran doesn't speak. His focus narrows on Jean.",
+    "Two short rumbles from Gorran — low, clipped. He's found Jean in the chaos.",
+    "Gorran makes a sound — quick, sharp. His eyes track Jean across the field.",
 ]
 
 # Fires when Gorran himself just took a hit (his HP dropped this beat)
 _COMBAT_GORRAN_HURT = [
     "Gorran absorbs the blow without flinching. He looks at whatever hit him as though mildly interested.",
-    "The impact staggers him half a step. He resets. Keeps going.",
-    "He makes a sound — deep, measured — that might be acknowledgement. Then he turns back to the fight.",
+    "Gorran takes the hit full. He doesn't flinch. He doesn't stop.",
+    "Gorran makes a sound — deep, measured — that might be acknowledgement. Then he's back in it.",
     "Gorran reaches up and brushes dust from the strike site. It's a casual motion. Almost contemptuous.",
 ]
 
@@ -57,19 +57,19 @@ _COMBAT_GORRAN_HURT = [
 # Fires during exploration (main game loop, not in combat)
 _EXPLORE = [
     "Gorran runs a hand along the tunnel wall without slowing, reading the stone with his fingers.",
-    "He stops briefly. Presses his palm flat against the rock. Lifts it. Moves on.",
+    "Gorran stops briefly. Presses his palm flat against the rock. Lifts it. Moves on.",
     "Gorran crouches to look at something in the path Jean had already passed. He doesn't pick it up — just looks, then straightens.",
     "For a moment Gorran stands completely still, head tilted. Whatever he was listening for, it seems to answer. He continues.",
-    "He ducks instinctively at a low overhang, even before he reaches it.",
+    "Gorran ducks at a low overhang, well before he reaches it.",
     "Gorran pauses at a junction and turns his head — one way, then the other — before moving on.",
-    "He makes three short sounds. Jean doesn't know what they mean. Gorran doesn't explain.",
+    "Gorran makes three short sounds. Jean doesn't know what they mean.",
     "Gorran notices Jean noticing him. He makes a brief rolling gesture with one hand. Jean has no idea what it means.",
-    "He moves through the dark without hesitation. His hand never strays far from the walls.",
+    "Gorran moves through the dark without hesitation, one hand never straying far from the walls.",
     "Gorran places one heavy foot with unusual care on a stretch of floor, then steps around it.",
-    "Something in the passage makes him produce a sound that is — almost certainly — a chuckle.",
-    "He slows. Not stopping — just slowing. Something ahead is different. Then he picks up the pace again.",
+    "Something in the passage makes Gorran produce a sound that is — almost certainly — a chuckle.",
+    "Gorran slows. Not stopping — just slowing. Something ahead is different. Then he picks up the pace again.",
     "Gorran rests a hand briefly on the ceiling as he passes below a low arch, steadying himself or greeting the stone. Hard to say which.",
-    "He glances back at Jean once, then ahead again. Just checking.",
+    "Gorran glances back at Jean once, then ahead again.",
 ]
 
 
