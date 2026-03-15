@@ -32,6 +32,14 @@ class AfterDefeatingLurker(Event):
               "last that he opened in the same manner.")
         time.sleep(2)
         print("Gorran turns back around to face Jean and rumbles in what has to be something like relief mixed with fatigue.")
+        time.sleep(2)
+        print("He doesn't go through yet. He stands at the mouth of the passage, one hand resting on the edge "
+              "of the stone he's just parted. His fingers trace the crack where the two halves met — "
+              "the seam, barely visible now, where the wall had been.")
+        time.sleep(2)
+        print("Then he turns, and for a moment he's just looking at Jean. Not prompting, not gesturing. "
+              "Just looking. As though weighing something that doesn't need to be said out loud.")
+        time.sleep(2)
         await_input()
         # Spawn a passageway to Grondia at coordinates (1, 3)
         self.tile.spawn_object("Passageway", self.player, self.tile, 
@@ -345,6 +353,44 @@ class AfterDefeatingKingSlime(Event):
                     npc.tile = self.tile
                     self.tile.npcs_here.append(npc)
                     break
+
+        # Narrate Gorran's arrival and his reaction to the cleansed pools
+        time.sleep(1)
+        print_slow(
+            "Then — footsteps. Heavy, deliberate, from the corridor entrance.",
+            delay=0.04
+        )
+        time.sleep(0.5)
+        print_slow(
+            "Gorran rounds the archway and stops.",
+            delay=0.05
+        )
+        time.sleep(1)
+        print_slow(
+            "He looks at the pools. Clean, blue, still. His great head moves slowly across the chamber, "
+            "taking in what it was and what it is now.",
+            delay=0.03
+        )
+        time.sleep(1.5)
+        print_slow(
+            "He makes no sound. He just stands there in the entrance to the arena, "
+            "looking at the water the way someone looks at something they thought was gone.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "Then, slowly, he walks to the edge of the nearest pool and lowers himself to one knee. "
+            "He extends one wide hand over the surface. Doesn't touch it. Just holds his palm there, "
+            "feeling the cold rise off it.",
+            delay=0.03
+        )
+        time.sleep(2)
+        print_slow(
+            "A sound from him — low and long, held in the chest. Not quite a word. "
+            "He stays like that for a moment, hand over the water. Then he straightens.",
+            delay=0.04
+        )
+        time.sleep(1)
 
         self.tile.remove_event(self.name)
 

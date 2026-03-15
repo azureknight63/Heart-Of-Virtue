@@ -15,6 +15,8 @@ from typing import Optional
 from combat_event_config import CombatEventConfig
 import importlib
 
+from story.gorran_flavor import maybe_combat_flavor
+
 
 def _evaluate_combat_events(player):
     """
@@ -214,6 +216,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
             process_npc(this_enemy)
 
     beat = 0  # initialize the beat variable. Beats are "combat" turns but more granular - moves can take multiple
+    gorran_beat_cooldown = 0  # throttle for Gorran ambient combat flavor text
     # beats and can be interrupted before completion
     player.heat = 1.0  # initialize the heat multiplier. This increases the damage of moves. The more the player
     # can combo moves together without being hit, the higher this multiplier grows.
@@ -459,6 +462,9 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                     player.combat_list_allies.remove(ally)
                 else:
                     process_npc(ally)
+                    gorran_beat_cooldown = maybe_combat_flavor(
+                        player, beat, gorran_beat_cooldown
+                    )
 
         for enemy in player.combat_list:
             check_for_dead_enemy(enemy)  # will process the enemy's actions if it's alive
