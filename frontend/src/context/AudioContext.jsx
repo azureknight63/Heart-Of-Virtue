@@ -34,7 +34,8 @@ const BGM_MAP = {
     'adventure': '/assets/sounds/bgm_adventure.wav',
     'battle': '/assets/sounds/bgm_battle.mp3',
     'dark_grotto': '/assets/sounds/dark_grotto.mp3',
-    'dungeon': '/assets/sounds/bgm_dungeon.mp3'
+    'dungeon': '/assets/sounds/bgm_dungeon.mp3',
+    'fanfare': '/assets/sounds/bgm_fanfare.wav',
 };
 
 export const AudioProvider = ({ children }) => {
