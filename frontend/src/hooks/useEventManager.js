@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import apiClient from '../api/client'
 
 // Constants
 // Constants - Optimized for test environment if detected
@@ -140,15 +141,8 @@ export function useEventManager({
         const fetchPendingEvents = async () => {
             try {
                 const data = await fetchWithRetry(async () => {
-                    const response = await fetch('/api/world/events/pending', {
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-                        }
-                    })
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-                    }
-                    return await response.json()
+                    const response = await apiClient.get('/world/events/pending')
+                    return response.data
                 })
 
                 if (data.success && data.events && data.events.length > 0) {
@@ -307,23 +301,11 @@ export function useEventManager({
     const handleEventInput = async (eventId, userInput, showError) => {
         try {
             const data = await fetchWithRetry(async () => {
-                const response = await fetch('/api/world/events/input', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-                    },
-                    body: JSON.stringify({
-                        event_id: eventId,
-                        user_input: userInput
-                    })
+                const response = await apiClient.post('/world/events/input', {
+                    event_id: eventId,
+                    user_input: userInput
                 })
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-                }
-
-                return await response.json()
+                return response.data
             })
 
             if (!data.success) {
