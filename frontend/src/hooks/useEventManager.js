@@ -55,7 +55,8 @@ export function useEventManager({
     isCombatLogProcessing,
     inCombat,
     combat,
-    onEventProcessed
+    onEventProcessed,
+    playBGM
 }) {
     // Event state
     const [eventQueue, setEventQueue] = useState([])
@@ -243,6 +244,9 @@ export function useEventManager({
             }
 
             console.log('[DEBUG] Showing next event from queue:', nextEvent)
+            if (isMemoryEvent && playBGM) {
+                playBGM('memory_flash')
+            }
             setCurrentEvent(nextEvent)
 
             // Reset delay tracking after dequeueing

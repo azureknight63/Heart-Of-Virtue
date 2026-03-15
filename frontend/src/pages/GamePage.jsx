@@ -87,6 +87,7 @@ export default function GamePage() {
     isCombatLogProcessing,
     inCombat,
     combat,
+    playBGM,
     onEventProcessed: () => {
       // Refresh combat status to ensure viable_targets are updated
       if (inCombat) {
