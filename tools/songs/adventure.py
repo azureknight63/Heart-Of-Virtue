@@ -231,5 +231,64 @@ class ThemeSnippet(Song):
                 current_dur += d(dur)
         
         perc = generate_percussion_pattern([1, 0, 1, 0, 1, 0, 1, 1] * int(dur_theme * 2), dur_theme)
-        
+
         return mix_layers([mel, harm, chd, bss, perc])
+
+
+class FanareSong(Song):
+    """Short triumphant victory fanfare (C-major, ~3s, loops cleanly).
+
+    Structure:
+      1. Rising G4-G4-C5-E5-G5-C6 arpeggio with parallel bass octave
+      2. Brief silence
+      3. Sustained G5 melody over a C-major chord swell
+    """
+    def __init__(self):
+        super().__init__("Victory Fanfare", "bgm_fanfare.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+
+        # --- Rising arpeggio ---
+        melody_pitches = [
+            (fr(392), d(0.10)),   # G4
+            (fr(392), d(0.10)),   # G4
+            (fr(523), d(0.15)),   # C5
+            (fr(659), d(0.15)),   # E5
+            (fr(784), d(0.15)),   # G5
+            (fr(1047), d(0.5)),   # C6 — held
+        ]
+        bass_pitches = [
+            (fr(196), d(0.10)),   # G3
+            (fr(196), d(0.10)),   # G3
+            (fr(261), d(0.15)),   # C4
+            (fr(329), d(0.15)),   # E4
+            (fr(392), d(0.15)),   # G4
+            (fr(523), d(0.5)),    # C5 — held
+        ]
+
+        melody_arp = b''.join(
+            generate_tone(f, dur, volume=0.6, wave_type='square', attack_time=0.01, release_time=0.02)
+            for f, dur in melody_pitches
+        )
+        bass_arp = b''.join(
+            generate_tone(f, dur, volume=0.4, wave_type='sawtooth', attack_time=0.01, release_time=0.02)
+            for f, dur in bass_pitches
+        )
+        arpeggio = mix_layers([melody_arp, bass_arp])
+
+        silence = b'\x00\x00' * int(44100 * d(0.25))
+
+        # --- Sustained resolution chord ---
+        swell_dur = d(1.2)
+        melody_swell = generate_tone(fr(784), swell_dur, volume=0.55, wave_type='square',
+                                     attack_time=0.05, release_time=0.4)
+        chord_swell = generate_chord(
+            [fr(261), fr(329), fr(392)],
+            swell_dur, volume=0.35, wave_type='sawtooth',
+            attack_time=0.05, release_time=0.4
+        )
+        swell = mix_layers([melody_swell, chord_swell])
+
+        return arpeggio + silence + swell
