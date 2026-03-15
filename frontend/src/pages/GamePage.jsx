@@ -39,6 +39,9 @@ export default function GamePage() {
   // Game over state (triggered by narrative events that kill the player)
   const [showGameOver, setShowGameOver] = useState(false)
   const [gameOverMessage, setGameOverMessage] = useState('')
+  // pendingGameOver: death text is shown in the current EventDialog first;
+  // GameOverScreen is revealed only after the user closes that dialog.
+  const [pendingGameOver, setPendingGameOver] = useState(false)
 
   // Combat coordination hook
   const {
@@ -225,10 +228,12 @@ export default function GamePage() {
     const result = await handleEventInput(eventId, userInput, showError)
 
     if (result.success) {
-      // Check if the player died during event processing
+      // Check if the player died during event processing.
+      // handleEventInput already placed the death text into the EventDialog
+      // (currentEvent = resultEvent). Show the GameOverScreen only after the
+      // user dismisses that dialog so they can actually read the death sequence.
       if (result.is_game_over) {
-        setGameOverMessage(result.output_text || '')
-        setShowGameOver(true)
+        setPendingGameOver(true)
         return
       }
 
@@ -443,7 +448,13 @@ export default function GamePage() {
       <EventManager
         currentEvent={currentEvent}
         eventHistory={eventHistory}
-        onClose={handleEventClose}
+        onClose={() => {
+          handleEventClose()
+          if (pendingGameOver) {
+            setPendingGameOver(false)
+            setShowGameOver(true)
+          }
+        }}
         onSubmitInput={handleEventInputWrapper}
       />
 
