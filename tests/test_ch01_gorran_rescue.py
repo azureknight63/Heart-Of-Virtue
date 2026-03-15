@@ -27,6 +27,7 @@ def test_gorran_rescue_updates_battlefield_positions():
     player.combat_list_allies = [player]
     player.in_combat = True
     player.current_room = Mock(spec=MapTile)
+    player.combat_events = []
     
     # Create mock tile
     tile = Mock(spec=MapTile)
@@ -84,6 +85,7 @@ def test_gorran_rescue_sets_combat_lists():
     player.combat_list_allies = [player]
     player.in_combat = True
     player.current_room = Mock(spec=MapTile)
+    player.combat_events = []
     
     # Create mock tile
     tile = Mock(spec=MapTile)
@@ -124,6 +126,7 @@ def test_gorran_rescue_coward_choice():
     player.combat_list = []
     player.combat_list_allies = [player]
     player.hp = 100
+    player.combat_events = []
     
     # Create mock tile
     tile = Mock(spec=MapTile)
