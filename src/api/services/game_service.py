@@ -271,6 +271,9 @@ class GameService:
         if hasattr(tile, "objects_here"):
             objects_data = ObjectSerializer.serialize_list(tile.objects_here)
 
+        current_map = getattr(player, "map", None)
+        map_metadata = current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
+
         return {
             "x": player.location_x,
             "y": player.location_y,
@@ -281,6 +284,7 @@ class GameService:
             "npcs": npcs_data,
             "objects": objects_data,
             "is_passable": getattr(tile, "is_passable", True),
+            "bgm": map_metadata.get("bgm"),
         }
 
     def _record_exploration(self, player: "player_module.Player", tile: Any) -> None:

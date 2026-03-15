@@ -36,6 +36,7 @@ const BGM_MAP = {
     'dark_grotto': '/assets/sounds/dark_grotto.mp3',
     'dungeon': '/assets/sounds/bgm_dungeon.mp3',
     'fanfare': '/assets/sounds/bgm_fanfare.wav',
+    'memory_flash': '/assets/sounds/memory_flash.mp3',
 };
 
 export const AudioProvider = ({ children }) => {
