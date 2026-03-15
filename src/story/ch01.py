@@ -400,7 +400,7 @@ class Ch01PostRumbler3(Event):
         self.input_prompt = "Which should Jean choose?"
         self.description = "Jean must decide his next move quickly."
         self.input_options = [
-            {"value": "a", "label": "A man doesn't leave someone to die. (Stand with Gorran)"},
+            {"value": "a", "label": "A man doesn't leave someone to die. (Stand with the rock-man)"},
             {"value": "b", "label": "I can't help anyone if I'm dead. (Make a break for it)"},
             {"value": "c", "label": "There has to be another way out. (Think it through)"}
         ]
