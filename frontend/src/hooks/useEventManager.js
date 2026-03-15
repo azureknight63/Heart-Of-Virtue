@@ -345,16 +345,18 @@ export function useEventManager({
 
             // If there's output text from processing, either merge it into the
             // next stage or show it as a standalone "Event Result" frame.
-            if (data.output_text && data.output_text.trim().length > 0) {
+            const trimmedOutput = data.output_text ? data.output_text.trim() : ''
+            if (trimmedOutput.length > 0) {
                 if (data.needs_input && data.event) {
                     // Merge narrative output into the next stage so the player
                     // sees the text and the Continue/choice prompt in one dialog
                     // instead of an extra intermediate frame.
-                    data.event.output_text = data.output_text.trim()
+                    // Spread to avoid mutating the API response object.
+                    data.event = { ...data.event, output_text: trimmedOutput }
                 } else {
                     const resultEvent = {
                         name: 'Event Result',
-                        output_text: data.output_text,
+                        output_text: trimmedOutput,
                         needs_input: false
                     }
                     setCurrentEvent(resultEvent)
