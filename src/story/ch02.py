@@ -43,7 +43,8 @@ class AfterDefeatingLurker(Event):
               "if he has any.")
         time.sleep(4)
         print("Immediately on passing under the shelf, Jean's greying whiskers were blasted by a cool "
-              "breeze of unknown origin. It had the dank smell of the cavern to which Jean was just "
+              "breeze. He turned his head slightly, reading the flow — east to west, coming up from somewhere "
+              "deeper in. It had the dank smell of the cavern to which Jean was just "
               "starting to grow accustomed, but also, something more. Or, rather, a lot of things more. "
               "There was a mixture of scents; some familiar, and some entirely alien. "
               "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
@@ -112,8 +113,10 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "The halls are vast and echo with the sound of their footsteps. "
                   "The walls are adorned with intricate carvings and murals, \ndepicting scenes from Grondia's history "
                   "much like the ones on the walls outside. \n"
-                  "Jean feels a sense of awe and reverence for this place, realizing that it is a testament to the \n"
-                  "Grondites' strength and resilience.")
+                  "Jean's first thought is not of the carvings. It is of the air — steady, slow-moving, \n"
+                  "cool at his feet and perceptibly warmer at his shoulders. Convection, working the way \n"
+                  "it's supposed to, on a scale he has never encountered. He wants to find where it rises. \n"
+                  "Then Gorran makes a sound and Jean remembers to look at the walls.")
             time.sleep(4)
             print("Gorran leads Jean to a large chamber at the heart of the Citadel where a group of Grondite elders \n"
                   "are gathered. They are seated on stone thrones, their faces lined with age and wisdom. \n"
@@ -159,9 +162,13 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "really know how to answer any of those questions. He furrows his brow, troubled by this sudden \n"
                   "consternation. He takes a deep breath, trying to gather his thoughts.")
             time.sleep(3)
-            dialogue("Jean", "I am Jean. Jean... Claire. I'm on a journey - I think. But I'm "
-                    "not sure where I'm going or why. I just know that I need to keep moving forward, "
-                    "to find something... or someone.", "cyan")
+            dialogue("Jean", "I am Jean. Jean Claire.", "cyan")
+            time.sleep(1)
+            print("He stops there. Votha Krr waits, unhurried as erosion.")
+            time.sleep(2)
+            dialogue("Jean", "As for the rest — I can fight. I'm good with my hands. "
+                    "I can figure out what's broken and fix it. "
+                    "That's... that's what I do.", "cyan")
             time.sleep(2)
             print("Elder Votha Krr nods slowly, his expression thoughtful.")
             time.sleep(1)
@@ -196,8 +203,9 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
             time.sleep(1)
             print("The last word rumbled from Votha like a landslide, reverberating into Jean's chest. ")
             time.sleep(1)
-            dialogue("Jean", "Alright, I'll help you if I can. I'm not sure what else to do, anyway.",
-                     "cyan")
+            print("Jean is quiet for a moment. Something is broken and someone needs it fixed.")
+            time.sleep(1)
+            dialogue("Jean", "Alright. I'll take a look at it.", "cyan")
             time.sleep(1)
             dialogue("Votha Krr", "Thank you, Jean. I will be forever grateful for your assistance. "
                      "The Grondelith Mineral Pools are located to the southwest of here. Take these supplies; I "
