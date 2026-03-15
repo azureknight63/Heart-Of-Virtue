@@ -98,6 +98,7 @@ class ApiCombatAdapter:
         self.on_event_callback = on_event_callback
         self.output_capture = CombatOutputCapture(player)
         self.current_beat_state_index = 0  # Track which beat state we're currently building
+        self.combat_grid_size = (13, 13)   # Set by initialize_combat; default matches legacy map size
         self.strategist = CombatStrategist()
         
         # Initialize persistent state if missing
@@ -247,7 +248,7 @@ class ApiCombatAdapter:
                 coord_config = CoordinateSystemConfig(self.player)
                 total_combatants = len(self.player.combat_list_allies) + len(self.player.combat_list)
                 grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
-                self.player.combat_grid_size = (grid_w, grid_h)
+                self.combat_grid_size = (grid_w, grid_h)
 
                 positions.initialize_combat_positions(
                     allies=self.player.combat_list_allies,
@@ -1523,7 +1524,7 @@ class ApiCombatAdapter:
             # Clear check_data after including it once
             del self.player.combat_adapter_state['check_data']
 
-        grid_size = getattr(self.player, "combat_grid_size", (13, 13))
+        grid_size = self.combat_grid_size
         result: Dict[str, Any] = {
             "combat_active": self.player.in_combat,
             "map_size": grid_size[0],

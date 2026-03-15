@@ -43,7 +43,7 @@ const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
 // ---------------------------------------------------------------------------
 // Grid / camera constants — module level
 // ---------------------------------------------------------------------------
-const VIEW_SIZE = 9;   // viewport cell count in zoomed mode; must be < any expected map size
+const VIEW_SIZE = 9;   // viewport cell count in zoomed mode; equals minimum map size (9×9), so on the smallest maps both views show the same thing
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
 const CAMERA_EPSILON = 0.004; // settle threshold (cells)
@@ -58,8 +58,8 @@ const computeSnapOrigin = (cam, cols, mapSz) => ({
 // Pure helpers — module level, stable references, never re-created
 // ---------------------------------------------------------------------------
 
-/** Returns the grid position of an entity, defaulting to map centre if absent. */
-const getPos = (entity) => entity?.position || { x: 6, y: 6 };
+/** Returns the grid position of an entity, defaulting to origin if absent. */
+const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 
 // Helper to calculate torus arc path
 const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
