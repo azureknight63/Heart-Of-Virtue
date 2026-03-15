@@ -61,22 +61,6 @@ const computeSnapOrigin = (cam, cols, mapSz) => ({
 /** Returns the grid position of an entity, defaulting to origin if absent. */
 const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 
-// Helper to calculate torus arc path
-const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
-  const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
-  return {
-    x: centerX + (radius * Math.cos(angleInRadians)),
-    y: centerY + (radius * Math.sin(angleInRadians))
-  };
-};
-
-const describeArc = (x, y, radius, startAngle, endAngle) => {
-  const start = polarToCartesian(x, y, radius, endAngle);
-  const end = polarToCartesian(x, y, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-  return ['M', start.x, start.y, 'A', radius, radius, 0, largeArcFlag, 0, end.x, end.y].join(' ');
-};
-
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
@@ -343,7 +327,7 @@ const EntityLayer = React.memo(({
           const sPos = getPos(item.entity);
           const tPos = getPos(target.entity);
           transformStyle = {
-            transform: `translate(${(tPos.x - sPos.x) * 40}px, ${(sPos.y - tPos.y) * 40}px)`,
+            transform: `translate(${(tPos.x - sPos.x) * 100}%, ${(sPos.y - tPos.y) * 100}%)`,
             transition: 'transform 0.2s cubic-bezier(0.1, 0.7, 1.0, 0.1)',
             zIndex: 100
           };

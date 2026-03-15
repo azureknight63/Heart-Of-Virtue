@@ -6,8 +6,10 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(1)
 
-  // Display state - synchronized with combat log progress
-  const [displayState, setDisplayState] = useState(combat)
+  // Display state - synchronized with combat log progress.
+  // Initialise directly to the first beat state (same shape BattlefieldGrid expects)
+  // so there is never a render where displayState has the top-level API response shape.
+  const [displayState, setDisplayState] = useState(combat?.beat_states?.[0] ?? combat)
 
   // Accumulated beat states across multiple actions so trails persist across turns
   const [accBeatStates, setAccBeatStates] = useState([])
@@ -39,8 +41,15 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     }
 
     setAccBeatStates(prev => {
+      const MAX_BEAT_STATES = 200
+      const next = [...prev, ...incoming]
+      if (next.length > MAX_BEAT_STATES) {
+        const dropped = next.length - MAX_BEAT_STATES
+        baseOffsetRef.current = Math.max(0, prev.length - dropped)
+        return next.slice(dropped)
+      }
       baseOffsetRef.current = prev.length
-      return [...prev, ...incoming]
+      return next
     })
   }, [combat?.beat_states, combat?.combat_active])
 
@@ -83,7 +92,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
               : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
               }`}
           >
-            Enemies ({displayState.enemies?.length || 0})
+            Enemies ({combat?.enemies?.length || 0})
           </button>
         </div>
 
