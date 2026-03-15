@@ -787,12 +787,28 @@ function BattlefieldGrid({
     const tgtY = Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
     targetCamRef.current = { x: tgtX, y: tgtY };
 
-    if (!cameraRef.current) {
-      // First mount in zoomed mode — snap immediately, no animation
+    const snapImmediately = () => {
+      if (cameraRafRef.current) { cancelAnimationFrame(cameraRafRef.current); cameraRafRef.current = null; }
       cameraRef.current = { x: tgtX, y: tgtY };
+      if (contentDivRef.current) contentDivRef.current.style.transform = '';
       const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, resolvedMapSize);
       snapCellRef.current = snap;
-      setSnapState(snap);
+      setSnapState({ ...snap });
+    };
+
+    if (!cameraRef.current) {
+      // First mount in zoomed mode — snap immediately, no animation
+      snapImmediately();
+      return;
+    }
+
+    // If Jean would leave the viewport during a smooth animation (jump > HALF_VIEW
+    // cells), snap instead. Moves ≤ HALF_VIEW always keep Jean within the 9-cell
+    // window; larger jumps (log skipping, combat start) would make her invisible.
+    const pendingX = Math.abs(tgtX - cameraRef.current.x);
+    const pendingY = Math.abs(tgtY - cameraRef.current.y);
+    if (pendingX > HALF_VIEW || pendingY > HALF_VIEW) {
+      snapImmediately();
       return;
     }
 
