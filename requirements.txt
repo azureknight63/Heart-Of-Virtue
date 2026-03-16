@@ -8,3 +8,7 @@ asciimatics>=1.15.0
 Pillow>=12.0.0
 bleach>=6.0.0
 python-dotenv>=1.0.0
+
+# Inquisitor: AI-driven game testing harness
+anthropic>=0.84.0   # Claude API SDK (claude-opus-4-6 + adaptive thinking)
+playwright>=1.58.0  # Browser automation (--browser mode only); run: playwright install chromium
