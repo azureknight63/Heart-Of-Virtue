@@ -1,0 +1,24 @@
+{
+  "total": 0,
+  "critical": 0,
+  "high": 0,
+  "bugs": [],
+  "findings": [
+    {
+      "mode": "happy_path",
+      "layer": "api",
+      "type": "observation",
+      "title": "Anthropic API error on turn 0",
+      "description": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CZ79eT6RYageoCWTA31av'}",
+      "severity": "medium",
+      "chapter": null,
+      "step_number": 0,
+      "tool_call": "(api)",
+      "tool_input": {},
+      "tool_result": {},
+      "screenshot_path": null,
+      "id": "6bace154",
+      "timestamp": "2026-03-16T17:25:36.059478+00:00"
+    }
+  ]
+}
