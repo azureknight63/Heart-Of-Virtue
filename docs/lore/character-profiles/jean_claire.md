@@ -20,6 +20,16 @@ resolve through ordinary mourning.
 See `docs/lore/jean-explosion-jerusalem.md` for full narrative research notes on the
 setting, the sensory details, and how this event should surface in Jean's memories.
 
+## The Crusader Identity (Roots)
+The identity has two sources. As a child Jean played a DOS computer game —
+*Crusader: Champions of the Holy Lance* — and absorbed its structure: a knight,
+called and willing, moving toward Jerusalem, clearing the enemies of humanity
+square by square. As an adult he went to Jerusalem on pilgrimage and walked the
+Via Dolorosa. His coma-mind combines both into the identity he inhabits in Aurelion.
+
+See `docs/lore/jean-crusader-game-childhood.md` for the memory flash scene and
+full notes on how the game shaped Jean's psychology.
+
 ## Important relationships
 - Gorran: A Golemite who becomes Jean's protector and companion. Their relationship is built on mutual respect and a shared sense of duty.
 - Amelia Claire: Jean's late wife, whose memory deeply influences his actions and motivations throughout his journey.

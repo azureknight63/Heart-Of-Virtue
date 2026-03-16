@@ -135,11 +135,27 @@ carries guilt inside it, which is distinct from simple loss. He does not feel on
 robbed; he feels complicit in a way he cannot rationally justify and cannot set down.
 
 ### The Crusader Identity
-The false memory of being a crusader is not random. A crusader is someone who goes to
-the Holy Land for God. Jean went to the Holy Land for God. The constructed identity in
-Aurelion mirrors the real act — pilgrimage — while replacing the catastrophic outcome
-with a role that has agency, purpose, and forward motion. He cannot be the man who
-walked his family into that market. He can be the man who fights.
+The false memory of being a crusader is not random, and it is not drawn from a single
+source. It has two roots:
+
+**The game:** As a child, Jean played a DOS computer game — *Crusader: Champions of the
+Holy Lance* — in which you move a knight through occupied territory toward the Holy City,
+clearing enemies square by square. The manual called them "enemies of humanity." Jean
+read those words many times. The shape of the game — called, willing, moving toward
+Jerusalem, the task legible and the enemies distinguishable — sits in him at a level
+below memory.
+
+**The pilgrimage:** As an adult, Jean went to the Holy Land for God. He walked the
+Via Dolorosa. He placed his hands on the stone of unction. He was, in the most
+literal sense, a man who traveled to Jerusalem out of faith.
+
+The constructed identity in Aurelion mirrors both. It replaces the catastrophic outcome
+of the pilgrimage with a role that has agency, purpose, and forward motion — the game's
+structure imposed on the adult act. He cannot be the man who walked his family into
+that market. He can be the man who clears the next square.
+
+See `docs/lore/jean-crusader-game-childhood.md` for full notes on the game,
+the memory flash, and what Aurelion takes from each.
 
 ### Memory Triggers
 The sensory landscape of the Old City market will surface through environmental echoes
