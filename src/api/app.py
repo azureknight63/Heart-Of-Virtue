@@ -221,6 +221,16 @@ def create_app(config_class=None):
             }
         )
 
+    # Test-only session endpoint — bypasses database auth entirely.
+    # Only registered when TESTING=True so it is never reachable in production.
+    if app.config.get("TESTING"):
+        @app.route("/api/test/session", methods=["POST"])
+        def test_create_session():
+            from flask import jsonify, request as _req
+            username = (_req.get_json() or {}).get("username", "inquisitor_test")
+            session_id, _ = app.session_manager.create_session(username)
+            return jsonify({"session_id": session_id, "username": username}), 201
+
     # API info endpoint
     @app.route("/api/info", methods=["GET"])
     def api_info():

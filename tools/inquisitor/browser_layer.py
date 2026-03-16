@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = ROOT / "frontend"
 API_URL = "http://localhost:5000"
 FRONTEND_URL = "http://localhost:3000"
-SERVER_STARTUP_TIMEOUT = 60  # seconds
+SERVER_STARTUP_TIMEOUT = 120  # seconds — Vite cold-starts slowly on first run
 SCREENSHOT_DIR = ROOT / "tools" / "inquisitor_screenshots"
 
 
@@ -109,7 +109,9 @@ class BrowserLayer:
     def _start_servers(self):
         """Start Flask API and Vite dev server as subprocesses."""
         env = os.environ.copy()
-        env["FLASK_ENV"] = "development"
+        # Use testing config so the /api/test/session bypass endpoint is active
+        # and no database credentials are required for auth.
+        env["FLASK_ENV"] = "testing"
         env["MYNX_LLM_ENABLED"] = "0"
 
         self._api_process = subprocess.Popen(
@@ -162,7 +164,30 @@ class BrowserLayer:
             )
 
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=self._headless)
+
+        # Try the default browser path first; fall back to any cached Chromium
+        # build if the expected version isn't installed (e.g. CDN is blocked).
+        launch_kwargs: dict = {
+            "headless": self._headless,
+            "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+        }
+        try:
+            self._browser = self._pw.chromium.launch(**launch_kwargs)
+        except Exception:
+            import glob as _glob
+            candidates = sorted(
+                _glob.glob(
+                    os.path.expanduser(
+                        "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome"
+                    )
+                ),
+                reverse=True,  # prefer highest build number
+            )
+            if not candidates:
+                raise
+            launch_kwargs["executable_path"] = candidates[0]
+            self._browser = self._pw.chromium.launch(**launch_kwargs)
+
         context = self._browser.new_context()
         self._page = context.new_page()
 
@@ -174,9 +199,16 @@ class BrowserLayer:
     def _login(self):
         """Register a fresh test account and extract the auth token."""
         username = f"inquisitor_{uuid.uuid4().hex[:6]}"
-        password = "Inquisitor1234!"
+        password = "Inquisitor1234!X"  # 16 chars — meets minimum length requirement
 
-        self._page.goto(f"{FRONTEND_URL}/login", wait_until="networkidle")
+        self._page.goto(f"{FRONTEND_URL}/login", wait_until="domcontentloaded", timeout=60000)
+
+        # Wait for React to hydrate — the form elements won't exist until the
+        # JS bundle has run and the component has mounted.
+        try:
+            self._page.wait_for_selector("form", timeout=15000)
+        except Exception:
+            pass  # continue anyway; fallback will handle it
 
         # Switch to register mode if needed (look for a "Register" toggle)
         try:
@@ -184,28 +216,40 @@ class BrowserLayer:
         except Exception:
             pass  # might already be on register form
 
-        # Fill in the form
+        # Fill in the form — target the register form explicitly since both
+        # the login and register forms are rendered simultaneously in the DOM.
+        email = f"{username}@inquisitor.test"
         try:
-            self._page.locator("input[type='text'], input[name='username']").first.fill(username)
-            self._page.locator("input[type='password']").first.fill(password)
-            self._page.locator("button[type='submit']").click()
-            self._page.wait_for_url("**/menu**", timeout=10000)
+            reg_form = self._page.locator("#register-form")
+            reg_form.locator("input[type='text'], input[name='username']").first.fill(username)
+            reg_form.locator("input[type='password']").first.fill(password)
+            email_input = reg_form.locator("input[type='email']")
+            if email_input.count():
+                email_input.first.fill(email)
+            reg_form.locator("button[type='submit']").click()
+            self._page.wait_for_url("**/menu**", timeout=30000)
         except Exception as exc:
-            # Fallback: register via API directly and set token in localStorage
+            # Fallback: create a session directly via the test-only bypass endpoint
+            # (available when FLASK_ENV=testing).  This avoids any database
+            # dependency and is safe because the endpoint is not registered in
+            # production (TESTING=False).
             resp = http_requests.post(
-                f"{API_URL}/api/auth/register",
-                json={"username": username, "password": password},
+                f"{API_URL}/api/test/session",
+                json={"username": username},
                 timeout=5,
             )
             if resp.status_code in (200, 201):
                 token = resp.json().get("session_id", "")
                 self._token = token
-                self._page.goto(FRONTEND_URL, wait_until="domcontentloaded")
+                self._page.goto(FRONTEND_URL, wait_until="domcontentloaded", timeout=60000)
                 self._page.evaluate(
                     f'localStorage.setItem("authToken", {json.dumps(token)})'
                 )
                 return
-            raise RuntimeError(f"Login failed: {exc}") from exc
+            raise RuntimeError(
+                f"Login failed (UI: {exc!s}; test-session fallback: "
+                f"HTTP {resp.status_code} {resp.text[:200]})"
+            ) from exc
 
         # Extract token from localStorage
         self._token = self._page.evaluate('localStorage.getItem("authToken")')
