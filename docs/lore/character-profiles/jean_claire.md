@@ -7,6 +7,19 @@
 - Personality: Jean is determined and resilient, driven by a deep sense of loss and a desire to find purpose. He is cautious but compassionate, especially towards those who are vulnerable.
 - Background: Jean's journey in Aurelion is marked by his struggle to come to terms with the loss of his family. He is haunted by fragmented memories of his past life, which fuel his quest for meaning in this new world.
 
+## The Explosion
+Jean, Amelia, and Regina were on Catholic pilgrimage in Jerusalem when a suicide bomber
+detonated in the crowded market lanes of the Old City, killing dozens of people including
+Amelia and Regina. Jean survived — barely — and is comatose in a hospital. The entire
+game takes place while he is unconscious.
+
+He was holding Regina when the bomb went off. He survived and she did not. His death
+words ("...I'm sorry...") carry this guilt, which is distinct from grief and does not
+resolve through ordinary mourning.
+
+See `docs/lore/jean-explosion-jerusalem.md` for full narrative research notes on the
+setting, the sensory details, and how this event should surface in Jean's memories.
+
 ## Important relationships
 - Gorran: A Golemite who becomes Jean's protector and companion. Their relationship is built on mutual respect and a shared sense of duty.
 - Amelia Claire: Jean's late wife, whose memory deeply influences his actions and motivations throughout his journey.
