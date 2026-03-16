@@ -497,6 +497,87 @@ class AfterDefeatingKingSlime(Event):
         self.tile.remove_event(self.name)
 
 
+class Ch02FragmentReminder(Event):
+    """
+    Fires via evaluate_for_map_entry() whenever the player has left the
+    arena tile without picking up the MineralFragment.
+
+    Gorran rumbles and gestures at the fragment; Jean is guided back.
+    Repeats until the fragment is collected or Votha Krr has been visited.
+
+    Attach to the arena tile alongside Ch02ArenaEntrance and
+    AfterDefeatingKingSlime.
+    """
+    def __init__(self, player, tile, params=None, repeat=True, name='Ch02FragmentReminder'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def evaluate_for_map_entry(self, player):
+        story = getattr(player.universe, 'story', {})
+
+        # Done once Votha has received the fragment
+        if story.get("votha_krr_response_given"):
+            self.tile.remove_event(self.name)
+            return
+
+        # Only active after the King Slime is defeated
+        if story.get("king_slime_defeated") != "1":
+            return
+
+        # If Jean already has the fragment, nothing to remind
+        if any(i.__class__.__name__ == "MineralFragment" for i in player.inventory):
+            return
+
+        # If the fragment is gone from the tile too, nothing to do
+        if not any(i.__class__.__name__ == "MineralFragment" for i in self.tile.items_here):
+            return
+
+        # Only fire when Jean has LEFT the arena
+        if player.current_room is self.tile:
+            return
+
+        # Rate-limit: at most once every 3 ticks so it doesn't spam corridors
+        last_tick = int(story.get("fragment_reminder_tick", -999))
+        if player.universe.game_tick - last_tick < 3:
+            return
+
+        story["fragment_reminder_tick"] = str(player.universe.game_tick)
+        self._remind(player)
+
+    def _remind(self, player):
+        if not player.skip_dialog:
+            print_slow(
+                "A rumble from behind — low, insistent.",
+                delay=0.04
+            )
+            time.sleep(1)
+            print_slow(
+                "Gorran stands at the entrance to the corridor, one hand braced against the arch. "
+                "He is looking at the island.",
+                delay=0.03
+            )
+            time.sleep(1)
+            print_slow(
+                "Jean follows his gaze.",
+                delay=0.05
+            )
+            time.sleep(1)
+            print_slow(
+                "The fragment is still there. He walked out without it.",
+                delay=0.03
+            )
+            time.sleep(1.5)
+
+        # Teleport player back to the arena tile
+        arena_coords = next(
+            (coord for coord, t in player.map.items()
+             if isinstance(coord, tuple) and t is self.tile),
+            None
+        )
+        map_name = player.map.get('name', 'grondia')
+        if arena_coords:
+            player.teleport(map_name, arena_coords)
+
+
 class Ch02KingSlimeMemoryFlash(MemoryFlash):
     """
     Memory flash triggered when Jean picks up the MineralFragment after
