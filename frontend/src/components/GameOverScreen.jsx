@@ -4,7 +4,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 
 // Delay before the "MAIN MENU" button appears (ms)
-const BUTTON_REVEAL_DELAY_MS = 3000
+const BUTTON_REVEAL_DELAY_MS = 1500
 
 /**
  * GameOverScreen - Full-screen overlay shown when the player dies via a narrative event.
@@ -46,7 +46,7 @@ export default function GameOverScreen({ message }) {
                 justifyContent: 'center',
                 gap: '32px',
                 background: 'radial-gradient(ellipse at center, #1a0000 0%, #000000 70%)',
-                animation: 'gameOverFadeIn 1.5s ease-in forwards',
+                animation: 'gameOverFadeIn 0.6s ease-in forwards',
             }}
         >
             <style>{`
