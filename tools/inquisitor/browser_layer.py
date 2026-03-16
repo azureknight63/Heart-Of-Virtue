@@ -106,8 +106,43 @@ class BrowserLayer:
     # Server lifecycle
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _free_port(port: int):
+        """Kill any process listening on *port* so we start with a clean slate.
+
+        Uses ``fuser`` (Linux) and falls back to ``lsof`` (macOS/BSD).  Errors
+        are silently ignored — if neither tool is available the server will
+        simply fail to bind and raise a clear error at startup.
+        """
+        for cmd in (
+            ["fuser", "-k", f"{port}/tcp"],
+            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+        ):
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, timeout=5
+                )
+                if result.returncode == 0 and cmd[0] == "lsof":
+                    # lsof just prints PIDs; kill them
+                    for pid in result.stdout.decode().split():
+                        subprocess.run(
+                            ["kill", "-9", pid.strip()],
+                            capture_output=True,
+                        )
+                break  # stop after first tool that exists on this OS
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        time.sleep(0.5)  # give the OS a moment to reclaim the port
+
     def _start_servers(self):
-        """Start Flask API and Vite dev server as subprocesses."""
+        """Start Flask API and Vite dev server as subprocesses.
+
+        Clears ports 5000 and 3000 first so a crashed previous run never
+        blocks this one.
+        """
+        self._free_port(5000)
+        self._free_port(3000)
+
         env = os.environ.copy()
         # Use testing config so the /api/test/session bypass endpoint is active
         # and no database credentials are required for auth.
@@ -133,6 +168,32 @@ class BrowserLayer:
 
         self._wait_for_server(f"{API_URL}/health", "Flask API")
         self._wait_for_server(FRONTEND_URL, "Vite frontend")
+
+        # Pre-warm Vite: trigger the JS bundle compile with a plain HTTP
+        # request before opening the browser.  Without this, the first
+        # browser navigation races against the compile and can time out.
+        self._prewarm_vite()
+
+    def _prewarm_vite(self):
+        """Fetch the Vite root URL repeatedly until the JS bundle is compiled.
+
+        Vite responds to HTTP requests as soon as it binds the port, but the
+        first browser navigation can stall for 15–30 s while it compiles the
+        bundle.  Hitting the URL from Python forces the compile to happen *before*
+        the browser opens, so navigation is fast and reliable.
+        """
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            try:
+                resp = http_requests.get(FRONTEND_URL, timeout=10)
+                # Vite serves HTML immediately; the bundle is done when the
+                # response contains a script tag pointing to a compiled asset.
+                if "src/main" in resp.text or ".js" in resp.text:
+                    return
+            except Exception:
+                pass
+            time.sleep(2)
+        # Not fatal — the browser will still try; it just might be slower.
 
     def _wait_for_server(self, url: str, name: str):
         """Poll a URL until it responds or the timeout is exceeded."""
@@ -405,12 +466,50 @@ class BrowserLayer:
         self._page.screenshot(path=str(path))
         return ToolResult.ok({"screenshot_saved": str(path)})
 
+    # Patterns that produce console noise in every run but are not code bugs.
+    # Confidence is intentionally high — only add a pattern here if you're
+    # certain it can never indicate a real regression in this codebase.
+    _NOISE_PATTERNS = (
+        # External font CDNs are unreachable in offline / sandboxed CI.
+        "fonts.googleapis.com",
+        "fonts.gstatic.com",
+        # React Router v6 → v7 migration warnings — known, tracked upstream.
+        "React Router Future Flag Warning",
+        "React.startTransition",
+        "Relative route resolution within Splat routes",
+    )
+
+    def _is_noise(self, entry: dict) -> bool:
+        text = entry.get("text", "") + entry.get("url", "")
+        return any(pat in text for pat in self._NOISE_PATTERNS)
+
     def _call_get_page_errors(self) -> ToolResult:
+        """Return browser errors split into *significant* and *known_noise*.
+
+        Significant errors are real JS exceptions or network failures that
+        indicate a bug in this codebase.  Known noise is filtered out so the
+        LLM agent doesn't waste turns investigating environment artefacts
+        (blocked CDNs, expected deprecation warnings, etc.).
+        """
+        recent_console = self._console_errors[-50:]
+        recent_net = self._network_failures[-20:]
+
+        significant_console = [e for e in recent_console if not self._is_noise(e)]
+        noise_console = [e for e in recent_console if self._is_noise(e)]
+        significant_net = [f for f in recent_net if not self._is_noise(f)]
+        noise_net = [f for f in recent_net if self._is_noise(f)]
+
         return ToolResult.ok({
-            "console_errors": self._console_errors[-50:],  # cap at 50
-            "network_failures": self._network_failures[-20:],
-            "total_console_errors": len(self._console_errors),
-            "total_network_failures": len(self._network_failures),
+            # Primary view — what the agent should act on
+            "console_errors": significant_console,
+            "network_failures": significant_net,
+            "total_console_errors": len(significant_console),
+            "total_network_failures": len(significant_net),
+            # Secondary view — visible but clearly labelled as non-actionable
+            "known_noise": {
+                "console": noise_console,
+                "network": noise_net,
+            },
         })
 
     def _call_click_element(self, selector: str) -> ToolResult:

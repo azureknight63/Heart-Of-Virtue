@@ -139,6 +139,56 @@ Scenarios live in `tools/harness/scenarios/`. Each extends `Scenario` (ABC) and 
 
 Fix-agent prompt is at `tools/harness/prompts/bug_hunt_prompt.txt`. GitHub Actions stub at `.github/workflows/bug-hunt.yml`.
 
+## Inquisitor — Browser Mode
+
+The Inquisitor harness has a `--browser` flag that drives the real React + Flask stack through a headless Chromium browser instead of the in-process test client. Use it to catch UI rendering bugs and JS errors that the API layer can't see.
+
+```bash
+# Headless browser run (CI-friendly)
+python tools/inquisitor.py --mode bug-hunt --browser --headless --output tools/browser_findings.json
+
+# Headed browser run (interactive debugging)
+python tools/inquisitor.py --mode bug-hunt --browser
+```
+
+### Prerequisites
+
+```bash
+pip install playwright asgiref          # asgiref makes async Flask routes work
+python -m playwright install chromium   # downloads ~150 MB browser binary
+```
+
+**If the Playwright CDN is blocked** (CI/Docker): the harness auto-detects cached
+Chromium builds in `~/.cache/ms-playwright/` and uses the highest available one
+via `executable_path`. If Node.js Playwright is installed separately (e.g. for
+frontend tests), its cached browser will be reused.
+
+### How auth works (no database required)
+
+The browser layer starts Flask with `FLASK_ENV=testing`. In test mode, the app
+registers a `/api/test/session` endpoint (never active in production) that calls
+`session_manager.create_session()` directly — no Turso DB needed. The login flow
+tries the real registration form first; on failure it falls back to this endpoint.
+
+### Known browser noise (filtered automatically)
+
+These events appear in every run and are **not bugs**:
+- `fonts.googleapis.com` / `fonts.gstatic.com` network failures — CDN is
+  unreachable in offline environments; harmless in production.
+- React Router future-flag warnings — v6→v7 migration notices, tracked upstream.
+
+`get_page_errors` separates these into a `known_noise` key so the agent focuses
+only on `console_errors` and `network_failures` (the significant ones).
+
+### Gotchas
+
+- `asgiref` must be installed or all `async def` Flask routes (auth, saves) will
+  crash with a 500 — they silently work in-process via the test client but fail
+  under a real Werkzeug server. It is listed in `requirements-api.txt`.
+- The Vite dev server is slow to compile on first boot; the harness pre-warms it
+  with an HTTP request before opening the browser, so navigation doesn't race.
+- Screenshots land in `tools/inquisitor_screenshots/<timestamp>/` (gitignored).
+
 ## Code Review Gate
 
 **Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
