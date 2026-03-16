@@ -2,10 +2,14 @@
 """Inquisitor — AI-driven game testing harness for Heart of Virtue.
 
 Usage:
+    # Self-drive mode (no API key needed — the calling agent IS the intelligence)
+    # Browser is the default layer for self-drive.
+    python tools/inquisitor.py --mode bug-hunt --self-drive
+    python tools/inquisitor.py --mode bug-hunt --self-drive --headless --output tools/browser_findings.json
+
     # API layer (no servers needed)
     python tools/inquisitor.py --mode bug-hunt --max-turns 30
     python tools/inquisitor.py --mode happy-path --chapter ch01
-    python tools/inquisitor.py --mode happy-path
 
     # Browser layer (auto-starts Flask + Vite)
     python tools/inquisitor.py --mode bug-hunt --browser
@@ -17,13 +21,11 @@ Usage:
 Exit codes:
     0  — no CRITICAL or HIGH findings
     1  — one or more CRITICAL or HIGH findings found
-    2  — setup failed (missing API key, import error, server startup failure)
+    2  — setup failed (import error, server startup failure, etc.)
 
-Required environment variable:
-    ANTHROPIC_API_KEY   Your Anthropic API key
-
-Optional environment variables (email report):
-    INQUISITOR_REPORT_EMAIL   Recipient email address
+Environment variables:
+    ANTHROPIC_API_KEY   Required for AI-agent mode (omit for --self-drive)
+    INQUISITOR_REPORT_EMAIL   Recipient email address (optional)
     INQUISITOR_FROM_EMAIL     Sender address (default: inquisitor@heart-of-virtue.local)
     INQUISITOR_SMTP_HOST      SMTP host (default: localhost)
     INQUISITOR_SMTP_PORT      SMTP port (default: 587)
@@ -165,6 +167,23 @@ def main() -> int:
         help="(happy-path only) Limit run to a single chapter, e.g. 'ch01'.",
     )
     parser.add_argument(
+        "--self-drive",
+        action="store_true",
+        dest="self_drive",
+        help=(
+            "Run a deterministic probe sequence without calling the Anthropic API. "
+            "Use this when the calling agent (e.g. Claude Code) is already the "
+            "intelligence: no ANTHROPIC_API_KEY needed. Browser layer is used by "
+            "default; pass --no-browser to fall back to the in-process API layer."
+        ),
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        dest="no_browser",
+        help="(--self-drive only) Use the in-process API layer instead of browser.",
+    )
+    parser.add_argument(
         "--browser",
         action="store_true",
         help="Use Playwright browser layer (auto-starts Flask + Vite).",
@@ -172,7 +191,7 @@ def main() -> int:
     parser.add_argument(
         "--headless",
         action="store_true",
-        help="Headless mode: JSON output only (no human-readable summary).",
+        help="Headless mode: suppress human-readable summary (JSON output only).",
     )
     parser.add_argument(
         "--output",
@@ -188,7 +207,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not _check_api_key():
+    # Self-drive does not require an API key; AI-agent mode does.
+    if not args.self_drive and not _check_api_key():
         return 2
 
     # ------------------------------------------------------------------
@@ -200,19 +220,23 @@ def main() -> int:
         print(f"[inquisitor] {exc}", file=sys.stderr)
         return 2
 
+    # In self-drive mode, browser is the default layer unless --no-browser.
+    use_browser = args.browser or (args.self_drive and not args.no_browser)
+
     if not args.headless:
-        print(f"[inquisitor] Mode: {mode.display_name}")
+        drive_label = "self-drive" if args.self_drive else f"ai-agent (max-turns={args.max_turns})"
+        print(f"[inquisitor] Mode:  {mode.display_name}")
+        print(f"[inquisitor] Drive: {drive_label}")
         if args.chapter:
             print(f"[inquisitor] Chapter filter: {args.chapter}")
-        print(f"[inquisitor] Layer: {'browser' if args.browser else 'api'}")
-        print(f"[inquisitor] Max turns: {args.max_turns}")
+        print(f"[inquisitor] Layer: {'browser' if use_browser else 'api'}")
 
     # ------------------------------------------------------------------
     # Build the layer
     # ------------------------------------------------------------------
     layer = None
     try:
-        if args.browser:
+        if use_browser:
             from tools.inquisitor.browser_layer import BrowserLayer
             if not args.headless:
                 print("[inquisitor] Starting servers and browser…")
@@ -228,18 +252,22 @@ def main() -> int:
         return 2
 
     # ------------------------------------------------------------------
-    # Run the agent
+    # Run: self-drive (deterministic probes) or AI-agent (Claude API loop)
     # ------------------------------------------------------------------
-    from tools.inquisitor.agent import Inquisitor
-
     try:
-        agent = Inquisitor(
-            mode=mode,
-            layer=layer,
-            max_turns=args.max_turns,
-            chapter_filter=args.chapter,
-        )
-        findings = agent.run()
+        if args.self_drive:
+            from tools.inquisitor.self_drive_runner import SelfDriveRunner
+            runner = SelfDriveRunner(layer, verbose=not args.headless)
+            findings = runner.run()
+        else:
+            from tools.inquisitor.agent import Inquisitor
+            agent = Inquisitor(
+                mode=mode,
+                layer=layer,
+                max_turns=args.max_turns,
+                chapter_filter=args.chapter,
+            )
+            findings = agent.run()
     except EnvironmentError as exc:
         print(f"[inquisitor] FATAL: {exc}", file=sys.stderr)
         return 2
@@ -281,7 +309,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Email report
     # ------------------------------------------------------------------
-    layer_name = "browser" if args.browser else "api"
+    layer_name = "browser" if use_browser else "api"
     send_report(
         findings=findings,
         mode=mode.display_name,

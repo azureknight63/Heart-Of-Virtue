@@ -141,14 +141,37 @@ Fix-agent prompt is at `tools/harness/prompts/bug_hunt_prompt.txt`. GitHub Actio
 
 ## Inquisitor — Browser Mode
 
-The Inquisitor harness has a `--browser` flag that drives the real React + Flask stack through a headless Chromium browser instead of the in-process test client. Use it to catch UI rendering bugs and JS errors that the API layer can't see.
+The Inquisitor harness drives the real React + Flask stack through a headless
+Chromium browser, catching UI rendering bugs and JS errors the API layer can't see.
+
+### Self-drive mode (preferred for agents)
+
+When you (Claude Code) are already the intelligence driving the session, use
+`--self-drive`. It runs a deterministic probe sequence across all eight bug-hunt
+categories without needing `ANTHROPIC_API_KEY`. Browser is the default layer.
 
 ```bash
-# Headless browser run (CI-friendly)
+# Recommended: agent self-drives the browser harness (no API key needed)
+python tools/inquisitor.py --mode bug-hunt --self-drive --headless --output tools/browser_findings.json
+
+# Headed run (shows browser window — useful for debugging)
+python tools/inquisitor.py --mode bug-hunt --self-drive
+
+# API-only fallback (faster, no servers needed, misses UI bugs)
+python tools/inquisitor.py --mode bug-hunt --self-drive --no-browser
+```
+
+### AI-agent mode (requires ANTHROPIC_API_KEY)
+
+Use when you want the harness to decide what to probe next. Slower and costlier
+than self-drive but adaptive.
+
+```bash
+# AI-driven browser run
 python tools/inquisitor.py --mode bug-hunt --browser --headless --output tools/browser_findings.json
 
-# Headed browser run (interactive debugging)
-python tools/inquisitor.py --mode bug-hunt --browser
+# AI-driven API-only run
+python tools/inquisitor.py --mode bug-hunt --max-turns 30
 ```
 
 ### Prerequisites
