@@ -233,6 +233,7 @@ export default function GamePage() {
       // (currentEvent = resultEvent). Show the GameOverScreen only after the
       // user dismisses that dialog so they can actually read the death sequence.
       if (result.is_game_over) {
+        setGameOverMessage(result.output_text || '')
         setPendingGameOver(true)
         return
       }
