@@ -141,14 +141,19 @@ Fix-agent prompt is at `tools/harness/prompts/bug_hunt_prompt.txt`. GitHub Actio
 
 ## Inquisitor — Browser Mode
 
-The Inquisitor harness has a `--browser` flag that drives the real React + Flask stack through a headless Chromium browser instead of the in-process test client. Use it to catch UI rendering bugs and JS errors that the API layer can't see.
+The Inquisitor harness drives the real React + Flask stack through a headless
+Chromium browser, catching UI rendering bugs and JS errors the API layer can't see.
+The harness runs a deterministic probe sequence — no Anthropic API key needed.
 
 ```bash
-# Headless browser run (CI-friendly)
-python tools/inquisitor.py --mode bug-hunt --browser --headless --output tools/browser_findings.json
+# Browser run (default — catches JS/rendering bugs)
+python tools/inquisitor.py --headless --output tools/browser_findings.json
 
-# Headed browser run (interactive debugging)
-python tools/inquisitor.py --mode bug-hunt --browser
+# Headed run (shows the browser window — useful for debugging)
+python tools/inquisitor.py
+
+# API-only (faster, no servers needed, misses UI bugs)
+python tools/inquisitor.py --no-browser
 ```
 
 ### Prerequisites

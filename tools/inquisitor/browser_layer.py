@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 import requests as http_requests
 
-from tools.inquisitor.game_tools import ToolResult, INTERNAL_TOOLS, INTERNAL_ACK, build_tool_list
+from tools.inquisitor.game_tools import ToolResult
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -35,10 +35,9 @@ SCREENSHOT_DIR = ROOT / "tools" / "inquisitor_screenshots"
 
 
 class BrowserLayer:
-    """Executes agent tool calls via Playwright + real HTTP requests."""
+    """Executes game tool calls via Playwright + real HTTP requests."""
 
-    def __init__(self, mode_name: str, headless: bool = False):
-        self._mode_name = mode_name
+    def __init__(self, headless: bool = False):
         self._headless = headless
         self._api_process: Optional[subprocess.Popen] = None
         self._vite_process: Optional[subprocess.Popen] = None
@@ -62,17 +61,11 @@ class BrowserLayer:
     # Layer contract
     # ------------------------------------------------------------------
 
-    def tool_specs(self) -> list:
-        return build_tool_list(self._mode_name, use_browser=True)
-
     def get_initial_state(self) -> str:
         result = self._call_get_game_state()
         return json.dumps(result.data, indent=2)
 
     def execute(self, tool_name: str, inputs: Dict[str, Any]) -> ToolResult:
-        if tool_name in INTERNAL_TOOLS:
-            return INTERNAL_ACK
-
         handler = getattr(self, f"_call_{tool_name}", None)
         if handler is None:
             return ToolResult.err(f"Unknown tool: {tool_name}")

@@ -1,7 +1,7 @@
-"""API layer: in-process Flask test client used by the Inquisitor agent.
+"""API layer: in-process Flask test client for the Inquisitor harness.
 
-Wraps the existing GameClient and dispatches agent tool calls to the correct
-REST endpoints.  No real browser or running servers needed.
+Wraps GameClient and dispatches tool calls to REST endpoints.
+No real browser or running servers needed.
 """
 
 import json
@@ -9,23 +9,19 @@ import time
 from typing import Any, Dict
 
 from tools.harness.client import GameClient
-from tools.inquisitor.game_tools import ToolResult, INTERNAL_TOOLS, INTERNAL_ACK, build_tool_list
+from tools.inquisitor.game_tools import ToolResult
 
 
 class ApiLayer:
-    """Executes agent tool calls against an in-process Flask test client."""
+    """Executes tool calls against an in-process Flask test client."""
 
-    def __init__(self, app, mode_name: str):
+    def __init__(self, app):
         self._client = GameClient(app)
-        self._mode_name = mode_name
         self._client.create_session("inquisitor_player")
 
     # ------------------------------------------------------------------
     # Layer contract
     # ------------------------------------------------------------------
-
-    def tool_specs(self) -> list:
-        return build_tool_list(self._mode_name, use_browser=False)
 
     def get_initial_state(self) -> str:
         """Return a JSON description of the starting game state."""
@@ -34,9 +30,6 @@ class ApiLayer:
 
     def execute(self, tool_name: str, inputs: Dict[str, Any]) -> ToolResult:
         """Dispatch a tool call and return a ToolResult."""
-        if tool_name in INTERNAL_TOOLS:
-            return INTERNAL_ACK
-
         handler = getattr(self, f"_call_{tool_name}", None)
         if handler is None:
             return ToolResult.err(f"Unknown tool: {tool_name}")

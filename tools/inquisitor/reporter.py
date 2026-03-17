@@ -18,15 +18,6 @@ _SEVERITY_MAP = {
     "low": BugSeverity.LOW,
 }
 
-_FINDING_TYPE_TO_SEVERITY = {
-    "bug": None,          # severity provided explicitly
-    "blocker": BugSeverity.HIGH,
-    "chapter_complete": None,
-    "observation": BugSeverity.LOW,
-    "done": None,
-    "stuck": BugSeverity.MEDIUM,
-}
-
 
 @dataclass
 class AgentFinding:
@@ -37,7 +28,7 @@ class AgentFinding:
     compatibility with the existing bug_hunt_prompt.txt pipeline.
     """
 
-    mode: str                    # "happy_path" | "bug_hunt"
+    mode: str                    # "bug_hunt"
     layer: str                   # "api" | "browser"
     type: str                    # "bug" | "blocker" | "chapter_complete" | "observation" | "stuck" | "done"
     title: str
