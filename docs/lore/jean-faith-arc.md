@@ -135,15 +135,28 @@ When Jean goes still, Gorran does not offer comfort. He does not explain. What h
 is sit down next to Jean — a significant act for a creature of his size and weight, a
 deliberate choice to become smaller, closer, slower.
 
-After a long silence, Gorran says something like:
+After a long silence, Gorran says — in Jean's language, in the words he has been
+building for the entire game, reaching past the limit of what he can comfortably say:
 
-> "I have not understood why the earth takes what it takes. I have been angry at it.
-> Then I was not angry anymore. I do not know if that was better."
+> "Earth takes. I have not... understood why."
 
-He does not look at Jean when he says this. He is looking at the stone.
+He stops. He is looking at the stone, not at Jean.
 
-This is not an answer. It is company in the dark. Jean does not respond. But he does
-not move away.
+> "Was angry. For long time."
+
+A pause.
+
+> "Then not angry. Do not know if... better."
+
+He does not look at Jean when he finishes.
+
+This is not an answer. It is not eloquent. Its power is that it is the most Gorran has
+ever said — shaped from nothing, word by word, across the entire game — reaching past
+his vocabulary to say something he needs Jean to hear. Jean does not respond. But he
+does not move away.
+
+See `docs/lore/character-profiles/gorran-language-arc.md` for the full language
+acquisition arc that makes this scene possible.
 
 ---
 
