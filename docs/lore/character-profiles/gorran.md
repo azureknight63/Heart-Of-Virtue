@@ -1,3 +1,13 @@
+## Language
+Gorran begins the game unable to speak Jean's language. He ends it capable of a few
+effortful sentences. He never becomes fluent — the scope of the game doesn't allow for
+that, and the arc is not about fluency. It is about one specific scene, earned word by
+word across the entire game.
+
+See `docs/lore/character-profiles/gorran-language-arc.md` for the full acquisition
+arc, stage-by-stage notes, combat flavor by stage, and the crisis scene lines revised
+to fit what Gorran can actually say at that point.
+
 ## The Steadfast Companion
 Gorran is not just a protector; he's a veteran, a steadfast guardian of his people. He's roughly 1,500 years old, which, in Golemite years, is a seasoned adult but not yet ancient. Golemites live for thousands of years, so in human terms, he would be around 45 to 55 years old—old enough to be wise and experienced, but still in his prime.
 
