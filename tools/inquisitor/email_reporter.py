@@ -53,7 +53,6 @@ def _build_plain_body(findings: list, mode: str, layer: str) -> str:
         lines.append("")
 
     if bugs:
-        from tools.inquisitor.reporter import BugSeverity
         sev_order = [BugSeverity.CRITICAL, BugSeverity.HIGH, BugSeverity.MEDIUM, BugSeverity.LOW]
         for sev in sev_order:
             group = [b for b in bugs if b.severity == sev]

@@ -1,27 +1,23 @@
-"""Self-drive runner: executes the Inquisitor bug-hunt probe sequence without
-a nested Claude API call.
+"""Self-drive runner: executes the Inquisitor bug-hunt probe sequence.
 
-When Claude Code (or any other agent) is already the intelligence driving the
-session, spinning up a second Claude model via the Anthropic SDK is redundant.
-This module runs the same eight probe categories from bug_hunt.txt as a
-deterministic script and returns structured findings the calling agent can act on.
+Runs the eight probe categories from bug_hunt.txt as a deterministic script
+and returns structured findings the calling agent can act on.
 
 Usage (from within Python):
-    layer = BrowserLayer(mode_name="bug_hunt", headless=True)
+    layer = BrowserLayer(headless=True)
     runner = SelfDriveRunner(layer)
     findings = runner.run()
     layer.teardown()
 
 CLI (via tools/inquisitor.py):
-    python tools/inquisitor.py --mode bug-hunt --self-drive --browser --headless
+    python tools/inquisitor.py [--no-browser] [--headless] [--output FILE]
 """
 
 from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
 from tools.inquisitor.game_tools import ToolResult
 from tools.inquisitor.reporter import AgentFinding, BugSeverity, BugCategory
@@ -45,8 +41,11 @@ class ProbeResult:
     def is_bug(self) -> bool:
         return self.result.implicit_bug
 
-    def to_finding(self) -> AgentFinding:
+    def to_finding(self, layer: str = "api") -> AgentFinding:
         return AgentFinding(
+            mode="bug_hunt",
+            layer=layer,
+            type="bug",
             title=self.result.implicit_bug_title or f"5xx on {self.tool}",
             description=(
                 f"Probe '{self.name}' triggered a server error.\n"
@@ -54,11 +53,12 @@ class ProbeResult:
                 f"Inputs: {json.dumps(self.inputs)}\n"
                 f"Response ({self.result.http_status}): {self.result.error}"
             ),
-            severity=BugSeverity.CRITICAL,
-            category=BugCategory.SERVER_ERROR,
-            endpoint=self.tool,
-            http_status=self.result.http_status,
-            response_body=json.dumps(self.result.data)[:500],
+            severity="critical",
+            chapter=None,
+            step_number=0,
+            tool_call=self.tool,
+            tool_input=self.inputs,
+            tool_result=self.result.to_dict(),
         )
 
 
@@ -84,6 +84,7 @@ class SelfDriveRunner:
         self._layer = layer
         self._verbose = verbose
         self._probes: List[ProbeResult] = []
+        self._extra_findings: List[AgentFinding] = []
         self._browser_mode = hasattr(layer, "_page")  # BrowserLayer has _page
 
     # ------------------------------------------------------------------
@@ -317,21 +318,27 @@ class SelfDriveRunner:
     def _manual_finding(self, title: str, description: str,
                         severity: BugSeverity, category: BugCategory):
         """Add a finding that didn't come from a ToolResult implicit_bug."""
-        self._probes.append(ProbeResult(
-            name=title,
-            tool="_browser",
-            inputs={},
-            result=ToolResult(
-                success=False,
-                error=description,
-                implicit_bug=True,
-                implicit_bug_title=title,
-            ),
-            category=category.value if hasattr(category, "value") else str(category),
+        # Build the AgentFinding directly rather than routing through ProbeResult
+        # so we can set the correct severity (not always "critical").
+        sev_str = severity.value if hasattr(severity, "value") else str(severity)
+        self._extra_findings.append(AgentFinding(
+            mode="bug_hunt",
+            layer="browser",
+            type="bug",
+            title=title,
+            description=description,
+            severity=sev_str,
+            chapter=None,
+            step_number=0,
+            tool_call="_browser",
+            tool_input={},
+            tool_result={},
         ))
 
     def _collect_findings(self) -> List[AgentFinding]:
-        bugs = [p.to_finding() for p in self._probes if p.is_bug]
+        layer = "browser" if self._browser_mode else "api"
+        bugs = [p.to_finding(layer) for p in self._probes if p.is_bug]
+        bugs.extend(self._extra_findings)
         total = len(self._probes)
         bug_count = len(bugs)
         self._log(f"\nProbes run: {total}  |  Bugs flagged: {bug_count}")
