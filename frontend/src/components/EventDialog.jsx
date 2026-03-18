@@ -48,7 +48,8 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const eventId = event?.event_id
 
     useEffect(() => {
-        setIsComplete(false)
+        const isDeath = /Jean has died\.|has died\./i.test(eventText)
+        setIsComplete(isDeath) // death events are instantly "complete" — no typewriter
         setShowInput(false)
         setTextInput('')
         setNumberInput('')
@@ -195,14 +196,19 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         }
     }
 
-    const dialogTitle = `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
+    // Death events get special treatment: no typewriter, red glow, pre-formatted ASCII
+    const isDeathEvent = /Jean has died\.|has died\./i.test(eventText)
+
+    const dialogTitle = isDeathEvent
+        ? '☠  DEATH'
+        : `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
 
     // Use wider dialog for memory events due to pre-formatted text
     const isMemoryEvent = /memory|flash/i.test(event?.type || '') ||
         /memory|flash/i.test(event?.name || '') ||
         /MEMORY STIRS/i.test(eventText)
-    const dialogMaxWidth = isMemoryEvent ? '900px' : '800px'
-    const dialogWidth = isMemoryEvent ? '95%' : '90%'
+    const dialogMaxWidth = isDeathEvent ? '700px' : (isMemoryEvent ? '900px' : '800px')
+    const dialogWidth = isDeathEvent ? '90%' : (isMemoryEvent ? '95%' : '90%')
 
     return (
         <BaseDialog
@@ -212,6 +218,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             zIndex={3000}
             maxWidth={dialogMaxWidth}
             width={dialogWidth}
+            variant={isDeathEvent ? 'danger' : 'default'}
             allowInternalScroll={false}
         >
             <div
@@ -293,6 +300,26 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                 </GameText>
                             </div>
                         ))}
+                    </div>
+                ) : isDeathEvent ? (
+                    <div
+                        style={{
+                            padding: spacing.lg,
+                            flex: 1,
+                            maxHeight: '450px',
+                            overflowY: 'auto',
+                            border: '2px solid #cc0000',
+                            borderRadius: '8px',
+                            backgroundColor: 'rgba(15, 0, 0, 0.95)',
+                            whiteSpace: 'pre',
+                            fontFamily: 'monospace',
+                            fontSize: '14px',
+                            lineHeight: '1.4',
+                            color: '#ff3333',
+                            textShadow: '0 0 6px #ff0000, 0 0 14px rgba(220, 0, 0, 0.7)',
+                        }}
+                    >
+                        {eventText}
                     </div>
                 ) : (
                     <TypewriterOutput
