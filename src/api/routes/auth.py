@@ -51,12 +51,25 @@ async def register():
         try:
             user = await auth_service.create_user(username, password, email)
         except ValueError as ve:
+            msg = str(ve)
+            # Don't expose internal config/infrastructure details to users
+            if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "service_unavailable",
+                            "message": "Registration is temporarily unavailable. Please try again later.",
+                        }
+                    ),
+                    503,
+                )
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
-                        "message": str(ve),
+                        "message": msg,
                     }
                 ),
                 400,
