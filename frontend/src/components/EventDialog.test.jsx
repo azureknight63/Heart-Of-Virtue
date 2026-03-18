@@ -286,4 +286,46 @@ describe('EventDialog', () => {
 
     expect(mockOnClose).toHaveBeenCalled();
   });
+
+  // Regression: death display — instant render, red glow, DEATH title
+  // Found by /qa on 2026-03-18
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-03-18.md
+  describe('death event display', () => {
+    const deathEvent = {
+      event_id: 'death-001',
+      name: 'Death',
+      type: 'narrative',
+      output_text: 'Jean has died. Her body crumpled to the ground, the light fading from her eyes.',
+      needs_input: false,
+      input_type: null,
+      choices: []
+    };
+
+    it('shows ☠ DEATH title instead of the event name', () => {
+      render(<EventDialog event={deathEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      // Title must contain DEATH — no timer advance needed
+      expect(screen.getByText(/DEATH/i)).toBeDefined();
+    });
+
+    it('renders death text immediately without typewriter delay', () => {
+      render(<EventDialog event={deathEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      // Text is visible right away — no act(vi.advanceTimersByTime) required
+      expect(screen.getByText(/Jean has died\./i)).toBeDefined();
+    });
+
+    it('also matches via "has died." pattern in event text', () => {
+      const altDeathEvent = { ...deathEvent, output_text: 'The warrior has died. A noble end.' };
+      render(<EventDialog event={altDeathEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(screen.getByText(/has died\./i)).toBeDefined();
+      expect(screen.getByText(/DEATH/i)).toBeDefined();
+    });
+
+    it('does not show typewriter element for death events', () => {
+      render(<EventDialog event={deathEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      // TypewriterOutput would be absent — death events skip it
+      // The text should be present immediately in a plain element, not a typewriter span
+      const text = screen.getByText(/Jean has died\./i);
+      expect(text).toBeDefined();
+    });
+  });
 });
