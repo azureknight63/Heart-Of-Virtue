@@ -52,6 +52,10 @@ export const AudioProvider = ({ children }) => {
     const bgmRef = useRef(new Audio());
     const trackProgress = useRef({}); // Stores currentTime for each track ID
     const fadeIntervalRef = useRef(null);
+    // Ref mirrors currentBGM state so playBGM/stopBGM can read it without
+    // closing over state (which would force new function references on every
+    // track change and trigger unrelated useEffects in consumers).
+    const currentBGMRef = useRef(null);
 
     // Save preferences whenever they change
     useEffect(() => {
@@ -72,7 +76,7 @@ export const AudioProvider = ({ children }) => {
     }, [musicVolume, isMusicMuted]);
 
     const playBGM = useCallback((trackName) => {
-        if (currentBGM === trackName) return;
+        if (currentBGMRef.current === trackName) return;
 
         const targetVolume = isMusicMuted ? 0 : musicVolume;
         const fadeStep = 0.05;
@@ -85,8 +89,8 @@ export const AudioProvider = ({ children }) => {
 
         const switchTrack = () => {
             // Save progress of current track
-            if (currentBGM) {
-                trackProgress.current[currentBGM] = bgmRef.current.currentTime;
+            if (currentBGMRef.current) {
+                trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
             }
 
             const path = BGM_MAP[trackName] || `/assets/sounds/bgm_${trackName}.wav`;
@@ -97,6 +101,7 @@ export const AudioProvider = ({ children }) => {
             bgmRef.current.currentTime = savedTime;
 
             bgmRef.current.play().catch(e => console.warn("Audio play failed (user interaction needed):", e));
+            currentBGMRef.current = trackName;
             setCurrentBGM(trackName);
 
             // Fade In
@@ -112,7 +117,7 @@ export const AudioProvider = ({ children }) => {
         };
 
         // Fade Out current track if playing
-        if (currentBGM && bgmRef.current.volume > 0) {
+        if (currentBGMRef.current && bgmRef.current.volume > 0) {
             fadeIntervalRef.current = setInterval(() => {
                 const nextVolume = Math.max(bgmRef.current.volume - fadeStep, 0);
                 bgmRef.current.volume = nextVolume;
@@ -124,15 +129,16 @@ export const AudioProvider = ({ children }) => {
         } else {
             switchTrack();
         }
-    }, [currentBGM, isMusicMuted, musicVolume]);
+    }, [isMusicMuted, musicVolume]);
 
     const stopBGM = useCallback(() => {
-        if (currentBGM) {
-            trackProgress.current[currentBGM] = bgmRef.current.currentTime;
+        if (currentBGMRef.current) {
+            trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
         }
         bgmRef.current.pause();
+        currentBGMRef.current = null;
         setCurrentBGM(null);
-    }, [currentBGM]);
+    }, []);
 
     const playSFX = useCallback((sfxName) => {
         const path = `/assets/sounds/sfx_${sfxName}.wav`;
