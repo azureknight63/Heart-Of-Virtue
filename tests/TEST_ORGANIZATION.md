@@ -550,3 +550,4 @@ The `conftest.py` handles module shimming after imports, so tests can use bare i
 - Add more integration tests bridging multiple systems
 - Create `integration/` category for cross-system tests
 - Add performance benchmarks in separate `benchmarks/` directory
+

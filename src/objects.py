@@ -18,7 +18,8 @@ from items import Item # noqa; This is used in type hints
 class Object:
     def __init__(self, name, description, tile=None, player=None, hidden=False, hide_factor=0,
                  idle_message=' is here.',
-                 discovery_message='something interesting.'):
+                 discovery_message='something interesting.',
+                 aliases=None):
         self.name = name
         self.description = description
         self.idle_message = idle_message
@@ -26,7 +27,9 @@ class Object:
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
         self.announce = self.idle_message
+        self.aliases = aliases or []
         self.keywords = []  # action keywords to hook up an arbitrary command like "press" for a switch
+        self.action_aliases = []  # Keywords that are aliases for other primary actions
         self.events = []  # a list of events that occur when the player interacts with the object.
         # Events with "repeat" will persist.
         self.tile = tile
@@ -91,13 +94,14 @@ class WallSwitch(Object):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(name="Wall Depression", description=description,
                          idle_message="There's a small depression in the wall.",
-                         discovery_message="a small depression in the wall!", player=player, tile=tile)
+                         discovery_message="a small depression in the wall!", player=player, tile=tile,
+                         aliases=["depression", "small depression"])
         self.position: bool = position  # False is unpressed, True is pressed
         self.event_on = None
         self.event_off = None
         self.keywords.append('press')
-        self.keywords.append('touch')
-        self.keywords.append('push')
+        self.action_aliases.extend(['touch', 'push'])
+        self.keywords.extend(self.action_aliases)
 
         if params:
             for thing in params:
@@ -152,7 +156,8 @@ class WallInscription(Object):
                  text: str=None):
         super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
                          idle_message="There appears to be some words inscribed in the wall.",
-                         discovery_message="some words etched into the wall!", player=player, tile=tile)
+                         discovery_message="some words etched into the wall!", player=player, tile=tile,
+                         aliases=["words inscribed", "inscription", "words etched"])
         self.events = []
         self.keywords.append('read')
         self.text = text
@@ -161,7 +166,7 @@ class WallInscription(Object):
     def read(self):
         if self.text:
             cprint(f"{self.player.name} begins reading...", color="cyan")
-            functions.print_slow(self.description, speed="fast")
+            functions.print_slow(self.text, speed="fast")
             functions.await_input()
         else:
             print(self.description)
@@ -231,16 +236,29 @@ class Container(Object):
         self.stock_count = stock_count  # Maximum number of items the container should hold (for shop logic)
         self.inventory = inv if inv else []
 
+        aliases = [nickname, name.lower()]
         super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
                          idle_message=idle_message,
-                         discovery_message=discovery_message, player=player, tile=tile)
+                         discovery_message=discovery_message, player=player, tile=tile,
+                         aliases=aliases)
 
         # Extend events list efficiently if events provided
         if events:
             self.events.extend(events)
 
         # Add keywords efficiently
-        self.keywords.extend(self._DEFAULT_KEYWORDS)
+        self.keywords.extend(['loot', 'take_all'])
+        
+        # Add conditional keywords based on state
+        if self.locked:
+            if 'unlock' not in self.keywords:
+                self.keywords.append('unlock')
+        elif self.state == "closed":
+            if 'open' not in self.keywords:
+                self.keywords.append('open')
+
+        self.action_aliases.extend(['check', 'view', 'examine', 'inspect', 'peruse'])
+        self.keywords.extend(self.action_aliases)
 
         self.process_events()  # process initial events (triggers labeled "auto")
         self.stack_items()
@@ -251,23 +269,32 @@ class Container(Object):
             self.description = f"A {self.nickname} which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
         elif self.inventory:
             # Use join for efficient string building instead of concatenation
-            item_descriptions = [colored(item.description, 'yellow') for item in self.inventory]
+            item_descriptions = [item.description for item in self.inventory]
             self.description = f"A {self.nickname}. Inside are the following things: \n\n" + '\n'.join(item_descriptions)
         else:
             self.description = f"A {self.nickname}. It's empty. Very sorry."
 
     def unlock(self):
-        """Optimized unlock method with early return and f-string formatting"""
+        """Optimized unlock method with early return and f-string formatting. Supports both direct object reference and nickname-based key matching."""
         if self.state != "closed":
             print("Jean can't unlock something that's already open!")
             return
 
-        # Use any() for more efficient key search
+        # Search for a matching key (either by direct object reference or by nickname)
         matching_key = next((key for key in self.player.inventory
-                           if hasattr(key, "lock") and key.lock == self), None)
+                           if hasattr(key, "lock") and (
+                               key.lock == self or 
+                               (hasattr(key, "lock_nickname") and 
+                                hasattr(self, "nickname") and 
+                                key.lock_nickname == self.nickname)
+                           )), None)
 
         if matching_key:
             self.locked = False
+            if 'unlock' in self.keywords:
+                self.keywords.remove('unlock')
+            if 'open' not in self.keywords and self.state == "closed":
+                self.keywords.append('open')
             cprint(f"Jean uses {matching_key.name} to unlock the {self.name}.", "green")
         else:
             cprint("Jean couldn't find a matching key.", "red")
@@ -284,10 +311,42 @@ class Container(Object):
             print("The lid lifts back on the hinge, revealing the contents inside.")
             self.revealed = True
             self.state = "opened"
+            if 'open' in self.keywords:
+                self.keywords.remove('open')
             self.refresh_description()
             self.process_events()
         else:
             print(f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside.")
+
+    def take_all(self, player):
+        """
+        Transfer all items from container to player.
+        """
+        if self.state == "closed":
+            self.open()
+
+        if self.state != "opened":
+            return
+
+        try:
+            from interface import transfer_item
+        except ImportError:
+            from src.interface import transfer_item
+
+        if not self.inventory:
+            print(f"The {self.nickname} is already empty.")
+            return
+
+        # Snapshot inventory since transfer_item modifies it
+        snapshot = self.inventory[:]
+        print(f"Jean begins gathering everything from the {self.nickname}...")
+        for item in snapshot:
+            qty = getattr(item, 'count', 1)
+            transfer_item(self, player, item, qty)
+
+        print(f"Jean collects all of the available items.")
+        self.refresh_description()
+        self.process_events()
 
     def loot(self):
         """
@@ -301,7 +360,10 @@ class Container(Object):
             return
 
         # Import the interface class
-        from interface import ContainerLootInterface
+        try:
+            from interface import ContainerLootInterface
+        except ImportError:
+            from src.interface import ContainerLootInterface
 
         # Create and run the loot interface
         loot_interface = ContainerLootInterface(self, self.player)
@@ -397,8 +459,10 @@ class Crate(Container):
                          merchant=merchant, allowed_subtypes=allowed_subtypes,
                          discovery_message=" a large wooden crate!", player=player, tile=tile,
                          nickname="crate", locked=False, start_open=True, stock_count=stock_count)
-        self.keywords.remove("open")
-        self.keywords.remove("unlock")
+        if "open" in self.keywords:
+            self.keywords.remove("open")
+        if "unlock" in self.keywords:
+            self.keywords.remove("unlock")
 
 
 class Shelf(Container):
@@ -414,8 +478,10 @@ class Shelf(Container):
                          merchant=merchant, allowed_subtypes=allowed_subtypes,
                          discovery_message=" a wooden shelf!", player=player, tile=tile,
                          nickname="shelf", locked=False, start_open=True, stock_count=stock_count)
-        self.keywords.remove("open")
-        self.keywords.remove("unlock")
+        if "open" in self.keywords:
+            self.keywords.remove("open")
+        if "unlock" in self.keywords:
+            self.keywords.remove("unlock")
 
 """
 World objects
@@ -428,7 +494,7 @@ class Shrine(Object):
     game effects should only happen once.
     """
 
-    def __init__(self, player, tile, params=None):
+    def __init__(self, player=None, tile=None, params=None):
         description = "A beautiful shrine depicting a variety of saints praying to God."
         super().__init__(name="Shrine", description=description,
                          idle_message="There is an ornate shrine here.",
@@ -456,9 +522,12 @@ class Shrine(Object):
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
         time.sleep(random.randint(3, 10))
-        selection = random.randint(0, len(player.prayer_msg) - 1)
-        print(player.prayer_msg[selection])
-        if self.event is not None:
+        
+        # Robustly handle missing prayer_msg
+        prayer_messages = getattr(player, 'prayer_msg', ["Jean prays silently."])
+        selection = random.randint(0, len(prayer_messages) - 1)
+        print(prayer_messages[selection])
+        if getattr(self, 'event', None) is not None:
             time.sleep(random.randint(3, 10))
             self.event.process()
             self.event = None
@@ -539,11 +608,15 @@ class Passageway(Object):
                  description: str="A passageway leading elsewhere is here.",
                  idle_message: str="There is a passageway here.",
                  discovery_message: str =" a passageway!"):
+        aliases = [name.lower(), "passage"]
         super().__init__(name=name, description=description,
                          idle_message=idle_message,
                          hidden=hidden, hide_factor=hide_factor,
-                         discovery_message=discovery_message, player=player, tile=tile)
-        self.keywords.extend(['enter', 'go', 'leave', 'exit'])
+                         discovery_message=discovery_message, player=player, tile=tile,
+                         aliases=aliases)
+        self.keywords.append('enter')
+        self.action_aliases.extend(['go', 'leave', 'exit'])
+        self.keywords.extend(self.action_aliases)
         self.events_before = events_before if events_before is not None else []
         self.events_after = events_after if events_after is not None else []
         self.teleport_map = teleport_map if teleport_map is not None else ""
@@ -571,7 +644,7 @@ class Passageway(Object):
         functions.await_input()
 
     def go(self, player):
-            self.enter(player)
+        self.enter(player)
 
     def leave(self, player):
         self.enter(player)
@@ -766,7 +839,7 @@ class PrayerCandleRack(Object):
         time.sleep(5)
         print("A strange feeling fills his chest, as if there's a tune he can't quite remember.")
         time.sleep(0.5)
-        if self.event:
+        if getattr(self, 'event', None):
             self.event.process()
             if not getattr(self.event, 'repeat', False):
                 self.event = None
@@ -808,3 +881,90 @@ class MarketGong(Object):
 
     def use(self):
         self.strike()
+
+
+class GeminateGeode(Object):
+    """
+    Puzzle object in the Luminous Grotto. Accepts three mineral fragments in the
+    correct sequence (Azure Crystal → Amber Stone → Pale Grey Fragment) and rewards
+    the EnchantedGolemitePauldron. One-use; removes itself after success.
+    """
+
+    # Each entry is (ClassName, display_name) — kept together so they can't drift apart
+    _INGREDIENT_DEFS = (
+        ("AzuriteGem",       "Azure Crystal"),
+        ("AmberStone",       "Amber Stone"),
+        ("PaleGreyFragment", "Pale Grey Fragment"),
+    )
+
+    def __init__(self, player: Player, tile: MapTile, params=None):
+        super().__init__(
+            name="Geode",
+            description=(
+                "A large hollow geode resting on a natural stone pedestal. "
+                "Three shallow depressions are carved into its rim, each shaped to receive "
+                "a single fragment. The vein colours above the depressions match the ritual "
+                "sequence from the Atrium etching: blue, amber, grey."
+            ),
+            idle_message="A hollow geode rests on a stone pedestal here, waiting.",
+            discovery_message=" a hollow geode resting on a stone pedestal!",
+            player=player, tile=tile,
+            aliases=["geode", "hollow geode", "pedestal", "stone pedestal"],
+        )
+        self.keywords.extend(["place", "insert", "solve", "use", "examine"])
+        self.action_aliases.extend(["examine", "use"])
+
+    def _has_ingredient(self, cls_name: str) -> bool:
+        return any(item.__class__.__name__ == cls_name for item in self.player.inventory)
+
+    def _remove_ingredient(self, cls_name: str) -> None:
+        for item in list(self.player.inventory):
+            if item.__class__.__name__ == cls_name:
+                self.player.inventory.remove(item)
+                return
+
+    def place(self, player=None):
+        """Attempt to solve the puzzle by placing the three mineral fragments."""
+        if player is not None:
+            self.player = player
+        missing = [
+            name for cls, name in self._INGREDIENT_DEFS
+            if not self._has_ingredient(cls)
+        ]
+        if missing:
+            print(f"The depressions wait. Jean is missing: {', '.join(missing)}.")
+            print("The ritual carving in the Atrium showed the sequence clearly.")
+            return
+        # All three fragments present — solve the puzzle
+        print("\nJean places the blue crystal in the first depression. The vein above it pulses.")
+        time.sleep(1)
+        print("The amber stone settles into the second. A harmonic hum begins, low and resonant.")
+        time.sleep(1)
+        print("The pale grey fragment locks into the third.")
+        time.sleep(0.5)
+        print("\nA sound like a struck bell fills the chamber — the geode cracks open.")
+        time.sleep(1)
+        print(
+            "Inside: a stone pauldron, inlaid with the same tricolor veins as the walls. "
+            "Still luminous."
+        )
+        time.sleep(1)
+        for cls, _name in self._INGREDIENT_DEFS:
+            self._remove_ingredient(cls)
+        if self.tile:
+            self.tile.spawn_item("EnchantedGolemitePauldron")
+        if self.tile and self in self.tile.objects_here:
+            self.tile.objects_here.remove(self)
+        functions.await_input()
+
+    def insert(self, player=None):
+        self.place(player)
+
+    def solve(self, player=None):
+        self.place(player)
+
+    def use(self, player=None):
+        self.place(player)
+
+    def examine(self):
+        print(self.description)

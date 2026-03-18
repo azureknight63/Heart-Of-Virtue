@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart of Virtue - Web UI Mockup</title>
+    <!-- Google Fonts - Open Source Options -->
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0a0a0a;
+            color: #e0e0e0;
+            line-height: 1.5;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        /* Left Panel - Narrative & Menus */
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 2px solid #00ff88;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+
+        .left-header {
+            background: linear-gradient(90deg, #00cc66 0%, #00ff88 100%);
+            color: #000;
+            padding: 12px;
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 2px solid #00ff88;
+        }
+
+        .left-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .narrative-box {
+            background: rgba(0, 100, 50, 0.2);
+            border-left: 4px solid #00ff88;
+            padding: 10px;
+            border-radius: 4px;
+            color: #00ff88;
+            line-height: 1.6;
+            font-size: 14px;
+            font-family: var(--narrative-font, 'EB Garamond', serif);
+        }
+
+        .narrative-box strong {
+            color: #00ffcc;
+            font-weight: 600;
+        }
+
+        .narrative-box em {
+            color: #00ffcc;
+            font-style: italic;
+        }
+
+        .status-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .stat-box {
+            background: rgba(0, 50, 100, 0.2);
+            border: 1px solid #0088ff;
+            padding: 8px;
+            border-radius: 4px;
+            color: #0088ff;
+        }
+
+        .stat-label {
+            font-weight: bold;
+            color: #00ccff;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 14px;
+            margin-top: 2px;
+        }
+
+        .hp-bar {
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 2px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+
+        .hp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffaa44);
+            width: 75%;
+        }
+
+        .fatigue-bar {
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 2px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+
+        .fatigue-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4488ff, #44ffff);
+            width: 60%;
+        }
+
+        .item-list {
+            background: rgba(50, 20, 0, 0.2);
+            border: 1px solid #cc8800;
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .item-list-title {
+            color: #ffaa00;
+            font-weight: bold;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .item {
+            color: #ffcc00;
+            font-size: 11px;
+            padding: 2px 0;
+        }
+
+        .item.equipped::before {
+            content: "[E] ";
+            color: #00ff88;
+        }
+
+        /* Action Buttons Area */
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-top: 1px solid #333;
+        }
+
+        .btn {
+            padding: 8px 12px;
+            border: 1px solid #666;
+            background: #1a1a2e;
+            color: #00ff88;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .btn:hover {
+            background: #0088ff;
+            color: #fff;
+            border-color: #00ff88;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn.primary {
+            grid-column: span 2;
+            background: linear-gradient(90deg, #00cc66, #00ff88);
+            color: #000;
+            border: none;
+            font-weight: bold;
+        }
+
+        .btn.primary:hover {
+            background: linear-gradient(90deg, #00ff88, #00ffaa);
+            box-shadow: 0 4px 16px rgba(0, 255, 136, 0.5);
+        }
+
+        .btn.danger {
+            color: #ff4444;
+            border-color: #ff4444;
+        }
+
+        .btn.danger:hover {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        /* Right Panel - Battlefield/Map */
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #0a1a0f 0%, #1a2a1f 100%);
+            border: 2px solid #ff6600;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(255, 102, 0, 0.3);
+        }
+
+        .right-header {
+            background: linear-gradient(90deg, #ff6600 0%, #ff8844 100%);
+            color: #fff;
+            padding: 12px;
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 2px solid #ff6600;
+        }
+
+        .right-content {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            position: relative;
+        }
+
+        /* Battlefield Grid */
+        .battlefield {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            gap: 4px;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            border: 2px solid #333;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .battlefield-tile {
+            background: rgba(50, 50, 50, 0.3);
+            border: 1px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            border-radius: 2px;
+            position: relative;
+            font-weight: bold;
+        }
+
+        .combatant {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 20px;
+        }
+
+        .combatant.player {
+            background: linear-gradient(135deg, #00ff88, #00ccff);
+            color: #000;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.7);
+        }
+
+        .combatant.ally {
+            background: linear-gradient(135deg, #00ccff, #0088ff);
+            color: #fff;
+            box-shadow: 0 0 8px rgba(0, 136, 255, 0.5);
+        }
+
+        .combatant.enemy {
+            background: linear-gradient(135deg, #ff4444, #ff0000);
+            color: #fff;
+            box-shadow: 0 0 8px rgba(255, 68, 68, 0.5);
+        }
+
+        .combatant.enemy.injured {
+            background: linear-gradient(135deg, #ffaa44, #ff6600);
+            box-shadow: 0 0 8px rgba(255, 170, 68, 0.5);
+        }
+
+        .combatant.enemy.critical {
+            background: linear-gradient(135deg, #ff0000, #cc0000);
+            animation: pulse 0.6s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 8px rgba(255, 0, 0, 0.8); }
+            50% { box-shadow: 0 0 15px rgba(255, 0, 0, 1); }
+        }
+
+        .combatant.dead {
+            background: rgba(100, 100, 100, 0.5);
+            color: #aaa;
+            opacity: 0.6;
+            text-decoration: line-through;
+        }
+
+        .combatant.preparing {
+            animation: prepare-pulse 0.5s infinite;
+        }
+
+        @keyframes prepare-pulse {
+            0%, 100% {
+                box-shadow: 0 0 8px rgba(255, 170, 68, 0.7), inset 0 0 4px rgba(255, 170, 68, 0.5);
+                transform: scale(1);
+            }
+            50% {
+                box-shadow: 0 0 16px rgba(255, 170, 68, 1), inset 0 0 8px rgba(255, 170, 68, 0.8);
+                transform: scale(1.05);
+            }
+        }
+
+        /* Tooltip for combatants */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid #ffaa00;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 11px;
+            pointer-events: none;
+            z-index: 1000;
+            min-width: 200px;
+            display: none;
+            box-shadow: 0 0 15px rgba(255, 170, 68, 0.6);
+            color: #fff;
+        }
+
+        .tooltip.show {
+            display: block;
+        }
+
+        .tooltip-header {
+            font-weight: bold;
+            color: #ffff00;
+            margin-bottom: 6px;
+            border-bottom: 1px solid #666;
+            padding-bottom: 4px;
+        }
+
+        .tooltip-row {
+            display: grid;
+            grid-template-columns: 80px 1fr;
+            gap: 8px;
+            margin: 4px 0;
+            align-items: center;
+        }
+
+        .tooltip-label {
+            color: #ffaa00;
+            font-weight: bold;
+        }
+
+        .tooltip-value {
+            color: #00ff88;
+        }
+
+        .tooltip-hp-bar {
+            grid-column: span 2;
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 4px 0;
+        }
+
+        .tooltip-hp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffaa44);
+        }
+
+        .tooltip-status {
+            grid-column: span 2;
+            background: rgba(100, 50, 0, 0.3);
+            border-left: 2px solid #ffaa00;
+            padding: 6px;
+            margin-top: 4px;
+            border-radius: 2px;
+        }
+
+        .status-effect {
+            color: #ff6666;
+            font-size: 10px;
+            padding: 2px 4px;
+            background: rgba(255, 100, 100, 0.2);
+            border-radius: 2px;
+            margin: 2px 0;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        /* Combat mode styles */
+        .action-buttons.combat-mode {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .action-buttons.combat-mode .btn.primary {
+            grid-column: span 3;
+        }
+
+        /* Combat log collapsible and resizable */
+        .combat-log-wrapper {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #ff6600;
+            border-radius: 4px;
+            overflow: hidden;
+            resize: vertical;
+            min-height: 24px;
+            max-height: 200px;
+            height: 80px;
+            box-shadow: 0 0 15px rgba(255, 102, 0, 0.3);
+        }
+
+        .combat-log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            border-bottom: 1px solid #ff6600;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            color: #ff6600;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .combat-log-header:hover {
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        .log-toggle {
+            font-size: 12px;
+            color: #ffaa00;
+        }
+
+        .combat-log {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            font-size: 11px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .combat-log.hidden {
+            display: none;
+        }
+
+        .log-resize-handle {
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #ff6600, transparent);
+            cursor: ns-resize;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+
+        .log-resize-handle:hover {
+            height: 6px;
+            background: linear-gradient(90deg, transparent, #ffaa00, transparent);
+        }
+
+        .log-resize-handle.resizing {
+            background: linear-gradient(90deg, transparent, #ff0000, transparent);
+            height: 8px;
+        }
+
+        .combatant-label {
+            position: absolute;
+            bottom: -20px;
+            font-size: 10px;
+            width: 100%;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #fff;
+        }
+
+        .breadcrumb {
+            position: absolute;
+            background: rgba(200, 200, 200, 0.3);
+            border-radius: 50%;
+            width: 4px;
+            height: 4px;
+            bottom: 2px;
+            right: 2px;
+            z-index: 5;
+        }
+
+        /* Combat Log */
+        .combat-log {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            max-height: 80px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #ff6600;
+            border-radius: 4px;
+            padding: 8px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+
+        .log-entry {
+            color: #ffcc00;
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-entry.damage {
+            color: #ff4444;
+        }
+
+        .log-entry.heal {
+            color: #00ff88;
+        }
+
+        .log-entry.ability {
+            color: #00ccff;
+        }
+
+        /* Map View (Alternative to Battlefield) */
+        .map-container {
+            display: none;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            border: 2px solid #333;
+            padding: 15px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .map-container.active {
+            display: block;
+        }
+
+        .map-grid {
+            font-family: monospace;
+            color: #00ff88;
+            line-height: 1.2;
+            font-size: 12px;
+            white-space: pre;
+            letter-spacing: 2px;
+        }
+
+        .map-legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff88;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            line-height: 1.4;
+        }
+
+        .legend-item {
+            margin: 2px 0;
+        }
+
+        /* Mode Toggle */
+        .mode-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            z-index: 10;
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            border: 1px solid #ff6600;
+            background: #1a1a2e;
+            color: #ff6600;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.active {
+            background: #ff6600;
+            color: #fff;
+        }
+
+        .toggle-btn:hover {
+            background: #ff6600;
+            color: #fff;
+        }
+
+        /* Stats Tab */
+        .tab-container {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #ff6600;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .tab-btn {
+            padding: 4px 8px;
+            border: none;
+            background: transparent;
+            color: #ff6600;
+            cursor: pointer;
+            font-size: 10px;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: #ff6600;
+            color: #fff;
+        }
+
+        /* Enemy List (Popup) */
+        .enemy-list-popup {
+            position: absolute;
+            bottom: 100px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #ff4444;
+            border-radius: 4px;
+            padding: 10px;
+            min-width: 200px;
+            max-height: 150px;
+            overflow-y: auto;
+            display: none;
+            z-index: 100;
+        }
+
+        .enemy-list-popup.show {
+            display: block;
+        }
+
+        .enemy-item {
+            padding: 6px;
+            border-bottom: 1px solid #333;
+            font-size: 11px;
+            color: #ffaa00;
+        }
+
+        .enemy-item:last-child {
+            border-bottom: none;
+        }
+
+        .enemy-hp-bar {
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 1px;
+            margin-top: 2px;
+            overflow: hidden;
+        }
+
+        .enemy-hp-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffaa44);
+        }
+
+        /* Responsive */
+        @media (max-width: 1400px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .left-panel, .right-panel {
+                flex: none;
+            }
+
+            .left-panel {
+                height: 40%;
+            }
+
+            .right-panel {
+                height: 60%;
+            }
+        }
+
+        /* Font Switcher */
+        .font-selector {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ff88;
+            border-radius: 6px;
+            padding: 12px;
+            z-index: 1000;
+            font-family: 'Courier New', monospace;
+            max-width: 220px;
+        }
+
+        .font-selector-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .font-selector-title {
+            color: #00ff88;
+            font-weight: bold;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .font-selector-toggle {
+            color: #ffaa00;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .font-selector-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 1;
+            margin-top: 8px;
+        }
+
+        .font-selector-group.collapsed {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            margin-top: 0;
+        }
+
+        .font-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .font-option input[type="radio"] {
+            cursor: pointer;
+            accent-color: #00ff88;
+        }
+
+        .font-option label {
+            color: #00ff88;
+            cursor: pointer;
+            font-size: 12px;
+            user-select: none;
+        }
+
+        .font-sample {
+            font-size: 11px;
+            color: #00ccff;
+            font-style: italic;
+            margin-left: 6px;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #666;
+        }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <!-- Font Selector -->
+    <div class="font-selector">
+        <div class="font-selector-header" onclick="toggleFontSelector()">
+            <div class="font-selector-title">Narrative Font</div>
+            <div class="font-selector-toggle" id="font-toggle-icon">▼</div>
+        </div>
+        <div class="font-selector-group collapsed" id="font-selector-group">
+            <div class="font-option">
+                <input type="radio" id="font-lora" name="font-choice" value="lora" onchange="switchFont('lora')">
+                <label for="font-lora">Lora</label>
+                <span class="font-sample" style="font-family: 'Lora', serif;">Elegant & readable</span>
+            </div>
+            <div class="font-option">
+                <input type="radio" id="font-crimson" name="font-choice" value="crimson" onchange="switchFont('crimson')">
+                <label for="font-crimson">Crimson Text</label>
+                <span class="font-sample" style="font-family: 'Crimson Text', serif;">Classic serif</span>
+            </div>
+            <div class="font-option">
+                <input type="radio" id="font-merriweather" name="font-choice" value="merriweather" onchange="switchFont('merriweather')">
+                <label for="font-merriweather">Merriweather</label>
+                <span class="font-sample" style="font-family: 'Merriweather', serif;">Warm & friendly</span>
+            </div>
+            <div class="font-option">
+                <input type="radio" id="font-garamond" name="font-choice" value="garamond" checked onchange="switchFont('garamond')">
+                <label for="font-garamond">EB Garamond</label>
+                <span class="font-sample" style="font-family: 'EB Garamond', serif;">Classic elegance</span>
+            </div>
+            <div class="font-option">
+                <input type="radio" id="font-playfair" name="font-choice" value="playfair" onchange="switchFont('playfair')">
+                <label for="font-playfair">Playfair Display</label>
+                <span class="font-sample" style="font-family: 'Playfair Display', serif;">Bold & dramatic</span>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- LEFT PANEL: Narrative & Menus -->
+        <div class="left-panel">
+            <div class="left-header">Heart of Virtue - World Mode</div>
+            <div class="left-content">
+                <!-- Narrative Box -->
+                <div class="narrative-box fade-in">
+                    <strong>Twilight Forest - Entrance</strong><br>
+                    The ancient forest looms before you, its twisted trees reaching toward a darkening sky. 
+                    The path ahead splits into three directions, each disappearing into shadow. You hear the 
+                    faint sound of running water to the east.
+                </div>
+
+                <!-- Player Status -->
+                <div class="status-row">
+                    <div class="stat-box">
+                        <div class="stat-label">Health</div>
+                        <div class="stat-value">75 / 100</div>
+                        <div class="hp-bar">
+                            <div class="hp-fill" style="width: 75%;"></div>
+                        </div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Fatigue</div>
+                        <div class="stat-value">60 / 100</div>
+                        <div class="fatigue-bar">
+                            <div class="fatigue-fill" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inventory -->
+                <div class="item-list">
+                    <div class="item-list-title">📦 Inventory (5/8)</div>
+                    <div class="item equipped">Rusty Shortsword</div>
+                    <div class="item equipped">Leather Armor</div>
+                    <div class="item">Healing Potion</div>
+                    <div class="item">Rope</div>
+                    <div class="item">Gold (45)</div>
+                </div>
+
+                <!-- Available Items in Room -->
+                <div class="item-list" style="border-color: #cc8800;">
+                    <div class="item-list-title">Items Here</div>
+                    <div class="item">Tattered Scroll</div>
+                    <div class="item">Old Coin</div>
+                </div>
+
+                <!-- Level Info -->
+                <div class="stat-box" style="background: rgba(100, 50, 0, 0.2); border-color: #ffaa00;">
+                    <div class="stat-label">Level 3 • EXP 1,240 / 2,000</div>
+                    <div style="margin-top: 4px; background: #333; height: 4px; border-radius: 2px; overflow: hidden;">
+                        <div style="height: 100%; background: linear-gradient(90deg, #ffaa00, #ffcc00); width: 62%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons" id="action-buttons">
+                <button class="btn" data-mode="exploration">North</button>
+                <button class="btn" data-mode="exploration">East</button>
+                <button class="btn" data-mode="exploration">South</button>
+                <button class="btn" data-mode="exploration">West</button>
+                <button class="btn" data-mode="exploration">Take</button>
+                <button class="btn" data-mode="exploration">Examine</button>
+                <button class="btn" data-mode="exploration">Inventory</button>
+                <button class="btn" data-mode="exploration">Skills</button>
+                <button class="btn primary" data-mode="exploration">Save Game</button>
+
+                <!-- Combat Skills (Hidden by default) -->
+                <button class="btn" data-mode="combat">Wait</button>
+                <button class="btn" data-mode="combat">Turn</button>
+                <button class="btn" data-mode="combat">Advance</button>
+                <button class="btn" data-mode="combat">Attack</button>
+                <button class="btn" data-mode="combat">Withdraw</button>
+                <button class="btn" data-mode="combat">Quick Strike</button>
+                <button class="btn" data-mode="combat">Rest</button>
+                <button class="btn" data-mode="combat">Use Item</button>
+                <button class="btn primary" data-mode="combat">Check</button>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL: Battlefield or Map -->
+        <div class="right-panel">
+            <div class="right-header">
+                <span id="right-header-text">Battlefield Map</span>
+            </div>
+
+            <!-- Mode Toggle -->
+            <div class="mode-toggle">
+                <button class="toggle-btn active" onclick="switchMode('battlefield')">Combat</button>
+                <button class="toggle-btn" onclick="switchMode('map')">Explore</button>
+            </div>
+
+            <div class="right-content">
+                <!-- Battlefield View (Combat Mode) -->
+                <div id="battlefield-mode" class="battlefield-container">
+                    <div class="mode-toggle tab-container" style="bottom: auto; top: 50px; right: 10px;">
+                        <button class="tab-btn" onclick="switchBattlefieldTab('enemies')">Enemies</button>
+                        <button class="tab-btn active" onclick="switchBattlefieldTab('overview')">Overview</button>
+                    </div>
+
+                    <div class="battlefield">
+                        <!-- Empty tiles -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"><div class="breadcrumb"></div></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 2 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"><div class="breadcrumb"></div></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 3 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile">
+                            <div class="combatant ally">
+                                <span>🛡️</span>
+                            </div>
+                            <div class="combatant-label">Mynx</div>
+                        </div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 4 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"><div class="breadcrumb"></div></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile combatant-tile" onmouseover="showTooltip(event, 'bat')" onmouseout="hideTooltip()">
+                            <div class="combatant enemy">
+                                <span>E</span>
+                            </div>
+                            <div class="combatant-label">Bat</div>
+                        </div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 5 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile combatant-tile" onmouseover="showTooltip(event, 'jean')" onmouseout="hideTooltip()">
+                            <div class="combatant player">
+                                <span>J</span>
+                            </div>
+                            <div class="combatant-label">Jean</div>
+                        </div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 6 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile combatant-tile" onmouseover="showTooltip(event, 'goblin')" onmouseout="hideTooltip()">
+                            <div class="combatant enemy injured preparing">
+                                <span>E!</span>
+                            </div>
+                            <div class="combatant-label">Goblin</div>
+                        </div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 7 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 8 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 9 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+
+                        <!-- Row 10 -->
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                        <div class="battlefield-tile"></div>
+                    </div>
+
+                    <!-- Combat Log -->
+                    <div class="combat-log-wrapper" id="combat-log-wrapper">
+                        <div class="combat-log-header" onclick="toggleCombatLog()">
+                            <span>Combat Log</span>
+                            <span class="log-toggle" id="log-toggle">▼</span>
+                        </div>
+                        <div id="log-content" class="combat-log">
+                            <div class="log-entry ability">Jean uses Attack on Bat!</div>
+                            <div class="log-entry damage">Bat takes 12 damage (HP: 18/30)</div>
+                            <div class="log-entry">Bat advances toward Jean...</div>
+                            <div class="log-entry ability">Mynx uses Quick Strike!</div>
+                        </div>
+                        <div class="log-resize-handle" id="log-resize-handle"></div>
+                    </div>
+
+                    <!-- Enemy List Popup -->
+                    <div class="enemy-list-popup show">
+                        <div style="font-weight: bold; margin-bottom: 6px; color: #ff4444;">Active Enemies</div>
+                        <div class="enemy-item">
+                            <div>Bat (E)</div>
+                            <div style="color: #ffaa00;">HP: 18/30</div>
+                            <div class="enemy-hp-bar">
+                                <div class="enemy-hp-fill" style="width: 60%;"></div>
+                            </div>
+                        </div>
+                        <div class="enemy-item">
+                            <div>Goblin (E!) - Injured</div>
+                            <div style="color: #ffaa00;">HP: 5/25</div>
+                            <div class="enemy-hp-bar">
+                                <div class="enemy-hp-fill" style="width: 20%; background: linear-gradient(90deg, #ff0000, #ff6600);"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map View (Exploration Mode) -->
+                <div id="map-mode" class="map-container">
+                    <div class="map-grid">
+       ?    ·    ·    ?    ·    ·    ·    ·    ·    ?
+       ·    ·    ●    ·    ·    ·    ·    ·    ·    ·
+       ?    ·    ·    ·    ·    ·    ·    ·    ·    ·
+       ·    ·    ·    ·    ·    ●    ·    ·    ?    ·
+       ·    ·    ●    ·    ·    ·    ·    ·    ·    ·
+       ?    ·    ·    ·    ·    ·    X    ·    ·    ?
+       ·    ·    ·    ·    ·    ●    ·    ·    ·    ·
+       ·    ·    ·    ·    ·    ·    ·    ·    ·    ·
+                    </div>
+                    <div class="map-legend">
+                        <div class="legend-item" style="color: #ff6600; font-weight: bold;">X = Your Position</div>
+                        <div class="legend-item" style="color: #00ff88;">● = Visited</div>
+                        <div class="legend-item" style="color: #ffaa00;">? = Discovered</div>
+                        <div class="legend-item" style="color: #666;">· = Unexplored</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Font switching
+        const fontMap = {
+            'lora': "'Lora', serif",
+            'crimson': "'Crimson Text', serif",
+            'merriweather': "'Merriweather', serif",
+            'garamond': "'EB Garamond', serif",
+            'playfair': "'Playfair Display', serif"
+        };
+
+        function switchFont(fontName) {
+            const narrativeBoxes = document.querySelectorAll('.narrative-box');
+            narrativeBoxes.forEach(box => {
+                box.style.setProperty('--narrative-font', fontMap[fontName]);
+            });
+            localStorage.setItem('preferredFont', fontName);
+        }
+
+        function toggleFontSelector() {
+            const fontGroup = document.getElementById('font-selector-group');
+            const toggleIcon = document.getElementById('font-toggle-icon');
+            fontGroup.classList.toggle('collapsed');
+            toggleIcon.textContent = fontGroup.classList.contains('collapsed') ? '▶' : '▼';
+            localStorage.setItem('fontSelectorCollapsed', fontGroup.classList.contains('collapsed'));
+        }
+
+        // Load saved font preference and collapsed state
+        window.addEventListener('load', function() {
+            const savedFont = localStorage.getItem('preferredFont') || 'garamond';
+            document.getElementById(`font-${savedFont}`).checked = true;
+            switchFont(savedFont);
+
+            // Load collapsed state
+            const isCollapsed = localStorage.getItem('fontSelectorCollapsed') === 'true';
+            const fontGroup = document.getElementById('font-selector-group');
+            const toggleIcon = document.getElementById('font-toggle-icon');
+            if (isCollapsed) {
+                fontGroup.classList.add('collapsed');
+                toggleIcon.textContent = '▶';
+            }
+        });
+
+        // Combatant tooltip data
+        const combatantData = {
+            jean: {
+                name: 'Jean Claire',
+                hp: 75,
+                maxhp: 100,
+                status: 'Awaiting action',
+                effects: ['Motivated (+5% DMG)', 'Blessed (+10% DEF)']
+            },
+            bat: {
+                name: 'Cave Bat',
+                hp: 18,
+                maxhp: 30,
+                status: 'Will attack next turn',
+                effects: []
+            },
+            goblin: {
+                name: 'Forest Goblin',
+                hp: 5,
+                maxhp: 25,
+                status: 'Preparing heavy strike!',
+                effects: ['Enraged (+20% DMG)', 'Bloodlust']
+            }
+        };
+
+        let tooltipTimeout;
+
+        function showTooltip(event, combatantId) {
+            clearTimeout(tooltipTimeout);
+            
+            const data = combatantData[combatantId];
+            if (!data) return;
+
+            const hpPercent = (data.hp / data.maxhp) * 100;
+            
+            let effectsHtml = '';
+            if (data.effects.length > 0) {
+                effectsHtml = `
+                    <div class="tooltip-status">
+                        <strong style="color: #ffaa00;">Status Effects:</strong>
+                        ${data.effects.map(e => `<div class="status-effect">${e}</div>`).join('')}
+                    </div>
+                `;
+            }
+
+            const tooltipHtml = `
+                <div class="tooltip-header">${data.name}</div>
+                <div class="tooltip-row">
+                    <div class="tooltip-label">HP:</div>
+                    <div class="tooltip-value">${data.hp}/${data.maxhp}</div>
+                </div>
+                <div class="tooltip-hp-bar">
+                    <div class="tooltip-hp-fill" style="width: ${hpPercent}%; background: linear-gradient(90deg, ${hpPercent < 25 ? '#ff0000' : hpPercent < 50 ? '#ff6600' : '#ffaa44'}, ${hpPercent < 25 ? '#cc0000' : hpPercent < 50 ? '#ff4444' : '#ffcc44'});"></div>
+                </div>
+                <div class="tooltip-row">
+                    <div class="tooltip-label">Status:</div>
+                    <div class="tooltip-value">${data.status}</div>
+                </div>
+                ${effectsHtml}
+            `;
+
+            // Remove existing tooltip
+            const existingTooltip = document.querySelector('.tooltip.show');
+            if (existingTooltip) {
+                existingTooltip.remove();
+            }
+
+            const tooltip = document.createElement('div');
+            tooltip.className = 'tooltip show';
+            tooltip.innerHTML = tooltipHtml;
+            document.body.appendChild(tooltip);
+
+            // Position tooltip near cursor
+            const rect = event.target.getBoundingClientRect();
+            tooltip.style.left = (rect.right + 10) + 'px';
+            tooltip.style.top = rect.top + 'px';
+        }
+
+        function hideTooltip() {
+            tooltipTimeout = setTimeout(() => {
+                const tooltip = document.querySelector('.tooltip.show');
+                if (tooltip) {
+                    tooltip.remove();
+                }
+            }, 100);
+        }
+
+        function toggleCombatLog() {
+            const log = document.querySelector('#log-content');
+            const toggle = document.getElementById('log-toggle');
+            
+            log.classList.toggle('hidden');
+            toggle.textContent = log.classList.contains('hidden') ? '▶' : '▼';
+        }
+
+        // Resizable combat log
+        const logWrapper = document.getElementById('combat-log-wrapper');
+        const resizeHandle = document.getElementById('log-resize-handle');
+        let isResizing = false;
+        let startY;
+        let startHeight;
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = logWrapper.offsetHeight;
+            resizeHandle.classList.add('resizing');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            const deltaY = e.clientY - startY;
+            const newHeight = startHeight + deltaY;
+
+            // Enforce min/max height constraints
+            if (newHeight >= 24 && newHeight <= 250) {
+                logWrapper.style.height = newHeight + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                resizeHandle.classList.remove('resizing');
+                document.body.style.cursor = 'default';
+                document.body.style.userSelect = 'auto';
+            }
+        });
+
+        function switchMode(mode) {
+            const battlefield = document.getElementById('battlefield-mode');
+            const mapView = document.getElementById('map-mode');
+            const buttons = document.querySelectorAll('.mode-toggle .toggle-btn');
+            const header = document.getElementById('right-header-text');
+            const actionButtons = document.querySelectorAll('#action-buttons .btn');
+
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            if (mode === 'battlefield') {
+                battlefield.style.display = 'block';
+                mapView.classList.remove('active');
+                buttons[0].classList.add('active');
+                header.textContent = 'Combat - Battlefield Map';
+                
+                // Show combat buttons, hide exploration buttons
+                actionButtons.forEach(btn => {
+                    if (btn.dataset.mode === 'combat') {
+                        btn.style.display = 'block';
+                    } else if (btn.dataset.mode === 'exploration') {
+                        btn.style.display = 'none';
+                    }
+                });
+                document.getElementById('action-buttons').classList.add('combat-mode');
+            } else {
+                battlefield.style.display = 'none';
+                mapView.classList.add('active');
+                buttons[1].classList.add('active');
+                header.textContent = 'Exploration - World Map';
+                
+                // Show exploration buttons, hide combat buttons
+                actionButtons.forEach(btn => {
+                    if (btn.dataset.mode === 'exploration') {
+                        btn.style.display = 'block';
+                    } else if (btn.dataset.mode === 'combat') {
+                        btn.style.display = 'none';
+                    }
+                });
+                document.getElementById('action-buttons').classList.remove('combat-mode');
+            }
+        }
+
+        function switchBattlefieldTab(tab) {
+            const tabs = document.querySelectorAll('.tab-container .tab-btn');
+            tabs.forEach(t => t.classList.remove('active'));
+            
+            if (tab === 'enemies') {
+                event.target.classList.add('active');
+                // Would show enemy list instead of battlefield
+            } else {
+                event.target.classList.add('active');
+            }
+        }
+
+        // Add hover effects to action buttons
+        document.querySelectorAll('#action-buttons .btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                this.style.animation = 'none';
+                setTimeout(() => {
+                    this.style.animation = '';
+                }, 10);
+                
+                const text = this.textContent;
+                console.log(`Action: ${text}`);
+            });
+        });
+
+        // Simulate combat log updates
+        setInterval(() => {
+            const log = document.querySelector('#log-content');
+            if (log && log.offsetParent !== null && !log.classList.contains('hidden')) { // Only if combat view is visible and not hidden
+                const messages = [
+                    { text: 'Jean uses Attack!', class: 'ability' },
+                    { text: 'Critical hit! 25 damage!', class: 'damage' },
+                    { text: 'Bat flees in fear!', class: 'heal' },
+                    { text: 'Victory! Gained 150 EXP', class: 'ability' }
+                ];
+                
+                const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${randomMsg.class}`;
+                entry.textContent = randomMsg.text;
+                log.appendChild(entry);
+                
+                // Auto-scroll to bottom
+                log.scrollTop = log.scrollHeight;
+                
+                // Remove old entries (keep last 5)
+                const entries = log.querySelectorAll('.log-entry');
+                if (entries.length > 5) {
+                    entries[0].remove();
+                }
+            }
+        }, 4000);
+
+        // Initialize with combat mode shown
+        window.addEventListener('load', function() {
+            switchMode('battlefield');
+        });
+    </script>
+</body>
+</html>

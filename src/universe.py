@@ -1,11 +1,11 @@
 __author__ = 'Alex Egbert'
 
-import functions as functions
+import src.functions as functions
 import json, inspect, importlib
 from pathlib import Path
 from typing import Final
-from scenario_config import ScenarioConfig
-from coordinate_config import CoordinateSystemConfig
+from src.scenario_config import ScenarioConfig
+from src.coordinate_config import CoordinateSystemConfig
 
 RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
 
@@ -36,6 +36,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.game_config = None  # full GameConfig object for access to all settings
         self.scenario_config = None  # ScenarioConfig for combat scenario management
         self.coordinate_config = None  # CoordinateSystemConfig for grid positioning
+
+    def get_tile(self, x, y):
+        """Get tile at coordinates from the current player's map."""
+        if self.player and self.player.map:
+            return tile_exists(self.player.map, x, y)
+        return None
 
     def build(self, player):  # builds all the maps as they are, then loads them into self.maps
         # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
@@ -150,6 +156,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Apply remaining props as attributes
             for k, v in props.items():
                 try:
+                    # Skip setting player or tile if they're null - let runtime set these
+                    if k in ('player', 'tile') and v is None:
+                        continue
                     if (
                         k == 'inventory'
                         and hasattr(inst, 'inventory')
@@ -172,6 +181,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         this_map: dict = {'name': map_name}
         # iterate coordinate keys
         for coord_str, tile_data in raw.items():
+            if coord_str == 'metadata':
+                this_map['metadata'] = tile_data
+                continue
             try:
                 x_str, y_str = coord_str.strip('()').split(',')
                 x = int(x_str)
@@ -189,7 +201,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     tile_cls = getattr(tiles_mod, 'MapTile')
                 except Exception:
                     from tiles import MapTile as tile_cls  # fallback
-            tile_instance = tile_cls(self, this_map, x, y, description=description)
+            tile_instance = tile_cls(self, this_map, x, y)
+            # Override description from JSON only if one was provided (tile subclasses
+            # may hardcode their own description via super().__init__; respect that as default)
+            if description:
+                tile_instance.description = description
             # block exits & symbol
             if 'block_exit' in tile_data and isinstance(tile_data['block_exit'], list):
                 tile_instance.block_exit = list(tile_data['block_exit'])
@@ -401,13 +417,17 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         A game tick occurs whenever the game loop iterates,
         which is generally whenever the player takes an action.
         """
-        print(f"\033[91m[DEBUG] game_tick: {self.game_tick}\033[0m")
-        if self.game_tick == 0:
-            # Single evaluation pass (includes repeat events once) to avoid double spawning
+        # Trigger merchant refresh on multiples of 1000 before incrementing
+        if self.game_tick > 0 and self.game_tick % 1000 == 0:
+            self.player.refresh_merchants()
+
+        self.game_tick += 1
+
+        if self.game_tick == 1:
+            # Single evaluation pass (includes repeat events once) after first tick
             self._evaluate_map_entry_spawners(process_repeats=True)
             return
-        if self.game_tick % 1000 == 0:
-            self.player.refresh_merchants()
+
         self._evaluate_map_entry_spawners(process_repeats=True)
 
     def _evaluate_map_entry_spawners(self, process_repeats=False):

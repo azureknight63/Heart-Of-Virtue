@@ -106,7 +106,8 @@ def test_attack_integration_creates_exp_entries(monkeypatch):
     # Build attack and enemy in range
     attack = None
     for mv in player.known_moves:
-        if isinstance(mv, Attack):
+        # Use name-based check since isinstance fails across module boundaries in tests
+        if isinstance(mv, Attack) or mv.__class__.__name__ == 'Attack':
             attack = mv
             break
     assert attack is not None
@@ -134,8 +135,8 @@ def test_attack_hit_direct_invocation_triggers_helper(monkeypatch):
     player.eq_weapon = DummyWeapon(subtype=new_subtype)
     player.combat_exp.pop(new_subtype, None)
     player.skill_exp.pop(new_subtype, None)
-    # Acquire attack move
-    attack = next(m for m in player.known_moves if isinstance(m, Attack))
+    # Acquire attack move (use name-based check due to module boundary issues in tests)
+    attack = next(m for m in player.known_moves if isinstance(m, Attack) or m.__class__.__name__ == 'Attack')
     tgt = DummyTarget()
     player.combat_proximity[tgt] = 1
     attack.target = tgt

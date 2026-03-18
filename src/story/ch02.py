@@ -3,8 +3,10 @@ Chapter 02 events
 """
 from src.events import Event, dialogue
 from src.functions import print_slow, await_input
+from neotermcolor import colored
 import time
 from src import items
+from src.story.effects import MemoryFlash
 
 
 class AfterDefeatingLurker(Event):
@@ -31,6 +33,14 @@ class AfterDefeatingLurker(Event):
               "last that he opened in the same manner.")
         time.sleep(2)
         print("Gorran turns back around to face Jean and rumbles in what has to be something like relief mixed with fatigue.")
+        time.sleep(2)
+        print("He doesn't go through yet. He stands at the mouth of the passage, one hand resting on the edge "
+              "of the stone he's just parted. His fingers trace the crack where the two halves met — "
+              "the seam, barely visible now, where the wall had been.")
+        time.sleep(2)
+        print("Then he turns, and for a moment he's just looking at Jean. Not prompting, not gesturing. "
+              "Just looking. As though weighing something that doesn't need to be said out loud.")
+        time.sleep(2)
         await_input()
         # Spawn a passageway to Grondia at coordinates (1, 3)
         self.tile.spawn_object("Passageway", self.player, self.tile, 
@@ -42,7 +52,8 @@ class AfterDefeatingLurker(Event):
               "if he has any.")
         time.sleep(4)
         print("Immediately on passing under the shelf, Jean's greying whiskers were blasted by a cool "
-              "breeze of unknown origin. It had the dank smell of the cavern to which Jean was just "
+              "breeze. He turned his head slightly, reading the flow — east to west, coming up from somewhere "
+              "deeper in. It had the dank smell of the cavern to which Jean was just "
               "starting to grow accustomed, but also, something more. Or, rather, a lot of things more. "
               "There was a mixture of scents; some familiar, and some entirely alien. "
               "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
@@ -111,8 +122,10 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "The halls are vast and echo with the sound of their footsteps. "
                   "The walls are adorned with intricate carvings and murals, \ndepicting scenes from Grondia's history "
                   "much like the ones on the walls outside. \n"
-                  "Jean feels a sense of awe and reverence for this place, realizing that it is a testament to the \n"
-                  "Grondites' strength and resilience.")
+                  "Jean's first thought is not of the carvings. It is of the air — steady, slow-moving, \n"
+                  "cool at his feet and perceptibly warmer at his shoulders. Convection, working the way \n"
+                  "it's supposed to, on a scale he has never encountered. He wants to find where it rises. \n"
+                  "Then Gorran makes a sound and Jean remembers to look at the walls.")
             time.sleep(4)
             print("Gorran leads Jean to a large chamber at the heart of the Citadel where a group of Grondite elders \n"
                   "are gathered. They are seated on stone thrones, their faces lined with age and wisdom. \n"
@@ -158,68 +171,127 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                   "really know how to answer any of those questions. He furrows his brow, troubled by this sudden \n"
                   "consternation. He takes a deep breath, trying to gather his thoughts.")
             time.sleep(3)
-            dialogue("Jean", "I am Jean. Jean... Claire. I'm on a journey - I think. But I'm "
-                    "not sure where I'm going or why. I just know that I need to keep moving forward, "
-                    "to find something... or someone.", "cyan")
+            dialogue("Jean", "I am Jean. Jean Claire.", "cyan")
+            time.sleep(1)
+            print("He stops there. Votha Krr waits, unhurried as erosion.")
             time.sleep(2)
-            print("Elder Votha Krr nods slowly, his expression thoughtful.")
-            time.sleep(1)
-            dialogue("Votha Krr", "In that case, perhaps you can help us with something while you "
-                     "work out your own path. I hope that is not too forward of me to ask. We are, you see, "
-                     "in dire need of assistance. Our people rely on the sustenance provided by the unique "
-                     "mineral formations found in the sacred Grondelith Mineral Pools to the southwest.", "green")
+            dialogue("Jean", "As for the rest — I can fight. I'm good with my hands. "
+                    "I can figure out what's broken and fix it. "
+                    "That's... that's what I do.", "cyan")
             time.sleep(2)
-            print("Votha Krr's expression darkens, and he continues.")
+            print("Votha Krr does not nod. He regards Jean with those deep-set eyes — "
+                  "patient, unhurried, the way a canyon regards a river.")
+            time.sleep(3)
+            dialogue("Votha Krr", "You know who you are in your hands. That is not a small thing. "
+                     "Many who arrive in this world know far less.", "green")
             time.sleep(1)
-            dialogue("Votha Krr", "However, the pools have become infested by a colony of slimes. "
-                     "These slimes are not only consuming the minerals, but are also corrupting the pools themselves, "
-                     "rendering them toxic to our people. We have tried to eradicate the slimes ourselves, "
-                     "but unfortunately, the corruption infects our kind like a disease, and so it is much "
-                     "too dangerous for me to send my people to deal with them. I have been worrying about "
-                     "this for some time now, and I fear that if we do not act soon, the pools will be lost to us "
-                     "and our people will begin to starve.", "green")
+            print("He tilts his great head, just slightly.")
+            time.sleep(1)
+            dialogue("Votha Krr", "But I notice you did not answer where you are going.", "green")
             time.sleep(2)
-            dialogue("Jean", "And you think me, being a creature of flesh, would not be affected by "
-                             "the corruption? ","cyan")
+            print("Jean opens his mouth. Closes it. The chamber is very quiet.")
+            time.sleep(2)
+            dialogue("Jean", "No. I didn't.", "cyan")
+            time.sleep(2)
+            print("Something passes across Votha Krr's expression — not pity, not recognition. "
+                  "Something older than both.")
+            time.sleep(2)
+            dialogue("Votha Krr", "Then perhaps that is a question for the road.", "green")
+            time.sleep(2)
+            print("He settles back in his throne, the stone of him indistinguishable from the stone beneath him.")
             time.sleep(1)
-            dialogue("Votha Krr", "Ah, well, your kind is not immune to the corruption, "
-                     "but it does not affect you in the same way it does us. You see, our bodies are made of "
-                     "the very minerals that the slimes consume, and so we are much more vulnerable to their "
-                     "corruption. However, your flesh is not stone and mineral, so while you may be "
-                     "harmed if you are not careful, you would not turn to dust and crumble "
-                     "as we surely would.", "green")
-            dialogue("Jean", "Wait, \"my kind?\" There are others here like me?", "cyan")
-            dialogue("Votha Krr", "Oh yes, indeed! We have traded, formed treaties, and even in times of war, "
-                    "allied with fleshlings like yourself. I believe you call yourselves... ahhhh... humans.",
-                     "green")
+            dialogue("Votha Krr", "Since you are a man who knows what to do with his hands — "
+                     "and since you find yourself without a direction — allow me to offer you one. "
+                     "Our sacred Grondelith Mineral Pools to the southwest have been infested by slimes. "
+                     "They consume the minerals our people depend on, and their corruption is lethal to our kind. "
+                     "We cannot clear them ourselves.", "green")
+            time.sleep(1.5)
+            print("He watches Jean's face. Jean isn't showing much.")
             time.sleep(1)
-            print("The last word rumbled from Votha like a landslide, reverberating into Jean's chest. ")
-            time.sleep(1)
-            dialogue("Jean", "Alright, I'll help you if I can. I'm not sure what else to do, anyway.",
-                     "cyan")
-            time.sleep(1)
-            dialogue("Votha Krr", "Thank you, Jean. I will be forever grateful for your assistance. "
-                     "The Grondelith Mineral Pools are located to the southwest of here. Take these supplies; I "
-                     "think you will find them useful.", "green")
-            time.sleep(1)
-        print("Votha Krr waves a hand, and a Grondite attendant steps forward, carrying a small bundle of supplies. ")
+            print(colored("[a]", "magenta") + " \"Tell me more.\"")
+            print(colored("[b]", "magenta") + " \"I'll take a look at it.\"")
+            _quest_choice = ""
+            while _quest_choice not in ["a", "b"]:
+                _quest_choice = input("Choice: ").strip().lower()
+
+            if _quest_choice == "a":
+                time.sleep(1)
+                print("Votha Krr's expression darkens, and he continues.")
+                time.sleep(1)
+                dialogue("Votha Krr", "The pools have become infested by a colony of slimes. "
+                         "These slimes are not only consuming the minerals, but are also corrupting the pools "
+                         "themselves, rendering them toxic to our people. We have tried to eradicate the slimes "
+                         "ourselves, but the corruption infects our kind like a disease — it is much too "
+                         "dangerous for me to send my people. I fear that if we do not act soon, the pools "
+                         "will be lost to us and our people will begin to starve.", "green")
+                time.sleep(2)
+                dialogue("Jean", "And you think me, being a creature of flesh, would not be affected by "
+                                 "the corruption?", "cyan")
+                time.sleep(1)
+                dialogue("Votha Krr", "Ah, well, your kind is not immune to the corruption, "
+                         "but it does not affect you in the same way it does us. You see, our bodies are made of "
+                         "the very minerals that the slimes consume, and so we are much more vulnerable to their "
+                         "corruption. However, your flesh is not stone and mineral, so while you may be "
+                         "harmed if you are not careful, you would not turn to dust and crumble "
+                         "as we surely would.", "green")
+                dialogue("Jean", "Wait, \"my kind?\" There are others here like me?", "cyan")
+                dialogue("Votha Krr", "Oh yes, indeed! We have traded, formed treaties, and even in times of war, "
+                         "allied with fleshlings like yourself. I believe you call yourselves... ahhhh... humans.",
+                         "green")
+                time.sleep(1)
+                print("The last word rumbled from Votha like a landslide, reverberating into Jean's chest.")
+                time.sleep(2)
+                print("Jean is quiet, but his mind is already moving — tracing the shape of the problem. "
+                      "An infestation with a center. Corrupted channels. A source.")
+                time.sleep(2)
+                dialogue("Jean", "Is it centralized? Or spread through the whole system?", "cyan")
+                time.sleep(1)
+                dialogue("Votha Krr", "There is a heart to it. One great slime at the center of the corruption — "
+                         "the others follow where it leads. Remove the heart, and the rest will dissipate.", "green")
+                time.sleep(1)
+                print("Jean nods slowly. He's had that kind of job before. Somewhere, in some life, he's gone "
+                      "after the source and let the symptoms take care of themselves.")
+                time.sleep(1)
+                print("He doesn't ask himself why he's so sure of that.")
+                time.sleep(2)
+                dialogue("Jean", "Alright. I'll take a look at it.", "cyan")
+                time.sleep(1)
+                dialogue("Votha Krr", "Thank you, Jean. The pools are to the southwest. "
+                         "Take these supplies — the corruption will harm you if you are not careful.",
+                         "green")
+                time.sleep(1)
+            else:
+                dialogue("Jean", "I'll take a look at it.", "cyan")
+                time.sleep(1)
+                dialogue("Votha Krr", "Thank you, Jean. The pools are southwest of the city. "
+                         "The corruption will not destroy your kind as it does ours, "
+                         "but it will hurt you if you are careless. Take these supplies.", "green")
+                time.sleep(1)
+        if not self.player.skip_dialog:
+            print("Votha Krr waves a hand, and a Grondite attendant steps forward, carrying a small bundle of supplies. ")
+            print("The attendant hands the bundle to Jean, who takes it gratefully.")
         # Add 5 Antidotes and 2 Restoratives to the player's inventory
-        print("The attendant hands the bundle to Jean, who takes it gratefully.")
         loot = [
             items.Antidote(5),
             items.Restorative(2)
         ]
         self.player.add_items_to_inventory(loot)
-        await_input()
+        if not self.player.skip_dialog:
+            await_input()
 
         if not self.player.skip_dialog:
-            print("With that, Votha Krr slowly got to his feet, his massive form towering over Jean. \n")
+            print("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.\n")
             dialogue("Votha Krr", "May the earth guide your steps, Jean. "
-                     "You are a guest of our city. You may find the merchants of the Eastern Gate "
-                     "to be of great help. As for me, I must return to my duties. "
-                     "Return to me when you have dealt with the slimes, and perhaps we can discover "
-                     "the trajectory of your future."
-                     "green")
+                     "You are a guest of our city. The merchants of the Eastern Gate "
+                     "will have what you need for the road. "
+                     "Return to me when you have dealt with the slimes.", "green")
+            time.sleep(1)
+            print("He pauses. Those deep-set eyes hold Jean's for a moment longer than necessary.")
+            time.sleep(1)
+            dialogue("Votha Krr", "And when you return — perhaps we will speak again "
+                     "of where you are going.", "green")
+            time.sleep(1)
+            print("He says it the same way he said it the first time. Like a door left open.")
 
 
 
@@ -227,4 +299,438 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
 
 
         #  Remove this event from the tile
+        self.tile.remove_event(self.name)
+
+
+class Ch02ArenaEntrance(Event):
+    """
+    Fires once when Jean first arrives at the King Slime arena — before combat
+    begins. Narrates the isolation (Gorran couldn't follow), the shape of the
+    corrupted pools, and the King Slime with something embedded inside it.
+
+    Attach to the same arena tile as AfterDefeatingKingSlime.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch02ArenaEntrance'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, 'story', {})
+        if story.get("arena_entered"):
+            self.tile.remove_event(self.name)
+            return
+        king_slime_present = any(
+            n.__class__.__name__ == "KingSlime"
+            for n in self.tile.npcs_here
+        )
+        if king_slime_present:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            print_slow(
+                "The corridor narrows and the smell changes — thick with something sweet and wrong, "
+                "like rot and copper together.",
+                delay=0.03
+            )
+            time.sleep(1)
+            print_slow(
+                "Jean came this way alone. The passageway behind him is empty. "
+                "Gorran's footsteps stopped at the last junction — the air grew too heavy, "
+                "the corruption too dense for stone to tolerate, and Gorran knew it "
+                "before Jean did. He made one sound, low and short, and did not follow.",
+                delay=0.03
+            )
+            time.sleep(1.5)
+            await_input()
+            print_slow(
+                "The arena opens before him. A circular cavern, pools filling it wall to wall — "
+                "churning, pulsating green that moves with its own slow intention. "
+                "The smell is overwhelming. The light casts no shadows.",
+                delay=0.03
+            )
+            time.sleep(1)
+            print_slow(
+                "At the far end, something large rises from the center of the pools. "
+                "It has no face, no shape that lends itself to naming — only mass, and a slow "
+                "purposeful movement. Within that mass, something that does not belong: "
+                "a glint, sharp and pale, glimpsed through the churning surface. "
+                "Consumed. Held. Not yet dissolved.",
+                delay=0.03
+            )
+            time.sleep(1.5)
+            print_slow(
+                "Jean has cleared drains before. Found the blockage. Removed what had lodged "
+                "where it shouldn't be. This is the same job.",
+                delay=0.04
+            )
+            time.sleep(1)
+            print_slow(
+                "He tells himself that.",
+                delay=0.05
+            )
+            time.sleep(1)
+            await_input()
+        self.player.universe.story["arena_entered"] = "1"
+        self.tile.remove_event(self.name)
+
+
+class AfterDefeatingKingSlime(Event):
+    """
+    Fires once KingSlime is absent from the arena tile.
+    Cleanses the pool description, spawns MineralFragment, then triggers the
+    memory flash when Jean picks it up. Gorran teleports to the arena afterward.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterDefeatingKingSlime'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        king_still_alive = any(
+            n.__class__.__name__ == "KingSlime"
+            for n in self.tile.npcs_here
+        )
+        if not king_still_alive:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(1)
+        print_slow(
+            "The churning stills. A deep, resonant silence settles over the cavern.",
+            delay=0.04
+        )
+        time.sleep(1)
+        print_slow(
+            "Then — gradually — the green recedes. Ripple by ripple, the corruption dissolves "
+            "outward from the center, the thick slime thinning and clearing until clean, "
+            "luminescent blue water fills the chamber.",
+            delay=0.03
+        )
+        time.sleep(1.5)
+        print_slow(
+            "The central stone island is exactly what it always was. "
+            "The light here is steady and quiet, blue-white, older than the corruption that hid it.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "On the island, something catches the light. "
+            "Impossibly sharp. Impossibly beautiful.",
+            delay=0.04
+        )
+        time.sleep(1.5)
+        print_slow(
+            "Jean stands in the clearing water. It's cold — rising back toward its natural level, "
+            "lapping at his boots. The fight is over. There is nothing left in the room that needs him.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "He doesn't know what to do with his hands when they aren't needed.",
+            delay=0.04
+        )
+        time.sleep(2)
+
+        # Update the arena tile description to reflect the cleansed state
+        self.tile.spawn_object(
+            "TileDescription", self.player, self.tile,
+            description=(
+                "The circular cavern is still. The pool that filled it — wall to wall with "
+                "pulsating corruption — is gone. Clean, luminescent blue water rests in its place, "
+                "glowing faintly from below. The single stone island at the centre is bare and quiet. "
+                "The arena smells of minerals and cold water."
+            )
+        )
+
+        # Spawn the MineralFragment on this tile
+        self.tile.spawn_item("MineralFragment")
+
+        # Set the story flag so AfterKingSlimeReturn can fire later
+        self.player.universe.story["king_slime_defeated"] = "1"
+
+        # Teleport Gorran from the atrium (2,1) to the arena (2,6)
+        current_map = self.player.universe.current_map
+        atrium_coords = (2, 1)
+        if atrium_coords in current_map.tiles:
+            atrium_tile = current_map.tiles[atrium_coords]
+            for npc in list(atrium_tile.npcs_here):
+                if npc.__class__.__name__ == "Gorran":
+                    atrium_tile.npcs_here.remove(npc)
+                    npc.tile = self.tile
+                    self.tile.npcs_here.append(npc)
+                    break
+
+        # Narrate Gorran's arrival and his reaction to the cleansed pools
+        time.sleep(1)
+        print_slow(
+            "Then — footsteps. Heavy, deliberate, from the corridor entrance.",
+            delay=0.04
+        )
+        time.sleep(0.5)
+        print_slow(
+            "Gorran rounds the archway and stops.",
+            delay=0.05
+        )
+        time.sleep(1)
+        print_slow(
+            "He looks at the pools. Clean, blue, still. His great head moves slowly across the chamber, "
+            "taking in what it was and what it is now.",
+            delay=0.03
+        )
+        time.sleep(1.5)
+        print_slow(
+            "He makes no sound. He just stands there in the entrance to the arena, "
+            "looking at the water the way someone looks at something they thought was gone.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "Then, slowly, he walks to the edge of the nearest pool and lowers himself to one knee. "
+            "He extends one wide hand over the surface. Doesn't touch it. Just holds his palm there, "
+            "feeling the cold rise off it.",
+            delay=0.03
+        )
+        time.sleep(2)
+        print_slow(
+            "A sound from him — low and long, held in the chest. Not quite a word. "
+            "He stays like that for a moment, hand over the water. Then he straightens.",
+            delay=0.04
+        )
+        time.sleep(1)
+
+        self.tile.remove_event(self.name)
+
+
+class Ch02FragmentReminder(Event):
+    """
+    Fires via evaluate_for_map_entry() whenever the player has left the
+    arena tile without picking up the MineralFragment.
+
+    Gorran rumbles and gestures at the fragment; Jean is guided back.
+    Repeats until the fragment is collected or Votha Krr has been visited.
+
+    Attach to the arena tile alongside Ch02ArenaEntrance and
+    AfterDefeatingKingSlime.
+    """
+    def __init__(self, player, tile, params=None, repeat=True, name='Ch02FragmentReminder'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def evaluate_for_map_entry(self, player):
+        story = getattr(player.universe, 'story', {})
+
+        # Done once Votha has received the fragment
+        if story.get("votha_krr_response_given"):
+            self.tile.remove_event(self.name)
+            return
+
+        # Only active after the King Slime is defeated
+        if story.get("king_slime_defeated") != "1":
+            return
+
+        # If Jean already has the fragment, nothing to remind
+        if any(i.__class__.__name__ == "MineralFragment" for i in player.inventory):
+            return
+
+        # If the fragment is gone from the tile too, nothing to do
+        if not any(i.__class__.__name__ == "MineralFragment" for i in self.tile.items_here):
+            return
+
+        # Only fire when Jean has LEFT the arena
+        if player.current_room is self.tile:
+            return
+
+        # Rate-limit: at most once every 3 ticks so it doesn't spam corridors
+        last_tick = int(story.get("fragment_reminder_tick", -999))
+        if player.universe.game_tick - last_tick < 3:
+            return
+
+        story["fragment_reminder_tick"] = str(player.universe.game_tick)
+        self._remind(player)
+
+    def _remind(self, player):
+        if not player.skip_dialog:
+            print_slow(
+                "A rumble from behind — low, insistent.",
+                delay=0.04
+            )
+            time.sleep(1)
+            print_slow(
+                "Gorran stands at the entrance to the corridor, one hand braced against the arch. "
+                "He is looking at the island.",
+                delay=0.03
+            )
+            time.sleep(1)
+            print_slow(
+                "Jean follows his gaze.",
+                delay=0.05
+            )
+            time.sleep(1)
+            print_slow(
+                "The fragment is still there. He walked out without it.",
+                delay=0.03
+            )
+            time.sleep(1.5)
+
+        # Teleport player back to the arena tile
+        arena_coords = next(
+            (coord for coord, t in player.map.items()
+             if isinstance(coord, tuple) and t is self.tile),
+            None
+        )
+        map_name = player.map.get('name', 'grondia')
+        if arena_coords:
+            player.teleport(map_name, arena_coords)
+
+
+class Ch02KingSlimeMemoryFlash(MemoryFlash):
+    """
+    Memory flash triggered when Jean picks up the MineralFragment after
+    defeating King Slime. The razor edge cuts Jean's finger; the sharp pain
+    unlocks a violent, fragmented memory of the explosion.
+    Called from the MineralFragment item's on_pickup hook via the story system.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch02KingSlimeMemoryFlash'):
+        memory_lines = [
+            ("The edge catches Jean's finger.", 1.5),
+            ("", 0.5),
+            ("Pain — sudden, immediate, real.", 1.5),
+            ("", 0.5),
+            ("Then —", 1.0),
+            ("", 0.3),
+            ("BOOM.", 2.0),
+            ("", 0.5),
+            ("A sound that is not a sound. A pressure that moves through bone.", 2.0),
+            ("", 0.5),
+            ("Screams. Human screams, many of them, very close.", 2.0),
+            ("A blinding flash of white — then nothing.", 1.5),
+            ("Then swirling debris. Dust and fire and cold air rushing in.", 2.0),
+            ("", 0.5),
+            ("Being thrown. The sensation of the ground disappearing.", 1.5),
+            ("", 0.5),
+            ("And where something warm should have been, in Jean's arms —", 2.0),
+            ("emptiness.", 3.0),
+        ]
+        aftermath = [
+            "Silence.",
+            "",
+            "Jean is standing on the stone island. The water around it is blue.",
+            "The fragment is in their hand, still sharp, still bright.",
+            "",
+            "The bleeding finger is real. Everything else is gone.",
+        ]
+        super().__init__(
+            player=player,
+            tile=tile,
+            memory_lines=memory_lines,
+            aftermath_text=aftermath,
+            repeat=repeat,
+            name=name
+        )
+
+    def check_conditions(self):
+        # This event is triggered manually from MineralFragment pickup — never fires on its own
+        pass
+
+
+class AfterKingSlimeReturn(Event):
+    """
+    Fires once when Jean re-enters any Grondia tile after king_slime_defeated is set.
+    Votha Krr eats the mineral fragment and sends Jean toward the Echoing Caves.
+    """
+    def __init__(self, player, tile, params=None, repeat=False, name='AfterKingSlimeReturn'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, 'story', {})
+        if story.get("king_slime_defeated") == "1" and not story.get("votha_krr_response_given"):
+            self.pass_conditions_to_process()
+
+    def process(self):
+        # Check if Jean actually has the MineralFragment
+        has_fragment = any(
+            i.__class__.__name__ == "MineralFragment"
+            for i in self.player.inventory
+        )
+        if not has_fragment:
+            return
+
+        time.sleep(1)
+        print_slow(
+            "Votha Krr rises from his throne as Jean enters. His deep-set eyes take in the "
+            "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.",
+            delay=0.03
+        )
+        time.sleep(1.5)
+
+        dialogue("Votha Krr",
+                 "The pools are clean, little one. You have done well.",
+                 "green")
+        time.sleep(1)
+        print_slow(
+            "Jean still holds the mineral fragment. The cut on his finger has stopped bleeding "
+            "but hasn't stopped hurting.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print(colored("[a]", "magenta") + " Hand it over.")
+        print(colored("[b]", "magenta") + " \"What is this thing, exactly?\"")
+        print(colored("[c]", "magenta") + " [Set it on the edge of the throne without a word.]")
+        _frag_choice = ""
+        while _frag_choice not in ["a", "b", "c"]:
+            _frag_choice = input("Choice: ").strip().lower()
+        if _frag_choice == "a":
+            print_slow("Jean holds it out. Votha takes it from his hand.", delay=0.03)
+        elif _frag_choice == "b":
+            dialogue("Jean", "What is this thing, exactly?", "cyan")
+            time.sleep(0.5)
+            dialogue("Votha Krr",
+                     "A memory, made stone. The mineral pools do not merely hold water — "
+                     "they record what passes through them. Light, creature, time. "
+                     "This fragment carries something very old. "
+                     "It is right that it returns to stone.",
+                     "green")
+            time.sleep(1)
+            print_slow("He takes the fragment from Jean's hand.", delay=0.03)
+        else:
+            print_slow(
+                "Jean sets the fragment on the armrest of the throne without looking at Votha. "
+                "The Elder watches him do it. Waits. "
+                "Then reaches out and picks it up, slowly, as though giving Jean time to reconsider.",
+                delay=0.03
+            )
+        time.sleep(1)
+        print_slow(
+            "Votha regards the fragment for a single moment — then places it in his mouth.",
+            delay=0.03
+        )
+        time.sleep(1)
+        print_slow(
+            "A soft, contented rumble escapes him. The fragment is gone.",
+            delay=0.04
+        )
+
+        # Remove the MineralFragment from inventory
+        for item in list(self.player.inventory):
+            if item.__class__.__name__ == "MineralFragment":
+                self.player.inventory.remove(item)
+                break
+
+        time.sleep(1.5)
+        dialogue("Votha Krr",
+                 "The corruption is gone. But I sense... a great disturbance within you. "
+                 "A sorrow that is not of this stone. "
+                 "The world outside these stones holds many shards. "
+                 "Some bring strength, some bring pain. "
+                 "Sometimes, the deepest truths are found in the broken places.",
+                 "green")
+        time.sleep(1)
+        dialogue("Votha Krr",
+                 "To mend what is broken, one must first understand the cracks. "
+                 "Go now. Seek the Echoing Caves to the west, beyond the river. "
+                 "There, the earth sings the songs of lost things. "
+                 "Perhaps you will find a different kind of strength there... "
+                 "or, at the very least, a clearer path.",
+                 "green")
+        time.sleep(0.5)
+        await_input()
+
+        self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)

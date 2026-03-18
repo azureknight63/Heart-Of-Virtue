@@ -1,4 +1,5 @@
 import textwrap
+import math
 import os
 import inspect
 import re
@@ -16,6 +17,7 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from items import Item
     from player import Player
     from tiles import MapTile
+    from npcs import NPC
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -252,7 +254,7 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
             continue
         awareness = getattr(e, 'awareness', float('inf'))
         if finesse_check <= awareness:
-            print(f"{getattr(e, 'name', '')} {getattr(e, 'alert_message', '')}")
+            # Don't print here - combat adapter will handle alert messages
             enemy_combat_list.append(e)
             e.in_combat = True
             # Nearby aggro allies join
@@ -260,11 +262,105 @@ def check_for_combat(player):  # returns a list of angry enemies who are ready t
                 if aggro_enemy is e:
                     continue
                 if getattr(aggro_enemy, 'aggro', False) and not getattr(aggro_enemy, 'friend', False):
-                    print(f"{getattr(aggro_enemy, 'name', '')}{getattr(aggro_enemy, 'alert_message', '')}")
+                    # Don't print here - combat adapter will handle alert messages
                     enemy_combat_list.append(aggro_enemy)
                     aggro_enemy.in_combat = True
             break  # stop scanning after alarm is raised
     return enemy_combat_list
+
+
+def add_enemies_to_combat(player, new_enemies, announcement:str=None):
+    """Add new enemies to an ongoing combat and reinitialize positions.
+    
+    This function is designed for mid-combat enemy spawning (e.g., reinforcements,
+    ambushes, or event-triggered spawns). It properly integrates new enemies into
+    the combat system by:
+    
+    1. Adding them to the player's combat_list
+    2. Setting up bidirectional combat list references
+    3. Reinitializing battlefield positions for ALL combatants
+    4. Updating combat_proximity dicts for backward compatibility
+    
+    Args:
+        player: The Player instance
+        new_enemies: List of NPC instances to add to combat
+        
+    Example:
+        # In an event that spawns reinforcements:
+        new_enemies = [tile.spawn_npc("Goblin") for _ in range(3)]
+        add_enemies_to_combat(player, new_enemies)
+    """
+    from coordinate_config import CoordinateSystemConfig
+    import positions
+
+    # Announce the new enemies
+    if announcement:
+        cprint(announcement, "red", attrs=["bold"])
+    
+    # Add enemies to combat list
+    for enemy in new_enemies:
+        if enemy not in player.combat_list:
+            player.combat_list.append(enemy)
+            enemy.in_combat = True
+
+            # Provide back-reference for API drop/loot tracking when available
+            try:
+                enemy.player_ref = player
+            except Exception:
+                pass
+
+            # Reset move states for newly added enemies
+            if hasattr(enemy, "reset_combat_moves"):
+                enemy.reset_combat_moves()
+            else:
+                for move in getattr(enemy, "known_moves", []):
+                    move.current_stage = 0
+                    move.beats_left = 0
+            
+            # Set up combat lists for the enemy
+            # Enemies target allies (player's team)
+            enemy.combat_list = player.combat_list_allies
+            # Enemies are allied with other enemies
+            enemy.combat_list_allies = player.combat_list
+    
+    # Reinitialize positions for ALL combatants to include new enemies
+    try:
+        coord_config = CoordinateSystemConfig(player)
+        total_combatants = len(player.combat_list_allies) + len(player.combat_list)
+        grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
+        
+        # Determine scenario type based on combat composition
+        scenario_type = "standard"
+        if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(player.combat_list):
+            scenario_type = "pincer"
+        elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+            scenario_type = "boss_arena"
+        
+        positions.initialize_combat_positions(
+            allies=player.combat_list_allies,
+            enemies=player.combat_list,
+            scenario_type=scenario_type,
+            grid_width=grid_w,
+            grid_height=grid_h
+        )
+    except Exception as e:
+        # Fallback to legacy proximity system if position initialization fails
+        for enemy in new_enemies:
+            default_proximity = getattr(enemy, 'default_proximity', 20)
+            player.combat_proximity[enemy] = int(default_proximity * random.uniform(0.75, 1.25))
+            
+            if len(player.combat_list_allies) > 0:
+                for ally in player.combat_list_allies:
+                    distance = int(default_proximity * random.uniform(0.75, 1.25))
+                    ally.combat_proximity[enemy] = distance
+                    enemy.combat_proximity[ally] = distance
+
+    # Reinitialize API combat adapter state if present (mid-combat reinforcements)
+    if hasattr(player, "_combat_adapter"):
+        try:
+            player._combat_adapter.initialize_combat(new_enemies, reinit=True)
+        except Exception:
+            pass
 
 
 def refresh_stat_bonuses(target):  # searches all items and states for stat bonuses, then applies them
@@ -383,15 +479,29 @@ def refresh_stat_bonuses(target):  # searches all items and states for stat bonu
             try:
                 check_weight = target.weight_tolerance - target.weight_current
                 if check_weight > (target.weight_tolerance / 2):
-                    target.maxfatigue += (target.maxfatigue / 4)
+                    target.maxfatigue = int(math.ceil(target.maxfatigue * 1.25))
                 elif check_weight < 0:
                     # Overweight penalty
                     penalty = (-check_weight) * 10
-                    target.maxfatigue -= penalty
+                    target.maxfatigue = int(math.ceil(target.maxfatigue - penalty))
                     if target.maxfatigue < 0:
                         target.maxfatigue = 0
             except Exception:
                 pass
+
+    # Refresh protection rating if applicable
+    if hasattr(target, "refresh_protection_rating"):
+        try:
+            target.refresh_protection_rating()
+        except Exception:
+            pass
+
+    # Ensure all fatigue values are rounded up to the nearest integer and clamped
+    if hasattr(target, "fatigue") and hasattr(target, "maxfatigue"):
+        target.maxfatigue = int(math.ceil(target.maxfatigue))
+        target.fatigue = int(math.ceil(target.fatigue))
+        if target.fatigue > target.maxfatigue:
+            target.fatigue = target.maxfatigue
 
 
 def check_parry(target):
@@ -424,13 +534,13 @@ def refresh_moves(player):
     else:
         player.known_moves.clear()
 
-    default_moves = ("Rest", "PlayerAttack")
+    default_moves = ("Check", "Wait", "Rest", "Turn", "UseItem", "Advance", "Withdraw", "Attack", "Dodge", "Parry", "Jab")
     for move_name in default_moves:
         if _moves is None or not hasattr(_moves, move_name):
             continue
         move_class = getattr(_moves, move_name)
         try:
-            move_instance = move_class()
+            move_instance = move_class(player)
         except Exception:
             # Skip moves that fail to instantiate
             continue
@@ -619,6 +729,7 @@ _PLAYER_REQUIRED_DEFAULTS = {
     'preferences': lambda: {"arrow": "Wooden Arrow"},
     'resistance': dict,
     'status_resistance': dict,
+    'combat_log': list,
 }
 
 def _patch_player_integrity(obj: Any):

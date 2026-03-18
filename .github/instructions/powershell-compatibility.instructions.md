@@ -6,3 +6,4 @@ When writing scripts or commands in PowerShell, it's important to ensure compati
 - Use Cmdlets: Prefer using built-in cmdlets over external commands or scripts, as they are more likely to be compatible across different environments.
 - Avoid Deprecated Features: Stay updated with the latest PowerShell documentation to avoid using features that may be deprecated in future versions.
 - Avoid using invalid operators such as `&`, `&&` and `||` for command chaining. Instead, use `;` to separate commands.
+- Use `Select-String` instead of `grep` for searching within files.

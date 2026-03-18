@@ -41,9 +41,10 @@ default_animations = {
 class Move:  # master class for all moves
     def __init__(self, name, description, xp_gain, current_stage, beats_left,
                  stage_announce, target, user, stage_beat, targeted, mvrange=(0, 9999), heat_gain=0, fatigue_cost=0,
-                 instant=False, verbose_targeting=False):
+                 instant=False, verbose_targeting=False, category="Miscellaneous", passive=False, web_animation=None):
         self.name = name
         self.description = description
+        self.category = category
         self.xp_gain = xp_gain
         self.heat_gain = heat_gain
         self.current_stage = current_stage
@@ -64,6 +65,30 @@ class Move:  # master class for all moves
         self.mvrange = mvrange  # tuple containing the min and max ranges for the move
         self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
         self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
+        self.passive = passive
+        self.web_animation = web_animation  # Animation type for web app ("attack", "pulse", "charge", etc.)
+        # None = auto-determine based on move properties
+        self.fatigue_per_beat = 0
+
+    def beat_update(self, user):
+        """Called on every beat while the move is active (beats_left > 0)."""
+        pass
+
+    def get_effective_range_max(self, user):
+        """Override in moves that compute range dynamically (e.g. ranged weapons with decay).
+        Return a float/int to override mvrange[1] during target selection, or None to use mvrange[1]."""
+        return None
+
+    def can_use_coordinates(self, user):
+        """Check if 2D coordinate-based movement is available for this move."""
+        if not (hasattr(user, 'combat_position') and user.combat_position is not None):
+            return False
+        
+        # If targeted at someone else, they must also have coordinates
+        if getattr(self, 'target', None) and self.target is not user:
+            return hasattr(self.target, 'combat_position') and self.target.combat_position is not None
+            
+        return True
 
     def viable(self):
         """Check arbitrary conditions to see if the move is available for use; return True or False"""
@@ -89,6 +114,7 @@ class Move:  # master class for all moves
         self.beats_left = self.stage_beat[0]
 
     def advance(self, user):
+        self.user = user  # Ensure user is always current
         self.evaluate()
         if user.current_move == self or self.current_stage == 3:  # only advance the move if it's the player's
             # current move or if it's in cooldown
@@ -96,6 +122,7 @@ class Move:  # master class for all moves
             #      " BEATS LEFT: " + str(self.beats_left))
             if self.beats_left > 0:
                 self.beats_left -= 1
+                self.beat_update(user)
             else:
                 while self.beats_left == 0:  # this loop will advance stages until the current stage has a beat count,
                     # effectively skipping unused stages; if the move is instant, pretend all beat counts are 0!
@@ -136,24 +163,28 @@ class Move:  # master class for all moves
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         player = ""
-        if self.user.name == "Jean":
+        # Check if user is player generally (by name or class, assuming Player class has no friend attr)
+        is_user_player = self.user.name == "Jean" or self.user.__class__.__name__ == "Player"
+        
+        if is_user_player:
             player = self.user
+            self.usercolor = "green"
         else:
-            if not self.user.friend:
+            if not getattr(self.user, 'friend', False):
                 self.usercolor = "magenta"
             else:
                 self.usercolor = "cyan"
-        if self.target.name == "Jean":
+                
+        is_target_player = self.target.name == "Jean" or self.target.__class__.__name__ == "Player"
+        
+        if is_target_player:
             player = self.target
+            self.targetcolor = "green"
         else:
-            if not self.target.friend:
+            if not getattr(self.target, 'friend', False):
                 self.targetcolor = "magenta"
             else:
                 self.targetcolor = "cyan"
-        if self.user == player:
-            self.usercolor = "green"
-        if self.target == player:
-            self.targetcolor = "green"
 
     def parry(self):
         print(colored(self.target.name, self.targetcolor) + colored(" parried the attack from ", "red") +
@@ -161,8 +192,12 @@ class Move:  # master class for all moves
         self.stage_beat[2] += 10  # add stagger time to the user
         if self.target.name == "Jean":
             self.target.change_heat(1.4)
-            _ensure_weapon_exp(self.user)
-            self.target.combat_exp[self.user.eq_weapon.subtype] += 15
+            # Credit parry experience based on target's weapon if available, otherwise "Basic"
+            if hasattr(self.target, 'eq_weapon') and self.target.eq_weapon:
+                _ensure_weapon_exp(self.target)
+                self.target.combat_exp[self.target.eq_weapon.subtype] += 15
+            else:
+                self.target.combat_exp["Basic"] += 15
         if self.user.name == "Jean":
             self.user.change_heat(0.75)
 
@@ -222,10 +257,14 @@ class Move:  # master class for all moves
         enemy_near = False
         allowed_subtypes = subtypes
         
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         # Special case for Unarmed: don't require an actual weapon equipped
         if "Unarmed" in allowed_subtypes:
             has_weapon = True  # Unarmed is always available
-        elif self.user.eq_weapon:
+        elif hasattr(self.user, 'eq_weapon') and self.user.eq_weapon:
             if len(subtypes) > 0:
                 if self.user.eq_weapon.subtype in allowed_subtypes:
                     has_weapon = True
@@ -295,7 +334,7 @@ class Move:  # master class for all moves
             )
 
             weapon_name = self.user.eq_weapon.name
-            self.stage_announce[1] = colored(f"Jean strikes with his {weapon_name}!", "green")
+            self.stage_announce[1] = colored(f"{self.user.name} strikes with his {weapon_name}!", "green")
             self.stage_beat = [prep, execute, recoil, cooldown]
             self.fatigue_cost = fatigue_cost
             self.mvrange = mvrange
@@ -329,8 +368,9 @@ class Move:  # master class for all moves
             damage /= 2
             glance = True
         damage = int(damage)
-        _ensure_weapon_exp(player)
-        player.combat_exp[player.eq_weapon.subtype] += 5
+        if hasattr(player, 'eq_weapon') and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
@@ -340,11 +380,30 @@ class Move:  # master class for all moves
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 """
 ANY MOVES
 """
+
+class StrategicInsight(Move):
+    def __init__(self, user):
+        description = "Provides advanced tactical suggestions during combat."
+        super().__init__(name="Strategic Insight", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[0, 0, 0, 0], targeted=False,
+                         stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+                         target=user, user=user, category="Special", passive=True)
+
+class MasterTactician(Move):
+    def __init__(self, user):
+        description = "Expertly analyzes the battlefield to provide the best possible tactical moves."
+        super().__init__(name="Master Tactician", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[0, 0, 0, 0], targeted=False,
+                         stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+                         target=user, user=user, category="Special", passive=True)
 
 
 class Dodge(Move):
@@ -361,7 +420,7 @@ class Dodge(Move):
                                          "{} tenses in preparation to avoid attacks.".format(user.name),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=user, user=user)
+                         target=user, user=user, category="Defensive")
         self.evaluate()
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
@@ -396,7 +455,7 @@ class Parry(Move):
                                          "{} attempts to parry the next attack.".format(user.name),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=user, user=user)
+                         target=user, user=user, category="Defensive")
         self.evaluate()
 
     def viable(self):
@@ -425,7 +484,7 @@ class Advance(Move):
         execute = 4
         recoil = 0
         cooldown = 3
-        fatigue_cost = 0
+        fatigue_cost = 0  # Legacy total cost
         target = user  # this will be changed during the combat loop when the user selects his target
         super().__init__(name="Advance", description=description, xp_gain=0, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(1, 9999),
@@ -433,124 +492,113 @@ class Advance(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
+        self.fatigue_per_beat = 1
         self.evaluate()
 
     def viable(self):
         """Advance is only viable if there are enemies beyond striking distance OR current target is at a good distance"""
-        # If a specific target is set
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.target and self.target in self.user.combat_proximity:
             target_distance = self.user.combat_proximity[self.target]
-            # Only viable if target is alive and NOT at striking distance
             if self.target.is_alive and target_distance > 1:
                 return True
-            # If current target IS at striking distance, Advance is not viable (use Attack instead)
             return False
         
-        # If no target set, check if there are ANY enemies beyond striking distance
         for enemy, distance in self.user.combat_proximity.items():
             if enemy.is_alive and distance > 1:
                 return True
         return False
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
-        # self.stage_beat = [0,2,2,2]
+    def evaluate(self):
         pass
 
     def prep(self, user):
-        print(self.stage_announce[1])
+        pass
 
-    def execute(self, user):
-        if not self.target.is_alive():
-            self.target = None  # this is to prevent advancing on targets that were killed
-            return
-        
-        # Try coordinate-based movement if available
-        if (hasattr(user, 'combat_position') and user.combat_position is not None and
-            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
-            self._execute_coordinate_based(user)
-        else:
-            self._execute_legacy(user)
+    def beat_update(self, user):
+        if self.current_stage == 1: # Execute stage
+            if not self.target or not self.target.is_alive:
+                # Try to find a new target if possible
+                nearest_enemy = None
+                min_dist = float('inf')
+                for enemy in user.combat_proximity.keys():
+                    if enemy.is_alive:
+                        dist = user.combat_proximity[enemy]
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest_enemy = enemy
+                
+                if nearest_enemy:
+                    self.target = nearest_enemy
+                    cprint(f"{user.name} switches target to {self.target.name} while advancing.", "yellow" if user.name == "Jean" else "white")
+                else:
+                    return # No enemies left
+            
+            if self.can_use_coordinates(user):
+                self._beat_coordinate_based(user)
+            else:
+                self._beat_legacy(user)
+            
+            user.fatigue -= self.fatigue_per_beat
 
-    def _execute_coordinate_based(self, user):
-        """Execute advance using 2D coordinates."""
-        print("{} advances on {}...".format(user.name, self.target.name))
-        
-        # Calculate direction toward target
+    def _beat_coordinate_based(self, user):
+        """Move one beat's worth of distance toward target."""
         current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
         
-        # Calculate movement distance (6-12 ft baseline, but don't overshoot target)
+        # Calculate movement for this beat (approx 2-3 ft)
         threshold = self.target.speed
-        performance = random.randint(0, 50) + user.speed
-        distance_moved = max(6, (performance - threshold) // 5)  # Baseline: 6-12 ft
-        distance_moved = min(distance_moved, 12)  # Cap at 12 squares
+        performance = random.randint(0, 30) + user.speed
+        distance_moved = max(1, (performance - threshold) // 10)
+        distance_moved = min(distance_moved, 3) # Cap per beat
         
-        # If target is already close, don't force minimum 6 ft
-        if current_distance <= 6:
-            distance_moved = max(1, (performance - threshold) // 5)  # Smaller increments when close
-        
-        # Move toward target
-        new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
+        # Ensure we don't move if we're already at striking distance (approx 3ft or 1 square)
+        if current_distance <= 3:
+            return
+
+        # Collect occupied positions
+        occupied = []
+        if hasattr(user, 'combat_list'):
+            for u in user.combat_list:
+                if hasattr(u, 'combat_position') and u.combat_position:
+                    occupied.append(u.combat_position)
+        if hasattr(user, 'combat_list_allies'):
+            for u in user.combat_list_allies:
+                if hasattr(u, 'combat_position') and u.combat_position and u != user:
+                    occupied.append(u.combat_position)
+
+        new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
         
-        # Turn to face target
+        # Turn to face target each beat
         user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
         
-        # Recalculate proximity for backward compatibility
+        # Update legacy proximity
         new_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
-        distance_reduced = current_distance - new_distance
-        
-        if distance_reduced <= 0:
-            if user.name == "Jean":
-                color = "red"
-            else:
-                color = "green"
-            cprint("{} was unable to get closer to {}!".format(user.name, self.target.name), color)
-        else:
-            if user.name == "Jean":
-                color = "green"
-            else:
-                color = "red"
-            cprint("{} got {} ft closer to {}!".format(user.name, distance_reduced, self.target.name), color)
+        user.combat_proximity[self.target] = int(new_distance)
+        if hasattr(self.target, 'combat_proximity'):
+            self.target.combat_proximity[user] = int(new_distance)
 
-    def _execute_legacy(self, user):
-        """Execute advance using old distance-based system."""
-        print("{} advances on {}...".format(user.name, self.target.name))
+    def _beat_legacy(self, user):
+        """Move one beat's worth in legacy system."""
+        if user.combat_proximity[self.target] <= 3:
+            return
+            
         threshold = self.target.speed
-        performance = random.randint(0, 50) + user.speed
+        performance = random.randint(0, 30) + user.speed
+        distance = max(1, (performance - threshold) // 10)
+        distance = min(distance, 3)
         
-        # Base calculation: 6-12 ft, but adjust if target is already close
-        current_distance = user.combat_proximity[self.target]
-        if current_distance <= 6:
-            distance = max(1, (performance - threshold) // 5)  # Smaller increments when close
-        else:
-            distance = max(6, (performance - threshold) // 5)  # Baseline: 6-12 ft
-            distance = min(distance, 12)  # Cap at 12 ft
-        if distance == 0:
-            if user.name == "Jean":
-                color = "red"
-            else:
-                color = "green"
-            cprint("{} was unable to get closer to {}!".format(user.name, self.target.name), color)
-        else:
-            if user.combat_proximity[self.target] <= distance:
-                distance = user.combat_proximity[self.target] - 3
-            distance = int(distance)
-            if distance > 0:
-                if user.name == "Jean":
-                    color = "green"
-                else:
-                    color = "red"
-                cprint("{} got {} ft closer to {}!".format(user.name, distance, self.target.name), color)
-                user.combat_proximity[self.target] -= distance
-                user.combat_proximity[self.target] = int(user.combat_proximity[self.target])
-                self.target.combat_proximity[user] = user.combat_proximity[self.target]
-            else:
-                if user.name == "Jean":
-                    color = "red"
-                else:
-                    color = "green"
-                cprint("{} was unable to get closer to {}!".format(user.name, self.target.name), color)
+        user.combat_proximity[self.target] -= distance
+        if user.combat_proximity[self.target] < 3:
+            user.combat_proximity[self.target] = 3
+        self.target.combat_proximity[user] = user.combat_proximity[self.target]
+
+    def execute(self, user):
+        if self.target and self.target.is_alive:
+            cprint("{} finished advancing on {}.".format(user.name, self.target.name), "green" if user.name == "Jean" else "red")
 
 
 class Withdraw(Move):
@@ -568,11 +616,15 @@ class Withdraw(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
+        self.fatigue_per_beat = 1
         self.evaluate()
 
     def viable(self):
         viability = False
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if distance < self.mvrange[1]:
                 viability = True
@@ -583,24 +635,22 @@ class Withdraw(Move):
                 viability = False
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
-        # self.stage_beat = [0,2,2,2]
+    def evaluate(self):
         pass
 
     def prep(self, user):
-        print(self.stage_announce[1])
+        pass
 
-    def execute(self, user):
-        # Try coordinate-based movement if available
-        if hasattr(user, 'combat_position') and user.combat_position is not None:
-            self._execute_coordinate_based(user)
-        else:
-            self._execute_legacy(user)
+    def beat_update(self, user):
+        if self.current_stage == 1: # Execute stage
+            if self.can_use_coordinates(user):
+                self._beat_coordinate_based(user)
+            else:
+                self._beat_legacy(user)
+            user.fatigue -= self.fatigue_per_beat
 
-    def _execute_coordinate_based(self, user):
-        """Execute withdraw using 2D coordinates."""
-        print("{} attempts to fall back...".format(user.name))
-        
+    def _beat_coordinate_based(self, user):
+        """Fallback one beat's worth away from nearest threat."""
         # Find the nearest threat
         nearest_threat = None
         min_distance = float('inf')
@@ -613,66 +663,36 @@ class Withdraw(Move):
                     nearest_threat = enemy
         
         if nearest_threat is None:
-            return  # No threats to withdraw from
+            return 
         
-        # Calculate movement distance (2-3 squares, based on speed)
+        # Calculate movement distance (approx 1-2 ft per beat)
         performance = random.randint(0, 35) + (user.speed - nearest_threat.speed)
-        distance_moved = max(1, performance // 15)  # Convert to grid squares
-        distance_moved = min(distance_moved, 3)  # Cap at 3 squares
+        distance_moved = max(1, performance // 20)
+        distance_moved = min(distance_moved, 2)
         
-        # Move away from nearest threat
         new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
         user.combat_position = new_pos
         
-        # Face the direction of retreat (toward where we're retreating, away from threat)
-        # Calculate retreat direction by facing away from threat
+        # Face away from threat while retreating
         direction_away_x = new_pos.x - nearest_threat.combat_position.x
         direction_away_y = new_pos.y - nearest_threat.combat_position.y
-        
-        # Create a target point in the retreat direction to calculate facing
         retreat_target = positions.CombatPosition(
             x=min(50, max(0, new_pos.x + direction_away_x)),
             y=min(50, max(0, new_pos.y + direction_away_y)),
             facing=user.combat_position.facing
         )
         user.combat_position.facing = positions.turn_toward(new_pos, retreat_target)
-        
-        if user.name == "Jean":
-            color = "green"
-        else:
-            color = "red"
-        cprint("{} retreated {} ft away from {}!".format(user.name, distance_moved, nearest_threat.name), color)
 
-    def _execute_legacy(self, user):
-        """Execute withdraw using old distance-based system."""
-        print("{} attempts to fall back...".format(user.name))
-        enemy_list = {}
+    def _beat_legacy(self, user):
+        """Fallback in legacy system."""
         for enemy, distance in self.user.combat_proximity.items():
             performance = random.randint(0, 35) + (user.speed - enemy.speed)
-            if performance < 1:
-                performance = 0
-            enemy_list[enemy] = int(performance)
-        for enemy, performance in enemy_list.items():
-            if (performance == 0) or (user.combat_proximity[enemy] >= self.mvrange[1]):
-                if user.name == "Jean":
-                    color = "red"
-                else:
-                    color = "green"
-                cprint("{} was unable to get further away from {}!".format(user.name, enemy.name), color)
-            else:
-                distance = performance
-                limit_distance = self.mvrange[1] - user.combat_proximity[enemy]
-                if distance > limit_distance:
-                    distance = limit_distance
-                distance = int(distance)
-                if user.name == "Jean":
-                    color = "green"
-                else:
-                    color = "red"
-                cprint("{} got {} ft further away from {}!".format(user.name, distance, enemy.name), color)
-                user.combat_proximity[enemy] += distance
-                user.combat_proximity[enemy] = int(user.combat_proximity[enemy])
-                enemy.combat_proximity[user] = user.combat_proximity[enemy]
+            move = max(1, performance // 20)
+            user.combat_proximity[enemy] += move
+            enemy.combat_proximity[user] = user.combat_proximity[enemy]
+
+    def execute(self, user):
+        cprint("{} successfully fell back.".format(user.name), "green" if user.name == "Jean" else "red")
 
 
 class BullCharge(Move):
@@ -691,15 +711,18 @@ class BullCharge(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
+        self.fatigue_per_beat = 2
         self.evaluate()
 
     def viable(self):
-        """Viable if target exists and isn't too close"""
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if not self.target or self.target not in self.user.combat_proximity:
             return False
         distance = self.user.combat_proximity[self.target]
-        return 3 <= distance <= 20  # Can charge from 3-20 feet away
+        return 3 <= distance <= 20
 
     def evaluate(self):
         pass
@@ -707,45 +730,50 @@ class BullCharge(Move):
     def prep(self, user):
         cprint(f"{user.name} readies for a charge...", "cyan")
 
-    def execute(self, user):
-        if not self.target.is_alive():
-            self.target = None
-            return
+    def beat_update(self, user):
+        if self.current_stage == 1: # Execute stage
+            if not self.target or not self.target.is_alive:
+                return
+            
+            if self.can_use_coordinates(user):
+                self._beat_coordinate_based(user)
+            else:
+                self._beat_legacy(user)
+            user.fatigue -= self.fatigue_per_beat
 
-        # Try coordinate-based charge if available
-        if (hasattr(user, 'combat_position') and user.combat_position is not None and
-            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
-            self._execute_coordinate_based(user)
-        else:
-            self._execute_legacy(user)
+    def _beat_coordinate_based(self, user):
+        """Move one beat's worth of charge."""
+        distance_moved = random.randint(2, 3) # Faster than static Advance
+        
+        occupied = []
+        if hasattr(user, 'combat_list'):
+            for u in user.combat_list:
+                if hasattr(u, 'combat_position') and u.combat_position:
+                    occupied.append(u.combat_position)
+        if hasattr(user, 'combat_list_allies'):
+            for u in user.combat_list_allies:
+                if hasattr(u, 'combat_position') and u.combat_position and u != user:
+                    occupied.append(u.combat_position)
 
-    def _execute_coordinate_based(self, user):
-        """Charge using coordinates - advance 4-6 squares"""
-        print(f"{user.name} charges at {self.target.name}!")
-        
-        distance_moved = random.randint(4, 6)
-        current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
-        
-        # Move toward target (may overshoot slightly)
-        new_pos = positions.move_toward(user.combat_position, self.target.combat_position, distance_moved)
+        new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, distance_moved, occupied)
         user.combat_position = new_pos
-        
-        # Face target
         user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
         
         new_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
-        distance_reduced = current_distance - new_distance
-        
-        cprint(f"{user.name} charged {distance_reduced} ft toward {self.target.name}!", "green")
+        user.combat_proximity[self.target] = int(new_distance)
+        if hasattr(self.target, 'combat_proximity'):
+            self.target.combat_proximity[user] = int(new_distance)
 
-    def _execute_legacy(self, user):
-        """Charge using distance-based system"""
-        distance = user.combat_proximity[self.target] - random.randint(3, 5)
-        if distance < 0:
-            distance = 0
-        user.combat_proximity[self.target] = distance
-        self.target.combat_proximity[user] = distance
-        cprint(f"{user.name} charged at {self.target.name}!", "green")
+    def _beat_legacy(self, user):
+        move = random.randint(4, 6)
+        user.combat_proximity[self.target] -= move
+        if user.combat_proximity[self.target] < 3:
+            user.combat_proximity[self.target] = 3
+        self.target.combat_proximity[user] = user.combat_proximity[self.target]
+
+    def execute(self, user):
+        if self.target and self.target.is_alive:
+            cprint(f"{user.name} slammed into {self.target.name} during the charge!", "green" if user.name == "Jean" else "red")
 
 
 class TacticalRetreat(Move):
@@ -765,10 +793,12 @@ class TacticalRetreat(Move):
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=target, user=user)
+        self.fatigue_per_beat = 1
         self.evaluate()
 
     def viable(self):
-        """Always viable if in combat with enemies"""
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
         return len(self.user.combat_proximity) > 0
 
     def evaluate(self):
@@ -777,18 +807,16 @@ class TacticalRetreat(Move):
     def prep(self, user):
         cprint(f"{user.name} prepares to retreat...", "cyan")
 
-    def execute(self, user):
-        # Try coordinate-based retreat if available
-        if hasattr(user, 'combat_position') and user.combat_position is not None:
-            self._execute_coordinate_based(user)
-        else:
-            self._execute_legacy(user)
+    def beat_update(self, user):
+        if self.current_stage == 1: # Execute stage
+            if self.can_use_coordinates(user):
+                self._beat_coordinate_based(user)
+            else:
+                self._beat_legacy(user)
+            user.fatigue -= self.fatigue_per_beat
 
-    def _execute_coordinate_based(self, user):
-        """Retreat using coordinates - retreat 3-4 squares"""
-        print(f"{user.name} retreats tactically!")
-        
-        # Find nearest threat
+    def _beat_coordinate_based(self, user):
+        """Retreat tactically one beat at a time."""
         nearest_threat = None
         min_distance = float('inf')
         
@@ -802,21 +830,18 @@ class TacticalRetreat(Move):
         if nearest_threat is None:
             return
         
-        distance_moved = random.randint(3, 4)
+        distance_moved = random.randint(1, 2)
         new_pos = positions.move_away_from(user.combat_position, nearest_threat.combat_position, distance_moved)
         user.combat_position = new_pos
-        
-        # Face threat while retreating (defensive stance)
         user.combat_position.facing = positions.turn_toward(user.combat_position, nearest_threat.combat_position)
-        
-        cprint(f"{user.name} fell back {distance_moved} ft while staying defensive!", "green")
 
-    def _execute_legacy(self, user):
-        """Retreat using distance-based system"""
+    def _beat_legacy(self, user):
         for enemy in user.combat_proximity.keys():
-            user.combat_proximity[enemy] += random.randint(2, 4)
+            user.combat_proximity[enemy] += random.randint(1, 2)
             enemy.combat_proximity[user] = user.combat_proximity[enemy]
-        cprint(f"{user.name} fell back defensively!", "green")
+
+    def execute(self, user):
+        cprint(f"{user.name} finished the tactical retreat.", "green" if user.name == "Jean" else "red")
 
 
 class FlankingManeuver(Move):
@@ -836,10 +861,13 @@ class FlankingManeuver(Move):
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=target, user=user)
+        self.fatigue_per_beat = 1
         self.evaluate()
 
     def viable(self):
-        """Viable if target is in range"""
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if not self.target or self.target not in self.user.combat_proximity:
             return False
         distance = self.user.combat_proximity[self.target]
@@ -851,39 +879,37 @@ class FlankingManeuver(Move):
     def prep(self, user):
         cprint(f"{user.name} prepares to flank...", "cyan")
 
-    def execute(self, user):
-        if not self.target.is_alive():
-            self.target = None
-            return
+    def beat_update(self, user):
+        if self.current_stage == 1: # Execute stage
+            if not self.target or not self.target.is_alive:
+                return
+            
+            if self.can_use_coordinates(user):
+                self._beat_coordinate_based(user)
+            
+            user.fatigue -= self.fatigue_per_beat
 
-        # Only works with coordinate-based system
-        if (hasattr(user, 'combat_position') and user.combat_position is not None and
-            hasattr(self.target, 'combat_position') and self.target.combat_position is not None):
-            self._execute_coordinate_based(user)
-        else:
-            # Fallback for legacy system
-            cprint(f"{user.name}'s flanking maneuver failed - coordinates unavailable", "yellow")
-
-    def _execute_coordinate_based(self, user):
-        """Flank target by moving perpendicular to their facing direction."""
-        print(f"{user.name} maneuvers to flank {self.target.name}!")
-        
-        # Calculate flanking position (perpendicular to target's facing)
-        flank_distance = random.randint(2, 4)
-        new_pos = positions.move_to_flank(user.combat_position, self.target.combat_position, flank_distance)
+    def _beat_coordinate_based(self, user):
+        """Maneuver toward flank one beat at a time."""
+        # This uses positions.move_to_flank which is naturally suited for small increments
+        # Actually move_to_flank takes a distance. We'll use 1-2 squares per beat.
+        distance_moved = random.randint(1, 2)
+        new_pos = positions.move_to_flank(user.combat_position, self.target.combat_position, distance_moved)
         user.combat_position = new_pos
-        
-        # Face target from flank position
         user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
-        
-        # Calculate angle difference to show flanking bonus
-        angle = positions.angle_to_target(user.combat_position, self.target.combat_position)
-        angle_diff = positions.attack_angle_difference(angle, self.target.combat_position.facing)
-        
-        if 45 < angle_diff <= 135:
-            cprint(f"{user.name} successfully flanked {self.target.name}! (+15-25% damage)", "green")
-        else:
-            cprint(f"{user.name} moved to the side of {self.target.name}!", "green")
+
+    def execute(self, user):
+        if self.target and self.target.is_alive and hasattr(user, 'combat_position') and user.combat_position:
+            # Calculate angle difference to show flanking bonus
+            angle = positions.angle_to_target(user.combat_position, self.target.combat_position)
+            angle_diff = positions.attack_angle_difference(angle, self.target.combat_position.facing)
+            
+            if 45 < angle_diff <= 135:
+                cprint(f"{user.name} successfully positioned to flank {self.target.name}! (+15-25% damage bonus)", "green")
+            else:
+                cprint(f"{user.name} moved to the side of {self.target.name}!", "green")
+        elif self.target and self.target.is_alive:
+            cprint(f"{user.name} finished maneuvering.", "green")
 
 
 class QuietMovement(Move):
@@ -939,7 +965,7 @@ class PowerStrike(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user)
+                         target=self.target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -951,6 +977,11 @@ class PowerStrike(Move):
             return False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -1030,6 +1061,9 @@ class PowerStrike(Move):
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class Jab(Move):
@@ -1053,7 +1087,7 @@ class Jab(Move):
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
                          stage_announce=["This", "will", "update", "dynamically"],
                          fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=self.target, user=user)
+                         target=self.target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
@@ -1119,6 +1153,9 @@ class Jab(Move):
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 """
@@ -1141,16 +1178,118 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player, instant=True)
+                         beats_left=execute, target=player, user=player, instant=True, category="Utility")
 
     def prep(self, user):
+        # In API mode, generate structured combatant data
+        if hasattr(user, '_combat_adapter'):
+            self._generate_api_check_data(user)
+        
         # Check coordinate-based positioning if available
         if hasattr(user, 'combat_position') and user.combat_position is not None:
             self._display_coordinate_info(user)
         else:
             # Fallback to legacy distance display
             self._display_legacy_info(user)
-        functions.await_input()
+        
+        # Don't block for input in API mode - info is captured in combat log
+        if not hasattr(user, '_combat_adapter'):
+            functions.await_input()
+    
+    def _generate_api_check_data(self, user):
+        """Generate structured combatant data for API mode."""
+        import positions
+        
+        combatants_data = []
+        
+        # Collect all combatants (enemies and allies)
+        all_combatants = []
+        
+        # Add enemies
+        for enemy in user.combat_list:
+            if not enemy.is_alive():
+                continue
+            all_combatants.append({
+                'combatant': enemy,
+                'is_ally': False,
+                'distance': user.combat_proximity.get(enemy, 0)
+            })
+        
+        # Add allies (excluding the player)
+        for ally in user.combat_list_allies:
+            if ally != user:
+                all_combatants.append({
+                    'combatant': ally,
+                    'is_ally': True,
+                    'distance': user.combat_proximity.get(ally, 0)
+                })
+        
+        # Sort by distance (closest first)
+        all_combatants.sort(key=lambda x: x['distance'])
+        
+        # Generate data for each combatant
+        for item in all_combatants:
+            combatant = item['combatant']
+            distance = item['distance']
+            is_ally = item['is_ally']
+            
+            combatant_info = {
+                'name': combatant.name,
+                'is_ally': is_ally,
+                'distance': int(distance),
+                'facing': None,
+                'direction_from_player': None,
+                'current_move': None
+            }
+            
+            # Get facing direction if available
+            if hasattr(combatant, 'combat_position') and combatant.combat_position is not None:
+                combatant_info['facing'] = combatant.combat_position.facing.name
+                
+                # Calculate direction relative to player
+                if hasattr(user, 'combat_position') and user.combat_position is not None:
+                    # Calculate angle from player to combatant
+                    angle = positions.angle_to_target(user.combat_position, combatant.combat_position)
+                    
+                    # Convert angle to cardinal direction
+                    if 337.5 <= angle or angle < 22.5:
+                        direction = "North"
+                    elif 22.5 <= angle < 67.5:
+                        direction = "Northeast"
+                    elif 67.5 <= angle < 112.5:
+                        direction = "East"
+                    elif 112.5 <= angle < 157.5:
+                        direction = "Southeast"
+                    elif 157.5 <= angle < 202.5:
+                        direction = "South"
+                    elif 202.5 <= angle < 247.5:
+                        direction = "Southwest"
+                    elif 247.5 <= angle < 292.5:
+                        direction = "West"
+                    else:  # 292.5 <= angle < 337.5
+                        direction = "Northwest"
+                    
+                    combatant_info['direction_from_player'] = direction
+            
+            # Get current move if not idle
+            if hasattr(combatant, 'current_move') and combatant.current_move is not None:
+                move = combatant.current_move
+                if move.current_stage > 0:  # Move is active
+                    combatant_info['current_move'] = move.name
+            
+            combatants_data.append(combatant_info)
+        
+        # Store in combat adapter state for frontend retrieval
+        if hasattr(user, 'combat_adapter_state'):
+            user.combat_adapter_state['check_data'] = combatants_data
+        
+        # Also add summary to combat log
+        if hasattr(user, 'combat_log'):
+            user.combat_log.append({
+                "round": getattr(user, "combat_beat", 0),
+                "message": f"Jean checks the battlefield... {len(combatants_data)} combatant(s) detected.",
+                "type": "info"
+            })
     
     def _display_coordinate_info(self, user):
         """Display coordinate-based positioning information."""
@@ -1210,13 +1349,23 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
     
     def _display_legacy_info(self, user):
         """Display legacy distance-based information (fallback)."""
-        for enemy, distance in user.combat_proximity.items():
-            cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
-            if user.combat_list_allies:
-                for ally in user.combat_list_allies:
-                    if ally.name != "Jean":
-                        cprint("{} is {} ft from {}".format(
-                            enemy.name, int(ally.combat_proximity[enemy]), ally.name), "cyan")
+        # In API mode, add to combat log
+        if hasattr(user, '_combat_adapter') and hasattr(user, 'combat_log'):
+            for enemy, distance in user.combat_proximity.items():
+                user.combat_log.append({
+                    "round": getattr(user, "combat_beat", 0),
+                    "message": f"{enemy.name} is {int(distance)} ft from {user.name}",
+                    "type": "info"
+                })
+        else:
+            # Terminal mode - print to console
+            for enemy, distance in user.combat_proximity.items():
+                cprint("{} is {} ft from {}".format(enemy.name, int(distance), user.name), "green")
+                if user.combat_list_allies:
+                    for ally in user.combat_list_allies:
+                        if ally.name != "Jean":
+                            cprint("{} is {} ft from {}".format(
+                                enemy.name, int(ally.combat_proximity[enemy]), ally.name), "cyan")
 
 
 class Wait(Move):  # player chooses how many beats he'd like to wait
@@ -1234,9 +1383,32 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost,
-                         beats_left=execute, target=player, user=player)
+                         beats_left=execute, target=player, user=player, category="Utility")
+        # Flag to indicate this move needs duration input
+        self.needs_duration = True
+        self.duration = None
 
     def execute(self, player):
+        # In API mode, check if duration was provided
+        if hasattr(player, '_combat_adapter'):
+            if self.duration is None:
+                # Duration not set yet - this shouldn't happen if adapter handles it correctly
+                # Default to 5 as fallback
+                duration = 5
+            else:
+                duration = self.duration
+            
+            self.stage_beat[2] = duration - 2
+            # Add feedback to combat log
+            if hasattr(player, 'combat_log'):
+                player.combat_log.append({
+                    "round": getattr(player, "combat_beat", 0),
+                    "message": f"Jean waits for {duration} beats...",
+                    "type": "info"
+                })
+            return
+        
+        # Terminal mode - prompt for input
         duration = ''
         while not functions.is_input_integer(duration):
             duration = input("Number of beats to wait (min 3, max 10): ", )
@@ -1260,20 +1432,23 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         if cooldown < 0:
             cooldown = 0
         weapon = "fist"  # modified later, based on player weapon
-        fatigue_cost = 100 - (5 * player.endurance)
+        fatigue_cost = int(math.ceil(100 - (5 * player.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
         mvrange = (0, 5)
         super().__init__(name="Attack", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean winds up for a strike...",
-                                         colored("Jean strikes with his " + weapon + "!", "green"),
-                                         "Jean braces himself as his weapon recoils.",
+                         stage_announce=[f"{player.name} winds up for a strike...",
+                                         colored(f"{player.name} strikes with his " + weapon + "!", "green"),
+                                         f"{player.name} braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=None, user=player)
+                         target=None, user=player, category="Offensive")
         self.power = 0
         self.evaluate()
-        self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+        if hasattr(player, 'eq_weapon') and player.eq_weapon:
+            self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+        else:
+            self.base_damage_type = "crushing"  # default for unarmed
         self.animations = default_animations.copy()
         self.animations["e"] = "hit.gif"
 
@@ -1289,6 +1464,11 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         viability = False
         has_weapon = False
         enemy_near = False
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.user.eq_weapon:
             has_weapon = True
             range_min = self.mvrange[0]
@@ -1319,14 +1499,14 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
-        fatigue_cost = (70 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+        fatigue_cost = int(math.ceil(70 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
 
         mvrange = self.user.eq_weapon.wpnrange
 
         weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored("Jean strikes with his " + weapon_name + "!", "green")
+        self.stage_announce[1] = colored(f"{self.user.name} strikes with his " + weapon_name + "!", "green")
         self.power = power
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
@@ -1370,6 +1550,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class Rest(Move):  # standard rest to restore fatigue.
@@ -1397,12 +1580,11 @@ class Rest(Move):  # standard rest to restore fatigue.
 
     def execute(self, player):
         print(self.stage_announce[1])
-        recovery_amt = (player.maxfatigue * 0.4) * random.uniform(0.8, 1.2)
-        recovery_amt = int(recovery_amt)
+        recovery_amt = int(math.ceil((player.maxfatigue * 0.4) * random.uniform(0.8, 1.2)))
         if recovery_amt > player.maxfatigue - player.fatigue:
             recovery_amt = player.maxfatigue - player.fatigue
         player.fatigue += recovery_amt
-        cprint("You recovered {} FP!".format(recovery_amt), "green")
+        cprint("{} recovered {} FP!".format(player.name, recovery_amt), "green")
         player.combat_exp["Basic"] += 2
 
 
@@ -1417,9 +1599,9 @@ class UseItem(Move):
         super().__init__(name="Use Item", description=description, xp_gain=0, current_stage=0,
                          targeted=False,
                          stage_beat=[prep, execute, recoil, cooldown],
-                         stage_announce=["Jean opens his bag.",
+                         stage_announce=[f"{player.name} opens his bag.",
                                          "",
-                                         "Jean closes his bag.",
+                                         f"{player.name} closes his bag.",
                                          ""], fatigue_cost=fatigue_cost,
                          beats_left=execute, target=player, user=player)
 
@@ -1450,10 +1632,11 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         fatigue_cost = 0
         mvrange = (0, 5)
         super().__init__(name="Slash", description=description, xp_gain=1, current_stage=0,
+                         category="Offensive",
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean winds up for a strike...",
-                                         colored("Jean slashes with his " + weapon + "!", "green"),
-                                         "Jean braces himself as his weapon recoils.",
+                         stage_announce=[f"{player.name} winds up for a strike...",
+                                         colored(f"{player.name} slashes with his " + weapon + "!", "green"),
+                                         f"{player.name} braces himself as his weapon recoils.",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = 0
@@ -1465,6 +1648,11 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
         has_weapon = False
         enemy_near = False
         allowed_subtypes = ["Dagger", "Sword", "Stars", "Axe"]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.user.eq_weapon:
             if self.user.eq_weapon.subtype in allowed_subtypes:
                 has_weapon = True
@@ -1503,14 +1691,14 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
-        fatigue_cost = (85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance))
+        fatigue_cost = int(math.ceil(85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
 
         mvrange = self.user.eq_weapon.wpnrange
 
         weapon_name = self.user.eq_weapon.name
-        self.stage_announce[1] = colored("Jean strikes with his " + weapon_name + "!", "green")
+        self.stage_announce[1] = colored(f"{self.user.name} strikes with his " + weapon_name + "!", "green")
         self.power = power
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
@@ -1541,7 +1729,8 @@ class Slash(Move):  # Slashing-type attack using the equipped weapon; available 
             damage /= 2
             glance = True
         damage = int(damage)
-        player.combat_exp[player.eq_weapon.subtype] += 10
+        if hasattr(player, 'eq_weapon') and player.eq_weapon:
+            player.combat_exp[player.eq_weapon.subtype] += 10
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
                 self.parry()
@@ -1569,15 +1758,15 @@ class PommelStrike(Move):
         mvrange = (0, 5)
         super().__init__(name="Pommel Strike", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean quickly turns his weapon...",
-                                         colored("Jean quickly strikes with the pommel of his {}!".format(weapon),
+                         stage_announce=[f"{player.name} quickly turns his weapon...",
+                                         colored(f"{player.name} quickly strikes with the pommel of his {{}}!".format(weapon),
                                                  "green"),
-                                         "Jean braces himself from the recoil of his attack.", ""],
+                                         f"{player.name} braces himself from the recoil of his attack.", ""],
                          fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player)
         self.power = 0  # enter the base damage bonus of the attack
-        self.evaluate()
         self.base_damage_type = "crushing"
+        self.evaluate()
 
     def viable(self):
         viability = self.standard_viability_attack(("Axe", "Pick", "Scythe", "Spear", "Hammer", "Sword"))
@@ -1601,71 +1790,104 @@ class TacticalPositioning(Move):
         recoil = 0
         cooldown = 3
         fatigue_cost = 0
-        target = user  # this will be changed during the combat loop when the user selects his target
-        super().__init__(name="Tactical Positioning", description=description, xp_gain=0, current_stage=0,
+        target = user
+        super().__init__(name="Tactical Positioning", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(0, 100),
                          stage_announce=["",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.distance = 0
+        self.target_dist_final = None
+        self.fatigue_per_beat = 1
         self.evaluate()
 
     def viable(self):
         return True
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
-        # self.stage_beat = [0,2,2,2]
+    def evaluate(self):
         pass
 
     def prep(self, user):
+        # Input handling for desired distance
         distance = ''
         while not functions.is_input_integer(distance):
             distance = input(
                 "Enter the desired distance between yourself and your target (min {}, max {}): ".format(self.mvrange[0],
-                                                                                                        self.mvrange[
-                                                                                                            1]), )
+                                                                                                        self.mvrange[1]))
             if functions.is_input_integer(distance):
-                distance = int(
-                    distance)  # forced typecasting is required because inputs are strings;
-                # is_input_integer only tests if the entered string follows the integer pattern (numeral, no decimal)
+                distance = int(distance)
                 if distance > 100 or distance < 0:
-                    cprint("You must enter a distance between {} and {}.".format(self.mvrange[0], self.mvrange[1]),
-                           "red")
+                    cprint("You must enter a distance between {} and {}.".format(self.mvrange[0], self.mvrange[1]), "red")
                     distance = ''
         self.distance = distance
+        self.target_dist_final = None # Reset for execution
+
+    def beat_update(self, user):
+        if self.current_stage == 1: # Execute
+            if not self.target or not self.target.is_alive:
+                return
+            
+            # Initialization of actual target distance with variance
+            if self.target_dist_final is None:
+                variance = (self.target.speed * random.uniform(0.5, 1.5)) - (user.speed * random.uniform(0.5, 1.5))
+                variance = int(max(1, variance))
+                self.target_dist_final = random.randint(self.distance - variance, self.distance + variance)
+                self.target_dist_final = max(self.mvrange[0], min(self.mvrange[1], self.target_dist_final))
+            
+            if self.can_use_coordinates(user):
+                self._beat_coordinate_based(user)
+            else:
+                self._beat_legacy(user)
+            
+            user.fatigue -= self.fatigue_per_beat
+
+    def _beat_coordinate_based(self, user):
+        """Gradually move toward the target distance."""
+        current_distance = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        diff = current_distance - self.target_dist_final
+        
+        if abs(diff) < 1:
+            return
+            
+        # Move at most 2 squares per beat
+        move_amount = min(abs(diff), 2)
+        
+        if diff > 0: # Need to move closer
+            occupied = [] # Should ideally populate this, but keeping it simple for now
+            new_pos = positions.move_toward_constrained(user.combat_position, self.target.combat_position, move_amount, [])
+        else: # Need to move further away
+            new_pos = positions.move_away_from(user.combat_position, self.target.combat_position, move_amount)
+            
+        user.combat_position = new_pos
+        user.combat_position.facing = positions.turn_toward(user.combat_position, self.target.combat_position)
+        
+        # Sync legacy proximity
+        new_dist = positions.distance_from_coords(user.combat_position, self.target.combat_position)
+        user.combat_proximity[self.target] = int(new_dist)
+        if hasattr(self.target, 'combat_proximity'):
+            self.target.combat_proximity[user] = int(new_dist)
+
+    def _beat_legacy(self, user):
+        current_distance = user.combat_proximity[self.target]
+        diff = current_distance - self.target_dist_final
+        
+        if abs(diff) < 1:
+            return
+            
+        move_amount = min(abs(diff), 2)
+        if diff > 0:
+            user.combat_proximity[self.target] -= move_amount
+        else:
+            user.combat_proximity[self.target] += move_amount
+            
+        self.target.combat_proximity[user] = user.combat_proximity[self.target]
 
     def execute(self, user):
-        print("{} adjusts his position in relation to {}...".format(user.name, self.target.name))
-        # modify the target position inputted by the player by some variance
-        variance = (self.target.speed * random.uniform(0.5, 1.5)) - (self.user.speed * random.uniform(0.5, 1.5))
-        if variance < 1:
-            variance = 1
-        variance = int(variance)
-        targetposition = random.randint(self.distance - variance, self.distance + variance)
-        if targetposition < self.mvrange[0]:
-            targetposition = self.mvrange[0]
-        if targetposition > self.mvrange[1]:
-            targetposition = self.mvrange[1]
-        # next, get the distance between the user and the target
-        currentposition = int(user.combat_proximity[self.target])
-        # now, evaluate the distance to move and execute
-        distance = currentposition - targetposition
-        if distance > 0:  # player will move closer to target
-            print("{} got {} ft closer to {}!".format(user.name, distance, self.target.name))
-            user.combat_proximity[self.target] -= distance
-            user.combat_proximity[self.target] = int(user.combat_proximity[self.target])
-            self.target.combat_proximity[user] = user.combat_proximity[self.target]
+        if self.target and self.target.is_alive:
+            cprint("{} finished adjusting position relative to {}.".format(user.name, self.target.name), "green" if user.name == "Jean" else "red")
             user.combat_exp["Basic"] += 5
-        elif distance < 0:  # player will move further away from target
-            print("{} got {} ft further away from {}!".format(user.name, distance, self.target.name))
-            user.combat_proximity[self.target] += distance
-            user.combat_proximity[self.target] = int(user.combat_proximity[self.target])
-            self.target.combat_proximity[user] = user.combat_proximity[self.target]
-            user.combat_exp["Basic"] += 5
-        else:
-            print("{} was unable to get closer to {}!".format(user.name, self.target.name))
 
 
 class ShootBow(Move):  # ranged attack with a bow, player only. Requires having arrows in inventory;
@@ -1683,8 +1905,8 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         mvrange = (6, 50)
         super().__init__(name="Shoot Bow", description=description, xp_gain=1, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=mvrange,
-                         stage_announce=["Jean reaches into his quiver.",
-                                         colored("Jean lets his arrow fly!", "green"),
+                         stage_announce=[f"{player.name} reaches into his quiver.",
+                                         colored(f"{player.name} lets his arrow fly!", "green"),
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
                          target=None, user=player, verbose_targeting=True)
@@ -1697,26 +1919,47 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         self.decay = 0.05
         self.evaluate()
 
+    def get_effective_range_max(self, user):
+        """Return the effective maximum range, accounting for weapon range and decay."""
+        wpn = getattr(user, 'eq_weapon', None)
+        decay = getattr(wpn, 'range_decay', 0) if wpn else 0
+        if wpn and decay:
+            return getattr(wpn, 'range_base', 0) + (100 / decay)
+        return None
+
     def calculate_hit_chance(self, enemy):  # estimate the hit chance for enemy and return as a string (ex "48%")
         hit_chance = 2
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return hit_chance
+            
         range_min = self.mvrange[0]
-        effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        effective_range = self.get_effective_range_max(self.user)
+        if effective_range is None:
+            return hit_chance
         range_max = effective_range
+
+        if enemy not in self.user.combat_proximity:
+            return hit_chance
+
         target_distance = self.user.combat_proximity[enemy]
-        close_range_distraction = 0  # all enemies will be checked;
-        # if any are closer than the weapon's min range, accuracy is halved
+        close_range_distraction = 0  # if any enemy is within minimum range, accuracy is halved
         for e, dist in self.user.combat_proximity.items():
-            if e != self.user:
+            if e != self.user and dist < range_min:
                 close_range_distraction = 1
                 break
         if range_min <= target_distance <= range_max:  # check if target is still in range
             hit_chance = (98 - enemy.finesse) + self.user.finesse
             hit_chance -= close_range_distraction * (hit_chance / 2)
-            if target_distance > self.user.eq_weapon.range_base:
-                accuracy_decay = (target_distance - self.user.eq_weapon.range_base) * self.decay
+            wpn_range_base = getattr(self.user.eq_weapon, 'range_base', 0)
+            if target_distance > wpn_range_base:
+                accuracy_decay = (target_distance - wpn_range_base) * self.decay
                 hit_chance -= accuracy_decay
-            if hit_chance < 2:  # Minimum value for hit chance
+            if hit_chance < 2:    # Minimum hit chance
                 hit_chance = 2
+            if hit_chance > 100:  # Maximum hit chance
+                hit_chance = 100
         for state in self.user.states:
             if state.name == "Hawkeye":
                 hit_chance *= 1.4
@@ -1727,12 +1970,17 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         has_bow = False
         enemy_in_range = False
         has_arrows = False
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         if self.user.eq_weapon.subtype == "Bow":
             has_bow = True
 
         range_min = self.mvrange[0]
-        if hasattr(self.user.eq_weapon, "range_base"):
-            effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
+        effective_range = self.get_effective_range_max(self.user)
+        if effective_range is not None:
             range_max = effective_range
             for enemy, distance in self.user.combat_proximity.items():
                 if range_min <= distance <= range_max:
@@ -1779,7 +2027,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
                     arrow_selection = None
         else:
             self.arrow = arrowtypes[0]
-        print("Jean knocks a {} and takes aim!".format(self.arrow.name.lower()))
+        print("{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower()))
         self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
         self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
         self.base_damage_type = items.get_base_damage_type(
@@ -1800,7 +2048,7 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         cooldown = 3 - int(self.user.speed / 20)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 100 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
         # effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
@@ -1811,7 +2059,9 @@ class ShootBow(Move):  # ranged attack with a bow, player only. Requires having 
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
         # self.mvrange = (6, effective_range)
-        self.base_damage_type = items.get_base_damage_type(self.arrow)
+        # Only set base_damage_type if arrow is available
+        if hasattr(self, 'arrow') and self.arrow:
+            self.base_damage_type = items.get_base_damage_type(self.arrow)
         # self.base_range = self.user.eq_weapon.range_base
         # self.decay = self.user.eq_weapon.range_decay
 
@@ -1914,6 +2164,9 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -1922,6 +2175,21 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         return viability
 
     def evaluate(self):  # adjusts the move's attributes to match the current game state
+        if isinstance(self.user, str):
+            # Log the error but try to recover if possible
+            import traceback
+            print(f"### ERROR: self.user is a string: '{self.user}' in {self.name}.evaluate()")
+            # If we're lucky, the caller might đã set a valid user on us recently, 
+            # or we might have to just return and hope for the best.
+            # However, since we just updated advance() to set self.user, 
+            # this case should now be much rarer.
+            return
+
+        # Double check that self.user is an object with a damage attribute
+        if not hasattr(self.user, 'damage'):
+             print(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
+             return
+
         power = (self.user.damage * random.uniform(0.8, 1.2))
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -1933,7 +2201,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 100 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
         if fatigue_cost <= 10:
             fatigue_cost = 10
         self.power = power
@@ -2005,8 +2273,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
 
     def execute(self, npc):
         print(self.stage_announce[1])
-        recovery_amt = (self.user.maxfatigue * 0.25) * random.uniform(0.8, 1.2)
-        recovery_amt = int(recovery_amt)
+        recovery_amt = int(math.ceil((self.user.maxfatigue * 0.25) * random.uniform(0.8, 1.2)))
         if recovery_amt > self.user.maxfatigue - self.user.fatigue:
             recovery_amt = self.user.maxfatigue - self.user.fatigue
         self.user.fatigue += recovery_amt
@@ -2031,6 +2298,103 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
 
     def execute(self, npc):
         print(self.stage_announce[1])
+
+
+class TelegraphedSurge(NpcAttack):
+    """
+    Base for telegraphed charge attacks that give the player a wind-up warning
+    and deal amplified damage if the hit lands. Subclasses set class-level
+    constants and supply flavour text; the mechanics are shared here.
+
+    Subclass interface:
+        _DAMAGE_MULTIPLIER  float  — final power = NpcAttack power × this
+        _EXTRA_PREP_BEATS   int    — extra beats added to prep phase (dodge window)
+        _prep_text(npc)     str    — yellow telegraph line shown during wind-up
+        _hit_text(npc, target_name)  str  — red line shown on impact
+        _recoil_text(npc)   str    — plain line shown after surge
+    """
+    _DAMAGE_MULTIPLIER = 1.0
+    _EXTRA_PREP_BEATS = 0
+
+    def _prep_text(self, npc):
+        return f"{npc.name} coils in preparation — now is the time to get clear."
+
+    def _hit_text(self, npc, target_name):
+        return f"{npc.name} surges outward and strikes {target_name}!"
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} recoils, spent by the effort."
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
+
+    def evaluate(self):
+        super().evaluate()
+        self.power *= self._DAMAGE_MULTIPLIER
+        self.stage_beat[0] += self._EXTRA_PREP_BEATS
+
+    def refresh_announcements(self, npc):
+        target_name = self.target.name if self.target else "its target"
+        self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
+        self.stage_announce[1] = colored(self._hit_text(npc, target_name), "red")
+        self.stage_announce[2] = self._recoil_text(npc)
+
+
+class SlimeVolley(TelegraphedSurge):
+    """
+    Telegraphed directional surge used by ElderSlime. The extended prep phase gives
+    the player time to Dodge; if unparried, deals significantly amplified damage.
+    """
+    _DAMAGE_MULTIPLIER = 2.2
+    _EXTRA_PREP_BEATS = 4
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Slime Volley"
+
+    def _prep_text(self, npc):
+        return (
+            f"{npc.name} draws back, compressing into a tight, trembling mass — coiling. "
+            f"Now is the time to get clear."
+        )
+
+    def _hit_text(self, npc, target_name):
+        return (
+            f"{npc.name} erupts outward with a sound like a wave breaking on stone! "
+            f"A crashing surge of corrupted slime strikes {target_name}!"
+        )
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} trembles, spent by the effort."
+
+
+class TidalSurge(TelegraphedSurge):
+    """
+    Boss-tier telegraphed surge used by KingSlime. Same two-turn structure as
+    SlimeVolley but with dramatically higher damage multiplier and longer prep.
+    """
+    _DAMAGE_MULTIPLIER = 2.5
+    _EXTRA_PREP_BEATS = 5
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Tidal Surge"
+
+    def _prep_text(self, npc):
+        return (
+            f"{npc.name}'s entire mass draws inward — the pool around it recedes with a "
+            f"terrifying suction. The arena floor shudders. It is about to surge."
+        )
+
+    def _hit_text(self, npc, target_name):
+        return (
+            f"{npc.name} erupts — a solid wall of corrupted mass crashes across the stone "
+            f"and slams into {target_name}!"
+        )
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} settles back, the surge spent."
 
 
 class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
@@ -2060,6 +2424,11 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2080,7 +2449,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         if cooldown < 0:
             cooldown = 0
         cooldown += 3
-        fatigue_cost = 100 - (3 * self.user.endurance)
+        fatigue_cost = int(math.ceil(100 - (3 * self.user.endurance)))
         if fatigue_cost <= 25:
             fatigue_cost = 25
         self.power = power
@@ -2156,6 +2525,8 @@ class VenomClaw(Move):  # Poisonous attack
         self.evaluate()
 
     def viable(self):
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
@@ -2178,7 +2549,7 @@ class VenomClaw(Move):  # Poisonous attack
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 120 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
         if fatigue_cost <= 20:
             fatigue_cost = 20
         self.power = power
@@ -2260,6 +2631,11 @@ class SpiderBite(Move):  # Poisonous attack
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2279,7 +2655,7 @@ class SpiderBite(Move):  # Poisonous attack
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 120 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
         if fatigue_cost <= 20:
             fatigue_cost = 20
         self.power = power
@@ -2332,6 +2708,9 @@ class SpiderBite(Move):  # Poisonous attack
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
+        # Prevent negative fatigue
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
@@ -2360,6 +2739,11 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
+        
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return False
+            
         for enemy, distance in self.user.combat_proximity.items():
             if range_min < distance < range_max:
                 viability = True
@@ -2379,7 +2763,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = 120 - (5 * self.user.endurance)
+        fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
         if fatigue_cost <= 20:
             fatigue_cost = 20
         self.power = power
@@ -2463,7 +2847,7 @@ class Turn(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Maneuver")
         self.target_direction = None  # Will be set when move is selected
         self.evaluate()
 
@@ -2550,12 +2934,12 @@ class Turn(Move):
         # If a direction was selected
         if selected_option['direction'] is not None:
             self.target_direction = selected_option['direction']
-            cprint(f"You chose to face {self.target_direction.name}.", "green")
+            cprint(f"{self.user.name} chose to face {self.target_direction.name}.", "green")
         # If a combatant was selected, calculate direction toward them
         elif selected_option['target'] is not None:
             target = selected_option['target']
             self.target_direction = self._calculate_direction_to_target(target)
-            cprint(f"You chose to face toward {target.name}.", "green")
+            cprint(f"{self.user.name} chose to face toward {target.name}.", "green")
         
     def _calculate_direction_to_target(self, target):
         """Calculate the direction from user to target."""
@@ -2640,7 +3024,7 @@ class WhirlAttack(Move):
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
         self.affected_enemies = []  # Track enemies hit
         self.evaluate()
 
@@ -2926,7 +3310,7 @@ class FeintAndPivot(Move):
         user.fatigue -= self.fatigue_cost
 
 
-class KnockbackStunSpin(Move):
+class VertigoSpin(Move):
     """Attack that rotates target's facing and applies Disoriented status.
     
     A powerful spinning attack that not only damages the target but also
@@ -2941,17 +3325,17 @@ class KnockbackStunSpin(Move):
         cooldown = 4
         fatigue_cost = 80
         target = user  # Will be set when move is selected
-        super().__init__(name="Knockback/Stun Spin", description=description, xp_gain=25, current_stage=0,
+        super().__init__(name="Vertigo Spin", description=description, xp_gain=25, current_stage=0,
                          stage_beat=[prep, execute, recoil, cooldown], targeted=True, mvrange=(1, 20),
                          stage_announce=["",
                                          "",
                                          "",
                                          ""], fatigue_cost=fatigue_cost, beats_left=prep,
-                         target=target, user=user)
+                         target=target, user=user, category="Offensive")
         self.evaluate()
 
     def viable(self):
-        """Knockback/Stun Spin is viable if target is nearby."""
+        """Vertigo Spin is viable if target is nearby."""
         if not hasattr(self.user, 'combat_position') or self.user.combat_position is None:
             return False
         
@@ -3067,6 +3451,10 @@ class QuickSwap(Move):
         """Find all allies within swapping range (1-4 squares)."""
         nearby = []
         
+        # Defensive check: ensure self.user is actually an NPC object with combat_proximity
+        if not hasattr(self.user, 'combat_proximity'):
+            return nearby
+            
         # Check coordinate-based system first
         if hasattr(self.user, 'combat_position') and self.user.combat_position is not None:
             for ally in self.user.combat_list_allies:

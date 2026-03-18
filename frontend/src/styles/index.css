@@ -1,0 +1,551 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Noto Color Emoji';
+  src: url('/fonts/NotoColorEmoji.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Courier New', monospace, 'Noto Color Emoji';
+  background-color: #0a0a0a;
+  color: #e0e0e0;
+  line-height: 1.5;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* Utility classes for the retro terminal aesthetic */
+.retro-border {
+  border-width: 2px;
+}
+
+.retro-glow {
+  box-shadow: 0 10px 25px -5px rgba(0, 255, 136, 0.3);
+}
+
+.text-lime {
+  color: #00ff88;
+}
+
+.text-cyan {
+  color: #00ccff;
+}
+
+.text-orange {
+  color: #ff6600;
+}
+
+.bg-dark-panel {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.bg-lime-glow {
+  background: linear-gradient(90deg, #00cc66 0%, #00ff88 100%);
+}
+
+.bg-orange-glow {
+  background: linear-gradient(90deg, #ff6600 0%, #ff8844 100%);
+}
+
+/* Animations */
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+  }
+
+  50% {
+    text-shadow: 0 0 20px rgba(0, 255, 136, 1);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes bounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse-opacity {
+
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+/* VictoryDialog minimized bar entrance */
+@keyframes slideUp {
+  from {
+    transform: translate(-50%, 100%);
+  }
+
+  to {
+    transform: translate(-50%, 0);
+  }
+}
+
+/* VictoryDialog pending-points pulse */
+@keyframes victory-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* HP Bar styling */
+.hp-bar {
+  width: 100%;
+  height: 6px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hp-fill-full {
+  height: 100%;
+  background: linear-gradient(90deg, #44ff44, #88ff88);
+}
+
+.hp-fill-partial {
+  height: 100%;
+  background: linear-gradient(90deg, #ffaa44, #ffcc44);
+}
+
+.hp-fill-critical {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4444, #ff0000);
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 2px solid #00ff88;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 448px;
+  width: 100%;
+  box-shadow: 0 10px 25px -5px rgba(0, 255, 136, 0.3);
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: 1px solid;
+  transition: all 200ms;
+}
+
+.btn-primary {
+  background: linear-gradient(90deg, #00cc66 0%, #00ff88 100%);
+  color: #000;
+  font-weight: bold;
+  border: none;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.4);
+}
+
+.btn-secondary {
+  border: 2px solid #00ff88;
+  color: #00ff88;
+  background-color: transparent;
+}
+
+.btn-secondary:hover {
+  background-color: #00ff88;
+  color: #000;
+}
+
+.btn-danger {
+  border: 2px solid #ff6600;
+  color: #ff6600;
+  background-color: transparent;
+}
+
+.btn-danger:hover {
+  background-color: #ff6600;
+  color: #fff;
+}
+
+/* Input fields */
+.input-field {
+  background-color: #1a1a2e;
+  border: 2px solid #00ff88;
+  color: #00ff88;
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #00ffaa;
+  box-shadow: inset 0 0 4px rgba(0, 255, 136, 0.5);
+}
+
+/* Status indicators */
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.status-active {
+  background-color: #00ff88;
+  color: #000;
+}
+
+.status-inactive {
+  background-color: #555;
+  color: #ccc;
+}
+
+.status-warning {
+  background-color: #ffaa00;
+  color: #000;
+}
+
+.status-danger {
+  background-color: #ff4444;
+  color: #fff;
+}
+
+/* Combat Dialog Transitions - Smooth animations for move/target selection flow */
+@keyframes dialog-pop-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+
+  70% {
+    transform: translate(-50%, -50%) scale(1.02);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-pop-out {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Combat panel entrance animation */
+.combat-panel-enter {
+  animation: dialog-pop-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Combat panel exit animation */
+.combat-panel-exit {
+  animation: dialog-pop-out 0.15s ease-out forwards;
+  pointer-events: none;
+}
+
+/* Modal overlay fade */
+.modal-fade-enter {
+  animation: overlay-fade-in 0.2s ease-out forwards;
+}
+
+/* Target card entrance animation */
+.target-card-enter {
+  animation: slide-up-fade 0.3s ease-out forwards;
+}
+
+/* Staggered animation delays for lists */
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+
+.stagger-6 {
+  animation-delay: 0.3s;
+}
+
+/* Smooth button press feedback */
+.combat-button-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.combat-button-press:active {
+  transform: scale(0.98);
+}
+
+/* Loading shimmer effect for transitioning states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.transitioning-shimmer {
+  background: linear-gradient(90deg,
+      rgba(255, 170, 0, 0.1) 25%,
+      rgba(255, 170, 0, 0.2) 50%,
+      rgba(255, 170, 0, 0.1) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Modern Animation Utilities */
+.animate-in {
+  animation-duration: 300ms;
+  animation-fill-mode: forwards;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fade-in {
+  animation-name: overlay-fade-in;
+}
+
+.slide-in-from-right-4 {
+  animation-name: slide-in-right-4;
+}
+
+.slide-in-from-bottom-2 {
+  animation-name: slide-in-bottom-2;
+}
+
+.zoom-in-95 {
+  transform: scale(0.95);
+  animation-name: zoom-in;
+}
+
+@keyframes slide-in-right-4 {
+  from {
+    transform: translateX(1rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-bottom-2 {
+  from {
+    transform: translateY(0.5rem);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes zoom-in {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.duration-200 {
+  animation-duration: 200ms;
+}
+
+.duration-300 {
+  animation-duration: 300ms;
+}
+
+.duration-500 {
+  animation-duration: 500ms;
+}
+
+/* Earthbound-style damage effects */
+@keyframes screen-shake {
+  0%   { transform: translateX(0); }
+  18%  { transform: translateX(-10px); }
+  36%  { transform: translateX(10px); }
+  54%  { transform: translateX(-7px); }
+  72%  { transform: translateX(5px); }
+  90%  { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes damage-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+
+body.damage-shake {
+  animation: screen-shake 0.42s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+body.damage-flash-active::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: #cc0000;
+  z-index: 99998;
+  pointer-events: none;
+  animation: damage-flash 0.42s ease-out forwards;
+}

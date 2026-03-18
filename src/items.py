@@ -1,6 +1,7 @@
 from __future__ import annotations
 import random
 import time
+import math
 from neotermcolor import colored, cprint
 import functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
@@ -92,7 +93,8 @@ class Item:
 
     def __init__(self, name: str, description: str, value: Union[int, float], maintype: str, subtype: str,
                  discovery_message: str, hidden: bool = False, hide_factor: Union[int, float] = 0,
-                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0,
+                 aliases: Optional[List[str]] = None) -> None:
         self.name = name
         self.description = description
         self.value = value
@@ -103,6 +105,8 @@ class Item:
         self.merchandise = merchandise
         self.discovery_message = discovery_message
         self.announce = "There's a {} here.".format(self.name)
+        self.aliases = aliases or []
+        self.action_aliases = []
         self.interactions = ["drop"]  # things to do with the item from the inventory menu
         self.skills = skills  # skills that can be learned from using the item (acquiring exp)
         self.owner = None  # used to tie an item to an owner for special interactions
@@ -124,7 +128,7 @@ class Item:
     def on_equip(self, player: 'Player') -> None:
         # Prevent equipping merchandise items until purchased
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             # Ensure the item is not marked as equipped on the player
             try:
                 if hasattr(self, 'isequipped'):
@@ -155,11 +159,15 @@ class Item:
     def on_unequip(self, player: 'Player') -> None:
         pass
 
-    def drop(self, player: 'Player') -> None:
+    def drop(self, player: 'Player', quantity: Optional[int] = None) -> None:
         if hasattr(self, "count"):
             if getattr(self, "count") > 1:
                 while True:
-                    drop_count = input("How many would you like to drop? (Carrying {}) ".format(getattr(self, "count")))
+                    if quantity is not None:
+                        drop_count = str(quantity)
+                    else:
+                        drop_count = input("How many would you like to drop? (Carrying {}) ".format(getattr(self, "count")))
+                    
                     if functions.is_input_integer(drop_count):
                         if 0 <= int(drop_count) <= getattr(self, "count"):
                             if int(drop_count) > 0:
@@ -168,6 +176,8 @@ class Item:
                                     self.count -= 1  # type: ignore[attr-defined]
                                     itemtype = self.__class__.__name__
                                     player.current_room.spawn_item(item_type=itemtype)
+                                if hasattr(self, "stack_grammar"):
+                                    self.stack_grammar()
                                 player.current_room.stack_duplicate_items()
                             else:
                                 print("Jean changed his mind.")
@@ -176,6 +186,10 @@ class Item:
                             cprint("Invalid amount!", "red")
                     else:
                         cprint("Invalid amount!", "red")
+                    
+                    # If quantity was provided but invalid, don't loop (prevent infinite loop in API)
+                    if quantity is not None:
+                        break
             else:
                 cprint("Jean dropped {}.".format(self.name), "cyan")
                 player.current_room.items_here.append(self)
@@ -195,8 +209,91 @@ class Item:
         functions.refresh_stat_bonuses(player)
         player.refresh_protection_rating()
 
+    def take(self, player: 'Player', quantity: Optional[int] = None) -> None:
+        """Take the item from the ground."""
+        if hasattr(self, "count") and getattr(self, "count") > 1:
+            while True:
+                if quantity is not None:
+                    take_count_str = str(quantity)
+                else:
+                    take_count_str = input("How many would you like to take? (Available {}) ".format(getattr(self, "count")))
+                
+                if functions.is_input_integer(take_count_str):
+                    take_count = int(take_count_str)
+                    if 0 <= take_count <= getattr(self, "count"):
+                        if take_count > 0:
+                            # Check weight limit
+                            capacity = getattr(player, "weight_tolerance", getattr(player, "carrying_capacity", None))
+                            if capacity is not None and hasattr(player, "weight_current"):
+                                if player.weight_current + (getattr(self, "weight", 0) * take_count) > capacity:
+                                    cprint("It's too heavy to carry all that!", "red")
+                                    if quantity is not None: break
+                                    continue
+
+                            if take_count == getattr(self, "count"):
+                                # Take all
+                                player.inventory.append(self)
+                                if self in player.current_room.items_here:
+                                    player.current_room.items_here.remove(self)
+                                cprint(f"{player.name} picks up {take_count} x {self.name}.", "green")
+                            else:
+                                # Take some
+                                self.count -= take_count
+                                if hasattr(self, "stack_grammar"):
+                                    self.stack_grammar()
+                                # Create a new item for inventory
+                                import importlib
+                                items_mod = importlib.import_module('items')
+                                item_cls = getattr(items_mod, self.__class__.__name__)
+                                new_item = item_cls()
+                                if hasattr(new_item, 'count'):
+                                    new_item.count = take_count
+                                # Update the new item's description based on count
+                                if hasattr(new_item, 'stack_grammar'):
+                                    new_item.stack_grammar()
+                                player.inventory.append(new_item)
+                                cprint(f"{player.name} picks up {take_count} x {self.name}.", "green")
+                            
+                            functions.stack_inv_items(player)
+                            if hasattr(player.current_room, 'stack_duplicate_items'):
+                                player.current_room.stack_duplicate_items()
+                        else:
+                            print("Jean changed his mind.")
+                        break
+                    else:
+                        cprint("Invalid amount!", "red")
+                else:
+                    cprint("Invalid amount!", "red")
+                
+                if quantity is not None:
+                    break
+            return
+
+        # Original logic for non-stacked or single items
+        capacity = getattr(player, "weight_tolerance", getattr(player, "carrying_capacity", None))
+        if capacity is not None and hasattr(player, "weight_current"):
+            if player.weight_current + getattr(self, "weight", 0) > capacity:
+                cprint("It's too heavy to carry!", "red")
+                return
+
+        # Add to inventory
+        player.inventory.append(self)
+        
+        # Remove from room
+        if self in player.current_room.items_here:
+            player.current_room.items_here.remove(self)
+            
+        cprint(f"{player.name} picks up the {self.name}.", "green")
+        
+        # Stack items if possible (in inventory)
+        if hasattr(player, 'stack_duplicate_items'):
+            player.stack_duplicate_items()
+        # Also stack in the room if the method exists
+        if hasattr(player.current_room, 'stack_duplicate_items'):
+            player.current_room.stack_duplicate_items()
+
     def equip(self, player: 'Player') -> None:
-        player.equip_item(phrase="{}".format(self.name))
+        player.equip_item(item_object=self)
 
     def unequip(self, player: 'Player') -> None:
         if hasattr(self, "isequipped"):
@@ -219,7 +316,8 @@ class Gold(Item):
         self.maintype = "Gold"
         super().__init__(name="Gold", description="A small pouch containing {} gold pieces.".format(str(self.amt)),
                          value=self.amt, maintype="Currency", subtype="Gold",
-                         discovery_message="a small pouch of gold.")
+                         discovery_message="a small pouch of gold.",
+                         aliases=["pouch of gold"])
         self.announce = "There's a small pouch of gold on the ground."
         self.interactions = []
         self.count = self.amt  # allow gold to stack in inventory
@@ -228,7 +326,9 @@ class Gold(Item):
         pass  # cannot drop gold
 
     def stack_grammar(self):
-        pass  # gold does not need special grammar handling
+        self.amt = self.count
+        self.description = "A small pouch containing {} gold pieces.".format(str(self.amt))
+        self.value = self.amt
 
 
 class Weapon(Item):
@@ -248,7 +348,8 @@ class Weapon(Item):
                  isequipped: bool, str_req: int, fin_req: int, str_mod: Union[int, float], fin_mod: Union[int, float],
                  weight: Union[int, float], maintype: str, subtype: str, wpnrange: Tuple[int, int] = (0, 5),
                  discovery_message: str = 'a kind of weapon.', twohand: bool = False,
-                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 skills: Optional[Dict[Any, int]] = None, merchandise: bool = False, enchantment_level: int = 0,
+                 aliases: Optional[List[str]] = None) -> None:
         self.damage = damage
         self.str_req = str_req
         self.fin_req = fin_req
@@ -261,7 +362,7 @@ class Weapon(Item):
         self.wpnrange = wpnrange  # tuple containing the min and max range for the weapon
         super().__init__(name, description, value, maintype, subtype,
                          discovery_message, skills=skills, merchandise=merchandise,
-                         enchantment_level=enchantment_level)
+                         enchantment_level=enchantment_level, aliases=aliases)
         self.announce = "There's a {} here.".format(self.name)
         self.twohand = twohand
         self.gives_exp = True
@@ -292,7 +393,7 @@ class Armor(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a piece of armor.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -301,7 +402,7 @@ class Armor(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -324,7 +425,7 @@ class Boots(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a pair of footgear.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -333,7 +434,7 @@ class Boots(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -433,7 +534,7 @@ class Helm(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a kind of head covering.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -442,7 +543,7 @@ class Helm(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -465,7 +566,7 @@ class Gloves(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_req: int, str_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a pair of gloves.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_req = str_req
         self.str_mod = str_mod
@@ -474,7 +575,7 @@ class Gloves(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -575,7 +676,7 @@ class Accessory(Item):
     def __init__(self, name: str, description: str, value: Union[int, float], protection: Union[int, float],
                  isequipped: bool, str_mod: Union[int, float], fin_mod: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a small trinket.',
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.protection = protection
         self.str_mod = str_mod
         self.fin_mod = fin_mod
@@ -584,7 +685,7 @@ class Accessory(Item):
         self.maintype = maintype
         self.subtype = subtype
         super().__init__(name, description, value, maintype, subtype, discovery_message, merchandise=merchandise,
-                         enchantment_level=enchantment_level)
+                         enchantment_level=enchantment_level, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         if self.isequipped:
@@ -603,15 +704,15 @@ class Consumable(Item):
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a useful item.', count: int = 1,
-                 merchandise: bool = False, enchantment_level: int = 0) -> None:
+                 merchandise: bool = False, enchantment_level: int = 0, aliases: Optional[List[str]] = None) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
         self.count = count
-        self.interactions = ["use", "drop"]
+        self.interactions = ["take", "use", "drop"]
         self.stack_key = name
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level)
+                         discovery_message, merchandise=merchandise, enchantment_level=enchantment_level, aliases=aliases)
 
     def stack_grammar(self) -> None:
         """Checks the stack count for the item and changes the verbiage accordingly"""
@@ -634,14 +735,14 @@ class Special(Item):
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a strange object.',
-                 merchandise: bool = False) -> None:
+                 merchandise: bool = False, aliases: Optional[List[str]] = None) -> None:
         self.weight = weight
         self.maintype = maintype
         self.subtype = subtype
         self.count = 1
         self.interactions = ["drop"]
         super().__init__(name, description, value, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, aliases=aliases)
 
     def __str__(self) -> str:  # pragma: no cover - display logic
         return "{}\n=====\n{}\nValue: {}\nWeight: {}".format(
@@ -657,9 +758,9 @@ class Commodity(Special):
 
     def __init__(self, name: str, description: str, value: Union[int, float], weight: Union[int, float],
                  maintype: str, subtype: str, discovery_message: str = 'a commodity item.',
-                 count: int = 1, merchandise: bool = False) -> None:
+                 count: int = 1, merchandise: bool = False, aliases: Optional[List[str]] = None) -> None:
         super().__init__(name, description, value, weight, maintype, subtype,
-                         discovery_message, merchandise=merchandise)
+                         discovery_message, merchandise=merchandise, aliases=aliases)
         self.count = count
         self.stack_key = name
         self.interactions = ["drop"]
@@ -680,10 +781,11 @@ class Commodity(Special):
 class Key(Special):
     lock: Optional[Any]
 
-    def __init__(self, lock: Optional[Any] = None, merchandise: bool = False) -> None:
+    def __init__(self, lock: Optional[Any] = None, lock_nickname: Optional[str] = None, merchandise: bool = False) -> None:
         """
         Keys just sort of sit in inventory. They are "used" when the player uses 'unlock' on their paired lock
         :param lock: Any object that has an 'unlock' method
+        :param lock_nickname: Optional nickname to match against a container's nickname (for JSON-based key-lock pairing)
         """
 
         super().__init__(name="Key",
@@ -691,6 +793,7 @@ class Key(Special):
                          value=0, weight=0, maintype="Special", subtype="Key", merchandise=merchandise)
 
         self.lock = lock  # Any object that has an 'unlock' method
+        self.lock_nickname = lock_nickname  # Optional nickname for matching keys to containers
         self.interactions = ["drop"]
 
 
@@ -1286,7 +1389,8 @@ class Restorative(Consumable):
                          description="A strange pink fluid of questionable chemistry.\n"
                                      "Drinking it seems to cause your wounds to immediately mend "
                                      "themselves.",
-                         value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count, merchandise=merchandise)
+                         value=100, weight=0.25, maintype="Consumable", subtype="Potion", count=count, merchandise=merchandise,
+                         aliases=["small glass vial", "vial", "box of small glass vials", "vials"])
         self.power = 60
         self.count = count
         self.interactions = ["use", "drink", "drop"]
@@ -1312,7 +1416,7 @@ class Restorative(Consumable):
     def use(self, player: 'Player') -> None:
         # Prevent using merchandise items until purchased
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
         if player.hp < player.maxhp:
             print(
@@ -1324,14 +1428,17 @@ class Restorative(Consumable):
             if amount > missing_hp:
                 amount = missing_hp
             player.hp += amount
-            time.sleep(2)
             cprint("Jean recovered {} HP!".format(amount), "green")
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            print("Jean is already at full health. He places the Restorative back into his bag.")
+            # Check if item is in inventory or on the ground
+            if self in player.inventory:
+                print("Jean is already at full health. He places the Restorative back into his bag.")
+            else:
+                print("Jean is already at full health. He sets the Restorative back down.")
 
 
 class Draught(Consumable):
@@ -1365,24 +1472,27 @@ class Draught(Consumable):
 
     def use(self, player: 'Player') -> None:
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
-        if player.hp < player.maxhp:
+        if player.fatigue < player.maxfatigue:
             print("Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                   "to have lifted off of his shoulders for the time being.".format(self.name))
-            amount: int = int((self.power * random.uniform(0.8, 1.2)))
+            amount: int = int(math.ceil(self.power * random.uniform(0.8, 1.2)))
             missing_fatigue: int = player.maxfatigue - player.fatigue
             if amount > missing_fatigue:
                 amount = missing_fatigue
             player.fatigue += amount
-            time.sleep(2)
             cprint("Jean recovered {} fatigue!".format(amount), "green")
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            print("Jean is already fully rested. He places the {} back into his bag.".format(self.name))
+            # Check if item is in inventory or on the ground
+            if self in player.inventory:
+                print("Jean is already fully rested. He places the {} back into his bag.".format(self.name))
+            else:
+                print("Jean is already fully rested. He sets the {} back down.".format(self.name))
 
 
 class Antidote(Consumable):
@@ -1419,7 +1529,7 @@ class Antidote(Consumable):
 
     def use(self, player: 'Player') -> None:
         if getattr(self, 'merchandise', False):
-            cprint("You must purchase {} before using or equipping it.".format(self.name), "red")
+            cprint("{} must purchase {} before using or equipping it.".format(player.name, self.name), "red")
             return
         poisons: List[Any] = []
         for state in player.states:
@@ -1437,7 +1547,6 @@ class Antidote(Consumable):
                 if amount > missing_hp:
                     amount = missing_hp
                 player.hp += amount
-                time.sleep(2)
                 cprint("Jean recovered {} HP!".format(amount), "green")
             for poison in poisons:
                 poison.on_removal(poison.target)
@@ -1448,7 +1557,11 @@ class Antidote(Consumable):
                 player.inventory.remove(self)
             return
         else:
-            print("Jean is not beset by poison. He places the Antidote back into his bag.")
+            # Check if item is in inventory or on the ground
+            if self in player.inventory:
+                print("Jean is not beset by poison. He places the Antidote back into his bag.")
+            else:
+                print("Jean is not beset by poison. He sets the Antidote back down.")
 
 # ---------------------------------------------------------------------------
 # Arrows
@@ -1762,3 +1875,126 @@ class Book(Special):
             if not getattr(self.event, 'repeat', False):
                 self.event = None
             functions.await_input()
+
+
+# ---------------------------------------------------------------------------
+# Grondelith Mineral Pools — puzzle ingredients, quest items, and rewards
+# ---------------------------------------------------------------------------
+
+class AzuriteGem(Special):
+    """Puzzle ingredient #1. Found in the Sacred Atrium of the Grondelith Mineral Pools."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Azure Crystal",
+            description=(
+                "A smooth crystal threaded with vivid blue veins, still faintly luminous "
+                "with mineral essence. It feels cool and slightly damp, as though newly lifted "
+                "from the pools."
+            ),
+            value=0,
+            weight=0.1,
+            maintype="Special",
+            subtype="Ingredient",
+            discovery_message="a blue-veined crystal!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "There's an Azure Crystal here."
+
+
+class AmberStone(Special):
+    """Puzzle ingredient #2. Found in the Sacred Atrium of the Grondelith Mineral Pools."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Amber Stone",
+            description=(
+                "A deep amber mineral fragment, warm to the touch — warm as freshly struck flint. "
+                "Its colour shifts slightly depending on the angle of the light."
+            ),
+            value=0,
+            weight=0.1,
+            maintype="Special",
+            subtype="Ingredient",
+            discovery_message="a warm amber stone!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "There's an Amber Stone here."
+
+
+class PaleGreyFragment(Special):
+    """Puzzle ingredient #3. Found deep in the Corrupted Channels."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Pale Grey Fragment",
+            description=(
+                "A smooth, pale-grey mineral shard, surprisingly light for its size. "
+                "Its surface is uniformly matte — it absorbs light rather than reflecting it."
+            ),
+            value=0,
+            weight=0.1,
+            maintype="Special",
+            subtype="Ingredient",
+            discovery_message="a pale grey mineral fragment!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "There's a Pale Grey Fragment here."
+
+
+class MineralFragment(Special):
+    """
+    Quest item. Retrieved from the King Slime's body. Triggers a memory flash
+    in the AfterDefeatingKingSlime story event.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Rare Mineral Fragment",
+            description=(
+                "An impossibly pristine mineral fragment. Each edge is razor-sharp — "
+                "unnaturally so. It was inside the King Slime; how long, it's impossible to say. "
+                "Something about it feels significant."
+            ),
+            value=0,
+            weight=0.2,
+            maintype="Special",
+            subtype="Quest",
+            discovery_message="a pristine mineral fragment, each edge razor-sharp!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "A pristine mineral fragment catches the light here."
+
+
+class EnchantedGolemitePauldron(Armor):
+    """
+    Reward for solving the Luminous Grotto puzzle. Carved Golemite stone inlaid
+    with luminous mineral veins. High protection; lighter than it looks.
+    """
+
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
+        super().__init__(
+            name="Golemite Blessed Pauldron",
+            description=(
+                "A shoulder-guard carved from Golemite stone and inlaid with luminous mineral "
+                "veins that pulse faintly — blue, amber, then grey, in slow rotation. "
+                "It is lighter than it looks. The veins absorb and dissipate slime-type impacts "
+                "with unusual efficiency."
+            ),
+            value=600,
+            protection=20,
+            isequipped=False,
+            str_req=8,
+            str_mod=0.6,
+            weight=3.0,
+            maintype="Armor",
+            subtype="Pauldron",
+            discovery_message="a glowing stone pauldron!",
+            merchandise=merchandise,
+            enchantment_level=enchantment_level,
+        )
+        self.add_resistance = {"crushing": 0.25}  # mineral veins dissipate crushing/slime impacts

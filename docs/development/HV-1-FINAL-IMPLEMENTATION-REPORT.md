@@ -85,7 +85,7 @@ HV-1 implements a comprehensive coordinate-based combat positioning system for H
   - Repositions player tactically based on relative position
   - High accuracy, mid-range damage
   
-- **KnockbackStunSpin** (Attack + Disoriented effect)
+- **VertigoSpin** (Attack + Disoriented effect)
   - Fatigue: 80 | Cooldown: 7 beats | XP: 50
   - Applies "Disoriented" status (8-15 beats duration)
   - Disoriented: -30% Finesse, -25% Protection
@@ -150,7 +150,7 @@ HV-1 implements a comprehensive coordinate-based combat positioning system for H
 - **Stackable:** No
 
 ### Disoriented
-- **Applied by:** KnockbackStunSpin
+- **Applied by:** VertigoSpin
 - **Duration:** 8-15 beats (random)
 - **Effects:**
   - -30% Finesse stat
@@ -266,7 +266,7 @@ player.use_move("WhirlAttack")
 player.use_move("FeintAndPivot", target=enemy)
 
 # Knockback stun spin
-player.use_move("KnockbackStunSpin", target=enemy)
+player.use_move("VertigoSpin", target=enemy)
 ```
 
 ---
@@ -496,3 +496,4 @@ HV-1: Coordinate-Based Combat Positioning is **feature complete and production r
 ---
 
 *For questions or issues, refer to the specific phase reports or code documentation.*
+

@@ -63,39 +63,54 @@ class MemoryFlash(Event):
         # Override this in subclasses for specific trigger conditions
         self.pass_conditions_to_process()
     
-    def process(self):
+    def process(self, user_input=None):
         """Display the memory flash sequence."""
-        # Pause before the memory begins
-        time.sleep(1)
-        print()
-        cprint("For a moment, there is only silence...", "white")
-        time.sleep(1.5)
-        print()
-        
-        # Top border with animation
-        memory_border("top")
-        
-        # Display each memory line with individual timing
-        for line, pause in self.memory_lines:
-            cprint(line, "magenta")
-            time.sleep(pause)
-        
-        # Bottom border
-        memory_border("bottom")
-        print()
-        
-        # Aftermath - Jean's reaction to the memory
-        if self.aftermath_text:
+        if user_input is None:
+            # First pass: display the memory and aftermath, then pause for input
+            # Pause before the memory begins
             time.sleep(1)
-            for line in self.aftermath_text:
-                cprint(line, "cyan")
-                time.sleep(2)
-        
-        # Wait for player acknowledgment
-        functions.await_input()
+            print()
+            cprint("For a moment, there is only silence...", "white")
+            time.sleep(0.5) # Reduced for API responsiveness
+            print()
+            
+            # Top border with animation
+            memory_border("top")
+            
+            # Display each memory line with individual timing
+            for line, pause in self.memory_lines:
+                cprint(line, "magenta")
+                # Removed long sleeps to prevent API timeouts, frontend handles pacing
+            
+            # Bottom border
+            memory_border("bottom")
+            print()
+            
+            # Aftermath - Jean's reaction to the memory
+            if self.aftermath_text:
+                for line in self.aftermath_text:
+                    cprint(line, "cyan")
+            
+            # Signal requirement for input
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = "The memory fades..."
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            return
+
+        # Second pass: user has clicked continue
         print()
         cprint("═" * 79, "cyan")
         print()
+        self.needs_input = False
+        self.completed = True
+        
+        # Remove from tile/combat events if not repeating
+        if not self.repeat:
+            if hasattr(self, "tile") and self.tile and self in getattr(self.tile, "events_here", []):
+                self.tile.events_here.remove(self)
+            elif hasattr(self, "player") and self.player and self in getattr(self.player, "combat_events", []):
+                self.player.combat_events.remove(self)
 
 
 class Effect(Event):
@@ -246,22 +261,14 @@ class Shrine(Event):  # Generic class for Shrine-based events
 class StMichael(Shrine):
     def __init__(self, player, tile, params=None, repeat=False, name='Shrine of St Michael the Archangel'):
         super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        # Declare input requirements for API mode
+        self.input_type = "choice"
+        self.input_prompt = "Selection:"
+        # Generate weapon choices at init time
+        self._generate_weapon_choices()
 
-    def process(self):
-        print("This, particularly, is a shrine to Saint Michael the Archangel.")
-        print("There is a small statue depicting St Michael spearing a vicious dragon.")
-        print("""An inscription on the shrine reads,
-
-        Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
-        Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
-        qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
-
-        """)
-        functions.await_input()
-        print("Suddenly, Jean has the feeling of intense heat all around him. "
-              "He hears a voice echoing inside his head.")
-        time.sleep(2)
-        cprint("""CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""", "red")
+    def _generate_weapon_choices(self):
+        """Generate 3 random weapon choices for the event."""
         all_choices = [
             ("A crafty dagger.", "Dagger"),
             ("A trusty sword.", "Shortsword"),
@@ -276,22 +283,82 @@ class StMichael(Shrine):
             ("A convenient crossbow.", "Crossbow"),
             ("A sturdy pole.", "Pole"),
         ]
-        available_choices = []
+        self.available_choices = []
         for i in range(0, 3):
             choice = all_choices[random.randint(0, len(all_choices) - 1)]
-            while choice in available_choices:
+            while choice in self.available_choices:
                 choice = all_choices[random.randint(0, len(all_choices) - 1)]
-            available_choices.append(choice)
+            self.available_choices.append(choice)
+        
+        # Create input_options for API serialization
+        self.input_options = [
+            {"value": str(i), "label": choice[0]} 
+            for i, choice in enumerate(self.available_choices)
+        ]
 
-        for i, choice in enumerate(available_choices):
+    def get_input_prompt(self):
+        """Return the weapon selection prompt."""
+        return "TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST."
+
+    def get_input_options(self):
+        """Return the available weapon choices."""
+        return self.input_options
+
+    def process(self, user_input=None):
+        print("This, particularly, is a shrine to Saint Michael the Archangel.")
+        print("There is a small statue depicting St Michael spearing a vicious dragon.")
+        print("""An inscription on the shrine reads,
+
+        Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
+        Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
+        qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
+
+        """)
+        print("Suddenly, Jean has the feeling of intense heat all around him. "
+              "He hears a voice echoing inside his head.")
+        time.sleep(2)
+        cprint("""CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""", "red")
+        
+        for i, choice in enumerate(self.available_choices):
             print("{}: {}".format(i, choice[0]))
-        selection = input(colored("Selection: ", "cyan"))
+
+        if user_input is None:
+            self.needs_input = True
+            return
+
+        selection = user_input
+        if selection is None:
+            # Fallback for terminal mode, but skip await_input if in API mode (user_input provided)
+            # Actually, just remove the blocking await_input as well
+            # functions.await_input()
+            try:
+                selection = input(colored("Selection: ", "cyan"))
+            except (EOFError, OSError, ValueError):
+                # Default to first option if no input available
+                selection = "0"
+        
         if functions.is_input_integer(selection):
             selection = int(selection)
-        drop = self.tile.spawn_item(available_choices[selection][1], amt=1, hidden=False, hfactor=0)
+        else:
+            selection = 0  # Default to first option if invalid
+        
+        # Ensure selection is within valid range
+        if selection < 0 or selection >= len(self.available_choices):
+            selection = 0
+        
+        drop = self.tile.spawn_item(self.available_choices[selection][1], amt=1, hidden=False, hfactor=0)
         functions.add_random_enchantments(drop, 1)
         cprint("There's a brief flash of light (or was it imagined?) \nSuddenly, at the foot of the shrine, "
                "there sits a {}.".format(drop.name), "cyan")
+
+        # Mark as completed so it doesn't prompt again
+        self.needs_input = False
+        self.completed = True
+        
+        # Remove from tile if not repeating
+        if not self.repeat:
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
 
 class NPCSpawnerEvent(Event):
     """Spawns a number of NPCs of a given class onto a specified tile.
@@ -384,3 +451,121 @@ class NPCSpawnerEvent(Event):
                 self.pass_conditions_to_process()
         except Exception:
             return
+
+class PulsingGlandEvent(NPCSpawnerEvent):
+    """
+    One-shot event representing a bursting gland in the Corrupted Channels.
+    Unlike NPCSpawnerEvent, it does NOT fire on map entry — it fires only when
+    the player walks onto the tile where it lives. Prints a flavored burst message
+    before spawning one Slime, then removes itself.
+    """
+
+    def __init__(self, player=None, tile=None, params=None, repeat=False,
+                 npc_cls=None, count=None, name="PulsingGlandEvent"):
+        # Always spawn exactly 1 Slime; inherit all other NPCSpawnerEvent behaviour
+        super().__init__(player=player, tile=tile, params=params, repeat=False,
+                         npc_cls=npc_cls, count=count, name=name)
+        if not self.npc_cls:
+            # Default gland type is Slime
+            self.npc_cls = "Slime"
+        if self.count is None or self.count < 1:
+            self.count = 1
+
+    def evaluate_for_map_entry(self, player):
+        """Suppress the map-entry pre-spawn. Fire only on tile entry via evaluate_events."""
+        pass
+
+    def process(self):
+        if self.has_run and not self.repeat:
+            return
+        print(
+            "A gland on the wall convulses and ruptures — "
+            "a slime drops wetly from the burst sac."
+        )
+        time.sleep(0.5)
+        self._do_spawn()
+        self.has_run = True
+
+
+class WhisperingStatue(Event):
+    def __init__(self, player, tile, params=None, repeat=False, name='The Whispering Statue'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+        # Declare input requirements for API mode
+        self.input_type = "choice"
+        self.input_prompt = "I have a mouth but never speak. I have a bed but never sleep. I run but have no legs. What am I?"
+        self.input_options = [
+            {"value": "1", "label": "A River"},
+            {"value": "2", "label": "The Wind"},
+            {"value": "3", "label": "A Shadow"}
+        ]
+        self.description = f"{player.name} stands before an ancient, moss-covered statue of a hooded figure. Its stone eyes seem to track {player.name}'s movements. Suddenly, a raspy voice emanates from the stone..."
+
+    def check_conditions(self):
+        # Always trigger if the player interacts with it
+        self.pass_conditions_to_process()
+
+    def get_input_prompt(self):
+        """Return the riddle question for display."""
+        return '"I have a mouth but never speak. I have a bed but never sleep. I run but have no legs. What am I?"'
+
+    def get_input_options(self):
+        """Return the available choices for this riddle."""
+        return self.input_options
+
+    def process(self, user_input=None):
+        # Determine if we are in API mode (user_input provided) or CLI mode (user_input is None)
+        if user_input is None:
+            # CLI mode: get input interactively
+            cprint(self.description, "cyan")
+            cprint(self.input_prompt, "yellow")
+            try:
+                choice = input(colored("\nYour answer (1-3): ", "white"))
+            except (EOFError, OSError, ValueError):
+                choice = "1"
+        else:
+            # API mode: use provided input
+            choice = user_input
+
+        # If still no choice, default to "1"
+        if not choice:
+            choice = "1"
+        
+        if not choice:
+            choice = "1"
+        
+        time.sleep(1)
+        
+        if choice == "1":
+            cprint("\nThe statue's eyes glow with a soft blue light.", "cyan")
+            time.sleep(1)
+            cprint('"Wisdom flows like water," the voice rumbles.', "yellow")
+            cprint("A hidden compartment opens at the statue's base!", "green")
+            
+            # Reward
+            cprint(f"{self.player.name} found a pouch of Gold!", "green", attrs=['bold'])
+            self.tile.spawn_item('Gold', amt=500)
+            
+        else:
+            cprint("\nThe statue's eyes flare with an angry red light.", "red")
+            time.sleep(1)
+            cprint('"Foolishness invites destruction," the voice hisses.', "red", attrs=['bold'])
+            cprint(f"The ground beneath {self.player.name} trembles!", "red")
+            
+            # Punishment - Spawn a low level enemy
+            cprint("A Slime oozes out from cracks in the earth!", "red")
+            slime = self.tile.spawn_npc('Slime')
+            if slime:
+                # Force combat initiation by setting awareness high for this scripted ambush
+                # This ensures check_for_combat() in GameService will always detect it regardless of player finesse
+                slime.awareness = 999
+            
+        # Mark as completed so it doesn't prompt again
+        self.needs_input = False
+        self.completed = True
+        
+        # Remove from tile if not repeating
+        if not self.repeat:
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            
+        # await_input is removed because it blocks the API request. The frontend handles dialog continuation.

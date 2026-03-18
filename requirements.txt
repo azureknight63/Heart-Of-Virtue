@@ -5,4 +5,9 @@ pytest-cov
 requests
 openai>=1.0.0,<2.0.0
 asciimatics>=1.15.0
-Pillow>=10.0.0
+Pillow>=12.0.0
+bleach>=6.0.0
+python-dotenv>=1.0.0
+
+# Inquisitor: game testing harness
+playwright>=1.49.0  # Browser automation; run: python -m playwright install chromium

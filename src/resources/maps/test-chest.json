@@ -1,0 +1,102 @@
+{
+    "metadata": {
+        "bgm": "dark_grotto"
+    },
+    "(1, 1)": {
+        "id": "tile_1_1",
+        "title": "TestChestRoom",
+        "description": "A test room with a wooden chest. This is for testing the chest rumbler battle narrative.",
+        "exits": [],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "Ch01ChestRumblerBattle",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Chest_Rumbler_Battle",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "wooden chest",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 68,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 68 gold pieces.",
+                                "value": 68,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 68
+                            }
+                        }
+                    ],
+                    "name": "Wooden Chest",
+                    "description": "A wooden chest. There may be something inside.",
+                    "idle_message": "A wooden chest is sitting here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": " a wooden chest!",
+                    "announce": "A wooden chest is sitting here.",
+                    "keywords": [
+                        "open",
+                        "unlock",
+                        "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
+        "symbol": ""
+    }
+}

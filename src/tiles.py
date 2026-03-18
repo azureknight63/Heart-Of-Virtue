@@ -1,6 +1,7 @@
 """Describes the tiles in the world space."""
 __author__ = 'Alex Egbert'
 
+import os
 import random
 import importlib
 
@@ -64,42 +65,60 @@ class MapTile:
                 tile.discovered = True
         return moves
 
-    def available_actions(self) -> list[actions.Action]:
+    def available_actions(self, callerIsApi = False, player=None) -> list[actions.Action]:
         """Returns all the available actions in this room."""
-        moves = self.adjacent_moves()  # first, add the available directions in the current room
-        default_moves = [  # these are the default moves available to the player
-            actions.ListCommands(),
-            actions.ViewInventory(),
-            actions.SkillMenu(),
-            actions.Look(),
-            actions.View(),
-            actions.Equip(),
-            actions.Take(),
-            actions.Use(),
-            actions.Search(),
-            actions.Menu(),
-            actions.Save(),
-            actions.ViewMap(),
-            actions.Attack(),
-            actions.ViewStatus()
-        ]
+        moves = []
 
-        debug_moves = [  # these are the moves available to the player if debugging is enabled
-            actions.Teleport(),
-            actions.Showvar(),
-            actions.Alter(),
-            actions.Supersaiyan(),
-            actions.TestEvent(),
-            actions.SpawnObj(),
-            actions.RefreshMerchants()
-        ]
+        if not callerIsApi:
+            moves = self.adjacent_moves()  # first, add the available directions in the current room
+            default_moves = [  # these are the default moves available to the player
+                actions.ListCommands(),
+                actions.ViewInventory(),
+                actions.SkillMenu(),
+                actions.Look(),
+                actions.View(),
+                actions.Equip(),
+                actions.Take(),
+                actions.Use(),
+                actions.Search(),
+                actions.Menu(),
+                actions.Save(),
+                actions.ViewMap(),
+                actions.Attack(),
+                actions.ViewStatus()
+            ]
+        else:
+            default_moves = [
+                actions.Search(),
+                actions.Menu(),
+                actions.Save(),
+            ]
 
         for move in default_moves:
             moves.append(move)
 
-        for move in debug_moves:
-            # noinspection PyTypeChecker
-            moves.append(move)
+        # Check if debug mode is enabled via player's game_config
+        debug_enabled = False
+        if player and hasattr(player, 'game_config') and hasattr(player.game_config, 'debug_mode'):
+            debug_enabled = player.game_config.debug_mode
+        elif self.universe.testing_mode:
+            # Fallback to universe.testing_mode for backward compatibility
+            debug_enabled = True
+
+        # Only instantiate debug commands if debug mode is enabled
+        if debug_enabled:
+            debug_moves = [
+                actions.Teleport(),
+                actions.Showvar(),
+                actions.Alter(),
+                actions.Supersaiyan(),
+                actions.TestEvent(),
+                actions.SpawnObj(),
+                actions.RefreshMerchants()
+            ]
+            for move in debug_moves:
+                # noinspection PyTypeChecker
+                moves.append(move)
 
         return moves
 
@@ -275,7 +294,7 @@ class MapTile:
                     if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
                         master_item.count += duplicate_item.count
                         remove_duplicates.append(duplicate_item)
-                if master_item.count > 1:
+                if hasattr(master_item, "stack_grammar"):
                     master_item.stack_grammar()
                 for duplicate in remove_duplicates:
                     self.items_here.remove(duplicate)

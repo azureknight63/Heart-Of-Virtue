@@ -478,3 +478,4 @@ Debug commands accessible via global hotkey regardless of menu state:
 
 **Document Status:** Ready for Implementation  
 **Next Step:** Begin Phase 1 implementation of `debug_manager.py`
+

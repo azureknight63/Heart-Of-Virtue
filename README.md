@@ -78,14 +78,77 @@ print(adapter.generate_plain("The mynx notices a dangling thread on the player's
 ### Changing Models Later
 For OpenRouter, just set `MYNX_LLM_MODEL` to any model ID they expose (e.g. `anthropic/claude-3.5-sonnet` if you have access). The rest of the adapter flow remains the same.
 
+## Web UI Frontend
+
+A modern React + Vite web UI is available for playing the game in your browser, featuring:
+
+- **Retro Terminal Aesthetic**: Lime green, cyan, and orange colors on dark background
+- **Dual-Panel Layout**: Narrative box + player controls (left), Battlefield or World Map (right)
+- **Real-Time Updates**: Combat grid, HP bars, inventory management
+- **Responsive Design**: Works on desktop and tablets
+- **Full API Integration**: Connects to the Flask backend API
+
+### Quick Start (Web UI)
+
+**Terminal 1 - Backend API:**
+```powershell
+.venv\Scripts\Activate.ps1
+python tools/run_api.py
+# Runs on http://localhost:5000
+```
+
+**Terminal 2 - Frontend Dev Server:**
+```powershell
+cd frontend
+npm install
+npm run dev
+# Runs on http://localhost:3000
+```
+
+Then open your browser to **http://localhost:3000** and log in!
+
+### Documentation
+
+See `docs/README.md` for the complete documentation index.
+
+Key documentation:
+- `docs/API_DOCUMENTATION.md` - Complete API reference
+- `docs/FRONTEND_DOCUMENTATION.md` - Frontend architecture and components
+- `docs/ARCHITECTURE_DIAGRAM.md` - System architecture
+- `frontend/README.md` - Frontend development guide
+
 ## Development
-Run tests:
+
+### Running Tests (Backend)
 ```
 pytest -q
 ```
-Generate a coverage report:
+
+**Note:** When running tests that require Flask (e.g., API tests in `tests/api/`), ensure the virtual environment is activated first:
+```
+.venv\Scripts\Activate.ps1
+pytest tests/api/ -v
+```
+
+### Coverage Report (Backend)
 ```
 pytest --cov=src --cov=ai --cov-report=term-missing
+```
+
+### Running the Terminal Game (CLI)
+```
+python src/game.py
+```
+
+### Running the Web API
+```
+python tools/run_api.py
+```
+
+### Developing the Web UI
+```
+cd frontend
+npm run dev
 ```
 
 ## Contributing
@@ -113,3 +176,45 @@ adapter = MynxLLMAdapter()
 print(adapter.debug_status())
 ```
 If `available` is False, the `reason` field will indicate the issue (missing key, connection error, etc.).
+
+## License
+
+This project uses a dual-license approach:
+
+### Code
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE-CODE)
+
+You are free to:
+- ✅ Use, modify, and distribute the code for **non-commercial purposes**
+- ✅ Learn from and build upon the codebase
+- ✅ Share your modifications
+
+You may NOT:
+- ❌ Use the code for commercial purposes without permission
+- ❌ Hold the author liable for any issues
+
+### Story, Lore & Creative Assets
+Licensed under [CC BY-NC-ND 4.0](LICENSE-ASSETS) (Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International)
+
+This applies to:
+- Character profiles and stories (`docs/lore/character-profiles/`)
+- World-building content and lore (`docs/lore/`)
+- Story content (`src/story/`)
+- Art, music, and sound assets (`frontend/public/assets/`)
+
+You are free to:
+- ✅ Share and redistribute the creative content for **non-commercial purposes**
+- ✅ Use the content for personal enjoyment and study
+
+You must:
+- 📌 Provide attribution to the original author
+
+You may NOT:
+- ❌ Use the content for commercial purposes
+- ❌ Create derivative works or adaptations
+- ❌ Remix or transform the creative content
+
+For full license texts, see [LICENSE-CODE](LICENSE-CODE) and [LICENSE-ASSETS](LICENSE-ASSETS).
+
+Copyright (c) 2025 Alexander Egbert
+

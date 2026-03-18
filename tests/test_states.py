@@ -260,7 +260,7 @@ def test_enflamed_initialization(mock_cprint, mock_target):
     assert state.name == "Enflamed"
     assert state.target == mock_target
     assert state.compounding is True
-    assert state.world is True
+    assert state.world is False  # combat-only; world=True caused fire to fire once then self-remove outside combat
     assert state.statustype == "enflamed"
     assert state.persistent is False
     assert state.tick == 0

@@ -19,6 +19,21 @@ class CoordinateSystemConfig:
         self.player = player
         self._default_grid_size = (50, 50)
     
+    def get_dynamic_grid_size(self, combatant_count: int) -> Tuple[int, int]:
+        """Calculate dynamic grid size based on combatant count.
+
+        Scales linearly from 9×9 for small skirmishes up to 100×100 for
+        large battles, giving roughly 9 cells of breathing room per combatant.
+
+        Args:
+            combatant_count: Total number of units (allies + enemies)
+
+        Returns:
+            (width, height) tuple in the range [9, 100].
+        """
+        size = max(9, min(100, combatant_count * 3 + 3))
+        return (size, size)
+
     def get_grid_size(self) -> Tuple[int, int]:
         """Get current grid size from config.
         
