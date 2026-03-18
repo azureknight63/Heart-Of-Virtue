@@ -45,3 +45,20 @@ if [ ! -e "$EXPECTED_SHELL" ]; then
     echo "Playwright: symlinked $(basename $(dirname $(dirname $CACHED))) binary → v1208 path"
   fi
 fi
+
+# ── gstack skill symlinks ─────────────────────────────────────────────────────
+# gstack setup exits early when the Playwright CDN is blocked, before it reaches
+# the skill-symlink step. Ensure each gstack sub-skill is reachable as a top-level
+# skill regardless of whether setup succeeded.
+SKILLS_DIR="$HOME/.claude/skills"
+for skill_dir in "$GSTACK_DIR"/*/; do
+  if [ -f "$skill_dir/SKILL.md" ]; then
+    skill_name="$(basename "$skill_dir")"
+    [ "$skill_name" = "node_modules" ] && continue
+    target="$SKILLS_DIR/$skill_name"
+    # Only create symlink if the target doesn't already exist as a real directory
+    if [ -L "$target" ] || [ ! -e "$target" ]; then
+      ln -snf "gstack/$skill_name" "$target"
+    fi
+  fi
+done

@@ -194,6 +194,79 @@ only on `console_errors` and `network_failures` (the significant ones).
   with an HTTP request before opening the browser, so navigation doesn't race.
 - Screenshots land in `tools/inquisitor_screenshots/<timestamp>/` (gitignored).
 
+## Map Design Skill
+
+**Expert map designer for generating or auditing game maps.** The `map-design` skill creates hierarchical, lore-integrated map design documents or audits existing maps for improvements. Outputs are actionable jump-off points for implementation agents to create maps quickly and effectively.
+
+### New Map Design
+
+Generate a complete map design document from concept, constraints, and lore hooks:
+
+```bash
+/map-design
+theme: "a sacred spring corrupted by infection"
+size: "medium (40-50 tiles)"
+chapter: 2
+key_encounters: ["The Infestation Queen", "Geode Puzzle Chamber"]
+npcs: ["Gorran", "Conclave Searchers"]
+narrative_moment: "Jean discovers the extent of the corruption"
+```
+
+Or conversationally:
+```bash
+/map-design
+Design a map for Chapter 2 where Jean enters a Golemite sacred space corrupted by slime.
+```
+
+**Output**: Markdown design document (automatically saved to `docs/lore/environments/{region}/{region}-map-design.md`) containing:
+- Executive summary & design philosophy
+- Hierarchical zone breakdown (3–5 zones with ASCII diagrams)
+- Room-by-room specifications (coordinates, prose descriptions, exits, encounters, items, NPCs, objects)
+- **Asset needs & dependencies** (what items/NPCs/enemies/objects must be created)
+- Implementation notes for agents (JSON patterns, mechanics, testing gates)
+- Lore integration checklist
+
+### Map Upgrade/Audit
+
+Analyze an existing map and recommend improvements:
+
+```bash
+/map-design --upgrade
+map: "dark-grotto"
+focus: "deepen lore integration and add secrets"
+```
+
+**Output**: Markdown audit report (saved to `docs/lore/environments/{region}/{map}-audit-report.md`) containing:
+- Current state analysis (tile count, zone structure, NPC/item inventory)
+- Six-dimension audit: thematic coherence, environmental storytelling, NPC balance, puzzle quality, pacing, lore depth
+- Categorized improvement suggestions (High Priority / Medium / Nice-to-Have)
+- Specific placements and effort estimates
+- Before/after ASCII comparisons (where helpful)
+
+### Design Principles
+
+The skill follows these principles:
+- **Lore first, mechanics second**: Every tile has a reason rooted in the world
+- **Sensory prose**: Descriptions invoke touch, sound, smell, not just sight
+- **Environmental storytelling**: Objects, items, NPCs tell history
+- **Progressive complexity**: Early zones tight and readable; later zones layer mechanics
+- **Secrets reward curiosity**: At least one genuinely discoverable secret
+- **Narrative beats embedded**: Story moments anchor to tiles, not separate cutscenes
+
+### Output Behavior
+
+By default, the skill **saves output as a markdown file** in the appropriate lore directory:
+- New maps → `docs/lore/environments/{region}/{region}-map-design.md`
+- Map audits → `docs/lore/environments/{region}/{map-name}-audit-report.md`
+
+If you need the output in the conversation instead of as a file, explicitly request it: `"just show me the design"` or `"display the audit report in chat"`.
+
+### Example Output
+
+See [docs/lore/environments/wailing-badlands/wailing-badlands-map-design.md](docs/lore/environments/wailing-badlands/wailing-badlands-map-design.md) for a complete map design document (87 tiles, 5 zones, Anger stage of Jean's grief arc).
+
+---
+
 ## Code Review Gate
 
 **Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
