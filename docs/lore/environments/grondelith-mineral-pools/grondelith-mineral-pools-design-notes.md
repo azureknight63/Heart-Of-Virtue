@@ -1,4 +1,4 @@
-The mineral pools are not just a dungeon—they are a sacred and corrupted space that sets the stage for Jean's journey. Their layout should reflect this, showing the player both the beauty of the world and the dangers lurking within it.
+The Grondelith Mineral Pools are not just a dungeon—they are a sacred and corrupted space that sets the stage for Jean's journey. Their layout should reflect this, showing the player both the beauty of the world and the dangers lurking within it.
 
 Here is a detailed layout for the mineral pools:
 ## The Sacred Atrium
@@ -43,5 +43,3 @@ When the correct three minerals are placed in the correct order, the luminous ve
 | ~500 Years Ago | The Brotherhood's Lament. After the loss of Gorran's partner and others, Golemites begin a new, quiet ritual of remembrance, depositing smooth, polished Grief Stones into the streams leading to the main pools. | Worn Sediments: Fine, smooth, man-made stones are found embedded in the silt and sediment of the outflow streams, worn down by the water—a silent record of their collective sorrow. |
 | Recent Past | The Onset of Corruption. The Mind-Eater's influence begins to subtly affect the world, and the pools—already weakened by stagnation—are breached by the Slime Infestation. | Dissolving Stone: The slimy green water actively corrodes the rock it touches, creating pitted, unnaturally soft stone and sharp, sickly-colored mineral deposits where the corruption is highest. |
 | Current Event (Jean's Arrival) | The Cleansing and the Fragment. Jean defeats the King Slime, purging the current wave of infestation from the central pool. | The Unblemished Gift: The defeat of the King Slime leaves behind the unique, razor-sharp mineral fragment, proving that the pools are still a source of powerful, pure essence once the corruption is removed. |
-
-
