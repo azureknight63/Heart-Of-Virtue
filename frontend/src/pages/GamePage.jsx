@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
@@ -10,9 +11,11 @@ import LeftPanel from '../components/LeftPanel'
 import RightPanel from '../components/RightPanel'
 import EventManager from '../components/EventManager'
 import CombatManager from '../components/CombatManager'
-import GameOverScreen from '../components/GameOverScreen'
+
+const DEATH_PATTERN = /Jean has died\.|has died\./i
 
 export default function GamePage() {
+  const navigate = useNavigate()
   // API hooks
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
@@ -36,11 +39,8 @@ export default function GamePage() {
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
   const [displayedLogCount, setDisplayedLogCount] = useState(0)
 
-  // Game over state (triggered by narrative events that kill the player)
-  const [showGameOver, setShowGameOver] = useState(false)
-  const [gameOverMessage, setGameOverMessage] = useState('')
-  // pendingGameOver: death text is shown in the current EventDialog first;
-  // GameOverScreen is revealed only after the user closes that dialog.
+  // pendingGameOver: set when the backend signals is_game_over so the close
+  // handler knows to navigate to the main menu after the death dialog is dismissed.
   const [pendingGameOver, setPendingGameOver] = useState(false)
 
   // Combat coordination hook
@@ -230,11 +230,9 @@ export default function GamePage() {
 
     if (result.success) {
       // Check if the player died during event processing.
-      // handleEventInput already placed the death text into the EventDialog
-      // (currentEvent = resultEvent). Show the GameOverScreen only after the
-      // user dismisses that dialog so they can actually read the death sequence.
+      // handleEventInput already placed the death text into the EventDialog.
+      // Navigate to /menu after the user dismisses that dialog.
       if (result.is_game_over) {
-        setGameOverMessage(result.output_text || '')
         setPendingGameOver(true)
         return
       }
@@ -451,10 +449,12 @@ export default function GamePage() {
         currentEvent={currentEvent}
         eventHistory={eventHistory}
         onClose={() => {
+          // Check for death before handleEventClose clears currentEvent
+          const isDeath = pendingGameOver || DEATH_PATTERN.test(currentEvent?.output_text)
           handleEventClose()
-          if (pendingGameOver) {
+          if (isDeath) {
             setPendingGameOver(false)
-            setShowGameOver(true)
+            navigate('/menu')
           }
         }}
         onSubmitInput={handleEventInputWrapper}
@@ -470,8 +470,6 @@ export default function GamePage() {
         onDefeatClose={handleDefeatClose}
       />
 
-      {/* Game Over Screen - shown when Jean dies via narrative event */}
-      {showGameOver && <GameOverScreen message={gameOverMessage} />}
     </div>
   )
 }
