@@ -32,3 +32,16 @@ fi
 # Always run setup to ensure binary and skills are up to date
 # Playwright CDN may be blocked in some environments; non-fatal since other skills still work
 cd "$GSTACK_DIR" && ./setup || echo "Warning: gstack setup finished with errors (Playwright CDN may be unreachable — /qa command may not work)"
+
+# ── Playwright Chromium fallback ──────────────────────────────────────────────
+# If the CDN was unreachable, gstack may have a cached older version that can be
+# symlinked into the path the current version expects.
+EXPECTED_SHELL="$HOME/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell"
+if [ ! -e "$EXPECTED_SHELL" ]; then
+  CACHED=$(find "$HOME/.cache/ms-playwright" -name "headless_shell" 2>/dev/null | sort | tail -1)
+  if [ -n "$CACHED" ]; then
+    mkdir -p "$(dirname "$EXPECTED_SHELL")"
+    ln -sf "$CACHED" "$EXPECTED_SHELL"
+    echo "Playwright: symlinked $(basename $(dirname $(dirname $CACHED))) binary → v1208 path"
+  fi
+fi

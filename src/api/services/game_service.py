@@ -273,11 +273,18 @@ class GameService:
 
         current_map = getattr(player, "map", None)
         map_metadata = current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+
+        raw_name = getattr(tile, "name", None) or type(tile).__name__
+        # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
+        import re as _re
+        tile_name = _re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', raw_name)
 
         return {
             "x": player.location_x,
             "y": player.location_y,
-            "name": getattr(tile, "name", "Unknown"),
+            "name": tile_name,
+            "map_name": map_name,
             "description": getattr(tile, "description", ""),
             "exits": exits_data,
             "items": items_data,

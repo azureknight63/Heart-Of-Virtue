@@ -29,7 +29,7 @@ export default {
         }
       },
       fontFamily: {
-        mono: ['Courier New', 'monospace'],
+        mono: ['Courier New', 'monospace', 'Noto Color Emoji'],
         serif: ['EB Garamond', 'serif'],
       }
     },

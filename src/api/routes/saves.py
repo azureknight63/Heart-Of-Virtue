@@ -35,8 +35,8 @@ async def list_saves():
         if error:
             return error[0], error[1]
 
-        if not hasattr(session, "db_user_id"):
-             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
+        if not hasattr(session, "db_user_id") or not session.db_user_id:
+            return jsonify({"success": True, "saves": []}), 200
 
         from flask import current_app
         game_service = current_app.game_service
@@ -65,8 +65,8 @@ async def create_save():
         if error:
             return error[0], error[1]
 
-        if not hasattr(session, "db_user_id"):
-             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
+        if not hasattr(session, "db_user_id") or not session.db_user_id:
+            return jsonify({"success": False, "error": "Cloud saves require a registered account."}), 403
 
         data = request.get_json()
         if not data or ("name" not in data and "is_autosave" not in data):
@@ -118,8 +118,8 @@ async def load_save(save_id):
         if error:
             return error[0], error[1]
 
-        if not hasattr(session, "db_user_id"):
-             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
+        if not hasattr(session, "db_user_id") or not session.db_user_id:
+            return jsonify({"success": False, "error": "Cloud saves require a registered account."}), 403
 
         from flask import current_app
         game_service = current_app.game_service
@@ -171,8 +171,8 @@ async def delete_save(save_id):
         if error:
             return error[0], error[1]
 
-        if not hasattr(session, "db_user_id"):
-             return jsonify({"error": "Session not linked to a cloud account. Please log in again."}), 401
+        if not hasattr(session, "db_user_id") or not session.db_user_id:
+            return jsonify({"success": False, "error": "Cloud saves require a registered account."}), 403
 
         from flask import current_app
         game_service = current_app.game_service
