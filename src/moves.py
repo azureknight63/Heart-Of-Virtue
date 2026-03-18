@@ -116,8 +116,8 @@ class Move:  # master class for all moves
     def advance(self, user):
         self.user = user  # Ensure user is always current
         self.evaluate()
-        if user.current_move == self or self.current_stage == 3:  # only advance the move if it's the player's
-            # current move or if it's in cooldown
+        if user.current_move == self or self.current_stage > 0:  # only advance the move if it's the player's
+            # current move or if it's already been used (past prep stage)
             # print("###DEBUG: " + user.name + " " + self.name + " STAGE: " + str(self.current_stage) +
             #      " BEATS LEFT: " + str(self.beats_left))
             if self.beats_left > 0:
