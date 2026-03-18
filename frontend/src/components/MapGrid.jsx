@@ -300,10 +300,8 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
           maxWidth: '100%',
           textAlign: 'center',
         }}>
-          <div style={{ color: '#ffaa00', fontWeight: 'bold' }}>
-            {location.map_name
-              ? location.map_name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-              : (location.name || 'Unknown Location')}
+          <div style={{ fontSize: '10px', color: '#666' }}>
+            ({location.x}, {location.y})
           </div>
           {location.exits && location.exits.length > 0 && (
             <div style={{ fontSize: '10px', marginTop: '4px' }}>
