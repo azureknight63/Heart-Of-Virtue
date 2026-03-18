@@ -81,10 +81,12 @@ export default function MainMenuPage() {
         initMenu()
     }, [playBGM])
 
-    // Keep mostRecentSave in sync with saveList
+    // Keep mostRecentSave in sync with saveList.
+    // Only cloud saves qualify — local saves can't be loaded directly.
     useEffect(() => {
-        if (saveList && saveList.length > 0) {
-            const sorted = [...saveList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        const cloudSaves = saveList ? saveList.filter(s => !s.isLocal) : []
+        if (cloudSaves.length > 0) {
+            const sorted = [...cloudSaves].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
             setMostRecentSave(sorted[0])
         } else {
             setMostRecentSave(null)
@@ -106,7 +108,7 @@ export default function MainMenuPage() {
     }
 
     const handleContinue = async () => {
-        if (!mostRecentSave) return
+        if (!mostRecentSave || mostRecentSave.isLocal) return
         playSFX('click')
         setLoadingAction(true)
         try {
@@ -225,7 +227,7 @@ export default function MainMenuPage() {
                 </GameText>
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-                    {!isLoadingInitial && saveList.length > 0 && mostRecentSave && (
+                    {!isLoadingInitial && mostRecentSave && !mostRecentSave.isLocal && (
                         <GameButton onClick={handleContinue} size="large" style={{ width: '100%' }}>Continue</GameButton>
                     )}
                     <GameButton onClick={handleNewGame} size="large" style={{ width: '100%' }}>New Game</GameButton>
