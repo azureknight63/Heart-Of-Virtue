@@ -175,6 +175,16 @@ registers a `/api/test/session` endpoint (never active in production) that calls
 `session_manager.create_session()` directly — no Turso DB needed. The login flow
 tries the real registration form first; on failure it falls back to this endpoint.
 
+**There is no guest mode.** Production requires registration; every real player session
+has a `db_user_id`. The "no db_user_id" path in the saves routes (which 403s cloud save
+operations) is only reachable via the test session bypass — i.e. QA/Inquisitor runs.
+
+**Local autosave (`hov_local_autosave` in localStorage)** is written on every player
+state change during active play. It exists as a crash-recovery safety net for the current
+session, not as a standalone save format. In production it is always superseded by the
+cloud autosave (written every 20 ticks). The only scenario where it is the *only* save
+is during QA runs that use the test session bypass.
+
 ### Known browser noise (filtered automatically)
 
 These events appear in every run and are **not bugs**:
