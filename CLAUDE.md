@@ -242,6 +242,39 @@ Standard closing checklist (use judgment on which apply):
 
 Don't suggest all of these robotically after every small change. Use judgment: a two-line fix doesn't need a full debrief. A significant architectural change does.
 
+## QA — Known Intentional Behaviors
+
+When running `/qa` or any exploratory testing, check this section before filing bugs
+related to blocked movement, missing exits, unresponsive objects, or apparent dead ends.
+This is an RPG — many things that look broken are puzzles.
+
+### Explorer heuristic (apply before filing any game-interaction bug)
+
+1. **Read first.** Tile descriptions, object descriptions, NPC dialogue, and environmental
+   text are the game's UI. An object that "does nothing" on click may have description text
+   hinting at how to use it.
+2. **Interact before concluding an exit is missing.** If a tile has no exit in some direction
+   but contains interactive objects (depressions, levers, inscriptions, switches), attempt
+   interaction before filing a missing-exit bug.
+3. **Track leads.** "Dead end with an interactive object" is a lead, not a confirmed bug.
+   Note it, try interacting, revisit if new context (a key, clue, or NPC hint) emerges.
+4. **Flag ambiguity correctly.** If still uncertain, file as "possible intentional mechanic —
+   needs verification" rather than a confirmed bug. Ask the user before closing it out.
+
+### Confirmed intentional mechanics
+
+| Location | Apparent issue | Actual behavior |
+|---|---|---|
+| Wall Depression (Dark Grotto) | No eastward exit | Interacting triggers "Jean hears a faint 'click.'" and unlocks the eastern passage — hidden passage mechanic |
+
+### General patterns (apply to all maps)
+
+- **Dead ends with nearby interactables** — try the object before concluding it's a dead end
+- **Locked doors** — may require a key item, quest state, or NPC interaction to open
+- **Empty rooms** — some are intentionally sparse; absence of content is only a bug if the room also lacks a description
+- **One-way passages** — some exits are directional by design
+- **Gated content** — areas/items/NPCs may only appear after story progress; early absence is not a bug
+
 ## Licenses
 
 - Code: PolyForm Noncommercial
