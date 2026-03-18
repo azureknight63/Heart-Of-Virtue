@@ -14,6 +14,7 @@ from player import Player
 from universe import Universe, tile_exists
 import sys
 from config_manager import ConfigManager
+from story.gorran_flavor import maybe_explore_flavor
 
 
 print_slow = functions.print_slow
@@ -215,6 +216,7 @@ _\\|//__( | )______)_/
             if not player.is_alive():
                 player.death()
             elif player.is_alive() and not player.victory:
+                maybe_explore_flavor(player)
                 player.stack_inv_items()
                 player.stack_gold()
                 action_input = input('Action: ')
