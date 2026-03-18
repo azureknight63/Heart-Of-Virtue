@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Noto Color Emoji';
+  src: url('/fonts/NotoColorEmoji.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -18,7 +25,7 @@ body,
 }
 
 body {
-  font-family: 'Courier New', monospace;
+  font-family: 'Courier New', monospace, 'Noto Color Emoji';
   background-color: #0a0a0a;
   color: #e0e0e0;
   line-height: 1.5;
