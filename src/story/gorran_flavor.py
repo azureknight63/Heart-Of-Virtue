@@ -157,12 +157,14 @@ def maybe_explore_flavor(player):
     """
     Possibly print a Gorran exploration flavor line.
 
-    Call once per game tick, outside of combat. No-op when Gorran is absent
-    or the cooldown hasn't elapsed.
+    Call once per game tick, outside of combat. No-op when Gorran is absent,
+    the cooldown hasn't elapsed, or skip_dialog is set.
 
     Args:
         player: The Player instance.
     """
+    if getattr(player, 'skip_dialog', False):
+        return
     gorran = _find_gorran(player)
     if gorran is None:
         return

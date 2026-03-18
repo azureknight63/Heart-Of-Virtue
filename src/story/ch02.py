@@ -267,15 +267,17 @@ class Ch02GuideToCitadel(Event):  # When first in Grondia, Gorran guides Jean to
                          "The corruption will not destroy your kind as it does ours, "
                          "but it will hurt you if you are careless. Take these supplies.", "green")
                 time.sleep(1)
-        print("Votha Krr waves a hand, and a Grondite attendant steps forward, carrying a small bundle of supplies. ")
+        if not self.player.skip_dialog:
+            print("Votha Krr waves a hand, and a Grondite attendant steps forward, carrying a small bundle of supplies. ")
+            print("The attendant hands the bundle to Jean, who takes it gratefully.")
         # Add 5 Antidotes and 2 Restoratives to the player's inventory
-        print("The attendant hands the bundle to Jean, who takes it gratefully.")
         loot = [
             items.Antidote(5),
             items.Restorative(2)
         ]
         self.player.add_items_to_inventory(loot)
-        await_input()
+        if not self.player.skip_dialog:
+            await_input()
 
         if not self.player.skip_dialog:
             print("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.\n")
