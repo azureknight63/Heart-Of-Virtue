@@ -81,12 +81,10 @@ export default function MainMenuPage() {
         initMenu()
     }, [playBGM])
 
-    // Keep mostRecentSave in sync with saveList.
-    // Only cloud saves qualify — local saves can't be loaded directly.
+    // Keep mostRecentSave in sync with saveList (cloud and local)
     useEffect(() => {
-        const cloudSaves = saveList ? saveList.filter(s => !s.isLocal) : []
-        if (cloudSaves.length > 0) {
-            const sorted = [...cloudSaves].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        if (saveList && saveList.length > 0) {
+            const sorted = [...saveList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
             setMostRecentSave(sorted[0])
         } else {
             setMostRecentSave(null)
@@ -108,8 +106,13 @@ export default function MainMenuPage() {
     }
 
     const handleContinue = async () => {
-        if (!mostRecentSave || mostRecentSave.isLocal) return
+        if (!mostRecentSave) return
         playSFX('click')
+        // Local autosave = active session still in server memory; just navigate.
+        if (mostRecentSave.isLocal) {
+            navigate('/game')
+            return
+        }
         setLoadingAction(true)
         try {
             await saves.load(mostRecentSave.id)
@@ -141,15 +144,9 @@ export default function MainMenuPage() {
         setLoadingAction(true)
         try {
             if (isLocal && saveId === 'local_autosave') {
-                // To load local, we would normally send the data to the server
-                // But for now, since the API doesn't support 'load from raw data' easily,
-                // we'll rely on the fact that 'Continue' or 'Load' usually targets the server state.
-                // REFINEMENT: If it's local, we might need an endpoint to sync it first.
-                // For this implementation, let's treat 'local_autosave' as a special case if we had a sync endpoint.
-                // Assuming cloud is the primary source of truth now.
-                // If the user selects a local save, we warn them or just load if supported.
-                showWarning("Loading from Local Storage is currently being synchronized with the cloud. Please select a Cloud save for now.")
-                // In a full implementation, we'd POST the local data to a 'sync' endpoint.
+                // Local autosave means the server session is (likely) still alive.
+                // Navigate to the game; if the session has expired the game page will redirect.
+                navigate('/game')
             } else {
                 await saves.load(saveId)
                 navigate('/game')
@@ -227,7 +224,7 @@ export default function MainMenuPage() {
                 </GameText>
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-                    {!isLoadingInitial && mostRecentSave && !mostRecentSave.isLocal && (
+                    {!isLoadingInitial && mostRecentSave && (
                         <GameButton onClick={handleContinue} size="large" style={{ width: '100%' }}>Continue</GameButton>
                     )}
                     <GameButton onClick={handleNewGame} size="large" style={{ width: '100%' }}>New Game</GameButton>
