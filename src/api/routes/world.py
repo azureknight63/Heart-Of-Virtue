@@ -249,6 +249,7 @@ def submit_event_input():
         # Detect player death caused by event processing
         if getattr(player, "hp", 1) <= 0:
             result["is_game_over"] = True
+            result["is_death_scene"] = True
 
         return jsonify(result), 200
 
