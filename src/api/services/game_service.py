@@ -2117,10 +2117,16 @@ class GameService:
                 raise ValueError("Maximum number of manual saves reached (20). Please delete an existing save to create a new one.")
 
         save_id = str(uuid.uuid4())
-        
-        # Serialize player state
-        # Note: We use pickle for BLOB storage to maintain character objects
-        save_data = pickle.dumps(player)
+
+        # Serialize player state.
+        # _combat_adapter holds a closure and a threading.Lock — neither is picklable.
+        # Strip it before serializing; restore immediately after.
+        combat_adapter = player.__dict__.pop("_combat_adapter", None)
+        try:
+            save_data = pickle.dumps(player)
+        finally:
+            if combat_adapter is not None:
+                player._combat_adapter = combat_adapter
 
         # 2. Hybrid Autosave Logic: UPSERT for the single autosave
         if is_autosave:
