@@ -261,7 +261,14 @@ If there were bugs, list them again here with severity (CRITICAL / HIGH / MEDIUM
 4. **Known noise**: ignore `fonts.googleapis.com`, `fonts.gstatic.com`, and React Router future-flag warnings — these are filtered automatically by the harness.
 5. **If /qa cannot start the servers**, fall back to the in-process harness: run `python tools/bug_hunt.py --scenario combat --headless --output /tmp/combat_test_results.json` and parse that output instead.
 6. **The map is agent-only** — it has no link to the main game world. Do not attempt to navigate there from dark-grotto or any other production map.
-7. **The Adjutant** is at `(0, 0)`. If stat changes are needed mid-session (terminal mode), use the `talk` command on that tile.
+7. **The Adjutant** is at `(0, 0)`. Use the `talk` command on that tile to:
+   - Set Jean's stats, level, heat, and skills at runtime via menu option [1]–[7]
+   - Manage arena combatants via menu option [8]:
+     - **Add** any NPC class from `npc.py` to any arena tile by class name
+     - **Remove** individual combatants by index
+     - **Clear** an entire arena tile's NPC roster
+     - **Edit** any combatant's stats (hp, damage, aggro, friend, speed, etc.) in place
+   Changes take effect immediately — no restart required.
 
 ---
 
