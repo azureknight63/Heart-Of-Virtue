@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.unmock('./AudioContext');
@@ -57,6 +57,27 @@ describe('AudioContext', () => {
 
         fireEvent.click(screen.getByText('Play BGM'));
         fireEvent.click(screen.getByText('Stop BGM'));
+    });
+
+    it('playBGM reference stays stable after switching tracks (regression: battle BGM override bug)', () => {
+        // When playBGM('memory_flash') is called it used to update currentBGM state,
+        // which recreated the playBGM function reference, which retriggered the BGM
+        // useEffect in GamePage (mode === 'combat') and called playBGM('battle') again.
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        const firstRef = result.current.playBGM;
+
+        act(() => { result.current.playBGM('battle'); });
+        const afterBattle = result.current.playBGM;
+
+        act(() => { result.current.playBGM('memory_flash'); });
+        const afterMemoryFlash = result.current.playBGM;
+
+        // Reference must be the same object throughout — any change would
+        // retrigger consumer effects that list playBGM as a dependency.
+        expect(afterBattle).toBe(firstRef);
+        expect(afterMemoryFlash).toBe(firstRef);
     });
 
     it('loads preferences from localStorage', () => {
