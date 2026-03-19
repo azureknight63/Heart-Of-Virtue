@@ -1,9 +1,12 @@
 """Comprehensive tests for saves routes."""
 
+import asyncio
 import sys
+import threading
 from pathlib import Path
 import json
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_DIR = ROOT / "src"
@@ -312,3 +315,125 @@ class TestSavesErrorCases:
         )
         # Should reject very long names
         assert response.status_code >= 400 or response.status_code == 201
+
+
+class TestAutosaveDuringCombat:
+    """Regression tests for autosave serialization while player is in combat.
+
+    Root cause: player._combat_adapter holds a closure (on_event_callback) and a
+    threading.Lock (_suggestion_lock), neither of which is picklable. Calling
+    save_game() mid-combat raised an uncaught PicklingError that bubbled up as
+    a 500 on POST /api/saves.
+
+    Fix: game_service.save_game() strips _combat_adapter from player.__dict__
+    before pickle.dumps() and restores it in a finally block.
+    """
+
+    def _make_combat_adapter(self):
+        """Return a minimal mock adapter that reproduces the pickling failure."""
+        adapter = MagicMock()
+        # The two attributes that made the original adapter unpicklable:
+        adapter._suggestion_lock = threading.Lock()
+        session_data = {"pending_events": {}}
+        adapter.on_event_callback = lambda p: session_data  # closure — not picklable
+        return adapter
+
+    def _make_player(self):
+        """Return a minimal picklable player object."""
+        class _Player:
+            def __init__(self):
+                self.name = "Jean"
+                self.level = 1
+                self.hp = 50
+                self.in_combat = True
+                self.time_elapsed = 0
+                self.map = None
+                self.current_room = None
+        return _Player()
+
+    def _mock_db_execute(self, rows=None):
+        """Return an async mock for db.execute that returns a result with given rows."""
+        result = MagicMock()
+        result.rows = rows if rows is not None else []
+        mock = AsyncMock(return_value=result)
+        return mock
+
+    def test_save_game_strips_combat_adapter_before_pickling(self):
+        """save_game must not raise PicklingError when _combat_adapter is present."""
+        from src.api.services.game_service import GameService
+
+        service = GameService()
+        player = self._make_player()
+        player._combat_adapter = self._make_combat_adapter()
+
+        # Mock db.execute: first call (autosave check) returns no existing row,
+        # second call (INSERT) returns nothing.
+        with patch("src.api.services.game_service.db") as mock_db:
+            mock_db.execute = self._mock_db_execute(rows=[])
+            save_id = asyncio.run(
+                service.save_game(player, "Autosave", user_id="user-123", is_autosave=True)
+            )
+
+        assert save_id is not None
+        assert isinstance(save_id, str)
+
+    def test_combat_adapter_restored_after_save(self):
+        """_combat_adapter must be back on the player after save_game returns."""
+        from src.api.services.game_service import GameService
+
+        service = GameService()
+        player = self._make_player()
+        adapter = self._make_combat_adapter()
+        player._combat_adapter = adapter
+
+        with patch("src.api.services.game_service.db") as mock_db:
+            mock_db.execute = self._mock_db_execute(rows=[])
+            asyncio.run(
+                service.save_game(player, "Autosave", user_id="user-123", is_autosave=True)
+            )
+
+        assert player._combat_adapter is adapter, (
+            "_combat_adapter was not restored after save_game — "
+            "combat state would be lost for the rest of the encounter."
+        )
+
+    def test_combat_adapter_restored_even_if_pickle_fails(self):
+        """_combat_adapter must be restored if an unexpected pickle error occurs."""
+        import pickle
+        from src.api.services.game_service import GameService
+
+        service = GameService()
+        player = self._make_player()
+        adapter = self._make_combat_adapter()
+        player._combat_adapter = adapter
+
+        # Force pickle.dumps to fail for any player instance
+        with patch("src.api.services.game_service.db") as mock_db:
+            mock_db.execute = self._mock_db_execute(rows=[])
+            with patch("pickle.dumps", side_effect=pickle.PicklingError("injected failure")):
+                with pytest.raises(Exception):
+                    asyncio.run(
+                        service.save_game(player, "Autosave", user_id="user-123", is_autosave=True)
+                    )
+
+        # Adapter must be restored regardless of the pickle failure
+        assert player._combat_adapter is adapter, (
+            "_combat_adapter was dropped after a pickle failure — "
+            "the finally block is not executing correctly."
+        )
+
+    def test_save_game_works_without_combat_adapter(self):
+        """save_game must work normally when no _combat_adapter is present."""
+        from src.api.services.game_service import GameService
+
+        service = GameService()
+        player = self._make_player()  # no _combat_adapter
+
+        with patch("src.api.services.game_service.db") as mock_db:
+            mock_db.execute = self._mock_db_execute(rows=[])
+            save_id = asyncio.run(
+                service.save_game(player, "Manual Save", user_id="user-123", is_autosave=False)
+            )
+
+        assert save_id is not None
+        assert not hasattr(player, "_combat_adapter")
