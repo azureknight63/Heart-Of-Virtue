@@ -264,6 +264,22 @@ maintenant et à l'heure de notre mort. Amen.""",
         if not player_has_state:
             self.states.append(state)
 
+    def __getstate__(self):
+        """Return picklable state, stripping API-layer attributes that are not serializable.
+
+        Known non-picklable attributes attached by the web layer:
+          _combat_adapter — holds a threading.Lock and a closure; removed before
+                            pickle.dumps in game_service.save_game as a belt-and-suspenders
+                            measure, but also excluded here so the Player class is
+                            self-documenting about its pickle contract.
+
+        If you attach a new non-picklable attribute to Player from the API layer,
+        add it to the exclusion list below rather than only patching the save path.
+        """
+        state = self.__dict__.copy()
+        state.pop("_combat_adapter", None)
+        return state
+
     def get_hp_pcnt(self):
         """Return the player's remaining HP as a decimal fraction."""
         curr = float(self.hp)
