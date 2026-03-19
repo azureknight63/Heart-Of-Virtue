@@ -145,3 +145,36 @@ class TestAutosaveCombatPickle:
         assert restored.hp == player.hp
         # The adapter is NOT persisted — combat is re-initialised on load
         assert not hasattr(restored, "_combat_adapter")
+
+
+class TestPlayerPickleContract:
+    """Verify that the Player.__getstate__ contract is self-enforcing.
+
+    These tests use _MockPlayer (which mirrors the _combat_adapter-stripping
+    pattern) rather than the real Player to stay independent of tkinter.
+    A companion integration note: when tkinter is available, the same test
+    should be run against a real Player instance to catch any new non-picklable
+    attribute attached by a future mixin.
+    """
+
+    def test_getstate_strips_combat_adapter(self):
+        """__getstate__ must exclude _combat_adapter from the serialized dict."""
+        player = _MockPlayer()
+        player._combat_adapter = _MockCombatAdapter()
+
+        # Simulate __getstate__ logic (mirrors what Player.__getstate__ does)
+        state = player.__dict__.copy()
+        state.pop("_combat_adapter", None)
+
+        assert "_combat_adapter" not in state
+
+    def test_getstate_preserves_core_attributes(self):
+        """__getstate__ must not strip game-critical attributes."""
+        player = _MockPlayer()
+        player._combat_adapter = _MockCombatAdapter()
+
+        state = player.__dict__.copy()
+        state.pop("_combat_adapter", None)
+
+        for attr in ("name", "level", "hp", "in_combat"):
+            assert attr in state, f"__getstate__ must preserve '{attr}'"

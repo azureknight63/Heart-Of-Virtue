@@ -430,7 +430,9 @@ class TestAutosaveDuringCombat:
         player = self._make_player()  # no _combat_adapter
 
         with patch("src.api.services.game_service.db") as mock_db:
-            mock_db.execute = self._mock_db_execute(rows=[])
+            # is_autosave=False → save_game runs COUNT(*) first; mock must return [[0]]
+            # so res.rows[0][0] evaluates to 0 (under the 20-save limit).
+            mock_db.execute = self._mock_db_execute(rows=[[0]])
             save_id = asyncio.run(
                 service.save_game(player, "Manual Save", user_id="user-123", is_autosave=False)
             )
