@@ -35,14 +35,14 @@ describe('BattlefieldGrid', () => {
 
         // Check for grid cells by style attribute
         const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        // VIEW_SIZE=9; mock max coord=8 → resolvedMapSize=9; normal mode gridCols=9 → 9×9=81 cells
-        expect(cells.length).toBe(81);
+        // VIEW_SIZE=13; normal mode gridCols=VIEW_SIZE=13 → 13×13=169 cells
+        expect(cells.length).toBe(169);
     });
 
     it('renders entire grid in full mode', () => {
         const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom="full" />);
 
-        // Full mode gridCols=resolvedMapSize=9 → 9×9=81 cells (same as normal on smallest maps)
+        // Full mode gridCols=resolvedMapSize=9 → 9×9=81 cells (smaller than 13×13 viewport on tiny maps)
         const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
         expect(cells.length).toBe(81);
     });
