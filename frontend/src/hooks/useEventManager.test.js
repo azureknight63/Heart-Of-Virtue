@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useEventManager } from './useEventManager'
+import apiClient from '../api/client'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -357,6 +358,30 @@ describe('useEventManager', () => {
                 expect(result.current.currentEvent).not.toBeNull()
                 expect(result.current.currentEvent.name).toBe('Event Result')
             })
+        })
+
+        it('should propagate is_death_scene to result event when api returns is_death_scene', async () => {
+            // apiClient uses axios — spy on it directly rather than global.fetch
+            const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: {
+                    success: true,
+                    output_text: 'Jean has died.',
+                    needs_input: false,
+                    is_game_over: true,
+                    is_death_scene: true
+                }
+            })
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'user input', showError)
+            })
+
+            expect(result.current.currentEvent?.is_death_scene).toBe(true)
+            expect(result.current.currentEvent?.output_text).toBe('Jean has died.')
+            postSpy.mockRestore()
         })
     })
 

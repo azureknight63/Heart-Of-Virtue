@@ -46,18 +46,19 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const inputPrompt = event?.input_prompt || 'Your choice:'
     const inputOptions = event?.input_options || []
     const eventId = event?.event_id
+    const isDeathScene = event?.is_death_scene || false
 
     useEffect(() => {
         // Death scenes show all text at once — mark complete immediately so the
         // Close button appears without waiting for a (non-existent) typewriter.
-        setIsComplete(event?.is_death_scene || false)
+        setIsComplete(isDeathScene)
         setShowInput(false)
         setTextInput('')
         setNumberInput('')
         setValidationMessage('')
         setSelectedChoice(null)
         setIsSubmitting(false)
-    }, [eventText, needsInput])
+    }, [eventText, needsInput, isDeathScene])
 
     // Focus input when shown
     useEffect(() => {
@@ -203,7 +204,6 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const isMemoryEvent = /memory|flash/i.test(event?.type || '') ||
         /memory|flash/i.test(event?.name || '') ||
         /MEMORY STIRS/i.test(eventText)
-    const isDeathScene = event?.is_death_scene || false
     const dialogMaxWidth = isDeathScene ? '1100px' : isMemoryEvent ? '900px' : '800px'
     const dialogWidth = isDeathScene ? '98%' : isMemoryEvent ? '95%' : '90%'
 
