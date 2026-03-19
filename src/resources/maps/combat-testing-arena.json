@@ -1,0 +1,469 @@
+{
+    "metadata": {
+        "bgm": "dream_space"
+    },
+    "(0, 0)": {
+        "id": "tile_0_0",
+        "title": "EmptyCave",
+        "description": "A space that is not quite a room. The floor is pale stone worn to a mirror shine; the walls dissolve into a white mist before they find a corner. The air carries no smell, no draft. A low hum runs beneath everything, like a word about to be spoken.\n\nThis is the Proving Grounds — a staging chamber drawn from the dream itself. Step east into the Fodder Pit, south toward the Ally Courtyard, or speak with the luminous figure that waits in the centre.",
+        "exits": [
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "TheAdjutant",
+                "__module__": "npc",
+                "props": {
+                    "name": "The Adjutant",
+                    "description": "A translucent figure robed in pale light. Its face is calm and purposeful — a construct of the dream, here to prepare you for what lies ahead.",
+                    "damage": 0,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "maxhp": 9999,
+                    "protection": 999,
+                    "speed": 1,
+                    "finesse": 10,
+                    "awareness": 100,
+                    "maxfatigue": 100,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 0],
+                    "idle_message": " waits silently.",
+                    "alert_message": " makes no move to fight.",
+                    "discovery_message": "a robed, luminous figure.",
+                    "target": null,
+                    "friend": true
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "equipment rack",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 50,
+                    "inventory": [
+                        {"__class__": "Shortsword", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Epee", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Mace", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Spear", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Dagger", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Hammer", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Battleaxe", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Longbow", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Crossbow", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "LeatherArmor", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "ChainmailShirt", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "IronCuirass", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "LeatherBoots", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "IronGreaves", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "IronHelm", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "PaddedGloves", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "IronGauntlets", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "GoldRing", "__module__": "items", "props": {"merchandise": false}},
+                        {"__class__": "Restorative", "__module__": "items", "props": {"count": 10, "merchandise": false}},
+                        {"__class__": "Draught", "__module__": "items", "props": {"count": 5, "merchandise": false}},
+                        {"__class__": "Antidote", "__module__": "items", "props": {"count": 5, "merchandise": false}},
+                        {"__class__": "WoodenArrow", "__module__": "items", "props": {"count": 20, "merchandise": false}},
+                        {"__class__": "IronArrow", "__module__": "items", "props": {"count": 20, "merchandise": false}}
+                    ],
+                    "name": "Equipment Rack",
+                    "description": "A long iron rack hung with weapons, armour, and supplies. Everything an agent could need to configure a loadout before testing.",
+                    "idle_message": "An equipment rack stands here, fully stocked.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a fully stocked equipment rack!",
+                    "announce": "An equipment rack stands here, fully stocked.",
+                    "keywords": ["open", "loot", "check", "view", "examine", "inspect", "peruse", "search"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            },
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Configuration Board",
+                    "description": "A broad stone panel etched with precise lettering. READ to see the current combat test configuration.",
+                    "idle_message": "A configuration board is mounted on the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a configuration board etched into the stone!",
+                    "announce": "A configuration board is mounted on the wall.",
+                    "keywords": ["read", "examine", "inspect", "view", "check"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "=== COMBAT TESTING ARENA — Active Configuration ===\n\nThis board reflects config_combat_testing.ini at last load.\nEdit that file and restart to change the scenario.\n\nARENAS:\n  East  → Fodder Pit      (Slime, CaveBat — weak/fodder enemies)\n  East→East → The Crucible    (KingSlime, Lurker — boss/tank)\n  South → Ally Courtyard  (Gorran + Slime — ally + enemy)\n  South→East → Status Chamber  (Pell — status-effect dummy, all resistances stripped)\n\nINTERACT WITH THE ADJUTANT to adjust Jean's stats at runtime.\nLOOT the Equipment Rack to change your loadout.\n\nAll arenas loop back to this Proving Grounds via the exit in the opposite direction."
+                }
+            }
+        ],
+        "symbol": "★"
+    },
+    "(1, 0)": {
+        "id": "tile_1_0",
+        "title": "EmptyCave",
+        "description": "The mist thickens here. The pale floor gives way to something darker — worn dirt scored by the impressions of countless conflicts. Small shapes glisten in the half-light.\n\nThis is the Fodder Pit. Slimes and Cave Bats are staged here for testing basic combat mechanics, move viability, and damage output at low threat levels. Go west to return to the Proving Grounds. Go east to reach the heavier threat of the Crucible.",
+        "exits": [
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Slime",
+                "__module__": "npc",
+                "props": {
+                    "name": "Slime",
+                    "description": "Goop that moves. Gross.",
+                    "damage": 20,
+                    "aggro": true,
+                    "exp_award": 1,
+                    "maxhp": 10,
+                    "protection": 0,
+                    "speed": 10,
+                    "finesse": 10,
+                    "awareness": 12,
+                    "maxfatigue": 100,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 5],
+                    "idle_message": " is glopping about.",
+                    "alert_message": "burbles angrily at Jean!",
+                    "discovery_message": "a slime.",
+                    "target": null,
+                    "friend": false
+                }
+            },
+            {
+                "__class__": "CaveBat",
+                "__module__": "npc",
+                "props": {
+                    "name": "Cave Bat",
+                    "description": "A small, leathery-winged mammal. Fragile but fast.",
+                    "damage": 18,
+                    "aggro": true,
+                    "exp_award": 4,
+                    "maxhp": 8,
+                    "protection": 0,
+                    "speed": 40,
+                    "finesse": 10,
+                    "awareness": 14,
+                    "maxfatigue": 100,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 5],
+                    "idle_message": " is hanging from the ceiling.",
+                    "alert_message": "screeches and dives!",
+                    "discovery_message": "a cave bat.",
+                    "target": null,
+                    "friend": false
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Pit Marker",
+                    "description": "A crude marker scratched into the floor by whatever force maintains this place.",
+                    "idle_message": "A marker is scratched into the floor.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a marker scratched into the floor!",
+                    "announce": "A marker is scratched into the floor.",
+                    "keywords": ["read", "examine", "inspect"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "FODDER PIT — Slime + CaveBat\nFor testing: move execution, basic damage, hit/dodge, low-threat scenarios.\nWest → Proving Grounds. East → The Crucible."
+                }
+            }
+        ],
+        "symbol": "○"
+    },
+    "(2, 0)": {
+        "id": "tile_2_0",
+        "title": "EmptyCave",
+        "description": "The hum is louder here. The floor vibrates faintly. Two shapes dominate the space — one vast and gelatinous, the other tall and thin, its claw-tipped arms too long for its frame.\n\nThis is the Crucible. The King Slime and a Lurker wait here for testing high-damage output, boss-scale HP pools, and complex move sets. Go west to return to the Fodder Pit and, beyond it, the Proving Grounds.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "KingSlime",
+                "__module__": "npc",
+                "props": {
+                    "name": "King Slime",
+                    "description": "A colossal mass of pulsating green slime, its body studded with mineral fragments it has consumed over centuries.",
+                    "damage": 50,
+                    "aggro": true,
+                    "exp_award": 500,
+                    "maxhp": 200,
+                    "protection": 15,
+                    "speed": 6,
+                    "finesse": 10,
+                    "awareness": 30,
+                    "maxfatigue": 100,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 5],
+                    "idle_message": " pulses at the centre of the floor.",
+                    "alert_message": " rears upward with a deep, resonant churn!",
+                    "discovery_message": "an enormous slime.",
+                    "target": null,
+                    "friend": false
+                }
+            },
+            {
+                "__class__": "Lurker",
+                "__module__": "npc",
+                "props": {
+                    "name": "Lurker",
+                    "description": "A grisly demon of the dark. Long, thin arms ending in poisonous claws.",
+                    "damage": 25,
+                    "aggro": true,
+                    "exp_award": 800,
+                    "maxhp": 250,
+                    "protection": 0,
+                    "speed": 10,
+                    "finesse": 10,
+                    "awareness": 60,
+                    "maxfatigue": 100,
+                    "endurance": 20,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 5],
+                    "idle_message": " clings to the shadows.",
+                    "alert_message": " lunges from the dark!",
+                    "discovery_message": "something lurking in the dark.",
+                    "target": null,
+                    "friend": false
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Crucible Marker",
+                    "description": "A marker etched deep into the stone.",
+                    "idle_message": "A marker is etched into the stone.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a marker etched into the stone!",
+                    "announce": "A marker is etched into the stone.",
+                    "keywords": ["read", "examine", "inspect"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "THE CRUCIBLE — KingSlime + Lurker\nFor testing: high HP pools, TidalSurge, VenomClaw, boss-tier damage, status stacking under pressure.\nWest → Fodder Pit → Proving Grounds."
+                }
+            }
+        ],
+        "symbol": "◆"
+    },
+    "(0, 1)": {
+        "id": "tile_0_1",
+        "title": "EmptyCave",
+        "description": "The mist here has a warmer quality, almost amber. A large, rock-armoured figure stands near the south wall. Across from it, a slime glistens with hostile intent.\n\nThis is the Ally Courtyard. Gorran, the rock-man, fights alongside Jean here — use this arena to test ally AI, co-op move interactions, and shared aggro mechanics. Go north to return to the Proving Grounds. Go east to reach the Status Chamber.",
+        "exits": [
+            "north",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Gorran",
+                "__module__": "npc",
+                "props": {
+                    "name": "Rock-Man",
+                    "description": "A massive creature covered head-to-toe in rock-like armour. Slow speech, powerful strikes. He seems friendly enough to Jean.",
+                    "damage": 55,
+                    "aggro": true,
+                    "exp_award": 0,
+                    "maxhp": 200,
+                    "protection": 10,
+                    "speed": 5,
+                    "finesse": 10,
+                    "awareness": 20,
+                    "maxfatigue": 100,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 7],
+                    "idle_message": " is bumbling about.",
+                    "alert_message": " lets out a deep and angry rumble!",
+                    "discovery_message": "a large, rock-armoured figure.",
+                    "target": null,
+                    "friend": true
+                }
+            },
+            {
+                "__class__": "Slime",
+                "__module__": "npc",
+                "props": {
+                    "name": "Slime",
+                    "description": "Goop that moves. Gross.",
+                    "damage": 20,
+                    "aggro": true,
+                    "exp_award": 1,
+                    "maxhp": 10,
+                    "protection": 0,
+                    "speed": 10,
+                    "finesse": 10,
+                    "awareness": 12,
+                    "maxfatigue": 100,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 5],
+                    "idle_message": " is glopping about.",
+                    "alert_message": "burbles angrily at Jean!",
+                    "discovery_message": "a slime.",
+                    "target": null,
+                    "friend": false
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Courtyard Marker",
+                    "description": "A marker pressed into the amber mist near the wall.",
+                    "idle_message": "A marker glows faintly in the mist.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a marker glowing in the mist!",
+                    "announce": "A marker glows faintly in the mist.",
+                    "keywords": ["read", "examine", "inspect"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "ALLY COURTYARD — Gorran (ally) + Slime (enemy)\nFor testing: ally AI targeting, shared aggro, co-op move timing, before_death hooks, friend=True behaviour.\nNorth → Proving Grounds. East → Status Chamber."
+                }
+            }
+        ],
+        "symbol": "▲"
+    },
+    "(1, 1)": {
+        "id": "tile_1_1",
+        "title": "EmptyCave",
+        "description": "The mist here is perfectly still. At the centre of the space stands a featureless shape — neither quite a figure nor a shadow. It does not breathe. It does not speak. It waits.\n\nThis is the Status Chamber. Pell, the test dummy, has every status resistance stripped to zero. Every debuff will land. Use this arena for testing states.py interactions: poison, stun, slow, doom, enflamed — anything and everything. Go west to the Ally Courtyard or north to the Fodder Pit.",
+        "exits": [
+            "north",
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "StatusDummy",
+                "__module__": "npc",
+                "props": {
+                    "name": "Pell",
+                    "description": "A featureless shape woven from the dream itself. It holds no malice — only the purpose you give it.",
+                    "damage": 3,
+                    "aggro": true,
+                    "exp_award": 0,
+                    "maxhp": 500,
+                    "protection": 0,
+                    "speed": 2,
+                    "finesse": 10,
+                    "awareness": 100,
+                    "maxfatigue": 9999,
+                    "endurance": 10,
+                    "strength": 10,
+                    "charisma": 10,
+                    "intelligence": 10,
+                    "faith": 10,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "combat_range": [0, 5],
+                    "idle_message": " stands inert, awaiting the test.",
+                    "alert_message": " shifts to face Jean, passive and ready.",
+                    "discovery_message": "a featureless shape.",
+                    "target": null,
+                    "friend": false
+                }
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Chamber Marker",
+                    "description": "A marker pressed into the stillness.",
+                    "idle_message": "A marker is pressed into the stillness.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a marker pressed into the stillness!",
+                    "announce": "A marker is pressed into the stillness.",
+                    "keywords": ["read", "examine", "inspect"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "STATUS CHAMBER — Pell (status dummy)\nAll status resistances: 0.0. All damage resistances: 1.0. HP: 500. Damage: 3.\nFor testing: states.py effects, debuff stacking, duration, interactions with player resistances.\nNorth → Fodder Pit. West → Ally Courtyard."
+                }
+            }
+        ],
+        "symbol": "●"
+    }
+}
