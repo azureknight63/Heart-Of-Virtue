@@ -139,9 +139,30 @@ Map `active_scenario` to the arena tile and the enemies expected:
 
 Note the tile and enemies. You will reference these when interpreting the QA output.
 
+**If `active_scenario = custom`:** The map JSON hardcodes Slime + CaveBat at tile (1, 0).
+Before invoking `/qa`, talk to The Adjutant and use **option [8] Manage arena combatants**:
+1. Clear tile (1, 0) — option [3]
+2. Add each class from `custom_enemies` — option [1], entering the class name from `npc.py`
+
+Changes take effect immediately. Then proceed to Step 4.
+
 ---
 
 ## Step 4: Invoke /qa
+
+Before calling `/qa`, ensure the server will boot with the combat testing config.
+If the server is not already running, set the env var so it loads the right ini:
+
+```bash
+export CONFIG_FILE=config_combat_testing.ini
+```
+
+This makes the game respect `startmap = combat-testing-arena`, `startposition = 0, 0`,
+and `testmode = True` from the ini. Without it, the game starts on the default map and
+the arena is unreachable (it has no link to the main game world).
+
+If the server is already running on a different config, restart it with the env var set
+before invoking `/qa`.
 
 Call the `/qa` skill, scoped to the combat arena:
 
@@ -149,8 +170,9 @@ Call the `/qa` skill, scoped to the combat arena:
 /qa target=http://localhost:3000 scope=combat focus="combat-testing-arena scenario={active_scenario}"
 ```
 
-If the Flask and Vite servers are not already running, note that `/qa` will
-start them automatically (it uses the inquisitor harness).
+If the Flask and Vite servers are not already running, `/qa` will start them
+automatically (it uses the inquisitor harness) — the `CONFIG_FILE` env var will be
+inherited by the child process.
 
 Pass the following context to `/qa` in the prompt:
 - The map is `combat-testing-arena` starting at `(0, 0)` (the Proving Grounds)
