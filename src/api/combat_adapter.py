@@ -898,13 +898,15 @@ class ApiCombatAdapter:
                 if not self.player.is_alive() or len(self.player.combat_list) == 0:
                     break
 
-                # Check if player is done with current move AND all cooldowns have drained.
-                # Continuing through cooldown beats mirrors the terminal game's beat loop so
-                # that moves return to stage 0 before the next API call.
+                # Check if the current move has finished executing (entered cooldown or
+                # completed). Return control as soon as at least one move is back at
+                # stage 0 — meaning the player has something they can do. Only keep
+                # advancing if every move is still in cooldown (player would have no
+                # available actions), to avoid leaving the player with zero options.
                 if self.player.current_move is None:
-                    if all(m.current_stage == 0 for m in self.player.known_moves):
+                    if any(m.current_stage == 0 for m in self.player.known_moves):
                         break
-                    # Otherwise keep advancing beats to drain cooldowns
+                    # All moves still cooling down — keep advancing beats until one opens up
         
         # Capture last move summary from the log entries of this move
         move_logs = [s["message"] for s in self.player.combat_log if s.get("type") in ("combat", "player_action")][-5:] # Last 5 relevant entries
