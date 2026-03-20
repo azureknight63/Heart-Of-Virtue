@@ -337,6 +337,8 @@ class EventSerializer:
                 pass
 
         # Check by event class name (known input-requiring events)
+        # NPCSpawnerEvent is intentionally excluded: it spawns NPCs silently and
+        # never sets needs_input=True, so it must not be treated as interactive.
         event_type = type(event).__name__
         input_requiring_events = [
             "WhisperingStatue",
@@ -346,7 +348,6 @@ class EventSerializer:
             "PuzzleEvent",
             "RiddleEvent",
             "CombatEvent",
-            "NPCSpawnerEvent",
         ]
 
         return event_type in input_requiring_events
