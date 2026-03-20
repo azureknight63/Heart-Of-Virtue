@@ -21,7 +21,13 @@ Character Meanings:
 - # = Grid boundary markers
 """
 
-import tkinter as tk
+try:
+    import tkinter as tk
+    _TKINTER_AVAILABLE = True
+except ImportError:
+    tk = None  # type: ignore
+    _TKINTER_AVAILABLE = False
+
 from typing import Optional, Dict, List, Any, Tuple, TYPE_CHECKING
 from collections import deque
 
@@ -70,13 +76,13 @@ class CombatBattlefieldWindow:
     def __init__(self, title: str = "Combat Battlefield"):
         """
         Initialize the combat battlefield window.
-        
+
         Args:
             title: Window title
         """
         self.title = title
-        self.window: Optional[tk.Tk] = None
-        self.text_widget: Optional[tk.Text] = None
+        self.window = None
+        self.text_widget = None
         self.combatants_data: Dict[str, Dict[str, Any]] = {}
         self.beat_number: int = 0
         self.is_open: bool = False
@@ -94,6 +100,8 @@ class CombatBattlefieldWindow:
 
     def create_window(self) -> None:
         """Create and configure the tkinter window with square grid layout."""
+        if not _TKINTER_AVAILABLE:
+            return
         if self.is_open:
             return
 

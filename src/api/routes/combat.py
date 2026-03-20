@@ -141,7 +141,11 @@ def execute_move():
         result = game_service.execute_move(player, move_type, move_id, target_id, direction, session_id=session.session_id, session_data=session.data)
 
         if "error" in result:
-            return jsonify({"success": False, "error": result["error"]}), 400
+            # Game-logic errors (move not available, wrong state, etc.) are not bad
+            # requests — return 200 with success=false so callers can distinguish
+            # structural errors (4xx) from in-game conditions (200 success=false).
+            session_manager.save_session(session.session_id)
+            return jsonify({"success": False, "error": result["error"]}), 200
 
         session_manager.save_session(session.session_id)
         return jsonify({"success": True, **result}), 200

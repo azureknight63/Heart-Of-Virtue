@@ -373,6 +373,9 @@ class SessionManager:
                     (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
                     player.universe.starting_map_default
                 )
+                # Last resort: first available map
+                if starting_map is None and player.universe.maps:
+                    starting_map = player.universe.maps[0]
                 player.map = starting_map
                 print(f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}", flush=True)
             except (ImportError, Exception) as e:

@@ -893,14 +893,18 @@ class ApiCombatAdapter:
                 beat_states.append(beat_state)
                 
                 beats_processed += 1
-                
-                # Check if player is done with current move
-                if self.player.current_move is None:
-                    break
-                
+
                 # Check win/loss conditions inside loop
                 if not self.player.is_alive() or len(self.player.combat_list) == 0:
                     break
+
+                # Check if player is done with current move AND all cooldowns have drained.
+                # Continuing through cooldown beats mirrors the terminal game's beat loop so
+                # that moves return to stage 0 before the next API call.
+                if self.player.current_move is None:
+                    if all(m.current_stage == 0 for m in self.player.known_moves):
+                        break
+                    # Otherwise keep advancing beats to drain cooldowns
         
         # Capture last move summary from the log entries of this move
         move_logs = [s["message"] for s in self.player.combat_log if s.get("type") in ("combat", "player_action")][-5:] # Last 5 relevant entries

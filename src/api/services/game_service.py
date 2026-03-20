@@ -1560,8 +1560,29 @@ class GameService:
         
         if not enemy:
             return {"error": "Enemy not found"}
-            
+
         result = self._initialize_combat(player, [enemy], session_id=session_id)
+
+        # Attach API-contract fields so routes don't need to reach into player internals
+        import uuid as _uuid
+        combatants = []
+        for ally in getattr(player, "combat_list_allies", []):
+            combatants.append({
+                "id": "player" if ally is player else f"ally_{id(ally)}",
+                "name": getattr(ally, "name", "Ally"),
+                "is_player": ally is player,
+                "is_ally": True,
+            })
+        for e in getattr(player, "combat_list", []):
+            combatants.append({
+                "id": f"enemy_{id(e)}",
+                "name": getattr(e, "name", "Enemy"),
+                "is_player": False,
+                "is_ally": False,
+            })
+        result["combat_id"] = str(_uuid.uuid4())
+        result["combatants"] = combatants
+        result["turn_order"] = [c["id"] for c in combatants]
         return result
 
     def execute_move(self, player: "player_module.Player", move_type: str, move_id: str, target_id: str = None, direction: str = None, session_id: str = None, session_data: Dict = None) -> Dict[str, Any]:
