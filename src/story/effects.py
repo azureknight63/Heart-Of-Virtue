@@ -103,6 +103,14 @@ class MemoryFlash(Event):
                 for line in self.aftermath_text:
                     cprint(line, "cyan")
 
+            # Build description for API clients from the narrative text
+            parts = ["For a moment, there is only silence...", ""]
+            parts.extend(line for line, _pause in self.memory_lines)
+            if self.aftermath_text:
+                parts.append("")
+                parts.extend(self.aftermath_text)
+            self.description = "\n".join(parts)
+
             # Signal requirement for input
             self.needs_input = True
             self.input_type = "choice"

@@ -127,21 +127,20 @@ class ApiCombatAdapter:
         # Track async suggestion loading state
         self.player.suggestions_loading = False
         self._suggestion_thread = None
-        self._suggestion_generation = (
-            0  # Generation counter for race condition prevention
-        )
-        self._suggestion_lock = (
-            threading.Lock()
-        )  # Guards generation counter and result writes
+        self._suggestion_generation = 0  # Generation counter for race condition prevention
+        self._suggestion_lock = threading.Lock()  # Guards generation counter and result writes
 
-        # Suppress terminal animations in API mode
-        try:
-            import src.animations as animations
-
-            animations.set_api_mode(True)
-        except Exception:
-            pass  # Fail silently if animations module isn't available
-
+        # Suppress terminal animations in API mode.
+        # Must set the flag on both possible module identities: moves.py imports
+        # the bare 'animations' module, while this file lives under 'src.animations'.
+        # They are different sys.modules entries so we set both.
+        for _anim_name in ("animations", "src.animations"):
+            try:
+                import importlib, sys as _sys
+                _anim_mod = _sys.modules.get(_anim_name) or importlib.import_module(_anim_name)
+                _anim_mod.set_api_mode(True)
+            except Exception:
+                pass
     @property
     def awaiting_input(self):
         return self.player.combat_adapter_state.get("awaiting_input", False)
