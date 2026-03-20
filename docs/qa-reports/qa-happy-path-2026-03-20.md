@@ -28,7 +28,7 @@
 | Verdette Caverns event queue | — | ❌ NPCSpawnerEvent stuck pending (FIXED) |
 | Verdette Caverns entry exploration | — | ✅ room, exits, item, Gorran NPC |
 
-**Overall: 4 bugs fixed. 3 open issues remain.**
+**Overall: 4 bugs fixed. 5 open issues remain. (ISSUE-011 downgraded to Low — death flow confirmed working.)**
 
 ---
 
@@ -61,6 +61,10 @@
 | (7,1) AfterGorranIntro → teleport to verdette-caverns (2,1) | ✅ | Jean transported |
 | Verdette Caverns (2,1) — Spiritual Umbral Battleaxe | ✅ | Item picked up |
 | Verdette Caverns (2,2) — Gorran NPC present, 3 exits | ✅ | room accessible |
+| Verdette Caverns interior exploration | ⚠️ | In progress — Jean died at (8,8); restart required |
+| Lurker fight at (8,8) | ❌ | Jean died; Battleaxe not equipped, no healing items |
+| AfterDefeatingLurker event | ❌ | Not reached |
+| Chapter 2 entry / Grondia navigation | ❌ | Not reached |
 
 ---
 
@@ -121,6 +125,34 @@
 
 ---
 
+### ISSUE-009 — Ch01PostRumbler3 narrative text not exposed via API
+**Severity:** Medium
+**Symptom:** After the Gorran rescue scene, `Ch01PostRumbler3.process()` (stage 1) plays rich narrative text ("Jean wipes the blood from his lip...") in the terminal via `cprint()`, but the pending event API returns only `description: "Jean must decide his next move quickly."`. The atmospheric paragraph before the choice prompt is invisible to web clients.
+**Root cause:** `Ch01PostRumbler3.process()` calls `cprint()` for terminal output, then sets `self.description = "Jean must decide his next move quickly."` independently. The `cprint()` lines are not accumulated into `self.description`. The same pattern exists in `MemoryFlash` (fixed as ISSUE-005) but was not applied here.
+**Fix approach:** Accumulate narrative text into `self.description` in stage 1, before setting `needs_input = True` — same pattern as the ISSUE-005 fix.
+**Action needed:** Update `Ch01PostRumbler3.process()` stage 1 to include narrative text in `self.description`.
+
+---
+
+### ISSUE-010 — Check move crashes with internal error, leaves adapter in stale state
+**Severity:** High
+**Symptom:** Submitting `POST /api/combat/move` with `move_id: "0"` (Check move, index 0 in the move list) returns `{"success": false, "message": "An internal error occurred"}`. The adapter then gets stuck: subsequent `GET /api/combat/status` returns `input_type: "number_input"` but with `pending_move_index: null`. Any non-number move submissions are rejected ("awaiting number input"); submitting a number returns "No pending move". Combat is fully deadlocked.
+**Root cause:** Check's internal implementation crashes during execution, but the adapter has already advanced to `number_input` state before the crash. The exception path does not reset `self.input_type` or `self.pending_move_index`, leaving them in an inconsistent intermediate state.
+**Recovery (manual):** Submit `move_type: "cancel"`, then `move_type: "number", move_id: "0"` (discarded with "No pending move") — this drains the stale state and returns combat to normal.
+**Fix approach:** In `CombatAdapter`, wrap move execution in a try/except that resets adapter state to a consistent baseline (`input_type = None`, `pending_move_index = None`) on any unhandled exception, or fix the Check move's internal crash.
+**Action needed:** Investigate what causes Check to crash; reset adapter state on exception.
+
+---
+
+### ISSUE-011 — Player death: DefeatDialog exists but save/load unavailable without DB
+**Severity:** Low (death flow works; only blocked by missing Turso DB)
+**Symptom (API testing only):** When Jean's HP drops to ≤ 0, subsequent `GET /api/world` returns `state: "normal"` and `GET /api/combat/status` returns `"not_in_combat"` — Jean appears stuck at HP −11 in API testing. No automated recovery occurs.
+**Actual behavior (browser):** `_execute_move()` in `combat_adapter.py` (lines 931–958) correctly detects death, sets `player.in_combat = False`, and populates `combat_end_summary` with `{status: "defeat", game_over: true}`. This is exposed as `end_state` in `GET /api/combat/status`. The frontend `useCombatCoordinator` hook detects `end_state.status === "defeat"` and renders `DefeatDialog` (skull ASCII art, "Load save" dropdown, "START OVER" logout). The "stuck" state is an API-testing artifact — in the browser the death flow is handled end-to-end.
+**Root cause of perceived issue:** ISSUE-001 (no Turso DB) means no saves exist to load in `DefeatDialog`. `START OVER` logs out and creates a fresh session, which is the recovery path.
+**Action needed:** Fix ISSUE-001 (Turso or SQLite fallback) to enable save/load recovery. No combat-engine changes required.
+
+---
+
 ### ISSUE-006 — Victory dialog re-appears on page reload (cosmetic)
 **Severity:** Low
 **Symptom:** After closing the Victory dialog, navigating or reloading the page causes it to reappear.
@@ -169,10 +201,13 @@
 
 ## Recommended Next Steps
 
-1. **Configure Turso** or add SQLite fallback to unblock real user registration (ISSUE-001)
-2. **Investigate HP overflow** (ISSUE-003) — `player.hp > player.max_hp` at game start
-3. **Fix Victory dialog replay** (ISSUE-006) — persist `lastEndStateId` in localStorage
-4. **Investigate Rock Rumbler AI loop** (ISSUE-008) — NPC stops attacking at high beat counts
-5. **Name Verdette Caverns tiles** — (2,1) shows "Map Tile"; set `name` in map data
-6. **Accessibility pass** on combat move panels — convert cursor-pointer divs to `<button>` elements
-7. **Continue QA** from Verdette Caverns (2,2) — interact with Gorran NPC, explore exits (southeast, southwest), find Chapter 2 story beats
+1. **Fix Check move crash + stale adapter state (ISSUE-010)** — High; combat deadlock
+2. **Fix ISSUE-001 (Turso/SQLite)** — unblocks DefeatDialog save/load recovery (ISSUE-011)
+3. **Expose Ch01PostRumbler3 narrative text (ISSUE-009)** — Medium; same pattern as ISSUE-005 fix
+4. **Configure Turso** or add SQLite fallback to unblock real user registration (ISSUE-001)
+5. **Investigate HP overflow** (ISSUE-003) — `player.hp > player.max_hp` at game start
+6. **Fix Victory dialog replay** (ISSUE-006) — persist `lastEndStateId` in localStorage
+7. **Investigate Rock Rumbler AI loop** (ISSUE-008) — NPC stops attacking at high beat counts
+8. **Name Verdette Caverns tiles** — (2,1) shows "Map Tile"; set `name` in map data
+9. **Accessibility pass** on combat move panels — convert cursor-pointer divs to `<button>` elements
+10. **Continue QA** from Verdette Caverns — restart fresh session, equip Battleaxe, use healing items, fight Lurker at (8,8), trigger AfterDefeatingLurker, reach Grondia

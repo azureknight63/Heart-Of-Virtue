@@ -172,8 +172,9 @@ class NPC(Combatant):
         # fatigue than is currently available (e.g. after 2+ attacks drain the pool).
         # Use available_moves (deduplicated) rather than weighted_moves to avoid calling
         # viable() multiple times on the same object due to weight expansion.
+        # Use getattr in case a move was created via __new__ without calling Move.__init__.
         can_attack = any(
-            m.category == "Offensive" and m.fatigue_cost <= self.fatigue and m.viable()
+            getattr(m, 'category', '') == "Offensive" and m.fatigue_cost <= self.fatigue and m.viable()
             for m in available_moves
         )
         if not can_attack and self.fatigue < self.maxfatigue:
