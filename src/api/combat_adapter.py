@@ -907,7 +907,19 @@ class ApiCombatAdapter:
 
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat(s)."""
+        try:
+            return self._execute_move_inner(move)
+        except Exception as e:
+            logger.exception("Unhandled exception in _execute_move for move '%s'", getattr(move, 'name', '?'))
+            # Reset to a consistent baseline so subsequent moves are not blocked
+            self.input_type = "move_selection"
+            self.pending_move_index = None
+            self.awaiting_input = True
+            self.available_options = self._get_available_moves()
+            return {"error": f"Move execution failed: {e}"}
 
+    def _execute_move_inner(self, move) -> Dict[str, Any]:
+        """Inner move execution — called only via _execute_move which handles state recovery."""
         # Reset beat state index for this move execution
         self.current_beat_state_index = 0
 
