@@ -83,6 +83,7 @@ ai/.model_cache.json
 .mcp.json
 .claude/settings.local.json
 !.claude/settings.json
+bugs.json
 bugs_*.json
 
 # Inquisitor browser test screenshots
