@@ -591,8 +591,8 @@ class Ch01PostRumbler3(Event):
                 "The hole in the chamber wall is open. Jean could make it in ten seconds flat."
             )
             cprint("\n" + narrative)
-            # Build description for API clients from the narrative text
-            self.description = narrative + "\n\nJean must decide his next move quickly."
+            # Build description for API clients: prepend narrative to the prompt text set in __init__
+            self.description = narrative + "\n\n" + self.description
             self.needs_input = True
             self._stage = 2
             return
