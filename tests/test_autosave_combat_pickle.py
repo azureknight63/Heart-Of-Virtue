@@ -147,14 +147,22 @@ class TestAutosaveCombatPickle:
         assert not hasattr(restored, "_combat_adapter")
 
 
-class TestPlayerGetstate:
-    """Verify that Player.__getstate__ self-enforces the pickle contract."""
+class TestPlayerPickleContract:
+    """Verify that the Player.__getstate__ contract is self-enforcing.
+
+    These tests use _MockPlayer (which mirrors the _combat_adapter-stripping
+    pattern) rather than the real Player to stay independent of tkinter.
+    A companion integration note: when tkinter is available, the same test
+    should be run against a real Player instance to catch any new non-picklable
+    attribute attached by a future mixin.
+    """
 
     def test_getstate_strips_combat_adapter(self):
         """__getstate__ must exclude _combat_adapter from the serialized dict."""
         player = _MockPlayer()
         player._combat_adapter = _MockCombatAdapter()
 
+        # Simulate __getstate__ logic (mirrors what Player.__getstate__ does)
         state = player.__dict__.copy()
         state.pop("_combat_adapter", None)
 

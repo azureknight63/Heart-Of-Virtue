@@ -343,7 +343,8 @@ export function useEventManager({
                     const resultEvent = {
                         name: 'Event Result',
                         output_text: trimmedOutput,
-                        needs_input: false
+                        needs_input: false,
+                        ...(data.is_death_scene ? { is_death_scene: true } : {})
                     }
                     setCurrentEvent(resultEvent)
                 }

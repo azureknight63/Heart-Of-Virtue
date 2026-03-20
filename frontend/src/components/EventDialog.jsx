@@ -46,16 +46,19 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const inputPrompt = event?.input_prompt || 'Your choice:'
     const inputOptions = event?.input_options || []
     const eventId = event?.event_id
+    const isDeathScene = event?.is_death_scene || false
 
     useEffect(() => {
-        setIsComplete(false)
+        // Death scenes show all text at once — mark complete immediately so the
+        // Close button appears without waiting for a (non-existent) typewriter.
+        setIsComplete(isDeathScene)
         setShowInput(false)
         setTextInput('')
         setNumberInput('')
         setValidationMessage('')
         setSelectedChoice(null)
         setIsSubmitting(false)
-    }, [eventText, needsInput])
+    }, [eventText, needsInput, isDeathScene])
 
     // Focus input when shown
     useEffect(() => {
@@ -201,8 +204,8 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const isMemoryEvent = /memory|flash/i.test(event?.type || '') ||
         /memory|flash/i.test(event?.name || '') ||
         /MEMORY STIRS/i.test(eventText)
-    const dialogMaxWidth = isMemoryEvent ? '900px' : '800px'
-    const dialogWidth = isMemoryEvent ? '95%' : '90%'
+    const dialogMaxWidth = isDeathScene ? '1100px' : isMemoryEvent ? '900px' : '800px'
+    const dialogWidth = isDeathScene ? '98%' : isMemoryEvent ? '95%' : '90%'
 
     return (
         <BaseDialog
@@ -293,6 +296,33 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                 </GameText>
                             </div>
                         ))}
+                    </div>
+                ) : isDeathScene ? (
+                    /* Death scene: show all at once, bright red, monospace pre-aligned, with glow */
+                    <div
+                        style={{
+                            padding: spacing.lg,
+                            flex: 1,
+                            overflowX: 'auto',
+                            overflowY: 'auto',
+                            maxHeight: '500px',
+                            background: 'rgba(20, 0, 0, 0.92)',
+                            border: '2px solid #660000',
+                            borderRadius: '8px',
+                            boxShadow: 'inset 0 0 40px rgba(180, 0, 0, 0.25), 0 0 20px rgba(150, 0, 0, 0.4)',
+                        }}
+                    >
+                        <pre style={{
+                            margin: 0,
+                            color: '#ff2222',
+                            fontFamily: 'monospace',
+                            fontSize: '13px',
+                            lineHeight: '1.4',
+                            whiteSpace: 'pre',
+                            textShadow: '0 0 8px rgba(255, 50, 50, 0.9), 0 0 20px rgba(200, 0, 0, 0.6)',
+                        }}>
+                            {eventText}
+                        </pre>
                     </div>
                 ) : (
                     <TypewriterOutput

@@ -286,4 +286,30 @@ describe('EventDialog', () => {
 
     expect(mockOnClose).toHaveBeenCalled();
   });
+
+  it('renders death scene without typewriter — shows text instantly in a pre element', () => {
+    const deathEvent = {
+      event_id: 'death-evt',
+      name: 'Event Result',
+      output_text: 'Jean has died.\n\n   .oOOOo.\n  OOOOOOOOo',
+      needs_input: false,
+      is_death_scene: true
+    };
+
+    render(<EventDialog event={deathEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+
+    // Text must be visible immediately — no timer advance needed
+    expect(screen.getByText(/Jean has died/i)).toBeDefined();
+
+    // Should use a <pre> element (not the TypewriterOutput data-testid div)
+    const preEl = document.querySelector('pre');
+    expect(preEl).not.toBeNull();
+    expect(preEl.textContent).toContain('Jean has died.');
+
+    // TypewriterOutput renders a data-testid="event-text-container" — should NOT be present
+    expect(screen.queryByTestId('event-text-container')).toBeNull();
+
+    // Close button visible immediately (isComplete=true on mount)
+    expect(screen.getByRole('button', { name: /Close/i })).toBeDefined();
+  });
 });

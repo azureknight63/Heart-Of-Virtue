@@ -38,7 +38,7 @@ src/
 ├── moves.py                # Combat abilities/moves (large file, ~152KB)
 ├── states.py               # Status effects (buffs/debuffs)
 ├── player.py               # Player class (~90KB), inherits Combatant
-├── npc.py                  # NPC class (~92KB), inherits Combatant
+├── npc.py                  # NPC class (~49KB), inherits Combatant
 ├── items.py                # Item definitions (~98KB)
 ├── game.py                 # Main game loop (CLI)
 ├── universe.py             # World/map system
@@ -50,6 +50,11 @@ frontend/src/
 ├── hooks/                  # useApi, useCombat, useFetchCombatStatus, ...
 ├── api/                    # Axios client + endpoint definitions
 └── context/                # AudioContext
+```
+
+Root:
+```
+config_combat_testing.ini   # Combat testing config (agent-only; pass CONFIG_FILE= to activate)
 ```
 
 ## Running the Project
@@ -203,6 +208,40 @@ only on `console_errors` and `network_failures` (the significant ones).
 - The Vite dev server is slow to compile on first boot; the harness pre-warms it
   with an HTTP request before opening the browser, so navigation doesn't race.
 - Screenshots land in `tools/inquisitor_screenshots/<timestamp>/` (gitignored).
+
+## Combat Testing Skill
+
+**Agent-focused combat scenario testing.** The `/combat-test` skill reads `config_combat_testing.ini`, sets up a scenario in the dedicated combat testing arena, invokes `/qa` to drive the full Flask + React stack, and surfaces raw combat logs and state for assertion.
+
+```bash
+/combat-test                                      # run default scenario (fodder)
+/combat-test scenario=boss                        # high-HP boss pressure test
+/combat-test scenario=status_dummy hp=50          # status effect verification
+/combat-test god_mode=True scenario=ally          # ally AI test, Jean cannot die
+```
+
+### Config file
+
+`config_combat_testing.ini` (project root) is the single control surface. Edit it directly or pass inline overrides. **The game must be started with `CONFIG_FILE=config_combat_testing.ini`** for `startmap`, `testmode`, and `startposition` to take effect — otherwise the game boots on the default map and the arena is unreachable (it has no link to the main game world).
+
+### Arena map
+
+`src/resources/maps/combat-testing-arena.json` — a self-contained 2×2 grid of test tiles:
+
+| Tile | Name | Combatants | Purpose |
+|------|------|-----------|---------|
+| `(0, 0)` | Proving Grounds | The Adjutant (ally) | Staging area — stat and roster configuration |
+| `(1, 0)` | Fodder Pit | Slime + CaveBat | Basic move/damage testing |
+| `(2, 0)` | The Crucible | KingSlime + Lurker | Boss-tier HP, complex move sets |
+| `(0, 1)` | Ally Courtyard | Gorran (ally) + Slime | Ally AI, co-op mechanics, friend=True |
+| `(1, 1)` | Status Chamber | Pell (StatusDummy) | Status effects — all resistances stripped to 0 |
+
+### Key NPCs added in `npc.py`
+
+- **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` opens a runtime menu: set Jean's HP/level/attributes/heat/skills and manage the NPC roster on each tile (add/remove/clear/edit by class name). Changes take effect immediately — no restart needed.
+- **`StatusDummy` / "Pell"** — test target at `(1, 1)`. Every status resistance is 0.0 and every damage resistance is 1.0 so effects land reliably. High HP (500), very low damage (3).
+
+---
 
 ## Map Design Skill
 
