@@ -2887,6 +2887,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
             beats_left=prep,
             target=npc.target,
             user=npc,
+            category="Offensive",
         )
         self.evaluate()
 
@@ -2898,7 +2899,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         if not hasattr(self.user, "combat_proximity"):
             return False
         for enemy, distance in self.user.combat_proximity.items():
-            if range_min < distance < range_max:
+            if range_min <= distance <= range_max:
                 viability = True
                 break
 
