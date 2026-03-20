@@ -277,8 +277,7 @@ class GameService:
 
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
-        import re as _re
-        tile_name = _re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', raw_name)
+        tile_name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', raw_name)
 
         return {
             "x": player.location_x,

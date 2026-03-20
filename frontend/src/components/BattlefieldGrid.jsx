@@ -43,7 +43,7 @@ const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
 // ---------------------------------------------------------------------------
 // Grid / camera constants — module level
 // ---------------------------------------------------------------------------
-const VIEW_SIZE = 13;  // viewport cell count in zoomed mode; shows enemies within attacking range plus buffer
+const VIEW_SIZE = 13;  // viewport cell count in zoomed mode; shows enemies within attacking range (up to 9 cells) plus buffer
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
 const CAMERA_EPSILON = 0.004; // settle threshold (cells)

@@ -48,8 +48,8 @@ class _MockPlayer:
 def _save_game_serialize(player):
     """Re-implement just the pickle-safe serialization logic from game_service.save_game.
 
-    This mirrors lines 2125-2130 of src/api/services/game_service.py so the
-    regression tests remain independent of the Flask/tkinter import chain.
+    This mirrors the try/finally pop-restore pattern in src/api/services/game_service.py
+    so the regression tests remain independent of the Flask/tkinter import chain.
     """
     combat_adapter = player.__dict__.pop("_combat_adapter", None)
     try:
