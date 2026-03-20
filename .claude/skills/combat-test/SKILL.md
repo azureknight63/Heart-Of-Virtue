@@ -1,11 +1,11 @@
 ---
 name: combat-test
-version: 1.0.0
+version: 1.1.0
 description: |
   Agent-focused combat testing skill. Reads config_combat_testing.ini to set up a
-  scenario in the dedicated combat testing arena, then invokes /qa to drive the
-  full Flask + React stack through that scenario and return the raw combat log
-  and state for agent exploration.
+  scenario in the dedicated combat testing arena, then runs the scenario via the
+  bug_hunt harness (primary) or /qa browser stack (escalation for UI bugs) and
+  returns raw combat logs and state for assertion.
   Use when asked to "test combat", "run a combat scenario", "set up a combat test",
   or "check combat for X".
 allowed-tools:
@@ -22,16 +22,35 @@ allowed-tools:
 # /combat-test: Combat Testing Skill
 
 You are a combat QA specialist for Heart of Virtue. Your job is to set up the
-combat testing arena, drive a scenario through the game stack, and surface the
-raw results for further investigation or assertion.
+combat testing arena, drive a scenario, and surface the raw results for further
+investigation or assertion.
 
 **This skill is agent-focused.** Output raw state and logs — do not summarise
 or soft-land issues. Surface everything so the calling agent can decide what to
 assert.
 
+**Testing tier:**
+- **Primary** — `python tools/bug_hunt.py` (fast, in-process, no browser). Use
+  this for all logic/mechanics verification: damage, status effects, EXP, cooldowns.
+- **Escalation** — `/qa` browser stack. Use only when the bug is clearly UI-layer
+  (React rendering, network failures, JS errors). Do not escalate by default.
+
 ---
 
-## Step 0: Parse Arguments
+## Preamble (run immediately)
+
+Print the current branch:
+```bash
+git branch --show-current
+```
+If not on a combat-related or feature branch, warn the user but proceed.
+
+Print the `active_scenario` from `config_combat_testing.ini` so the agent knows
+what will run before any changes are applied.
+
+---
+
+## Step 1: Read Config and Apply Overrides
 
 The user may invoke with inline overrides:
 
@@ -43,7 +62,7 @@ The user may invoke with inline overrides:
 /combat-test god_mode=True scenario=ally
 ```
 
-Recognised override keys (all map directly to `config_combat_testing.ini` keys):
+Recognised override keys (all map directly to `config_combat_testing.ini`):
 
 | Key | Section | Description |
 |-----|---------|-------------|
@@ -67,15 +86,10 @@ Recognised override keys (all map directly to `config_combat_testing.ini` keys):
 | `skip_combat` | `[development]` | `True` / `False` |
 | `active_events` | `[combat_events]` | Comma-separated event class names |
 
-Collect overrides. Do **not** apply them yet.
+**Do this in one pass:**
 
----
-
-## Step 1: Read Current Configuration
-
-Read `config_combat_testing.ini` from the project root.
-
-Print the current effective configuration in a compact table:
+1. Read `config_combat_testing.ini`.
+2. Print the current effective configuration:
 
 ```
 === COMBAT TEST CONFIG ===
@@ -91,7 +105,7 @@ Active events:   (none)
 ==========================
 ```
 
-If the user provided overrides, show what will change:
+3. If the user provided overrides, show the diff:
 
 ```
 OVERRIDES to apply:
@@ -99,33 +113,21 @@ OVERRIDES to apply:
   hp=50                (was: 100)
 ```
 
-Ask for confirmation only if the override changes `god_mode`, `skip_combat`, or
-`active_events` — those carry behaviour risk. For stat and scenario changes,
-proceed without asking.
+4. **Record the original values** for every key you are about to change — you
+   will need them to restore the ini in Step 4.
+
+5. Ask for confirmation **only** if the override changes `god_mode`,
+   `skip_combat`, or `active_events`. For stat and scenario changes, proceed
+   without asking.
+
+6. Apply each override: locate the correct section and key, edit with the Edit
+   tool. Preserve all comments. Change only the relevant values.
+
+7. Re-read the file and confirm effective values match expectations.
 
 ---
 
-## Step 2: Apply Overrides
-
-For each override, locate the correct section and key in
-`config_combat_testing.ini` and apply the edit using the Edit tool.
-
-Preserve all comments. Change only the values on the relevant lines.
-
-Example: if `scenario=boss` is passed, edit this line in `[scenario]`:
-```
-active_scenario = fodder
-```
-→
-```
-active_scenario = boss
-```
-
-After edits, re-read the file and confirm the effective values match expectations.
-
----
-
-## Step 3: Identify the Target Arena Tile
+## Step 2: Identify the Target Arena Tile
 
 Map `active_scenario` to the arena tile and the enemies expected:
 
@@ -137,65 +139,74 @@ Map `active_scenario` to the arena tile and the enemies expected:
 | `status_dummy` | `(1, 1)` Status Chamber | Pell (all resistances 0) | Status effect verification |
 | `custom` | `(1, 0)` Fodder Pit | `custom_enemies` value | Custom roster |
 
-Note the tile and enemies. You will reference these when interpreting the QA output.
+**If `active_scenario = custom`:** Edit the map JSON directly
+(`src/resources/maps/combat-testing-arena.json`, tile `(1, 0)`, `"npcs"` array)
+to replace the roster with the class names from `custom_enemies`. This is faster
+and more reliable than driving The Adjutant's runtime menu via the browser. Restart
+the server after the edit if it is already running.
 
-**If `active_scenario = custom`:** The map JSON hardcodes Slime + CaveBat at tile (1, 0).
-Before invoking `/qa`, talk to The Adjutant and use **option [8] Manage arena combatants**:
-1. Clear tile (1, 0) — option [3]
-2. Add each class from `custom_enemies` — option [1], entering the class name from `npc.py`
-
-Changes take effect immediately. Then proceed to Step 4.
+Note the tile and enemies — reference them when interpreting results.
 
 ---
 
-## Step 4: Invoke /qa
+## Step 3: Run the Scenario
 
-Before calling `/qa`, ensure the server will boot with the combat testing config.
-If the server is not already running, set the env var so it loads the right ini:
+### Primary path — bug_hunt harness
+
+Set the environment variable and run the harness:
+
+```bash
+CONFIG_FILE=config_combat_testing.ini python tools/bug_hunt.py --headless --output /tmp/combat_results.json
+```
+
+This is faster, needs no browser, and produces structured JSON output. Use this
+for all logic/mechanics verification.
+
+If the harness has no dedicated combat scenario, run the general harness and
+filter results by combat-related endpoints (`/api/combat/*`).
+
+### Escalation path — full browser /qa
+
+Use this **only** if the bug is clearly UI-layer (React rendering, JS console
+errors, network failures visible only in the browser). Before calling `/qa`,
+ensure the server boots with the combat testing config:
 
 ```bash
 export CONFIG_FILE=config_combat_testing.ini
 ```
 
-This makes the game respect `startmap = combat-testing-arena`, `startposition = 0, 0`,
-and `testmode = True` from the ini. Without it, the game starts on the default map and
-the arena is unreachable (it has no link to the main game world).
-
-If the server is already running on a different config, restart it with the env var set
-before invoking `/qa`.
-
-Call the `/qa` skill, scoped to the combat arena:
-
+Then call:
 ```
 /qa target=http://localhost:3000 scope=combat focus="combat-testing-arena scenario={active_scenario}"
 ```
 
-If the Flask and Vite servers are not already running, `/qa` will start them
-automatically (it uses the inquisitor harness) — the `CONFIG_FILE` env var will be
-inherited by the child process.
-
-Pass the following context to `/qa` in the prompt:
-- The map is `combat-testing-arena` starting at `(0, 0)` (the Proving Grounds)
-- The scenario tile is `{tile}` — navigate there to trigger combat
+Pass this context to `/qa`:
+- Map is `combat-testing-arena` starting at `(0, 0)` (the Proving Grounds)
+- Scenario tile is `{tile}` — navigate there to trigger combat
 - Enemies expected: `{enemies}`
-- Max rounds: `{max_rounds}`
-- God mode: `{god_mode}`
-- Check: combat start, move execution, status effects if `status_dummy`, ally
-  targeting if `ally`, post-combat EXP distribution, and reset (return to
-  Proving Grounds after combat ends)
+- Max rounds: `{max_rounds}`, God mode: `{god_mode}`
+- Check: combat start, move execution, status effects (if `status_dummy`), ally
+  targeting (if `ally`), post-combat EXP distribution, reset to Proving Grounds
 
 Let `/qa` run to completion. Do not interrupt it.
 
 ---
 
+## Step 4: Restore the Ini
+
+Revert every key you changed in Step 1 back to the original values you recorded.
+Use the Edit tool, one key at a time. Re-read the file to confirm restoration.
+
+Skip restoration if the user passed `--keep-overrides`.
+
+---
+
 ## Step 5: Surface Raw Results
 
-After `/qa` completes, collect and display:
+Read `/tmp/combat_results.json` (harness path) or collect from `/qa`'s output
+(browser path). Display everything verbatim.
 
 ### 5a. Combat Log
-
-Extract the full combat log from `/api/combat/log` (or from `/qa`'s network
-capture). Display every entry verbatim:
 
 ```
 COMBAT LOG (raw):
@@ -206,8 +217,6 @@ COMBAT LOG (raw):
 ```
 
 ### 5b. Combatant State Snapshot
-
-Display the final state of all combatants:
 
 ```
 COMBATANT STATES (end of combat):
@@ -227,12 +236,12 @@ EXP DISTRIBUTION:
 
 ### 5d. Flagged Issues
 
-List everything `/qa` flagged — do not filter, do not triage. Include:
+List everything the harness or `/qa` flagged — do not filter, do not triage:
 - HTTP 5xx responses
 - Missing fields in combat API responses
-- JS console errors
+- JS console errors (browser path only)
 - Network failures (excluding known noise: fonts.googleapis.com, fonts.gstatic.com, React Router warnings)
-- Any unexpected combat_active state changes
+- Unexpected `combat_active` state changes
 
 Format as a numbered list with endpoint, status, and description.
 
@@ -254,11 +263,12 @@ STATUS EFFECTS (Pell):
 
 ## Step 6: Agent Handoff
 
-End with a structured handoff block for the calling agent:
+End with a structured handoff block:
 
 ```
 === COMBAT TEST COMPLETE ===
 Scenario:      fodder
+Runner:        bug_hunt harness / /qa browser
 Outcome:       VICTORY / DEFEAT / TIMEOUT
 Rounds:        3
 Bugs flagged:  0
@@ -279,23 +289,12 @@ If there were bugs, list them again here with severity (CRITICAL / HIGH / MEDIUM
 
 1. **Never filter or suppress raw output.** The calling agent decides what matters.
 2. **Do not fix bugs found during this run** unless the user explicitly asks. Surface and hand off.
-3. **Restore the ini after the run** if overrides were applied — revert to the pre-run values so the file reflects the intended baseline. Skip restoration if the user says `--keep-overrides`.
-4. **Known noise**: ignore `fonts.googleapis.com`, `fonts.gstatic.com`, and React Router future-flag warnings — these are filtered automatically by the harness.
-5. **If /qa cannot start the servers**, fall back to the in-process harness: run `python tools/bug_hunt.py --scenario combat --headless --output /tmp/combat_test_results.json` and parse that output instead.
+3. **Restore the ini after the run** — you recorded the original values in Step 1 before applying overrides. Revert them in Step 4. Skip only if `--keep-overrides` was passed.
+4. **Known noise**: ignore `fonts.googleapis.com`, `fonts.gstatic.com`, and React Router future-flag warnings — filtered automatically.
+5. **Prefer the harness over the browser stack** for combat logic. Only escalate to `/qa` when the issue is clearly UI-layer.
 6. **The map is agent-only** — it has no link to the main game world. Do not attempt to navigate there from dark-grotto or any other production map.
-7. **The Adjutant** is at `(0, 0)`. Use the `talk` command on that tile to:
-   - Set Jean's stats, level, heat, and skills at runtime via menu option [1]–[7]
-   - Manage arena combatants via menu option [8]:
-     - **Add** any NPC class from `npc.py` to any arena tile by class name
-     - **Remove** individual combatants by index
-     - **Clear** an entire arena tile's NPC roster
-     - **Edit** any combatant's stats (hp, damage, aggro, friend, speed, etc.) in place
+7. **The Adjutant** is at `(0, 0)`. Use the `talk` command on that tile (in a running game session) to:
+   - Set Jean's stats, level, heat, and skills at runtime via menu options [1]–[7]
+   - Manage arena combatants via menu option [8]: add/remove/clear/edit by NPC class name
    Changes take effect immediately — no restart required.
-
----
-
-## Preamble (run first)
-
-Print current branch. If not on a combat-related or feature branch, warn but proceed.
-
-Print the current `active_scenario` from the ini so the agent knows what will run.
+   For automated runs, prefer editing the map JSON or ini directly instead of driving the menu.
