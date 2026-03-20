@@ -551,6 +551,12 @@ class NPCSpawnerEvent(Event):
             return None
         if isinstance(self.npc_cls, str):
             return self.npc_cls
+        # Handle deserialized {"__class_type__": "npc:ClassName"} dict format from map JSON
+        if isinstance(self.npc_cls, dict):
+            class_type = self.npc_cls.get("__class_type__", "")
+            if ":" in class_type:
+                return class_type.split(":", 1)[1]
+            return class_type or None
         try:
             from npc import NPC  # local import avoids circular on module load
 
