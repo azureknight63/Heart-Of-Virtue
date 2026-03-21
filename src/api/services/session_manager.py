@@ -368,13 +368,13 @@ class SessionManager:
                 player.universe = Universe(player)
                 player.universe.build(player)
                 
-                # Set starting map
+                # Set starting map — prefer configured name, then universe default, then first available map
                 starting_map = next(
                     (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
                     player.universe.starting_map_default
                 )
-                # Last resort: first map that contains tiles
                 if starting_map is None and player.universe.maps:
+                    # No named or default map found — fall back to first map that contains tiles
                     starting_map = next(
                         (m for m in player.universe.maps if any(isinstance(k, tuple) for k in m)),
                         player.universe.maps[0]
@@ -385,7 +385,7 @@ class SessionManager:
             except (ImportError, Exception) as e:
                  print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
                  player = MinimalPlayer(username)
-            
+
             # Apply game config if available
             if self.game_config and hasattr(player, 'game_config'):
                 player.game_config = self.game_config

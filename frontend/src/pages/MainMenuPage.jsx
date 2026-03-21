@@ -81,7 +81,7 @@ export default function MainMenuPage() {
         initMenu()
     }, [playBGM])
 
-    // Keep mostRecentSave in sync with saveList
+    // Keep mostRecentSave in sync with saveList (cloud and local)
     useEffect(() => {
         if (saveList && saveList.length > 0) {
             const sorted = [...saveList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
@@ -224,7 +224,7 @@ export default function MainMenuPage() {
                 </GameText>
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-                    {!isLoadingInitial && saveList.length > 0 && mostRecentSave && (
+                    {!isLoadingInitial && mostRecentSave && (
                         <GameButton onClick={handleContinue} size="large" style={{ width: '100%' }}>Continue</GameButton>
                     )}
                     <GameButton onClick={handleNewGame} size="large" style={{ width: '100%' }}>New Game</GameButton>

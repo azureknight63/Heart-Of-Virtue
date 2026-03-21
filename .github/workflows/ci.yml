@@ -1,0 +1,65 @@
+# Continuous Integration — runs on every push and PR
+# Ensures tests and linting pass before code lands on master.
+
+name: CI
+
+on:
+  push:
+    branches: [master, web-api]
+  pull_request:
+    branches: [master]
+
+jobs:
+  backend:
+    name: Backend (pytest + lint)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+        env:
+          MYNX_LLM_ENABLED: "0"
+          MYNX_LLM_PROVIDER: "none"
+
+      - name: Check formatting (black)
+        run: black --check src/
+
+      - name: Lint (flake8)
+        run: flake8 src/
+
+  frontend:
+    name: Frontend (vitest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: Run tests
+        run: cd frontend && npm test -- --run
