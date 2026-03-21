@@ -178,8 +178,12 @@ class NPC(Combatant):
             for m in available_moves
         )
         if not can_attack and self.fatigue < self.maxfatigue:
-            self.current_move = moves.NpcRest(self)
-            return
+            # Only force-rest when advancing is not an option.  If a viable Advance move
+            # exists the NPC should close distance rather than stand still and recover.
+            can_advance = any(getattr(m, 'name', '') == 'Advance' for m in available_moves)
+            if not can_advance:
+                self.current_move = moves.NpcRest(self)
+                return
 
         num_choices = len(weighted_moves) - 1
         max_attempts = 20  # Prevent infinite loops

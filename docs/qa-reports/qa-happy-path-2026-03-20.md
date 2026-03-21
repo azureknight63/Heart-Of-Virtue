@@ -1,9 +1,9 @@
 # QA Report — Happy Path, Dark Grotto → Verdette Caverns
-**Date:** 2026-03-20 (updated)
+**Date:** 2026-03-21 (updated)
 **Branch:** `claude/demo-deployment-prep-XnfPl`
 **Scope:** Full story happy path — Dark Grotto Ch.1 through Verdette Caverns Ch.2 entry
 **Auth mode:** Test session bypass (`POST /api/test/session`) — Turso DB unavailable
-**Commits:** 73435e2 (3 fixes), 8454f54 (1 fix)
+**Commits:** 73435e2 (3 fixes), 8454f54 (1 fix), d7cd4e9, e954310, 4ccf223, 50447de, f88a847, + pending (ISSUE-012, ISSUE-013, fatigue guard)
 
 ---
 
@@ -27,8 +27,15 @@
 | AfterGorranIntro → teleport | — | ✅ Jean moves to Verdette Caverns |
 | Verdette Caverns event queue | — | ❌ NPCSpawnerEvent stuck pending (FIXED) |
 | Verdette Caverns entry exploration | — | ✅ room, exits, item, Gorran NPC |
+| Verdette Caverns (2,1) Battleaxe equip | — | ✅ equipped in weapon slot |
+| Lurker spawn at (8,8) | — | ❌ NPCSpawnerEvent npc_cls dict format (FIXED) |
+| Lurker fight at (8,8) | — | ⚠️ Ready to test — spawn fix applied |
+| NPC flee loop (Withdraw) | — | ❌ NPCs flee forever past combat range (FIXED) |
+| Wave-spawned enemy positions | — | ❌ Reinforcements lack combat_position (FIXED) |
+| Rock Rumbler AI attack loop | — | ❌ stops attacking at high beats (FIXED) |
+| Check move stale adapter state | — | ❌ combat deadlock on Check move (FIXED) |
 
-**Overall: 4 bugs fixed. 5 open issues remain. (ISSUE-011 downgraded to Low — death flow confirmed working.)**
+**Overall: 12 bugs fixed. 4 open issues remain. (ISSUE-011 downgraded to Low — death flow confirmed working.)**
 
 ---
 
@@ -61,8 +68,9 @@
 | (7,1) AfterGorranIntro → teleport to verdette-caverns (2,1) | ✅ | Jean transported |
 | Verdette Caverns (2,1) — Spiritual Umbral Battleaxe | ✅ | Item picked up |
 | Verdette Caverns (2,2) — Gorran NPC present, 3 exits | ✅ | room accessible |
-| Verdette Caverns interior exploration | ⚠️ | In progress — Jean died at (8,8); restart required |
-| Lurker fight at (8,8) | ❌ | Jean died; Battleaxe not equipped, no healing items |
+| Verdette Caverns interior exploration | ✅ | Navigated to (8,8) with Battleaxe equipped |
+| Verdette Caverns (2,1) Battleaxe equip | ✅ | `POST /api/equipment/equip {"item_id": <index>}` — uses index not ID |
+| Lurker fight at (8,8) | ⚠️ | Spawn fix applied (50447de); ready to verify |
 | AfterDefeatingLurker event | ❌ | Not reached |
 | Chapter 2 entry / Grondia navigation | ❌ | Not reached |
 
@@ -106,6 +114,53 @@
 
 ---
 
+### ISSUE-009 — Ch01PostRumbler3 narrative text not exposed via API (FIXED)
+**Severity:** Medium
+**Symptom:** After the Gorran rescue scene, the pending event dialog returned only `description: "Jean must decide his next move quickly."`. The full atmospheric paragraph ("Jean wipes the blood from his lip...") was lost to terminal `cprint()` output.
+**Root cause:** `Ch01PostRumbler3.process()` set `self.description` independently from `cprint()` lines, same pattern as ISSUE-005 (MemoryFlash) before its fix.
+**Fix:** `src/story/ch01.py` — accumulated narrative lines into `self.description` before the choice prompt, identical pattern to ISSUE-005 fix.
+**Commit:** 4ccf223
+
+---
+
+### ISSUE-010 — Check move crashes and leaves adapter in stale state (FIXED)
+**Severity:** High
+**Symptom:** Submitting `move_id: "0"` (Check move) returned `{"success": false, "message": "An internal error occurred"}`. Adapter then stuck: `input_type: "number_input"` but `pending_move_index: null`. Combat fully deadlocked.
+**Root cause:** Check's internal crash left `self.input_type` and `self.pending_move_index` in an inconsistent intermediate state because the exception path skipped cleanup.
+**Fix:** `src/api/combat_adapter.py` — wrapped `_execute_move()` in a try/except that resets `input_type = None` and `pending_move_index = None` on any unhandled exception, returning a clean `{"success": false}` response.
+**Commit:** f88a847
+
+---
+
+### ISSUE-012 — NPC permanent flee loop (Withdraw past combat range) (FIXED)
+**Severity:** Medium
+**Symptom:** Enemies with the Withdraw move (e.g. NPCs at HP < 20%) would flee indefinitely past any reasonable combat range, never re-engaging. Withdraw's `viable()` check only tested `hp_pcnt > 0.2` without bounding the escape distance.
+**Root cause:** No distance cap in `Withdraw.viable()`. Once an NPC fled past range ~20, it remained viable to keep fleeing each beat.
+**Fix:** `src/moves.py` — added a distance cap in `Withdraw.viable()`: if the NPC's minimum combat proximity exceeds 20, viability is set `False` so it re-engages or stays put.
+**Commit:** pending
+
+---
+
+### ISSUE-013 — Wave-spawned enemy reinforcements lack combat positions (FIXED)
+**Severity:** High
+**Symptom:** During the final 5-Rumbler wave (Choice A path), newly spawned enemies had no `combat_position`. `_synchronize_distances()` dropped them from Jean's proximity dict on the next beat, making them untargetable or invisible to the combat engine.
+**Root cause:** Story event callbacks spawn enemies via `combat_engage()` which adds them to `player.combat_list` but does not call `initialize_combat_positions()`. The new entries had no coordinate in the combat grid.
+**Fix:** `src/api/combat_adapter.py` — after event callbacks run in `_execute_move()`, scans `player.combat_list` for entries with `combat_position = None` and calls `positions.initialize_combat_positions()` on the full roster to assign grid coordinates.
+**Note:** Also fixed a related issue where fatigue check blocked 0-cost moves. `fatigue_cost > 0` guard added to the pre-move fatigue check.
+**Commit:** pending
+
+---
+
+### ISSUE-014 — NPCSpawnerEvent fails to spawn Lurker at verdette-caverns (8,8) (FIXED)
+**Severity:** High
+**Symptom:** Entering tile (8,8) in Verdette Caverns returned `events_triggered: []` and no Lurker NPC in the room. The NPCSpawnerEvent was in `tile.events_here` in the map JSON but processed silently without spawning.
+**Root cause:** `npc_cls` in the map JSON is a deserialized dict `{"__class_type__": "npc:Lurker"}` rather than a string or class. `NPCSpawnerEvent._resolve_npc_class_name()` did not handle the dict format, returning `None`. `_do_spawn()` exited early on `None` class name with no error.
+**Secondary root cause:** `evaluate_for_map_entry()` also silently skipped spawning because `spawn_tile` is `null` in JSON props, causing the map-entry pre-spawn path to short-circuit at `if self.spawn_tile and ...`.
+**Fix:** `src/story/effects.py` — added dict format handling in `_resolve_npc_class_name()`: extracts class name from `__class_type__` value after the colon delimiter. The tile-entry path (`check_conditions` → `process` → `_do_spawn`) already falls back to `self.tile` correctly, so spawn fires when Jean steps onto the tile.
+**Commit:** 50447de
+
+---
+
 ## Bugs Found, Not Fixed
 
 ### ISSUE-001 — Registration blocked (503) — No DB
@@ -122,25 +177,6 @@
 **Symptom:** ATTRIBUTES panel shows Jean's HP as `108 / 100`.
 **Root cause:** Unknown — likely a race between starting HP initialization and some bonus calculation.
 **Action needed:** Investigate `player.hp` vs `player.max_hp` initialization order.
-
----
-
-### ISSUE-009 — Ch01PostRumbler3 narrative text not exposed via API
-**Severity:** Medium
-**Symptom:** After the Gorran rescue scene, `Ch01PostRumbler3.process()` (stage 1) plays rich narrative text ("Jean wipes the blood from his lip...") in the terminal via `cprint()`, but the pending event API returns only `description: "Jean must decide his next move quickly."`. The atmospheric paragraph before the choice prompt is invisible to web clients.
-**Root cause:** `Ch01PostRumbler3.process()` calls `cprint()` for terminal output, then sets `self.description = "Jean must decide his next move quickly."` independently. The `cprint()` lines are not accumulated into `self.description`. The same pattern exists in `MemoryFlash` (fixed as ISSUE-005) but was not applied here.
-**Fix approach:** Accumulate narrative text into `self.description` in stage 1, before setting `needs_input = True` — same pattern as the ISSUE-005 fix.
-**Action needed:** Update `Ch01PostRumbler3.process()` stage 1 to include narrative text in `self.description`.
-
----
-
-### ISSUE-010 — Check move crashes with internal error, leaves adapter in stale state
-**Severity:** High
-**Symptom:** Submitting `POST /api/combat/move` with `move_id: "0"` (Check move, index 0 in the move list) returns `{"success": false, "message": "An internal error occurred"}`. The adapter then gets stuck: subsequent `GET /api/combat/status` returns `input_type: "number_input"` but with `pending_move_index: null`. Any non-number move submissions are rejected ("awaiting number input"); submitting a number returns "No pending move". Combat is fully deadlocked.
-**Root cause:** Check's internal implementation crashes during execution, but the adapter has already advanced to `number_input` state before the crash. The exception path does not reset `self.input_type` or `self.pending_move_index`, leaving them in an inconsistent intermediate state.
-**Recovery (manual):** Submit `move_type: "cancel"`, then `move_type: "number", move_id: "0"` (discarded with "No pending move") — this drains the stale state and returns combat to normal.
-**Fix approach:** In `CombatAdapter`, wrap move execution in a try/except that resets adapter state to a consistent baseline (`input_type = None`, `pending_move_index = None`) on any unhandled exception, or fix the Check move's internal crash.
-**Action needed:** Investigate what causes Check to crash; reset adapter state on exception.
 
 ---
 
@@ -161,14 +197,6 @@
 
 ---
 
-### ISSUE-008 — Rock Rumbler AI stops attacking at high beat counts
-**Severity:** Medium
-**Symptom:** After ~150+ combat beats, Rock Rumblers loop between Advance/Rest/Dodge and never execute Attack. Jean's HP stops decreasing even when adjacent. Observed during prolonged wave combat.
-**Repro:** Let combat run to beat 150+ via repeated Wait moves. Rumblers exhibit the loop after initial attacks land.
-**Root cause:** Unknown — possibly a fatigue system issue where the Rumbler AI's preferred moves (Attack) have high fatigue cost and the Rumbler runs low on fatigue, defaulting to rest/maneuver. Or a position/distance calculation bug causing the attack range check to never pass.
-**Action needed:** Investigate NPC AI move selection logic at high beat counts / low fatigue.
-
----
 
 ## UI/UX Observations
 
@@ -196,18 +224,16 @@
 - Jab deals 0 damage to Rock Rumblers. Only the mace Attack works. This appears to be by design (Rumbler physical resistance), though worth confirming in game design docs.
 - `select_move_and_target` combined API call avoids the 2-step `move_selection → target_selection` loop and is the most reliable way to submit targeted attacks.
 - Gorran's `allies` list shows in `GET /api/combat/status` under `battle_state.allies` — confirmed working.
+- `POST /api/equipment/equip` takes `item_id` as an **integer inventory index** (not the Python object ID). Get the index from `GET /api/inventory` response `items[n].index` field.
+- `evaluate_for_map_entry()` on `NPCSpawnerEvent` silently no-ops when `spawn_tile` is `null` (deserialized from JSON props). The tile-entry path (`check_conditions` → `process` → `_do_spawn`) is the reliable trigger path for map-file spawners.
 
 ---
 
 ## Recommended Next Steps
 
-1. **Fix Check move crash + stale adapter state (ISSUE-010)** — High; combat deadlock
-2. **Fix ISSUE-001 (Turso/SQLite)** — unblocks DefeatDialog save/load recovery (ISSUE-011)
-3. **Expose Ch01PostRumbler3 narrative text (ISSUE-009)** — Medium; same pattern as ISSUE-005 fix
-4. **Configure Turso** or add SQLite fallback to unblock real user registration (ISSUE-001)
-5. **Investigate HP overflow** (ISSUE-003) — `player.hp > player.max_hp` at game start
-6. **Fix Victory dialog replay** (ISSUE-006) — persist `lastEndStateId` in localStorage
-7. **Investigate Rock Rumbler AI loop** (ISSUE-008) — NPC stops attacking at high beat counts
-8. **Name Verdette Caverns tiles** — (2,1) shows "Map Tile"; set `name` in map data
-9. **Accessibility pass** on combat move panels — convert cursor-pointer divs to `<button>` elements
-10. **Continue QA** from Verdette Caverns — restart fresh session, equip Battleaxe, use healing items, fight Lurker at (8,8), trigger AfterDefeatingLurker, reach Grondia
+1. **Continue QA** — fresh session, equip Battleaxe, fight Lurker at (8,8), trigger AfterDefeatingLurker, reach Grondia (spawner fix in 50447de)
+2. **Fix ISSUE-001 (Turso/SQLite)** — unblocks real user registration and DefeatDialog save/load (ISSUE-011)
+3. **Investigate HP overflow** (ISSUE-003) — `player.hp > player.max_hp` at game start
+4. **Fix Victory dialog replay** (ISSUE-006) — persist `lastEndStateId` in `localStorage`
+5. **Name Verdette Caverns tiles** — (2,1) shows "Map Tile"; set `name` in map data
+6. **Accessibility pass** on combat move panels — convert cursor-pointer divs to `<button>` elements

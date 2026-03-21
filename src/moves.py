@@ -843,6 +843,12 @@ class Withdraw(Move):
             hp_pcnt = self.user.hp / self.user.maxhp
             if hp_pcnt > 0.2:
                 viability = False
+            elif viability:
+                # Prevent infinite flee loop: once an NPC has fled past max combat range,
+                # stop withdrawing so it re-engages or stays put (distance > 20 = escaped).
+                min_dist = min(self.user.combat_proximity.values(), default=0)
+                if min_dist > 20:
+                    viability = False
         return viability
 
     def evaluate(self):
@@ -2892,18 +2898,22 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         self.evaluate()
 
     def viable(self):
-        viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
         # Defensive check: ensure self.user is actually an NPC object with combat_proximity
         if not hasattr(self.user, "combat_proximity"):
             return False
+        # Check only the actual target's distance, not all proximity entries.
+        # Counting fellow allied NPCs (other enemies) would incorrectly make attacks
+        # viable from any distance, causing NPCs to attack across the battlefield.
+        target = getattr(self.user, 'target', None)
+        if target is not None and target in self.user.combat_proximity:
+            return range_min <= self.user.combat_proximity[target] <= range_max
+        # Fallback: no target set yet, check any proximity entry
         for enemy, distance in self.user.combat_proximity.items():
             if range_min <= distance <= range_max:
-                viability = True
-                break
-
-        return viability
+                return True
+        return False
 
     def evaluate(
         self,

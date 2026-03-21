@@ -515,7 +515,7 @@ class ApiCombatAdapter:
         if not selected_move.viable():
             return {"error": "Move is not currently available"}
 
-        if self.player.fatigue < selected_move.fatigue_cost:
+        if selected_move.fatigue_cost > 0 and self.player.fatigue < selected_move.fatigue_cost:
             return {"error": "Not enough fatigue"}
 
         # If move is targeted, find target
@@ -1139,6 +1139,31 @@ class ApiCombatAdapter:
                     self.player.combat_adapter_state["events_triggered"] = (
                         existing + new_events
                     )
+
+            # After event callbacks run, any newly-spawned enemies that were added via
+            # combat_engage() won't have a combat_position (they only got a legacy proximity
+            # entry).  Initialize positions for them now so _synchronize_distances() won't
+            # drop them from Jean's proximity dict on the next beat.
+            new_enemies_without_position = [
+                e for e in self.player.combat_list
+                if not hasattr(e, 'combat_position') or e.combat_position is None
+            ]
+            if new_enemies_without_position:
+                try:
+                    from src.coordinate_config import CoordinateSystemConfig
+                    total = len(self.player.combat_list_allies) + len(self.player.combat_list)
+                    coord_config = CoordinateSystemConfig(self.player)
+                    grid_w, grid_h = coord_config.get_dynamic_grid_size(total)
+                    self.combat_grid_size = (grid_w, grid_h)
+                    positions.initialize_combat_positions(
+                        allies=self.player.combat_list_allies,
+                        enemies=self.player.combat_list,
+                        scenario_type="standard",
+                        grid_width=grid_w,
+                        grid_height=grid_h,
+                    )
+                except Exception as e:
+                    logger.warning("Position init for reinforcements failed: %s", e)
 
         # Check if events triggered (BEFORE calling get_combat_state which consumes them)
         event_just_triggered = (
