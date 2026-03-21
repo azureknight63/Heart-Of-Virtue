@@ -201,12 +201,25 @@ async def login():
         )
 
     except Exception as e:
+        msg = str(e)
+        # Don't expose internal config/infrastructure details to users
+        if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "service_unavailable",
+                        "message": "Login is temporarily unavailable. Please try again later.",
+                    }
+                ),
+                503,
+            )
         return (
             jsonify(
                 {
                     "success": False,
                     "error": "server_error",
-                    "message": str(e),
+                    "message": msg,
                 }
             ),
             500,

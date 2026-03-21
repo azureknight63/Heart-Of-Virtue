@@ -373,9 +373,13 @@ class SessionManager:
                     (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
                     player.universe.starting_map_default
                 )
-                # Last resort: first available map
+                # Last resort: first map that contains tiles
                 if starting_map is None and player.universe.maps:
-                    starting_map = player.universe.maps[0]
+                    starting_map = next(
+                        (m for m in player.universe.maps if any(isinstance(k, tuple) for k in m)),
+                        player.universe.maps[0]
+                    )
+                    print(f"[SessionManager] Warning: startmap '{self.starting_map_name}' not found; falling back to '{starting_map.get('name')}'", flush=True)
                 player.map = starting_map
                 print(f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}", flush=True)
             except (ImportError, Exception) as e:
@@ -388,10 +392,18 @@ class SessionManager:
                 if self.game_config.starting_exp > 0:
                     player.apply_starting_experience(self.game_config.starting_exp)
                     print(f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories", flush=True)
-            
-            # Set starting position from config
-            player.location_x, player.location_y = self.start_x, self.start_y
-            
+
+            # Set starting position — validate it exists in the chosen map; fall back to first valid tile
+            eff_x, eff_y = self.start_x, self.start_y
+            if getattr(player, 'map', None) and not player.map.get((eff_x, eff_y)):
+                valid_coord = next(
+                    (k for k in player.map if isinstance(k, tuple)),
+                    (eff_x, eff_y)
+                )
+                eff_x, eff_y = valid_coord
+                print(f"[SessionManager] Warning: start position ({self.start_x},{self.start_y}) not in map; using {valid_coord}", flush=True)
+            player.location_x, player.location_y = eff_x, eff_y
+
             # Add starting items from config if available
             config_items = self._create_items_from_config()
             if config_items:

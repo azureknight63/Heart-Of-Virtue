@@ -277,8 +277,7 @@ class GameService:
 
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
-        import re as _re
-        tile_name = _re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', raw_name)
+        tile_name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', raw_name)
 
         return {
             "x": player.location_x,
@@ -1564,13 +1563,17 @@ class GameService:
         result = self._initialize_combat(player, [enemy], session_id=session_id)
 
         # Attach API-contract fields so routes don't need to reach into player internals
-        import uuid as _uuid
-        combatants = []
+        combatants = [{
+            "id": "player",
+            "name": getattr(player, "name", "Jean Claire"),
+            "is_player": True,
+            "is_ally": False,
+        }]
         for ally in getattr(player, "combat_list_allies", []):
             combatants.append({
-                "id": "player" if ally is player else f"ally_{id(ally)}",
+                "id": f"ally_{id(ally)}",
                 "name": getattr(ally, "name", "Ally"),
-                "is_player": ally is player,
+                "is_player": False,
                 "is_ally": True,
             })
         for e in getattr(player, "combat_list", []):
@@ -1580,7 +1583,7 @@ class GameService:
                 "is_player": False,
                 "is_ally": False,
             })
-        result["combat_id"] = str(_uuid.uuid4())
+        result["combat_id"] = str(uuid.uuid4())
         result["combatants"] = combatants
         result["turn_order"] = [c["id"] for c in combatants]
         return result
