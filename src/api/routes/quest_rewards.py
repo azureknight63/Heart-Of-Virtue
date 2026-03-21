@@ -7,7 +7,7 @@ Provides REST API endpoints for:
 - Tracking progression
 """
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, abort
 from src.api.services.validators import (
     validate_required_fields,
 )
@@ -140,15 +140,17 @@ def complete_quest(quest_id: str):
 @quest_rewards_bp.route("/award-gold", methods=["POST"])
 def award_gold():
     """Award gold to player (for testing/admin).
-    
+
     Request body:
     {
         "amount": int (required)
     }
-    
+
     Returns:
         JSON with gold update info
     """
+    if not current_app.debug:
+        abort(404)
     session_manager, session, player, error, status = get_session_and_player()
     if error:
         return error, status
@@ -177,15 +179,17 @@ def award_gold():
 @quest_rewards_bp.route("/award-experience", methods=["POST"])
 def award_experience():
     """Award experience to player (for testing/admin).
-    
+
     Request body:
     {
         "amount": int (required)
     }
-    
+
     Returns:
         JSON with experience update info
     """
+    if not current_app.debug:
+        abort(404)
     session_manager, session, player, error, status = get_session_and_player()
     if error:
         return error, status
@@ -214,17 +218,19 @@ def award_experience():
 @quest_rewards_bp.route("/award-item", methods=["POST"])
 def award_item():
     """Award item to player inventory (for testing/admin).
-    
+
     Request body:
     {
         "item_id": str (required),
         "item_name": str (required),
         "quantity": int (optional, defaults to 1)
     }
-    
+
     Returns:
         JSON with item award info
     """
+    if not current_app.debug:
+        abort(404)
     session_manager, session, player, error, status = get_session_and_player()
     if error:
         return error, status

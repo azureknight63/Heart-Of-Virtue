@@ -8,12 +8,15 @@ class Config:
     """Base configuration."""
 
     # Flask settings
-    SECRET_KEY = os.environ.get("SECRET_KEY") or os.urandom(24).hex()
-    DEBUG = os.environ.get("FLASK_DEBUG", True)
+    _secret_env = os.environ.get("SECRET_KEY")
+    if not _secret_env and os.environ.get("FLASK_ENV") == "production":
+        raise RuntimeError("SECRET_KEY must be set in production")
+    SECRET_KEY = _secret_env or os.urandom(24).hex()
+    DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() not in ("0", "false", "no")
     TESTING = False
 
     # Session settings
-    SESSION_COOKIE_SECURE = False  # True in production with HTTPS
+    SESSION_COOKIE_SECURE = os.environ.get("FLASK_ENV") == "production"
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
