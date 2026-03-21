@@ -73,7 +73,7 @@ $remoteScript = "docker cp $remoteTar ${container}:/tmp/hov_dist.tar && " +
 "docker exec $container sh -c 'find $targetDir -type d -exec chmod 755 {} \;' && " +
 "docker exec $container sh -c 'find $targetDir -type f -exec chmod 644 {} \;' && " +
 "cd $appDir && git pull origin master && " +
-".venv/bin/pip install -q -r requirements-api.txt && " +
+".venv/bin/pip install -q -r requirements.txt -r requirements-api.txt && " +
 "sudo systemctl restart heart-of-virtue"
 
 $sshCommand = "ssh ${serverUser}@${serverHost} `"$remoteScript`""
