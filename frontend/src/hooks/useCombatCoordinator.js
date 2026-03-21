@@ -32,7 +32,9 @@ export function useCombatCoordinator({
     const [showVictoryDialog, setShowVictoryDialog] = useState(false)
     const [showDefeatDialog, setShowDefeatDialog] = useState(false)
     const [endState, setEndState] = useState(null)
-    const [lastEndStateId, setLastEndStateId] = useState(null)
+    const [lastEndStateId, setLastEndStateId] = useState(
+        () => sessionStorage.getItem('hov_last_end_state_id')
+    )
 
     // Combat log processing state
     const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
@@ -58,6 +60,7 @@ export function useCombatCoordinator({
                     setShowDefeatDialog(true)
                 }
                 setLastEndStateId(maybeEnd.id)
+                sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
             }
         }
     }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log])
