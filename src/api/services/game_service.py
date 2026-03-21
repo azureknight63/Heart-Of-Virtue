@@ -1562,6 +1562,11 @@ class GameService:
 
         result = self._initialize_combat(player, [enemy], session_id=session_id)
 
+        # _initialize_combat returns None in the idempotency branch (already in combat
+        # with the same enemy set).  Treat this as a graceful no-op.
+        if result is None:
+            return {"error": "Already in combat with these enemies"}
+
         # Attach API-contract fields so routes don't need to reach into player internals
         combatants = [{
             "id": "player",
@@ -1569,7 +1574,9 @@ class GameService:
             "is_player": True,
             "is_ally": False,
         }]
-        for ally in getattr(player, "combat_list_allies", []):
+        # combat_list_allies[0] is always the player — skip it to avoid a duplicate
+        # entry in the combatants list (same pattern as the [1:] slice at line ~1898).
+        for ally in getattr(player, "combat_list_allies", [])[1:]:
             combatants.append({
                 "id": f"ally_{id(ally)}",
                 "name": getattr(ally, "name", "Ally"),
