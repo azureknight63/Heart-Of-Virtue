@@ -5,15 +5,22 @@
     "(1, 1)": {
         "id": "tile_1_1",
         "title": "EmptyCave",
-        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.",
+        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.\nA single copper coin lies in the dust, face-down.\nThe southeastern passage is a tangle of fallen rock. No way through.",
         "exits": [
             "south",
-            "east",
-            "southeast"
+            "east"
         ],
         "block_exit": [],
         "events": [],
-        "items": [],
+        "items": [
+            {
+                "__class__": "Gold",
+                "__module__": "items",
+                "props": {
+                    "amt": 1
+                }
+            }
+        ],
         "npcs": [],
         "objects": []
     },
@@ -59,7 +66,7 @@
     "(3, 1)": {
         "id": "tile_3_1",
         "title": "EmptyCave",
-        "description": "A dusting of pale grit marks where the ceiling once\ncrumbled. A thin draft threads through a hairline seam,\ncarrying distant echoes that never resolve to words.",
+        "description": "A dusting of pale grit marks where the ceiling once\ncrumbled. A thin draft threads through a hairline seam,\ncarrying distant echoes that never resolve to words.\nA loose fist-sized stone rests on a natural shelf, a faint red smear on one face.",
         "exits": [
             "west",
             "south",
@@ -77,7 +84,7 @@
     "(6, 1)": {
         "id": "tile_6_1",
         "title": "EmptyCave",
-        "description": "Here the air sits heavier, as though the stone holds\nits breath. A muted thud vibrates once beneath the\nboots, then is gone, like a heart choosing silence.",
+        "description": "Here the air sits heavier, as though the stone holds\nits breath. A muted thud vibrates once beneath the\nboots, then is gone, like a heart choosing silence.\nThree claw-marks score the floor in parallel lines, deep and deliberate.",
         "exits": [
             "south",
             "east",
@@ -207,15 +214,13 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "JeanGameStartTile",
-        "description": "This space is like dawn breaking over forgotten stone.\nA shaft of silver light pierces the darkness above, illuminating\nan altar of cold rock. Ancient dust swirls in the beam,\nwhispering of secrets buried in shadow. The cavern breathes\naround you; alive, patient, waiting for you to take your first\nstep into whatever lies beyond the light's reach.",
+        "description": "A shaft of silver light pierces the darkness above, illuminating\nan altar of cold rock, loose stones heaped at its base\nas though piled there by deliberate hands.\nAncient dust swirls in the beam, whispering of secrets buried in shadow.\nThe cavern breathes around you; alive, patient, waiting.\nA low shelf of stone seals the southwestern corner; the northwest passage beyond the altar is choked with rubble.",
         "exits": [
             "north",
             "south",
             "east",
             "west",
-            "northeast",
-            "northwest",
-            "southwest"
+            "northeast"
         ],
         "block_exit": [],
         "events": [],
@@ -312,7 +317,7 @@
     "(4, 2)": {
         "id": "tile_4_2",
         "title": "RockLedgeWest",
-        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind\nscatters it inland. A small creature watches, tail\nflicking to some private melody of the river.",
+        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as you approach — not alarmed, just waiting.",
         "exits": [
             "east",
             "west",
@@ -497,24 +502,7 @@
                         0,
                         0
                     ],
-                    "loot": {
-                        "Gold": {
-                            "chance": 50,
-                            "qty": "r25-50"
-                        },
-                        "Restorative": {
-                            "chance": 25,
-                            "qty": 1
-                        },
-                        "Draught": {
-                            "chance": 25,
-                            "qty": 1
-                        },
-                        "Equipment_0_1": {
-                            "chance": 10,
-                            "qty": 1
-                        }
-                    },
+                    "loot": {},
                     "pronouns": {
                         "personal": "it",
                         "possessive": "its",
@@ -530,7 +518,7 @@
     "(5, 2)": {
         "id": "tile_5_2",
         "title": "RockLedgeEast",
-        "description": "The ledge narrows and kisses a sealed wall seam.\nMountain silhouettes haze the distance, crowns lost\nin traveling mist. Wind funnels here and thins your\nbreath with a clean, high cold.",
+        "description": "The ledge narrows and ends at a sealed wall seam above a sheer drop.\nMountain silhouettes haze the distance, crowns lost\nin traveling mist. Wind funnels here and thins your\nbreath with a clean, high cold.",
         "exits": [
             "east",
             "west",
@@ -566,12 +554,12 @@
                 "__module__": "objects",
                 "props": {
                     "name": "Wall Depression",
-                    "description": "A small depression in the wall. You may be able to PRESS on it.",
-                    "idle_message": "There's a small depression in the wall.",
+                    "description": "A shallow indentation beside the gap where the ledge ends. Something mechanical, perhaps — built to bridge what the stone cannot. You may be able to PRESS it.",
+                    "idle_message": "There's a shallow indentation in the rock beside the gap.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": "a small depression in the wall!",
-                    "announce": "There's a small depression in the wall.",
+                    "discovery_message": "a shallow indentation in the rock!",
+                    "announce": "There's a shallow indentation in the rock beside the gap.",
                     "keywords": [
                         "press"
                     ],
@@ -609,10 +597,9 @@
     "(1, 3)": {
         "id": "tile_1_3",
         "title": "EmptyCave",
-        "description": "Loose grit shifts with a soft crunch that feels loud\nin the hush. A faint metallic tang lingers, maybe\nlichen, maybe rusted memory.",
+        "description": "Loose grit shifts with a soft crunch that feels loud\nin the hush. A faint metallic tang lingers, maybe\nlichen, maybe rusted memory.\nNear the northeastern wall, a heel-print in the silt — fresh enough that the edges haven't crumbled — points toward a crack that narrows to a fist-width and stops.",
         "exits": [
             "north",
-            "northeast",
             "east"
         ],
         "block_exit": [],
@@ -694,13 +681,34 @@
             }
         ],
         "npcs": [],
-        "objects": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "A torn scrap of paper wedged into a crack. The handwriting is shaky but legible if you READ it.",
+                    "idle_message": "A scrap of paper is wedged into a crack in the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a scrap of paper wedged in the wall!",
+                    "announce": "A scrap of paper is wedged into a crack in the wall.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Day 18: Found a wooden chest near the eastern alcove, left by some previous soul. Locked tight.\nI managed to hide the key beneath some loose stones near the altar — a natural landmark in this cave.\nIf anyone finds this, search there.\n— Aldric"
+                }
+            }
+        ],
         "symbol": ""
     },
     "(6, 3)": {
         "id": "tile_6_3",
         "title": "EmptyCave",
-        "description": "Sound threads from several unseen corridors, weaving\na restless hush. The air cools at the ankles only, a\nsubtle drift hinting at deeper chambers.",
+        "description": "Sound threads from several unseen corridors, weaving\na restless hush. The air cools at the ankles only, a\nsubtle drift hinting at deeper chambers.\nA rusted iron ring is sunk into the wall at chest height, its original purpose unclear.",
         "exits": [
             "north",
             "south",
@@ -807,7 +815,7 @@
     "(6, 4)": {
         "id": "tile_6_4",
         "title": "EmptyCave",
-        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.",
+        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.\nWax drippings harden in a thin line along one wall — someone walked this corridor with a candle, recently.",
         "exits": [
             "north",
             "west",
@@ -827,7 +835,7 @@
     "(5, 5)": {
         "id": "tile_5_5",
         "title": "EmptyCave",
-        "description": "The floor sags a little here, a shallow basin where\ncolder air pools. A faint, steady drip marks time\nwithout counting it. Somewhere distant, water moves\nwith a slow, persistent purpose.\nThere's an odd feeling which persists in this modest\nalcove; a sense of nostalgic sadness, or perhaps weariness,\nwhich hangs in the air like a faded tapestry adorns the\nwall of a dusty attic.",
+        "description": "The floor sags in a shallow basin where colder air pools.\nA faint, steady drip marks time without counting it.\nThis place feels chosen — the low ceiling, the closed curve of stone,\nthe corner where a man might set his back to the rock\nand face the dark for the last time.\nThe quiet here is different from the quiet elsewhere. It keeps a shape.",
         "exits": [
             "north",
             "northeast"
