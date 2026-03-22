@@ -382,6 +382,81 @@ Use when you need to:
 
 ---
 
+## Sound Designer Skill
+
+**Expert indie game sound designer.** The `/sound-designer` skill audits the game's **procedural audio synthesis system**, designs new SFX by implementing Song classes, and works with the project's sound creation tools to generate and test audio.
+
+The project uses a **Wave Synthesis Engine** (`tools/audio_engine/`) for all audio: no external AI generation. The skill writes Song class code that uses `generate_tone()`, `generate_chord()`, `mix_layers()`, and `generate_percussion_pattern()` to create SFX.
+
+Use when you need to:
+- Audit existing sound design and identify gaps
+- Design SFX for specific locations, events, or narrative moments
+- Implement new Song classes using procedural synthesis
+- Generate and test audio using the project's tools
+- Analyze sonic lore integration (how audio reflects the world and Jean's arc)
+
+```bash
+/sound-designer                                    # full audio audit
+/sound-designer --design
+event: entering the corrupted sacred spring
+emotional_goal: awe mixed with reverent dread
+
+/sound-designer --audit
+Review SFX coverage and identify weak spots
+```
+
+**Output**: Sound design audit reports, Song class implementations (Python code), testing instructions, and integration notes.
+
+**Project audio tools**:
+- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_chord, mix_layers)
+- `tools/songs/` — existing Song classes (sfx.py, adventure.py, battle.py, etc.)
+- `python tools/generate_audio.py` — renders all songs to WAV files
+- `python tools/audio_player.py` — interactive testing GUI (tempo, pitch, visualization)
+- Output: `frontend/public/assets/sounds/`
+
+Key capabilities:
+- Procedural wave synthesis (sine, square, sawtooth, triangle, noise)
+- Envelope shaping (attack/release for precise control)
+- Frequency selection and layering strategies
+- Song class architecture and design patterns
+- Audio generation and QA testing
+
+---
+
+## Music Designer Skill
+
+**Expert indie game music designer.** The `/music-designer` skill analyzes maps, lore, and story beats to understand BGM needs. Works with AI music generation models with intimate understanding of how to extract exceptional music from each prompt.
+
+Use when you need to:
+- Create a music blueprint (thematic map, emotional arcs)
+- Design music for specific chapters, locations, or narrative moments
+- Generate detailed prompts for AI music generators (Suno, MusicGen, AIVA)
+- Understand model capabilities and limitations
+- Create music integration strategies and quality criteria
+
+```bash
+/music-designer                                    # full music design audit
+/music-designer --blueprint
+scope: chapter 2
+focus: reflect the corruption theme and Jean's growing resolve
+
+/music-designer --generate
+location: dark-grotto
+moment: discovering the sacred spring corrupted
+generator: suno
+```
+
+**Output**: Music design blueprints, AI generation requests with settings, integration guides, and sonic palettes.
+
+Key capabilities:
+- Thematic composition (motifs for characters, locations, emotional states)
+- Narrative pacing and emotional arc design
+- AI music generation mastery (Suno, MusicGen, AIVA, etc.)
+- Prompt engineering for music (model-specific language, iteration strategies)
+- Game audio integration (looping, transitions, adaptive systems)
+
+---
+
 ## Code Review Gate
 
 **Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
