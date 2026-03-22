@@ -79,7 +79,9 @@ def start_combat():
         result = game_service.start_combat(player, enemy_id, session_id=session.session_id)
 
         if "error" in result:
-            return jsonify({"success": False, "error": result["error"]}), 400
+            # Game-logic errors (already in combat, etc.) — return 200 with success=false
+            # to match execute_move semantics. 4xx is reserved for structural/auth errors.
+            return jsonify({"success": False, "error": result["error"]}), 200
 
         session_manager.save_session(session.session_id)
 
@@ -144,7 +146,7 @@ def execute_move():
             # Game-logic errors (move not available, wrong state, etc.) are not bad
             # requests — return 200 with success=false so callers can distinguish
             # structural errors (4xx) from in-game conditions (200 success=false).
-            session_manager.save_session(session.session_id)
+            # Do NOT save session on error paths — avoid persisting partial mutations.
             return jsonify({"success": False, "error": result["error"]}), 200
 
         session_manager.save_session(session.session_id)

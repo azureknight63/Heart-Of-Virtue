@@ -139,8 +139,8 @@ class CombatScenario(Scenario):
             try:
                 cfg.read(config_path)
                 scenario = cfg.get("scenario", "active_scenario", fallback="fodder").strip()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[CombatScenario] Warning: failed to read CONFIG_FILE={config_path!r}: {e}. Falling back to 'fodder'.")
 
         directions = _SCENARIO_NAV.get(scenario, _SCENARIO_NAV["fodder"])
         bugs = []

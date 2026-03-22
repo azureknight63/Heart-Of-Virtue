@@ -904,9 +904,15 @@ class ApiCombatAdapter:
                 # advancing if every move is still in cooldown (player would have no
                 # available actions), to avoid leaving the player with zero options.
                 if self.player.current_move is None:
+                    # Guard: no moves at all — don't burn remaining max_beats
+                    if not self.player.known_moves:
+                        break
                     if any(m.current_stage == 0 for m in self.player.known_moves):
                         break
-                    # All moves still cooling down — keep advancing beats until one opens up
+                    # All moves still cooling — re-check survival before the next drain beat
+                    if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                        break
+                    # Keep advancing beats until one opens up
         
         # Capture last move summary from the log entries of this move
         move_logs = [s["message"] for s in self.player.combat_log if s.get("type") in ("combat", "player_action")][-5:] # Last 5 relevant entries

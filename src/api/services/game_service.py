@@ -2318,14 +2318,13 @@ class GameService:
         # Detect if this is a re-initialization (enemies joining an already active combat)
         is_reinit = getattr(player, "in_combat", False)
 
-        # Idempotency check: If player is already in combat with these enemies, do nothing.
+        # Idempotency check: If player is already in combat with exactly these enemy objects,
+        # do nothing. Keyed on object identity (id) rather than name so two enemies with the
+        # same name (e.g. two Slimes) are treated as distinct combatants.
         if is_reinit and hasattr(player, "combat_list"):
-            # Check if we are fighting the same group of enemies
-            current_combatants = set(getattr(e, "name", str(e)) for e in player.combat_list)
-            new_combatants = set(getattr(e, "name", str(e)) for e in enemies)
-            
-            # If the set of enemies is the same, we assume this is a duplicate request
-            if current_combatants == new_combatants:
+            current_ids = set(id(e) for e in player.combat_list)
+            new_ids = set(id(e) for e in enemies)
+            if current_ids == new_ids:
                 return
 
         from src.api.combat_adapter import ApiCombatAdapter
