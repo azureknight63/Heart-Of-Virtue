@@ -407,9 +407,11 @@ Review SFX coverage and identify weak spots
 
 **Output**: Sound design audit reports, Song class implementations (Python code), testing instructions, and integration notes.
 
+**Authority**: The sound designer has **full authority to improve the audio generation tools** (audio_engine, Song system) as needed to meet design goals. If synthesis capabilities are missing, add them.
+
 **Project audio tools**:
-- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_chord, mix_layers)
-- `tools/songs/` — existing Song classes (sfx.py, adventure.py, battle.py, etc.)
+- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_chord, mix_layers) — *can be enhanced*
+- `tools/songs/` — existing Song classes (sfx.py, adventure.py, battle.py, etc.) — *can be templated/refactored*
 - `python tools/generate_audio.py` — renders all songs to WAV files
 - `python tools/audio_player.py` — interactive testing GUI (tempo, pitch, visualization)
 - Output: `frontend/public/assets/sounds/`
@@ -418,6 +420,7 @@ Key capabilities:
 - Procedural wave synthesis (sine, square, sawtooth, triangle, noise)
 - Envelope shaping (attack/release for precise control)
 - Frequency selection and layering strategies
+- **Audio engine enhancement** (add new synthesis functions, helper classes, templates)
 - Song class architecture and design patterns
 - Audio generation and QA testing
 

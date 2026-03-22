@@ -25,10 +25,12 @@ Use when asked to:
 ## Capabilities
 
 - Auditing existing Song implementations and identifying gaps
+- **Improving the audio generation tools** when needed (new synthesis functions, helper classes, templates)
 - Designing new SFX/music by implementing Song class code
 - Understanding procedural synthesis (wave types, envelopes, frequency selection, layering)
 - Generating and testing audio using the project's tools
 - Integrating sound triggers into game code
+- Creating reusable Song class templates and design patterns
 
 ## Output
 
