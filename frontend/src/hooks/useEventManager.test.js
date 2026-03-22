@@ -3,9 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useEventManager } from './useEventManager'
 import apiClient from '../api/client'
 
-// Mock fetch globally
-global.fetch = vi.fn()
-
 // Mock useToast from ToastContext
 vi.mock('../context/ToastContext', () => ({
     useToast: () => ({
@@ -22,22 +19,9 @@ vi.mock('../context/ToastContext', () => ({
 describe('useEventManager', () => {
     beforeEach(() => {
         vi.clearAllMocks()
-        global.fetch.mockImplementation((url) => {
-            if (url.includes('/api/world/events/pending')) {
-                return Promise.resolve({
-                    ok: true,
-                    status: 200,
-                    statusText: 'OK',
-                    json: async () => ({ success: true, events: [] })
-                })
-            }
-            return Promise.resolve({
-                ok: true,
-                status: 200,
-                statusText: 'OK',
-                json: async () => ({ success: true })
-            })
-        })
+        // The hook uses apiClient (axios), not global.fetch — mock at the axios level
+        vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, events: [] } })
+        vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { success: true } })
     })
 
     afterEach(() => {
@@ -65,25 +49,19 @@ describe('useEventManager', () => {
         })
 
         it('should fetch pending events on mount', async () => {
-            global.fetch.mockImplementationOnce(() => Promise.resolve({
-                ok: true,
-                status: 200,
-                statusText: 'OK',
-                json: async () => ({
+            vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+                data: {
                     success: true,
                     events: [
                         { event_id: 'test-1', name: 'Test Event', output_text: 'Test', needs_input: false }
                     ]
-                })
-            }))
+                }
+            })
 
             renderHook(() => useEventManager(defaultParams))
 
             await waitFor(() => {
-                expect(global.fetch).toHaveBeenCalledWith(
-                    '/api/world/events/pending',
-                    expect.anything()
-                )
+                expect(apiClient.get).toHaveBeenCalledWith('/world/events/pending')
             })
         })
     })
@@ -261,25 +239,8 @@ describe('useEventManager', () => {
 
     describe('handleEventInput', () => {
         it('should submit event input successfully', async () => {
-            global.fetch.mockImplementation((url) => {
-                if (url.includes('/api/world/events/input')) {
-                    return Promise.resolve({
-                        ok: true,
-                        status: 200,
-                        statusText: 'OK',
-                        json: async () => ({
-                            success: true,
-                            output_text: 'Result text',
-                            needs_input: false
-                        })
-                    })
-                }
-                return Promise.resolve({
-                    ok: true,
-                    status: 200,
-                    statusText: 'OK',
-                    json: async () => ({ success: true, events: [] })
-                })
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: { success: true, output_text: 'Result text', needs_input: false }
             })
 
             const { result } = renderHook(() => useEventManager(defaultParams))
@@ -295,24 +256,8 @@ describe('useEventManager', () => {
         })
 
         it('should handle event input errors', async () => {
-            global.fetch.mockImplementation((url) => {
-                if (url.includes('/api/world/events/input')) {
-                    return Promise.resolve({
-                        ok: true,
-                        status: 200,
-                        statusText: 'OK',
-                        json: async () => ({
-                            success: false,
-                            error: 'Something went wrong'
-                        })
-                    })
-                }
-                return Promise.resolve({
-                    ok: true,
-                    status: 200,
-                    statusText: 'OK',
-                    json: async () => ({ success: true, events: [] })
-                })
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: { success: false, error: 'Something went wrong' }
             })
 
             const { result } = renderHook(() => useEventManager(defaultParams))
@@ -326,25 +271,8 @@ describe('useEventManager', () => {
         })
 
         it('should show result event if output text is returned', async () => {
-            global.fetch.mockImplementation((url) => {
-                if (url.includes('/api/world/events/input')) {
-                    return Promise.resolve({
-                        ok: true,
-                        status: 200,
-                        statusText: 'OK',
-                        json: async () => ({
-                            success: true,
-                            output_text: 'Result text',
-                            needs_input: false
-                        })
-                    })
-                }
-                return Promise.resolve({
-                    ok: true,
-                    status: 200,
-                    statusText: 'OK',
-                    json: async () => ({ success: true, events: [] })
-                })
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: { success: true, output_text: 'Result text', needs_input: false }
             })
 
             const { result } = renderHook(() => useEventManager(defaultParams))
