@@ -43,15 +43,16 @@ const saveAudioPreferences = (preferences) => {
     }
 };
 
+const BASE = import.meta.env.BASE_URL;
 const BGM_MAP = {
-    'adventure': '/assets/sounds/bgm_adventure.wav',
-    'battle': '/assets/sounds/bgm_battle.mp3',
-    'dark_grotto': '/assets/sounds/dark_grotto.mp3',
-    'dungeon': '/assets/sounds/bgm_dungeon.mp3',
-    'fanfare': '/assets/sounds/bgm_fanfare.wav',
-    'memory_flash': '/assets/sounds/memory_flash.mp3',
-    'mineral_pools': '/assets/sounds/bgm_mineral_pools.wav',
-    'dream_space': '/assets/sounds/bgm_dream_space.wav',
+    'adventure': `${BASE}assets/sounds/bgm_adventure.wav`,
+    'battle': `${BASE}assets/sounds/bgm_battle.mp3`,
+    'dark_grotto': `${BASE}assets/sounds/dark_grotto.mp3`,
+    'dungeon': `${BASE}assets/sounds/bgm_dungeon.mp3`,
+    'fanfare': `${BASE}assets/sounds/bgm_fanfare.wav`,
+    'memory_flash': `${BASE}assets/sounds/memory_flash.mp3`,
+    'mineral_pools': `${BASE}assets/sounds/bgm_mineral_pools.wav`,
+    'dream_space': `${BASE}assets/sounds/bgm_dream_space.wav`,
 };
 
 export const AudioProvider = ({ children }) => {
@@ -108,7 +109,7 @@ export const AudioProvider = ({ children }) => {
                 trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
             }
 
-            const path = BGM_MAP[trackName] || `/assets/sounds/bgm_${trackName}.wav`;
+            const path = BGM_MAP[trackName] || `${BASE}assets/sounds/bgm_${trackName}.wav`;
             bgmRef.current.src = path;
 
             // Restore progress
@@ -156,7 +157,7 @@ export const AudioProvider = ({ children }) => {
     }, []);
 
     const playSFX = useCallback((sfxName) => {
-        const path = `/assets/sounds/sfx_${sfxName}.wav`;
+        const path = `${BASE}assets/sounds/sfx_${sfxName}.wav`;
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
         audio.play().catch(e => console.warn("SFX play failed:", e));
