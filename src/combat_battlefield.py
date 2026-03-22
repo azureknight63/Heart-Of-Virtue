@@ -2,7 +2,7 @@
 Combat Battlefield Display Window (tkinter-based)
 
 Provides a real-time ASCII art visualization of the combat battlefield during turn-based combat.
-Displays combatant positions on a 50×50 square grid using ASCII characters to maintain visual 
+Displays combatant positions on a 50×50 square grid using ASCII characters to maintain visual
 consistency with the game's aesthetic.
 
 Features:
@@ -23,6 +23,7 @@ Character Meanings:
 
 try:
     import tkinter as tk
+
     _TKINTER_AVAILABLE = True
 except ImportError:
     tk = None  # type: ignore
@@ -41,36 +42,36 @@ class CombatBattlefieldWindow:
     # Grid dimensions (in characters, not game coordinates)
     GRID_WIDTH = 50
     GRID_HEIGHT = 50
-    
+
     # Character mappings for different combatants
     PLAYER_CHAR = "J"  # Jean, our hero
     ALLY_CHAR = "A"
     ENEMY_CHAR = "E"
     BREADCRUMB_CHAR = "·"
     BORDER_CHAR = "#"
-    
+
     # Direction indicators (compass rose)
     DIRECTION_CHARS = {
-        0: "↑",      # N
-        45: "↗",     # NE
-        90: "→",     # E
-        135: "↘",    # SE
-        180: "↓",    # S
-        225: "↙",    # SW
-        270: "←",    # W
-        315: "↖",    # NW
+        0: "↑",  # N
+        45: "↗",  # NE
+        90: "→",  # E
+        135: "↘",  # SE
+        180: "↓",  # S
+        225: "↙",  # SW
+        270: "←",  # W
+        315: "↖",  # NW
     }
-    
+
     # Colors (tkinter color names)
     COLOR_BACKGROUND = "#1e1e1e"
     COLOR_GRID = "#404040"
-    COLOR_PLAYER = "#00ff00"      # Green for player
-    COLOR_ALLY = "#00ccff"        # Cyan for allies
-    COLOR_ENEMY = "#ff3333"       # Red for enemies
-    COLOR_INJURED = "#ffaa00"     # Orange for injured
-    COLOR_CRITICAL = "#ff6666"    # Bright red for critical
+    COLOR_PLAYER = "#00ff00"  # Green for player
+    COLOR_ALLY = "#00ccff"  # Cyan for allies
+    COLOR_ENEMY = "#ff3333"  # Red for enemies
+    COLOR_INJURED = "#ffaa00"  # Orange for injured
+    COLOR_CRITICAL = "#ff6666"  # Bright red for critical
     COLOR_TEXT = "#ffffff"
-    COLOR_DEAD = "#666666"        # Gray for dead combatants
+    COLOR_DEAD = "#666666"  # Gray for dead combatants
     COLOR_BREADCRUMB = "#404040"  # Dark gray for trails
 
     def __init__(self, title: str = "Combat Battlefield"):
@@ -86,11 +87,11 @@ class CombatBattlefieldWindow:
         self.combatants_data: Dict[str, Dict[str, Any]] = {}
         self.beat_number: int = 0
         self.is_open: bool = False
-        
+
         # Track movement history for breadcrumb trails
         # combatant_name -> deque of positions (max 3 recent positions for minimal clutter)
         self.movement_history: Dict[str, deque] = {}
-        
+
         # Dynamic viewport for showing only relevant area with margin
         self.viewport_x_min: int = 0
         self.viewport_x_max: int = self.GRID_WIDTH - 1
@@ -127,7 +128,7 @@ class CombatBattlefieldWindow:
             text="Beat: 0 | Combatants: 0",
             bg=self.COLOR_BACKGROUND,
             fg=self.COLOR_TEXT,
-            font=("Courier New", 10, "bold")
+            font=("Courier New", 10, "bold"),
         )
         self.info_label.pack(side=tk.LEFT)
 
@@ -147,31 +148,65 @@ class CombatBattlefieldWindow:
             wrap=tk.NONE,
             relief=tk.FLAT,
             highlightthickness=0,
-            state=tk.DISABLED
+            state=tk.DISABLED,
         )
         self.text_widget.pack(fill=tk.BOTH, expand=True)
 
         # Configure text tags for colors and health status
-        self.text_widget.tag_config("player", foreground=self.COLOR_PLAYER, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("player_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("player_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
-        
-        self.text_widget.tag_config("ally", foreground=self.COLOR_ALLY, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("ally_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("ally_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
-        
-        self.text_widget.tag_config("enemy", foreground=self.COLOR_ENEMY, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("enemy_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
-        self.text_widget.tag_config("enemy_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
-        
-        self.text_widget.tag_config("dead", foreground=self.COLOR_DEAD, font=("Courier New", 10))
-        
+        self.text_widget.tag_config(
+            "player", foreground=self.COLOR_PLAYER, font=("Courier New", 10, "bold")
+        )
+        self.text_widget.tag_config(
+            "player_injured",
+            foreground=self.COLOR_INJURED,
+            font=("Courier New", 10, "bold"),
+        )
+        self.text_widget.tag_config(
+            "player_critical",
+            foreground=self.COLOR_CRITICAL,
+            font=("Courier New", 10, "bold"),
+        )
+
+        self.text_widget.tag_config(
+            "ally", foreground=self.COLOR_ALLY, font=("Courier New", 10, "bold")
+        )
+        self.text_widget.tag_config(
+            "ally_injured",
+            foreground=self.COLOR_INJURED,
+            font=("Courier New", 10, "bold"),
+        )
+        self.text_widget.tag_config(
+            "ally_critical",
+            foreground=self.COLOR_CRITICAL,
+            font=("Courier New", 10, "bold"),
+        )
+
+        self.text_widget.tag_config(
+            "enemy", foreground=self.COLOR_ENEMY, font=("Courier New", 10, "bold")
+        )
+        self.text_widget.tag_config(
+            "enemy_injured",
+            foreground=self.COLOR_INJURED,
+            font=("Courier New", 10, "bold"),
+        )
+        self.text_widget.tag_config(
+            "enemy_critical",
+            foreground=self.COLOR_CRITICAL,
+            font=("Courier New", 10, "bold"),
+        )
+
+        self.text_widget.tag_config(
+            "dead", foreground=self.COLOR_DEAD, font=("Courier New", 10)
+        )
+
         # Health marker tags - used for the ! and !! indicators
         # self.text_widget.tag_config("marker_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
         # self.text_widget.tag_config("marker_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
-        
+
         self.text_widget.tag_config("breadcrumb", foreground=self.COLOR_BREADCRUMB)
-        self.text_widget.tag_config("border", foreground=self.COLOR_GRID, font=("Courier New", 10, "bold"))
+        self.text_widget.tag_config(
+            "border", foreground=self.COLOR_GRID, font=("Courier New", 10, "bold")
+        )
 
         # Legend frame
         legend_frame = tk.Frame(main_frame, bg=self.COLOR_BACKGROUND)
@@ -190,21 +225,21 @@ class CombatBattlefieldWindow:
             fg=self.COLOR_TEXT,
             font=("Courier New", 8),
             wraplength=750,
-            justify=tk.LEFT
+            justify=tk.LEFT,
         )
         legend_label.pack(anchor=tk.W)
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
         self.is_open = True
-        
+
         # Bring window to foreground
         self.window.lift()
-        self.window.attributes('-topmost', True)
-        self.window.after_idle(self.window.attributes, '-topmost', False)
-        
+        self.window.attributes("-topmost", True)
+        self.window.after_idle(self.window.attributes, "-topmost", False)
+
         # Display initial empty grid
         self._render_initial_grid()
-        
+
         self.window.update()
 
     def on_close(self) -> None:
@@ -227,15 +262,15 @@ class CombatBattlefieldWindow:
         """Render an initial empty grid to display when window first opens."""
         if not self.text_widget:
             return
-        
+
         try:
             self.text_widget.config(state=tk.NORMAL)
             self.text_widget.delete(1.0, tk.END)
-            
+
             # Create empty grid with borders
             grid_text = self.render_grid()
             self.text_widget.insert(1.0, grid_text)
-            
+
             self.text_widget.config(state=tk.DISABLED)
         except tk.TclError:
             pass
@@ -244,12 +279,12 @@ class CombatBattlefieldWindow:
         """Get the direction indicator character for a facing value."""
         # Normalize facing value to 0-360
         facing_value = facing_value % 360
-        
+
         # Find closest direction
         for direction in sorted(self.DIRECTION_CHARS.keys()):
             if abs(facing_value - direction) <= 22.5:
                 return self.DIRECTION_CHARS[direction]
-        
+
         return "·"
 
     def _get_health_indicator(self, health_percent: float) -> str:
@@ -264,11 +299,11 @@ class CombatBattlefieldWindow:
         """
         Get all integer grid points between two positions using Bresenham's line algorithm.
         Includes both start and end points.
-        
+
         Args:
             start_pos: Starting position object with x, y attributes
             end_pos: Ending position object with x, y attributes
-            
+
         Returns:
             List of (x, y) coordinate tuples along the line
         """
@@ -276,23 +311,23 @@ class CombatBattlefieldWindow:
         y0 = int(start_pos.y)
         x1 = int(end_pos.x)
         y1 = int(end_pos.y)
-        
+
         points = []
-        
+
         # Bresenham's line algorithm
         dx = abs(x1 - x0)
         dy = abs(y1 - y0)
         sx = 1 if x0 < x1 else -1
         sy = 1 if y0 < y1 else -1
         err = dx - dy
-        
+
         x, y = x0, y0
         while True:
             points.append((x, y))
-            
+
             if x == x1 and y == y1:
                 break
-            
+
             e2 = 2 * err
             if e2 > -dy:
                 err -= dy
@@ -300,7 +335,7 @@ class CombatBattlefieldWindow:
             if e2 < dx:
                 err += dx
                 y += sy
-        
+
         return points
 
     def _update_viewport(self) -> None:
@@ -312,13 +347,13 @@ class CombatBattlefieldWindow:
             self.viewport_y_min = 0
             self.viewport_y_max = self.GRID_HEIGHT - 1
             return
-        
+
         # Find bounds of all combatants
         min_x = self.GRID_WIDTH
         max_x = 0
         min_y = self.GRID_HEIGHT
         max_y = 0
-        
+
         for name, data in self.combatants_data.items():
             pos = data.get("position")
             if pos is None:
@@ -329,7 +364,7 @@ class CombatBattlefieldWindow:
             max_x = max(max_x, x)
             min_y = min(min_y, y)
             max_y = max(max_y, y)
-        
+
         # Also consider movement history
         for name, history in self.movement_history.items():
             for pos in history:
@@ -339,94 +374,120 @@ class CombatBattlefieldWindow:
                 max_x = max(max_x, x)
                 min_y = min(min_y, y)
                 max_y = max(max_y, y)
-        
+
         # Ensure we have valid bounds
-        if min_x >= self.GRID_WIDTH or max_x < 0 or min_y >= self.GRID_HEIGHT or max_y < 0:
+        if (
+            min_x >= self.GRID_WIDTH
+            or max_x < 0
+            or min_y >= self.GRID_HEIGHT
+            or max_y < 0
+        ):
             # All combatants are outside the grid, show full grid
             self.viewport_x_min = 0
             self.viewport_x_max = self.GRID_WIDTH - 1
             self.viewport_y_min = 0
             self.viewport_y_max = self.GRID_HEIGHT - 1
             return
-        
+
         # Apply margin
         self.viewport_x_min = max(0, min_x - self.margin)
         self.viewport_x_max = min(self.GRID_WIDTH - 1, max_x + self.margin)
         self.viewport_y_min = max(0, min_y - self.margin)
         self.viewport_y_max = min(self.GRID_HEIGHT - 1, max_y + self.margin)
-        
+
         # If we're clamped at a boundary, expand in the opposite direction to maintain view size
         # This ensures we always have margin space visible even at edges
         viewport_width = self.viewport_x_max - self.viewport_x_min
         viewport_height = self.viewport_y_max - self.viewport_y_min
-        
+
         # If left edge is at boundary, expand right
         if self.viewport_x_min == 0 and max_x + self.margin < self.GRID_WIDTH - 1:
             desired_width = (max_x + self.margin + 1) - (min_x - self.margin)
-            self.viewport_x_max = min(self.GRID_WIDTH - 1, self.viewport_x_min + desired_width + self.margin)
-        
+            self.viewport_x_max = min(
+                self.GRID_WIDTH - 1, self.viewport_x_min + desired_width + self.margin
+            )
+
         # If right edge is at boundary, expand left
         if self.viewport_x_max == self.GRID_WIDTH - 1 and min_x - self.margin >= 0:
             desired_width = (max_x + self.margin + 1) - (min_x - self.margin)
-            self.viewport_x_min = max(0, self.viewport_x_max - desired_width - self.margin)
-        
+            self.viewport_x_min = max(
+                0, self.viewport_x_max - desired_width - self.margin
+            )
+
         # If top edge is at boundary, expand down
         if self.viewport_y_min == 0 and max_y + self.margin < self.GRID_HEIGHT - 1:
             desired_height = (max_y + self.margin + 1) - (min_y - self.margin)
-            self.viewport_y_max = min(self.GRID_HEIGHT - 1, self.viewport_y_min + desired_height + self.margin)
-        
+            self.viewport_y_max = min(
+                self.GRID_HEIGHT - 1, self.viewport_y_min + desired_height + self.margin
+            )
+
         # If bottom edge is at boundary, expand up
         if self.viewport_y_max == self.GRID_HEIGHT - 1 and min_y - self.margin >= 0:
             desired_height = (max_y + self.margin + 1) - (min_y - self.margin)
-            self.viewport_y_min = max(0, self.viewport_y_max - desired_height - self.margin)
+            self.viewport_y_min = max(
+                0, self.viewport_y_max - desired_height - self.margin
+            )
 
     def render_grid(self) -> str:
         """
         Render the current combat state as an ASCII grid with breadcrumbs and facing indicators.
         Dynamically crops to viewport containing combatants with margin.
-        
+
         Returns:
             String representation of the grid
         """
         # Update viewport based on current combatants
         self._update_viewport()
-        
+
         # Calculate visible dimensions
         visible_width = self.viewport_x_max - self.viewport_x_min + 1
         visible_height = self.viewport_y_max - self.viewport_y_min + 1
-        
+
         # Initialize grid with empty spaces
         grid = [[" " for _ in range(visible_width)] for _ in range(visible_height)]
-        
+
         # Track movement direction for each cell to enable diagonal padding
         # (x, y) -> direction tuple (dx, dy) indicating overall movement direction
         grid_directions: Dict[Tuple[int, int], Tuple[int, int]] = {}
-        
+
         # Track combatant positions for overlay (to avoid breadcrumb overwrites)
         combatant_overlay: Dict[Tuple[int, int], str] = {}
-        combatant_positions: set = set()  # Track current combatant positions to avoid breadcrumb collision
+        combatant_positions: set = (
+            set()
+        )  # Track current combatant positions to avoid breadcrumb collision
 
         # Draw breadcrumb trails first (so they appear under combatants)
         # Breadcrumbs show the complete path including intermediate points between history items
         for name, history in self.movement_history.items():
             history_list = list(history)  # Convert deque to list for easier indexing
-            
+
             # Draw breadcrumbs between consecutive history points
             for i in range(len(history_list) - 1):
                 start_pos = history_list[i]
                 end_pos = history_list[i + 1]
-                
+
                 # Calculate overall movement direction for this segment
-                dx = 1 if int(end_pos.x) > int(start_pos.x) else (-1 if int(end_pos.x) < int(start_pos.x) else 0)
-                dy = 1 if int(end_pos.y) > int(start_pos.y) else (-1 if int(end_pos.y) < int(start_pos.y) else 0)
-                
+                dx = (
+                    1
+                    if int(end_pos.x) > int(start_pos.x)
+                    else (-1 if int(end_pos.x) < int(start_pos.x) else 0)
+                )
+                dy = (
+                    1
+                    if int(end_pos.y) > int(start_pos.y)
+                    else (-1 if int(end_pos.y) < int(start_pos.y) else 0)
+                )
+
                 # Get all points along the line between these two positions
                 line_points = self._get_line_points(start_pos, end_pos)
-                
+
                 # Place breadcrumbs on ALL points including start/end (we're showing the complete path)
                 for x, y in line_points:
                     # Check if position is in viewport
-                    if self.viewport_x_min <= x <= self.viewport_x_max and self.viewport_y_min <= y <= self.viewport_y_max:
+                    if (
+                        self.viewport_x_min <= x <= self.viewport_x_max
+                        and self.viewport_y_min <= y <= self.viewport_y_max
+                    ):
                         grid_x = x - self.viewport_x_min
                         grid_y = y - self.viewport_y_min
                         # Mark this as a breadcrumb trail position (don't overwrite existing breadcrumbs)
@@ -443,14 +504,17 @@ class CombatBattlefieldWindow:
 
             x = int(pos.x)
             y = int(pos.y)
-            
+
             # Check if position is in viewport
-            if not (self.viewport_x_min <= x <= self.viewport_x_max and self.viewport_y_min <= y <= self.viewport_y_max):
+            if not (
+                self.viewport_x_min <= x <= self.viewport_x_max
+                and self.viewport_y_min <= y <= self.viewport_y_max
+            ):
                 continue
-            
+
             grid_x = x - self.viewport_x_min
             grid_y = y - self.viewport_y_min
-            
+
             # Track this position to avoid breadcrumb collision
             combatant_positions.add((grid_x, grid_y))
 
@@ -476,11 +540,11 @@ class CombatBattlefieldWindow:
                     char = self.ALLY_CHAR.lower()
                 else:
                     char = self.ENEMY_CHAR.lower()
-            
+
             # Add facing direction indicator as a suffix
             direction_char = self._get_direction_char(facing_value)
             combined_display = char + direction_char
-            
+
             # Store in overlay (this will overwrite grid values)
             combatant_overlay[(grid_x, grid_y)] = combined_display
 
@@ -506,7 +570,7 @@ class CombatBattlefieldWindow:
                         # Get movement direction for this breadcrumb if available
                         direction = grid_directions.get((x, y), (0, 0))
                         dx, dy = direction
-                        
+
                         if dx != 0 and dy == 0:
                             # Horizontal movement: fill both cells with breadcrumb
                             grid[y][x] = cell + self.BREADCRUMB_CHAR
@@ -556,14 +620,18 @@ class CombatBattlefieldWindow:
 
             # Apply color tags FIRST to combatants (so they have highest priority)
             self._apply_color_tags()
-            
+
             # Then apply color tags to grid elements (borders, breadcrumbs)
             # These will NOT override combatant tags since they're lower priority
             self._apply_grid_tags()
 
             # Update info label - count only alive combatants
             if self.info_label:
-                alive_count = sum(1 for data in self.combatants_data.values() if data.get("is_alive", True))
+                alive_count = sum(
+                    1
+                    for data in self.combatants_data.values()
+                    if data.get("is_alive", True)
+                )
                 self.info_label.config(
                     text=f"Beat: {self.beat_number} | Combatants: {alive_count}"
                 )
@@ -584,16 +652,24 @@ class CombatBattlefieldWindow:
             # Tag all borders (# characters) and breadcrumbs (· characters)
             # IMPORTANT: Only tag the single character, not the padding that follows
             content = self.text_widget.get(1.0, tk.END)
-            
+
             # Find and tag borders and breadcrumbs
-            for line_num, line in enumerate(content.split('\n'), 1):
+            for line_num, line in enumerate(content.split("\n"), 1):
                 for col_num, char in enumerate(line, 1):
                     if char == self.BORDER_CHAR:
                         # Tag only this single character
-                        self.text_widget.tag_add("border", f"{line_num}.{col_num - 1}", f"{line_num}.{col_num}")
+                        self.text_widget.tag_add(
+                            "border",
+                            f"{line_num}.{col_num - 1}",
+                            f"{line_num}.{col_num}",
+                        )
                     elif char == self.BREADCRUMB_CHAR:
                         # Tag only this single character (not the padding that follows)
-                        self.text_widget.tag_add("breadcrumb", f"{line_num}.{col_num - 1}", f"{line_num}.{col_num}")
+                        self.text_widget.tag_add(
+                            "breadcrumb",
+                            f"{line_num}.{col_num - 1}",
+                            f"{line_num}.{col_num}",
+                        )
         except tk.TclError:
             pass
 
@@ -605,7 +681,7 @@ class CombatBattlefieldWindow:
         # Map combatant names to their tag colors
         # This approach searches for each combatant by their unique display string
         combatant_tags: Dict[str, str] = {}
-        
+
         # Build mapping of display string -> tag for all combatants
         for name, data in self.combatants_data.items():
             is_alive: bool = data.get("is_alive", True)
@@ -638,11 +714,11 @@ class CombatBattlefieldWindow:
                     char_tag = "enemy_injured"
                 else:
                     char_tag = "enemy"
-            
+
             # Store tag using display string as key (each combatant's display is unique)
             if display_text:
                 combatant_tags[display_text] = char_tag
-        
+
         # Apply color tags by searching for display strings
         for display_text, char_tag in combatant_tags.items():
             try:
@@ -652,16 +728,18 @@ class CombatBattlefieldWindow:
                     pos = self.text_widget.search(display_text, pos, tk.END)
                     if not pos:
                         break
-                    
+
                     # Calculate end position (display_text is 2 characters)
-                    line_col = pos.split('.')
+                    line_col = pos.split(".")
                     line = line_col[0]
                     col = int(line_col[1])
                     end_col = col + len(display_text)
-                    
+
                     # Apply the tag
-                    self.text_widget.tag_add(char_tag, f"{line}.{col}", f"{line}.{end_col}")
-                    
+                    self.text_widget.tag_add(
+                        char_tag, f"{line}.{col}", f"{line}.{end_col}"
+                    )
+
                     # Move past this occurrence
                     pos = f"{line}.{end_col}"
             except (tk.TclError, ValueError, IndexError):
@@ -675,11 +753,11 @@ class CombatBattlefieldWindow:
         is_player: bool = False,
         is_ally: bool = False,
         health_percent: float = 1.0,
-        facing_value: int = 0
+        facing_value: int = 0,
     ) -> None:
         """
         Update or add a combatant's position on the battlefield.
-        
+
         Args:
             name: Combatant's name (unique identifier)
             position: CombatPosition object or None to remove
@@ -704,7 +782,7 @@ class CombatBattlefieldWindow:
                 "health_percent": max(0.0, min(1.0, health_percent)),
                 "facing_value": facing_value,
             }
-            
+
             # Pre-calculate display text for use in color tagging
             # Build the display string (char + direction + health markers)
             if is_alive:
@@ -721,22 +799,28 @@ class CombatBattlefieldWindow:
                     char = self.ALLY_CHAR.lower()
                 else:
                     char = self.ENEMY_CHAR.lower()
-            
+
             direction_char = self._get_direction_char(facing_value)
             display_text = char + direction_char
-            
+
             self.combatants_data[name]["display_text"] = display_text
-            
+
             # Track movement history
             if name not in self.movement_history:
-                self.movement_history[name] = deque(maxlen=3)  # Keep only last 3 positions
-            
+                self.movement_history[name] = deque(
+                    maxlen=3
+                )  # Keep only last 3 positions
+
             # Check if position changed and add to history
             history = self.movement_history[name]
-            if not history or (history[-1].x != position.x or history[-1].y != position.y):
+            if not history or (
+                history[-1].x != position.x or history[-1].y != position.y
+            ):
                 try:
                     # Try to copy the position object
-                    history.append(position.copy() if hasattr(position, 'copy') else position)
+                    history.append(
+                        position.copy() if hasattr(position, "copy") else position
+                    )
                 except (AttributeError, TypeError):
                     # If copy fails, just append the position as-is
                     history.append(position)
@@ -744,16 +828,18 @@ class CombatBattlefieldWindow:
     def set_beat(self, beat: int) -> None:
         """
         Update the current beat number display.
-        
+
         Args:
             beat: Current combat beat number
         """
         self.beat_number = beat
 
-    def update_all_combatants(self, player: Any, allies: List[Any], enemies: List[Any]) -> None:
+    def update_all_combatants(
+        self, player: Any, allies: List[Any], enemies: List[Any]
+    ) -> None:
         """
         Bulk update all combatants from combat lists.
-        
+
         Args:
             player: Player object
             allies: List of allied NPCs
@@ -761,16 +847,16 @@ class CombatBattlefieldWindow:
         """
         # Build a set of all currently alive combatant names to track
         alive_names = set()
-        
+
         # Update player
         if hasattr(player, "combat_position") and player.combat_position is not None:
             player_name = player.name if hasattr(player, "name") else "Player"
             alive_names.add(player_name)
-            
+
             health_pct = 1.0
             if hasattr(player, "current_health") and hasattr(player, "maxhealth"):
                 health_pct = player.current_health / max(1, player.maxhealth)
-            
+
             # Extract facing value - handle Direction enum or raw value
             facing_val = 0
             if hasattr(player.combat_position, "facing"):
@@ -782,7 +868,7 @@ class CombatBattlefieldWindow:
                     # Or if it's already a number
                     elif isinstance(facing, (int, float)):
                         facing_val = facing
-            
+
             self.set_combatant(
                 player_name,
                 player.combat_position,
@@ -790,7 +876,7 @@ class CombatBattlefieldWindow:
                 is_player=True,
                 is_ally=True,
                 health_percent=health_pct,
-                facing_value=facing_val
+                facing_value=facing_val,
             )
 
         # Update allies
@@ -801,11 +887,11 @@ class CombatBattlefieldWindow:
                 if ally_name == player_name:
                     continue
                 alive_names.add(ally_name)
-                
+
                 health_pct = 1.0
                 if hasattr(ally, "current_health") and hasattr(ally, "maxhealth"):
                     health_pct = ally.current_health / max(1, ally.maxhealth)
-                
+
                 # Extract facing value - handle Direction enum or raw value
                 facing_val = 0
                 if hasattr(ally.combat_position, "facing"):
@@ -817,7 +903,7 @@ class CombatBattlefieldWindow:
                         # Or if it's already a number
                         elif isinstance(facing, (int, float)):
                             facing_val = facing
-                
+
                 self.set_combatant(
                     ally_name,
                     ally.combat_position,
@@ -825,19 +911,21 @@ class CombatBattlefieldWindow:
                     is_player=False,
                     is_ally=True,
                     health_percent=health_pct,
-                    facing_value=facing_val
+                    facing_value=facing_val,
                 )
 
         # Update enemies
         for enemy in enemies:
             if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
-                enemy_name = enemy.name if hasattr(enemy, "name") else f"Enemy_{id(enemy)}"
+                enemy_name = (
+                    enemy.name if hasattr(enemy, "name") else f"Enemy_{id(enemy)}"
+                )
                 alive_names.add(enemy_name)
-                
+
                 health_pct = 1.0
                 if hasattr(enemy, "current_health") and hasattr(enemy, "maxhealth"):
                     health_pct = enemy.current_health / max(1, enemy.maxhealth)
-                
+
                 # Extract facing value - handle Direction enum or raw value
                 facing_val = 0
                 if hasattr(enemy.combat_position, "facing"):
@@ -849,7 +937,7 @@ class CombatBattlefieldWindow:
                         # Or if it's already a number
                         elif isinstance(facing, (int, float)):
                             facing_val = facing
-                
+
                 self.set_combatant(
                     enemy_name,
                     enemy.combat_position,
@@ -857,16 +945,16 @@ class CombatBattlefieldWindow:
                     is_player=False,
                     is_ally=False,
                     health_percent=health_pct,
-                    facing_value=facing_val
+                    facing_value=facing_val,
                 )
-        
+
         # Remove combatants that are no longer in any list
         # This cleans up dead enemies that were removed from combat_list
         to_remove = []
         for name in self.combatants_data.keys():
             if name not in alive_names:
                 to_remove.append(name)
-        
+
         for name in to_remove:
             del self.combatants_data[name]
             if name in self.movement_history:

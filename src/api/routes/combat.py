@@ -76,7 +76,9 @@ def start_combat():
 
         game_service = current_app.game_service
 
-        result = game_service.start_combat(player, enemy_id, session_id=session.session_id)
+        result = game_service.start_combat(
+            player, enemy_id, session_id=session.session_id
+        )
 
         if "error" in result:
             # Game-logic errors (already in combat, etc.) — return 200 with success=false
@@ -140,7 +142,15 @@ def execute_move():
 
         game_service = current_app.game_service
 
-        result = game_service.execute_move(player, move_type, move_id, target_id, direction, session_id=session.session_id, session_data=session.data)
+        result = game_service.execute_move(
+            player,
+            move_type,
+            move_id,
+            target_id,
+            direction,
+            session_id=session.session_id,
+            session_data=session.data,
+        )
 
         if "error" in result:
             # Game-logic errors (move not available, wrong state, etc.) are not bad
@@ -182,13 +192,16 @@ def get_combat_status():
 
         game_service = current_app.game_service
 
-        status = game_service.get_combat_status(player, session_id=session.session_id, session_data=session.data)
+        status = game_service.get_combat_status(
+            player, session_id=session.session_id, session_data=session.data
+        )
 
         return jsonify({"success": True, **status}), 200
 
     except Exception as e:
         logger.exception("Unhandled error in get_combat_status")
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
+
 
 @combat_bp.route("/log", methods=["GET"])
 def get_combat_log():

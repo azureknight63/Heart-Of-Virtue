@@ -322,7 +322,10 @@ class RewardConditionValidator:
         max_inventory = getattr(player, "max_inventory", 20)
 
         if len(inventory) + total_items > max_inventory:
-            return False, f"Inventory full: need {total_items} slots, have {max_inventory - len(inventory)}"
+            return (
+                False,
+                f"Inventory full: need {total_items} slots, have {max_inventory - len(inventory)}",
+            )
 
         # Check reputation recipients exist
         reputation = rewards.get("reputation", {})

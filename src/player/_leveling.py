@@ -38,15 +38,18 @@ class PlayerLevelingMixin:
                     else:
                         continue
                 if announce:
-                    cprint(f"Jean may spend some of his earned exp to learn a new {exp_type} skill. "
-                           f"Type SKILL to open the skill menu for details.", "magenta")
+                    cprint(
+                        f"Jean may spend some of his earned exp to learn a new {exp_type} skill. "
+                        f"Type SKILL to open the skill menu for details.",
+                        "magenta",
+                    )
                 break
 
         if self.level < 100:
             self.exp += amt
 
         # In API mode (frontend), do not prompt for input during level-up.
-        if hasattr(self, '_combat_adapter'):
+        if hasattr(self, "_combat_adapter"):
             events = []
             while self.exp >= self.exp_to_level:
                 events.append(self._level_up_api())
@@ -62,7 +65,7 @@ class PlayerLevelingMixin:
 
         Returns a dict describing the level-up event for frontend display.
         """
-        old_level = int(getattr(self, 'level', 1) or 1)
+        old_level = int(getattr(self, "level", 1) or 1)
 
         # Level up bookkeeping (match terminal behavior)
         self.level += 1
@@ -88,7 +91,7 @@ class PlayerLevelingMixin:
 
         # Award attribute points to distribute (same range as terminal mode)
         points = random.randint(6, 9)
-        if not hasattr(self, 'pending_attribute_points'):
+        if not hasattr(self, "pending_attribute_points"):
             self.pending_attribute_points = 0
         self.pending_attribute_points += points
 
@@ -115,7 +118,8 @@ class PlayerLevelingMixin:
 
     def level_up(self):
         """Terminal-mode level up: prints ASCII art, awards random stat increases, prompts for attribute allocation."""
-        cprint(r"""
+        cprint(
+            r"""
                          .'  '.____.' '.           ..
         '''';;;,~~~,,~~''   /  *    ,\  ''~~,,,..''  '.,_
                            / ,    *   \
@@ -123,13 +127,18 @@ class PlayerLevelingMixin:
                          /  . *     ,   \
                         / *     ,  *   , \
                        /  .  *       *  . \
-        """, "yellow")
+        """,
+            "yellow",
+        )
         cprint("Jean has reached a new level!", "cyan")
         self.level += 1
         print(colored("He is now level {}".format(self.level)))
         self.exp -= self.exp_to_level
         self.exp_to_level = self.level * (150 - self.intelligence)
-        cprint("{} exp needed for the next level.".format(self.exp_to_level - self.exp), "yellow")
+        cprint(
+            "{} exp needed for the next level.".format(self.exp_to_level - self.exp),
+            "yellow",
+        )
 
         attributes = [
             ("strength_base", colored("Strength", "magenta"), 1),
@@ -137,7 +146,7 @@ class PlayerLevelingMixin:
             ("speed_base", colored("Speed", "magenta"), 3),
             ("endurance_base", colored("Endurance", "magenta"), 4),
             ("charisma_base", colored("Charisma", "magenta"), 5),
-            ("intelligence_base", colored("Intelligence", "magenta"), 6)
+            ("intelligence_base", colored("Intelligence", "magenta"), 6),
         ]
 
         for attr, attr_name, i in attributes:
@@ -151,14 +160,18 @@ class PlayerLevelingMixin:
         points = random.randint(6, 9)
 
         while points > 0:
-            print(f'You have {colored(str(points), "yellow")} additional attribute points to distribute. '
-                  f'Please select an attribute to increase:\n')
+            print(
+                f'You have {colored(str(points), "yellow")} additional attribute points to distribute. '
+                f"Please select an attribute to increase:\n"
+            )
             for attr, attr_name, i in attributes:
-                print(f'({i}) {attr_name} - {getattr(self, attr)}')
+                print(f"({i}) {attr_name} - {getattr(self, attr)}")
 
             selection = input("Selection: ")
             if not selection.isdigit() or (1 > int(selection) > 6):
-                cprint("Invalid selection. You must enter a choice between 1 and 6.", "red")
+                cprint(
+                    "Invalid selection. You must enter a choice between 1 and 6.", "red"
+                )
                 continue
 
             selection = int(selection)
@@ -169,9 +182,14 @@ class PlayerLevelingMixin:
                     set_attr, set_attr_name = attr, attr_name
                     break
 
-            amt = input(f"How many points would you like to allocate? ({points} available, 0 to cancel) ")
+            amt = input(
+                f"How many points would you like to allocate? ({points} available, 0 to cancel) "
+            )
             if not amt.isdigit() or not (0 <= int(amt) <= points):
-                cprint(f"Invalid selection. You must enter an amount between 0 and {points}.", "red")
+                cprint(
+                    f"Invalid selection. You must enter an amount between 0 and {points}.",
+                    "red",
+                )
                 continue
 
             amt = int(amt)

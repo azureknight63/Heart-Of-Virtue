@@ -27,14 +27,22 @@ def create_app(config_class=None):
     app.config.from_object(config_class)
 
     # Initialize CORS - with explicit support for all methods
-    CORS(app, 
-         origins=app.config["CORS_ORIGINS"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-         allow_headers=["Content-Type", "Authorization"],
-         supports_credentials=True)
+    CORS(
+        app,
+        origins=app.config["CORS_ORIGINS"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["Content-Type", "Authorization"],
+        supports_credentials=True,
+    )
 
     # Initialize SocketIO for real-time updates
-    socketio = SocketIO(app, cors_allowed_origins=app.config["CORS_ORIGINS"], async_mode='eventlet', logger=app.debug, engineio_logger=app.debug)
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins=app.config["CORS_ORIGINS"],
+        async_mode="eventlet",
+        logger=app.debug,
+        engineio_logger=app.debug,
+    )
     app.socketio = socketio
 
     # Load starting position and map from config file
@@ -42,21 +50,23 @@ def create_app(config_class=None):
     starting_exp = 0
     starting_map_name = "default"
     config_file = os.environ.get("CONFIG_FILE")
-    
+
     if config_file:
         try:
             # Remove quotes if present (from .env file)
             config_file = config_file.strip("'\"")
             config_path = Path(config_file)
-            
+
             # If relative path, make it relative to project root
             if not config_path.is_absolute():
-                config_path = Path(__file__).resolve().parent.parent.parent / config_file
-            
+                config_path = (
+                    Path(__file__).resolve().parent.parent.parent / config_file
+                )
+
             if config_path.exists():
                 parser = configparser.ConfigParser()
                 parser.read(config_path)
-                
+
                 if parser.has_option("game", "startposition"):
                     pos_str = parser.get("game", "startposition")
                     # Strip parentheses and whitespace
@@ -64,10 +74,10 @@ def create_app(config_class=None):
                     coords = [int(x.strip()) for x in pos_str.split(",")]
                     if len(coords) == 2:
                         start_x, start_y = coords
-                
+
                 if parser.has_option("game", "starting_exp"):
                     starting_exp = parser.getint("game", "starting_exp")
-                
+
                 if parser.has_option("game", "startmap"):
                     starting_map_name = parser.get("game", "startmap")
         except Exception as e:
@@ -77,67 +87,72 @@ def create_app(config_class=None):
     # For testing and development, load real game universe
     # Check by class name to avoid import namespace issues
     config_class_name = config_class.__name__
-    is_dev_or_test = config_class_name in ('DevelopmentConfig', 'TestingConfig')
-    
+    is_dev_or_test = config_class_name in ("DevelopmentConfig", "TestingConfig")
+
     universe = None
     game_service = None
-    
+
     if is_dev_or_test:
         try:
             # Import Player to create a test player for universe initialization
             from src.player import Player
-            
+
             # Create a test player
             test_player = Player()
             test_player.name = "Jean"
-            
+
             # Create universe with test player
             universe = universe_module.Universe(test_player)
-            
+
             # Build universe with real maps from JSON files
             universe.build(test_player)
-            
+
             # Set universe reference on player
             test_player.universe = universe
-            
+
             # Find the starting map by name
             starting_map = next(
-                (map_item for map_item in universe.maps if map_item.get('name') == starting_map_name),
-                universe.starting_map_default
+                (
+                    map_item
+                    for map_item in universe.maps
+                    if map_item.get("name") == starting_map_name
+                ),
+                universe.starting_map_default,
             )
-            
+
             # Set player to starting map and position from config
             test_player.map = starting_map
             test_player.location_x, test_player.location_y = start_x, start_y
-            
+
             # Apply starting exp
             if starting_exp > 0:
                 for category in test_player.skilltree.subtypes.keys():
                     test_player.skill_exp[category] = starting_exp
-            
+
             # Create a get_tile wrapper for accessing tiles from the player's current map only
             def get_tile_from_maps(x, y):
                 """Retrieve a tile from the player's current map by coordinates."""
-                if not hasattr(universe, 'player') or not universe.player:
+                if not hasattr(universe, "player") or not universe.player:
                     return None
-                
+
                 player_map = universe.player.map
                 if not player_map:
                     return None
-                
+
                 # Only search in the player's current map
                 if (x, y) in player_map:
                     return player_map[(x, y)]
-                
+
                 return None
-            
+
             # Add get_tile method to universe for API layer
             universe.get_tile = get_tile_from_maps
-            
+
             game_service = GameService()
         except Exception as e:
             # Fallback if universe initialization fails
             import traceback
+
             print(f"Warning: Universe initialization failed: {e}")
             traceback.print_exc()
             game_service = GameService()
@@ -194,6 +209,7 @@ def create_app(config_class=None):
 
     # Register WebSocket handlers
     from src.api.sockets import register_socket_handlers
+
     register_socket_handlers(socketio)
 
     # Global before_request handler for CORS preflight
@@ -201,11 +217,18 @@ def create_app(config_class=None):
     def handle_preflight():
         """Handle CORS preflight OPTIONS requests globally."""
         from flask import make_response, request
+
         if request.method == "OPTIONS":
             response = make_response()
-            response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "http://localhost:3000")
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get(
+                "Origin", "http://localhost:3000"
+            )
+            response.headers["Access-Control-Allow-Methods"] = (
+                "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            )
+            response.headers["Access-Control-Allow-Headers"] = (
+                "Content-Type, Authorization"
+            )
             response.headers["Access-Control-Max-Age"] = "3600"
             return response, 200
 
@@ -224,9 +247,11 @@ def create_app(config_class=None):
     # Test-only session endpoint — bypasses database auth entirely.
     # Only registered when TESTING=True so it is never reachable in production.
     if app.config.get("TESTING"):
+
         @app.route("/api/test/session", methods=["POST"])
         def test_create_session():
             from flask import jsonify, request as _req
+
             username = (_req.get_json() or {}).get("username", "inquisitor_test")
             session_id, _ = app.session_manager.create_session(username)
             return jsonify({"session_id": session_id, "username": username}), 201
@@ -264,13 +289,16 @@ def create_app(config_class=None):
     @app.route("/api/debug/routes", methods=["GET"])
     def list_routes():
         from flask import jsonify
+
         routes = []
         for rule in app.url_map.iter_rules():
-            routes.append({
-                'endpoint': rule.endpoint,
-                'methods': sorted(list(rule.methods - {'HEAD', 'OPTIONS'})),
-                'rule': str(rule),
-            })
-        return jsonify({'routes': sorted(routes, key=lambda x: x['rule'])})
+            routes.append(
+                {
+                    "endpoint": rule.endpoint,
+                    "methods": sorted(list(rule.methods - {"HEAD", "OPTIONS"})),
+                    "rule": str(rule),
+                }
+            )
+        return jsonify({"routes": sorted(routes, key=lambda x: x["rule"])})
 
     return app, socketio

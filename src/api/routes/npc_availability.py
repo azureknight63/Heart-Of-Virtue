@@ -18,18 +18,33 @@ def get_session_and_player(request):
     """Extract and validate session from request header. Returns (session_manager, session, player, error_response) or error tuple."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None, None, None, (jsonify({"success": False, "error": "Missing auth"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"success": False, "error": "Missing auth"}), 401),
+        )
 
     session_id = auth_header[7:]
     session_manager = current_app.session_manager
     session = session_manager.get_session(session_id)
 
     if not session:
-        return None, None, None, (jsonify({"success": False, "error": "Invalid session"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"success": False, "error": "Invalid session"}), 401),
+        )
 
     player = session_manager.get_player(session_id)
     if not player:
-        return None, None, None, (jsonify({"success": False, "error": "Player not found"}), 404)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"success": False, "error": "Player not found"}), 404),
+        )
 
     return session_manager, session, player, None
 
@@ -50,12 +65,15 @@ def get_npc_status(npc_id):
         result = current_app.game_service.get_npc_status(player, npc_id)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify(
-            {
-                "success": False,
-                "error": f"Failed to get NPC status: {str(e)}",
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to get NPC status: {str(e)}",
+                }
+            ),
+            500,
+        )
 
 
 @npc_availability_bp.route("/locations/<location_id>/npcs", methods=["GET"])
@@ -74,12 +92,15 @@ def get_npcs_at_location(location_id):
         result = current_app.game_service.get_npcs_at_location(player, location_id)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify(
-            {
-                "success": False,
-                "error": f"Failed to get NPCs at location: {str(e)}",
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to get NPCs at location: {str(e)}",
+                }
+            ),
+            500,
+        )
 
 
 @npc_availability_bp.route("/npcs/<npc_id>/check-availability", methods=["POST"])
@@ -101,12 +122,15 @@ def check_npc_availability(npc_id):
         result = current_app.game_service.check_npc_availability(player, npc_id, reason)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify(
-            {
-                "success": False,
-                "error": f"Failed to check NPC availability: {str(e)}",
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to check NPC availability: {str(e)}",
+                }
+            ),
+            500,
+        )
 
 
 @npc_availability_bp.route("/npcs/<npc_id>/location", methods=["POST"])
@@ -129,23 +153,31 @@ def update_npc_location(npc_id):
         new_location_id = data.get("new_location_id")
 
         if not new_location_id:
-            return jsonify(
-                {
-                    "success": False,
-                    "error": "Missing required field: new_location_id",
-                }
-            ), 400
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Missing required field: new_location_id",
+                    }
+                ),
+                400,
+            )
 
-        result = current_app.game_service.update_npc_location(player, npc_id, new_location_id)
+        result = current_app.game_service.update_npc_location(
+            player, npc_id, new_location_id
+        )
         session_manager.save_session(session.session_id)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify(
-            {
-                "success": False,
-                "error": f"Failed to update NPC location: {str(e)}",
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to update NPC location: {str(e)}",
+                }
+            ),
+            500,
+        )
 
 
 @npc_availability_bp.route("/npcs/<npc_id>/timeline", methods=["GET"])
@@ -164,9 +196,12 @@ def get_npc_timeline(npc_id):
         result = current_app.game_service.get_npc_timeline(player, npc_id)
         return jsonify(result), 200
     except Exception as e:
-        return jsonify(
-            {
-                "success": False,
-                "error": f"Failed to get NPC timeline: {str(e)}",
-            }
-        ), 500
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Failed to get NPC timeline: {str(e)}",
+                }
+            ),
+            500,
+        )

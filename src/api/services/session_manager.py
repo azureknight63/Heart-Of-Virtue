@@ -11,7 +11,7 @@ from src.config_manager import ConfigManager
 
 class MinimalPlayer:
     """Minimal player object for API testing/initialization."""
-    
+
     def __init__(self, username):
         self.username = username
         self.name = "Jean"
@@ -26,7 +26,7 @@ class MinimalPlayer:
         self.fatigue = 150
         self.maxfatigue = 150
         self.maxfatigue_base = 150
-        
+
         # Core stats to avoid crashes in events/interactions
         self.strength = 10
         self.strength_base = 10
@@ -43,35 +43,83 @@ class MinimalPlayer:
         self.speed = 10
         self.speed_base = 10
         self.awareness = 10
-        
+
         # Resistances (required by refresh_stat_bonuses and game_service)
         self.resistance = {
-            "fire": 1.0, "ice": 1.0, "shock": 1.0, "earth": 1.0, "light": 1.0,
-            "dark": 1.0, "piercing": 1.0, "slashing": 1.0, "crushing": 1.0,
-            "spiritual": 1.0, "pure": 1.0
+            "fire": 1.0,
+            "ice": 1.0,
+            "shock": 1.0,
+            "earth": 1.0,
+            "light": 1.0,
+            "dark": 1.0,
+            "piercing": 1.0,
+            "slashing": 1.0,
+            "crushing": 1.0,
+            "spiritual": 1.0,
+            "pure": 1.0,
         }
         self.resistance_base = {
-            "fire": 1.0, "ice": 1.0, "shock": 1.0, "earth": 1.0, "light": 1.0,
-            "dark": 1.0, "piercing": 1.0, "slashing": 1.0, "crushing": 1.0,
-            "spiritual": 1.0, "pure": 1.0
+            "fire": 1.0,
+            "ice": 1.0,
+            "shock": 1.0,
+            "earth": 1.0,
+            "light": 1.0,
+            "dark": 1.0,
+            "piercing": 1.0,
+            "slashing": 1.0,
+            "crushing": 1.0,
+            "spiritual": 1.0,
+            "pure": 1.0,
         }
         self.status_resistance = {
-            "generic": 1.0, "stun": 1.0, "poison": 1.0, "inflamed": 1.0,
-            "sloth": 1.0, "apathy": 1.0, "blind": 1.0, "incoherence": 1.0,
-            "mute": 1.0, "enraged": 1.0, "enchanted": 1.0, "ethereal": 1.0,
-            "berserk": 1.0, "slow": 1.0, "sleep": 1.0, "confusion": 1.0,
-            "cursed": 1.0, "stop": 1.0, "stone": 1.0, "frozen": 1.0,
-            "doom": 1.0, "death": 1.0
+            "generic": 1.0,
+            "stun": 1.0,
+            "poison": 1.0,
+            "inflamed": 1.0,
+            "sloth": 1.0,
+            "apathy": 1.0,
+            "blind": 1.0,
+            "incoherence": 1.0,
+            "mute": 1.0,
+            "enraged": 1.0,
+            "enchanted": 1.0,
+            "ethereal": 1.0,
+            "berserk": 1.0,
+            "slow": 1.0,
+            "sleep": 1.0,
+            "confusion": 1.0,
+            "cursed": 1.0,
+            "stop": 1.0,
+            "stone": 1.0,
+            "frozen": 1.0,
+            "doom": 1.0,
+            "death": 1.0,
         }
         self.status_resistance_base = {
-            "generic": 1.0, "stun": 1.0, "poison": 1.0, "inflamed": 1.0,
-            "sloth": 1.0, "apathy": 1.0, "blind": 1.0, "incoherence": 1.0,
-            "mute": 1.0, "enraged": 1.0, "enchanted": 1.0, "ethereal": 1.0,
-            "berserk": 1.0, "slow": 1.0, "sleep": 1.0, "confusion": 1.0,
-            "cursed": 1.0, "stop": 1.0, "stone": 1.0, "frozen": 1.0,
-            "doom": 1.0, "death": 1.0
+            "generic": 1.0,
+            "stun": 1.0,
+            "poison": 1.0,
+            "inflamed": 1.0,
+            "sloth": 1.0,
+            "apathy": 1.0,
+            "blind": 1.0,
+            "incoherence": 1.0,
+            "mute": 1.0,
+            "enraged": 1.0,
+            "enchanted": 1.0,
+            "ethereal": 1.0,
+            "berserk": 1.0,
+            "slow": 1.0,
+            "sleep": 1.0,
+            "confusion": 1.0,
+            "cursed": 1.0,
+            "stop": 1.0,
+            "stone": 1.0,
+            "frozen": 1.0,
+            "doom": 1.0,
+            "death": 1.0,
         }
-        
+
         self.level = 1
         self.exp = 0
         self.story = {}  # Empty story dict for API operations
@@ -79,17 +127,17 @@ class MinimalPlayer:
         self.completed_dialogues = []  # Track completed dialogues
         self.dialogue_contexts = {}  # Store active dialogue contexts
         self.combat_log = []  # List of combat messages
-        
+
         # Default prayer messages (subset of Player messages)
         self.prayer_msg = [
             "A warm sense of peace fills Jean's heart.",
-            'Jean frowns impatiently.',
-            'Jean shudders slightly.',
-            'Jean makes the sign of the cross.',
-            'Jean becomes conscious of his own heart beating loudly.',
-            'Jean feels the silence around him to be very heavy.'
+            "Jean frowns impatiently.",
+            "Jean shudders slightly.",
+            "Jean makes the sign of the cross.",
+            "Jean becomes conscious of his own heart beating loudly.",
+            "Jean feels the silence around him to be very heavy.",
         ]
-    
+
     def _create_starting_inventory(self):
         """Create starting items for new players."""
         return [
@@ -129,7 +177,9 @@ class MinimalPlayer:
 class Session:
     """Represents a player session."""
 
-    def __init__(self, session_id: str, player_id: str, username: str, created_at: datetime):
+    def __init__(
+        self, session_id: str, player_id: str, username: str, created_at: datetime
+    ):
         """Initialize a session.
 
         Args:
@@ -175,7 +225,7 @@ class SessionManager:
 
     def __init__(self, universe=None):
         """Initialize session manager.
-        
+
         Args:
             universe: Optional Universe instance for player positioning
         """
@@ -183,7 +233,7 @@ class SessionManager:
         self.players: Dict[str, object] = {}  # Stores Player or MinimalPlayer objects
         self.session_to_player: Dict[str, str] = {}
         self.universe = universe  # Reference to universe for getting starting positions
-        
+
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
         self.starting_map_name = "default"
@@ -192,22 +242,25 @@ class SessionManager:
         self._load_starting_position_from_config()
         self._load_game_config()
         self._load_starting_items_from_config()
-    
+
     def _load_starting_position_from_config(self):
         """Load starting position from config file specified in .env."""
         import sys
+
         config_file = os.environ.get("CONFIG_FILE")
-        
+
         print(f"[SessionManager] CONFIG_FILE env var: {config_file}", flush=True)
-        
+
         if config_file:
             try:
                 # Remove quotes if present (from .env file)
                 config_file = config_file.strip("'\"")
                 config_path = Path(config_file)
-                
-                print(f"[SessionManager] Initial config path: {config_path}", flush=True)
-                
+
+                print(
+                    f"[SessionManager] Initial config path: {config_path}", flush=True
+                )
+
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (4 levels up from this file: src/api/services/session_manager.py)
@@ -215,109 +268,155 @@ class SessionManager:
                     config_path = project_root / config_file
                     print(f"[SessionManager] Project root: {project_root}", flush=True)
                     print(f"[SessionManager] Resolved to: {config_path}", flush=True)
-                
-                print(f"[SessionManager] Config path exists: {config_path.exists()}", flush=True)
-                
+
+                print(
+                    f"[SessionManager] Config path exists: {config_path.exists()}",
+                    flush=True,
+                )
+
                 if config_path.exists():
                     parser = configparser.ConfigParser()
                     parser.read(config_path)
-                    
-                    print(f"[SessionManager] Config sections: {parser.sections()}", flush=True)
-                    
+
+                    print(
+                        f"[SessionManager] Config sections: {parser.sections()}",
+                        flush=True,
+                    )
+
                     if parser.has_option("game", "startposition"):
                         pos_str = parser.get("game", "startposition")
-                        print(f"[SessionManager] Raw position string: '{pos_str}'", flush=True)
+                        print(
+                            f"[SessionManager] Raw position string: '{pos_str}'",
+                            flush=True,
+                        )
                         # Strip parentheses and whitespace
                         pos_str = pos_str.strip("() ")
                         coords = [int(x.strip()) for x in pos_str.split(",")]
                         if len(coords) == 2:
                             self.start_x, self.start_y = coords
-                            print(f"[SessionManager] [OK] Loaded starting position from config: ({self.start_x}, {self.start_y})", flush=True)
+                            print(
+                                f"[SessionManager] [OK] Loaded starting position from config: ({self.start_x}, {self.start_y})",
+                                flush=True,
+                            )
                     else:
-                        print(f"[SessionManager] No startposition option in [game] section", flush=True)
-                    
+                        print(
+                            f"[SessionManager] No startposition option in [game] section",
+                            flush=True,
+                        )
+
                     if parser.has_option("game", "startmap"):
                         self.starting_map_name = parser.get("game", "startmap")
-                        print(f"[SessionManager] [OK] Loaded starting map from config: {self.starting_map_name}", flush=True)
+                        print(
+                            f"[SessionManager] [OK] Loaded starting map from config: {self.starting_map_name}",
+                            flush=True,
+                        )
                     else:
-                        print(f"[SessionManager] No startmap option in [game] section, using default", flush=True)
+                        print(
+                            f"[SessionManager] No startmap option in [game] section, using default",
+                            flush=True,
+                        )
             except Exception as e:
                 import traceback
+
                 print(f"[SessionManager] [ERROR] Error loading config: {e}", flush=True)
                 traceback.print_exc()
         else:
-            print(f"[SessionManager] CONFIG_FILE environment variable not set", flush=True)
+            print(
+                f"[SessionManager] CONFIG_FILE environment variable not set", flush=True
+            )
 
     def _load_starting_items_from_config(self):
         """Load starting item types from config file specified in .env."""
         config_file = os.environ.get("CONFIG_FILE")
-        
+
         if config_file:
             try:
                 # Remove quotes if present (from .env file)
                 config_file = config_file.strip("'\"")
                 config_path = Path(config_file)
-                
+
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (4 levels up from this file)
                     project_root = Path(__file__).resolve().parent.parent.parent.parent
                     config_path = project_root / config_file
-                
+
                 if config_path.exists():
                     parser = configparser.ConfigParser()
                     parser.read(config_path)
-                    
+
                     if parser.has_option("game", "starting_items"):
                         items_str = parser.get("game", "starting_items")
                         # Parse comma-separated list of item types
-                        self.starting_item_types = [item.strip() for item in items_str.split(",")]
-                        print(f"[SessionManager] [OK] Loaded starting items from config: {self.starting_item_types}", flush=True)
+                        self.starting_item_types = [
+                            item.strip() for item in items_str.split(",")
+                        ]
+                        print(
+                            f"[SessionManager] [OK] Loaded starting items from config: {self.starting_item_types}",
+                            flush=True,
+                        )
                     else:
-                        print(f"[SessionManager] No starting_items option in [game] section", flush=True)
+                        print(
+                            f"[SessionManager] No starting_items option in [game] section",
+                            flush=True,
+                        )
             except Exception as e:
                 import traceback
-                print(f"[SessionManager] [ERROR] Error loading starting_items config: {e}", flush=True)
+
+                print(
+                    f"[SessionManager] [ERROR] Error loading starting_items config: {e}",
+                    flush=True,
+                )
                 traceback.print_exc()
 
     def _load_game_config(self):
         """Load full game configuration using ConfigManager."""
-        config_file = os.environ.get("CONFIG_FILE", 'config_dev.ini')
-        
+        config_file = os.environ.get("CONFIG_FILE", "config_dev.ini")
+
         if config_file:
             try:
                 # Remove quotes if present (from .env file)
                 config_file = config_file.strip("'\"")
                 config_path = Path(config_file)
-                
+
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (4 levels up from this file)
                     project_root = Path(__file__).resolve().parent.parent.parent.parent
                     config_path = project_root / config_file
-                
+
                 if config_path.exists():
                     config_mgr = ConfigManager(str(config_path))
                     self.game_config = config_mgr.load()
-                    print(f"[SessionManager] [OK] Loaded full game config from: {config_path}", flush=True)
+                    print(
+                        f"[SessionManager] [OK] Loaded full game config from: {config_path}",
+                        flush=True,
+                    )
                 else:
-                    print(f"[SessionManager] Config file not found: {config_path}", flush=True)
+                    print(
+                        f"[SessionManager] Config file not found: {config_path}",
+                        flush=True,
+                    )
             except Exception as e:
                 import traceback
-                print(f"[SessionManager] [ERROR] Error loading game config: {e}", flush=True)
+
+                print(
+                    f"[SessionManager] [ERROR] Error loading game config: {e}",
+                    flush=True,
+                )
                 traceback.print_exc()
 
     def _create_items_from_config(self):
         """Create item instances from config item types.
-        
+
         Returns:
             List of item instances
         """
         items = []
-        
+
         if not self.starting_item_types:
             return items
-        
+
         try:
             # Try to import items module
             try:
@@ -325,7 +424,7 @@ class SessionManager:
             except ImportError:
                 # Try alternate import path
                 from src import items as items_module
-            
+
             for item_type in self.starting_item_types:
                 try:
                     # Get the class from items module
@@ -334,22 +433,34 @@ class SessionManager:
                         # Create instance of the item
                         item_instance = item_class()
                         items.append(item_instance)
-                        print(f"[SessionManager] [OK] Created starting item: {item_type}", flush=True)
+                        print(
+                            f"[SessionManager] [OK] Created starting item: {item_type}",
+                            flush=True,
+                        )
                     else:
-                        print(f"[SessionManager] [ERROR] Item class not found: {item_type}", flush=True)
+                        print(
+                            f"[SessionManager] [ERROR] Item class not found: {item_type}",
+                            flush=True,
+                        )
                 except Exception as e:
-                    print(f"[SessionManager] [ERROR] Error creating item {item_type}: {e}", flush=True)
+                    print(
+                        f"[SessionManager] [ERROR] Error creating item {item_type}: {e}",
+                        flush=True,
+                    )
         except Exception as e:
-            print(f"[SessionManager] [ERROR] Error importing items module: {e}", flush=True)
-        
+            print(
+                f"[SessionManager] [ERROR] Error importing items module: {e}",
+                flush=True,
+            )
+
         return items
 
     def _create_player_for_session(self, username: str) -> object:
         """Create a fresh player instance for a session.
-        
+
         Args:
             username: Username for the player
-            
+
         Returns:
             Player or MinimalPlayer instance
         """
@@ -358,76 +469,104 @@ class SessionManager:
             try:
                 from src.player import Player
                 from src.universe import Universe
-                
+
                 # Create new player
                 player = Player()
                 player.username = username
                 # player.name is already "Jean" by default in Player.__init__
-                
+
                 # Create isolated universe for this player
                 player.universe = Universe(player)
                 player.universe.build(player)
-                
+
                 # Set starting map — prefer configured name, then universe default, then first available map
                 starting_map = next(
-                    (map_item for map_item in player.universe.maps if map_item.get('name') == self.starting_map_name),
-                    player.universe.starting_map_default
+                    (
+                        map_item
+                        for map_item in player.universe.maps
+                        if map_item.get("name") == self.starting_map_name
+                    ),
+                    player.universe.starting_map_default,
                 )
                 if starting_map is None and player.universe.maps:
                     # No named or default map found — fall back to first map that contains tiles
                     starting_map = next(
-                        (m for m in player.universe.maps if any(isinstance(k, tuple) for k in m)),
-                        player.universe.maps[0]
+                        (
+                            m
+                            for m in player.universe.maps
+                            if any(isinstance(k, tuple) for k in m)
+                        ),
+                        player.universe.maps[0],
                     )
-                    print(f"[SessionManager] Warning: startmap '{self.starting_map_name}' not found; falling back to '{starting_map.get('name')}'", flush=True)
+                    print(
+                        f"[SessionManager] Warning: startmap '{self.starting_map_name}' not found; falling back to '{starting_map.get('name')}'",
+                        flush=True,
+                    )
                 player.map = starting_map
-                print(f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}", flush=True)
+                print(
+                    f"[SessionManager] [OK] Set player starting map to: {starting_map.get('name') if starting_map else 'None'}",
+                    flush=True,
+                )
             except (ImportError, Exception) as e:
-                 print(f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer", flush=True)
-                 player = MinimalPlayer(username)
+                print(
+                    f"[SessionManager] Warning: Could not create full game state ({e}), falling back to MinimalPlayer",
+                    flush=True,
+                )
+                player = MinimalPlayer(username)
 
             # Apply game config if available
-            if self.game_config and hasattr(player, 'game_config'):
+            if self.game_config and hasattr(player, "game_config"):
                 player.game_config = self.game_config
                 if self.game_config.starting_exp > 0:
                     player.apply_starting_experience(self.game_config.starting_exp)
-                    print(f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories", flush=True)
+                    print(
+                        f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories",
+                        flush=True,
+                    )
 
             # Set starting position — validate it exists in the chosen map; fall back to first valid tile
             eff_x, eff_y = self.start_x, self.start_y
-            if getattr(player, 'map', None) and not player.map.get((eff_x, eff_y)):
+            if getattr(player, "map", None) and not player.map.get((eff_x, eff_y)):
                 valid_coord = next(
-                    (k for k in player.map if isinstance(k, tuple)),
-                    (eff_x, eff_y)
+                    (k for k in player.map if isinstance(k, tuple)), (eff_x, eff_y)
                 )
                 eff_x, eff_y = valid_coord
-                print(f"[SessionManager] Warning: start position ({self.start_x},{self.start_y}) not in map; using {valid_coord}", flush=True)
+                print(
+                    f"[SessionManager] Warning: start position ({self.start_x},{self.start_y}) not in map; using {valid_coord}",
+                    flush=True,
+                )
             player.location_x, player.location_y = eff_x, eff_y
 
             # Add starting items from config if available
             config_items = self._create_items_from_config()
             if config_items:
                 # If player already has inventory, extend it
-                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
+                if hasattr(player, "inventory") and isinstance(player.inventory, list):
                     player.inventory.extend(config_items)
-                    print(f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory", flush=True)
-            
+                    print(
+                        f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
+                        flush=True,
+                    )
+
             return player
         except Exception as e:
             print(f"[SessionManager] Error creating player: {e}", flush=True)
             # Fallback to minimal player
             player = MinimalPlayer(username)
-            
+
             # Set starting position from config
             player.location_x, player.location_y = self.start_x, self.start_y
-            
+
             # Add starting items from config if available
             config_items = self._create_items_from_config()
             if config_items:
-                if hasattr(player, 'inventory') and isinstance(player.inventory, list):
+                if hasattr(player, "inventory") and isinstance(player.inventory, list):
                     player.inventory.extend(config_items)
-                    print(f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory", flush=True)
-            
+                    print(
+                        f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
+                        flush=True,
+                    )
+
             return player
 
     def create_session(self, username: str) -> Tuple[str, str]:
@@ -455,28 +594,28 @@ class SessionManager:
 
     def start_new_game(self, session_id: str) -> bool:
         """Reset player state for an existing session to start a new game.
-        
+
         Args:
             session_id: The session ID to reset
-            
+
         Returns:
             True if successful, False if session not found
         """
         session = self.get_session(session_id)
         if not session:
             return False
-            
+
         player_id = session.player_id
-        
+
         # Create fresh player instance
         player = self._create_player_for_session(session.username)
-        
+
         # Replace existing player
         self.players[player_id] = player
-        
+
         # Explicitly clear any combat state if game_service exists (though we don't have ref here easily)
         # Actually replacing the player object should be enough as combat is usually linked to player
-        
+
         return True
 
     def get_session(self, session_id: str) -> Optional[Session]:
@@ -581,9 +720,7 @@ class SessionManager:
         Returns:
             Number of sessions cleaned up
         """
-        expired_ids = [
-            sid for sid, sess in self.sessions.items() if sess.is_expired()
-        ]
+        expired_ids = [sid for sid, sess in self.sessions.items() if sess.is_expired()]
 
         for session_id in expired_ids:
             self.expire_session(session_id)

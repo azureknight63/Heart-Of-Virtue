@@ -42,26 +42,34 @@ class CombatStateSerializer:
             Dict with full combat state
         """
         allies = allies or []
-        serialized_allies = [CombatantSerializer.serialize_combatant(a, reference=player) for a in allies]
+        serialized_allies = [
+            CombatantSerializer.serialize_combatant(a, reference=player) for a in allies
+        ]
         return {
             "status": "active",
             "round": round_number,
             "current_turn_index": current_turn_index,
             "player": CombatantSerializer.serialize_combatant(player),
             "allies": serialized_allies,
-            "enemies": [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies],
+            "enemies": [
+                CombatantSerializer.serialize_combatant(e, reference=player)
+                for e in enemies
+            ],
             "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
             "combatants": (
                 [CombatantSerializer.serialize_combatant(player)]
                 + serialized_allies
-                + [CombatantSerializer.serialize_combatant(e, reference=player) for e in enemies]
+                + [
+                    CombatantSerializer.serialize_combatant(e, reference=player)
+                    for e in enemies
+                ]
             ),
             "suggested_moves": getattr(player, "suggested_moves", []),
             "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
             "last_move_name": getattr(player, "last_move_name", None),
             "last_move_target_id": getattr(player, "last_move_target_id", None),
-            "player_consumables": CombatStateSerializer._get_consumables(player)
+            "player_consumables": CombatStateSerializer._get_consumables(player),
         }
 
     @staticmethod
@@ -72,12 +80,14 @@ class CombatStateSerializer:
             for item in player.inventory:
                 # Basic check for consumables: if it has a 'use' method or is a potion
                 # For now, let's include everything with a value and quantity for the LLM to decide
-                consumables.append({
-                    "name": getattr(item, "name", "Unknown"),
-                    "qty": getattr(item, "count", 1),
-                    "value": getattr(item, "value", 0),
-                    "description": getattr(item, "description", "")
-                })
+                consumables.append(
+                    {
+                        "name": getattr(item, "name", "Unknown"),
+                        "qty": getattr(item, "count", 1),
+                        "value": getattr(item, "value", 0),
+                        "description": getattr(item, "description", ""),
+                    }
+                )
         return consumables
 
     @staticmethod
@@ -120,9 +130,7 @@ class CombatStateSerializer:
             "enemies_defeated": sum(1 for e in enemies if e.hp <= 0),
             "total_enemies": len(enemies),
             "experience_gained": (
-                CombatStateSerializer._calculate_experience(enemies)
-                if victory
-                else 0
+                CombatStateSerializer._calculate_experience(enemies) if victory else 0
             ),
             "items_dropped": (
                 CombatStateSerializer._get_drops(enemies) if victory else []
@@ -198,25 +206,33 @@ class CombatantSerializer:
             "level": getattr(combatant, "level", 1),
             "health": {
                 "current": getattr(combatant, "hp", getattr(combatant, "health", 0)),
-                "max": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
+                "max": getattr(
+                    combatant, "maxhp", getattr(combatant, "max_health", 100)
+                ),
             },
             "hp": getattr(combatant, "hp", getattr(combatant, "health", 0)),
-            "max_hp": getattr(combatant, "maxhp", getattr(combatant, "max_health", 100)),
+            "max_hp": getattr(
+                combatant, "maxhp", getattr(combatant, "max_health", 100)
+            ),
             "fatigue": getattr(combatant, "fatigue", 0),
-            "max_fatigue": getattr(combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)),
-            "maxfatigue": getattr(combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)),
+            "max_fatigue": getattr(
+                combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)
+            ),
+            "maxfatigue": getattr(
+                combatant, "maxfatigue", getattr(combatant, "max_fatigue", 100)
+            ),
             "heat": getattr(combatant, "heat", 1.0) if is_player else 1.0,
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
             "attributes": CombatantSerializer._serialize_base_attributes(combatant),
-            "status_effects": CombatantSerializer._serialize_status_effects(
-                combatant
-            ),
+            "status_effects": CombatantSerializer._serialize_status_effects(combatant),
             "passives": CombatantSerializer._serialize_passives(combatant),
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
             "distance": CombatantSerializer._get_distance(combatant, reference),
             "position": CombatantSerializer._serialize_position(combatant),
             "current_move": CombatantSerializer._serialize_active_move(combatant),
-            "move_in_process": CombatantSerializer._serialize_active_move(combatant), # Alias for Strategist
+            "move_in_process": CombatantSerializer._serialize_active_move(
+                combatant
+            ),  # Alias for Strategist
         }
 
     @staticmethod
@@ -230,7 +246,13 @@ class CombatantSerializer:
                 "description": getattr(move, "description", ""),
                 "current_stage": getattr(move, "current_stage", 0),
                 "beats_left": getattr(move, "beats_left", 0),
-                "total_beats": getattr(move, "stage_beat", [0, 0, 0, 0])[getattr(move, "current_stage", 0)] if hasattr(move, "stage_beat") else 0,
+                "total_beats": (
+                    getattr(move, "stage_beat", [0, 0, 0, 0])[
+                        getattr(move, "current_stage", 0)
+                    ]
+                    if hasattr(move, "stage_beat")
+                    else 0
+                ),
             }
         return None
 
@@ -250,16 +272,22 @@ class CombatantSerializer:
     @staticmethod
     def _serialize_position(combatant: Any) -> Optional[Dict[str, Any]]:
         """Serialize combat position coordinates."""
-        if not hasattr(combatant, "combat_position") or combatant.combat_position is None:
+        if (
+            not hasattr(combatant, "combat_position")
+            or combatant.combat_position is None
+        ):
             return None
-        
+
         pos = combatant.combat_position
         return {
             "x": pos.x,
             "y": pos.y,
-            "facing": pos.facing.name if hasattr(pos, "facing") and hasattr(pos.facing, "name") else "N"
+            "facing": (
+                pos.facing.name
+                if hasattr(pos, "facing") and hasattr(pos.facing, "name")
+                else "N"
+            ),
         }
-
 
     @staticmethod
     def serialize_combatant_list(combatants: List[Any]) -> List[Dict[str, Any]]:
@@ -336,12 +364,16 @@ class CombatantSerializer:
         if hasattr(combatant, "known_moves"):
             for move in combatant.known_moves:
                 if getattr(move, "passive", False):
-                    passives.append({
-                        "name": move.name,
-                        "type": "passive",
-                        "description": getattr(move, "description", "Passive skill."),
-                        "category": getattr(move, "category", "Miscellaneous")
-                    })
+                    passives.append(
+                        {
+                            "name": move.name,
+                            "type": "passive",
+                            "description": getattr(
+                                move, "description", "Passive skill."
+                            ),
+                            "category": getattr(move, "category", "Miscellaneous"),
+                        }
+                    )
         return passives
 
     @staticmethod

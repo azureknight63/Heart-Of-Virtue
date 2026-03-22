@@ -53,37 +53,37 @@ __version__ = "1.0"
 import random
 
 consonants = [
-    ('b',  2),
-    ('c',  2),
-    ('ch', 1),
-    ('d',  4),
-    ('f',  2),
-    ('g',  3),
-    ('h',  2),
-    ('j',  1),
-    ('k',  1),
-    ('l',  4),
-    ('m',  2),
-    ('n',  6),
-    ('p',  2),
-    ('q',  1),
-    ('qu', 1),
-    ('r',  6),
-    ('s',  4),
-    ('t',  6),
-    ('v',  2),
-    ('w',  2),
-    ('x',  1),
-    ('z',  1),
+    ("b", 2),
+    ("c", 2),
+    ("ch", 1),
+    ("d", 4),
+    ("f", 2),
+    ("g", 3),
+    ("h", 2),
+    ("j", 1),
+    ("k", 1),
+    ("l", 4),
+    ("m", 2),
+    ("n", 6),
+    ("p", 2),
+    ("q", 1),
+    ("qu", 1),
+    ("r", 6),
+    ("s", 4),
+    ("t", 6),
+    ("v", 2),
+    ("w", 2),
+    ("x", 1),
+    ("z", 1),
 ]
 
 vowels = [
-    ('a', 9),
-    ('e', 12),
-    ('i', 9),
-    ('o', 8),
-    ('u', 4),
-    ('y', 2),
+    ("a", 9),
+    ("e", 12),
+    ("i", 9),
+    ("o", 8),
+    ("u", 4),
+    ("y", 2),
 ]
 
 # Initialize logic moved to module level to ensure thread safety
@@ -94,23 +94,25 @@ for table in [consonants, vowels]:
             s += table[i][1]
         table.append(s)
 
+
 def selection(table):
     s = table[-1]
     n = random.randrange(s) + 1
-    for i in range(len(table)-1):
+    for i in range(len(table) - 1):
         item = table[i]
         # Skip if we encounter the sum (sanity check, though logic shouldn't reach here if len is correct)
         if type(item) is int:
             continue
-            
+
         n -= item[1]
         if n <= 0:
             return item[0]
 
     # should not happen
-    return ''
+    return ""
 
-def generate(minsyl = 1, maxsyl = 3):
+
+def generate(minsyl=1, maxsyl=3):
 
     numsyl = random.randint(minsyl, maxsyl)
 
@@ -125,16 +127,15 @@ def generate(minsyl = 1, maxsyl = 3):
         if not flag or random.randrange(100) < 40:
             word.append(selection(consonants))
 
-
     return "".join(word).capitalize()
+
 
 if __name__ == "__main__":
 
     import sys
 
     if len(sys.argv) <= 1 or len(sys.argv) > 2:
-        sys.stderr.write(
-            "Usage: genericng.py [ nn ]\n")
+        sys.stderr.write("Usage: genericng.py [ nn ]\n")
         sys.exit(0)
 
     if len(sys.argv) == 2:
