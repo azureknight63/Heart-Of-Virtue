@@ -2,7 +2,7 @@
     "(2, 1)": {
         "id": "tile_2_1",
         "title": "VerdetteCavernsRoom",
-        "description": "The passage opens just enough to stand upright. A faint pink luminescence bleeds from crystal formations embedded in the walls \u2014 not torches, but living stone. The air is cool and mineral-sharp. Gorran moves ahead with the quiet confidence of someone who knows exactly where he is. Jean does not.",
+        "description": "The passage opens just enough to stand upright. A faint pink luminescence bleeds from crystal formations embedded in the walls \u2014 not torches, but living stone. The air is cool and mineral-sharp, carrying the taste of deep stone and something faintly sweet. A draft presses against Jean's face from somewhere deeper in.",
         "exits": [
             "south"
         ],
@@ -152,7 +152,7 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows sharply here, forcing a sideways shuffle between slick stone walls. A chorus of leathery wingbeats echoes from somewhere above. The crystalline growths along the floor catch the faintest light and throw it in strange, scattered directions.",
+        "description": "The cave narrows sharply here, forcing a sideways shuffle between slick stone walls. The crystalline growths along the floor catch the faintest light and throw it in strange, scattered directions. The air carries a faint acrid tang, and the rock near the ceiling is stained dark from years of concentrated presence.",
         "exits": [
             "north",
             "southeast",
@@ -223,7 +223,7 @@
     "(8, 2)": {
         "id": "tile_8_2",
         "title": "VerdetteCavernsRoom",
-        "description": "The ceiling overhead is alive with movement. Thousands of small bodies cluster in the shadows above, rustling and chittering restlessly. A thick, acrid smell hangs in the air. The bats have not moved yet, but the passage disturbs them.",
+        "description": "The ceiling overhead is lost in shadow, but the smell is unmistakable \u2014 thick and acrid, the kind that settles into everything. The stone floor beneath is whitened in overlapping patches. Something has nested here for a very long time.",
         "exits": [
             "north",
             "southwest"
@@ -841,7 +841,7 @@
     "(4, 5)": {
         "id": "tile_4_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The floor vanishes under a thin film of dark water \u2014 ankle-deep, cold enough to ache. Stone spires thrust up through the surface unpredictably, making footing treacherous. The Rumblers move through the water as though it isn't there.",
+        "description": "The floor vanishes under a thin film of dark water \u2014 ankle-deep, cold enough to ache. Stone spires thrust up through the surface unpredictably, making footing treacherous. Deep scoring in the rock walls nearby suggests that whatever passes through here regularly does so without much concern for caution.",
         "exits": [
             "north",
             "southeast",
@@ -916,7 +916,7 @@
     "(7, 5)": {
         "id": "tile_7_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The stone here has been rearranged. Not collapsed \u2014 rearranged. Large blocks of rock have been moved aside to create a wider path, or possibly a fortification. The Rumblers do not build, but they reshape. This passage has been reshaped.",
+        "description": "The stone here has been rearranged. Not collapsed \u2014 rearranged. Large blocks of rock have been moved aside to create a wider path, or possibly a fortification. Something powerful has passed through here repeatedly, and the tunnel bears the marks of that passage.",
         "exits": [
             "south",
             "west",
@@ -968,7 +968,7 @@
     "(5, 6)": {
         "id": "tile_5_6",
         "title": "VerdetteCavernsRoom",
-        "description": "The largest crystal formation Jean has seen yet occupies the center of this chamber \u2014 a rough cluster of rose quartz taller than he is, resonating at a frequency just below hearing. Jean can feel it in his back teeth. Gorran places one hand flat against it and is still for a long moment before moving on.",
+        "description": "The largest crystal formation Jean has seen yet occupies the center of this chamber \u2014 a rough cluster of rose quartz taller than he is, resonating at a frequency just below hearing. Jean can feel it in his back teeth. Golemite markings cover the base, worn smooth by what looks like the repeated pressure of large hands.",
         "exits": [
             "east",
             "northeast",
@@ -1023,7 +1023,7 @@
     "(7, 6)": {
         "id": "tile_7_6",
         "title": "VerdetteCavernsRoom",
-        "description": "The crystal glow fades here. The chamber is darker than anything Jean has passed through, and the darkness has a quality to it \u2014 thick, directional. Something moves at the periphery but retreats when Jean turns toward it. Gorran stops at the entrance and raises his hand.",
+        "description": "The crystal glow fades here. The chamber is darker than anything Jean has passed through, and the darkness has a quality to it \u2014 thick, directional. The walls have a glassy quality, as though whatever has lived here has polished them over years of contact. The air is colder than it should be.",
         "exits": [
             "north",
             "west",
@@ -1040,7 +1040,7 @@
     "(3, 7)": {
         "id": "tile_3_7",
         "title": "VerdetteCavernsRoom",
-        "description": "The floor is matted with decades of nesting material. The smell is overwhelming. Overhead, the entire ceiling moves \u2014 a slow, breathing mass of clustered bodies. The bats are aware of Jean but have not yet decided what to do about it.",
+        "description": "The floor is matted with decades of nesting material. The smell is overwhelming. The ceiling is lost in shadow, and from somewhere above comes a slow, collective sound \u2014 the kind large numbers of small creatures make when resting, broken only by the occasional shift and rustle.",
         "exits": [
             "north",
             "south",
@@ -1166,7 +1166,7 @@
     "(8, 7)": {
         "id": "tile_8_7",
         "title": "VerdetteCavernsRoom",
-        "description": "A high-ceilinged antechamber where a colony of bats has taken permanent residence. Their echolocation fills the air with a sound that isn't quite silence. Jean cannot locate the source of the dim light here \u2014 it seems to come from the bats themselves.",
+        "description": "A high-ceilinged antechamber, the air thick with a sound that isn't quite silence \u2014 a low, pulsing frequency that seems to come from the walls themselves. The dim light has no obvious source. The stone floor is pale and uniformly stained, worn smooth at the center as though by countless small repeated contacts.",
         "exits": [
             "south",
             "northwest"
@@ -1259,7 +1259,7 @@
     "(4, 8)": {
         "id": "tile_4_8",
         "title": "VerdetteCavernsRoom",
-        "description": "The air changes here. A trace of freshness cuts through the mineral heaviness of the deep cavern \u2014 something ahead is alive and clean. The supplies left in this passage are old but not ancient: someone sheltered here before pressing on toward the spring.",
+        "description": "The air changes here. A trace of freshness cuts through the mineral heaviness of the deep cavern \u2014 something ahead is alive and clean. A natural alcove in the rock wall bears the marks of former use: worn stone, a dark ring on the floor where a fire once burned. Someone sheltered here before pressing on toward the spring.",
         "exits": [
             "west",
             "northwest",
@@ -1366,7 +1366,7 @@
     "(8, 8)": {
         "id": "tile_8_8",
         "title": "VerdetteCavernsRoom",
-        "description": "The chamber is cold in a way that has nothing to do with temperature. The walls absorb sound. Jean's footsteps make no echo here, and the darkness pools at the edges like standing water. Something shifted in the corner just now. Jean cannot see what it is. Gorran has gone very still.",
+        "description": "The chamber is cold in a way that has nothing to do with temperature. The walls absorb sound. Jean's footsteps make no echo here, and the darkness pools at the edges like standing water. Long, thin gouges mark the stone floor in parallel sets, too regular to be erosion.",
         "exits": [
             "north"
         ],
