@@ -53,3 +53,4 @@ class ProductionConfig(Config):
 
     DEBUG = False
     SESSION_COOKIE_SECURE = True
+    CORS_ORIGINS = ["https://nexusfidei.dev"]

@@ -15,7 +15,7 @@ function App() {
 
   return (
     <AudioProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/games/HeartOfVirtue">
         <Routes>
           <Route path="/login" element={isAuthenticated ? <Navigate to="/menu" /> : <LoginPage />} />
           <Route path="/menu" element={isAuthenticated ? <MainMenuPage /> : <Navigate to="/login" />} />

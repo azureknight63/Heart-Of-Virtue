@@ -68,7 +68,7 @@ export const useAuth = () => {
       localStorage.removeItem('username')
       setIsAuthenticated(false)
       // Force reload to clear state and redirect to login
-      window.location.href = '/login'
+      window.location.href = `${import.meta.env.BASE_URL}login`
     }
   }
 

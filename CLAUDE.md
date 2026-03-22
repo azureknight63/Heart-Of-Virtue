@@ -322,6 +322,72 @@ See [docs/lore/environments/wailing-badlands/wailing-badlands-map-design.md](doc
 
 ---
 
+## DevOps Review Skill
+
+**Infrastructure and deployment audit expert.** The `/devops-review` skill performs a comprehensive audit of CI/CD pipelines, dependency health, secrets management, deployment readiness, environment hygiene, and operational risk.
+
+Use when you need to:
+- Audit CI/CD pipeline configuration
+- Review dependency health and security
+- Assess secrets management and configuration
+- Evaluate deployment readiness
+- Identify operational risks and single points of failure
+- Prepare for production deployment
+
+```bash
+/devops-review                                     # full audit (all systems)
+/devops-review --ci-only                          # CI/CD pipelines only
+/devops-review --dependencies-only                # dependency health only
+/devops-review --secrets-only                     # secrets and configuration only
+/devops-review --prod-only                        # production environment only
+/devops-review --quick                            # critical issues only
+```
+
+**Output**: Markdown audit report (saved to `tools/devops-audit-{YYYY-MM-DD}.md`) containing:
+- Executive summary of overall health and top risks
+- CI/CD pipeline audit (grade A-F with findings)
+- Dependency health report (CVE count, outdated packages)
+- Secrets & configuration assessment
+- Deployment readiness evaluation
+- Environment hygiene analysis
+- Operational risk matrix
+- Critical and high-priority remediation steps with effort estimates
+
+---
+
+## Narrative Review Skill
+
+**Expert indie game narrative audit.** The `/narrative-review` skill reviews lore, character consistency, and dialogue quality. It compares story implementation against lore documents, flags contradictions, and suggests fixes.
+
+Use when you need to:
+- Audit story coherence and lore consistency
+- Review character voice and dialogue quality
+- Check thematic alignment
+- Verify narrative implementation matches design docs
+- Identify plot holes or contradictions
+
+```bash
+/narrative-review                                  # full narrative audit
+/narrative-review --chapter 1                      # Chapter 1 only
+/narrative-review --character Jean                 # Jean Claire dialogue/voice only
+/narrative-review --lore-only                      # lore documents only
+/narrative-review --dialogue-only                  # dialogue and character voice
+/narrative-review --quick                          # character consistency only
+/narrative-review --deep                           # full audit with stylistic critique
+```
+
+**Output**: Markdown audit report (saved to `.gstack/narrative-reports/narrative-audit-{branch}-{YYYY-MM-DD}.md`) containing:
+- Executive summary of narrative health
+- Lore coherence audit (grade A-F with contradictions flagged)
+- Character consistency analysis (per-character voice profiles and violations)
+- Dialogue quality assessment (exposition, subtext, pacing issues)
+- Thematic alignment evaluation
+- Lore-implementation gaps
+- Prioritized high-impact findings with suggested rewrites
+- Ship-readiness narrative assessment
+
+---
+
 ## Code Review Gate
 
 **Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
