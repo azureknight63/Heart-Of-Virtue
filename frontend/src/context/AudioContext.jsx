@@ -37,6 +37,8 @@ const BGM_MAP = {
     'dungeon': '/assets/sounds/bgm_dungeon.mp3',
     'fanfare': '/assets/sounds/bgm_fanfare.wav',
     'memory_flash': '/assets/sounds/memory_flash.mp3',
+    'mineral_pools': '/assets/sounds/bgm_mineral_pools.wav',
+    'dream_space': '/assets/sounds/bgm_dream_space.wav',
 };
 
 export const AudioProvider = ({ children }) => {

@@ -8,10 +8,12 @@ from tools.audio_engine.core import save_wav, OUTPUT_DIR
 from tools.songs.adventure import AdventureSong, ThemeSnippet, FanareSong
 from tools.songs.battle import BattleSong
 from tools.songs.dungeon import DungeonSong
+from tools.songs.ambient import MineralPoolsSong, DreamSpaceSong
 from tools.songs.sfx import (
     ClickSFX, MoveSFX, ErrorSFX, UiConfirmSFX,
     CombatStartSFX, AttackSFX, AttackSwipeSFX, AttackHitSFX,
     AttackMissSFX, AttackParrySFX, EnemyDeathSFX, LowHealthWarningSFX,
+    LevelUpSFX, QuestCompleteSFX, ItemUseSFX, HealSFX, StatusHitSFX, PlayerDeathSFX,
 )
 
 SONG_LIST = [
@@ -20,6 +22,9 @@ SONG_LIST = [
     FanareSong(),
     BattleSong(),
     DungeonSong(),
+    # Ambient / location BGM
+    MineralPoolsSong(),
+    DreamSpaceSong(),
     # UI SFX
     ClickSFX(),
     MoveSFX(),
@@ -34,6 +39,13 @@ SONG_LIST = [
     AttackParrySFX(),
     EnemyDeathSFX(),
     LowHealthWarningSFX(),
+    # Progression / reward SFX
+    LevelUpSFX(),
+    QuestCompleteSFX(),
+    ItemUseSFX(),
+    HealSFX(),
+    StatusHitSFX(),
+    PlayerDeathSFX(),
 ]
 
 if __name__ == "__main__":
