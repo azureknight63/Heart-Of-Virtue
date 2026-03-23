@@ -63,28 +63,29 @@ class MineralPoolsSong(Song):
         # 16-beat pattern; 1 = drop, 0 = silence
         drop_pattern = [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0]
 
-        for loop_i in range(6):
-            arp_data = b''
-            for freq, dur in arp_pattern:
-                arp_data += generate_tone(
-                    freq, dur, volume=0.22, wave_type='triangle',
-                    attack_time=dur * 0.25, decay_time=dur * 0.1,
-                    sustain_level=0.7, release_time=dur * 0.35,
-                    vibrato_rate=3.5, vibrato_depth=0.004,
-                )
+        arp_data = b''
+        for freq, dur in arp_pattern:
+            arp_data += generate_tone(
+                freq, dur, volume=0.22, wave_type='triangle',
+                attack_time=dur * 0.25, decay_time=dur * 0.1,
+                sustain_level=0.7, release_time=dur * 0.35,
+                vibrato_rate=3.5, vibrato_depth=0.004,
+            )
 
-            shimmer_data = b''
-            for freq, dur in zip(shimmer_freqs_hi, shimmer_durs):
-                shimmer_data += generate_tone(
-                    freq, dur, volume=0.07, wave_type='sine',
-                    attack_time=dur * 0.4, sustain_level=0.5,
-                    release_time=dur * 0.4,
-                )
+        shimmer_data = b''
+        for freq, dur in zip(shimmer_freqs_hi, shimmer_durs):
+            shimmer_data += generate_tone(
+                freq, dur, volume=0.07, wave_type='sine',
+                attack_time=dur * 0.4, sustain_level=0.5,
+                release_time=dur * 0.4,
+            )
 
-            loop_dur = sum(dur for _, dur in arp_pattern)
-            perc = generate_percussion_pattern(drop_pattern, loop_dur)
+        loop_dur = sum(dur for _, dur in arp_pattern)
+        perc = generate_percussion_pattern(drop_pattern, loop_dur)
+        base_loop = mix_layers([drone_d, drone_a, arp_data, shimmer_data, perc])
 
-            all_sections += mix_layers([drone_d, drone_a, arp_data, shimmer_data, perc])
+        for _ in range(6):
+            all_sections += base_loop
 
         # ── Outro: fade to silence ────────────────────────────────────────────
         outro = generate_tone(fr(73.42), d(4.0), volume=0.20, wave_type='triangle',
@@ -134,21 +135,26 @@ class DreamSpaceSong(Song):
                                          attack_time=d(0.1), release_time=d(1.2))
         silence_long = b'\x00\x00' * int(44100 * d(6.0))
 
-        # Main loop x 5
+        # Pre-compute both alternating loop variants (even = aug C, odd = sus2 A)
+        pulse = generate_tone(
+            pulse_freq, d(12.0), volume=0.18, wave_type='square',
+            attack_time=d(3.0), decay_time=d(2.0), sustain_level=0.5,
+            release_time=d(3.0),
+        )
+        loop_even = mix_layers([
+            generate_chord(pad_aug_c, d(12.0), volume=0.22, wave_type='sine',
+                           attack_time=d(2.5), release_time=d(3.5)),
+            pulse,
+            sweep_up + silence_long,
+        ])
+        loop_odd = mix_layers([
+            generate_chord(pad_sus2_a, d(12.0), volume=0.22, wave_type='sine',
+                           attack_time=d(2.5), release_time=d(3.5)),
+            pulse,
+            sweep_down + silence_long,
+        ])
+
         for loop_i in range(5):
-            chord_freqs = pad_aug_c if loop_i % 2 == 0 else pad_sus2_a
-            pad = generate_chord(
-                chord_freqs, d(12.0),
-                volume=0.22, wave_type='sine',
-                attack_time=d(2.5), release_time=d(3.5),
-            )
-            pulse = generate_tone(
-                pulse_freq, d(12.0), volume=0.18, wave_type='square',
-                attack_time=d(3.0), decay_time=d(2.0), sustain_level=0.5,
-                release_time=d(3.0),
-            )
-            # Add sweep accent every other loop
-            accent = (sweep_up if loop_i % 2 == 0 else sweep_down) + silence_long
-            all_sections += mix_layers([pad, pulse, accent])
+            all_sections += loop_even if loop_i % 2 == 0 else loop_odd
 
         return all_sections

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuth } from '../hooks/useApi'
+import { useAudio } from '../context/AudioContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import { colors, spacing } from '../styles/theme'
@@ -29,12 +30,17 @@ const SKULL_ART = `
 
 export default function DefeatDialog({ endState, onLoadedSave }) {
   const { logout } = useAuth()
+  const { playSFX } = useAudio()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [saves, setSaves] = useState([])
   const [selectedSaveId, setSelectedSaveId] = useState('')
 
   const message = endState?.message || 'You have been defeated.'
+
+  useEffect(() => {
+    playSFX('player_death')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let mounted = true

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { useAudio } from '../context/AudioContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
@@ -14,6 +15,8 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
+
+  const { playSFX } = useAudio()
 
   const remainingPoints = Number(endState?.attribute_points_available || 0)
 
@@ -37,6 +40,10 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
 
   const drops = useMemo(() => endState?.items_dropped || [], [endState])
   const levelUps = useMemo(() => endState?.level_ups || [], [endState])
+
+  useEffect(() => {
+    if (levelUps.length > 0) playSFX('level_up')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const canClose = remainingPoints <= 0
 

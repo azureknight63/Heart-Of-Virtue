@@ -33,6 +33,14 @@ def generate_tone(frequency, duration, volume=0.5, sample_rate=44100, wave_type=
         Vibrato LFO frequency in Hz (0 = disabled).
     vibrato_depth : float
         Vibrato depth as a fraction of the base frequency (e.g. 0.02 = ±2 %).
+
+    Notes
+    -----
+    ADSR regions are evaluated in order: attack → decay → release → sustain.
+    If ``attack_time + decay_time > duration - release_time``, the release
+    region overlaps the decay region and the envelope will be cut off before
+    it reaches ``sustain_level``.  Keep ``attack + decay + release < duration``
+    to guarantee a proper sustain tail.
     """
     n_samples = int(sample_rate * duration)
     attack_samples = int(sample_rate * attack_time)
@@ -99,9 +107,11 @@ def generate_tone_sweep(freq_start, freq_end, duration, volume=0.5, sample_rate=
         if wave_type == 'square':
             val = 1.0 if math.sin(phase) > 0 else -1.0
         elif wave_type == 'sawtooth':
-            val = 2.0 * ((phase / (2 * math.pi)) % 1.0) - 1.0
+            norm = (phase / (2 * math.pi)) % 1.0
+            val = 2.0 * norm - 1.0
         elif wave_type == 'triangle':
-            val = 2.0 * abs(2.0 * ((phase / (2 * math.pi)) % 1.0) - 1.0) - 1.0
+            norm = (phase / (2 * math.pi)) % 1.0
+            val = 2.0 * abs(2.0 * norm - 1.0) - 1.0
         else:  # sine
             val = math.sin(phase)
 
@@ -122,26 +132,27 @@ def generate_chord(frequencies, duration, volume=0.3, sample_rate=44100, wave_ty
     attack_samples = int(sample_rate * attack_time)
     release_samples = int(sample_rate * release_time)
     
+    n_freqs = len(frequencies)
     data = []
     for i in range(n_samples):
         t = float(i) / sample_rate
         val = 0.0
         for freq in frequencies:
             if wave_type == 'square':
-                val += (1.0 if math.sin(2 * math.pi * freq * t) > 0 else -1.0) / len(frequencies)
+                val += (1.0 if math.sin(2 * math.pi * freq * t) > 0 else -1.0) / n_freqs
             elif wave_type == 'sawtooth':
-                val += (2.0 * (t * freq - math.floor(t * freq + 0.5))) / len(frequencies)
+                val += (2.0 * (t * freq - math.floor(t * freq + 0.5))) / n_freqs
             elif wave_type == 'triangle':
-                val += (2.0 * abs(2.0 * (t * freq - math.floor(t * freq + 0.5))) - 1.0) / len(frequencies)
+                val += (2.0 * abs(2.0 * (t * freq - math.floor(t * freq + 0.5))) - 1.0) / n_freqs
             else:  # sine
-                val += math.sin(2 * math.pi * freq * t) / len(frequencies)
+                val += math.sin(2 * math.pi * freq * t) / n_freqs
         
         # Apply Envelope
         envelope = 1.0
         if i < attack_samples:
-            envelope = i / attack_samples
+            envelope = i / attack_samples if attack_samples > 0 else 1.0
         elif i > n_samples - release_samples:
-            envelope = (n_samples - i) / release_samples
+            envelope = (n_samples - i) / release_samples if release_samples > 0 else 0.0
             
         packed_val = struct.pack('h', int(val * volume * envelope * 32767.0))
         data.append(packed_val)
