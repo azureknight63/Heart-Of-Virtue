@@ -213,7 +213,9 @@ class PlayerUIMixin:
     {}
     -------------------------
     {}
-    -------------------------""".format(skill_object.name, skill_object.description)
+    -------------------------""".format(
+                            skill_object.name, skill_object.description
+                        )
                         cprint(info, "cyan")
                         cprint(
                             "Available {} experience: {}\n".format(

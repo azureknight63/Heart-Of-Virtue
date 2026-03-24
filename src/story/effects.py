@@ -381,13 +381,15 @@ class StMichael(Shrine):
     def process(self, user_input=None):
         print("This, particularly, is a shrine to Saint Michael the Archangel.")
         print("There is a small statue depicting St Michael spearing a vicious dragon.")
-        print("""An inscription on the shrine reads,
+        print(
+            """An inscription on the shrine reads,
 
         Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
         Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
         qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
 
-        """)
+        """
+        )
         print(
             "Suddenly, Jean has the feeling of intense heat all around him. "
             "He hears a voice echoing inside his head."
