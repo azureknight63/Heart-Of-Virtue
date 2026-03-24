@@ -639,3 +639,64 @@ class AfterGorranIntro(Event):
                 if self.player.in_combat:
                     gorran.reset_combat_moves()
         self.player.teleport("verdette-caverns", (2, 1))
+
+
+class Ch01GorranCautionJunction(Event):
+    """
+    Gorran reads the violence-marked junction at (4,3) and signals Jean to slow down.
+    Fires once on tile entry. Non-blocking.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Caution_Junction'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(0.5)
+        cprint("Gorran stops at the threshold of the junction. His head lowers slowly, "
+               "scanning the floor. He raises one flat palm toward Jean without turning — "
+               "a gesture that needs no translation.", "cyan")
+        time.sleep(1.5)
+        cprint("He holds that stillness for a moment, then drops his hand and moves forward.", "cyan")
+        time.sleep(0.5)
+
+
+class Ch01GorranMarkings(Event):
+    """
+    Gorran briefly acknowledges the Golemite markings on the crystal at (5,6),
+    establishing his familiarity with these tunnels. Fires once. Non-blocking.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Markings'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(0.5)
+        cprint("Gorran passes the crystal without slowing, but as he moves by he reaches out "
+               "and drags his fingertips across the worn markings at its base — the way a man "
+               "touches a familiar doorframe. He does not stop.", "cyan")
+        time.sleep(1)
+
+
+class Ch01GorranDarkChamber(Event):
+    """
+    Gorran becomes very still in the dark chamber at (7,6), signaling Jean
+    to stay close before the Lurker encounter. Fires once. Non-blocking.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Dark_Chamber'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(0.5)
+        cprint("Gorran stops. He does not move, does not turn. One hand comes back slowly, "
+               "palm out — stay. The darkness ahead is different from the darkness behind.", "cyan")
+        time.sleep(2)

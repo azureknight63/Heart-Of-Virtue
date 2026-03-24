@@ -59,3 +59,7 @@ healing — it is the healing, happening in real time while his body lies in a J
 hospital. His arc moves from denial through crisis to a choice he makes without certainty,
 in the dark, for others. The game does not end with Jean restored; it ends with Jean turned
 in the right direction.
+
+Aurelion was created by God specifically for Jean — not by Jean's subconscious, not by
+narrative contrivance. God built a world and placed Jean in it, with room to make real
+choices. The game never states this. The player may infer it. Jean never knows.

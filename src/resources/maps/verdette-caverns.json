@@ -79,7 +79,7 @@
     "(8, 1)": {
         "id": "tile_8_1",
         "title": "VerdetteCavernsRoom",
-        "description": "A recessed nook where the rock face has split, leaving a hollow just large enough to shelter in. Crystal veins branch across the ceiling like a frozen river delta, glowing softly. The unsettled dust on the ground suggests something large passed through here recently.",
+        "description": "A recessed nook where the rock face has split, leaving a hollow just large enough to shelter in. Crystal veins branch across the ceiling like a frozen river delta, glowing softly. The unsettled dust on the ground suggests something large passed through here.",
         "exits": [
             "south"
         ],
@@ -209,7 +209,7 @@
     "(5, 2)": {
         "id": "tile_5_2",
         "title": "VerdetteCavernsRoom",
-        "description": "The path rises briefly onto a natural shelf of rock that overlooks a lower passage. The view in both directions offers nothing reassuring \u2014 darkness in one, a faint reddish glow in the other. The ledge is narrow, and footing here requires care.",
+        "description": "The path rises briefly onto a natural shelf of rock that overlooks a lower passage. The view in both directions offers nothing reassuring \u2014 darkness in one, a faint rose glow in the other. The ledge is narrow, and footing here requires care.",
         "exits": [
             "southeast",
             "southwest"
@@ -390,6 +390,20 @@
                     },
                     "count": 1,
                     "spawned_npcs": []
+                }
+            },
+            {
+                "__class__": "Ch01GorranCautionJunction",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_Caution_Junction",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
                 }
             }
         ],
@@ -916,7 +930,7 @@
     "(7, 5)": {
         "id": "tile_7_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The stone here has been rearranged. Not collapsed \u2014 rearranged. Large blocks of rock have been moved aside to create a wider path, or possibly a fortification. Something powerful has passed through here repeatedly, and the tunnel bears the marks of that passage.",
+        "description": "The stone here has been rearranged. Not collapsed \u2014 rearranged. Large blocks of rock have been moved aside to create a wider path, or possibly a fortification. Something powerful has passed through here repeatedly.",
         "exits": [
             "south",
             "west",
@@ -976,7 +990,22 @@
             "southeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "Ch01GorranMarkings",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_Markings",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": [
@@ -1032,7 +1061,22 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "Ch01GorranDarkChamber",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_Dark_Chamber",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -1434,7 +1478,7 @@
     "(5, 9)": {
         "id": "tile_5_9",
         "title": "VerdetteCavernsSpring",
-        "description": "The unmistakable sound of water trickling over rock fills this small chamber with something like relief. The air carries a freshness Jean hasn't tasted since the surface \u2014 not just mineral, but alive. The spring wells up through fractured rock in the center of the chamber, perfectly clear. This is the kind of place that makes the rest of the journey briefly worth it.",
+        "description": "The unmistakable sound of water trickling over rock fills this small chamber with something like relief. The air carries a freshness Jean hasn't tasted since the surface \u2014 not just mineral, but alive. The spring wells up through fractured rock in the center of the chamber, perfectly clear.",
         "exits": [
             "northwest"
         ],
