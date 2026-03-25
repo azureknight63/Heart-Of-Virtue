@@ -57,7 +57,7 @@ class TestQuestChainsGameService:
     def test_get_chain_progress_returns_success(self, game_service, mock_player):
         """Test that get_chain_progress returns a dict with success."""
         result = game_service.get_chain_progress(mock_player, "chain_1")
-        
+
         assert isinstance(result, dict)
         assert "success" in result
         assert result["success"] is True
@@ -136,14 +136,14 @@ class TestQuestChainsGameService:
         mock_player.chain_progress = {
             "chain_1": {"current_stage": 0, "completed_stages": []}
         }
-        
+
         result = game_service.get_chain_progress(mock_player, "chain_1")
         assert result["success"] is True
 
         # Update the player state
         mock_player.chain_progress["chain_1"]["current_stage"] = 1
         mock_player.chain_progress["chain_1"]["completed_stages"].append(0)
-        
+
         # Get updated progress
         updated = game_service.get_chain_progress(mock_player, "chain_1")
         assert updated["success"] is True
@@ -200,4 +200,3 @@ class TestQuestChainsGameService:
             mock_player, "chain_2", ["chain_1"]
         )
         assert result2["success"] is True
-

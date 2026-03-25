@@ -79,4 +79,3 @@ def test_update_shop_conditions_deterministic_value_stack(monkeypatch):
     # Sanity: multipliers recorded in order
     multipliers = [c.multiplier for c in m.shop_conditions['value']]
     assert multipliers == [1.5, 1.2, 0.8]
-

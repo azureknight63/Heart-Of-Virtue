@@ -195,7 +195,9 @@ class DialogueConditionSerializer:
             forbidden_story_gates=data.get("forbidden_story_gates", []),
             min_reputation=data.get("min_reputation"),
             max_reputation=data.get("max_reputation"),
-            required_completed_dialogues=data.get("required_completed_dialogues", []),
+            required_completed_dialogues=data.get(
+                "required_completed_dialogues", []
+            ),
             min_player_level=data.get("min_player_level"),
         )
 
@@ -258,8 +260,14 @@ class DialogueConditionSerializer:
                 )
 
         # Check player level
-        if condition.min_player_level and player_level < condition.min_player_level:
-            return False, f"Player level too low (need {condition.min_player_level})"
+        if (
+            condition.min_player_level
+            and player_level < condition.min_player_level
+        ):
+            return (
+                False,
+                f"Player level too low (need {condition.min_player_level})",
+            )
 
         return True, None
 
@@ -315,7 +323,9 @@ class DialogueChoiceSerializer:
                 if choice.condition
                 else None
             ),
-            "effects": [DialogueEffectSerializer.serialize(e) for e in choice.effects],
+            "effects": [
+                DialogueEffectSerializer.serialize(e) for e in choice.effects
+            ],
         }
 
     @staticmethod
@@ -340,11 +350,16 @@ class DialogueChoiceSerializer:
 
         condition = None
         if data.get("condition"):
-            condition = DialogueConditionSerializer.deserialize(data["condition"])
+            condition = DialogueConditionSerializer.deserialize(
+                data["condition"]
+            )
 
         effects = []
         if data.get("effects"):
-            effects = [DialogueEffectSerializer.deserialize(e) for e in data["effects"]]
+            effects = [
+                DialogueEffectSerializer.deserialize(e)
+                for e in data["effects"]
+            ]
 
         return DialogueChoice(
             choice_id=data["choice_id"],
@@ -442,7 +457,9 @@ class DialogueNodeSerializer:
             "text": node.text,
             "speaker": node.speaker,
             "npc_tone": node.npc_tone,
-            "choices": [DialogueChoiceSerializer.serialize(c) for c in node.choices],
+            "choices": [
+                DialogueChoiceSerializer.serialize(c) for c in node.choices
+            ],
             "condition": (
                 DialogueConditionSerializer.serialize(node.condition)
                 if node.condition
@@ -472,11 +489,16 @@ class DialogueNodeSerializer:
 
         condition = None
         if data.get("condition"):
-            condition = DialogueConditionSerializer.deserialize(data["condition"])
+            condition = DialogueConditionSerializer.deserialize(
+                data["condition"]
+            )
 
         choices = []
         if data.get("choices"):
-            choices = [DialogueChoiceSerializer.deserialize(c) for c in data["choices"]]
+            choices = [
+                DialogueChoiceSerializer.deserialize(c)
+                for c in data["choices"]
+            ]
 
         return DialogueNode(
             node_id=data["node_id"],
@@ -641,7 +663,9 @@ class ConversationHistorySerializer:
         history.choices_made.append(choice_id)
 
     @staticmethod
-    def add_effect(history: ConversationHistory, effect: Dict[str, Any]) -> None:
+    def add_effect(
+        history: ConversationHistory, effect: Dict[str, Any]
+    ) -> None:
         """
         Record an effect that was applied.
 
@@ -696,9 +720,12 @@ class DialogueContextSerializer:
         """
         return {
             "conversation_id": context.conversation_id,
-            "current_node": DialogueNodeSerializer.serialize(context.current_node),
+            "current_node": DialogueNodeSerializer.serialize(
+                context.current_node
+            ),
             "available_choices": [
-                DialogueChoiceSerializer.serialize(c) for c in context.available_choices
+                DialogueChoiceSerializer.serialize(c)
+                for c in context.available_choices
             ],
             "conversation_history": ConversationHistorySerializer.serialize(
                 context.conversation_history
@@ -733,7 +760,9 @@ class DialogueContextSerializer:
 
         return DialogueContext(
             conversation_id=data["conversation_id"],
-            current_node=DialogueNodeSerializer.deserialize(data["current_node"]),
+            current_node=DialogueNodeSerializer.deserialize(
+                data["current_node"]
+            ),
             available_choices=[
                 DialogueChoiceSerializer.deserialize(c)
                 for c in data["available_choices"]

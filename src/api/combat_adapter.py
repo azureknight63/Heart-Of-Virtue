@@ -25,7 +25,10 @@ if TYPE_CHECKING:
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
 import positions  # type: ignore
-from src.api.serializers.combat import CombatStateSerializer, CombatantSerializer
+from src.api.serializers.combat import (
+    CombatStateSerializer,
+    CombatantSerializer,
+)
 from ai.combat_strategist import CombatStrategist
 
 logger = logging.getLogger(__name__)
@@ -205,7 +208,8 @@ class ApiCombatAdapter:
         # Check for duplicate
         # We check both message and round to allow the same event in different rounds
         is_duplicate = any(
-            existing.get("message") == message and existing.get("round") == round_num
+            existing.get("message") == message
+            and existing.get("round") == round_num
             for existing in self.player.combat_log
         )
         if not is_duplicate:
@@ -230,7 +234,9 @@ class ApiCombatAdapter:
 
                     if hasattr(current_app, "socketio"):
                         room = f"combat_{self.session_id}"
-                        current_app.socketio.emit("combat:log", entry, room=room)
+                        current_app.socketio.emit(
+                            "combat:log", entry, room=room
+                        )
                 except Exception as e:
                     print(f"[SOCKET ERROR] Failed to emit log: {e}")
 
@@ -251,7 +257,9 @@ class ApiCombatAdapter:
             # Import here to avoid circular dependencies
 
             if not reinit:
-                self.player.combat_beat = 1  # Start at beat 1 for synchronization
+                self.player.combat_beat = (
+                    1  # Start at beat 1 for synchronization
+                )
                 self.player.combat_log = []  # Clear log for new combat
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
@@ -285,7 +293,9 @@ class ApiCombatAdapter:
                 total_combatants = len(self.player.combat_list_allies) + len(
                     self.player.combat_list
                 )
-                grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
+                grid_w, grid_h = coord_config.get_dynamic_grid_size(
+                    total_combatants
+                )
                 self.combat_grid_size = (grid_w, grid_h)
 
                 positions.initialize_combat_positions(
@@ -305,12 +315,11 @@ class ApiCombatAdapter:
                         if not hasattr(enemy, "combat_proximity"):
                             enemy.combat_proximity = {}
                         if not hasattr(enemy, "default_proximity"):
-                            enemy.default_proximity = (
-                                10  # Default distance - enemies start in striking range
-                            )
+                            enemy.default_proximity = 10  # Default distance - enemies start in striking range
                         if enemy not in ally.combat_proximity:
                             distance = int(
-                                enemy.default_proximity * random.uniform(0.75, 1.25)
+                                enemy.default_proximity
+                                * random.uniform(0.75, 1.25)
                             )
                             ally.combat_proximity[enemy] = distance
                             enemy.combat_proximity[ally] = distance
@@ -396,7 +405,9 @@ class ApiCombatAdapter:
             if self.session_id:
                 try:
                     from flask import current_app
-                    from src.api.serializers.combat import CombatStateSerializer
+                    from src.api.serializers.combat import (
+                        CombatStateSerializer,
+                    )
 
                     serialized_state = result
                     if hasattr(current_app, "socketio"):
@@ -414,9 +425,7 @@ class ApiCombatAdapter:
         except Exception as e:
             import traceback
 
-            error_msg = (
-                f"Combat initialization error: {str(e)}\n{traceback.format_exc()}"
-            )
+            error_msg = f"Combat initialization error: {str(e)}\n{traceback.format_exc()}"
             print(error_msg)
             return {
                 "error": "Failed to initialize combat",
@@ -545,7 +554,8 @@ class ApiCombatAdapter:
 
                     target_obj_id = single_target_id.replace("enemy_", "")
                     all_combatants = (
-                        self.player.combat_list + self.player.combat_list_allies
+                        self.player.combat_list
+                        + self.player.combat_list_allies
                     )
                     for combatant in all_combatants:
                         if str(id(combatant)) == target_obj_id:
@@ -658,7 +668,10 @@ class ApiCombatAdapter:
             return self.get_combat_state()
 
         # Check if move needs duration input (e.g., Wait move)
-        if hasattr(selected_move, "needs_duration") and selected_move.needs_duration:
+        if (
+            hasattr(selected_move, "needs_duration")
+            and selected_move.needs_duration
+        ):
             self.input_type = "number_input"
             self.available_options = {
                 "prompt": "How many beats do you want to wait?",
@@ -707,7 +720,9 @@ class ApiCombatAdapter:
         # We need to parse the target_id (e.g. "enemy_123456")
         target_obj_id = target_id.replace("enemy_", "")
 
-        all_combatants = self.player.combat_list + self.player.combat_list_allies
+        all_combatants = (
+            self.player.combat_list + self.player.combat_list_allies
+        )
         for combatant in all_combatants:
             if str(id(combatant)) == target_obj_id:
                 target = combatant
@@ -752,7 +767,9 @@ class ApiCombatAdapter:
                 "west": positions.Direction.W,
             }
             # Fallback to N if mapping fails (though validation above catches it)
-            enum_dir = direction_map.get(direction.lower(), positions.Direction.N)
+            enum_dir = direction_map.get(
+                direction.lower(), positions.Direction.N
+            )
             pending_move.target_direction = enum_dir
 
         # Clear pending move index
@@ -782,7 +799,9 @@ class ApiCombatAdapter:
             max_val = self.available_options.get("max", 100)
 
             if value < min_val or value > max_val:
-                return {"error": f"Value must be between {min_val} and {max_val}"}
+                return {
+                    "error": f"Value must be between {min_val} and {max_val}"
+                }
 
         # Set the duration on the move (for Wait move)
         if hasattr(pending_move, "duration"):
@@ -804,7 +823,10 @@ class ApiCombatAdapter:
         # Calculate proximity from coordinates for units with combat_position set
         all_combatants = player.combat_list_allies + player.combat_list
         for unit in all_combatants:
-            if hasattr(unit, "combat_position") and unit.combat_position is not None:
+            if (
+                hasattr(unit, "combat_position")
+                and unit.combat_position is not None
+            ):
                 unit.combat_proximity = positions.recalculate_proximity_dict(
                     unit, all_combatants
                 )
@@ -828,9 +850,9 @@ class ApiCombatAdapter:
                     del each_enemy.combat_proximity[each_ally_that_died]
 
                 if each_enemy in each_ally.combat_proximity:
-                    each_enemy.combat_proximity[each_ally] = each_ally.combat_proximity[
-                        each_enemy
-                    ]
+                    each_enemy.combat_proximity[each_ally] = (
+                        each_ally.combat_proximity[each_enemy]
+                    )
                 else:
                     # Enemy not in list (legacy/fallback), add with random distance
                     # But ONLY if we don't have positions (which would have handled it above)
@@ -842,7 +864,9 @@ class ApiCombatAdapter:
                     ):
 
                         default = getattr(each_enemy, "default_proximity", 20)
-                        each_distance = int(default * random.uniform(0.75, 1.25))
+                        each_distance = int(
+                            default * random.uniform(0.75, 1.25)
+                        )
                         each_ally.combat_proximity[each_enemy] = each_distance
                         each_enemy.combat_proximity[each_ally] = each_distance
 
@@ -984,7 +1008,9 @@ class ApiCombatAdapter:
                         # Narrative pause: record events and stop processing beats for now
                         if not hasattr(self.player, "combat_adapter_state"):
                             self.player.combat_adapter_state = {}
-                        self.player.combat_adapter_state["events_triggered"] = events
+                        self.player.combat_adapter_state[
+                            "events_triggered"
+                        ] = events
 
                         # Stop processing beats
                         break
@@ -998,13 +1024,18 @@ class ApiCombatAdapter:
                 )
 
                 # Add log to beat state (snapshot of log at this point)
-                beat_state["log"] = list(getattr(self.player, "combat_log", []))
+                beat_state["log"] = list(
+                    getattr(self.player, "combat_log", [])
+                )
                 beat_states.append(beat_state)
 
                 beats_processed += 1
 
                 # Check win/loss conditions inside loop
-                if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                if (
+                    not self.player.is_alive()
+                    or len(self.player.combat_list) == 0
+                ):
                     break
 
                 # Check if the current move has finished executing (entered cooldown or
@@ -1016,10 +1047,15 @@ class ApiCombatAdapter:
                     # Guard: no moves at all — don't burn remaining max_beats
                     if not self.player.known_moves:
                         break
-                    if any(m.current_stage == 0 for m in self.player.known_moves):
+                    if any(
+                        m.current_stage == 0 for m in self.player.known_moves
+                    ):
                         break
                     # All moves still cooling — re-check survival before the next drain beat
-                    if not self.player.is_alive() or len(self.player.combat_list) == 0:
+                    if (
+                        not self.player.is_alive()
+                        or len(self.player.combat_list) == 0
+                    ):
                         break
                     # Keep advancing beats until one opens up
 
@@ -1131,7 +1167,9 @@ class ApiCombatAdapter:
 
                 if hasattr(current_app, "socketio"):
                     room = f"combat_{self.session_id}"
-                    current_app.socketio.emit("combat:update", result, room=room)
+                    current_app.socketio.emit(
+                        "combat:update", result, room=room
+                    )
 
                     # If awaiting input, also emit turn notification
                     if self.awaiting_input:
@@ -1139,12 +1177,16 @@ class ApiCombatAdapter:
                             "combat:turn",
                             {
                                 "input_type": self.input_type,
-                                "available_options_count": len(self.available_options),
+                                "available_options_count": len(
+                                    self.available_options
+                                ),
                             },
                             room=room,
                         )
             except Exception as e:
-                logger.warning("Failed to emit socket update after process_move: %s", e)
+                logger.warning(
+                    "Failed to emit socket update after process_move: %s", e
+                )
 
         return result
 
@@ -1236,10 +1278,13 @@ class ApiCombatAdapter:
                     npc.current_move.target = npc.target
 
                     # Determine animation type
-                    animation_type = getattr(npc.current_move, "web_animation", None)
+                    animation_type = getattr(
+                        npc.current_move, "web_animation", None
+                    )
                     if animation_type is None:
-                        if npc.current_move.targeted and self._move_deals_damage(
-                            npc.current_move
+                        if (
+                            npc.current_move.targeted
+                            and self._move_deals_damage(npc.current_move)
                         ):
                             animation_type = "attack"
                         else:
@@ -1252,7 +1297,11 @@ class ApiCombatAdapter:
                         "target_id": (
                             "player"
                             if npc.target == self.player
-                            else (f"enemy_{id(npc.target)}" if npc.target else None)
+                            else (
+                                f"enemy_{id(npc.target)}"
+                                if npc.target
+                                else None
+                            )
                         ),
                         "move_name": npc.current_move.name,
                     }
@@ -1278,7 +1327,10 @@ class ApiCombatAdapter:
 
         # Advance moves (include dynamically selected current_move if not in known_moves)
         moves_to_advance = list(getattr(npc, "known_moves", []))
-        if npc.current_move is not None and npc.current_move not in moves_to_advance:
+        if (
+            npc.current_move is not None
+            and npc.current_move not in moves_to_advance
+        ):
             moves_to_advance.append(npc.current_move)
 
         for move in moves_to_advance:
@@ -1305,7 +1357,9 @@ class ApiCombatAdapter:
 
         # Set loading state
         self.player.suggestions_loading = True
-        self.player.suggested_moves = []  # Clear previous suggestions while loading
+        self.player.suggested_moves = (
+            []
+        )  # Clear previous suggestions while loading
 
         # Increment generation counter to invalidate any in-flight requests
         with self._suggestion_lock:
@@ -1336,7 +1390,9 @@ class ApiCombatAdapter:
                 )
                 try:
                     # Calculate allowed suggestions count
-                    count = getattr(self.player, "base_suggested_move_count", 1)
+                    count = getattr(
+                        self.player, "base_suggested_move_count", 1
+                    )
                     for m in self.player.known_moves:
                         if m.name in ["Strategic Insight", "Master Tactician"]:
                             count += 1
@@ -1352,7 +1408,9 @@ class ApiCombatAdapter:
                     from src.api.serializers.combat import CombatantSerializer
 
                     ctx = {
-                        "player": CombatantSerializer.serialize_combatant(self.player),
+                        "player": CombatantSerializer.serialize_combatant(
+                            self.player
+                        ),
                         "enemies": [
                             CombatantSerializer.serialize_combatant(
                                 e, reference=self.player
@@ -1360,13 +1418,18 @@ class ApiCombatAdapter:
                             for e in self.player.combat_list
                         ],
                         "history": [
-                            entry["message"] for entry in self.player.combat_log[-20:]
+                            entry["message"]
+                            for entry in self.player.combat_log[-20:]
                         ],  # Last 20 messages
-                        "last_move": getattr(self.player, "last_move_summary", "None"),
+                        "last_move": getattr(
+                            self.player, "last_move_summary", "None"
+                        ),
                         "available_moves": self.available_options,
                     }
 
-                    logger.debug(f"DEBUG: Combat context keys: {list(ctx.keys())}")
+                    logger.debug(
+                        f"DEBUG: Combat context keys: {list(ctx.keys())}"
+                    )
 
                     # Fetch from strategist (this is the slow part)
                     suggestions = self.strategist.get_suggestions(
@@ -1398,7 +1461,9 @@ class ApiCombatAdapter:
                         # Emit socket event to notify frontend that suggestions are ready
                         if self.session_id:
                             try:
-                                if flask_app and hasattr(flask_app, "socketio"):
+                                if flask_app and hasattr(
+                                    flask_app, "socketio"
+                                ):
                                     logger.info(
                                         f"DEBUG: Emitting combat:suggestions_ready to room combat_{self.session_id} with {len(suggestions)} suggestions"
                                     )
@@ -1421,7 +1486,9 @@ class ApiCombatAdapter:
                             )
 
                 except Exception as e:
-                    logger.error(f"Error in async suggestion fetch: {e}", exc_info=True)
+                    logger.error(
+                        f"Error in async suggestion fetch: {e}", exc_info=True
+                    )
                     with self._suggestion_lock:
                         is_current = current_gen == self._suggestion_generation
                     if is_current:
@@ -1467,7 +1534,9 @@ class ApiCombatAdapter:
                     event.check_combat_conditions()
             except Exception as e:
                 event_name = getattr(event, "name", "UnknownEvent")
-                logger.warning("Error evaluating combat event '%s': %s", event_name, e)
+                logger.warning(
+                    "Error evaluating combat event '%s': %s", event_name, e
+                )
 
     def _handle_victory(self):
         """Handle combat victory."""
@@ -1492,7 +1561,9 @@ class ApiCombatAdapter:
         if exp_summary:
             victory_msg += "Gained exp: " + ", ".join(exp_summary)
 
-        self._add_log_entry(self.output_capture.current_round, victory_msg, "system")
+        self._add_log_entry(
+            self.output_capture.current_round, victory_msg, "system"
+        )
 
         # Aggregate combat drops collected during the encounter (API mode)
         drops_raw = getattr(self.player, "combat_drops", []) or []
@@ -1506,7 +1577,9 @@ class ApiCombatAdapter:
 
         items_dropped = [
             {"name": name, "quantity": qty}
-            for name, qty in sorted(drops_by_name.items(), key=lambda kv: kv[0].lower())
+            for name, qty in sorted(
+                drops_by_name.items(), key=lambda kv: kv[0].lower()
+            )
             if qty > 0
         ]
 
@@ -1526,11 +1599,19 @@ class ApiCombatAdapter:
                 - (getattr(self.player, "exp", 0) or 0)
             ),
             "attributes": {
-                "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
-                "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
+                "strength_base": int(
+                    getattr(self.player, "strength_base", 0) or 0
+                ),
+                "finesse_base": int(
+                    getattr(self.player, "finesse_base", 0) or 0
+                ),
                 "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
-                "endurance_base": int(getattr(self.player, "endurance_base", 0) or 0),
-                "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
+                "endurance_base": int(
+                    getattr(self.player, "endurance_base", 0) or 0
+                ),
+                "charisma_base": int(
+                    getattr(self.player, "charisma_base", 0) or 0
+                ),
                 "intelligence_base": int(
                     getattr(self.player, "intelligence_base", 0) or 0
                 ),
@@ -1563,18 +1644,24 @@ class ApiCombatAdapter:
                 "reason": None,
                 "targeted": is_targeted,
                 "viable_targets": viable_targets,
-                "requires_target_selection": is_targeted and len(viable_targets) > 1,
+                "requires_target_selection": is_targeted
+                and len(viable_targets) > 1,
             }
 
             # Check various conditions that might make the move unavailable
             if move.current_stage == 3:
                 if move.beats_left > 0:
                     move_data["available"] = False
-                    move_data["reason"] = f"Available in {move.beats_left + 1} beats"
+                    move_data["reason"] = (
+                        f"Available in {move.beats_left + 1} beats"
+                    )
                 else:
                     move_data["available"] = False
                     move_data["reason"] = "Available next beat"
-            elif move.fatigue_cost > 0 and self.player.fatigue < move.fatigue_cost:
+            elif (
+                move.fatigue_cost > 0
+                and self.player.fatigue < move.fatigue_cost
+            ):
                 move_data["available"] = False
                 move_data["reason"] = "Not enough fatigue"
             elif not is_viable:
@@ -1593,9 +1680,13 @@ class ApiCombatAdapter:
                         )
                         if not enemies_in_range:
                             if range_max <= 5:
-                                move_data["reason"] = "Enemy out of range (too far)"
+                                move_data["reason"] = (
+                                    "Enemy out of range (too far)"
+                                )
                             else:
-                                move_data["reason"] = "No valid target in range"
+                                move_data["reason"] = (
+                                    "No valid target in range"
+                                )
                         else:
                             move_data["reason"] = "Cannot use this move"
                     else:
@@ -1646,7 +1737,9 @@ class ApiCombatAdapter:
                     "name": enemy.name,
                     "distance": distance,
                     "health": {
-                        "current": getattr(enemy, "hp", getattr(enemy, "health", 0)),
+                        "current": getattr(
+                            enemy, "hp", getattr(enemy, "health", 0)
+                        ),
                         "max": getattr(
                             enemy, "maxhp", getattr(enemy, "max_health", 100)
                         ),
@@ -1654,8 +1747,12 @@ class ApiCombatAdapter:
                 }
 
                 # Add hit chance if verbose targeting
-                if move.verbose_targeting and hasattr(move, "calculate_hit_chance"):
-                    target_data["hit_chance"] = move.calculate_hit_chance(enemy)
+                if move.verbose_targeting and hasattr(
+                    move, "calculate_hit_chance"
+                ):
+                    target_data["hit_chance"] = move.calculate_hit_chance(
+                        enemy
+                    )
 
                 targets.append(target_data)
 
@@ -1723,7 +1820,9 @@ class ApiCombatAdapter:
             hasattr(self.player, "combat_adapter_state")
             and "check_data" in self.player.combat_adapter_state
         ):
-            battle_state["check_data"] = self.player.combat_adapter_state["check_data"]
+            battle_state["check_data"] = self.player.combat_adapter_state[
+                "check_data"
+            ]
             # Clear check_data after including it once
             del self.player.combat_adapter_state["check_data"]
 
@@ -1732,13 +1831,19 @@ class ApiCombatAdapter:
             "combat_active": self.player.in_combat,
             "map_size": grid_size[0],
             "battle_state": battle_state,
-            "beat_states": [battle_state],  # Initial state as a single beat state
+            "beat_states": [
+                battle_state
+            ],  # Initial state as a single beat state
             "log": getattr(self.player, "combat_log", []),
             "suggested_moves": getattr(self.player, "suggested_moves", []),
-            "suggestions_loading": getattr(self.player, "suggestions_loading", False),
+            "suggestions_loading": getattr(
+                self.player, "suggestions_loading", False
+            ),
             "last_move_outcome": getattr(self.player, "last_move_summary", ""),
             "last_move_name": getattr(self.player, "last_move_name", ""),
-            "last_move_target_id": getattr(self.player, "last_move_target_id", None),
+            "last_move_target_id": getattr(
+                self.player, "last_move_target_id", None
+            ),
         }
 
         # Include triggered events if any (narrative pause)
@@ -1767,13 +1872,21 @@ class ApiCombatAdapter:
                     - (getattr(self.player, "exp", 0) or 0)
                 )
                 summary["attributes"] = {
-                    "strength_base": int(getattr(self.player, "strength_base", 0) or 0),
-                    "finesse_base": int(getattr(self.player, "finesse_base", 0) or 0),
-                    "speed_base": int(getattr(self.player, "speed_base", 0) or 0),
+                    "strength_base": int(
+                        getattr(self.player, "strength_base", 0) or 0
+                    ),
+                    "finesse_base": int(
+                        getattr(self.player, "finesse_base", 0) or 0
+                    ),
+                    "speed_base": int(
+                        getattr(self.player, "speed_base", 0) or 0
+                    ),
                     "endurance_base": int(
                         getattr(self.player, "endurance_base", 0) or 0
                     ),
-                    "charisma_base": int(getattr(self.player, "charisma_base", 0) or 0),
+                    "charisma_base": int(
+                        getattr(self.player, "charisma_base", 0) or 0
+                    ),
                     "intelligence_base": int(
                         getattr(self.player, "intelligence_base", 0) or 0
                     ),

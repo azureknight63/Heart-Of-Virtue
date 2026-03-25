@@ -45,7 +45,9 @@ class QuestRewardSerializer:
                 "difficulty": rewards.get("difficulty", "normal"),
                 "time_limit": rewards.get("time_limit", None),
                 "no_deaths": rewards.get("no_deaths", False),
-                "bonus_objectives_completed": rewards.get("bonus_complete", False),
+                "bonus_objectives_completed": rewards.get(
+                    "bonus_complete", False
+                ),
             },
         }
 
@@ -69,7 +71,9 @@ class QuestRewardSerializer:
         }
 
     @staticmethod
-    def _serialize_reward_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _serialize_reward_items(
+        items: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
         """Serialize reward items.
 
         Args:
@@ -290,7 +294,9 @@ class RewardConditionValidator:
             # Assume time_limit is quest completion time in seconds
             # Would need to compare with actual completion time
             # For now, just mark as available
-            bonuses.append("Speed Bonus Available: Complete faster for extra rewards")
+            bonuses.append(
+                "Speed Bonus Available: Complete faster for extra rewards"
+            )
 
         # Check bonus objectives
         if rewards.get("bonus_complete", False):

@@ -145,7 +145,10 @@ class WorldSerializer:
 
     @staticmethod
     def serialize_movement_result(
-        player: Any, old_position: tuple, new_tile: Any, events_triggered: List[Dict]
+        player: Any,
+        old_position: tuple,
+        new_tile: Any,
+        events_triggered: List[Dict],
     ) -> Dict[str, Any]:
         """Serialize the result of a movement action.
 

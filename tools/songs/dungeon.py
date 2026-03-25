@@ -8,15 +8,15 @@ class DungeonSong(Song):
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
         def fr(freq): return freq * (2 ** (pitch_shift / 12))
-        
+
         # Theme A: Creeping Dread
         theme_a = [[(220, 0.8), (233, 0.8), (196, 0.8), (220, 1.6)], [(262, 0.8), (247, 0.8), (220, 0.8), (196, 1.6)]]
         # Theme B: Unsettling Arpeggios
         theme_b = [[(220, 0.4), (262, 0.4), (330, 0.4), (262, 0.4)], [(196, 0.4), (247, 0.4), (294, 0.4), (247, 0.4)]]
-        
+
         prog_a = [([220, 262, 330], 3.2), ([196, 247, 294], 3.2)]
         bass_a = [(110, 3.2), (98, 3.2)]
-        
+
         all_sections = b''
 
         # --- Section 1: Ambient Intro ---
@@ -31,7 +31,7 @@ class DungeonSong(Song):
                 for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.3, wave_type='triangle')
             for c, dur in prog_a: chd += generate_chord([fr(x) for x in c], d(dur), 0.2, wave_type='sawtooth')
             for f, dur in bass_a: bss += generate_tone(fr(f), d(dur), 0.4, wave_type='sawtooth')
-            
+
             dur = 6.4
             perc = generate_percussion_pattern([1, 0, 0, 0, 0, 0, 1, 0], d(dur))
             all_sections += mix_layers([mel, chd, bss, perc])
@@ -42,7 +42,7 @@ class DungeonSong(Song):
             for phrase in theme_b:
                 for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.25, wave_type='square')
             for c, dur in prog_a: chd += generate_chord([fr(x) for x in c], d(dur), 0.25, wave_type='triangle')
-            
+
             dur = 3.2
             perc = generate_percussion_pattern([1, 0, 1, 0], d(dur))
             all_sections += mix_layers([mel, chd, perc])
@@ -59,7 +59,7 @@ class DungeonSong(Song):
                 for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.35, wave_type='sawtooth')
             for c, dur in prog_a: chd += generate_chord([fr(x) for x in c], d(dur), 0.3, wave_type='square')
             for f, dur in bass_a: bss += generate_tone(fr(f), d(dur), 0.5, wave_type='square')
-            
+
             dur = 6.4
             perc = generate_percussion_pattern([1, 1, 0, 1, 1, 0, 1, 0], d(dur))
             all_sections += mix_layers([mel, chd, bss, perc])

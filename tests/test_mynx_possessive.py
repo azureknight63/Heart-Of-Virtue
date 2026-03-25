@@ -22,4 +22,3 @@ def test_mynx_possessive_preserved():
     assert "it gentle petting" not in corrected
     # Basic sanity: first occurrence of Snookums may remain; pronoun use acceptable thereafter
     assert corrected.startswith("Snookums")
-

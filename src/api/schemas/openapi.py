@@ -22,8 +22,14 @@ def generate_openapi_schema() -> Dict[str, Any]:
             "license": {"name": "MIT"},
         },
         "servers": [
-            {"url": "http://localhost:5000", "description": "Development server"},
-            {"url": "http://localhost:8000", "description": "Production server"},
+            {
+                "url": "http://localhost:5000",
+                "description": "Development server",
+            },
+            {
+                "url": "http://localhost:8000",
+                "description": "Production server",
+            },
         ],
         "paths": {
             "/auth/login": {
@@ -61,12 +67,18 @@ def generate_openapi_schema() -> Dict[str, Any]:
                                             "data": {
                                                 "type": "object",
                                                 "properties": {
-                                                    "session_id": {"type": "string"},
-                                                    "expires_at": {"type": "string"},
+                                                    "session_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "expires_at": {
+                                                        "type": "string"
+                                                    },
                                                     "player": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "name": {"type": "string"},
+                                                            "name": {
+                                                                "type": "string"
+                                                            },
                                                             "level": {
                                                                 "type": "integer"
                                                             },
@@ -111,7 +123,9 @@ def generate_openapi_schema() -> Dict[str, Any]:
                                             "data": {
                                                 "type": "object",
                                                 "properties": {
-                                                    "message": {"type": "string"}
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
                                                 },
                                             },
                                         },
@@ -142,9 +156,15 @@ def generate_openapi_schema() -> Dict[str, Any]:
                                             "data": {
                                                 "type": "object",
                                                 "properties": {
-                                                    "is_valid": {"type": "boolean"},
-                                                    "player_name": {"type": "string"},
-                                                    "expires_at": {"type": "string"},
+                                                    "is_valid": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "player_name": {
+                                                        "type": "string"
+                                                    },
+                                                    "expires_at": {
+                                                        "type": "string"
+                                                    },
                                                 },
                                             },
                                         },
@@ -177,18 +197,26 @@ def generate_openapi_schema() -> Dict[str, Any]:
                                                 "properties": {
                                                     "x": {"type": "integer"},
                                                     "y": {"type": "integer"},
-                                                    "description": {"type": "string"},
+                                                    "description": {
+                                                        "type": "string"
+                                                    },
                                                     "exits": {
                                                         "type": "array",
-                                                        "items": {"type": "string"},
+                                                        "items": {
+                                                            "type": "string"
+                                                        },
                                                     },
                                                     "items": {
                                                         "type": "array",
-                                                        "items": {"type": "object"},
+                                                        "items": {
+                                                            "type": "object"
+                                                        },
                                                     },
                                                     "npcs": {
                                                         "type": "array",
-                                                        "items": {"type": "object"},
+                                                        "items": {
+                                                            "type": "object"
+                                                        },
                                                     },
                                                 },
                                             },
@@ -217,7 +245,12 @@ def generate_openapi_schema() -> Dict[str, Any]:
                                     "properties": {
                                         "direction": {
                                             "type": "string",
-                                            "enum": ["north", "south", "east", "west"],
+                                            "enum": [
+                                                "north",
+                                                "south",
+                                                "east",
+                                                "west",
+                                            ],
                                         }
                                     },
                                     "required": ["direction"],
@@ -326,7 +359,9 @@ def generate_openapi_schema() -> Dict[str, Any]:
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "properties": {"item_id": {"type": "string"}},
+                                    "properties": {
+                                        "item_id": {"type": "string"}
+                                    },
                                     "required": ["item_id"],
                                 }
                             }
@@ -356,7 +391,9 @@ def generate_openapi_schema() -> Dict[str, Any]:
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "properties": {"item_index": {"type": "integer"}},
+                                    "properties": {
+                                        "item_index": {"type": "integer"}
+                                    },
                                     "required": ["item_index"],
                                 }
                             }
@@ -401,7 +438,9 @@ def generate_openapi_schema() -> Dict[str, Any]:
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "properties": {"item_index": {"type": "integer"}},
+                                    "properties": {
+                                        "item_index": {"type": "integer"}
+                                    },
                                     "required": ["item_index"],
                                 }
                             }
@@ -461,7 +500,9 @@ def generate_openapi_schema() -> Dict[str, Any]:
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "properties": {"enemy_id": {"type": "string"}},
+                                    "properties": {
+                                        "enemy_id": {"type": "string"}
+                                    },
                                     "required": ["enemy_id"],
                                 }
                             }
@@ -562,7 +603,9 @@ def generate_openapi_schema() -> Dict[str, Any]:
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "properties": {"save_name": {"type": "string"}},
+                                    "properties": {
+                                        "save_name": {"type": "string"}
+                                    },
                                     "required": ["save_name"],
                                 }
                             }

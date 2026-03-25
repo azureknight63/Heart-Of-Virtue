@@ -17,11 +17,11 @@ from src.universe import Universe  # type: ignore
 def test_config_manager_loads_config_dev_ini_if_exists():
     """Test that ConfigManager loads config_dev.ini if it exists in project root."""
     config_dev_path = ROOT / "config_dev.ini"
-    
+
     if config_dev_path.exists():
         mgr = ConfigManager(str(config_dev_path))
         config = mgr.load()
-        
+
         # Verify config loaded some settings (not all defaults)
         assert isinstance(config, GameConfig)
         # At minimum, check that basic structure is intact
@@ -32,31 +32,31 @@ def test_config_manager_loads_config_dev_ini_if_exists():
 def test_config_phase4_testing_loads_correctly():
     """Test that config_phase4_testing.ini loads with all sections parsed."""
     config_file = ROOT / "config_phase4_testing.ini"
-    
+
     if not config_file.exists():
         # Skip if file doesn't exist
         return
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all major sections were parsed
     # [game] section
     assert hasattr(config, 'testmode')
     assert hasattr(config, 'debug_mode')
     assert hasattr(config, 'coordinate_grid_size')
-    
+
     # [development] section
     assert hasattr(config, 'enable_hot_reload')
     assert hasattr(config, 'show_all_items')
     assert hasattr(config, 'god_mode')
     assert hasattr(config, 'skip_combat')
-    
+
     # [combat_testing] section
     assert hasattr(config, 'enable_scenario_rotation')
     assert hasattr(config, 'current_scenario')
     assert hasattr(config, 'npc_flanking_threshold')
-    
+
     # [testing_locations] section
     assert hasattr(config, 'standard_player_x')
     assert hasattr(config, 'standard_player_y')
@@ -67,14 +67,14 @@ def test_config_phase4_testing_loads_correctly():
 def test_player_receives_config_attributes():
     """Test that Player instance has config-related attributes."""
     player = Player()
-    
+
     # Verify new attributes exist
     assert hasattr(player, 'testing_mode')
     assert hasattr(player, 'use_colour')
     assert hasattr(player, 'enable_animations')
     assert hasattr(player, 'animation_speed')
     assert hasattr(player, 'game_config')
-    
+
     # Verify default values
     assert player.testing_mode is False
     assert player.use_colour is True
@@ -87,11 +87,11 @@ def test_universe_receives_config_attributes():
     """Test that Universe instance has config-related attributes."""
     player = Player()
     universe = Universe(player)
-    
+
     # Verify new attributes exist
     assert hasattr(universe, 'testing_mode')
     assert hasattr(universe, 'game_config')
-    
+
     # Verify default values
     assert universe.testing_mode is False
     assert universe.game_config is None
@@ -107,11 +107,11 @@ use_colour = false
 enable_animations = false
 animation_speed = 0.5
 """)
-    
+
     # Load config
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Create player and apply config
     player = Player()
     player.testing_mode = config.testmode
@@ -119,7 +119,7 @@ animation_speed = 0.5
     player.enable_animations = config.enable_animations
     player.animation_speed = config.animation_speed
     player.game_config = config
-    
+
     # Verify settings applied
     assert player.testing_mode is True
     assert player.use_colour is False
@@ -140,17 +140,17 @@ testmode = true
 enable_scenario_rotation = true
 current_scenario = pincer
 """)
-    
+
     # Load config
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Create universe and apply config
     player = Player()
     universe = Universe(player)
     universe.testing_mode = config.testmode
     universe.game_config = config
-    
+
     # Verify settings applied
     assert universe.testing_mode is True
     assert universe.game_config is not None
@@ -165,19 +165,19 @@ def test_config_coordinate_grid_size_as_tuple(tmp_path):
 [game]
 coordinate_grid_size = 100, 150
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify tuple parsing
     assert config.coordinate_grid_size == (100, 150)
     assert isinstance(config.coordinate_grid_size, tuple)
-    
+
     # Apply to universe and verify
     player = Player()
     universe = Universe(player)
     universe.game_config = config
-    
+
     # Can access through universe
     assert universe.game_config.coordinate_grid_size == (100, 150)
 
@@ -204,10 +204,10 @@ boss_arena_x = 20
 boss_arena_y = 20
 boss_start_distance = 35
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all location coordinates loaded
     assert config.standard_player_x == 15
     assert config.standard_player_y == 5
@@ -240,10 +240,10 @@ debug_accuracy = true
 debug_ai_decisions = true
 debug_npc_positions = true
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all debug flags loaded
     assert config.debug_mode is True
     assert config.debug_positions is True
@@ -265,10 +265,10 @@ validate_angle_calc = false
 validate_modifier_calc = false
 validate_npc_formations = false
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all validation flags loaded and can be toggled
     assert config.validate_grid_bounds is False
     assert config.validate_distance_calc is False
@@ -287,16 +287,16 @@ show_all_items = true
 god_mode = true
 skip_combat = true
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all development settings
     assert config.enable_hot_reload is True
     assert config.show_all_items is True
     assert config.god_mode is True
     assert config.skip_combat is True
-    
+
     # Ensure they can be applied to player
     player = Player()
     player.game_config = config
@@ -316,10 +316,10 @@ show_accuracy_modifiers = false
 show_coordinate_display = false
 show_full_grid = true
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all display settings
     assert config.show_combat_distance is False
     assert config.show_unit_positions is False
@@ -344,10 +344,10 @@ npc_flanking_threshold = 60.0
 npc_retreat_health_threshold = 0.5
 npc_flanking_distance_range = 15.0 to 50.0
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify NPC AI settings
     assert config.npc_flanking_enabled is False
     assert config.npc_tactical_retreat is False
@@ -374,10 +374,10 @@ current_scenario = melee
 starting_difficulty = 5
 difficulty_scaling = 0.75
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify scenario settings
     assert config.test_scenario == "pincer"
     assert config.max_enemies_standard == 5
@@ -403,10 +403,10 @@ log_file = custom_log.txt
 log_performance = true
 monitor_bps = true
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify logging settings
     assert config.log_combat_moves is False
     assert config.log_distance_calculations is False

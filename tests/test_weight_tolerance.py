@@ -24,4 +24,3 @@ def test_weight_tolerance_is_not_stacked_on_refresh():
     # also must equal base + attribute bonus
     expected = base + round((p.strength + p.endurance) / 2, 2)
     assert first == expected
-

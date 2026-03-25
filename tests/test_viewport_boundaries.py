@@ -17,17 +17,17 @@ class MockPosition:
     """Mock position object for testing."""
     x: float
     y: float
-    
+
     def copy(self):
         return MockPosition(self.x, self.y)
 
 def test_left_boundary():
     """Test combatant at left boundary has proper viewport."""
     window = CombatBattlefieldWindow()
-    
+
     # Place combatant very close to left edge (x=1)
     window.set_combatant("enemy1", MockPosition(1, 25), is_player=False, is_ally=False)
-    
+
     # Check viewport
     window._update_viewport()
     print(f"Combatant at (1, 25)")
@@ -35,7 +35,7 @@ def test_left_boundary():
     print(f"Expected x_min: max(0, 1-2) = 0 or less = 0")
     print(f"Expected x_max: min(49, 1+2) = 3")
     print()
-    
+
     grid = window.render_grid()
     print("Rendered grid:")
     print(grid)
@@ -44,10 +44,10 @@ def test_left_boundary():
 def test_right_boundary():
     """Test combatant at right boundary has proper viewport."""
     window = CombatBattlefieldWindow()
-    
+
     # Place combatant near right edge (x=48)
     window.set_combatant("enemy1", MockPosition(48, 25), is_player=False, is_ally=False)
-    
+
     # Check viewport
     window._update_viewport()
     print(f"Combatant at (48, 25)")

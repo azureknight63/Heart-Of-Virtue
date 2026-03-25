@@ -43,11 +43,11 @@ class TestInventoryRoutes:
         app, socketio = create_app(TestingConfig)
         app.config["TESTING"] = True
         client = app.test_client()
-        
+
         # Create session and get session_id
         session_manager = app.session_manager
         session_id, _ = session_manager.create_session("test_player")
-        
+
         yield {
             "app": app,
             "client": client,
@@ -123,8 +123,8 @@ class TestInventoryRoutes:
         """Test taking item without request body returns 400."""
         headers = self.get_auth_header(app_and_client["session_id"])
         response = app_and_client["client"].post(
-            "/inventory/take", 
-            data=json.dumps({}), 
+            "/inventory/take",
+            data=json.dumps({}),
             headers=headers,
             content_type="application/json"
         )
@@ -137,7 +137,7 @@ class TestInventoryRoutes:
         """Test taking item with invalid index returns 400."""
         headers = self.get_auth_header(app_and_client["session_id"])
         response = app_and_client["client"].post(
-            "/inventory/take", 
+            "/inventory/take",
             data=json.dumps({"index": 99}),
             headers=headers,
             content_type="application/json"
@@ -151,7 +151,7 @@ class TestInventoryRoutes:
         """Test dropping item without request body returns 400."""
         headers = self.get_auth_header(app_and_client["session_id"])
         response = app_and_client["client"].post(
-            "/inventory/drop", 
+            "/inventory/drop",
             data=json.dumps({}),
             headers=headers,
             content_type="application/json"
@@ -165,7 +165,7 @@ class TestInventoryRoutes:
         """Test dropping item with invalid index returns 400."""
         headers = self.get_auth_header(app_and_client["session_id"])
         response = app_and_client["client"].post(
-            "/inventory/drop", 
+            "/inventory/drop",
             data=json.dumps({"index": 99}),
             headers=headers,
             content_type="application/json"
@@ -201,7 +201,7 @@ class TestInventoryRoutes:
         """Test equipping item without request body returns 400."""
         headers = self.get_auth_header(app_and_client["session_id"])
         response = app_and_client["client"].post(
-            "/inventory/equip", 
+            "/inventory/equip",
             data=json.dumps({}),
             headers=headers,
             content_type="application/json"
@@ -229,7 +229,7 @@ class TestInventoryRoutes:
         """Test unequipping item without request body returns 400."""
         headers = self.get_auth_header(app_and_client["session_id"])
         response = app_and_client["client"].post(
-            "/inventory/unequip", 
+            "/inventory/unequip",
             data=json.dumps({}),
             headers=headers,
             content_type="application/json"

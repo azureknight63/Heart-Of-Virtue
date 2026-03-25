@@ -86,12 +86,12 @@ def test_combat_engage_adds_to_player_and_allies(monkeypatch):
 
     # Make uniform deterministic so proximity is exact
     monkeypatch.setattr('random.uniform', lambda a, b: 1.0)
-    
+
     # Set stale move state to verify it gets reset
     for move in bat.known_moves:
         move.current_stage = 2
         move.beats_left = 5
-    
+
     bat.combat_engage(p)
     assert bat in p.combat_list
     assert p.combat_proximity.get(bat) == int(bat.default_proximity * 1.0)
@@ -99,7 +99,7 @@ def test_combat_engage_adds_to_player_and_allies(monkeypatch):
     assert bat in ally.combat_proximity
     assert ally.combat_proximity[bat] == int(bat.default_proximity * 1.0)
     assert bat.in_combat is True
-    
+
     # Verify move states were reset during combat_engage
     for move in bat.known_moves:
         assert move.current_stage == 0, "Move stages should be reset to 0 when joining combat"

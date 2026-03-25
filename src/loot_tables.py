@@ -33,7 +33,9 @@ class Loot:
                     if eq_level == obj.level:
                         candidates.append(name)
         select = random.randint(0, len(candidates) - 1)
-        drop = tile.spawn_item(candidates[select], amt=1, hidden=False, hfactor=0)
+        drop = tile.spawn_item(
+            candidates[select], amt=1, hidden=False, hfactor=0
+        )
         try:
             ench_pool = int(enchantment)
         except:

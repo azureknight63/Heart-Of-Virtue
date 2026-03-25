@@ -59,7 +59,8 @@ async def register():
             msg = str(ve)
             # Don't expose internal config/infrastructure details to users
             if any(
-                kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
+                kw in msg
+                for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
             ):
                 return (
                     jsonify(
@@ -212,7 +213,10 @@ async def login():
     except Exception as e:
         msg = str(e)
         # Don't expose internal config/infrastructure details to users
-        if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
+        if any(
+            kw in msg
+            for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
+        ):
             return (
                 jsonify(
                     {
@@ -283,7 +287,12 @@ def logout():
         success = session_manager.expire_session(session_id)
 
         if success:
-            return jsonify({"success": True, "message": "Logged out successfully"}), 200
+            return (
+                jsonify(
+                    {"success": True, "message": "Logged out successfully"}
+                ),
+                200,
+            )
         else:
             return (
                 jsonify(
@@ -324,7 +333,10 @@ def validate_session():
     try:
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return jsonify({"valid": False, "username": None, "player_id": None}), 401
+            return (
+                jsonify({"valid": False, "username": None, "player_id": None}),
+                401,
+            )
 
         session_id = auth_header[7:]
 

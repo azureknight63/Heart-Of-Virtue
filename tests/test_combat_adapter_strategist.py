@@ -15,13 +15,13 @@ class MockMove:
         self.target = None
         self.description = "Test move"
         self.category = "Offensive"
-    
+
     def viable(self):
         return self._viable
-    
+
     def cast(self):
         pass
-        
+
     def advance(self, user):
         user.current_move = None
 
@@ -63,7 +63,7 @@ def test_refresh_suggestions_count(adapter, player):
          patch.object(adapter.strategist, 'get_suggestions', return_value=[]) as mock_get:
         # Make the thread run synchronously
         mock_thread.side_effect = lambda target, **kwargs: MagicMock(start=lambda: target())
-        
+
         adapter.refresh_suggestions()
         mock_get.assert_called_with(ANY, max_suggestions=1)
 
@@ -72,7 +72,7 @@ def test_refresh_suggestions_count(adapter, player):
     with patch('threading.Thread') as mock_thread, \
          patch.object(adapter.strategist, 'get_suggestions', return_value=[]) as mock_get:
         mock_thread.side_effect = lambda target, **kwargs: MagicMock(start=lambda: target())
-        
+
         adapter.refresh_suggestions()
         mock_get.assert_called_with(ANY, max_suggestions=2)
 
@@ -81,18 +81,18 @@ def test_refresh_suggestions_count(adapter, player):
     with patch('threading.Thread') as mock_thread, \
          patch.object(adapter.strategist, 'get_suggestions', return_value=[]) as mock_get:
         mock_thread.side_effect = lambda target, **kwargs: MagicMock(start=lambda: target())
-        
+
         adapter.refresh_suggestions()
         mock_get.assert_called_with(ANY, max_suggestions=3)
 
 def test_handle_combined_selection(adapter, player):
     adapter.input_type = "move_selection"
     adapter.awaiting_input = True
-    
+
     # Mocking _execute_move instead of doing full combat processing
     with patch.object(adapter, '_execute_move', return_value={"success": True}) as mock_exec:
         result = adapter._handle_combined_selection("Slash", "enemy_123")
-        
+
         selected_move = player.current_move
         assert selected_move.name == "Slash"
         # Check if target ID was parsed (ApiCombatAdapter usually does this manually, let's just check if it tried to find target)
@@ -115,11 +115,11 @@ def test_last_move_summary_capture(adapter, player):
         {"message": "Jean used Slash!", "type": "player_action"},
         {"message": "Jean hit Rat for 5 damage.", "type": "combat"}
     ]
-    
+
     # Simulate end of move execution
     with patch.object(adapter, 'get_combat_state', return_value={}):
         adapter.player.combat_list = [] # Exit loop
         adapter._execute_move(player.known_moves[0])
-    
+
     assert "Jean used Slash!" in player.last_move_summary
     assert "Jean hit Rat for 5 damage." in player.last_move_summary

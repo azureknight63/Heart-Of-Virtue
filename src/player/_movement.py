@@ -94,7 +94,11 @@ class PlayerMovementMixin:
         x = target_coordinates[0]
         y = target_coordinates[1]
         for area in self.universe.maps:
-            if area.get("name") == target_map and x is not None and y is not None:
+            if (
+                area.get("name") == target_map
+                and x is not None
+                and y is not None
+            ):
                 tile = tile_exists(area, x, y)
                 if tile:
                     self.map = area
@@ -104,7 +108,9 @@ class PlayerMovementMixin:
                     print(tile.intro_text())
                     return
                 else:
-                    print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
+                    print(
+                        f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###"
+                    )
                     return
         print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
 

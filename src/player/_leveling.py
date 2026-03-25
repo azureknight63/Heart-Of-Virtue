@@ -136,7 +136,9 @@ class PlayerLevelingMixin:
         self.exp -= self.exp_to_level
         self.exp_to_level = self.level * (150 - self.intelligence)
         cprint(
-            "{} exp needed for the next level.".format(self.exp_to_level - self.exp),
+            "{} exp needed for the next level.".format(
+                self.exp_to_level - self.exp
+            ),
             "yellow",
         )
 
@@ -154,7 +156,9 @@ class PlayerLevelingMixin:
             if bonus != 0:
                 current_value = getattr(self, attr)
                 setattr(self, attr, current_value + bonus)
-                print(f"{attr_name} went up by {colored(str(bonus), 'yellow')}.")
+                print(
+                    f"{attr_name} went up by {colored(str(bonus), 'yellow')}."
+                )
                 time.sleep(2)
 
         points = random.randint(6, 9)
@@ -170,7 +174,8 @@ class PlayerLevelingMixin:
             selection = input("Selection: ")
             if not selection.isdigit() or (1 > int(selection) > 6):
                 cprint(
-                    "Invalid selection. You must enter a choice between 1 and 6.", "red"
+                    "Invalid selection. You must enter a choice between 1 and 6.",
+                    "red",
                 )
                 continue
 

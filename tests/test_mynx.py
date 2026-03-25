@@ -32,7 +32,7 @@ def test_mynx_non_combat():
 
 def test_mynx_interact_plain_and_structured(capfd):
     """Test mynx plain and structured interactions with flexible LLM response matching.
-    
+
     This test is resilient to LLM volatility by:
     - Checking for semantic equivalence rather than exact action matches
     - Accepting any action that could reasonably relate to feeding
@@ -53,13 +53,13 @@ def test_mynx_interact_plain_and_structured(capfd):
     obj = m.talk(None, prompt="feed", structured=True)
     assert isinstance(obj, dict), "Expected structured response to be a dict"
     assert "action" in obj, f"Expected 'action' key in response: {obj}"
-    
+
     action = obj.get("action", "").lower()
-    
+
     # Accept a wide range of semantically equivalent food-related actions
     # LLMs may interpret 'feed' differently: taking food, investigating food, consuming, etc.
     valid_feed_actions = {
-        "take_food", "eat_food", "take", "eat", "consume", "accept", "grab", 
+        "take_food", "eat_food", "take", "eat", "consume", "accept", "grab",
         "snatch", "investigate_object", "inspect", "approach", "pounce", "investigate",
         "accept_food", "munch", "nibble", "sample", "receive", "grasp"
     }
@@ -67,11 +67,11 @@ def test_mynx_interact_plain_and_structured(capfd):
         f"Expected action to be food/consumption related, got '{action}'. "
         f"Valid options: {valid_feed_actions}"
     )
-    
+
     description = obj.get("description", "").lower()
     # Check for food-taking behavior (flexible to LLM variations)
     assert any(phrase in description for phrase in [
-        "takes", "food", "hand", "eats", "consumes", "accepts", "snatches", "grabs", 
+        "takes", "food", "hand", "eats", "consumes", "accepts", "snatches", "grabs",
         "tucks", "lifts", "paw", "grasp", "nudges", "morsel", "pounce", "investigate",
         "sniff", "smell", "munch", "nibble", "approach", "eye", "watch"
     ]), f"Expected food-related behavior in description: {obj.get('description', '')}"
@@ -79,7 +79,7 @@ def test_mynx_interact_plain_and_structured(capfd):
 
 def test_mynx_pet_and_play_methods(capfd):
     """Test mynx pet and play methods with flexible LLM response matching.
-    
+
     This test is resilient to LLM volatility by:
     - Accepting a broader set of semantically equivalent actions
     - Checking for behavioral keywords rather than exact action names
@@ -98,9 +98,9 @@ def test_mynx_pet_and_play_methods(capfd):
     obj = m.pet(None, structured=True)
     assert isinstance(obj, dict), "Expected structured pet response to be a dict"
     assert "action" in obj, f"Expected 'action' key in pet response: {obj}"
-    
+
     action = obj.get("action", "").lower()
-    
+
     # Allow flexible action types for petting - LLMs might interpret as grooming, play, interaction, etc.
     valid_pet_actions = {
         "groom", "playful_tussle", "investigate", "play", "nuzzle", "stretch",
@@ -127,9 +127,9 @@ def test_mynx_pet_and_play_methods(capfd):
     obj2 = m.play(None, item="feather", structured=True)
     assert isinstance(obj2, dict), "Expected structured play response to be a dict"
     assert "action" in obj2, f"Expected 'action' key in play response: {obj2}"
-    
+
     action2 = obj2.get("action", "").lower()
-    
+
     # Accept a wide range of play-related actions
     valid_play_actions = {
         "playful_tussle", "investigate", "play", "pounce", "chase", "bat",

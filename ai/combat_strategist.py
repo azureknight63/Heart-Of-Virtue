@@ -28,7 +28,7 @@ class CombatStrategist:
     def get_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int = 1) -> List[Dict[str, Any]]:
         """Fetch movement suggestions from the LLM or fallback to heuristics."""
         logger.info(f"DEBUG: CombatStrategist.get_suggestions called (max: {max_suggestions})")
-        
+
         suggestions = []
         if self.client.available():
             try:
@@ -37,10 +37,10 @@ class CombatStrategist:
                     f"{user_prompt}\nReturn the result as a JSON object with a key 'suggestions' "
                     f"containing a list of exactly {max_suggestions} move objects."
                 )
-                
+
                 logger.info(f"DEBUG: Requesting {max_suggestions} suggestions for {combat_context.get('player', {}).get('name')}")
                 raw_response = self.client.generate_structured(self.system_prompt, wrapped_prompt)
-                
+
                 if isinstance(raw_response, dict):
                     raw_suggestions = raw_response.get("suggestions", [])
                 elif isinstance(raw_response, list):
@@ -68,7 +68,7 @@ class CombatStrategist:
         # Post-process: sort, limit, and ensure targets
         suggestions.sort(key=lambda x: x["score"], reverse=True)
         results = suggestions[:max_suggestions]
-        
+
         self._ensure_target_ids(results, combat_context)
         logger.info(f"DEBUG: CombatStrategist returning {len(results)} suggestions.")
         return results
@@ -77,12 +77,12 @@ class CombatStrategist:
         """Ensure targeted moves have a target_id, auto-filling if missing."""
         enemies = context.get("enemies", [])
         primary_target_id = enemies[0].get("id") if enemies else None
-        
+
         targeted_move_names = {
-            m.get("name") for m in context.get("available_moves", []) 
+            m.get("name") for m in context.get("available_moves", [])
             if m.get("targeted")
         }
-        
+
         for s in suggestions:
             if s.get("move_name") in targeted_move_names and not s.get("target_id"):
                 logger.info(f"DEBUG: Strategist auto-filling missing target_id for '{s.get('move_name')}'")
@@ -105,15 +105,15 @@ class CombatStrategist:
             "Defensive": 65,
             "Miscellaneous": 40
         }
-        
+
         scored_moves = []
         for m in available:
             name = m.get("name", "Unknown")
             if name in ["Cancel"]: continue
-            
+
             category = m.get("category", "Miscellaneous")
             base_score = category_scores.get(category, 40)
-            
+
             # Specific move adjustments
             if name == "Advance": base_score = 80
             elif name in ["Wait", "Check"]: base_score = 20
@@ -126,7 +126,7 @@ class CombatStrategist:
             })
 
         scored_moves.sort(key=lambda x: x["score"], reverse=True)
-        
+
         # FINAL SAFETY: If we somehow ended up with no scored moves but had available ones,
         # just take the first available one to avoid returning an empty list.
         if not scored_moves and available:
@@ -136,7 +136,7 @@ class CombatStrategist:
                 "score": 10,
                 "reasoning": "Standard tactical fallback; maintaining position."
             })
-            
+
         results = scored_moves[:max(1, min(3, max_suggestions))]
         self._ensure_target_ids(results, combat_context)
         return results
@@ -145,14 +145,14 @@ class CombatStrategist:
         """Construct the context string for the LLM."""
         player = ctx.get("player", {})
         pos = player.get("position") or {}
-        
+
         # Player Stats & Effects
         p_attrs = ", ".join([f"{k}: {v}" for k, v in player.get("attributes", {}).items()])
         passives = self._extract_names(player.get('passives', []))
         statuses = self._extract_names(player.get('status_effects', []))
-        
+
         p_consumables = ", ".join([
-            f"{c.get('name', 'Item')} (Qty: {c.get('qty', 1)})" 
+            f"{c.get('name', 'Item')} (Qty: {c.get('qty', 1)})"
             for c in player.get("consumables", [])
         ])
 
@@ -189,7 +189,7 @@ class CombatStrategist:
                 move_descriptions.append(f"{name} [Targets: {target_info}]")
             else:
                 move_descriptions.append(name)
-        
+
         history_str = "\n".join(ctx.get("history", [])[-5:])
         return (
             f"{player_block}\n\n{enemies_block}\n\n"

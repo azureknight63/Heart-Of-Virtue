@@ -102,7 +102,9 @@ class InventorySerializer:
             "total_weight": round(total_weight, 2),
             "weight_limit": getattr(player, "carrying_capacity", 100.0),
             "weight_percentage": round(
-                (total_weight / getattr(player, "carrying_capacity", 100.0)) * 100, 1
+                (total_weight / getattr(player, "carrying_capacity", 100.0))
+                * 100,
+                1,
             ),
             "item_count": len(items),
             "slots_used": len([i for i in items if i]),
@@ -209,7 +211,9 @@ class EquipmentSerializer:
 
         if equipment_dict:
             for slot_name, item in equipment_dict.items():
-                equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)
+                equipped[slot_name] = EquipmentSlotSerializer.serialize(
+                    slot_name, item
+                )
 
                 # Accumulate bonuses
                 if item and hasattr(item, "stat_bonuses"):
@@ -223,7 +227,9 @@ class EquipmentSerializer:
             player, "inventory", []
         )
         for item in inventory_list:
-            if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
+            if hasattr(item, "equip") and not getattr(
+                item, "equipped_state", False
+            ):
                 unequipped_equippable += 1
 
         # Calculate equipment value
@@ -296,7 +302,9 @@ class ItemComparisonSerializer:
     """Compare two items (e.g., for equip decision)."""
 
     @staticmethod
-    def serialize(current_item: Optional[object], candidate_item: object) -> Dict:
+    def serialize(
+        current_item: Optional[object], candidate_item: object
+    ) -> Dict:
         """
         Compare two items side-by-side.
 
@@ -316,8 +324,12 @@ class ItemComparisonSerializer:
                 "reason": "No item currently equipped",
             }
 
-        current_data = ItemDetailSerializer.serialize(current_item, equipped=True)
-        candidate_data = ItemDetailSerializer.serialize(candidate_item, equipped=False)
+        current_data = ItemDetailSerializer.serialize(
+            current_item, equipped=True
+        )
+        candidate_data = ItemDetailSerializer.serialize(
+            candidate_item, equipped=False
+        )
 
         # Calculate differences
         damage_diff = getattr(candidate_item, "damage", 0) - getattr(

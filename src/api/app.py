@@ -6,7 +6,12 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from src.api.config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
+from src.api.config import (
+    Config,
+    DevelopmentConfig,
+    TestingConfig,
+    ProductionConfig,
+)
 from src.api.services import SessionManager, GameService
 import src.universe as universe_module
 
@@ -87,7 +92,10 @@ def create_app(config_class=None):
     # For testing and development, load real game universe
     # Check by class name to avoid import namespace issues
     config_class_name = config_class.__name__
-    is_dev_or_test = config_class_name in ("DevelopmentConfig", "TestingConfig")
+    is_dev_or_test = config_class_name in (
+        "DevelopmentConfig",
+        "TestingConfig",
+    )
 
     universe = None
     game_service = None
@@ -220,8 +228,8 @@ def create_app(config_class=None):
 
         if request.method == "OPTIONS":
             response = make_response()
-            response.headers["Access-Control-Allow-Origin"] = request.headers.get(
-                "Origin", "http://localhost:3000"
+            response.headers["Access-Control-Allow-Origin"] = (
+                request.headers.get("Origin", "http://localhost:3000")
             )
             response.headers["Access-Control-Allow-Methods"] = (
                 "GET, POST, PUT, DELETE, OPTIONS, PATCH"
@@ -252,9 +260,14 @@ def create_app(config_class=None):
         def test_create_session():
             from flask import jsonify, request as _req
 
-            username = (_req.get_json() or {}).get("username", "inquisitor_test")
+            username = (_req.get_json() or {}).get(
+                "username", "inquisitor_test"
+            )
             session_id, _ = app.session_manager.create_session(username)
-            return jsonify({"session_id": session_id, "username": username}), 201
+            return (
+                jsonify({"session_id": session_id, "username": username}),
+                201,
+            )
 
     # API info endpoint
     @app.route("/api/info", methods=["GET"])
@@ -295,7 +308,9 @@ def create_app(config_class=None):
             routes.append(
                 {
                     "endpoint": rule.endpoint,
-                    "methods": sorted(list(rule.methods - {"HEAD", "OPTIONS"})),
+                    "methods": sorted(
+                        list(rule.methods - {"HEAD", "OPTIONS"})
+                    ),
                     "rule": str(rule),
                 }
             )
