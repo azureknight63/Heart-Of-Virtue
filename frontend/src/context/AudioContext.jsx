@@ -1,6 +1,19 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 
-const AudioContext = createContext();
+const AudioContext = createContext({
+    playBGM: () => {},
+    stopBGM: () => {},
+    playSFX: () => {},
+    musicVolume: 0.5,
+    setMusicVolume: () => {},
+    sfxVolume: 0.5,
+    setSfxVolume: () => {},
+    isMusicMuted: false,
+    setIsMusicMuted: () => {},
+    isSfxMuted: false,
+    setIsSfxMuted: () => {},
+    currentBGM: null,
+});
 
 export const useAudio = () => useContext(AudioContext);
 
