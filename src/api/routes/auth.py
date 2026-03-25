@@ -1,7 +1,6 @@
 """Authentication routes."""
 
 from flask import Blueprint, request, jsonify
-from src.api.services import SessionManager
 from src.api.services.auth_service import auth_service
 
 auth_bp = Blueprint("auth", __name__)

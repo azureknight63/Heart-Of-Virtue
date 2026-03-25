@@ -2,8 +2,12 @@ import uuid
 import contextlib
 import io
 import re
-from typing import Dict, Any, Optional, List
+from typing import TYPE_CHECKING, Dict, Any, Optional, List
+from unittest.mock import patch
 from src.interface import get_gold
+
+if TYPE_CHECKING:
+    from src import player as player_module
 from src.api.serializers.item_serializer import ItemSerializer
 from src.api.serializers.npc_serializer import NPCSerializer
 from src.api.serializers.object_serializer import ObjectSerializer

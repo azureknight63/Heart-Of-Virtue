@@ -6,23 +6,14 @@ It captures output, manages state between API calls, and processes commands
 without blocking for user input.
 """
 
-import io
-import sys
 import contextlib
 import uuid
 import threading
 import logging
-from datetime import datetime
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
-from unittest.mock import patch
 import re
 import random
-
-if TYPE_CHECKING:
-    from player import Player
-
-# Compiled once at module level for performance
-_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
+from datetime import datetime
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 import positions  # type: ignore
 from src.api.serializers.combat import (
@@ -30,6 +21,12 @@ from src.api.serializers.combat import (
     CombatantSerializer,
 )
 from ai.combat_strategist import CombatStrategist
+
+if TYPE_CHECKING:
+    from player import Player
+
+# Compiled once at module level for performance
+_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
 logger = logging.getLogger(__name__)
 
@@ -405,9 +402,6 @@ class ApiCombatAdapter:
             if self.session_id:
                 try:
                     from flask import current_app
-                    from src.api.serializers.combat import (
-                        CombatStateSerializer,
-                    )
 
                     serialized_state = result
                     if hasattr(current_app, "socketio"):
@@ -416,7 +410,7 @@ class ApiCombatAdapter:
                             {"battle_state": serialized_state},
                             room=f"combat_{self.session_id}",
                         )
-                except Exception as e:
+                except Exception as _:
                     import traceback
 
                     traceback.print_exc()
@@ -1405,8 +1399,6 @@ class ApiCombatAdapter:
                         f"DEBUG: Preparing context for strategist with {len(self.player.combat_list)} enemies and {len(self.available_options)} available moves."
                     )
                     # Gather context
-                    from src.api.serializers.combat import CombatantSerializer
-
                     ctx = {
                         "player": CombatantSerializer.serialize_combatant(
                             self.player
@@ -1482,7 +1474,7 @@ class ApiCombatAdapter:
                                 )
                         else:
                             logger.warning(
-                                f"DEBUG: Cannot emit suggestions - session_id is missing"
+                                "DEBUG: Cannot emit suggestions - session_id is missing"
                             )
 
                 except Exception as e:

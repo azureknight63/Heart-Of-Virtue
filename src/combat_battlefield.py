@@ -409,8 +409,6 @@ class CombatBattlefieldWindow:
 
         # If we're clamped at a boundary, expand in the opposite direction to maintain view size
         # This ensures we always have margin space visible even at edges
-        viewport_width = self.viewport_x_max - self.viewport_x_min
-        viewport_height = self.viewport_y_max - self.viewport_y_min
 
         # If left edge is at boundary, expand right
         if (
@@ -551,7 +549,6 @@ class CombatBattlefieldWindow:
             is_alive: bool = data.get("is_alive", True)
             is_player: bool = data.get("is_player", False)
             is_ally: bool = data.get("is_ally", False)
-            health_percent: float = data.get("health_percent", 1.0)
             facing_value: int = data.get("facing_value", 0)
 
             # Determine character to display

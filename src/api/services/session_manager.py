@@ -5,7 +5,7 @@ import uuid
 import configparser
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Any
 from src.config_manager import ConfigManager
 
 
@@ -253,8 +253,6 @@ class SessionManager:
 
     def _load_starting_position_from_config(self):
         """Load starting position from config file specified in .env."""
-        import sys
-
         config_file = os.environ.get("CONFIG_FILE")
 
         print(
@@ -319,7 +317,7 @@ class SessionManager:
                             )
                     else:
                         print(
-                            f"[SessionManager] No startposition option in [game] section",
+                            "[SessionManager] No startposition option in [game] section",
                             flush=True,
                         )
 
@@ -331,7 +329,7 @@ class SessionManager:
                         )
                     else:
                         print(
-                            f"[SessionManager] No startmap option in [game] section, using default",
+                            "[SessionManager] No startmap option in [game] section, using default",
                             flush=True,
                         )
             except Exception as e:
@@ -344,7 +342,7 @@ class SessionManager:
                 traceback.print_exc()
         else:
             print(
-                f"[SessionManager] CONFIG_FILE environment variable not set",
+                "[SessionManager] CONFIG_FILE environment variable not set",
                 flush=True,
             )
 
@@ -382,7 +380,7 @@ class SessionManager:
                         )
                     else:
                         print(
-                            f"[SessionManager] No starting_items option in [game] section",
+                            "[SessionManager] No starting_items option in [game] section",
                             flush=True,
                         )
             except Exception as e:

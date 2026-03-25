@@ -6,7 +6,6 @@ Handles receiving and storing browser console logs
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 import os
-import json
 from pathlib import Path
 from src.api.utils.log_cleanup import LogCleanupManager
 

@@ -17,7 +17,6 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from items import Item
     from player import Player
     from tiles import MapTile
-    from npcs import NPC
 
 from neotermcolor import colored, cprint
 from os import listdir

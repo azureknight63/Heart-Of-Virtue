@@ -106,7 +106,7 @@ def start_combat():
 
         return jsonify({"success": True, **result}), 201
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in start_combat")
         return (
             jsonify({"success": False, "error": "An internal error occurred"}),
@@ -184,7 +184,7 @@ def execute_move():
         session_manager.save_session(session.session_id)
         return jsonify({"success": True, **result}), 200
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in execute_move")
         return (
             jsonify({"success": False, "error": "An internal error occurred"}),
@@ -225,7 +225,7 @@ def get_combat_status():
 
         return jsonify({"success": True, **status}), 200
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in get_combat_status")
         return (
             jsonify({"success": False, "error": "An internal error occurred"}),
@@ -256,7 +256,7 @@ def get_combat_log():
         log = getattr(player, "combat_log", [])
         return jsonify({"success": True, "log": log}), 200
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in get_combat_log")
         return (
             jsonify({"success": False, "error": "An internal error occurred"}),

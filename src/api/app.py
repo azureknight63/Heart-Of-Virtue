@@ -6,12 +6,7 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from src.api.config import (
-    Config,
-    DevelopmentConfig,
-    TestingConfig,
-    ProductionConfig,
-)
+from src.api.config import DevelopmentConfig
 from src.api.services import SessionManager, GameService
 import src.universe as universe_module
 
