@@ -1,6 +1,6 @@
 """OpenAPI schema generation for Heart of Virtue API."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 def generate_openapi_schema() -> Dict[str, Any]:

@@ -12,7 +12,7 @@ Classes:
     ItemComparisonSerializer: Compare two items for decision-making
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 
 class InventoryItemSerializer:

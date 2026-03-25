@@ -1,7 +1,7 @@
 """Reputation management routes for Phase 3 Stage 2."""
 
 from flask import Blueprint, request, jsonify, current_app
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 reputation_bp = Blueprint("reputation", __name__, url_prefix="/api/reputation")
 

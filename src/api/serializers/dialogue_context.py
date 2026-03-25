@@ -17,7 +17,7 @@ Docstrings: Comprehensive docstring for each class and method
 """
 
 from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 
 
