@@ -78,7 +78,7 @@ def get_current_room():
             )
 
         room = game_service.get_current_room(player, session.data)
-        
+
         # Debug: Check if room has error
         if "error" in room:
             return jsonify({"success": False, "error": room["error"]}), 404
@@ -87,6 +87,7 @@ def get_current_room():
 
     except Exception as e:
         import traceback
+
         print(f"[ERROR] World route exception: {e}", flush=True)
         traceback.print_exc()
         return (
@@ -218,12 +219,16 @@ def submit_event_input():
 
         # Sanitize user input
         from src.api.utils.input_sanitizer import sanitize_event_input
-        sanitized_input, validation_error = sanitize_event_input(user_input, session.data, event_id)
-        
+
+        sanitized_input, validation_error = sanitize_event_input(
+            user_input, session.data, event_id
+        )
+
         if validation_error:
             return jsonify({"success": False, "error": validation_error}), 400
 
         from flask import current_app
+
         game_service = current_app.game_service
 
         if not game_service:
@@ -238,7 +243,9 @@ def submit_event_input():
             )
 
         # Process the event with user input
-        result = game_service.process_event_input(player, event_id, sanitized_input, session.data)
+        result = game_service.process_event_input(
+            player, event_id, sanitized_input, session.data
+        )
 
         # Save session after processing event
         session_manager.save_session(session.session_id)
@@ -255,6 +262,7 @@ def submit_event_input():
 
     except Exception as e:
         import traceback
+
         print(f"[ERROR] Event input route exception: {e}", flush=True)
         traceback.print_exc()
         return (
@@ -386,10 +394,14 @@ def get_explored_tiles():
             return error[0], error[1]
 
         from flask import current_app
+
         game_service = current_app.game_service
 
         if not game_service:
-            return jsonify({"success": False, "error": "Game service not initialized"}), 500
+            return (
+                jsonify({"success": False, "error": "Game service not initialized"}),
+                500,
+            )
 
         explored_tiles = game_service.get_explored_tiles(player)
 
@@ -402,10 +414,10 @@ def get_explored_tiles():
 @world_bp.route("/world/tiles/batch", methods=["POST"])
 def get_tiles_batch():
     """Get multiple tiles at once (batch request).
-    
+
     Headers:
         Authorization: Bearer <session_id>
-    
+
     Request body:
         {
             "coordinates": [
@@ -414,7 +426,7 @@ def get_tiles_batch():
                 ...
             ]
         }
-    
+
     Returns:
         {
             "success": bool,
@@ -491,12 +503,12 @@ def get_tiles_batch():
         for coord in coordinates:
             if not isinstance(coord, dict) or "x" not in coord or "y" not in coord:
                 continue
-            
+
             try:
                 x = int(coord["x"])
                 y = int(coord["y"])
                 tile = game_service.get_tile(player, x, y)
-                
+
                 # Only include valid tiles (skip errors)
                 if "error" not in tile:
                     tiles.append(tile)
@@ -505,18 +517,18 @@ def get_tiles_batch():
                 continue
 
         return jsonify({"success": True, "tiles": tiles}), 200
-    
+
     except Exception as e:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Internal server error",
-                        "message": str(e),
-                    }
-                ),
-                500,
-            )
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Internal server error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
 
 
 @world_bp.route("/world/commands", methods=["GET"])
@@ -560,18 +572,18 @@ def get_available_commands():
         commands_data = game_service.get_available_commands(player)
 
         return jsonify({"success": True, **commands_data}), 200
-    
+
     except Exception as e:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Internal server error",
-                        "message": str(e),
-                    }
-                ),
-                500,
-            )
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Internal server error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
 
 
 @world_bp.route("/world/interact", methods=["POST"])
@@ -618,6 +630,7 @@ def interact_with_target():
         quantity = data.get("quantity")
 
         from flask import current_app
+
         game_service = current_app.game_service
 
         if not game_service:
@@ -674,6 +687,7 @@ def trigger_room_events():
             return error[0], error[1]
 
         from flask import current_app
+
         game_service = current_app.game_service
 
         if not game_service:
@@ -700,8 +714,8 @@ def trigger_room_events():
             session.data,
             tile.x,
             tile.y,
-            'block_exit',
-            tile.block_exit.copy() if hasattr(tile, 'block_exit') else []
+            "block_exit",
+            tile.block_exit.copy() if hasattr(tile, "block_exit") else [],
         )
         session_manager.save_session(session.session_id)
 
@@ -771,6 +785,7 @@ def search_room():
             return error[0], error[1]
 
         from flask import current_app
+
         game_service = current_app.game_service
 
         if not game_service:
@@ -801,4 +816,3 @@ def search_room():
             ),
             500,
         )
-

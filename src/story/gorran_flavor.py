@@ -7,11 +7,11 @@ Two entry points:
 
 Both are no-ops when Gorran is absent. Neither crashes on unexpected state.
 """
+
 import logging
 import random
 
 from neotermcolor import colored
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Flavor pools
@@ -77,6 +77,7 @@ _EXPLORE = [
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _find_gorran(player):
     """Return the Gorran ally if he is in the party, otherwise None."""
     try:
@@ -92,12 +93,12 @@ def _find_gorran(player):
 # Public entry points
 # ──────────────────────────────────────────────────────────────────────────────
 
-_COMBAT_CHANCE = 0.22          # ~1-in-5 beats
-_COMBAT_COOLDOWN_BEATS = 4     # minimum beats between lines
+_COMBAT_CHANCE = 0.22  # ~1-in-5 beats
+_COMBAT_COOLDOWN_BEATS = 4  # minimum beats between lines
 _COMBAT_HURT_HP_THRESHOLD = 0.40
 
-_EXPLORE_CHANCE = 0.18         # ~1-in-6 ticks
-_EXPLORE_MIN_TICKS = 5         # minimum ticks between lines
+_EXPLORE_CHANCE = 0.18  # ~1-in-6 ticks
+_EXPLORE_MIN_TICKS = 5  # minimum ticks between lines
 
 
 def maybe_combat_flavor(player, beat, cooldown):
@@ -133,8 +134,12 @@ def maybe_combat_flavor(player, beat, cooldown):
 
         if hp_ratio < _COMBAT_HURT_HP_THRESHOLD and _COMBAT_JEAN_HURT:
             pool = _COMBAT_JEAN_HURT
-        elif (gorran_hp is not None and gorran_prev_hp is not None
-              and gorran_hp < gorran_prev_hp and _COMBAT_GORRAN_HURT):
+        elif (
+            gorran_hp is not None
+            and gorran_prev_hp is not None
+            and gorran_hp < gorran_prev_hp
+            and _COMBAT_GORRAN_HURT
+        ):
             pool = _COMBAT_GORRAN_HURT
         else:
             pool = _COMBAT_GENERAL
@@ -163,7 +168,7 @@ def maybe_explore_flavor(player):
     Args:
         player: The Player instance.
     """
-    if getattr(player, 'skip_dialog', False):
+    if getattr(player, "skip_dialog", False):
         return
     gorran = _find_gorran(player)
     if gorran is None:

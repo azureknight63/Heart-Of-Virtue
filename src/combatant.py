@@ -31,29 +31,29 @@ _DEFAULT_RESISTANCE = {
 }
 
 _DEFAULT_STATUS_RESISTANCE = {
-    "generic": 1.0,     # Default status type for all states
-    "stun": 1.0,        # Unable to move; typically short duration
-    "poison": 1.0,      # Drains HP every combat turn/game tick; persists
-    "enflamed": 1.0,    # Fire damage over time (matches State.statustype="enflamed")
-    "sloth": 1.0,       # Drains Fatigue every combat turn
-    "apathy": 1.0,      # Drains HEAT every combat turn
-    "blind": 1.0,       # Misses physical attacks more frequently; persists
-    "incoherence": 1.0, # Miracles fail more frequently; persists
-    "mute": 1.0,        # Cannot use Miracles; persists
-    "enraged": 1.0,     # Double physical damage given and taken
-    "enchanted": 1.0,   # Double magical damage given and taken
-    "ethereal": 1.0,    # Immune to physical; 3× magical damage; persists
-    "berserk": 1.0,     # Auto-attack, 1.5× physical damage
-    "slow": 1.0,        # All move times doubled
-    "sleep": 1.0,       # Unable to move; removed upon physical damage
-    "confusion": 1.0,   # Uses random moves on random targets; removed on physical damage
-    "cursed": 1.0,      # Sets luck to 1; chance of random move/target; persists
-    "stop": 1.0,        # Unable to move; not removed with damage
-    "stone": 1.0,       # Unable to move; immune to damage; permanent death if it persists
-    "frozen": 1.0,      # Unable to move; removed with Fire magic; permanent death if it persists
-    "doom": 1.0,        # Death after n turns/ticks; persists; lifted only by purification
+    "generic": 1.0,  # Default status type for all states
+    "stun": 1.0,  # Unable to move; typically short duration
+    "poison": 1.0,  # Drains HP every combat turn/game tick; persists
+    "enflamed": 1.0,  # Fire damage over time (matches State.statustype="enflamed")
+    "sloth": 1.0,  # Drains Fatigue every combat turn
+    "apathy": 1.0,  # Drains HEAT every combat turn
+    "blind": 1.0,  # Misses physical attacks more frequently; persists
+    "incoherence": 1.0,  # Miracles fail more frequently; persists
+    "mute": 1.0,  # Cannot use Miracles; persists
+    "enraged": 1.0,  # Double physical damage given and taken
+    "enchanted": 1.0,  # Double magical damage given and taken
+    "ethereal": 1.0,  # Immune to physical; 3× magical damage; persists
+    "berserk": 1.0,  # Auto-attack, 1.5× physical damage
+    "slow": 1.0,  # All move times doubled
+    "sleep": 1.0,  # Unable to move; removed upon physical damage
+    "confusion": 1.0,  # Uses random moves on random targets; removed on physical damage
+    "cursed": 1.0,  # Sets luck to 1; chance of random move/target; persists
+    "stop": 1.0,  # Unable to move; not removed with damage
+    "stone": 1.0,  # Unable to move; immune to damage; permanent death if it persists
+    "frozen": 1.0,  # Unable to move; removed with Fire magic; permanent death if it persists
+    "doom": 1.0,  # Death after n turns/ticks; persists; lifted only by purification
     "death": 1.0,
-    "disoriented": 1.0, # Reduced finesse and protection
+    "disoriented": 1.0,  # Reduced finesse and protection
 }
 
 

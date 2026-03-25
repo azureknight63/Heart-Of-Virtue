@@ -143,7 +143,12 @@ def advance_chain_stage(chain_id: str):
     current_stage = data.get("current_stage")
     if not isinstance(current_stage, int) or current_stage < 0:
         return (
-            jsonify({"success": False, "error": "'current_stage' must be non-negative integer"}),
+            jsonify(
+                {
+                    "success": False,
+                    "error": "'current_stage' must be non-negative integer",
+                }
+            ),
             400,
         )
 
@@ -157,7 +162,9 @@ def advance_chain_stage(chain_id: str):
     next_stage = data.get("next_stage")
     if not isinstance(next_stage, int) or next_stage < 0:
         return (
-            jsonify({"success": False, "error": "'next_stage' must be non-negative integer"}),
+            jsonify(
+                {"success": False, "error": "'next_stage' must be non-negative integer"}
+            ),
             400,
         )
 

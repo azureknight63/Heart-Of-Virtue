@@ -7,8 +7,8 @@ from neotermcolor import colored, cprint
 import functions as functions
 from player import Player
 from tiles import MapTile
-from events import Event # noqa; This is used in type hints
-from items import Item # noqa; This is used in type hints
+from events import Event  # noqa; This is used in type hints
+from items import Item  # noqa; This is used in type hints
 
 #####
 # These are objects that exist on tiles as opposed to items carried by the player
@@ -16,10 +16,18 @@ from items import Item # noqa; This is used in type hints
 
 
 class Object:
-    def __init__(self, name, description, tile=None, player=None, hidden=False, hide_factor=0,
-                 idle_message=' is here.',
-                 discovery_message='something interesting.',
-                 aliases=None):
+    def __init__(
+        self,
+        name,
+        description,
+        tile=None,
+        player=None,
+        hidden=False,
+        hide_factor=0,
+        idle_message=" is here.",
+        discovery_message="something interesting.",
+        aliases=None,
+    ):
         self.name = name
         self.description = description
         self.idle_message = idle_message
@@ -28,16 +36,22 @@ class Object:
         self.discovery_message = discovery_message
         self.announce = self.idle_message
         self.aliases = aliases or []
-        self.keywords = []  # action keywords to hook up an arbitrary command like "press" for a switch
+        self.keywords = (
+            []
+        )  # action keywords to hook up an arbitrary command like "press" for a switch
         self.action_aliases = []  # Keywords that are aliases for other primary actions
-        self.events = []  # a list of events that occur when the player interacts with the object.
+        self.events = (
+            []
+        )  # a list of events that occur when the player interacts with the object.
         # Events with "repeat" will persist.
         self.tile = tile
         self.player = player
 
     def spawn_event(self, event_type, player, tile, params, repeat=False):
         event_cls = functions.seek_class(event_type, "story")
-        event = functions.instantiate_event(event_cls, player, tile, params=params, repeat=repeat)
+        event = functions.instantiate_event(
+            event_cls, player, tile, params=params, repeat=repeat
+        )
         if event != "":
             self.events.append(event)
             return event
@@ -54,35 +68,46 @@ class TileDescription(Object):
     def __init__(self, player, tile, params):
         param_list = params[2:]
         last_param = param_list[-1]
-        if last_param[-1] == '~':  # Tilde is used to replace the end period when parsing the object from the map
+        if (
+            last_param[-1] == "~"
+        ):  # Tilde is used to replace the end period when parsing the object from the map
             param_list[-1] = last_param[:-1]  # Remove the tilde
-            end_mark = '.'
+            end_mark = "."
         else:
-            end_mark = ''
-        description = '.'.join(param_list)
-        word_list = description.split(' ')
+            end_mark = ""
+        description = ".".join(param_list)
+        word_list = description.split(" ")
         last_word = word_list[-1]
-        word_list[-1] = last_word + end_mark  # adds the last bit of punctuation if it's a period
+        word_list[-1] = (
+            last_word + end_mark
+        )  # adds the last bit of punctuation if it's a period
         lines = []
         temp_line = word_list[0]
         for word in word_list[1:]:
             if len(temp_line) < (104 - len(word)):
-                temp_line += (' ' + word)
+                temp_line += " " + word
             else:
                 lines.append(temp_line)
                 temp_line = word
         lines.append(temp_line)
         for i, v in enumerate(lines):
-            lines[i] = '        ' + v + '\n'
+            lines[i] = "        " + v + "\n"
             # if i != len(lines)-1:
             #     lines[i] = '        ' + v + '\n'
             # else:
             #     lines[i] = '        ' + v + '.\n'
-        description = colored(''.join(lines), 'cyan')
+        description = colored("".join(lines), "cyan")
         idle_message = description
-        super().__init__(name="null", description=description, hidden=False, hide_factor=0,
-                         idle_message=idle_message,
-                         discovery_message="", player=player, tile=tile)
+        super().__init__(
+            name="null",
+            description=description,
+            hidden=False,
+            hide_factor=0,
+            idle_message=idle_message,
+            discovery_message="",
+            player=player,
+            tile=tile,
+        )
 
 
 class WallSwitch(Object):
@@ -90,17 +115,22 @@ class WallSwitch(Object):
     A wall switch that does something when pressed.
     """
 
-    def __init__(self, player, tile, params=None, position: bool=False):
+    def __init__(self, player, tile, params=None, position: bool = False):
         description = "A small depression in the wall. You may be able to PRESS on it."
-        super().__init__(name="Wall Depression", description=description,
-                         idle_message="There's a small depression in the wall.",
-                         discovery_message="a small depression in the wall!", player=player, tile=tile,
-                         aliases=["depression", "small depression"])
+        super().__init__(
+            name="Wall Depression",
+            description=description,
+            idle_message="There's a small depression in the wall.",
+            discovery_message="a small depression in the wall!",
+            player=player,
+            tile=tile,
+            aliases=["depression", "small depression"],
+        )
         self.position: bool = position  # False is unpressed, True is pressed
         self.event_on = None
         self.event_off = None
-        self.keywords.append('press')
-        self.action_aliases.extend(['touch', 'push'])
+        self.keywords.append("press")
+        self.action_aliases.extend(["touch", "push"])
         self.keywords.extend(self.action_aliases)
 
         if params:
@@ -108,19 +138,25 @@ class WallSwitch(Object):
                 # account for the events associated with this switch. Max of 2 events.
                 # The first event, in order of index, is tied to toggling the switch ON.
                 # The second is tied to an OFF toggle.
-                if thing[0] == '!':
-                    param = thing.replace('!', '')
-                    p_list = param.split(':')
+                if thing[0] == "!":
+                    param = thing.replace("!", "")
+                    p_list = param.split(":")
                     repeat = False
                     event_type = p_list.pop(0)
                     for setting in p_list:
-                        if setting == 'r':
+                        if setting == "r":
                             repeat = True
                             p_list.remove(setting)
                             continue
                     # use adapter for backward compatible signature handling
                     event_cls = functions.seek_class(event_type, "story")
-                    event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
+                    event = functions.instantiate_event(
+                        event_cls,
+                        player,
+                        tile,
+                        params=(p_list if p_list else None),
+                        repeat=repeat,
+                    )
                     if self.event_on is None:
                         self.event_on = event
                     else:
@@ -150,18 +186,28 @@ class WallInscription(Object):
     An inscription (typically visible) that can be looked at.
     """
 
-    def __init__(self, player: Player, tile: MapTile,
-                 description: str="Words scratched into the wall."
-                                  " Unfortunately, the inscription is too worn to be decipherable.",
-                 text: str=None):
-        super().__init__(name="Inscription", description=description, hidden=False, hide_factor=0,
-                         idle_message="There appears to be some words inscribed in the wall.",
-                         discovery_message="some words etched into the wall!", player=player, tile=tile,
-                         aliases=["words inscribed", "inscription", "words etched"])
+    def __init__(
+        self,
+        player: Player,
+        tile: MapTile,
+        description: str = "Words scratched into the wall."
+        " Unfortunately, the inscription is too worn to be decipherable.",
+        text: str = None,
+    ):
+        super().__init__(
+            name="Inscription",
+            description=description,
+            hidden=False,
+            hide_factor=0,
+            idle_message="There appears to be some words inscribed in the wall.",
+            discovery_message="some words etched into the wall!",
+            player=player,
+            tile=tile,
+            aliases=["words inscribed", "inscription", "words etched"],
+        )
         self.events = []
-        self.keywords.append('read')
+        self.keywords.append("read")
         self.text = text
-
 
     def read(self):
         if self.text:
@@ -180,7 +226,16 @@ class Container(Object):
 
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
-    _DEFAULT_KEYWORDS = ['open', 'unlock', 'loot', 'check', 'view', 'examine', 'inspect', 'peruse']
+    _DEFAULT_KEYWORDS = [
+        "open",
+        "unlock",
+        "loot",
+        "check",
+        "view",
+        "examine",
+        "inspect",
+        "peruse",
+    ]
 
     @property
     def start_open(self) -> bool:
@@ -190,13 +245,15 @@ class Container(Object):
         start_open may be written as an attribute after __init__), the container's
         state correctly reflects that attribute.
         """
-        return getattr(self, '_start_open', False)
+        return getattr(self, "_start_open", False)
 
     @start_open.setter
     def start_open(self, value: bool):
         self._start_open = bool(value)
         # Ensure state matches the boolean flag
-        self.state = self._POSSIBLE_STATES[1] if self._start_open else self._POSSIBLE_STATES[0]
+        self.state = (
+            self._POSSIBLE_STATES[1] if self._start_open else self._POSSIBLE_STATES[0]
+        )
         # If a container starts open, it cannot be locked
         if self._start_open:
             try:
@@ -206,17 +263,33 @@ class Container(Object):
                 # ignore attribute issues during early init
                 pass
 
-    def __init__(self, name: str="Container", description: str="A container. There may be something inside.",
-                 hidden: bool=False, hide_factor: int=0, start_open: bool=False,
-                 idle_message: str="A container is sitting here.",
-                 discovery_message: str=" a container!", player: Player=None, tile: MapTile=None,
-                 nickname: str="container", locked: bool=False, inventory: list['Item']=None, events: list['Event']=None,
-                 merchant: object="", items: list['Item']=None, allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
+    def __init__(
+        self,
+        name: str = "Container",
+        description: str = "A container. There may be something inside.",
+        hidden: bool = False,
+        hide_factor: int = 0,
+        start_open: bool = False,
+        idle_message: str = "A container is sitting here.",
+        discovery_message: str = " a container!",
+        player: Player = None,
+        tile: MapTile = None,
+        nickname: str = "container",
+        locked: bool = False,
+        inventory: list["Item"] = None,
+        events: list["Event"] = None,
+        merchant: object = "",
+        items: list["Item"] = None,
+        allowed_subtypes: list[type[Item]] = None,
+        stock_count: int = 10,
+    ):
         """Accept both 'items' (legacy/tests) and 'inventory'. Normalize merchant to a name when possible.
         Also accept 'allowed_subtypes' and expose as allowed_item_types (list of types).
         """
         # Normalize inventory parameter: accept items alias for tests/tools
-        inv = inventory if inventory is not None else (items if items is not None else [])
+        inv = (
+            inventory if inventory is not None else (items if items is not None else [])
+        )
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
         # Set default revealed flag
@@ -228,7 +301,7 @@ class Container(Object):
         self.start_open = start_open
         # Normalize merchant to name if an object is provided (avoid circular import of Merchant)
         try:
-            self.merchant = merchant.name if hasattr(merchant, 'name') else merchant
+            self.merchant = merchant.name if hasattr(merchant, "name") else merchant
         except Exception:
             self.merchant = merchant
         # allowed_subtypes may be provided as tuple/list of types; default to Item if falsy
@@ -237,27 +310,34 @@ class Container(Object):
         self.inventory = inv if inv else []
 
         aliases = [nickname, name.lower()]
-        super().__init__(name=name, description=description, hidden=hidden, hide_factor=hide_factor,
-                         idle_message=idle_message,
-                         discovery_message=discovery_message, player=player, tile=tile,
-                         aliases=aliases)
+        super().__init__(
+            name=name,
+            description=description,
+            hidden=hidden,
+            hide_factor=hide_factor,
+            idle_message=idle_message,
+            discovery_message=discovery_message,
+            player=player,
+            tile=tile,
+            aliases=aliases,
+        )
 
         # Extend events list efficiently if events provided
         if events:
             self.events.extend(events)
 
         # Add keywords efficiently
-        self.keywords.extend(['loot', 'take_all'])
-        
+        self.keywords.extend(["loot", "take_all"])
+
         # Add conditional keywords based on state
         if self.locked:
-            if 'unlock' not in self.keywords:
-                self.keywords.append('unlock')
+            if "unlock" not in self.keywords:
+                self.keywords.append("unlock")
         elif self.state == "closed":
-            if 'open' not in self.keywords:
-                self.keywords.append('open')
+            if "open" not in self.keywords:
+                self.keywords.append("open")
 
-        self.action_aliases.extend(['check', 'view', 'examine', 'inspect', 'peruse'])
+        self.action_aliases.extend(["check", "view", "examine", "inspect", "peruse"])
         self.keywords.extend(self.action_aliases)
 
         self.process_events()  # process initial events (triggers labeled "auto")
@@ -270,7 +350,10 @@ class Container(Object):
         elif self.inventory:
             # Use join for efficient string building instead of concatenation
             item_descriptions = [item.description for item in self.inventory]
-            self.description = f"A {self.nickname}. Inside are the following things: \n\n" + '\n'.join(item_descriptions)
+            self.description = (
+                f"A {self.nickname}. Inside are the following things: \n\n"
+                + "\n".join(item_descriptions)
+            )
         else:
             self.description = f"A {self.nickname}. It's empty. Very sorry."
 
@@ -281,20 +364,29 @@ class Container(Object):
             return
 
         # Search for a matching key (either by direct object reference or by nickname)
-        matching_key = next((key for key in self.player.inventory
-                           if hasattr(key, "lock") and (
-                               key.lock == self or 
-                               (hasattr(key, "lock_nickname") and 
-                                hasattr(self, "nickname") and 
-                                key.lock_nickname == self.nickname)
-                           )), None)
+        matching_key = next(
+            (
+                key
+                for key in self.player.inventory
+                if hasattr(key, "lock")
+                and (
+                    key.lock == self
+                    or (
+                        hasattr(key, "lock_nickname")
+                        and hasattr(self, "nickname")
+                        and key.lock_nickname == self.nickname
+                    )
+                )
+            ),
+            None,
+        )
 
         if matching_key:
             self.locked = False
-            if 'unlock' in self.keywords:
-                self.keywords.remove('unlock')
-            if 'open' not in self.keywords and self.state == "closed":
-                self.keywords.append('open')
+            if "unlock" in self.keywords:
+                self.keywords.remove("unlock")
+            if "open" not in self.keywords and self.state == "closed":
+                self.keywords.append("open")
             cprint(f"Jean uses {matching_key.name} to unlock the {self.name}.", "green")
         else:
             cprint("Jean couldn't find a matching key.", "red")
@@ -302,7 +394,9 @@ class Container(Object):
     def open(self):
         """Optimized open method with f-string formatting"""
         if self.locked:
-            print(f"Jean pulls on the lid of the {self.nickname} to no avail. It's locked.")
+            print(
+                f"Jean pulls on the lid of the {self.nickname} to no avail. It's locked."
+            )
             return
 
         if self.state == "closed":
@@ -311,12 +405,14 @@ class Container(Object):
             print("The lid lifts back on the hinge, revealing the contents inside.")
             self.revealed = True
             self.state = "opened"
-            if 'open' in self.keywords:
-                self.keywords.remove('open')
+            if "open" in self.keywords:
+                self.keywords.remove("open")
             self.refresh_description()
             self.process_events()
         else:
-            print(f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside.")
+            print(
+                f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside."
+            )
 
     def take_all(self, player):
         """
@@ -341,7 +437,7 @@ class Container(Object):
         snapshot = self.inventory[:]
         print(f"Jean begins gathering everything from the {self.nickname}...")
         for item in snapshot:
-            qty = getattr(item, 'count', 1)
+            qty = getattr(item, "count", 1)
             transfer_item(self, player, item, qty)
 
         print(f"Jean collects all of the available items.")
@@ -394,7 +490,7 @@ class Container(Object):
         self.events.clear()  # Clear the original list
 
         for event in events_to_process:
-            #TODO: Test this and make sure events process properly
+            # TODO: Test this and make sure events process properly
             self.tile.events_here.append(event)
 
         self.tile.evaluate_events()
@@ -409,7 +505,10 @@ class Container(Object):
         items_to_remove = []
 
         for i, master_item in enumerate(self.inventory):
-            if not hasattr(master_item, "count") or master_item.__class__ in processed_classes:
+            if (
+                not hasattr(master_item, "count")
+                or master_item.__class__ in processed_classes
+            ):
                 continue
 
             processed_classes.add(master_item.__class__)
@@ -418,10 +517,12 @@ class Container(Object):
             for j in range(i + 1, len(self.inventory)):
                 duplicate_item = self.inventory[j]
                 if (
-                        hasattr(duplicate_item, "count") and
-                        master_item.__class__ == duplicate_item.__class__
+                    hasattr(duplicate_item, "count")
+                    and master_item.__class__ == duplicate_item.__class__
                 ):
-                    master_item.count += duplicate_item.count # noqa; attribute guaranteed in conditional
+                    master_item.count += (
+                        duplicate_item.count
+                    )  # noqa; attribute guaranteed in conditional
                     items_to_remove.append(j)
 
             # Update grammar if needed
@@ -432,16 +533,18 @@ class Container(Object):
         for idx in sorted(items_to_remove, reverse=True):
             self.inventory.pop(idx)
 
+
 # --- Annotation normalization patch ---
 # Ensure that the 'allowed_subtypes' annotation on Container.__init__ is an evaluated type
 # instead of a postponed string (due to from __future__ import annotations) so that
 # inspect.get_origin returns 'list' as expected by tests and runtime reflection.
 try:
-    _ann = Container.__init__.__annotations__.get('allowed_subtypes')  # type: ignore[attr-defined]
+    _ann = Container.__init__.__annotations__.get("allowed_subtypes")  # type: ignore[attr-defined]
     if isinstance(_ann, str):
         # Rebind with concrete evaluated type
         from items import Item as _Item  # local import to avoid re-export side effects
-        Container.__init__.__annotations__['allowed_subtypes'] = list[type[_Item]]  # type: ignore[index]
+
+        Container.__init__.__annotations__["allowed_subtypes"] = list[type[_Item]]  # type: ignore[index]
 except Exception:
     pass
 
@@ -451,14 +554,32 @@ class Crate(Container):
     This is meant to be a merchant crate with all merchandise and a stock count.
     The purpose of this object is to be a convenient, predefined container for rapid map creation.
     """
-    def __init__(self, player, tile, events: list['Event']=None,
-                 merchant: object="", allowed_subtypes: list[type[Item]] = None, stock_count: int=20):
+
+    def __init__(
+        self,
+        player,
+        tile,
+        events: list["Event"] = None,
+        merchant: object = "",
+        allowed_subtypes: list[type[Item]] = None,
+        stock_count: int = 20,
+    ):
         description = "A large wooden crate containing merchandise."
-        super().__init__(name="Crate", description=description,
-                         idle_message="A large wooden crate is here.", events=events,
-                         merchant=merchant, allowed_subtypes=allowed_subtypes,
-                         discovery_message=" a large wooden crate!", player=player, tile=tile,
-                         nickname="crate", locked=False, start_open=True, stock_count=stock_count)
+        super().__init__(
+            name="Crate",
+            description=description,
+            idle_message="A large wooden crate is here.",
+            events=events,
+            merchant=merchant,
+            allowed_subtypes=allowed_subtypes,
+            discovery_message=" a large wooden crate!",
+            player=player,
+            tile=tile,
+            nickname="crate",
+            locked=False,
+            start_open=True,
+            stock_count=stock_count,
+        )
         if "open" in self.keywords:
             self.keywords.remove("open")
         if "unlock" in self.keywords:
@@ -470,22 +591,42 @@ class Shelf(Container):
     This is meant to be a merchant shelf with all merchandise and a stock count.
     The purpose of this object is to be a convenient, predefined container for rapid map creation.
     """
-    def __init__(self, player, tile, events: list['Event']=None,
-                 merchant: object="", allowed_subtypes: list[type[Item]] = None, stock_count: int=10):
+
+    def __init__(
+        self,
+        player,
+        tile,
+        events: list["Event"] = None,
+        merchant: object = "",
+        allowed_subtypes: list[type[Item]] = None,
+        stock_count: int = 10,
+    ):
         description = "A practical wooden shelf displaying merchandise."
-        super().__init__(name="Shelf", description=description,
-                         idle_message="A shelf displaying merchandise is here.", events=events,
-                         merchant=merchant, allowed_subtypes=allowed_subtypes,
-                         discovery_message=" a wooden shelf!", player=player, tile=tile,
-                         nickname="shelf", locked=False, start_open=True, stock_count=stock_count)
+        super().__init__(
+            name="Shelf",
+            description=description,
+            idle_message="A shelf displaying merchandise is here.",
+            events=events,
+            merchant=merchant,
+            allowed_subtypes=allowed_subtypes,
+            discovery_message=" a wooden shelf!",
+            player=player,
+            tile=tile,
+            nickname="shelf",
+            locked=False,
+            start_open=True,
+            stock_count=stock_count,
+        )
         if "open" in self.keywords:
             self.keywords.remove("open")
         if "unlock" in self.keywords:
             self.keywords.remove("unlock")
 
+
 """
 World objects
 """
+
 
 class Shrine(Object):
     """
@@ -496,38 +637,49 @@ class Shrine(Object):
 
     def __init__(self, player=None, tile=None, params=None):
         description = "A beautiful shrine depicting a variety of saints praying to God."
-        super().__init__(name="Shrine", description=description,
-                         idle_message="There is an ornate shrine here.",
-                         discovery_message=" a shrine!", player=player, tile=tile)
+        super().__init__(
+            name="Shrine",
+            description=description,
+            idle_message="There is an ornate shrine here.",
+            discovery_message=" a shrine!",
+            player=player,
+            tile=tile,
+        )
         self.event = None
-        self.keywords.append('pray')
+        self.keywords.append("pray")
 
         if params:
             for thing in params:
                 # account for the events associated with this object. Max of 1 event.
                 # Triggers after interacting with the shrine.
-                if thing[0] == '!':
-                    param = thing.replace('!', '')
-                    p_list = param.split(':')
+                if thing[0] == "!":
+                    param = thing.replace("!", "")
+                    p_list = param.split(":")
                     repeat = False
                     event_type = p_list.pop(0)
                     for setting in p_list:
-                        if setting == 'r':
+                        if setting == "r":
                             repeat = True
                             p_list.remove(setting)
                             continue
                     event_cls = functions.seek_class(event_type, "story")
-                    self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
+                    self.event = functions.instantiate_event(
+                        event_cls,
+                        player,
+                        tile,
+                        params=(p_list if p_list else None),
+                        repeat=repeat,
+                    )
 
     def pray(self, player):
         print("Jean kneels down and begins to pray for intercession.")
         time.sleep(random.randint(3, 10))
-        
+
         # Robustly handle missing prayer_msg
-        prayer_messages = getattr(player, 'prayer_msg', ["Jean prays silently."])
+        prayer_messages = getattr(player, "prayer_msg", ["Jean prays silently."])
         selection = random.randint(0, len(prayer_messages) - 1)
         print(prayer_messages[selection])
-        if getattr(self, 'event', None) is not None:
+        if getattr(self, "event", None) is not None:
             time.sleep(random.randint(3, 10))
             self.event.process()
             self.event = None
@@ -542,33 +694,46 @@ class HealingSpring(Object):
 
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
-        super().__init__(name="HealingSpring", description=description,
-                         idle_message="There is a small spring bubbling here.",
-                         discovery_message=" a healing spring!", player=player, tile=tile)
+        super().__init__(
+            name="HealingSpring",
+            description=description,
+            idle_message="There is a small spring bubbling here.",
+            discovery_message=" a healing spring!",
+            player=player,
+            tile=tile,
+        )
         self.event = None
-        self.keywords.append('drink')
-        self.keywords.append('clean')
-        self.keywords.append('wash')
+        self.keywords.append("drink")
+        self.keywords.append("clean")
+        self.keywords.append("wash")
 
         if params:
             for thing in params:
                 # account for the events associated with this object. Max of 1 event.
                 # Triggers after interacting with the object.
-                if thing[0] == '!':
-                    param = thing.replace('!', '')
-                    p_list = param.split(':')
+                if thing[0] == "!":
+                    param = thing.replace("!", "")
+                    p_list = param.split(":")
                     repeat = False
                     event_type = p_list.pop(0)
                     for setting in p_list:
-                        if setting == 'r':
+                        if setting == "r":
                             repeat = True
                             p_list.remove(setting)
                             continue
                     event_cls = functions.seek_class(event_type, "story")
-                    self.event = functions.instantiate_event(event_cls, player, tile, params=(p_list if p_list else None), repeat=repeat)
+                    self.event = functions.instantiate_event(
+                        event_cls,
+                        player,
+                        tile,
+                        params=(p_list if p_list else None),
+                        repeat=repeat,
+                    )
 
     def drink(self, player):
-        print("Jean bends down to the water and, cupping it in his hands, begins to sip eagerly.")
+        print(
+            "Jean bends down to the water and, cupping it in his hands, begins to sip eagerly."
+        )
         time.sleep(2)
         print("The water is cool and refreshing as it goes down his throat.")
         time.sleep(1)
@@ -584,7 +749,9 @@ class HealingSpring(Object):
     def clean(player):
         print("Jean summarily begins washing himself in the cool water of the spring.")
         time.sleep(2)
-        print("Jean closes his eyes for a moment, enjoying the feeling of simple cleanliness.")
+        print(
+            "Jean closes his eyes for a moment, enjoying the feeling of simple cleanliness."
+        )
         time.sleep(1)
         cprint("Jean now has Clean status!", "green")
         player.apply_state(states.Clean(player))
@@ -599,23 +766,37 @@ class Passageway(Object):
     different map entirely.
     """
 
-    def __init__(self, player: Player, tile: MapTile,
-                 events_before: list['Event']=None, events_after: list['Event']=None,
-                 teleport_map: str=None, teleport_tile: tuple=None, persist: bool=True,
-                 hidden: bool=False, hide_factor: int=0,
-                 is_shop_exit: bool=False,
-                 name: str="Passageway",
-                 description: str="A passageway leading elsewhere is here.",
-                 idle_message: str="There is a passageway here.",
-                 discovery_message: str =" a passageway!"):
+    def __init__(
+        self,
+        player: Player,
+        tile: MapTile,
+        events_before: list["Event"] = None,
+        events_after: list["Event"] = None,
+        teleport_map: str = None,
+        teleport_tile: tuple = None,
+        persist: bool = True,
+        hidden: bool = False,
+        hide_factor: int = 0,
+        is_shop_exit: bool = False,
+        name: str = "Passageway",
+        description: str = "A passageway leading elsewhere is here.",
+        idle_message: str = "There is a passageway here.",
+        discovery_message: str = " a passageway!",
+    ):
         aliases = [name.lower(), "passage"]
-        super().__init__(name=name, description=description,
-                         idle_message=idle_message,
-                         hidden=hidden, hide_factor=hide_factor,
-                         discovery_message=discovery_message, player=player, tile=tile,
-                         aliases=aliases)
-        self.keywords.append('enter')
-        self.action_aliases.extend(['go', 'leave', 'exit'])
+        super().__init__(
+            name=name,
+            description=description,
+            idle_message=idle_message,
+            hidden=hidden,
+            hide_factor=hide_factor,
+            discovery_message=discovery_message,
+            player=player,
+            tile=tile,
+            aliases=aliases,
+        )
+        self.keywords.append("enter")
+        self.action_aliases.extend(["go", "leave", "exit"])
         self.keywords.extend(self.action_aliases)
         self.events_before = events_before if events_before is not None else []
         self.events_after = events_after if events_after is not None else []
@@ -623,9 +804,10 @@ class Passageway(Object):
         self.teleport_tile = teleport_tile if teleport_tile is not None else ""
         self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
+
     def enter(self, player):
         # Drop any merchandise items immediately upon attempting to enter/teleport
-        if hasattr(player, 'drop_merchandise_items'):
+        if hasattr(player, "drop_merchandise_items"):
             player.drop_merchandise_items()
         if self.events_before:
             for event in self.events_before:
@@ -640,7 +822,9 @@ class Passageway(Object):
             if not self.persist:
                 self.tile.objects.remove(self)
         else:
-            print("The passageway is not properly configured. Please contact the developer.")
+            print(
+                "The passageway is not properly configured. Please contact the developer."
+            )
         functions.await_input()
 
     def go(self, player):
@@ -655,30 +839,38 @@ class Passageway(Object):
 
 class MarketBell(Object):
     """
-        Represents a bell mounted near a stall or booth in the Ecumerium. Players can RING it to summon attention or
-        trigger a configured event. The bell provides feedback when rung and can optionally process an attached event.
+    Represents a bell mounted near a stall or booth in the Ecumerium. Players can RING it to summon attention or
+    trigger a configured event. The bell provides feedback when rung and can optionally process an attached event.
     """
-    def __init__(self, player: Player, tile: MapTile, event: Event=None):
+
+    def __init__(self, player: Player, tile: MapTile, event: Event = None):
         description = "A small metal bell hangs from a short iron hook; it looks like it can be RUNG to draw attention."
-        super().__init__(name="Market Bell", description=description,
-                         idle_message="A small bell hangs here, waiting to be rung.",
-                         discovery_message="a small bell mounted by a stall!", player=player, tile=tile)
-        self.keywords.append('ring')
-        self.keywords.append('use')
+        super().__init__(
+            name="Market Bell",
+            description=description,
+            idle_message="A small bell hangs here, waiting to be rung.",
+            discovery_message="a small bell mounted by a stall!",
+            player=player,
+            tile=tile,
+        )
+        self.keywords.append("ring")
+        self.keywords.append("use")
         self.event = event
 
     def ring(self):
         """Player rings the bell. If an event is attached, process it. Otherwise provide a simple cue."""
-        cprint("Jean reaches up and rings the bell.", color='cyan')
+        cprint("Jean reaches up and rings the bell.", color="cyan")
         time.sleep(0.4)
-        print("A clear, bright tone rings through the arcade, briefly carrying above the market din.")
+        print(
+            "A clear, bright tone rings through the arcade, briefly carrying above the market din."
+        )
         if self.event is not None:
             # process and clear non-repeat events; instantiate_event handles repeat flag behavior
             time.sleep(0.6)
             self.event.process()
             # if the event was non-repeat it will typically be consumed; mirror Shrine behavior by clearing
             try:
-                if not getattr(self.event, 'repeat', False):
+                if not getattr(self.event, "repeat", False):
                     self.event = None
             except Exception:
                 self.event = None
@@ -692,22 +884,30 @@ class Fountain(Object):
     """A decorative stone fountain providing simple ambiance. Jean can DRINK (minor refresh) or LISTEN/ADMIRE it.
     Optionally an event may be attached which triggers the first time it is drunk from.
     """
-    def __init__(self, player: Player, tile: MapTile, event: Event=None):
-        description = "A low circular fountain murmurs softly; clear water bubbles up and spills over carved stone."\
-                      " You could probably DRINK from it or just LISTEN to the water."  # noqa: E501
-        super().__init__(name="Fountain", description=description,
-                         idle_message="A small stone fountain murmurs here.",
-                         discovery_message="a murmuring fountain!", player=player, tile=tile)
-        self.keywords.extend(['drink', 'listen', 'admire', 'use'])
+
+    def __init__(self, player: Player, tile: MapTile, event: Event = None):
+        description = (
+            "A low circular fountain murmurs softly; clear water bubbles up and spills over carved stone."
+            " You could probably DRINK from it or just LISTEN to the water."
+        )  # noqa: E501
+        super().__init__(
+            name="Fountain",
+            description=description,
+            idle_message="A small stone fountain murmurs here.",
+            discovery_message="a murmuring fountain!",
+            player=player,
+            tile=tile,
+        )
+        self.keywords.extend(["drink", "listen", "admire", "use"])
         self.event = event
 
     def drink(self):
-        cprint("Jean cups some water from the fountain and takes a cool sip.", 'cyan')
+        cprint("Jean cups some water from the fountain and takes a cool sip.", "cyan")
         time.sleep(0.5)
         if self.event:
             time.sleep(0.5)
             self.event.process()
-            if not getattr(self.event, 'repeat', False):
+            if not getattr(self.event, "repeat", False):
                 self.event = None
         functions.await_input()
 
@@ -724,17 +924,33 @@ class Fountain(Object):
 
 
 class StreetLantern(Object):
-    """A wrought iron street lantern that can be LIGHTed or DOUSEd. Optional events may trigger on state change.
-    """
-    def __init__(self, player: Player, tile: MapTile, event_when_lighting: Event=None, event_when_dousing: Event=None,
-                 lit: bool=False):
-        description = "An iron street lantern stands here, its glass panes slightly clouded." + \
-                      (" It is currently lit, casting a warm glow in all directions." if lit
-                       else " It is dark; maybe you could LIGHT it.")
-        super().__init__(name="Street Lantern", description=description,
-                         idle_message="A wrought iron street lantern stands here.",
-                         discovery_message="a street lantern!", player=player, tile=tile)
-        self.keywords.extend(['light', 'douse', 'extinguish', 'inspect'])
+    """A wrought iron street lantern that can be LIGHTed or DOUSEd. Optional events may trigger on state change."""
+
+    def __init__(
+        self,
+        player: Player,
+        tile: MapTile,
+        event_when_lighting: Event = None,
+        event_when_dousing: Event = None,
+        lit: bool = False,
+    ):
+        description = (
+            "An iron street lantern stands here, its glass panes slightly clouded."
+            + (
+                " It is currently lit, casting a warm glow in all directions."
+                if lit
+                else " It is dark; maybe you could LIGHT it."
+            )
+        )
+        super().__init__(
+            name="Street Lantern",
+            description=description,
+            idle_message="A wrought iron street lantern stands here.",
+            discovery_message="a street lantern!",
+            player=player,
+            tile=tile,
+        )
+        self.keywords.extend(["light", "douse", "extinguish", "inspect"])
         self.lit = lit
         self.event_on = event_when_lighting
         self.event_off = event_when_dousing
@@ -753,7 +969,7 @@ class StreetLantern(Object):
         self._update_description()
         if self.event_on:
             self.event_on.process()
-            if not getattr(self.event_on, 'repeat', False):
+            if not getattr(self.event_on, "repeat", False):
                 self.event_on = None
         functions.await_input()
 
@@ -766,7 +982,7 @@ class StreetLantern(Object):
         self._update_description()
         if self.event_off:
             self.event_off.process()
-            if not getattr(self.event_off, 'repeat', False):
+            if not getattr(self.event_off, "repeat", False):
                 self.event_off = None
         functions.await_input()
 
@@ -782,19 +998,35 @@ class NoticeBoard(Object):
     """A public notice board. Jean can READ posted notes. Optional single event
     triggers on first READ.
     """
-    def __init__(self, player: Player, tile: MapTile, event: Event=None, notes: list[str]=None):
+
+    def __init__(
+        self,
+        player: Player,
+        tile: MapTile,
+        event: Event = None,
+        notes: list[str] = None,
+    ):
         description = "A wooden notice board stands here with a scattering of parchment scraps pinned to it."
-        super().__init__(name="Notice Board", description=description,
-                         idle_message="A wooden notice board is here.",
-                         discovery_message="a notice board!", player=player, tile=tile)
-        self.keywords.extend(['read', 'use'])
-        self.notes: list[str] = notes if notes else [
-            "Lost: One black cat with a white spot on its chest. Answers to 'Midnight'. Reward offered.",
-            "For Sale: Handmade pottery bowls, vases, and mugs. All proceeds support the local orphanage.",
-            "Help Wanted: Looking for an assistant to help with daily chores and errands. Inquire within.",
-            "Event: The annual Ecumerium Festival will take place next week! Music, food, and games for all ages.",
-            "Notice: Please keep the market area clean. Trash bins are provided throughout the arcade."
-        ]
+        super().__init__(
+            name="Notice Board",
+            description=description,
+            idle_message="A wooden notice board is here.",
+            discovery_message="a notice board!",
+            player=player,
+            tile=tile,
+        )
+        self.keywords.extend(["read", "use"])
+        self.notes: list[str] = (
+            notes
+            if notes
+            else [
+                "Lost: One black cat with a white spot on its chest. Answers to 'Midnight'. Reward offered.",
+                "For Sale: Handmade pottery bowls, vases, and mugs. All proceeds support the local orphanage.",
+                "Help Wanted: Looking for an assistant to help with daily chores and errands. Inquire within.",
+                "Event: The annual Ecumerium Festival will take place next week! Music, food, and games for all ages.",
+                "Notice: Please keep the market area clean. Trash bins are provided throughout the arcade.",
+            ]
+        )
         self.event = event
         self._read_once = False
 
@@ -802,10 +1034,10 @@ class NoticeBoard(Object):
         print("Jean scans the various notes:")
         for note in self.notes:
             print(f"  - {note}")
-        if self.event and (not self._read_once or getattr(self.event, 'repeat', False)):
+        if self.event and (not self._read_once or getattr(self.event, "repeat", False)):
             time.sleep(0.3)
             self.event.process()
-            if not getattr(self.event, 'repeat', False):
+            if not getattr(self.event, "repeat", False):
                 self._read_once = True
         functions.await_input()
 
@@ -814,14 +1046,21 @@ class NoticeBoard(Object):
 
 
 class PrayerCandleRack(Object):
-    """A rack of small votive candles. Jean can LIGHT a candle (increments count) or PRAY. Optional single event on PRAY.
-    """
-    def __init__(self, player: Player, tile: MapTile, lit_candles: int=0, event: Event=None):
+    """A rack of small votive candles. Jean can LIGHT a candle (increments count) or PRAY. Optional single event on PRAY."""
+
+    def __init__(
+        self, player: Player, tile: MapTile, lit_candles: int = 0, event: Event = None
+    ):
         description = "A wrought rack of small votive candles. A few flicker; many are unlit."  # noqa: E501
-        super().__init__(name="Candle Rack", description=description,
-                         idle_message="A rack of votive candles stands here.",
-                         discovery_message="a rack of small candles!", player=player, tile=tile)
-        self.keywords.extend(['light', 'pray', 'use'])
+        super().__init__(
+            name="Candle Rack",
+            description=description,
+            idle_message="A rack of votive candles stands here.",
+            discovery_message="a rack of small candles!",
+            player=player,
+            tile=tile,
+        )
+        self.keywords.extend(["light", "pray", "use"])
         self.lit_candles = lit_candles
         self.event = event
 
@@ -837,11 +1076,13 @@ class PrayerCandleRack(Object):
     def pray(self):
         print("Jean bows his head silently before the little flames.")
         time.sleep(5)
-        print("A strange feeling fills his chest, as if there's a tune he can't quite remember.")
+        print(
+            "A strange feeling fills his chest, as if there's a tune he can't quite remember."
+        )
         time.sleep(0.5)
-        if getattr(self, 'event', None):
+        if getattr(self, "event", None):
             self.event.process()
-            if not getattr(self.event, 'repeat', False):
+            if not getattr(self.event, "repeat", False):
                 self.event = None
         functions.await_input()
 
@@ -850,26 +1091,35 @@ class PrayerCandleRack(Object):
 
 
 class MarketGong(Object):
-    """A larger bronze gong used to signal openings or special sales. Jean can STRIKE/HIT it; optional event triggers.
-    """
-    def __init__(self, player: Player, tile: MapTile, event: Event=None):
+    """A larger bronze gong used to signal openings or special sales. Jean can STRIKE/HIT it; optional event triggers."""
+
+    def __init__(self, player: Player, tile: MapTile, event: Event = None):
         description = "A wide bronze gong is suspended from a stout frame. A padded mallet invites someone to STRIKE it."  # noqa: E501
-        super().__init__(name="Market Gong", description=description,
-                         idle_message="A bronze gong hangs here, silent.",
-                         discovery_message="a large bronze gong!", player=player, tile=tile)
-        self.keywords.extend(['strike', 'hit', 'bang', 'use'])
+        super().__init__(
+            name="Market Gong",
+            description=description,
+            idle_message="A bronze gong hangs here, silent.",
+            discovery_message="a large bronze gong!",
+            player=player,
+            tile=tile,
+        )
+        self.keywords.extend(["strike", "hit", "bang", "use"])
         self.event = event
 
     def strike(self):
-        cprint("Jean swings the mallet into the gong with a resonant BOOOONG...", 'cyan')
+        cprint(
+            "Jean swings the mallet into the gong with a resonant BOOOONG...", "cyan"
+        )
         time.sleep(0.7)
         print("The deep tone rolls outward and slowly fades.")
         time.sleep(1)
-        print("Some nearby shoppers glance over, momentarily distracted. More than a few wear a confused expression.")
+        print(
+            "Some nearby shoppers glance over, momentarily distracted. More than a few wear a confused expression."
+        )
         if self.event:
             time.sleep(0.4)
             self.event.process()
-            if not getattr(self.event, 'repeat', False):
+            if not getattr(self.event, "repeat", False):
                 self.event = None
         functions.await_input()
 
@@ -892,8 +1142,8 @@ class GeminateGeode(Object):
 
     # Each entry is (ClassName, display_name) — kept together so they can't drift apart
     _INGREDIENT_DEFS = (
-        ("AzuriteGem",       "Azure Crystal"),
-        ("AmberStone",       "Amber Stone"),
+        ("AzuriteGem", "Azure Crystal"),
+        ("AmberStone", "Amber Stone"),
         ("PaleGreyFragment", "Pale Grey Fragment"),
     )
 
@@ -908,14 +1158,17 @@ class GeminateGeode(Object):
             ),
             idle_message="A hollow geode rests on a stone pedestal here, waiting.",
             discovery_message=" a hollow geode resting on a stone pedestal!",
-            player=player, tile=tile,
+            player=player,
+            tile=tile,
             aliases=["geode", "hollow geode", "pedestal", "stone pedestal"],
         )
         self.keywords.extend(["place", "insert", "solve", "use", "examine"])
         self.action_aliases.extend(["examine", "use"])
 
     def _has_ingredient(self, cls_name: str) -> bool:
-        return any(item.__class__.__name__ == cls_name for item in self.player.inventory)
+        return any(
+            item.__class__.__name__ == cls_name for item in self.player.inventory
+        )
 
     def _remove_ingredient(self, cls_name: str) -> None:
         for item in list(self.player.inventory):
@@ -928,17 +1181,20 @@ class GeminateGeode(Object):
         if player is not None:
             self.player = player
         missing = [
-            name for cls, name in self._INGREDIENT_DEFS
-            if not self._has_ingredient(cls)
+            name for cls, name in self._INGREDIENT_DEFS if not self._has_ingredient(cls)
         ]
         if missing:
             print(f"The depressions wait. Jean is missing: {', '.join(missing)}.")
             print("The ritual carving in the Atrium showed the sequence clearly.")
             return
         # All three fragments present — solve the puzzle
-        print("\nJean places the blue crystal in the first depression. The vein above it pulses.")
+        print(
+            "\nJean places the blue crystal in the first depression. The vein above it pulses."
+        )
         time.sleep(1)
-        print("The amber stone settles into the second. A harmonic hum begins, low and resonant.")
+        print(
+            "The amber stone settles into the second. A harmonic hum begins, low and resonant."
+        )
         time.sleep(1)
         print("The pale grey fragment locks into the third.")
         time.sleep(0.5)

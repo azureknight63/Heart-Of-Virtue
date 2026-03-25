@@ -3,7 +3,6 @@
 from flask import Blueprint, request, jsonify
 from src.api.serializers.inventory import InventorySerializer
 
-
 player_bp = Blueprint("player", __name__)
 
 
@@ -107,37 +106,46 @@ def get_full_state():
             return error[0], error[1]
 
         from flask import current_app
+
         game_service = current_app.game_service
 
         if not game_service:
-            return jsonify({"success": False, "error": "Game service not initialized"}), 500
+            return (
+                jsonify({"success": False, "error": "Game service not initialized"}),
+                500,
+            )
 
         # Collect all data in one pass
         status = game_service.get_player_status(player)
         inventory = InventorySerializer.serialize(player)
         from src.api.serializers.inventory import EquipmentSerializer
+
         equipment = EquipmentSerializer.serialize(player)
         stats = game_service.get_player_stats(player)
         skills = game_service.get_player_skills(player)
 
-        return jsonify({
-            "success": True, 
-            "status": status,
-            "inventory": inventory,
-            "equipment": equipment,
-            "stats": stats,
-            "skills": skills
-        }), 200
-
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "status": status,
+                    "inventory": inventory,
+                    "equipment": equipment,
+                    "stats": stats,
+                    "skills": skills,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 
 @player_bp.route("/stats", methods=["GET"])
-
 def get_stats():
     """Get player stats (strength, dexterity, etc.).
 
@@ -289,7 +297,10 @@ def learn_skill():
 
         data = request.get_json()
         if not data or "skill_name" not in data or "category" not in data:
-            return jsonify({"success": False, "error": "Missing skill_name or category"}), 400
+            return (
+                jsonify({"success": False, "error": "Missing skill_name or category"}),
+                400,
+            )
 
         result = game_service.learn_skill(player, data["skill_name"], data["category"])
 
@@ -370,21 +381,28 @@ def allocate_level_up_points():
         # Refresh derived stats if available
         try:
             from src.functions import refresh_stat_bonuses
+
             refresh_stat_bonuses(player)
         except Exception:
             pass
 
         from flask import current_app
+
         game_service = current_app.game_service
         stats = game_service.get_player_stats(player) if game_service else {}
 
         session_manager.save_session(session.session_id)
 
-        return jsonify({
-            "success": True,
-            "remaining_points": int(player.pending_attribute_points),
-            "stats": stats,
-        }), 200
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "remaining_points": int(player.pending_attribute_points),
+                    "stats": stats,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         return (
@@ -396,4 +414,3 @@ def allocate_level_up_points():
             ),
             500,
         )
-

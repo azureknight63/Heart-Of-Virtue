@@ -33,48 +33,57 @@ if TYPE_CHECKING:
 
 class Direction(Enum):
     """8 compass directions for unit facing.
-    
+
     Values correspond to angles:
     N=0°, NE=45°, E=90°, SE=135°, S=180°, SW=225°, W=270°, NW=315°
     """
-    N = 0       # North
-    NE = 45     # Northeast
-    E = 90      # East
-    SE = 135    # Southeast
-    S = 180     # South
-    SW = 225    # Southwest
-    W = 270     # West
-    NW = 315    # Northwest
+
+    N = 0  # North
+    NE = 45  # Northeast
+    E = 90  # East
+    SE = 135  # Southeast
+    S = 180  # South
+    SW = 225  # Southwest
+    W = 270  # West
+    NW = 315  # Northwest
 
 
 @dataclass
 class CombatPosition:
     """Represents a combatant's position and facing direction on the battlefield.
-    
+
     Attributes:
         x: Horizontal coordinate (0-width, left to right)
         y: Vertical coordinate (0-height, front to back)
         facing: Direction the combatant is facing (affects attack angle calculations)
     """
+
     x: int
     y: int
     facing: Direction = Direction.N
-    
+
     def __post_init__(self):
         """Validate coordinates and facing."""
         if not isinstance(self.x, int) or not isinstance(self.y, int):
             raise ValueError(f"Coordinates must be integers, got ({self.x}, {self.y})")
-        
+
         # Grid bounds validation (0-50)
         if not (0 <= self.x <= 50) or not (0 <= self.y <= 50):
-             raise ValueError(f"Coordinates must be between 0 and 50, got ({self.x}, {self.y})")
-             
+            raise ValueError(
+                f"Coordinates must be between 0 and 50, got ({self.x}, {self.y})"
+            )
+
         # Check facing is a Direction enum (handle module loading issues in tests)
-        if not (isinstance(self.facing, Direction) or
-                (hasattr(self.facing, 'name') and hasattr(self.facing, 'value') and
-                 self.facing.__class__.__name__ == 'Direction')):
+        if not (
+            isinstance(self.facing, Direction)
+            or (
+                hasattr(self.facing, "name")
+                and hasattr(self.facing, "value")
+                and self.facing.__class__.__name__ == "Direction"
+            )
+        ):
             raise ValueError(f"Facing must be Direction enum, got {self.facing}")
-    
+
     def copy(self) -> "CombatPosition":
         """Create an independent copy of this position."""
         return CombatPosition(x=self.x, y=self.y, facing=self.facing)
@@ -83,12 +92,15 @@ class CombatPosition:
 @dataclass
 class CombatScenario:
     """Configuration for how a combat encounter initializes positions.
-    
+
     Scenarios define spawn zones and formation types for allies and enemies.
     This allows varied tactical situations (standard, pincer, melee, boss arena, etc.)
     """
+
     scenario_type: str  # "standard", "pincer", "melee", "boss_arena", "custom"
-    ally_spawn_zone: Tuple[Tuple[int, int], Tuple[int, int]]  # ((x_min, y_min), (x_max, y_max))
+    ally_spawn_zone: Tuple[
+        Tuple[int, int], Tuple[int, int]
+    ]  # ((x_min, y_min), (x_max, y_max))
     enemy_spawn_zones: List[Tuple[Tuple[int, int], Tuple[int, int]]]  # List of zones
     formation_type: str  # "spread", "cluster", "random"
     min_spacing: int = 1  # Minimum grid squares between units
@@ -96,72 +108,69 @@ class CombatScenario:
 
 
 def get_combat_scenario(
-    scenario_type: str,
-    grid_width: int,
-    grid_height: int,
-    seed: Optional[int] = None
+    scenario_type: str, grid_width: int, grid_height: int, seed: Optional[int] = None
 ) -> CombatScenario:
     """Generate a combat scenario for the given grid dimensions.
-    
+
     Dynamically scales zones based on grid size.
-    
+
     Args:
         scenario_type: "standard", "pincer", "melee", "boss_arena", "custom"
         grid_width: Width of the battlefield
         grid_height: Height of the battlefield
         seed: Optional random seed
-        
+
     Returns:
         Configured CombatScenario
     """
     scenario_type = scenario_type.lower()
-    
+
     if scenario_type == "standard":
         # Allies left, Enemies right
         # Gap should scale with grid size to maintain melee possibility on small grids
         gap = max(4, int(grid_width * 0.2))
         ally_x_max = max(1, int(grid_width * 0.20))
-        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.4)) 
+        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.4))
         enemy_x_max = min(grid_width, enemy_x_min + max(2, int(grid_width * 0.2)))
-        
+
         y_buffer = int(grid_height * 0.2)
         y_min = y_buffer
         y_max = grid_height - y_buffer
-        
+
         return CombatScenario(
             scenario_type="standard",
             ally_spawn_zone=((0, y_min), (ally_x_max, y_max)),
             enemy_spawn_zones=[((enemy_x_min, y_min), (enemy_x_max, y_max))],
             formation_type="spread",
-            min_spacing=max(1, int(grid_width/20)),
-            seed=seed
+            min_spacing=max(1, int(grid_width / 20)),
+            seed=seed,
         )
-        
+
     elif scenario_type == "pincer":
         # Allies in center, enemies on left and right edges
         center_x = grid_width // 2
         center_y = grid_height // 2
         center_w = max(2, int(grid_width * 0.15))
         center_h = max(2, int(grid_height * 0.15))
-        
+
         ally_zone = (
             (center_x - center_w, center_y - center_h),
-            (center_x + center_w, center_y + center_h)
+            (center_x + center_w, center_y + center_h),
         )
-        
+
         flank_width = max(2, int(grid_width * 0.15))
         left_flank = ((0, 0), (flank_width, grid_height))
         right_flank = ((grid_width - flank_width, 0), (grid_width, grid_height))
-        
+
         return CombatScenario(
             scenario_type="pincer",
             ally_spawn_zone=ally_zone,
             enemy_spawn_zones=[left_flank, right_flank],
             formation_type="cluster",
             min_spacing=1,
-            seed=seed
+            seed=seed,
         )
-        
+
     elif scenario_type in ["melee", "random"]:
         # Everyone scattered everywhere
         full_map = ((0, 0), (grid_width, grid_height))
@@ -170,25 +179,30 @@ def get_combat_scenario(
             ally_spawn_zone=full_map,
             enemy_spawn_zones=[full_map],
             formation_type="random",
-            min_spacing=int(min(3, grid_width/5)),
-            seed=seed
+            min_spacing=int(min(3, grid_width / 5)),
+            seed=seed,
         )
-        
+
     elif scenario_type == "boss_arena":
         # Standard but allies start further back, and gap is smaller for tactical reasons
-        gap = 1 # Force melee range for boss arena on small grids
+        gap = 1  # Force melee range for boss arena on small grids
         ally_x_max = max(1, int(grid_width * 0.15))
-        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.3)) 
-        
+        enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.3))
+
         return CombatScenario(
             scenario_type="boss_arena",
             ally_spawn_zone=((0, 0), (ally_x_max, grid_height)),
-            enemy_spawn_zones=[((enemy_x_min, int(grid_height*0.3)), (grid_width, int(grid_height*0.7)))],
+            enemy_spawn_zones=[
+                (
+                    (enemy_x_min, int(grid_height * 0.3)),
+                    (grid_width, int(grid_height * 0.7)),
+                )
+            ],
             formation_type="spread",
-            min_spacing=max(1, int(grid_width/15)),
-            seed=seed
+            min_spacing=max(1, int(grid_width / 15)),
+            seed=seed,
         )
-        
+
     else:
         raise ValueError(f"Unknown combat scenario type: {scenario_type}")
 
@@ -206,17 +220,18 @@ COMBAT_SCENARIOS = {
 # Distance and Angle Calculations
 # ============================================================================
 
+
 def distance_from_coords(pos1: CombatPosition, pos2: CombatPosition) -> int:
     """Calculate Euclidean distance between two positions in feet.
-    
+
     Each grid square represents approximately 1 foot for combat purposes.
     This function converts 2D coordinates back to 1D distance for backward
     compatibility with the old proximity-based system.
-    
+
     Args:
         pos1: First combat position
         pos2: Second combat position
-    
+
     Returns:
         Distance in feet (rounded to nearest integer)
     """
@@ -228,13 +243,13 @@ def distance_from_coords(pos1: CombatPosition, pos2: CombatPosition) -> int:
 
 def distance_squared(pos1: CombatPosition, pos2: CombatPosition) -> float:
     """Calculate squared Euclidean distance (faster for comparisons).
-    
+
     Useful when only comparing distances, not displaying them.
-    
+
     Args:
         pos1: First combat position
         pos2: Second combat position
-    
+
     Returns:
         Squared distance (no square root)
     """
@@ -245,98 +260,98 @@ def distance_squared(pos1: CombatPosition, pos2: CombatPosition) -> float:
 
 def angle_to_target(from_pos: CombatPosition, to_pos: CombatPosition) -> float:
     """Calculate angle from one position to another (0-360°).
-    
+
     Used to determine the direction of an attack relative to target's facing.
-    
+
     Args:
         from_pos: Position of attacker
         to_pos: Position of target
-    
+
     Returns:
         Angle in degrees (0-360), where 0° is North, 90° is East, etc.
     """
     dx = to_pos.x - from_pos.x
     dy = to_pos.y - from_pos.y
-    
+
     # atan2 gives angle from -π to π
     # We want 0-360 where 0° = North (positive Y) and 90° = East (positive X)
     # Standard atan2 has 0° pointing East, so we need to adjust
     angle_rad = math.atan2(dx, dy)  # Swap x/y to make North = 0°
     angle_deg = math.degrees(angle_rad)
-    
+
     # Normalize to 0-360
     if angle_deg < 0:
         angle_deg += 360
-    
+
     return angle_deg
 
 
 def attack_angle_difference(attack_angle: float, target_facing: Direction) -> int:
     """Calculate angular difference between attack direction and target's facing.
-    
+
     Returns the acute angle (0-180°) between where the attack comes from
     and where the target is facing. Used to determine damage/accuracy modifiers.
-    
+
     - 0° = attack from front (target facing attacker)
     - 90° = attack from flank
     - 180° = attack from rear (target facing away)
-    
+
     Args:
         attack_angle: Angle of attack (0-360°)
         target_facing: Direction target is facing
-    
+
     Returns:
         Angular difference in degrees (0-180)
     """
     diff = abs(attack_angle - target_facing.value)
-    
+
     # Take the acute angle (shortest rotation)
     if diff > 180:
         diff = 360 - diff
-    
+
     return int(round(diff))
 
 
 def get_damage_modifier(angle_diff: int) -> float:
     """Get damage multiplier based on attack angle relative to target's facing.
-    
+
     Frontal attacks are defended, while flanking and rear attacks bypass defense.
-    
+
     Args:
         angle_diff: Angular difference (0-180°)
-    
+
     Returns:
         Damage multiplier (e.g., 1.0 = normal, 1.15 = +15% damage)
     """
-    if 0 <= angle_diff <= 45:           # Front quarter
+    if 0 <= angle_diff <= 45:  # Front quarter
         return 0.85  # -15% damage
-    elif 45 < angle_diff <= 90:         # Flanking
+    elif 45 < angle_diff <= 90:  # Flanking
         return 1.15  # +15% damage
-    elif 90 < angle_diff <= 135:        # Deep flank
+    elif 90 < angle_diff <= 135:  # Deep flank
         return 1.25  # +25% damage
-    else:                               # Rear (135-180)
+    else:  # Rear (135-180)
         return 1.40  # +40% damage
 
 
 def get_accuracy_modifier(angle_diff: int) -> float:
     """Get accuracy multiplier based on attack angle relative to target's facing.
-    
+
     Frontal attacks are easier to see/defend against. Rear attacks are nearly
     impossible to defend.
-    
+
     Args:
         angle_diff: Angular difference (0-180°)
-    
+
     Returns:
         Accuracy multiplier (e.g., 1.0 = normal, 1.10 = +10% accuracy)
     """
-    if 0 <= angle_diff <= 45:           # Front quarter
+    if 0 <= angle_diff <= 45:  # Front quarter
         return 0.95  # -5% accuracy
-    elif 45 < angle_diff <= 90:         # Flanking
+    elif 45 < angle_diff <= 90:  # Flanking
         return 1.10  # +10% accuracy
-    elif 90 < angle_diff <= 135:        # Deep flank
+    elif 90 < angle_diff <= 135:  # Deep flank
         return 1.20  # +20% accuracy
-    else:                               # Rear (135-180)
+    else:  # Rear (135-180)
         return 1.30  # +30% accuracy
 
 
@@ -344,41 +359,39 @@ def get_accuracy_modifier(angle_diff: int) -> float:
 # Position Generation and Movement
 # ============================================================================
 
+
 def random_position_in_zone(
-    zone: Tuple[Tuple[int, int], Tuple[int, int]],
-    seed: Optional[int] = None
+    zone: Tuple[Tuple[int, int], Tuple[int, int]], seed: Optional[int] = None
 ) -> CombatPosition:
     """Generate a random position within a spawn zone.
-    
+
     Args:
         zone: Rectangular zone ((x_min, y_min), (x_max, y_max))
         seed: Random seed for reproducibility (optional)
-    
+
     Returns:
         CombatPosition with random x, y within zone bounds
     """
     if seed is not None:
         random.seed(seed)
-    
+
     (x_min, y_min), (x_max, y_max) = zone
     x = random.randint(x_min, x_max)
     y = random.randint(y_min, y_max)
-    
+
     return CombatPosition(x=x, y=y)
 
 
 def clamp_position(
-    pos: CombatPosition,
-    max_w: int = 50,
-    max_h: int = 50
+    pos: CombatPosition, max_w: int = 50, max_h: int = 50
 ) -> CombatPosition:
     """Clamp position to grid bounds.
-    
+
     Args:
         pos: Position to clamp
         max_w: Grid width
         max_h: Grid height
-    
+
     Returns:
         New CombatPosition with clamped coordinates
     """
@@ -392,45 +405,44 @@ def move_toward(
     target: CombatPosition,
     distance: int,
     max_w: int = 50,
-    max_h: int = 50
+    max_h: int = 50,
 ) -> CombatPosition:
     """Move from current position toward target by specified distance.
-    
+
     Moves in a straight line (8-directional) as close as possible to the
     target without overshooting. Returns clamped position within grid bounds.
-    
+
     Args:
         current: Starting position
         target: Target position
         distance: How many grid squares to move (each ≈ 1 foot)
         max_w: Grid width limit
         max_h: Grid height limit
-    
+
     Returns:
         New CombatPosition after movement (stops at or before target)
     """
     if current.x == target.x and current.y == target.y:
         return current.copy()  # Already at target
-    
+
     # Calculate distance to target
     distance_to_target = distance_from_coords(current, target)
-    
+
     # If we would overshoot, only move close enough to reach the target
     actual_distance = min(distance, distance_to_target)
-    
+
     # Calculate direction (normalized to -1, 0, or 1)
     dx = 0 if current.x == target.x else (1 if target.x > current.x else -1)
     dy = 0 if current.y == target.y else (1 if target.y > current.y else -1)
-    
+
     # Move in that direction by the actual distance (capped at distance_to_target)
     new_x = current.x + (dx * actual_distance)
     new_y = current.y + (dy * actual_distance)
-    
-    
+
     # Clamp to grid bounds
     new_x = max(0, min(max_w, new_x))
     new_y = max(0, min(max_h, new_y))
-    
+
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
 
@@ -440,12 +452,12 @@ def move_toward_constrained(
     distance: int,
     occupied: List[CombatPosition],
     max_w: int = 50,
-    max_h: int = 50
+    max_h: int = 50,
 ) -> CombatPosition:
     """Move toward target but ensure destination is not occupied.
-    
+
     If ideal destination is occupied, tries successively shorter distances.
-    
+
     Args:
         current: Starting position
         target: Target position
@@ -453,32 +465,32 @@ def move_toward_constrained(
         occupied: List of positions occupied by other units
         max_w: Grid width limit
         max_h: Grid height limit
-    
+
     Returns:
         New valid CombatPosition
     """
     if not occupied:
         return move_toward(current, target, distance, max_w, max_h)
-        
+
     test_dist = distance
     while test_dist > 0:
         new_pos = move_toward(current, target, test_dist, max_w, max_h)
-        
+
         # Check if new_pos is occupied (unless it's our current pos)
         if new_pos.x == current.x and new_pos.y == current.y:
             return current
-            
+
         has_collision = False
         for occ in occupied:
             if occ.x == new_pos.x and occ.y == new_pos.y:
                 has_collision = True
                 break
-        
+
         if not has_collision:
             return new_pos
-            
+
         test_dist -= 1
-        
+
     return current.copy()
 
 
@@ -487,17 +499,17 @@ def move_away_from(
     threat: CombatPosition,
     distance: int,
     max_w: int = 50,
-    max_h: int = 50
+    max_h: int = 50,
 ) -> CombatPosition:
     """Move from current position away from a threat by specified distance.
-    
+
     Args:
         current: Starting position
         threat: Position to move away from
         distance: How many grid squares to move
         max_w: Grid width limit
         max_h: Grid height limit
-    
+
     Returns:
         New CombatPosition after movement away
     """
@@ -510,16 +522,17 @@ def move_away_from(
             CombatPosition(current.x, current.y - distance, current.facing),
         ]
         return clamp_position(random.choice(directions), max_w, max_h)
-    
+
     # Calculate direction away from threat (opposite of toward threat)
     dx = 0 if current.x == threat.x else (1 if current.x > threat.x else -1)
     dy = 0 if current.y == threat.y else (1 if current.y > threat.y else -1)
-    
+
     # Move away, clamping the coordinates before creating the position
     new_x = max(0, min(max_w, current.x + (dx * distance)))
     new_y = max(0, min(max_h, current.y + (dy * distance)))
-    
+
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
 
 def move_away_constrained(
     current: CombatPosition,
@@ -527,12 +540,12 @@ def move_away_constrained(
     distance: int,
     occupied: List[CombatPosition],
     max_w: int = 50,
-    max_h: int = 50
+    max_h: int = 50,
 ) -> CombatPosition:
     """Move away from threat but ensure destination is not occupied.
-    
+
     If ideal destination is occupied, tries successively shorter distances.
-    
+
     Args:
         current: Starting position
         threat: Position to move away from
@@ -540,32 +553,32 @@ def move_away_constrained(
         occupied: List of positions occupied by other units
         max_w: Grid width limit
         max_h: Grid height limit
-    
+
     Returns:
         New valid CombatPosition
     """
     if not occupied:
         return move_away_from(current, threat, distance, max_w, max_h)
-        
+
     test_dist = distance
     while test_dist > 0:
         new_pos = move_away_from(current, threat, test_dist, max_w, max_h)
-        
+
         # Check if new_pos is occupied (unless it's our current pos)
         if new_pos.x == current.x and new_pos.y == current.y:
             return current
-            
+
         has_collision = False
         for occ in occupied:
             if occ.x == new_pos.x and occ.y == new_pos.y:
                 has_collision = True
                 break
-        
+
         if not has_collision:
             return new_pos
-            
+
         test_dist -= 1
-        
+
     return current.copy()
 
 
@@ -574,34 +587,35 @@ def move_to_flank(
     target: CombatPosition,
     distance: int = 3,
     max_w: int = 50,
-    max_h: int = 50
+    max_h: int = 50,
 ) -> CombatPosition:
     """Move to a flanking position (90° perpendicular to target's facing).
-    
+
     Args:
         current: Starting position
         target: Target position to flank
         distance: How many squares away from target to position
         max_w: Grid width limit
         max_h: Grid height limit
-    
+
     Returns:
         New CombatPosition at flanking angle
     """
     # Calculate perpendicular angle (90° from target's facing)
     target_facing_angle = target.facing.value
     flank_angle = (target_facing_angle + 90) % 360
-    
+
     # Convert to radians and calculate offset
     flank_rad = math.radians(flank_angle)
     offset_x = math.cos(flank_rad) * distance
     offset_y = math.sin(flank_rad) * distance
-    
+
     # Clamp coordinates before creating the position
     new_x = max(0, min(max_w, int(round(target.x + offset_x))))
     new_y = max(0, min(max_h, int(round(target.y + offset_y))))
-    
+
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
+
 
 def move_to_flank_constrained(
     current: CombatPosition,
@@ -609,15 +623,15 @@ def move_to_flank_constrained(
     distance: int,
     occupied: List[CombatPosition],
     max_w: int = 50,
-    max_h: int = 50
+    max_h: int = 50,
 ) -> CombatPosition:
     """Move to flank but avoid occupied squares.
-    
+
     Tries both left (+90°) and right (-90°) flanking positions.
     """
     if not occupied:
         return move_to_flank(current, target, distance, max_w, max_h)
-        
+
     options = [90, -90]
     for angle_offset in options:
         target_facing_angle = target.facing.value
@@ -625,45 +639,42 @@ def move_to_flank_constrained(
         flank_rad = math.radians(flank_angle)
         offset_x = math.cos(flank_rad) * distance
         offset_y = math.sin(flank_rad) * distance
-        
+
         new_x = max(0, min(max_w, int(round(target.x + offset_x))))
         new_y = max(0, min(max_h, int(round(target.y + offset_y))))
-        
+
         has_collision = False
         for occ in occupied:
             if occ.x == new_x and occ.y == new_y:
                 has_collision = True
                 break
-        
+
         if not has_collision:
             return CombatPosition(x=new_x, y=new_y, facing=current.facing)
-            
+
     return current.copy()
 
 
-def turn_toward(
-    current: CombatPosition,
-    target: CombatPosition
-) -> Direction:
+def turn_toward(current: CombatPosition, target: CombatPosition) -> Direction:
     """Calculate which direction to face to look at target.
-    
+
     Args:
         current: Observer position
         target: Target position to face
-    
+
     Returns:
         Direction to face target (one of 8 cardinal directions)
     """
     angle = angle_to_target(current, target)
-    
+
     # Round angle to nearest cardinal/diagonal direction
     # 0=N, 45=NE, 90=E, 135=SE, 180=S, 225=SW, 270=W, 315=NW
     direction_angle = round(angle / 45) * 45 % 360
-    
+
     for direction in Direction:
         if direction.value == direction_angle:
             return direction
-    
+
     return Direction.N  # Fallback
 
 
@@ -671,35 +682,36 @@ def turn_toward(
 # Backward Compatibility Helpers
 # ============================================================================
 
-def recalculate_proximity_dict(
-    unit: Any,
-    all_combatants: List[Any]
-) -> Dict[Any, int]:
+
+def recalculate_proximity_dict(unit: Any, all_combatants: List[Any]) -> Dict[Any, int]:
     """Recalculate combat_proximity dict from coordinate positions.
-    
+
     Called after any position change to maintain backward compatibility
     with the old proximity-based system.
-    
+
     Args:
         unit: The unit to calculate proximities for (should have combat_position attribute)
         all_combatants: All combatants in the encounter
-    
+
     Returns:
         Updated proximity dict {combatant: distance_in_feet}
     """
     proximity = {}
-    if not hasattr(unit, 'combat_position') or unit.combat_position is None:
+    if not hasattr(unit, "combat_position") or unit.combat_position is None:
         return proximity
-    
+
     for combatant in all_combatants:
         if combatant == unit:
             continue
-        if not hasattr(combatant, 'combat_position') or combatant.combat_position is None:
+        if (
+            not hasattr(combatant, "combat_position")
+            or combatant.combat_position is None
+        ):
             continue
-        
+
         distance = distance_from_coords(unit.combat_position, combatant.combat_position)
         proximity[combatant] = distance
-    
+
     return proximity
 
 
@@ -707,19 +719,20 @@ def recalculate_proximity_dict(
 # Combat Initialization
 # ============================================================================
 
+
 def initialize_combat_positions(
     allies: List[Any],
     enemies: List[Any],
     scenario_type: str = "standard",
     grid_width: int = 50,
     grid_height: int = 50,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
 ) -> None:
     """Initialize combat positions for all combatants based on scenario.
-    
+
     Sets CombatPosition on each unit and initializes facing directions toward
     opponent teams. Updates combat_proximity dicts for backward compatibility.
-    
+
     Args:
         allies: List of allied units (player party)
         enemies: List of enemy units
@@ -729,7 +742,7 @@ def initialize_combat_positions(
         seed: Optional random seed
     """
     scenario = get_combat_scenario(scenario_type, grid_width, grid_height, seed)
-    
+
     # Spawn allies in their zone
     _spawn_units_in_zone(
         units=allies,
@@ -738,18 +751,18 @@ def initialize_combat_positions(
         min_spacing=scenario.min_spacing,
         grid_width=grid_width,
         grid_height=grid_height,
-        seed=scenario.seed
+        seed=scenario.seed,
     )
-    
+
     # Spawn enemies in their zones
     for zone_index, zone in enumerate(scenario.enemy_spawn_zones):
         # Distribute enemies across zones
         enemies_for_zone = _distribute_units_across_zones(
             units=enemies,
             total_zones=len(scenario.enemy_spawn_zones),
-            zone_index=zone_index
+            zone_index=zone_index,
         )
-        
+
         _spawn_units_in_zone(
             units=enemies_for_zone,
             zone=zone,
@@ -757,22 +770,26 @@ def initialize_combat_positions(
             min_spacing=scenario.min_spacing,
             grid_width=grid_width,
             grid_height=grid_height,
-            seed=scenario.seed
+            seed=scenario.seed,
         )
-    
+
     # Set initial facing directions
     for ally in allies:
         if len(enemies) > 0:
             # Face toward center of enemy group
             enemy_center = _calculate_center_position(enemies)
-            ally.combat_position.facing = turn_toward(ally.combat_position, enemy_center)
-    
+            ally.combat_position.facing = turn_toward(
+                ally.combat_position, enemy_center
+            )
+
     for enemy in enemies:
         if len(allies) > 0:
             # Face toward center of ally group
             ally_center = _calculate_center_position(allies)
-            enemy.combat_position.facing = turn_toward(enemy.combat_position, ally_center)
-    
+            enemy.combat_position.facing = turn_toward(
+                enemy.combat_position, ally_center
+            )
+
     # Update proximity dicts for backward compatibility
     all_combatants = allies + enemies
     for unit in all_combatants:
@@ -786,10 +803,10 @@ def _spawn_units_in_zone(
     min_spacing: int = 1,
     grid_width: int = 50,
     grid_height: int = 50,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
 ) -> None:
     """Spawn units within a zone using the specified formation.
-    
+
     Args:
         units: Units to spawn
         zone: Spawn zone boundaries
@@ -799,30 +816,26 @@ def _spawn_units_in_zone(
     """
     if seed is not None:
         random.seed(seed)
-    
+
     spawned = []
-    
+
     for unit in units:
         if formation_type == "spread":
             # Distribute units across zone with spacing
-            position = _find_spaced_position(
-                zone,
-                spawned,
-                min_spacing
-            )
+            position = _find_spaced_position(zone, spawned, min_spacing)
         elif formation_type == "cluster":
             # Cluster units tightly in center of zone
             position = _find_clustered_position(
-                zone, 
-                spawned, 
+                zone,
+                spawned,
                 min_spacing,
                 grid_width=grid_width,
-                grid_height=grid_height
+                grid_height=grid_height,
             )
         else:  # "random"
             # Random placement with minimum spacing
             position = _find_random_position(zone, spawned, min_spacing)
-        
+
         unit.combat_position = position
         spawned.append(position)
 
@@ -830,18 +843,18 @@ def _spawn_units_in_zone(
 def _find_spaced_position(
     zone: Tuple[Tuple[int, int], Tuple[int, int]],
     occupied: List[CombatPosition],
-    min_spacing: int
+    min_spacing: int,
 ) -> CombatPosition:
     """Find a position in zone with minimum spacing from occupied positions.
-    
+
     Attempts to find a valid position, with fallback to random if too constrained.
     """
     (x_min, y_min), (x_max, y_max) = zone
     max_attempts = 20
-    
+
     for _ in range(max_attempts):
         pos = random_position_in_zone(zone)
-        
+
         # Check spacing constraint
         valid = True
         for occupied_pos in occupied:
@@ -849,10 +862,10 @@ def _find_spaced_position(
             if dist < min_spacing:
                 valid = False
                 break
-        
+
         if valid:
             return pos
-    
+
     # Fallback: return random position anyway
     return random_position_in_zone(zone)
 
@@ -862,10 +875,10 @@ def _find_clustered_position(
     occupied: List[CombatPosition],
     min_spacing: int,
     grid_width: int = 50,
-    grid_height: int = 50
+    grid_height: int = 50,
 ) -> CombatPosition:
     """Find position clustered near other units in zone.
-    
+
     For cluster formation: positions are close together rather than spread.
     """
     if not occupied:
@@ -874,37 +887,37 @@ def _find_clustered_position(
         center_x = (x_min + x_max) // 2
         center_y = (y_min + y_max) // 2
         return CombatPosition(x=center_x, y=center_y)
-    
+
     # Subsequent units: near existing cluster
     cluster_center = _calculate_center_position(occupied)
-    
+
     # Try positions in spiral around cluster center
     for distance in range(1, 5):
         for dx in range(-distance, distance + 1):
             for dy in range(-distance, distance + 1):
                 if abs(dx) != distance and abs(dy) != distance:
                     continue  # Only check perimeter
-                
+
                 x = cluster_center.x + dx
                 y = cluster_center.y + dy
-                
+
                 if not (0 <= x <= grid_width and 0 <= y <= grid_height):
                     continue
-                
+
                 # Check if position is in zone and has spacing
                 if _is_in_zone((x, y), zone):
                     pos = CombatPosition(x=x, y=y)
-                    
+
                     # Verify spacing
                     valid = True
                     for occupied_pos in occupied:
                         if distance_from_coords(pos, occupied_pos) < min_spacing:
                             valid = False
                             break
-                    
+
                     if valid:
                         return pos
-    
+
     # Fallback
     return random_position_in_zone(zone)
 
@@ -912,18 +925,17 @@ def _find_clustered_position(
 def _find_random_position(
     zone: Tuple[Tuple[int, int], Tuple[int, int]],
     occupied: List[CombatPosition],
-    min_spacing: int
+    min_spacing: int,
 ) -> CombatPosition:
     """Find random position in zone with minimum spacing.
-    
+
     Simpler than spread formation - just ensures min_spacing.
     """
     return _find_spaced_position(zone, occupied, min_spacing)
 
 
 def _is_in_zone(
-    point: Tuple[int, int],
-    zone: Tuple[Tuple[int, int], Tuple[int, int]]
+    point: Tuple[int, int], zone: Tuple[Tuple[int, int], Tuple[int, int]]
 ) -> bool:
     """Check if a point is within a zone."""
     (x_min, y_min), (x_max, y_max) = zone
@@ -931,70 +943,69 @@ def _is_in_zone(
     return x_min <= x <= x_max and y_min <= y <= y_max
 
 
-def _calculate_center_position(
-    positions: List[Any]
-) -> CombatPosition:
+def _calculate_center_position(positions: List[Any]) -> CombatPosition:
     """Calculate center point of all combat positions.
-    
+
     Args:
         positions: List of units with combat_position attribute
-    
+
     Returns:
         CombatPosition at center (average x, y)
     """
     valid_positions = [
-        u.combat_position for u in positions
-        if hasattr(u, 'combat_position') and u.combat_position is not None
+        u.combat_position
+        for u in positions
+        if hasattr(u, "combat_position") and u.combat_position is not None
     ]
-    
+
     if not valid_positions:
-        return CombatPosition(x=12//2, y=12//2)  # Use small grid center as safe default if no units
-    
+        return CombatPosition(
+            x=12 // 2, y=12 // 2
+        )  # Use small grid center as safe default if no units
+
     avg_x = sum(p.x for p in valid_positions) // len(valid_positions)
     avg_y = sum(p.y for p in valid_positions) // len(valid_positions)
-    
+
     return CombatPosition(x=avg_x, y=avg_y)
 
 
 def _distribute_units_across_zones(
-    units: List[Any],
-    total_zones: int,
-    zone_index: int
+    units: List[Any], total_zones: int, zone_index: int
 ) -> List[Any]:
     """Distribute units across multiple spawn zones.
-    
+
     Args:
         units: All units to spawn
         total_zones: Total number of zones
         zone_index: Current zone index (0-based)
-    
+
     Returns:
         Subset of units for this zone
     """
     if total_zones == 1:
         return units
-    
+
     # Simple round-robin distribution
     return [u for i, u in enumerate(units) if i % total_zones == zone_index]
 
 
 __all__ = [
-    'Direction',
-    'CombatPosition',
-    'CombatScenario',
-    'COMBAT_SCENARIOS',
-    'distance_from_coords',
-    'distance_squared',
-    'angle_to_target',
-    'attack_angle_difference',
-    'get_damage_modifier',
-    'get_accuracy_modifier',
-    'random_position_in_zone',
-    'clamp_position',
-    'move_toward',
-    'move_away_from',
-    'move_to_flank',
-    'turn_toward',
-    'recalculate_proximity_dict',
-    'initialize_combat_positions',
+    "Direction",
+    "CombatPosition",
+    "CombatScenario",
+    "COMBAT_SCENARIOS",
+    "distance_from_coords",
+    "distance_squared",
+    "angle_to_target",
+    "attack_angle_difference",
+    "get_damage_modifier",
+    "get_accuracy_modifier",
+    "random_position_in_zone",
+    "clamp_position",
+    "move_toward",
+    "move_away_from",
+    "move_to_flank",
+    "turn_toward",
+    "recalculate_proximity_dict",
+    "initialize_combat_positions",
 ]
