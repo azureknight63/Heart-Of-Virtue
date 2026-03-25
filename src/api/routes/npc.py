@@ -18,7 +18,7 @@ npc_bp = Blueprint("npc", __name__, url_prefix="/api/npc")
 
 def get_session_and_player():
     """Extract and validate session from Authorization header.
-    
+
     Returns:
         Tuple of (session_manager, session, player, error_response, status_code)
         or (None, None, None, error_response, status_code) on error
@@ -29,7 +29,9 @@ def get_session_and_player():
             None,
             None,
             None,
-            jsonify({"success": False, "error": "Missing or invalid Authorization header"}),
+            jsonify(
+                {"success": False, "error": "Missing or invalid Authorization header"}
+            ),
             401,
         )
 
@@ -62,10 +64,10 @@ def get_session_and_player():
 @npc_bp.route("/<npc_id>/state", methods=["GET"])
 def get_npc_state(npc_id):
     """Get current state of an NPC.
-    
+
     Args:
         npc_id: NPC identifier (from URL)
-        
+
     Returns:
         JSON response with NPC state
     """
@@ -85,16 +87,18 @@ def get_npc_state(npc_id):
     # Save session after read operation (defensive)
     session_manager.save_session(session.session_id)
 
-    return jsonify({"success": result.get("success"), "data": result}), 200 if result.get("success") else 404
+    return jsonify({"success": result.get("success"), "data": result}), (
+        200 if result.get("success") else 404
+    )
 
 
 @npc_bp.route("/<npc_id>/dialogue", methods=["GET"])
 def get_npc_dialogue(npc_id):
     """Get dialogue options from an NPC.
-    
+
     Args:
         npc_id: NPC identifier (from URL)
-        
+
     Returns:
         JSON response with dialogue state
     """
@@ -114,21 +118,23 @@ def get_npc_dialogue(npc_id):
     # Save session
     session_manager.save_session(session.session_id)
 
-    return jsonify({"success": result.get("success"), "data": result}), 200 if result.get("success") else 404
+    return jsonify({"success": result.get("success"), "data": result}), (
+        200 if result.get("success") else 404
+    )
 
 
 @npc_bp.route("/<npc_id>/dialogue", methods=["POST"])
 def select_dialogue_option(npc_id):
     """Select a dialogue option from an NPC.
-    
+
     Args:
         npc_id: NPC identifier (from URL)
-        
+
     Request body:
         {
             "option_id": 0  // Index of selected dialogue option
         }
-        
+
     Returns:
         JSON response with next dialogue state
     """
@@ -150,28 +156,31 @@ def select_dialogue_option(npc_id):
     try:
         option_id = int(request.json["option_id"])
         if option_id < 0:
-            return jsonify({"success": False, "error": "option_id must be non-negative"}), 400
+            return (
+                jsonify({"success": False, "error": "option_id must be non-negative"}),
+                400,
+            )
     except (ValueError, TypeError):
         return jsonify({"success": False, "error": "option_id must be an integer"}), 400
 
     # Select dialogue option
-    result = current_app.game_service.select_dialogue_option(
-        player, npc_id, option_id
-    )
+    result = current_app.game_service.select_dialogue_option(player, npc_id, option_id)
 
     # Save session
     session_manager.save_session(session.session_id)
 
-    return jsonify({"success": result.get("success"), "data": result}), 200 if result.get("success") else 404
+    return jsonify({"success": result.get("success"), "data": result}), (
+        200 if result.get("success") else 404
+    )
 
 
 @npc_bp.route("/<npc_id>/profile", methods=["GET"])
 def get_npc_profile(npc_id):
     """Get NPC behavior profile.
-    
+
     Args:
         npc_id: NPC identifier (from URL)
-        
+
     Returns:
         JSON response with NPC behavior profile
     """
@@ -191,13 +200,15 @@ def get_npc_profile(npc_id):
     # Save session
     session_manager.save_session(session.session_id)
 
-    return jsonify({"success": result.get("success"), "data": result}), 200 if result.get("success") else 404
+    return jsonify({"success": result.get("success"), "data": result}), (
+        200 if result.get("success") else 404
+    )
 
 
 @npc_bp.route("/quests/active", methods=["GET"])
 def get_active_quests():
     """Get list of active quests.
-    
+
     Returns:
         JSON response with active quests
     """
@@ -218,10 +229,10 @@ def get_active_quests():
 @npc_bp.route("/quests/<quest_id>/accept", methods=["POST"])
 def accept_quest(quest_id):
     """Accept (start) a quest.
-    
+
     Args:
         quest_id: Quest identifier (from URL)
-        
+
     Returns:
         JSON response with quest details
     """
@@ -247,15 +258,15 @@ def accept_quest(quest_id):
 @npc_bp.route("/quests/<quest_id>/progress", methods=["POST"])
 def update_quest_progress(quest_id):
     """Update progress on a quest objective.
-    
+
     Args:
         quest_id: Quest identifier (from URL)
-        
+
     Request body:
         {
             "objective_id": "obj_1"  // Objective to complete
         }
-        
+
     Returns:
         JSON response with updated quest progress
     """
@@ -263,7 +274,9 @@ def update_quest_progress(quest_id):
     if not quest_id or len(quest_id) == 0:
         return jsonify({"success": False, "error": "Invalid quest_id"}), 400
 
-    is_valid, error = validate_required_fields(request.get_json() or {}, ["objective_id"])
+    is_valid, error = validate_required_fields(
+        request.get_json() or {}, ["objective_id"]
+    )
     if not is_valid:
         return jsonify({"success": False, "error": error}), 400
 
@@ -289,10 +302,10 @@ def update_quest_progress(quest_id):
 @npc_bp.route("/quests/<quest_id>/status", methods=["GET"])
 def get_quest_status(quest_id):
     """Get status of a specific quest.
-    
+
     Args:
         quest_id: Quest identifier (from URL)
-        
+
     Returns:
         JSON response with quest status
     """

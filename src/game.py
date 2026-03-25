@@ -1,4 +1,4 @@
-__author__ = 'Alex Egbert'
+__author__ = "Alex Egbert"
 
 import time
 
@@ -15,7 +15,6 @@ from universe import Universe, tile_exists
 import sys
 from config_manager import ConfigManager
 from story.gorran_flavor import maybe_explore_flavor
-
 
 print_slow = functions.print_slow
 screen_clear = functions.screen_clear
@@ -34,7 +33,8 @@ def validate_numerical_input(prompt, min_value, max_value):
 def play():
     game = True
     while game:
-        cprint(r"""
+        cprint(
+            r"""
         _
        (_)
        |=|              __  __
@@ -59,41 +59,34 @@ def play():
 _\\|//__( | )______)_/
         \\|//
 
-            """, "cyan")
+            """,
+            "cyan",
+        )
         newgame = True
         save_exists = bool(functions.saves_list())
-        menu = {'NEW GAME':
-                {
-                    'Enabled': True,
-                    'Index': 1
-                },
-                'LOAD GAME':
-                {
-                    'Enabled': save_exists,
-                    'Index': 2
-                },
-                'QUIT TO DESKTOP':
-                {
-                    'Enabled': True,
-                    'Index': 3
-                }
-                }
+        menu = {
+            "NEW GAME": {"Enabled": True, "Index": 1},
+            "LOAD GAME": {"Enabled": save_exists, "Index": 2},
+            "QUIT TO DESKTOP": {"Enabled": True, "Index": 3},
+        }
 
         choice = None
-        enabled_options = {menu[option]['Index']: option for option in menu if menu[option]['Enabled']}
+        enabled_options = {
+            menu[option]["Index"]: option for option in menu if menu[option]["Enabled"]
+        }
         while choice not in enabled_options:
             for option, data in menu.items():
-                if data['Enabled']:
+                if data["Enabled"]:
                     print(f"{data['Index']}: {colored(option, 'red')}")
                 else:
                     print(f"X: {colored(option, 'yellow', attrs=['dark'])}")
-            choice = validate_numerical_input('Selection: ', 1, len(menu) + 1)
+            choice = validate_numerical_input("Selection: ", 1, len(menu) + 1)
             selected_option = enabled_options.get(choice)
-            if selected_option == 'NEW GAME':
+            if selected_option == "NEW GAME":
                 pass  # Proceed as new game
-            elif selected_option == 'LOAD GAME':
+            elif selected_option == "LOAD GAME":
                 newgame = False
-            elif selected_option == 'QUIT TO DESKTOP':
+            elif selected_option == "QUIT TO DESKTOP":
                 sys.exit()
         # Acquire player (either new or loaded). If load cancelled, restart menu loop.
         if newgame:
@@ -107,21 +100,22 @@ _\\|//__( | )______)_/
         player.universe = Universe(player)
         player.universe.build(player)
         starting_map_name = "default"
-        
+
         # Load configuration using ConfigManager
         # Support environment variable CONFIG_FILE to override default config file
         import os
-        config_file = os.getenv('CONFIG_FILE', 'config_dev.ini')
+
+        config_file = os.getenv("CONFIG_FILE", "config_dev.ini")
         config_mgr = ConfigManager(config_file)
         config = config_mgr.load()
-        
+
         testing_mode = config.testmode
         skip_dialog = config.skipdialog
         if skip_dialog:
             player.skip_dialog = True
         starting_map_name = config.startmap
         startposition = config.startposition
-        
+
         # Apply configuration to player and universe
         player.use_colour = config.use_colour
         player.enable_animations = config.enable_animations
@@ -130,13 +124,19 @@ _\\|//__( | )______)_/
         player.game_config = config
         player.universe.testing_mode = testing_mode
         player.universe.game_config = config
-        
+
         # Apply starting experience if configured
         if config.starting_exp > 0:
             player.apply_starting_experience(config.starting_exp)
-        
-        starting_map = next((map_item for map_item in player.universe.maps if
-                            map_item.get('name') == starting_map_name), player.universe.starting_map_default)
+
+        starting_map = next(
+            (
+                map_item
+                for map_item in player.universe.maps
+                if map_item.get("name") == starting_map_name
+            ),
+            player.universe.starting_map_default,
+        )
 
         if testing_mode:
             print(f"\n\n###\nTest Mode: {testing_mode}")
@@ -193,7 +193,9 @@ _\\|//__( | )______)_/
             if not player.eq_weapon:  # if the player is unarmed, "equip" fists
                 player.eq_weapon = player.fists
 
-            player.current_room = tile_exists(player.map, player.location_x, player.location_y)
+            player.current_room = tile_exists(
+                player.map, player.location_x, player.location_y
+            )
             if player.universe.game_tick > 0:
                 player.current_room.last_entered = player.universe.game_tick
             else:
@@ -204,12 +206,16 @@ _\\|//__( | )______)_/
             player.current_room.evaluate_events()
             player.current_room.modify_player(player)
             if mark_health != player.hp:
-                player.show_bars(True, False)  # show just the health bar if the player's current HP has changed
+                player.show_bars(
+                    True, False
+                )  # show just the health bar if the player's current HP has changed
                 mark_health = player.hp
             functions.print_npcs_in_room(player.current_room)
             player.current_room.stack_duplicate_items()
             player.combat_list = functions.check_for_combat(player)
-            if len(player.combat_list) > 0:  # Check the state of the room to see if there are any enemies
+            if (
+                len(player.combat_list) > 0
+            ):  # Check the state of the room to see if there are any enemies
                 print(colored("Jean readies himself for battle!", "red"))
                 combat(player)
             # check to make sure entering the most recent tile hasn't ended the game
@@ -219,18 +225,23 @@ _\\|//__( | )______)_/
                 maybe_explore_flavor(player)
                 player.stack_inv_items()
                 player.stack_gold()
-                action_input = input('Action: ')
-                raw_args = action_input.split(' ')
-                lc_exceptions = ("te", "test",
-                                 "testevent")  # exceptions to lowering case
+                action_input = input("Action: ")
+                raw_args = action_input.split(" ")
+                lc_exceptions = (
+                    "te",
+                    "test",
+                    "testevent",
+                )  # exceptions to lowering case
                 # (better precision, worse searching, may break some actions)
                 if raw_args[0] not in lc_exceptions:
                     action_input = action_input.lower()
                 available_actions = player.current_room.available_actions()
-                count_args = action_input.split(' ')
+                count_args = action_input.split(" ")
                 arbitrary_action = True  # this will be set to False if the action is a default one that the player
                 #                          normally has access to
-                if len(count_args) == 1:  # if the player entered only one word (ex 'look'), do this stuff
+                if (
+                    len(count_args) == 1
+                ):  # if the player entered only one word (ex 'look'), do this stuff
                     for action in available_actions:
                         if action_input in action.hotkey:
                             arbitrary_action = False
@@ -238,32 +249,36 @@ _\\|//__( | )______)_/
                 elif len(count_args) > 1:
                     for action in available_actions:
                         if count_args[0] in action.hotkey:
-                            join_args = ' '.join(count_args[1:])
+                            join_args = " ".join(count_args[1:])
                             player.do_action(action, join_args)
                             arbitrary_action = False
-                if arbitrary_action:  # if the command the player used could not be found in the list of default
+                if (
+                    arbitrary_action
+                ):  # if the command the player used could not be found in the list of default
                     #                   actions, check to see if objects in the room have an associated command.
                     #                   In arbitrary one-word commands, ALL objects that associate the command
                     #                   will evaluate their respective functions
                     #                   The syntax for multiple words is '<command> <target object>';
                     #                   additional words are ignored
                     interaction_scopes = [
-                        player.current_room.objects_here + player.current_room.npcs_here,
-                        player.inventory
-                        ]
+                        player.current_room.objects_here
+                        + player.current_room.npcs_here,
+                        player.inventory,
+                    ]
                     success = False
                     for scope in interaction_scopes:
-                        if functions.enumerate_for_interactions(scope, player, count_args, action_input):
+                        if functions.enumerate_for_interactions(
+                            scope, player, count_args, action_input
+                        ):
                             success = True  # Check each scope separately and, if an interaction is found,
                             # don't check the remaining scope(s)
                             break
-                    if not success:  # Nothing was found matching the arbitrary input, so Jean is mightily confused
-                        cprint("Jean isn't sure exactly what he's trying to do.", 'red')
+                    if (
+                        not success
+                    ):  # Nothing was found matching the arbitrary input, so Jean is mightily confused
+                        cprint("Jean isn't sure exactly what he's trying to do.", "red")
             player.universe.game_tick += 1
             time.sleep(0.5)
-
-
-
 
 
 if __name__ == "__main__":

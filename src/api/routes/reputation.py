@@ -152,7 +152,9 @@ def update_npc_relationship(npc_id: str):
     amount = int(amount)
     if amount < -100 or amount > 100:
         return (
-            jsonify({"success": False, "error": "'amount' must be between -100 and 100"}),
+            jsonify(
+                {"success": False, "error": "'amount' must be between -100 and 100"}
+            ),
             400,
         )
 
@@ -164,9 +166,7 @@ def update_npc_relationship(npc_id: str):
         )
 
     # Update reputation
-    result = current_app.game_service.update_reputation(
-        player, npc_id, amount, reason
-    )
+    result = current_app.game_service.update_reputation(player, npc_id, amount, reason)
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -306,8 +306,6 @@ def check_quest_available(npc_id: str, quest_type: str):
             400,
         )
 
-    result = current_app.game_service.check_quest_available(
-        player, npc_id, quest_type
-    )
+    result = current_app.game_service.check_quest_available(player, npc_id, quest_type)
 
     return jsonify({"success": True, "data": result}), 200

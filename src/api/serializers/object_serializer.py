@@ -25,7 +25,7 @@ class ObjectSerializer:
         # Passability and state
         if hasattr(obj, "is_passable"):
             obj_data["is_passable"] = obj.is_passable
-        
+
         # Hidden/discovery info
         if hasattr(obj, "hidden"):
             obj_data["hidden"] = obj.hidden
@@ -43,23 +43,23 @@ class ObjectSerializer:
         # Handle state/opened flag consistently
         if hasattr(obj, "state"):
             obj_data["state"] = obj.state
-            obj_data["opened"] = (obj.state == "opened")
+            obj_data["opened"] = obj.state == "opened"
         elif hasattr(obj, "opened"):
             obj_data["opened"] = obj.opened
-            
+
         # Ensure keywords are consistent with dynamic state
         if "keywords" in obj_data and isinstance(obj_data["keywords"], list):
             has_locked = hasattr(obj, "locked")
             has_opened_attr = hasattr(obj, "opened") or hasattr(obj, "state")
-            
+
             if has_locked or has_opened_attr:
                 current_k = obj_data["keywords"]
                 is_locked = obj_data.get("locked", False)
                 is_opened = obj_data.get("opened", False)
-                
+
                 # Filter out state-dependent keywords to avoid duplicates or inconsistencies
                 new_k = [k for k in current_k if k not in ("open", "unlock")]
-                
+
                 if is_locked:
                     # If locked, only show unlock
                     if "unlock" not in new_k:
@@ -68,9 +68,9 @@ class ObjectSerializer:
                     # If closed and unlocked, show open
                     if "open" not in new_k:
                         new_k.append("open")
-                
+
                 obj_data["keywords"] = new_k
-            
+
         if hasattr(obj, "open_message"):
             obj_data["open_message"] = obj.open_message
         if hasattr(obj, "idle_message"):
@@ -81,10 +81,10 @@ class ObjectSerializer:
     @staticmethod
     def serialize(obj: Any) -> Dict[str, Any]:
         """Serialize a single world object.
-        
+
         Args:
             obj: World object to serialize (Container, Chest, Door, Shrine, etc.)
-            
+
         Returns:
             Dictionary with object data
         """
@@ -96,7 +96,7 @@ class ObjectSerializer:
             from objects import Container
         except ImportError:
             from src.objects import Container
-        
+
         if isinstance(obj, Container) or type(obj).__name__ == "Container":
             return ObjectSerializer.serialize_container(obj)
 
@@ -105,25 +105,25 @@ class ObjectSerializer:
     @staticmethod
     def serialize_list(objects: List[Any]) -> List[Dict[str, Any]]:
         """Serialize multiple world objects.
-        
+
         Args:
             objects: List of world objects
-            
+
         Returns:
             List of serialized object dictionaries
         """
         if not objects:
             return []
-        
+
         return [ObjectSerializer.serialize(obj) for obj in objects]
 
     @staticmethod
     def serialize_container(obj: Any) -> Dict[str, Any]:
         """Serialize a container object with its contents.
-        
+
         Args:
             obj: Container object (Chest, Container, etc.)
-            
+
         Returns:
             Dictionary with container data and items
         """
@@ -155,10 +155,10 @@ class ObjectSerializer:
     @staticmethod
     def serialize_interactive(obj: Any) -> Dict[str, Any]:
         """Serialize interactive object with event/consequence data.
-        
+
         Args:
             obj: Interactive object to serialize
-            
+
         Returns:
             Dictionary with interaction data
         """
@@ -188,10 +188,10 @@ class ObjectSerializer:
     @staticmethod
     def serialize_door(obj: Any) -> Dict[str, Any]:
         """Serialize door object with state and connection info.
-        
+
         Args:
             obj: Door object to serialize
-            
+
         Returns:
             Dictionary with door data
         """
@@ -220,10 +220,10 @@ class ObjectSerializer:
     @staticmethod
     def serialize_shrine(obj: Any) -> Dict[str, Any]:
         """Serialize shrine object with blessing/interaction info.
-        
+
         Args:
             obj: Shrine object to serialize
-            
+
         Returns:
             Dictionary with shrine data
         """

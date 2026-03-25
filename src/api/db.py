@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Database:
     _instance = None
     _client = None
@@ -15,6 +16,7 @@ class Database:
 
     def get_client(self):
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -26,7 +28,11 @@ class Database:
             # The http client usually has a _session.loop
             session = getattr(self._client, "_session", None)
             if session:
-                if session.closed or (loop and session.loop != loop) or session.loop.is_closed():
+                if (
+                    session.closed
+                    or (loop and session.loop != loop)
+                    or session.loop.is_closed()
+                ):
                     self._client = None
 
         if self._client is None:
@@ -49,5 +55,6 @@ class Database:
         if self._client:
             await self._client.close()
             self._client = None
+
 
 db = Database()

@@ -14,12 +14,20 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 MAGENTA = "\033[35m"
 
+
 class BaseInterface:
     """
     Base class for player interfaces (menus, status displays, etc.)
     Handles common features: title, choices, and exit handlers.
     """
-    def __init__(self, title: str, choices: list = None, exit_label: str = "Exit", exit_message: str = "Exiting..."):
+
+    def __init__(
+        self,
+        title: str,
+        choices: list = None,
+        exit_label: str = "Exit",
+        exit_message: str = "Exiting...",
+    ):
         self.title = title
         self.choices = choices if choices is not None else []
         self.exit_label = exit_label
@@ -30,7 +38,7 @@ class BaseInterface:
 
     def display_choices(self):
         for idx, choice in enumerate(self.choices):
-            label = choice.get('label', str(choice))
+            label = choice.get("label", str(choice))
             print(f"{YELLOW}{idx}: {label}{RESET}")
         print(f"{RED}x: {self.exit_label}{RESET}")
 
@@ -41,7 +49,9 @@ class BaseInterface:
         self.display_title()
         while True:
             if not callable(self.display_choices):
-                print(f"{RED}Error: display_choices is not callable! Value: {self.display_choices} (type: {type(self.display_choices)}){RESET}")
+                print(
+                    f"{RED}Error: display_choices is not callable! Value: {self.display_choices} (type: {type(self.display_choices)}){RESET}"
+                )
                 break
             self.display_choices()
             selection = input(f"{BOLD}Selection:{RESET} ")
@@ -56,7 +66,7 @@ class BaseInterface:
     def handle_choice(self, idx: int):
         choice = self.choices[idx]
         print(f"{GREEN}You selected: {choice.get('label', str(choice))}{RESET}")
-        submenu = choice.get('submenu')
+        submenu = choice.get("submenu")
         if submenu and isinstance(submenu, BaseInterface):
             submenu.run()
         # Override in subclasses for specific behavior
@@ -65,7 +75,12 @@ class BaseInterface:
 class ShopBuyMenu(BaseInterface):
     def __init__(self, shop_interface):
         self.shop = shop_interface
-        super().__init__(title="Buy Menu", choices=[], exit_label="Back", exit_message="Leaving Buy Menu!")
+        super().__init__(
+            title="Buy Menu",
+            choices=[],
+            exit_label="Back",
+            exit_message="Leaving Buy Menu!",
+        )
 
     def display_choices(self):
         # Rebuild choices each time menu is displayed
@@ -73,22 +88,31 @@ class ShopBuyMenu(BaseInterface):
         # Show player's weight status
         if self.shop.player:
             self.shop.player.refresh_weight()
-            print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
+            print(
+                f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}"
+            )
             # Show merchant and player gold when entering buy menu
-            if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
-                print(f"{MAGENTA}Merchant Gold: {get_gold(self.shop.merchant.inventory)} | Your Gold: {get_gold(self.shop.player.inventory)}{RESET}")
-        if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
+            if self.shop.merchant and hasattr(self.shop.merchant, "inventory"):
+                print(
+                    f"{MAGENTA}Merchant Gold: {get_gold(self.shop.merchant.inventory)} | Your Gold: {get_gold(self.shop.player.inventory)}{RESET}"
+                )
+        if self.shop.merchant and hasattr(self.shop.merchant, "inventory"):
             for item in self.shop.merchant.inventory:
-                if getattr(item, 'name', None) != 'Gold':
-                    price = int(getattr(item, 'value', 1) * self.shop.buy_modifier)
-                    weight = getattr(item, 'weight', 0)
-                    self.choices.append({'label': f"{item.name} (Price: {price}, Weight: {weight})", 'item': item})
+                if getattr(item, "name", None) != "Gold":
+                    price = int(getattr(item, "value", 1) * self.shop.buy_modifier)
+                    weight = getattr(item, "weight", 0)
+                    self.choices.append(
+                        {
+                            "label": f"{item.name} (Price: {price}, Weight: {weight})",
+                            "item": item,
+                        }
+                    )
         # Call parent method to display the choices
         super().display_choices()
 
     def handle_choice(self, idx: int):
-        item = self.choices[idx]['item']
-        price = int(getattr(item, 'value', 1) * self.shop.buy_modifier)
+        item = self.choices[idx]["item"]
+        price = int(getattr(item, "value", 1) * self.shop.buy_modifier)
         # Show detailed item info and current price, ask for confirmation
         try:
             print(item)
@@ -96,25 +120,28 @@ class ShopBuyMenu(BaseInterface):
             print(f"{item.name if hasattr(item, 'name') else str(item)}")
         print(f"{MAGENTA}Merchant price: {price} gold{RESET}")
         confirm = input(f"{BOLD}Proceed to buy this item? (y/n): {RESET}")
-        if confirm.lower() != 'y':
+        if confirm.lower() != "y":
             print(f"{YELLOW}Purchase cancelled.{RESET}")
             return
-        if hasattr(item, 'count'):
+        if hasattr(item, "count"):
             max_qty = min(item.count, get_gold(self.shop.player.inventory) // price)
             self.shop.handle_count_item_transaction(
-                item=item,
-                price=price,
-                max_qty=max_qty,
-                transaction_type="buy"
+                item=item, price=price, max_qty=max_qty, transaction_type="buy"
             )
         else:
-            item_weight = getattr(item, 'weight', 0)
-            weightcap = self.shop.player.weight_tolerance - self.shop.player.weight_current
+            item_weight = getattr(item, "weight", 0)
+            weightcap = (
+                self.shop.player.weight_tolerance - self.shop.player.weight_current
+            )
             if item_weight > weightcap:
-                print(f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}")
+                print(
+                    f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}"
+                )
                 return
             if get_gold(self.shop.player.inventory) >= price:
-                transfer_gold(self.shop.player.inventory, self.shop.merchant.inventory, price)
+                transfer_gold(
+                    self.shop.player.inventory, self.shop.merchant.inventory, price
+                )
                 transfer_item(self.shop.merchant, self.shop.player, item)
                 print(f"{GREEN}You bought {item.name} for {price} gold.{RESET}")
             else:
@@ -137,7 +164,12 @@ class ShopBuyMenu(BaseInterface):
 class ShopSellMenu(BaseInterface):
     def __init__(self, shop_interface):
         self.shop = shop_interface
-        super().__init__(title="Sell Menu", choices=[], exit_label="Back", exit_message="Leaving Sell Menu!")
+        super().__init__(
+            title="Sell Menu",
+            choices=[],
+            exit_label="Back",
+            exit_message="Leaving Sell Menu!",
+        )
 
     def display_choices(self):
         # Rebuild choices each time menu is displayed
@@ -145,22 +177,31 @@ class ShopSellMenu(BaseInterface):
         # Show player's weight status
         if self.shop.player:
             self.shop.player.refresh_weight()
-            print(f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}")
+            print(
+                f"{MAGENTA}Your Weight: {self.shop.player.weight_current}/{self.shop.player.weight_tolerance}{RESET}"
+            )
             # Show merchant and player gold when entering sell menu
-            if self.shop.merchant and hasattr(self.shop.merchant, 'inventory'):
-                print(f"{MAGENTA}Merchant Gold: {get_gold(self.shop.merchant.inventory)} | Your Gold: {get_gold(self.shop.player.inventory)}{RESET}")
-        if self.shop.player and hasattr(self.shop.player, 'inventory'):
+            if self.shop.merchant and hasattr(self.shop.merchant, "inventory"):
+                print(
+                    f"{MAGENTA}Merchant Gold: {get_gold(self.shop.merchant.inventory)} | Your Gold: {get_gold(self.shop.player.inventory)}{RESET}"
+                )
+        if self.shop.player and hasattr(self.shop.player, "inventory"):
             for item in self.shop.player.inventory:
-                if getattr(item, 'name', None) != 'Gold':
-                    price = int(getattr(item, 'value', 1) * self.shop.sell_modifier)
-                    weight = getattr(item, 'weight', 0)
-                    self.choices.append({'label': f"{item.name} (Sell Price: {price}, Weight: {weight})", 'item': item})
+                if getattr(item, "name", None) != "Gold":
+                    price = int(getattr(item, "value", 1) * self.shop.sell_modifier)
+                    weight = getattr(item, "weight", 0)
+                    self.choices.append(
+                        {
+                            "label": f"{item.name} (Sell Price: {price}, Weight: {weight})",
+                            "item": item,
+                        }
+                    )
         # Call parent method to display the choices
         super().display_choices()
 
     def handle_choice(self, idx: int):
-        item = self.choices[idx]['item']
-        price = int(getattr(item, 'value', 1) * self.shop.sell_modifier)
+        item = self.choices[idx]["item"]
+        price = int(getattr(item, "value", 1) * self.shop.sell_modifier)
         # Show detailed item info and current sell price, then confirm
         try:
             print(item)
@@ -168,20 +209,19 @@ class ShopSellMenu(BaseInterface):
             print(f"{item.name if hasattr(item, 'name') else str(item)}")
         print(f"{MAGENTA}Merchant will pay: {price} gold{RESET}")
         confirm = input(f"{BOLD}Proceed to sell this item? (y/n): {RESET}")
-        if confirm.lower() != 'y':
+        if confirm.lower() != "y":
             print(f"{YELLOW}Sale cancelled.{RESET}")
             return
-        if hasattr(item, 'count'):
+        if hasattr(item, "count"):
             max_qty = min(item.count, get_gold(self.shop.merchant.inventory) // price)
             self.shop.handle_count_item_transaction(
-                item=item,
-                price=price,
-                max_qty=max_qty,
-                transaction_type="sell"
+                item=item, price=price, max_qty=max_qty, transaction_type="sell"
             )
         else:
             if get_gold(self.shop.merchant.inventory) >= price:
-                transfer_gold(self.shop.merchant.inventory, self.shop.player.inventory, price)
+                transfer_gold(
+                    self.shop.merchant.inventory, self.shop.player.inventory, price
+                )
                 transfer_item(self.shop.player, self.shop.merchant, item)
                 print(f"{GREEN}You sold {item.name} for {price} gold.{RESET}")
             else:
@@ -209,8 +249,8 @@ def get_gold(inventory: list) -> int:
     """
     gold_amt = 0
     for item in inventory:
-        if hasattr(item, 'name') and item.name == 'Gold':
-            gold_amt += getattr(item, 'amt', 0)
+        if hasattr(item, "name") and item.name == "Gold":
+            gold_amt += getattr(item, "amt", 0)
     return gold_amt
 
 
@@ -228,14 +268,16 @@ def transfer_gold(from_inventory: list, to_inventory: list, amt: int) -> None:
         amt: int - amount of gold to move from `from_inventory` to `to_inventory`.
                    Positive `amt` moves gold from `from_inventory` to `to_inventory`.
     """
+
     def _find_gold_item(inventory: list) -> object | None:
         for search_item in inventory:
-            if hasattr(search_item, 'name') and search_item.name == 'Gold':
+            if hasattr(search_item, "name") and search_item.name == "Gold":
                 return search_item
         return None
 
     def _create_new_gold_item(inventory: list) -> object:
         from items import Gold
+
         new_gold = Gold(0)
         inventory.append(new_gold)
         return new_gold
@@ -258,13 +300,18 @@ def transfer_gold(from_inventory: list, to_inventory: list, amt: int) -> None:
 
         # Sync count and update description
         for item in [gold_item_from, gold_item_to]:
-            if hasattr(item, 'count'):
+            if hasattr(item, "count"):
                 item.count = item.amt
-            if hasattr(item, 'stack_grammar') and callable(item.stack_grammar):
+            if hasattr(item, "stack_grammar") and callable(item.stack_grammar):
                 item.stack_grammar()
 
 
-def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: Item, qty: int=1) -> None:
+def transfer_item(
+    source: Player | NPC | Object,
+    target: Player | NPC | Object,
+    item: Item,
+    qty: int = 1,
+) -> None:
     """
     Transfer an item (or a quantity of a stackable item) from `source` to `target`.
 
@@ -282,7 +329,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
       is called on both `source` and `target` if available.
     - No exceptions are raised; failures are communicated via printed messages.
     """
-    if not hasattr(source, 'inventory') or not hasattr(target, 'inventory'):
+    if not hasattr(source, "inventory") or not hasattr(target, "inventory"):
         print(f"{RED}Error: Source or target does not have an inventory!{RESET}")
         return
     from_inventory = source.inventory
@@ -290,7 +337,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
 
     # Helper to set merchandise flag consistently
     def _set_merch_flag(obj, item_target, item_source):
-        if not hasattr(obj, 'merchandise'):
+        if not hasattr(obj, "merchandise"):
             return
         is_player = lambda ent: getattr(ent, "name", None) == "Jean"
         is_merchant = lambda ent: hasattr(ent, "shop")
@@ -305,12 +352,14 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
 
     # If the item isn't in the source inventory, nothing to do
     if item not in from_inventory:
-        print(f"{RED}Error: Item {getattr(item, 'name', 'Unknown')} not found in source inventory.{RESET}")
+        print(
+            f"{RED}Error: Item {getattr(item, 'name', 'Unknown')} not found in source inventory.{RESET}"
+        )
         return
 
     # Handle stackable items
-    if hasattr(item, 'count') and getattr(item, 'count', 0) > 1:
-        available = getattr(item, 'count', 0)
+    if hasattr(item, "count") and getattr(item, "count", 0) > 1:
+        available = getattr(item, "count", 0)
         # Clamp requested qty to available
         if qty >= available:
             # Move entire stack object
@@ -327,7 +376,7 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
                 item.stack_grammar()
             # Create a shallow copy of the item object then set count to qty
             new_item = item.__class__.__new__(item.__class__)
-            if hasattr(item, '__dict__'):
+            if hasattr(item, "__dict__"):
                 for k, v in item.__dict__.items():
                     try:
                         setattr(new_item, k, _copy.copy(v))
@@ -336,13 +385,13 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
                             setattr(new_item, k, v)
                         except Exception:
                             pass
-            setattr(new_item, 'count', qty)
+            setattr(new_item, "count", qty)
             if hasattr(new_item, "stack_grammar") and callable(new_item.stack_grammar):
                 new_item.stack_grammar()
             _set_merch_flag(new_item, target, source)
             to_inventory.append(new_item)
             # If source stack was reduced to zero for some reason, remove it
-            if getattr(item, 'count', 0) <= 0:
+            if getattr(item, "count", 0) <= 0:
                 try:
                     from_inventory.remove(item)
                 except ValueError:
@@ -363,12 +412,12 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
         pass
 
     # Refresh weights if possible
-    if hasattr(source, 'refresh_weight') and callable(source.refresh_weight):
+    if hasattr(source, "refresh_weight") and callable(source.refresh_weight):
         try:
             source.refresh_weight()
         except Exception:
             pass
-    if hasattr(target, 'refresh_weight') and callable(target.refresh_weight):
+    if hasattr(target, "refresh_weight") and callable(target.refresh_weight):
         try:
             target.refresh_weight()
         except Exception:
@@ -376,7 +425,14 @@ def transfer_item(source: Player|NPC|Object, target: Player|NPC|Object, item: It
 
 
 class ShopInterface(BaseInterface):
-    def __init__(self, merchant, player=None, shop_name=None, base_buy_modifier=1.0, base_sell_modifier=0.5):
+    def __init__(
+        self,
+        merchant,
+        player=None,
+        shop_name=None,
+        base_buy_modifier=1.0,
+        base_sell_modifier=0.5,
+    ):
         if not shop_name:
             shop_name = f"{merchant.name}'s Shop"
         self.merchant = merchant
@@ -384,19 +440,25 @@ class ShopInterface(BaseInterface):
         self.base_buy_modifier = base_buy_modifier
         self.base_sell_modifier = base_sell_modifier
         self.buy_modifier = base_buy_modifier  # affected by events, player skills, etc.
-        self.sell_modifier = base_sell_modifier  # affected by events, player skills, etc.
+        self.sell_modifier = (
+            base_sell_modifier  # affected by events, player skills, etc.
+        )
 
         # Buy submenu
         self.buy_menu = ShopBuyMenu(self)
-        assert isinstance(self.buy_menu, ShopBuyMenu), "buy_menu is not a ShopBuyMenu instance!"
+        assert isinstance(
+            self.buy_menu, ShopBuyMenu
+        ), "buy_menu is not a ShopBuyMenu instance!"
         # Sell submenu
         self.sell_menu = ShopSellMenu(self)
-        assert isinstance(self.sell_menu, ShopSellMenu), "sell_menu is not a ShopSellMenu instance!"
+        assert isinstance(
+            self.sell_menu, ShopSellMenu
+        ), "sell_menu is not a ShopSellMenu instance!"
 
         # Main shop menu choices use submenus
         self.choices = [
-            {'label': 'Buy', 'submenu': self.buy_menu},
-            {'label': 'Sell', 'submenu': self.sell_menu}
+            {"label": "Buy", "submenu": self.buy_menu},
+            {"label": "Sell", "submenu": self.sell_menu},
         ]
         super().__init__(title=shop_name, choices=self.choices, exit_label="Leave Shop")
 
@@ -408,12 +470,17 @@ class ShopInterface(BaseInterface):
 
     def handle_count_item_transaction(self, item, price, max_qty, transaction_type):
         if max_qty < 1:
-            msg = f"{RED}Not enough gold or item unavailable.{RESET}" if transaction_type == "buy" \
+            msg = (
+                f"{RED}Not enough gold or item unavailable.{RESET}"
+                if transaction_type == "buy"
                 else f"{RED}Merchant does not have enough gold or item unavailable.{RESET}"
+            )
             print(msg)
             return False
 
-        qty = input(f"{BOLD}How many would you like to {transaction_type}? (1-{max_qty}): {RESET}")
+        qty = input(
+            f"{BOLD}How many would you like to {transaction_type}? (1-{max_qty}): {RESET}"
+        )
         if not qty.isdigit():
             print(f"{RED}Invalid quantity.{RESET}")
             return False
@@ -430,22 +497,30 @@ class ShopInterface(BaseInterface):
             print(item)
         except Exception:
             print(f"{item.name if hasattr(item, 'name') else str(item)}")
-        print(f"{MAGENTA}Total {('cost' if transaction_type=='buy' else 'proceeds')}: {total_price} gold{RESET}")
-        final_confirm = input(f"{BOLD}Confirm {transaction_type} of {qty}x {getattr(item,'name',str(item))} for {total_price} gold? (y/n): {RESET}")
-        if final_confirm.lower() != 'y':
+        print(
+            f"{MAGENTA}Total {('cost' if transaction_type=='buy' else 'proceeds')}: {total_price} gold{RESET}"
+        )
+        final_confirm = input(
+            f"{BOLD}Confirm {transaction_type} of {qty}x {getattr(item,'name',str(item))} for {total_price} gold? (y/n): {RESET}"
+        )
+        if final_confirm.lower() != "y":
             print(f"{YELLOW}{transaction_type.title()} cancelled.{RESET}")
             return False
 
         if transaction_type == "buy":
             # Calculate total weight for qty
-            item_weight = getattr(item, 'weight', 0) * qty
+            item_weight = getattr(item, "weight", 0) * qty
             weightcap = self.player.weight_tolerance - self.player.weight_current
             if item_weight > weightcap:
-                print(f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}")
+                print(
+                    f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}"
+                )
                 return False
             transfer_gold(self.player.inventory, self.merchant.inventory, total_price)
             transfer_item(self.merchant, self.player, item, qty)
-            print(f"{GREEN}You bought {qty}x {item.name} for {total_price} gold.{RESET}")
+            print(
+                f"{GREEN}You bought {qty}x {item.name} for {total_price} gold.{RESET}"
+            )
         else:  # sell
             transfer_gold(self.merchant.inventory, self.player.inventory, total_price)
             transfer_item(self.player, self.merchant, item, qty)
@@ -455,13 +530,13 @@ class ShopInterface(BaseInterface):
 
     def handle_choice(self, idx: int):
         self.choices = [
-            {'label': 'Buy', 'submenu': self.buy_menu},
-            {'label': 'Sell', 'submenu': self.sell_menu}
+            {"label": "Buy", "submenu": self.buy_menu},
+            {"label": "Sell", "submenu": self.sell_menu},
         ]
         choice = self.choices[idx]
         print(f"{GREEN}You selected: {choice.get('label', str(choice))}{RESET}")
-        submenu = choice.get('submenu')
-        if submenu and hasattr(submenu, 'run') and callable(submenu.run):
+        submenu = choice.get("submenu")
+        if submenu and hasattr(submenu, "run") and callable(submenu.run):
             submenu.run()
         # Override in subclasses for specific behavior
 
@@ -486,20 +561,31 @@ class InventoryCategorySubmenu(BaseInterface):
         self.category_name = category_name  # store for rebuilds
         choices = []
         for i, item in enumerate(items):
-            item_preference_value = "(P)" if item.name in player.preferences.values() else ""
+            item_preference_value = (
+                "(P)" if item.name in player.preferences.values() else ""
+            )
             label = f"{item.name} {item_preference_value}"
-            if getattr(item, 'isequipped', False):
+            if getattr(item, "isequipped", False):
                 label += " (Equipped)"
-            if hasattr(item, 'count') and getattr(item, 'count', 1) > 1:
+            if hasattr(item, "count") and getattr(item, "count", 1) > 1:
                 label += f" ({item.count})"
             if hasattr(item, "merchandise") and item.merchandise:
                 label += " (Merch)"
-            choices.append({'label': label, 'item': item})
-        super().__init__(title=f"{player.name}'s {category_name}", choices=choices, exit_label="Back", exit_message="Returning to category selection...")
+            choices.append({"label": label, "item": item})
+        super().__init__(
+            title=f"{player.name}'s {category_name}",
+            choices=choices,
+            exit_label="Back",
+            exit_message="Returning to category selection...",
+        )
 
     def _rebuild_choices(self):
         # Remove any stack items that have reached zero count
-        remove_zero = [itm for itm in self.player.inventory if hasattr(itm, 'count') and getattr(itm, 'count', 0) <= 0]
+        remove_zero = [
+            itm
+            for itm in self.player.inventory
+            if hasattr(itm, "count") and getattr(itm, "count", 0) <= 0
+        ]
         for itm in remove_zero:
             try:
                 self.player.inventory.remove(itm)
@@ -508,49 +594,62 @@ class InventoryCategorySubmenu(BaseInterface):
         # Rebuild based on current inventory contents for this category
         self.choices = []
         for item in self.player.inventory:
-            if getattr(item, 'maintype', None) == self.category_name:
-                item_preference_value = "(P)" if item.name in self.player.preferences.values() else ""
+            if getattr(item, "maintype", None) == self.category_name:
+                item_preference_value = (
+                    "(P)" if item.name in self.player.preferences.values() else ""
+                )
                 label = f"{item.name} {item_preference_value}"
-                if getattr(item, 'isequipped', False):
+                if getattr(item, "isequipped", False):
                     label += " (Equipped)"
-                if hasattr(item, 'count') and getattr(item, 'count', 1) > 1:
+                if hasattr(item, "count") and getattr(item, "count", 1) > 1:
                     label += f" ({item.count})"
                 if hasattr(item, "merchandise") and item.merchandise:
                     label += " (Merch)"
-                self.choices.append({'label': label, 'item': item})
+                self.choices.append({"label": label, "item": item})
 
     def handle_exit(self):
         print(f"Returning to category selection...")
 
     def handle_choice(self, idx: int):
-        item = self.choices[idx]['item']
-        print(item, '\n')
-        if getattr(item, "subtype", None) == "Arrow" and self.player.preferences.get("arrow") == item.name:
-            print('\nThis is your preferred arrow type. You will choose this when shooting your bow as '
-                  'long as you have enough.\nIf you select "prefer" again, you will remove this preference. '
-                  'Having no arrow preference will force you to choose the arrow you want each time you shoot.\n')
+        item = self.choices[idx]["item"]
+        print(item, "\n")
+        if (
+            getattr(item, "subtype", None) == "Arrow"
+            and self.player.preferences.get("arrow") == item.name
+        ):
+            print(
+                "\nThis is your preferred arrow type. You will choose this when shooting your bow as "
+                'long as you have enough.\nIf you select "prefer" again, you will remove this preference. '
+                "Having no arrow preference will force you to choose the arrow you want each time you shoot.\n"
+            )
         if getattr(item, "interactions", None):
             InventoryInterface.inventory_item_sub_menu_static(item, self.player)
             # After interaction, rebuild so dropped/changed items update immediately
             self._rebuild_choices()
         else:
-            __import__('functions').await_input()
+            __import__("functions").await_input()
 
 
 class InventoryInterface(BaseInterface):
     def __init__(self, player):
         self.player = player
         self.item_categories = {
-            "Consumable": {"hotkey": "c", "class": __import__('items').Consumable},
-            "Weapon": {"hotkey": "w", "class": __import__('items').Weapon},
-            "Armor": {"hotkey": "a", "class": __import__('items').Armor},
-            "Boots": {"hotkey": "b", "class": __import__('items').Boots},
-            "Helm": {"hotkey": "h", "class": __import__('items').Helm},
-            "Gloves": {"hotkey": "g", "class": __import__('items').Gloves},
-            "Accessory": {"hotkey": "y", "class": __import__('items').Accessory},
-            "Special": {"hotkey": "s", "class": __import__('items').Special, "include_maintypes": ["Special", "Book", "Relic"]}
+            "Consumable": {"hotkey": "c", "class": __import__("items").Consumable},
+            "Weapon": {"hotkey": "w", "class": __import__("items").Weapon},
+            "Armor": {"hotkey": "a", "class": __import__("items").Armor},
+            "Boots": {"hotkey": "b", "class": __import__("items").Boots},
+            "Helm": {"hotkey": "h", "class": __import__("items").Helm},
+            "Gloves": {"hotkey": "g", "class": __import__("items").Gloves},
+            "Accessory": {"hotkey": "y", "class": __import__("items").Accessory},
+            "Special": {
+                "hotkey": "s",
+                "class": __import__("items").Special,
+                "include_maintypes": ["Special", "Book", "Relic"],
+            },
         }
-        super().__init__(title=f"{player.name}'s Inventory", exit_label="Exit Inventory")
+        super().__init__(
+            title=f"{player.name}'s Inventory", exit_label="Exit Inventory"
+        )
 
     def run(self):
         while True:
@@ -558,23 +657,31 @@ class InventoryInterface(BaseInterface):
             print(f"=====")
             print(f"Inventory")
             print(f"=====")
-            print(f"Weight: {self.player.weight_current} / {self.player.weight_tolerance}")
-            gold_amt = sum(getattr(item, 'amt', 0) for item in self.player.inventory if getattr(item, 'subtype', None) == "Gold")
+            print(
+                f"Weight: {self.player.weight_current} / {self.player.weight_tolerance}"
+            )
+            gold_amt = sum(
+                getattr(item, "amt", 0)
+                for item in self.player.inventory
+                if getattr(item, "subtype", None) == "Gold"
+            )
             print(f"Gold: {gold_amt}\n\nSelect a category to view:\n")
             # Build item_types and item_counts robustly
             # Track which categories have items
             category_counts = {}
             for cat_name, cat_data in self.item_categories.items():
                 category_counts[cat_name] = 0
-                include_maintypes = cat_data.get("include_maintypes", [cat_data["class"].__name__])
+                include_maintypes = cat_data.get(
+                    "include_maintypes", [cat_data["class"].__name__]
+                )
                 for item in self.player.inventory:
-                    item_maintype = getattr(item, 'maintype', None)
+                    item_maintype = getattr(item, "maintype", None)
                     if item_maintype in include_maintypes:
-                        if hasattr(item, 'count'):
+                        if hasattr(item, "count"):
                             category_counts[cat_name] += item.count
                         else:
                             category_counts[cat_name] += 1
-            
+
             # Display categories with items
             for cat_name, cat_data in self.item_categories.items():
                 count = category_counts.get(cat_name, 0)
@@ -583,7 +690,7 @@ class InventoryInterface(BaseInterface):
                     print(f"({hotkey}) {cat_name}: {count}")
             print("(x) Cancel\n")
             inventory_selection = input("Selection: ")
-            if inventory_selection == 'x':
+            if inventory_selection == "x":
                 break
             selected_category = None
             for key, value in self.item_categories.items():
@@ -593,12 +700,16 @@ class InventoryInterface(BaseInterface):
             choices = []
             if selected_category:
                 cat_data = self.item_categories[selected_category]
-                include_maintypes = cat_data.get("include_maintypes", [cat_data["class"].__name__])
+                include_maintypes = cat_data.get(
+                    "include_maintypes", [cat_data["class"].__name__]
+                )
                 for item in self.player.inventory:
-                    if getattr(item, 'maintype', None) in include_maintypes:
+                    if getattr(item, "maintype", None) in include_maintypes:
                         choices.append(item)
             if choices:
-                submenu = InventoryCategorySubmenu(choices, self.player, selected_category)
+                submenu = InventoryCategorySubmenu(
+                    choices, self.player, selected_category
+                )
                 submenu.run()
 
     @staticmethod
@@ -608,17 +719,18 @@ class InventoryInterface(BaseInterface):
             print(f"{i}: {action.title()}")
         print("(x): Nothing, nevermind.\n")
         selection = input("Selection: ")
-        if selection == 'x':
+        if selection == "x":
             return
-        if __import__('functions').is_input_integer(selection):
+        if __import__("functions").is_input_integer(selection):
             selection = int(selection)
             if hasattr(item, item.interactions[selection]):
                 method = getattr(item, item.interactions[selection])
                 # Inspect method signature to determine if it expects a player argument
                 import inspect
+
                 sig = inspect.signature(method)
                 # Count parameters excluding 'self' (for bound methods, 'self' is already bound)
-                params = [p for p in sig.parameters.values() if p.name != 'self']
+                params = [p for p in sig.parameters.values() if p.name != "self"]
                 if len(params) > 0:
                     method(player)
                 else:
@@ -629,6 +741,7 @@ class ContainerLootInterface(BaseInterface):
     """
     Interface for looting containers. Handles item selection and transfer.
     """
+
     def __init__(self, container, player):
         self.container = container
         self.player = player
@@ -637,25 +750,26 @@ class ContainerLootInterface(BaseInterface):
         choices = []
         for i, item in enumerate(container.inventory):
             tag_count = f"({item.count})" if hasattr(item, "count") else ""
-            tag_merch = "(Merch)" if hasattr(item, "merchandise") and item.merchandise else ""
-            choices.append({
-                'label': f"{item.name} {tag_count} {tag_merch}",
-                'item': item,
-                'index': i
-            })
+            tag_merch = (
+                "(Merch)" if hasattr(item, "merchandise") and item.merchandise else ""
+            )
+            choices.append(
+                {
+                    "label": f"{item.name} {tag_count} {tag_merch}",
+                    "item": item,
+                    "index": i,
+                }
+            )
 
         # Add "Take All" option if there are items
         if choices:
-            choices.append({
-                'label': "Take all items",
-                'action': 'take_all'
-            })
+            choices.append({"label": "Take all items", "action": "take_all"})
 
         super().__init__(
             title=f"Looting {container.nickname}",
             choices=choices,
             exit_label="Cancel",
-            exit_message=f"Jean closes the {container.nickname}."
+            exit_message=f"Jean closes the {container.nickname}.",
         )
 
     def display_title(self):
@@ -667,24 +781,28 @@ class ContainerLootInterface(BaseInterface):
         choice = self.choices[idx]
 
         # Handle container-level "Take All" option
-        if choice.get('action') == 'take_all':
+        if choice.get("action") == "take_all":
             self._take_all_items()
             return
 
         # Handle individual item selection with a sub-menu (interactive only when stdin is a TTY)
         # Prefer index-based transfers when an index is supplied in the choice to preserve
         # existing behavior where an invalid index prevents transfer (used by tests).
-        item_index = choice.get('index')
+        item_index = choice.get("index")
         if item_index is not None:
             # Validate the recorded index against current container contents
-            if not isinstance(item_index, int) or item_index < 0 or item_index >= len(self.container.inventory):
+            if (
+                not isinstance(item_index, int)
+                or item_index < 0
+                or item_index >= len(self.container.inventory)
+            ):
                 # Invalid index -> do not transfer
                 print(f"{YELLOW}That item is no longer here.{RESET}")
                 self._rebuild_choices()
                 return
             item = self.container.inventory[item_index]
         else:
-            item = choice['item']
+            item = choice["item"]
 
         # If the item is no longer in the container (concurrent change), notify and rebuild
         if item not in self.container.inventory:
@@ -699,27 +817,27 @@ class ContainerLootInterface(BaseInterface):
             print(f"{getattr(item, 'name', str(item))}")
 
         # Indicate merchandise after the description if applicable
-        if hasattr(item, 'merchandise') and item.merchandise:
+        if hasattr(item, "merchandise") and item.merchandise:
             print(f"{MAGENTA}(This item is merchandise){RESET}")
 
         # Build and show sub-menu options
-        is_stackable = hasattr(item, 'count')
+        is_stackable = hasattr(item, "count")
         print("\nWhat would you like to do?\n")
         opt_map = {}
         opt_idx = 0
         if is_stackable:
             print(f"{opt_idx}: Take some (choose a quantity)")
-            opt_map[str(opt_idx)] = 'take_some'
+            opt_map[str(opt_idx)] = "take_some"
             opt_idx += 1
             print(f"{opt_idx}: Take all")
         else:
             print(f"{opt_idx}: Take item")
-        opt_map[str(opt_idx)] = 'take_all_item'
+        opt_map[str(opt_idx)] = "take_all_item"
         opt_idx += 1
         print("x: Go back")
 
         selection = input(f"{BOLD}Selection:{RESET} ")
-        if selection == 'x':
+        if selection == "x":
             print(f"{YELLOW}Going back.{RESET}")
             return
         action = opt_map.get(selection)
@@ -733,7 +851,9 @@ class ContainerLootInterface(BaseInterface):
         except Exception:
             pass
 
-        weightcap = getattr(self.player, 'weight_tolerance', 0) - getattr(self.player, 'weight_current', 0)
+        weightcap = getattr(self.player, "weight_tolerance", 0) - getattr(
+            self.player, "weight_current", 0
+        )
 
         # Helper to finalize a successful transfer
         def _finalize_transfer(qty_to_transfer: int):
@@ -746,7 +866,9 @@ class ContainerLootInterface(BaseInterface):
             # Perform transfer
             transfer_item(self.container, self.player, item, qty_to_transfer)
             multiple_items_text = f"{qty_to_transfer}x " if qty_to_transfer > 1 else ""
-            print(f"{GREEN}Jean takes {multiple_items_text}{getattr(item, 'name', str(item))}.{RESET}")
+            print(
+                f"{GREEN}Jean takes {multiple_items_text}{getattr(item, 'name', str(item))}.{RESET}"
+            )
             # Refresh container and choices, then process events
             try:
                 self.container.refresh_description()
@@ -759,10 +881,12 @@ class ContainerLootInterface(BaseInterface):
                 pass
 
         weight_err_message = f"{RED}Jean can't carry that much weight! He needs to drop something first.{RESET}"
-        if action == 'take_some':
+        if action == "take_some":
             # Only reachable for stackable items
-            available = getattr(item, 'count', 0)
-            qty = input(f"{BOLD}How many would you like to take? (1-{available}): {RESET}")
+            available = getattr(item, "count", 0)
+            qty = input(
+                f"{BOLD}How many would you like to take? (1-{available}): {RESET}"
+            )
             if not qty.isdigit():
                 print(f"{RED}Invalid quantity.{RESET}")
                 return
@@ -770,16 +894,16 @@ class ContainerLootInterface(BaseInterface):
             if qty < 1 or qty > available:
                 print(f"{RED}Invalid quantity.{RESET}")
                 return
-            item_weight = getattr(item, 'weight', 0) * qty
+            item_weight = getattr(item, "weight", 0) * qty
             if item_weight > weightcap:
                 print(weight_err_message)
                 return
             _finalize_transfer(qty)
 
-        elif action == 'take_all_item':
+        elif action == "take_all_item":
             # For stackable items, take the whole stack; for single items, take the object
-            qty = getattr(item, 'count', 1)
-            item_weight = getattr(item, 'weight', 0) * qty
+            qty = getattr(item, "count", 1)
+            item_weight = getattr(item, "weight", 0) * qty
             if item_weight > weightcap:
                 print(weight_err_message)
                 return
@@ -793,15 +917,17 @@ class ContainerLootInterface(BaseInterface):
 
         snapshot = self.container.inventory.copy()
         for item in snapshot:
-            qty_available = getattr(item, 'count', 1)
-            item_weight = getattr(item, 'weight', 0)
+            qty_available = getattr(item, "count", 1)
+            item_weight = getattr(item, "weight", 0)
 
             # Refresh player's weight and compute remaining capacity
             try:
                 self.player.refresh_weight()
             except Exception:
                 pass
-            weightcap = getattr(self.player, 'weight_tolerance', 0) - getattr(self.player, 'weight_current', 0)
+            weightcap = getattr(self.player, "weight_tolerance", 0) - getattr(
+                self.player, "weight_current", 0
+            )
 
             # Determine how many of this item can be taken
             if item_weight <= 0:
@@ -809,13 +935,17 @@ class ContainerLootInterface(BaseInterface):
             else:
                 max_fit = weightcap // item_weight
                 if max_fit <= 0:
-                    print(f"{YELLOW}Jean can't carry any of {getattr(item, 'name', str(item))} right now.{RESET}")
+                    print(
+                        f"{YELLOW}Jean can't carry any of {getattr(item, 'name', str(item))} right now.{RESET}"
+                    )
                     continue
                 qty_to_take = min(qty_available, max_fit)
 
             transfer_item(self.container, self.player, item, qty_to_take)
             multiple_items_text = f"{qty_to_take}x " if qty_to_take > 1 else ""
-            print(f"{GREEN}Jean takes {multiple_items_text}{getattr(item, 'name', str(item))}.{RESET}")
+            print(
+                f"{GREEN}Jean takes {multiple_items_text}{getattr(item, 'name', str(item))}.{RESET}"
+            )
 
         try:
             self.container.refresh_description()
@@ -829,9 +959,13 @@ class ContainerLootInterface(BaseInterface):
         # Rebuild choices to reflect remaining items
         self._rebuild_choices()
         if not self.choices:
-            print(f"{YELLOW}Jean has taken everything from the {self.container.nickname}.{RESET}")
+            print(
+                f"{YELLOW}Jean has taken everything from the {self.container.nickname}.{RESET}"
+            )
         else:
-            print(f"{YELLOW}Jean has taken what he can; some items remain in the {self.container.nickname}.{RESET}")
+            print(
+                f"{YELLOW}Jean has taken what he can; some items remain in the {self.container.nickname}.{RESET}"
+            )
 
     def _rebuild_choices(self):
         """Rebuild the choices list after items are taken"""
@@ -839,19 +973,20 @@ class ContainerLootInterface(BaseInterface):
 
         for i, item in enumerate(self.container.inventory):
             tag_count = f"({item.count})" if hasattr(item, "count") else ""
-            tag_merch = "(Merch)" if hasattr(item, "merchandise") and item.merchandise else ""
-            self.choices.append({
-                'label': f"{item.name} {tag_count} {tag_merch}",
-                'item': item,
-                'index': i
-            })
+            tag_merch = (
+                "(Merch)" if hasattr(item, "merchandise") and item.merchandise else ""
+            )
+            self.choices.append(
+                {
+                    "label": f"{item.name} {tag_count} {tag_merch}",
+                    "item": item,
+                    "index": i,
+                }
+            )
 
         # Add "Take All" option if there are still items
         if self.choices:
-            self.choices.append({
-                'label': "Take all items",
-                'action': 'take_all'
-            })
+            self.choices.append({"label": "Take all items", "action": "take_all"})
 
     def run(self):
         """Override run to handle empty container case"""
@@ -880,31 +1015,39 @@ class RoomTakeInterface(BaseInterface):
     Interface for taking items from the current room. Mirrors the old Player.take behavior
     but lives in `interface.py` so the UI is centralized in interface classes.
     """
+
     def __init__(self, player, room=None):
         self.player = player
-        self.room = room if room is not None else getattr(player, 'current_room', None)
+        self.room = room if room is not None else getattr(player, "current_room", None)
         # Build choices from room items
         choices = []
-        if self.room and hasattr(self.room, 'items_here'):
+        if self.room and hasattr(self.room, "items_here"):
             for i, item in enumerate(self.room.items_here):
-                choices.append({'label': f"{item.name}", 'item': item, 'index': i})
+                choices.append({"label": f"{item.name}", "item": item, "index": i})
         # Add 'Take all' option if there are items
         if choices:
-            choices.append({'label': 'Take all', 'action': 'take_all'})
-        super().__init__(title=f"Take Items", choices=choices, exit_label="Cancel", exit_message="Nevermind.")
+            choices.append({"label": "Take all", "action": "take_all"})
+        super().__init__(
+            title=f"Take Items",
+            choices=choices,
+            exit_label="Cancel",
+            exit_message="Nevermind.",
+        )
 
     def display_title(self):
         print(f"{BOLD}{CYAN}\n=== What are you trying to take? ===\n{RESET}")
 
-    def run(self, phrase: str = ''):
+    def run(self, phrase: str = ""):
         # Non-interactive shortcuts: if phrase provided, delegate to player's helpers
-        if not self.room or not getattr(self.room, 'items_here', []):
-            print(f"{RED}There doesn't seem to be anything here for Jean to take.{RESET}")
+        if not self.room or not getattr(self.room, "items_here", []):
+            print(
+                f"{RED}There doesn't seem to be anything here for Jean to take.{RESET}"
+            )
             return
 
         if phrase:
             # 'all' shortcut
-            if isinstance(phrase, str) and phrase.lower() == 'all':
+            if isinstance(phrase, str) and phrase.lower() == "all":
                 try:
                     # Player already has a helper for taking all items
                     self._take_all_items()
@@ -929,12 +1072,12 @@ class RoomTakeInterface(BaseInterface):
             # Display choices using BaseInterface style
             self.display_title()
             for idx, c in enumerate(self.choices):
-                label = c.get('label', str(c))
+                label = c.get("label", str(c))
                 print(f"{YELLOW}{idx}: {label}{RESET}")
             print(f"{RED}x: {self.exit_label}{RESET}")
 
             selection = input(f"{BOLD}Selection:{RESET} ")
-            if selection == 'x':
+            if selection == "x":
                 print(f"{YELLOW}Going back.{RESET}")
                 return
             if not selection.isdigit():
@@ -949,7 +1092,7 @@ class RoomTakeInterface(BaseInterface):
             choice = self.choices[sel]
 
             # Handle 'Take all' action
-            if choice.get('action') == 'take_all':
+            if choice.get("action") == "take_all":
                 try:
                     self._take_all_items()
                 except Exception:
@@ -962,15 +1105,19 @@ class RoomTakeInterface(BaseInterface):
                 continue
 
             # Individual item selected: validate index and perform transfer via player's helper
-            item_index = choice.get('index')
+            item_index = choice.get("index")
             if item_index is not None:
                 # Validate the recorded index against current room contents
-                if not isinstance(item_index, int) or item_index < 0 or item_index >= len(self.room.items_here):
+                if (
+                    not isinstance(item_index, int)
+                    or item_index < 0
+                    or item_index >= len(self.room.items_here)
+                ):
                     print(f"{YELLOW}That item is no longer here.{RESET}")
                     continue
                 item = self.room.items_here[item_index]
             else:
-                item = choice.get('item')
+                item = choice.get("item")
 
             # If the item is gone, notify and continue
             if item not in self.room.items_here:
@@ -987,14 +1134,18 @@ class RoomTakeInterface(BaseInterface):
             try:
                 idx = item_index if item_index is not None else None
                 success = False
-                if hasattr(self.player, '_take_item') and callable(getattr(self.player, '_take_item')):
+                if hasattr(self.player, "_take_item") and callable(
+                    getattr(self.player, "_take_item")
+                ):
                     try:
                         success = self.player._take_item(item, idx)
                     except Exception:
                         success = False
                 if not success:
                     # Fallback to interface implementation
-                    if hasattr(self, '_take_item') and callable(getattr(self, '_take_item')):
+                    if hasattr(self, "_take_item") and callable(
+                        getattr(self, "_take_item")
+                    ):
                         try:
                             success = self._take_item(item, idx)
                         except Exception:
@@ -1006,12 +1157,12 @@ class RoomTakeInterface(BaseInterface):
 
     def _rebuild_choices(self):
         self.choices.clear()
-        if not self.room or not hasattr(self.room, 'items_here'):
+        if not self.room or not hasattr(self.room, "items_here"):
             return
         for i, item in enumerate(self.room.items_here):
-            self.choices.append({'label': f"{item.name}", 'item': item, 'index': i})
+            self.choices.append({"label": f"{item.name}", "item": item, "index": i})
         if self.choices:
-            self.choices.append({'label': 'Take all', 'action': 'take_all'})
+            self.choices.append({"label": "Take all", "action": "take_all"})
 
     def _take_all_items(self):
         """Helper method to take all items that don't exceed weight capacity."""
@@ -1026,23 +1177,32 @@ class RoomTakeInterface(BaseInterface):
                 if hasattr(item, "count"):
                     item_weight *= item.count
 
-                if self.player.weight_current + total_weight + item_weight <= self.player.weight_tolerance:
+                if (
+                    self.player.weight_current + total_weight + item_weight
+                    <= self.player.weight_tolerance
+                ):
                     items_to_take.append(item)
                     total_weight += item_weight
                 else:
-                    cprint(f"Jean can't carry {item.name}. He's reached his weight limit.", 'red')
+                    cprint(
+                        f"Jean can't carry {item.name}. He's reached his weight limit.",
+                        "red",
+                    )
             else:
                 items_to_take.append(item)
 
         # Then take the items
         for item in items_to_take:
             self.player.inventory.append(item)
-            print(f'Jean takes {item.name}.')
+            print(f"Jean takes {item.name}.")
             self.room.items_here.remove(item)
             item.owner = self.player
 
         if not items_to_take:
-            cprint("Jean can't carry anything more. He needs to drop something first.", 'red')
+            cprint(
+                "Jean can't carry anything more. He needs to drop something first.",
+                "red",
+            )
 
     def _take_item(self, item, index=None):
         """Helper method to take a single item, checking weight restrictions.
@@ -1052,7 +1212,9 @@ class RoomTakeInterface(BaseInterface):
         """
         # Ensure player's weight is up-to-date
         try:
-            if hasattr(self.player, 'refresh_weight') and callable(self.player.refresh_weight):
+            if hasattr(self.player, "refresh_weight") and callable(
+                self.player.refresh_weight
+            ):
                 self.player.refresh_weight()
         except Exception:
             pass
@@ -1064,7 +1226,10 @@ class RoomTakeInterface(BaseInterface):
 
             weightcap = self.player.weight_tolerance - self.player.weight_current
             if item_weight > weightcap:
-                cprint("Jean can't carry that much weight! He needs to drop something first.", 'red')
+                cprint(
+                    "Jean can't carry that much weight! He needs to drop something first.",
+                    "red",
+                )
                 return False
 
         # Add to player's inventory
@@ -1106,12 +1271,14 @@ class RoomTakeInterface(BaseInterface):
             pass
 
         try:
-            if hasattr(self.player, 'refresh_weight') and callable(self.player.refresh_weight):
+            if hasattr(self.player, "refresh_weight") and callable(
+                self.player.refresh_weight
+            ):
                 self.player.refresh_weight()
         except Exception:
             pass
 
-        print(f'Jean takes {item.name}.')
+        print(f"Jean takes {item.name}.")
         return True
 
     def _take_specific_item(self, phrase):
@@ -1126,20 +1293,22 @@ class RoomTakeInterface(BaseInterface):
             n: Take a specific listed item.
            'x': Cancel (do nothing).
         """
-        if not self.room or not hasattr(self.room, 'items_here'):
+        if not self.room or not hasattr(self.room, "items_here"):
             return
         target = phrase.lower() if isinstance(phrase, str) else phrase
         matches = []  # list of (item, room_index_at_time_of_match)
         for i, item in enumerate(self.room.items_here):
             try:
-                search_item = (item.name.lower() + ' ' + getattr(item, 'announce', '').lower())
+                search_item = (
+                    item.name.lower() + " " + getattr(item, "announce", "").lower()
+                )
             except Exception:
                 continue
             if target in search_item:
                 matches.append((item, i))
 
         if not matches:
-            cprint(f"Jean doesn't see any {phrase} to take.", 'red')
+            cprint(f"Jean doesn't see any {phrase} to take.", "red")
             return
 
         if len(matches) == 1:  # single match: act immediately
@@ -1159,7 +1328,7 @@ class RoomTakeInterface(BaseInterface):
         print(f"{RED}x: Cancel{RESET}")
 
         selection = input(f"{BOLD}Selection:{RESET} ").strip().lower()
-        if selection == 'x':
+        if selection == "x":
             print(f"{YELLOW}Jean decides against taking anything just yet.{RESET}")
             return
         if selection.isdigit():
@@ -1174,7 +1343,7 @@ class RoomTakeInterface(BaseInterface):
                     if self._take_item(item, None):
                         taken_any = True
                 if not taken_any:
-                    cprint("Jean can't carry any of those items.", 'red')
+                    cprint("Jean can't carry any of those items.", "red")
                 return
             elif 1 <= choice <= len(matches):
                 item, idx = matches[choice - 1]

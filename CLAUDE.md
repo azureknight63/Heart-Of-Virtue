@@ -74,14 +74,17 @@ cd frontend && npm install && npm run dev
 
 ```bash
 # Backend (fast — excludes tests/api, tests/broken, tests/uat per pytest.ini)
-pytest -q
+python -m pytest -q
 
 # Backend with coverage
-pytest --cov=src --cov=ai --cov-report=term-missing
+python -m pytest --cov=src --cov=ai --cov-report=term-missing
 
 # Frontend
 cd frontend && npm test
 ```
+
+Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
+`pytest` binary on PATH, causing silent import failures.
 
 The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs.
 
@@ -112,14 +115,17 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 - To access universe data from a service method, use the static helpers: `self._story(player)` (returns `player.universe.story` or `{}`) and `self._game_tick(player)` (returns `player.universe.game_tick` or `0`). Never reference `self.universe.*` directly.
 - Routes must not reach into player internals. Use `game_service.some_method(player)` — not `getattr(player, "attribute", default)` in routes. Player attribute traps: `player.attack` is a combat action method (not a stat); `player.health` doesn't exist (it's `player.hp`); `player.stamina`, `player.defense`, `player.accuracy`, `player.evasion` are also absent. When in doubt, add a method to GameService.
 - `player.reputation` doesn't exist initially. Methods that write to it initialize `player.reputation = {}` first. Read-only uses should do `getattr(player, 'reputation', {})`.
+- **Cooldown timing trap**: cooldowns must only drain during active combat beats. Any code path that calls cooldown drain outside the combat loop (e.g., during rest, world movement, or save/load) will silently corrupt move availability. Guard all drain calls with an active-combat check.
 
-## Current Branch: `web-api`
+## Completed Milestones
 
-Active work extracting the Python combat system into a stateless REST API consumed by React. Key completed work:
+Key architectural work already merged into the codebase:
 - `Combatant` base class introduced (eliminates Player/NPC resistance duplication)
 - Blueprint URL prefixes fixed (reputation, npc, quests, quest-chains were all misrouted)
 - `GameService._story(player)` / `_game_tick(player)` helpers added (universe attribute fix)
 - Automated bug-hunt harness live in `tools/` with 11 scenarios
+- Combat testing arena added (`src/resources/maps/combat-testing-arena.json`) with `/combat-test` skill
+- Cooldown drain bug fixed: cooldowns now only tick during active combat beats, not during resting/non-combat states
 
 ## Bug-Hunt Harness
 
@@ -211,7 +217,7 @@ only on `console_errors` and `network_failures` (the significant ones).
 
 ## Combat Testing Skill
 
-**Agent-focused combat scenario testing.** The `/combat-test` skill reads `config_combat_testing.ini`, sets up a scenario in the dedicated combat testing arena, invokes `/qa` to drive the full Flask + React stack, and surfaces raw combat logs and state for assertion.
+**Agent-focused combat scenario testing.** The `/combat-test` skill reads `config_combat_testing.ini`, applies any inline overrides, and runs the scenario. **Primary path: `python tools/bug_hunt.py`** (fast, in-process, no browser needed — use for logic/mechanics verification). Full browser `/qa` is the escalation path for UI-layer concerns only.
 
 ```bash
 /combat-test                                      # run default scenario (fodder)
@@ -383,6 +389,84 @@ Use when you need to:
 
 ---
 
+## Sound Designer Skill
+
+**Expert indie game sound designer.** The `/sound-designer` skill audits the game's **procedural audio synthesis system**, designs new SFX by implementing Song classes, and works with the project's sound creation tools to generate and test audio.
+
+The project uses a **Wave Synthesis Engine** (`tools/audio_engine/`) for all audio: no external AI generation. The skill writes Song class code that uses `generate_tone()`, `generate_chord()`, `mix_layers()`, and `generate_percussion_pattern()` to create SFX.
+
+Use when you need to:
+- Audit existing sound design and identify gaps
+- Design SFX for specific locations, events, or narrative moments
+- Implement new Song classes using procedural synthesis
+- Generate and test audio using the project's tools
+- Analyze sonic lore integration (how audio reflects the world and Jean's arc)
+
+```bash
+/sound-designer                                    # full audio audit
+/sound-designer --design
+event: entering the corrupted sacred spring
+emotional_goal: awe mixed with reverent dread
+
+/sound-designer --audit
+Review SFX coverage and identify weak spots
+```
+
+**Output**: Sound design audit reports, Song class implementations (Python code), testing instructions, and integration notes.
+
+**Authority**: The sound designer has **full authority to improve the audio generation tools** (audio_engine, Song system) as needed to meet design goals. If synthesis capabilities are missing, add them.
+
+**Project audio tools**:
+- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_chord, mix_layers) — *can be enhanced*
+- `tools/songs/` — existing Song classes (sfx.py, adventure.py, battle.py, etc.) — *can be templated/refactored*
+- `python tools/generate_audio.py` — renders all songs to WAV files
+- `python tools/audio_player.py` — interactive testing GUI (tempo, pitch, visualization)
+- Output: `frontend/public/assets/sounds/`
+
+Key capabilities:
+- Procedural wave synthesis (sine, square, sawtooth, triangle, noise)
+- Envelope shaping (attack/release for precise control)
+- Frequency selection and layering strategies
+- **Audio engine enhancement** (add new synthesis functions, helper classes, templates)
+- Song class architecture and design patterns
+- Audio generation and QA testing
+
+---
+
+## Music Designer Skill
+
+**Expert indie game music designer.** The `/music-designer` skill analyzes maps, lore, and story beats to understand BGM needs. Works with AI music generation models with intimate understanding of how to extract exceptional music from each prompt.
+
+Use when you need to:
+- Create a music blueprint (thematic map, emotional arcs)
+- Design music for specific chapters, locations, or narrative moments
+- Generate detailed prompts for AI music generators (Suno, MusicGen, AIVA)
+- Understand model capabilities and limitations
+- Create music integration strategies and quality criteria
+
+```bash
+/music-designer                                    # full music design audit
+/music-designer --blueprint
+scope: chapter 2
+focus: reflect the corruption theme and Jean's growing resolve
+
+/music-designer --generate
+location: dark-grotto
+moment: discovering the sacred spring corrupted
+generator: suno
+```
+
+**Output**: Music design blueprints, AI generation requests with settings, integration guides, and sonic palettes.
+
+Key capabilities:
+- Thematic composition (motifs for characters, locations, emotional states)
+- Narrative pacing and emotional arc design
+- AI music generation mastery (Suno, MusicGen, AIVA, etc.)
+- Prompt engineering for music (model-specific language, iteration strategies)
+- Game audio integration (looping, transitions, adaptive systems)
+
+---
+
 ## Code Review Gate
 
 **Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
@@ -426,7 +510,7 @@ Standard closing checklist (use judgment on which apply):
 - **`code_reviewer` skill** — use the skill to review all code changes (mandatory for any non-trivial changes)
 - **`/commit`** — if there are uncommitted changes worth preserving
 - **`/revise-claude-md`** — if the session revealed something about the project that isn't in CLAUDE.md (new patterns, gotchas, decisions made)
-- **Tests** — remind to run `pytest -q` or `cd frontend && npm test` if the changes touch testable code
+- **Tests** — remind to run `python -m pytest -q` or `cd frontend && npm test` if the changes touch testable code
 - **Pending improvements** — flag any items from `~/.claude/projects/.../pending-improvements.md` that became newly relevant
 
 Don't suggest all of these robotically after every small change. Use judgment: a two-line fix doesn't need a full debrief. A significant architectural change does.

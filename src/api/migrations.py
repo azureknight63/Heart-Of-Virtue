@@ -1,6 +1,7 @@
 import asyncio
 from src.api.db import db
 
+
 async def init_db():
     statements = [
         """
@@ -30,9 +31,9 @@ async def init_db():
         """,
         # Index for faster lookup of user saves
         "CREATE INDEX IF NOT EXISTS idx_saves_user_id ON saves(user_id);",
-        "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);"
+        "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);",
     ]
-    
+
     print("Initializing database...")
     try:
         await db.batch(statements)
@@ -41,6 +42,7 @@ async def init_db():
         print(f"Error initializing database: {e}")
     finally:
         await db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(init_db())

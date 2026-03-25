@@ -9,10 +9,10 @@ class EventSerializer:
     @staticmethod
     def serialize(event: Any) -> Dict[str, Any]:
         """Serialize a single event.
-        
+
         Args:
             event: Event object to serialize
-            
+
         Returns:
             Dictionary with event data
         """
@@ -48,36 +48,36 @@ class EventSerializer:
             event_data["hidden"] = event.hidden
         if hasattr(event, "hide_factor"):
             event_data["hide_factor"] = event.hide_factor
-            
+
         # Optional display delay configuration
         if hasattr(event, "delay_mode") and event.delay_mode:
             event_data["delay_mode"] = event.delay_mode
             event_data["delay_duration"] = getattr(event, "delay_duration", 3000)
-            
+
         return event_data
 
     @staticmethod
     def serialize_list(events: List[Any]) -> List[Dict[str, Any]]:
         """Serialize multiple events.
-        
+
         Args:
             events: List of events
-            
+
         Returns:
             List of serialized event dictionaries
         """
         if not events:
             return []
-        
+
         return [EventSerializer.serialize(event) for event in events]
 
     @staticmethod
     def serialize_with_conditions(event: Any) -> Dict[str, Any]:
         """Serialize event with condition/trigger information.
-        
+
         Args:
             event: Event object to serialize
-            
+
         Returns:
             Dictionary with event and condition data
         """
@@ -106,10 +106,10 @@ class EventSerializer:
     @staticmethod
     def serialize_with_consequences(event: Any) -> Dict[str, Any]:
         """Serialize event with consequence/reward information.
-        
+
         Args:
             event: Event object to serialize
-            
+
         Returns:
             Dictionary with event and consequence data
         """
@@ -151,10 +151,10 @@ class EventSerializer:
     @staticmethod
     def serialize_story_event(event: Any) -> Dict[str, Any]:
         """Serialize story-specific event with narrative data.
-        
+
         Args:
             event: Story event object to serialize
-            
+
         Returns:
             Dictionary with story event data
         """
@@ -185,10 +185,10 @@ class EventSerializer:
     @staticmethod
     def serialize_combat_event(event: Any) -> Dict[str, Any]:
         """Serialize combat-specific event.
-        
+
         Args:
             event: Combat event object to serialize
-            
+
         Returns:
             Dictionary with combat event data
         """
@@ -221,10 +221,10 @@ class EventSerializer:
     @staticmethod
     def serialize_conditional_event(event: Any) -> Dict[str, Any]:
         """Serialize event with complex conditional logic.
-        
+
         Args:
             event: Conditional event object to serialize
-            
+
         Returns:
             Dictionary with conditional event data
         """
@@ -235,7 +235,7 @@ class EventSerializer:
         # Multiple conditions
         if hasattr(event, "conditions") and event.conditions:
             event_data["condition_count"] = len(event.conditions)
-        
+
         # Branching outcomes
         if hasattr(event, "success_consequence"):
             event_data["success_consequence"] = event.success_consequence
@@ -255,10 +255,10 @@ class EventSerializer:
     @staticmethod
     def serialize_with_input(event: Any) -> Dict[str, Any]:
         """Serialize event with user input requirements.
-        
+
         Args:
             event: Event object to serialize
-            
+
         Returns:
             Dictionary with event and input requirement data
         """
@@ -312,10 +312,10 @@ class EventSerializer:
     @staticmethod
     def _detect_input_requirement(event: Any) -> bool:
         """Detect if an event requires user input.
-        
+
         Args:
             event: Event object to check
-            
+
         Returns:
             True if event requires input
         """
@@ -340,28 +340,32 @@ class EventSerializer:
             "PuzzleEvent",
             "RiddleEvent",
             "CombatEvent",
-            "NPCSpawnerEvent"
+            "NPCSpawnerEvent",
         ]
-        
+
         return event_type in input_requiring_events
 
     @staticmethod
     def _infer_input_type(event: Any) -> str:
         """Infer the type of input required by an event.
-        
+
         Args:
             event: Event object
-            
+
         Returns:
             Input type: 'choice', 'text', or 'number'
         """
         # Check for input_options or choices
-        if hasattr(event, "input_options") or hasattr(event, "get_input_options") or hasattr(event, "choices"):
+        if (
+            hasattr(event, "input_options")
+            or hasattr(event, "get_input_options")
+            or hasattr(event, "choices")
+        ):
             return "choice"
-        
+
         # Check for numeric input requirements
         if hasattr(event, "input_min") and hasattr(event, "input_max"):
             return "number"
-        
+
         # Default to choice for most interactive events
         return "choice"

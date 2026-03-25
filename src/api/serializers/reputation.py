@@ -162,7 +162,9 @@ class PlayerReputationSerializer:
             Reputation change data
         """
         change = new_reputation - old_reputation
-        direction = "positive" if change > 0 else "negative" if change < 0 else "neutral"
+        direction = (
+            "positive" if change > 0 else "negative" if change < 0 else "neutral"
+        )
 
         return {
             "npc_id": npc_id,
