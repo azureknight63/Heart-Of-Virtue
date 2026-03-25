@@ -10,10 +10,10 @@ class NPCSerializer:
     @staticmethod
     def serialize(npc: Any) -> Dict[str, Any]:
         """Serialize a single NPC with basic combat stats.
-        
+
         Args:
             npc: NPC object to serialize
-            
+
         Returns:
             Dictionary with NPC data
         """
@@ -39,7 +39,7 @@ class NPCSerializer:
         # Hostility
         if hasattr(npc, "is_hostile"):
             npc_data["is_hostile"] = npc.is_hostile
-        
+
         # Conversation/dialogue
         if hasattr(npc, "idle_message"):
             npc_data["idle_message"] = npc.idle_message
@@ -55,37 +55,44 @@ class NPCSerializer:
     @staticmethod
     def serialize_list(npcs: List[Any]) -> List[Dict[str, Any]]:
         """Serialize multiple NPCs.
-        
+
         Args:
             npcs: List of NPC objects
-            
+
         Returns:
             List of serialized NPC dictionaries
         """
         if not npcs:
             return []
-        
+
         return [NPCSerializer.serialize(npc) for npc in npcs]
 
     @staticmethod
     def serialize_with_stats(npc: Any) -> Dict[str, Any]:
         """Serialize NPC with detailed combat statistics.
-        
+
         Args:
             npc: NPC object to serialize
-            
+
         Returns:
             Dictionary with detailed NPC and stat data
         """
         npc_data = NPCSerializer.serialize(npc)
 
         # Add all combat stats if available
-        stat_names = ["strength", "dexterity", "vitality", "intelligence", "wisdom", "speed"]
+        stat_names = [
+            "strength",
+            "dexterity",
+            "vitality",
+            "intelligence",
+            "wisdom",
+            "speed",
+        ]
         stats = {}
         for stat in stat_names:
             if hasattr(npc, stat):
                 stats[stat] = getattr(npc, stat)
-        
+
         if stats:
             npc_data["stats"] = stats
 
@@ -110,10 +117,10 @@ class NPCSerializer:
     @staticmethod
     def serialize_merchant(npc: Any) -> Dict[str, Any]:
         """Serialize NPC as merchant with shop inventory.
-        
+
         Args:
             npc: NPC object (merchant) to serialize
-            
+
         Returns:
             Dictionary with merchant data including shop items
         """
@@ -137,10 +144,10 @@ class NPCSerializer:
     @staticmethod
     def serialize_with_inventory(npc: Any) -> Dict[str, Any]:
         """Serialize NPC with full inventory details.
-        
+
         Args:
             npc: NPC object to serialize
-            
+
         Returns:
             Dictionary with NPC and inventory data
         """
@@ -159,10 +166,10 @@ class NPCSerializer:
     @staticmethod
     def serialize_for_combat(npc: Any) -> Dict[str, Any]:
         """Serialize NPC for combat display.
-        
+
         Args:
             npc: NPC object to serialize
-            
+
         Returns:
             Dictionary with combat-relevant NPC data
         """
@@ -171,7 +178,7 @@ class NPCSerializer:
         # Add combat-specific info
         if hasattr(npc, "combat_list"):
             npc_data["in_combat"] = len(npc.combat_list) > 0
-        
+
         if hasattr(npc, "status_effects"):
             npc_data["status_effects"] = getattr(npc, "status_effects", [])
 

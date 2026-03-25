@@ -24,6 +24,7 @@ Hook method contract (all optional to implement in subclasses):
 None of these hooks have side-effects unless explicitly implemented by a
 subclass.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -34,12 +35,15 @@ from typing import Any, Dict, List, Optional, Sequence, Type
 try:
     from items import Item  # type: ignore
 except Exception:  # pragma: no cover - fallback for static analysis
+
     class Item:  # type: ignore
         value: int  # minimal stub
+
 
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ShopCondition:
@@ -50,6 +54,7 @@ class ShopCondition:
         description: Short description for UI / logging.
         metadata: Arbitrary data bag for subclass use.
     """
+
     name: str
     description: str
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -65,7 +70,9 @@ class ShopCondition:
         return None
 
     # ---- Unique Inventory Injection ------------------------------------
-    def inject_unique_items(self, merchant: Any) -> List[Item]:  # noqa: ANN401 (merchant is loosely typed)
+    def inject_unique_items(
+        self, merchant: Any
+    ) -> List[Item]:  # noqa: ANN401 (merchant is loosely typed)
         """Inject unique items into the merchant or its containers.
 
         Returns list of injected Items. Default: none.
@@ -74,13 +81,20 @@ class ShopCondition:
 
     # Utility for choosing random subclass of Item (excluding Item itself)
     @staticmethod
-    def random_item_base_class(candidates: Optional[Sequence[Type[Item]]] = None) -> Optional[Type[Item]]:
+    def random_item_base_class(
+        candidates: Optional[Sequence[Type[Item]]] = None,
+    ) -> Optional[Type[Item]]:
         if candidates is None:
             try:
                 import items as items_module  # local import to avoid cycles
+
                 subclasses: List[Type[Item]] = []
                 for _, obj in inspect.getmembers(items_module, inspect.isclass):
-                    if obj is not Item and isinstance(obj, type) and issubclass(obj, Item):
+                    if (
+                        obj is not Item
+                        and isinstance(obj, type)
+                        and issubclass(obj, Item)
+                    ):
                         subclasses.append(obj)
             except Exception:  # pragma: no cover - reflection failure fallback
                 subclasses = []
@@ -93,6 +107,7 @@ class ShopCondition:
 # 1. Value modifier condition
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ValueModifierCondition(ShopCondition):
     """Adjusts value of items of a randomly chosen base item class (and its subclasses).
@@ -103,6 +118,7 @@ class ValueModifierCondition(ShopCondition):
         multiplier: Price multiplier applied to matching items.
         target_class: The chosen base class (None if selection failed).
     """
+
     multiplier: float = 1.0
     target_class: Optional[Type[Item]] = None
 
@@ -123,7 +139,7 @@ class ValueModifierCondition(ShopCondition):
             if not name:
                 name = f"{target_class.__name__} Value Modifier"
             if not description:
-                sign = '+' if multiplier >= 1 else '-'
+                sign = "+" if multiplier >= 1 else "-"
                 pct = round(abs(multiplier - 1) * 100)
                 description = f"{target_class.__name__} items {sign}{pct}% value"
         else:
@@ -132,17 +148,23 @@ class ValueModifierCondition(ShopCondition):
                 name = "Value Modifier"
             if not description:
                 description = f"Value modifier x{multiplier}"
-        super().__init__(name=name or "Value Modifier", description=description or "", metadata=metadata or {})
+        super().__init__(
+            name=name or "Value Modifier",
+            description=description or "",
+            metadata=metadata or {},
+        )
         self.multiplier = multiplier
         self.target_class = target_class
-        if self.target_class and 'target_class_name' not in self.metadata:
-            self.metadata['target_class_name'] = self.target_class.__name__
+        if self.target_class and "target_class_name" not in self.metadata:
+            self.metadata["target_class_name"] = self.target_class.__name__
 
     def applies(self, item: Item) -> bool:
         return bool(self.target_class and isinstance(item, self.target_class))
 
     def apply_to_price(self, item: Item, base_price: float) -> float:  # type: ignore[override]
-        if self.applies(item) and not hasattr(item, "unique"):  # do not modify unique items
+        if self.applies(item) and not hasattr(
+            item, "unique"
+        ):  # do not modify unique items
             try:
                 return max(0.0, base_price * self.multiplier)
             except Exception:
@@ -154,9 +176,11 @@ class ValueModifierCondition(ShopCondition):
 # 2. Restock weight boost condition
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RestockWeightBoostCondition(ShopCondition):
     """Boosts restock weight for a chosen base item class (and subclasses)."""
+
     weight_multiplier: float = 2.0
     target_class: Optional[Type[Item]] = None
 
@@ -176,17 +200,23 @@ class RestockWeightBoostCondition(ShopCondition):
                 name = f"{target_class.__name__} Restock Boost"
             if not description:
                 pct = round((weight_multiplier - 1) * 100)
-                description = f"Increased chance (+{pct}%) for {target_class.__name__} items"
+                description = (
+                    f"Increased chance (+{pct}%) for {target_class.__name__} items"
+                )
         else:
             if not name:
                 name = "Restock Boost"
             if not description:
                 description = f"Restock weight x{weight_multiplier} for chosen class"
-        super().__init__(name=name or "Restock Boost", description=description or "", metadata=metadata or {})
+        super().__init__(
+            name=name or "Restock Boost",
+            description=description or "",
+            metadata=metadata or {},
+        )
         self.weight_multiplier = weight_multiplier
         self.target_class = target_class
-        if self.target_class and 'target_class_name' not in self.metadata:
-            self.metadata['target_class_name'] = self.target_class.__name__
+        if self.target_class and "target_class_name" not in self.metadata:
+            self.metadata["target_class_name"] = self.target_class.__name__
 
     def adjust_restock_weights(self, weight_map: Dict[Type[Item], float]) -> None:  # type: ignore[override]
         if not self.target_class:
@@ -203,6 +233,7 @@ class RestockWeightBoostCondition(ShopCondition):
 # 3. Unique item injection condition
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class UniqueItemInjectionCondition(ShopCondition):
     """Inject exactly one predefined unique item.
@@ -212,6 +243,7 @@ class UniqueItemInjectionCondition(ShopCondition):
     (or lookup fails) the item is added directly to the merchant's inventory.
     Only one instance of a unique item may exist in the game world at a time.
     """
+
     def __init__(
         self,
         *,
@@ -228,8 +260,13 @@ class UniqueItemInjectionCondition(ShopCondition):
     def inject_unique_items(self, merchant: Any) -> list[Item]:  # type: ignore[override]
         try:
             from items import unique_item_factories, unique_items_spawned  # type: ignore
+
             # Build list of factories whose item class name has not yet spawned
-            available_factories = [f for f in unique_item_factories if f.__name__ not in unique_items_spawned]
+            available_factories = [
+                f
+                for f in unique_item_factories
+                if f.__name__ not in unique_items_spawned
+            ]
             if not available_factories:
                 return []  # nothing left to inject
             factory = random.choice(available_factories)
@@ -237,16 +274,18 @@ class UniqueItemInjectionCondition(ShopCondition):
             # Mark as spawned globally
             unique_items_spawned.add(factory.__name__)
             # Ensure uniqueness flags
-            setattr(item, 'unique', True)
-            setattr(item, 'unique_condition', self.name or 'Unique Item Injection')
+            setattr(item, "unique", True)
+            setattr(item, "unique_condition", self.name or "Unique Item Injection")
 
             # Attempt to locate a merchant container (first match)
             container = None
             try:
-                if hasattr(merchant, 'current_room') and getattr(merchant.current_room, 'universe', None):
+                if hasattr(merchant, "current_room") and getattr(
+                    merchant.current_room, "universe", None
+                ):
                     for room in merchant.current_room.universe.map:  # type: ignore[attr-defined]
-                        for obj in getattr(room, 'objects', []):
-                            if getattr(obj, 'merchant', None) is merchant:
+                        for obj in getattr(room, "objects", []):
+                            if getattr(obj, "merchant", None) is merchant:
                                 container = obj
                                 break
                         if container:
@@ -254,11 +293,11 @@ class UniqueItemInjectionCondition(ShopCondition):
             except Exception:
                 container = None
 
-            if container is not None and hasattr(container, 'inventory'):
+            if container is not None and hasattr(container, "inventory"):
                 container.inventory.append(item)  # type: ignore[attr-defined]
             else:
-                if not hasattr(merchant, 'inventory'):
-                    setattr(merchant, 'inventory', [])
+                if not hasattr(merchant, "inventory"):
+                    setattr(merchant, "inventory", [])
                 merchant.inventory.append(item)  # type: ignore[attr-defined]
 
             if not self.description:
@@ -274,8 +313,8 @@ class UniqueItemInjectionCondition(ShopCondition):
 
 
 __all__ = [
-    'ShopCondition',
-    'ValueModifierCondition',
-    'RestockWeightBoostCondition',
-    'UniqueItemInjectionCondition',
+    "ShopCondition",
+    "ValueModifierCondition",
+    "RestockWeightBoostCondition",
+    "UniqueItemInjectionCondition",
 ]

@@ -35,14 +35,24 @@ def get_session_and_player():
     """Extract session and player from request."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None, None, jsonify({"success": False, "error": "Missing authorization"}), 401
+        return (
+            None,
+            None,
+            jsonify({"success": False, "error": "Missing authorization"}),
+            401,
+        )
 
     session_id = auth_header[7:]
     session_manager = current_app.session_manager
     session = session_manager.get_session(session_id)
 
     if not session:
-        return None, None, jsonify({"success": False, "error": "Invalid or expired session"}), 401
+        return (
+            None,
+            None,
+            jsonify({"success": False, "error": "Invalid or expired session"}),
+            401,
+        )
 
     player = session_manager.get_player(session_id)
     if not player:
@@ -54,30 +64,32 @@ def get_session_and_player():
 def get_item_and_index(player, item_id=None, item_index=None):
     """
     Find item by ID or index.
-    
+
     Args:
         player: Player object
         item_id: String ID of the item (Python id())
         item_index: Numeric index in inventory
-        
+
     Returns:
         Tuple of (item, index) or (None, None) if not found
     """
-    inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
-    
+    inventory_list = getattr(player, "inventory_list", None) or getattr(
+        player, "inventory", []
+    )
+
     # Try finding by ID first
     if item_id:
         for idx, item in enumerate(inventory_list):
             if str(id(item)) == item_id:
                 return item, idx
         return None, None
-    
+
     # Fall back to index
     if item_index is not None:
         if 0 <= item_index < len(inventory_list):
             return inventory_list[item_index], item_index
         return None, None
-    
+
     return None, None
 
 
@@ -125,15 +137,15 @@ def examine_item():
             )
 
         # Get inventory (handle both naming conventions)
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        inventory_list = getattr(player, "inventory_list", None) or getattr(
+            player, "inventory", []
+        )
         is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
         item = inventory_list[item_index]
-        item_data = ItemDetailSerializer.serialize(
-            item, inventory_index=item_index
-        )
+        item_data = ItemDetailSerializer.serialize(item, inventory_index=item_index)
 
         return (
             jsonify({"success": True, "item": item_data}),
@@ -173,17 +185,21 @@ def take_item():
 
         # For now, just validate the index and return success
         # Full implementation requires game engine state manipulation
-        is_valid, error_msg = validate_item_index(item_index, len(tile_data.get("items", [])))
+        is_valid, error_msg = validate_item_index(
+            item_index, len(tile_data.get("items", []))
+        )
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
         inventory_data = InventorySerializer.serialize(player)
         return (
-            jsonify({
-                "success": True,
-                "message": f"Item taken",
-                "inventory": inventory_data,
-            }),
+            jsonify(
+                {
+                    "success": True,
+                    "message": f"Item taken",
+                    "inventory": inventory_data,
+                }
+            ),
             200,
         )
     except Exception as e:
@@ -207,18 +223,24 @@ def drop_item():
 
     try:
         data = request.get_json() or {}
-        
+
         # Get item ID or index from request
         item_id = data.get("item_id")
         item_index = data.get("item_index")
-        
+
         if not item_id and item_index is None:
-            return jsonify({"success": False, "error": "Missing item_id or item_index"}), 400
+            return (
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
+                400,
+            )
 
         # Find the item
         item_to_drop, actual_index = get_item_and_index(player, item_id, item_index)
         if item_to_drop is None:
-            return jsonify({"success": False, "error": "Item not found in inventory"}), 400
+            return (
+                jsonify({"success": False, "error": "Item not found in inventory"}),
+                400,
+            )
 
         # Get player's current position
         player_x = getattr(player, "location_x", 0)
@@ -230,22 +252,26 @@ def drop_item():
             return jsonify({"success": False, "error": "Current tile not found"}), 400
 
         # Remove item from inventory and add to tile
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        inventory_list = getattr(player, "inventory_list", None) or getattr(
+            player, "inventory", []
+        )
         inventory_list.pop(actual_index)
         items_here = getattr(tile, "items_here", [])
         items_here.append(item_to_drop)
         # Update item description if it's stackable
-        if hasattr(item_to_drop, 'stack_grammar'):
+        if hasattr(item_to_drop, "stack_grammar"):
             item_to_drop.stack_grammar()
 
         # Return updated inventory
         inventory_data = InventorySerializer.serialize(player)
         return (
-            jsonify({
-                "success": True,
-                "message": f"Item dropped",
-                "inventory": inventory_data,
-            }),
+            jsonify(
+                {
+                    "success": True,
+                    "message": f"Item dropped",
+                    "inventory": inventory_data,
+                }
+            ),
             200,
         )
     except Exception as e:
@@ -290,23 +316,34 @@ def equip_item():
 
     try:
         data = request.get_json() or {}
-        
+
         # Get item ID or index from request
         item_id = data.get("item_id")
         item_index = data.get("item_index")
-        
+
         if not item_id and item_index is None:
-            return jsonify({"success": False, "error": "Missing item_id or item_index"}), 400
+            return (
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
+                400,
+            )
 
         # Find the item
         item, actual_index = get_item_and_index(player, item_id, item_index)
         if item is None:
-            return jsonify({"success": False, "error": "Item not found in inventory"}), 400
+            return (
+                jsonify({"success": False, "error": "Item not found in inventory"}),
+                400,
+            )
 
         # Check if equippable
         if not hasattr(item, "isequipped"):
             return (
-                jsonify({"success": False, "error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}),
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"{getattr(item, 'name', 'Item')} cannot be equipped",
+                    }
+                ),
                 400,
             )
 
@@ -321,12 +358,19 @@ def equip_item():
             # Check if merchandise - can't equip until purchased
             if getattr(item, "merchandise", False):
                 return (
-                    jsonify({"success": False, "error": f"You must purchase {item.name} before equipping it"}),
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"You must purchase {item.name} before equipping it",
+                        }
+                    ),
                     400,
                 )
-            
+
             # Unequip other items of same maintype if needed
-            inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+            inventory_list = getattr(player, "inventory_list", None) or getattr(
+                player, "inventory", []
+            )
             maintype = getattr(item, "maintype", None)
             if maintype:
                 for other_item in inventory_list:
@@ -350,34 +394,38 @@ def equip_item():
                             other_item.isequipped = False
                             if hasattr(other_item, "on_unequip"):
                                 other_item.on_unequip(player)
-            
+
             # Equip the item
             item.isequipped = True
             if hasattr(item, "on_equip"):
                 item.on_equip(player)
-            
+
             # Update weapon reference if applicable
             if maintype == "Weapon":
                 player.eq_weapon = item
-            
+
             # Refresh stat bonuses
             from src import functions
+
             functions.refresh_stat_bonuses(player)
-            
+
             message = f"{item.name} equipped"
 
         # Get updated equipment data
         from src.api.serializers.inventory import EquipmentSerializer
+
         equipment_data = EquipmentSerializer.serialize(player)
         inventory_data = InventorySerializer.serialize(player)
-        
+
         return (
-            jsonify({
-                "success": True,
-                "message": message,
-                "equipment": equipment_data,
-                "inventory": inventory_data,
-            }),
+            jsonify(
+                {
+                    "success": True,
+                    "message": message,
+                    "equipment": equipment_data,
+                    "inventory": inventory_data,
+                }
+            ),
             200,
         )
     except Exception as e:
@@ -401,55 +449,73 @@ def use_item():
 
     try:
         data = request.get_json() or {}
-        
+
         # Get item ID or index from request
         item_id = data.get("item_id")
         item_index = data.get("item_index")
-        
+
         if not item_id and item_index is None:
-            return jsonify({"success": False, "error": "Missing item_id or item_index"}), 400
+            return (
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
+                400,
+            )
 
         # Find the item
         item, actual_index = get_item_and_index(player, item_id, item_index)
         if item is None:
-            return jsonify({"success": False, "error": "Item not found in inventory"}), 400
+            return (
+                jsonify({"success": False, "error": "Item not found in inventory"}),
+                400,
+            )
 
         # Check if merchandise - can't use until purchased
         if getattr(item, "merchandise", False):
             return (
-                jsonify({"success": False, "error": f"You must purchase {item.name} before using it"}),
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"You must purchase {item.name} before using it",
+                    }
+                ),
                 400,
             )
 
         # Check if item is usable
         if not hasattr(item, "use"):
             return (
-                jsonify({"success": False, "error": f"{getattr(item, 'name', 'Item')} cannot be used"}),
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"{getattr(item, 'name', 'Item')} cannot be used",
+                    }
+                ),
                 400,
             )
 
         # Capture output from item use
         f = io.StringIO()
-        
-        def mock_cprint(text, *args, **kwargs):
-            f.write(str(text) + '\n')
-            
-        def mock_print_slow(text, speed="slow"):
-            f.write(str(text) + '\n')
 
-        with contextlib.redirect_stdout(f), \
-             patch('neotermcolor.cprint', mock_cprint), \
-             patch('src.functions.print_slow', mock_print_slow), \
-             patch('functions.print_slow', mock_print_slow), \
-             patch('time.sleep', return_value=None):
+        def mock_cprint(text, *args, **kwargs):
+            f.write(str(text) + "\n")
+
+        def mock_print_slow(text, speed="slow"):
+            f.write(str(text) + "\n")
+
+        with contextlib.redirect_stdout(f), patch(
+            "neotermcolor.cprint", mock_cprint
+        ), patch("src.functions.print_slow", mock_print_slow), patch(
+            "functions.print_slow", mock_print_slow
+        ), patch(
+            "time.sleep", return_value=None
+        ):
             # Call the item's use method
             item.use(player)
-        
+
         output = f.getvalue()
         # Clean up output (remove ANSI codes)
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        clean_output = ansi_escape.sub('', output).strip()
-        
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        clean_output = ansi_escape.sub("", output).strip()
+
         if not clean_output:
             clean_output = f"{item.name} used"
 
@@ -459,38 +525,41 @@ def use_item():
                 adapter = player._combat_adapter
                 current_beat = getattr(player, "combat_beat", 0)
                 # Split by lines and add each as a log entry
-                for line in clean_output.split('\n'):
+                for line in clean_output.split("\n"):
                     if line.strip():
                         adapter._add_log_entry(current_beat, line.strip(), "combat")
             else:
                 # Fallback if adapter not initialized
-                if not hasattr(player, 'combat_log'):
+                if not hasattr(player, "combat_log"):
                     player.combat_log = []
-                for line in clean_output.split('\n'):
+                for line in clean_output.split("\n"):
                     if line.strip():
-                        player.combat_log.append({
-                            "round": getattr(player, "combat_beat", 0),
-                            "message": line.strip(),
-                            "type": "combat"
-                        })
+                        player.combat_log.append(
+                            {
+                                "round": getattr(player, "combat_beat", 0),
+                                "message": line.strip(),
+                                "type": "combat",
+                            }
+                        )
 
         # Get updated inventory
         inventory_data = InventorySerializer.serialize(player)
-        
+
         # Prepare response
         response_data = {
             "success": True,
             "message": clean_output,
             "inventory": inventory_data,
         }
-        
+
         # If in combat, also return updated combat state
         if getattr(player, "in_combat", False):
             from src.api.serializers.combat import CombatStateSerializer
+
             combat_state = CombatStateSerializer.serialize_combat_state(
                 player,
                 getattr(player, "combat_list", []),
-                round_number=getattr(player, "combat_beat", 0)
+                round_number=getattr(player, "combat_beat", 0),
             )
             response_data["combat_state"] = combat_state
 
@@ -530,7 +599,9 @@ def unequip_item():
             return jsonify({"success": False, "error": error_msg}), 400
 
         # Check if slot has item (handle both equipped and equipment)
-        equipment_dict = getattr(player, "equipped", None) or getattr(player, "equipment", {})
+        equipment_dict = getattr(player, "equipped", None) or getattr(
+            player, "equipment", {}
+        )
         if not equipment_dict or slot_name not in equipment_dict:
             return (
                 jsonify({"success": False, "error": f"Invalid slot: {slot_name}"}),
@@ -540,7 +611,9 @@ def unequip_item():
         item = equipment_dict.get(slot_name)
         if not item:
             return (
-                jsonify({"success": False, "error": f"No item equipped in {slot_name}"}),
+                jsonify(
+                    {"success": False, "error": f"No item equipped in {slot_name}"}
+                ),
                 400,
             )
 
@@ -548,11 +621,13 @@ def unequip_item():
         # Full implementation requires game engine state manipulation
         equipment_data = EquipmentSerializer.serialize(player)
         return (
-            jsonify({
-                "success": True,
-                "message": f"Unequipped item",
-                "equipment": equipment_data,
-            }),
+            jsonify(
+                {
+                    "success": True,
+                    "message": f"Unequipped item",
+                    "equipment": equipment_data,
+                }
+            ),
             200,
         )
     except Exception as e:
@@ -580,12 +655,16 @@ def compare_items():
 
         if candidate_index is None:
             return (
-                jsonify({"success": False, "error": "Missing candidate_index parameter"}),
+                jsonify(
+                    {"success": False, "error": "Missing candidate_index parameter"}
+                ),
                 400,
             )
 
         # Get inventory (handle both naming conventions)
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        inventory_list = getattr(player, "inventory_list", None) or getattr(
+            player, "inventory", []
+        )
 
         # Validate candidate index
         is_valid, error_msg = validate_item_index(candidate_index, len(inventory_list))
@@ -594,7 +673,9 @@ def compare_items():
 
         current_item = None
         if current_index is not None:
-            is_valid, error_msg = validate_item_index(current_index, len(inventory_list))
+            is_valid, error_msg = validate_item_index(
+                current_index, len(inventory_list)
+            )
             if not is_valid:
                 return jsonify({"success": False, "error": error_msg}), 400
             current_item = inventory_list[current_index]
@@ -602,7 +683,9 @@ def compare_items():
         candidate_item = inventory_list[candidate_index]
 
         # Compare items
-        comparison_data = ItemComparisonSerializer.serialize(current_item, candidate_item)
+        comparison_data = ItemComparisonSerializer.serialize(
+            current_item, candidate_item
+        )
 
         return (
             jsonify({"success": True, "comparison": comparison_data}),

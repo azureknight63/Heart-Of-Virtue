@@ -17,7 +17,7 @@ quest_rewards_bp = Blueprint("quest_rewards", __name__, url_prefix="/api/quests"
 
 def get_session_and_player():
     """Extract and validate session from Authorization header.
-    
+
     Returns:
         Tuple of (session_manager, session, player, error_response, status_code)
         or (None, None, None, error_response, status_code) on error
@@ -28,7 +28,9 @@ def get_session_and_player():
             None,
             None,
             None,
-            jsonify({"success": False, "error": "Missing or invalid Authorization header"}),
+            jsonify(
+                {"success": False, "error": "Missing or invalid Authorization header"}
+            ),
             401,
         )
 
@@ -61,10 +63,10 @@ def get_session_and_player():
 @quest_rewards_bp.route("/<quest_id>/rewards", methods=["GET"])
 def get_quest_rewards(quest_id: str):
     """Get rewards for a specific quest.
-    
+
     Args:
         quest_id: Quest identifier from URL
-        
+
     Returns:
         JSON with quest reward details
     """
@@ -84,17 +86,17 @@ def get_quest_rewards(quest_id: str):
 @quest_rewards_bp.route("/<quest_id>/complete", methods=["POST"])
 def complete_quest(quest_id: str):
     """Complete a quest and distribute rewards.
-    
+
     Args:
         quest_id: Quest identifier from URL
-        
+
     Request body:
     {
         "difficulty": "normal|easy|hard|nightmare" (optional, defaults to "normal"),
         "no_deaths": boolean (optional, defaults to True),
         "bonus_objectives_completed": boolean (optional, defaults to False)
     }
-    
+
     Returns:
         JSON with quest completion details and rewards
     """
@@ -104,15 +106,17 @@ def complete_quest(quest_id: str):
 
     # Parse request body
     data = request.get_json() or {}
-    
+
     # Validate request fields
     difficulty = data.get("difficulty", "normal")
     if difficulty not in ["easy", "normal", "hard", "nightmare"]:
         return (
-            jsonify({
-                "success": False,
-                "error": "Invalid difficulty. Must be: easy, normal, hard, or nightmare"
-            }),
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid difficulty. Must be: easy, normal, hard, or nightmare",
+                }
+            ),
             400,
         )
 
@@ -267,14 +271,14 @@ def award_item():
 @quest_rewards_bp.route("/award-reputation", methods=["POST"])
 def award_reputation():
     """Award reputation with an NPC.
-    
+
     Request body:
     {
         "npc_id": str (required),
         "npc_name": str (required),
         "amount": int (required, can be negative for loss)
     }
-    
+
     Returns:
         JSON with reputation update info
     """
@@ -311,7 +315,7 @@ def award_reputation():
 @quest_rewards_bp.route("/progression", methods=["GET"])
 def get_progression():
     """Get player progression stats.
-    
+
     Returns:
         JSON with progression data
     """

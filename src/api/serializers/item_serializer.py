@@ -9,10 +9,10 @@ class ItemSerializer:
     @staticmethod
     def serialize(item: Any) -> Dict[str, Any]:
         """Serialize a single item.
-        
+
         Args:
             item: Item object to serialize
-            
+
         Returns:
             Dictionary with item data
         """
@@ -37,7 +37,7 @@ class ItemSerializer:
             item_data["count"] = item.quantity
         elif hasattr(item, "count"):
             item_data["count"] = item.count
-        
+
         # Add subtype for categorization
         if hasattr(item, "subtype"):
             item_data["subtype"] = item.subtype
@@ -83,20 +83,20 @@ class ItemSerializer:
             keywords = list(item.keywords)
         elif hasattr(item, "interactions"):
             keywords = list(item.interactions)
-        
+
         # Filter out inventory-only interactions (drop, unequip)
         # Keep 'equip' if the item is equippable
         inventory_only_actions = ["drop", "unequip"]
         keywords = [k for k in keywords if k not in inventory_only_actions]
-        
+
         # Ensure 'take' is available for items
         if "take" not in keywords:
             keywords.append("take")
-        
+
         # Add 'equip' for equippable items if not already present
         if hasattr(item, "isequipped") and "equip" not in keywords:
             keywords.append("equip")
-            
+
         item_data["keywords"] = keywords
 
         return item_data
@@ -104,59 +104,65 @@ class ItemSerializer:
     @staticmethod
     def serialize_list(items: List[Any]) -> List[Dict[str, Any]]:
         """Serialize multiple items.
-        
+
         Args:
             items: List of Item objects
-            
+
         Returns:
             List of serialized item dictionaries
         """
         if not items:
             return []
-        
+
         return [ItemSerializer.serialize(item) for item in items]
 
     @staticmethod
     def serialize_with_effects(item: Any) -> Dict[str, Any]:
         """Serialize item with full effect details.
-        
+
         Args:
             item: Item object to serialize
-            
+
         Returns:
             Dictionary with detailed item and effect data
         """
         item_data = ItemSerializer.serialize(item)
-        
+
         # Add effect descriptions if available
         if hasattr(item, "skills") and item.skills:
             item_data["skills"] = item.skills
-        
+
         if hasattr(item, "effects") and item.effects:
             item_data["effects"] = item.effects
-        
+
         # Add discovery/announcement text
         if hasattr(item, "discovery_message"):
             item_data["discovery_message"] = item.discovery_message
-        
+
         if hasattr(item, "announce"):
             item_data["announce"] = item.announce
-        
+
         return item_data
 
     @staticmethod
-    def serialize_inventory(items: List[Any], include_effects: bool = False) -> Dict[str, Any]:
+    def serialize_inventory(
+        items: List[Any], include_effects: bool = False
+    ) -> Dict[str, Any]:
         """Serialize player inventory.
-        
+
         Args:
             items: List of items in inventory
             include_effects: Whether to include full effect details
-            
+
         Returns:
             Dictionary with inventory data
         """
-        serializer = ItemSerializer.serialize_with_effects if include_effects else ItemSerializer.serialize
-        
+        serializer = (
+            ItemSerializer.serialize_with_effects
+            if include_effects
+            else ItemSerializer.serialize
+        )
+
         return {
             "items": [serializer(item) for item in items],
             "count": len(items),
@@ -166,10 +172,10 @@ class ItemSerializer:
     @staticmethod
     def serialize_container(items: List[Any]) -> Dict[str, Any]:
         """Serialize items in a container (chest, shop, etc).
-        
+
         Args:
             items: List of items in container
-            
+
         Returns:
             Dictionary with container items
         """

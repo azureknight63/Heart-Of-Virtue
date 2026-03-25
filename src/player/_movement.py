@@ -58,10 +58,10 @@ class PlayerMovementMixin:
     def move_southwest(self):
         self.move(dx=-1, dy=1)
 
-    def do_action(self, action, phrase=''):
+    def do_action(self, action, phrase=""):
         """Dispatch a room Action to the corresponding player method."""
         action_method = getattr(self, action.method.__name__)
-        if phrase == '':
+        if phrase == "":
             if action_method:
                 action_method()
         else:
@@ -94,9 +94,7 @@ class PlayerMovementMixin:
         x = target_coordinates[0]
         y = target_coordinates[1]
         for area in self.universe.maps:
-            if (area.get('name') == target_map
-                    and x is not None
-                    and y is not None):
+            if area.get("name") == target_map and x is not None and y is not None:
                 tile = tile_exists(area, x, y)
                 if tile:
                     self.map = area
@@ -122,16 +120,26 @@ class PlayerMovementMixin:
                 friend.current_room = self.current_room
                 friend.current_room.npcs_here.append(friend)
         if party_size == 1:
-            print(colored(self.combat_list_allies[1].name, "cyan") + colored(" follows Jean.", "green"))
+            print(
+                colored(self.combat_list_allies[1].name, "cyan")
+                + colored(" follows Jean.", "green")
+            )
         elif party_size == 2:
-            print(colored(self.combat_list_allies[1].name, "cyan") + colored(" and ", "green") +
-                  colored(self.combat_list_allies[2].name, "cyan")
-                  + colored("follow Jean.", "green"))
+            print(
+                colored(self.combat_list_allies[1].name, "cyan")
+                + colored(" and ", "green")
+                + colored(self.combat_list_allies[2].name, "cyan")
+                + colored("follow Jean.", "green")
+            )
         elif party_size >= 3:
             output = ""
             for friend in range(party_size - 1):
-                output += (colored(self.combat_list_allies[friend + 1].name, "cyan") +
-                           colored(", ", "green"))
-            output += colored(", and ", "green") + colored(
-                self.combat_list_allies[party_size].name, "cyan") + colored(" follow Jean.", "green")
+                output += colored(
+                    self.combat_list_allies[friend + 1].name, "cyan"
+                ) + colored(", ", "green")
+            output += (
+                colored(", and ", "green")
+                + colored(self.combat_list_allies[party_size].name, "cyan")
+                + colored(" follow Jean.", "green")
+            )
             print(output)

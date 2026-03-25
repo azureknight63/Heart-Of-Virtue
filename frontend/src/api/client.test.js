@@ -68,7 +68,7 @@ describe('apiClient', () => {
       if (responseError) {
         responseError(mockError).catch(() => {});
         expect(localStorage.getItem('authToken')).toBeNull();
-        expect(mockLocation.href).toBe('/login');
+        expect(mockLocation.href).toBe('/games/HeartOfVirtue/login');
       }
     } finally {
       Object.defineProperty(window, 'location', {

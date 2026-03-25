@@ -1,5 +1,6 @@
 """Describes the tiles in the world space."""
-__author__ = 'Alex Egbert'
+
+__author__ = "Alex Egbert"
 
 import os
 import random
@@ -15,7 +16,7 @@ from universe import tile_exists as tile_exists  # type: ignore
 class MapTile:
     """The base class for a tile within the world space"""
 
-    def __init__(self, universe, current_map, x, y, description=''):
+    def __init__(self, universe, current_map, x, y, description=""):
         """Creates a new tile.
 
         :param x: the x-coordinate of the tile
@@ -35,7 +36,7 @@ class MapTile:
         self.respawn_rate = 9999  # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
         self.description = description  # used for the intro_text to make it dynamic
-        self.symbol = '●'  # symbol to mark on the map when the tile is fully discovered
+        self.symbol = "●"  # symbol to mark on the map when the tile is fully discovered
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
@@ -59,18 +60,23 @@ class MapTile:
             ((-1, 1), "southwest", actions.MoveSouthWest),
         ]
         for (dx, dy), direction, action_cls in directions:
-            if tile_exists(self.map, self.x + dx, self.y + dy) and direction not in self.block_exit:
+            if (
+                tile_exists(self.map, self.x + dx, self.y + dy)
+                and direction not in self.block_exit
+            ):
                 moves.append(action_cls())
                 tile = tile_exists(self.map, self.x + dx, self.y + dy)
                 tile.discovered = True
         return moves
 
-    def available_actions(self, callerIsApi = False, player=None) -> list[actions.Action]:
+    def available_actions(self, callerIsApi=False, player=None) -> list[actions.Action]:
         """Returns all the available actions in this room."""
         moves = []
 
         if not callerIsApi:
-            moves = self.adjacent_moves()  # first, add the available directions in the current room
+            moves = (
+                self.adjacent_moves()
+            )  # first, add the available directions in the current room
             default_moves = [  # these are the default moves available to the player
                 actions.ListCommands(),
                 actions.ViewInventory(),
@@ -85,7 +91,7 @@ class MapTile:
                 actions.Save(),
                 actions.ViewMap(),
                 actions.Attack(),
-                actions.ViewStatus()
+                actions.ViewStatus(),
             ]
         else:
             default_moves = [
@@ -99,7 +105,11 @@ class MapTile:
 
         # Check if debug mode is enabled via player's game_config
         debug_enabled = False
-        if player and hasattr(player, 'game_config') and hasattr(player.game_config, 'debug_mode'):
+        if (
+            player
+            and hasattr(player, "game_config")
+            and hasattr(player.game_config, "debug_mode")
+        ):
             debug_enabled = player.game_config.debug_mode
         elif self.universe.testing_mode:
             # Fallback to universe.testing_mode for backward compatibility
@@ -114,7 +124,7 @@ class MapTile:
                 actions.Supersaiyan(),
                 actions.TestEvent(),
                 actions.SpawnObj(),
-                actions.RefreshMerchants()
+                actions.RefreshMerchants(),
             ]
             for move in debug_moves:
                 # noinspection PyTypeChecker
@@ -130,20 +140,26 @@ class MapTile:
         simultaneously before combat begins.
         """
         from story.effects import NPCSpawnerEvent
-        
+
         # First pass: process all NPCSpawnerEvents
-        spawner_events = [event for event in self.events_here if isinstance(event, NPCSpawnerEvent)]
+        spawner_events = [
+            event for event in self.events_here if isinstance(event, NPCSpawnerEvent)
+        ]
         for event in spawner_events:
             event.check_conditions()
-        
+
         # Second pass: process all other events
-        other_events = [event for event in self.events_here if not isinstance(event, NPCSpawnerEvent)]
+        other_events = [
+            event
+            for event in self.events_here
+            if not isinstance(event, NPCSpawnerEvent)
+        ]
         for event in other_events:
             event.check_conditions()
 
     def spawn_npc(self, npc_type, hidden=False, hfactor=0, delay=-1):
         try:
-            module = __import__('npc')
+            module = __import__("npc")
         except ModuleNotFoundError:
             module = None
         npc_cls = None
@@ -190,21 +206,21 @@ class MapTile:
         # python
         import importlib
 
-        items_mod = importlib.import_module('items')
+        items_mod = importlib.import_module("items")
         amt = max(1, int(amt))
         spawned = []
 
-        if item_type == 'Gold':
+        if item_type == "Gold":
             item = getattr(items_mod, item_type)(amt)
             spawned.append(item)
         else:
             item_cls = getattr(items_mod, item_type)
             # create a sample to inspect attributes
             sample = item_cls()
-            if hasattr(sample, 'count'):
+            if hasattr(sample, "count"):
                 # stackable: create a single item with the requested count
                 item = sample
-                if hasattr(item, 'merchandise'):
+                if hasattr(item, "merchandise"):
                     item.merchandise = merchandise
                 item.count = amt
                 spawned.append(item)
@@ -212,7 +228,7 @@ class MapTile:
                 # non-stackable: create separate instances
                 for _ in range(amt):
                     inst = item_cls()
-                    if hasattr(inst, 'merchandise'):
+                    if hasattr(inst, "merchandise"):
                         inst.merchandise = merchandise
                     spawned.append(inst)
                 item = spawned[0]
@@ -227,16 +243,20 @@ class MapTile:
 
     def spawn_event(self, event_type, player, tile, repeat=False, params=None):
         event_cls = functions.seek_class(event_type, "story")
-        event = functions.instantiate_event(event_cls, player, tile, params=params, repeat=repeat)
+        event = functions.instantiate_event(
+            event_cls, player, tile, params=params, repeat=repeat
+        )
         if event:
             self.events_here.append(event)
             return event
         return None
 
-    def spawn_object(self, obj_type, player, tile, params=None, hidden=False, hfactor=0, **kwargs):
+    def spawn_object(
+        self, obj_type, player, tile, params=None, hidden=False, hfactor=0, **kwargs
+    ):
         """
         Spawn an object on this tile.
-        
+
         Args:
             obj_type: The class name of the object to spawn
             player: The player instance
@@ -253,22 +273,22 @@ class MapTile:
             if len(parts) >= 3:
                 map_part = parts[0]
                 # Handle both "t.mapname" and "mapname" formats
-                if map_part.startswith('t.'):
+                if map_part.startswith("t."):
                     teleport_map = map_part[2:]  # Remove "t." prefix
                 else:
                     teleport_map = map_part
                 try:
                     x = int(parts[1])
                     y = int(parts[2])
-                    kwargs['teleport_map'] = teleport_map
-                    kwargs['teleport_tile'] = (x, y)
+                    kwargs["teleport_map"] = teleport_map
+                    kwargs["teleport_tile"] = (x, y)
                     params = None  # Don't pass the string to constructor
                 except (ValueError, IndexError):
                     pass  # Fall back to passing params as-is
-        
+
         # Import the object class
-        obj_cls = getattr(__import__('objects'), obj_type)
-        
+        obj_cls = getattr(__import__("objects"), obj_type)
+
         # Try to instantiate with kwargs first (modern approach)
         if kwargs:
             try:
@@ -279,7 +299,7 @@ class MapTile:
         else:
             # Use params (legacy approach)
             obj = obj_cls(player, tile, params)
-        
+
         if hidden:
             obj.hidden = True
             obj.hide_factor = hfactor
@@ -287,11 +307,18 @@ class MapTile:
         return obj
 
     def stack_duplicate_items(self):
-        for master_item in self.items_here:  # traverse the inventory for stackable items, then stack them
+        for (
+            master_item
+        ) in (
+            self.items_here
+        ):  # traverse the inventory for stackable items, then stack them
             if hasattr(master_item, "count"):
                 remove_duplicates = []
                 for duplicate_item in self.items_here:
-                    if duplicate_item != master_item and master_item.__class__ == duplicate_item.__class__:
+                    if (
+                        duplicate_item != master_item
+                        and master_item.__class__ == duplicate_item.__class__
+                    ):
                         master_item.count += duplicate_item.count
                         remove_duplicates.append(duplicate_item)
                 if hasattr(master_item, "stack_grammar"):

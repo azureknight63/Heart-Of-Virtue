@@ -33,7 +33,7 @@ class InventoryItemSerializer:
         # Determine item category
         item_type = item.__class__.__name__
         maintype = getattr(item, "maintype", "")
-        
+
         # Build base item data
         item_data = {
             "id": str(id(item)),  # Unique identifier for this item object
@@ -53,18 +53,23 @@ class InventoryItemSerializer:
             "is_merchandise": getattr(item, "merchandise", False),
             "description": getattr(item, "description", ""),
         }
-        
+
         # Add weapon-specific stats
         if item_type == "Weapon" or maintype == "Weapon":
             item_data["damage"] = getattr(item, "damage", 0)
             item_data["str_mod"] = getattr(item, "str_mod", 0)
             item_data["fin_mod"] = getattr(item, "fin_mod", 0)
-        
+
         # Add armor-specific stats (Armor, Boots, Helm, Gloves, Accessory)
-        if item_type in ["Armor", "Boots", "Helm", "Gloves", "Accessory"] or \
-           maintype in ["Armor", "Boots", "Helm", "Gloves", "Accessory"]:
+        if item_type in [
+            "Armor",
+            "Boots",
+            "Helm",
+            "Gloves",
+            "Accessory",
+        ] or maintype in ["Armor", "Boots", "Helm", "Gloves", "Accessory"]:
             item_data["protection"] = getattr(item, "protection", 0)
-        
+
         return item_data
 
 
@@ -86,7 +91,9 @@ class InventorySerializer:
         total_weight = 0.0
 
         # Handle both inventory_list (real Player) and inventory (MinimalPlayer)
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        inventory_list = getattr(player, "inventory_list", None) or getattr(
+            player, "inventory", []
+        )
         for idx, item in enumerate(inventory_list):
             items.append(InventoryItemSerializer.serialize(item, idx))
             total_weight += getattr(item, "weight", 0.0)
@@ -172,8 +179,10 @@ class EquipmentSerializer:
         }
 
         # Get equipped items from player (handle both equipped and equipment attributes)
-        equipment_dict = getattr(player, "equipped", None) or getattr(player, "equipment", {})
-        
+        equipment_dict = getattr(player, "equipped", None) or getattr(
+            player, "equipment", {}
+        )
+
         # Fallback: check individual attributes if dict is empty
         if not equipment_dict:
             slot_mapping = {
@@ -193,7 +202,9 @@ class EquipmentSerializer:
                 if item:
                     # Only include if specifically marked as equipped, or if it's a weapon (always have a weapon)
                     # Use isequipped flag to distinguish real equipped items from defaults if needed
-                    if getattr(item, "isequipped", False) or (slot == "weapon" and item):
+                    if getattr(item, "isequipped", False) or (
+                        slot == "weapon" and item
+                    ):
                         equipment_dict[slot] = item
 
         if equipment_dict:
@@ -208,7 +219,9 @@ class EquipmentSerializer:
 
         # Count unequipped equippable items (handle both inventory_list and inventory)
         unequipped_equippable = 0
-        inventory_list = getattr(player, "inventory_list", None) or getattr(player, "inventory", [])
+        inventory_list = getattr(player, "inventory_list", None) or getattr(
+            player, "inventory", []
+        )
         for item in inventory_list:
             if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
                 unequipped_equippable += 1
@@ -231,7 +244,9 @@ class ItemDetailSerializer:
     """Serialize full details of a single item."""
 
     @staticmethod
-    def serialize(item, equipped: bool = False, inventory_index: Optional[int] = None) -> Dict:
+    def serialize(
+        item, equipped: bool = False, inventory_index: Optional[int] = None
+    ) -> Dict:
         """
         Serialize complete item details.
 
@@ -271,7 +286,8 @@ class ItemDetailSerializer:
             "flags": {
                 "merchandise": getattr(item, "merchandise", False),
                 "hidden": getattr(item, "hidden", False),
-                "special": isinstance(item, type) and item.__class__.__name__ == "Special",
+                "special": isinstance(item, type)
+                and item.__class__.__name__ == "Special",
             },
         }
 
@@ -307,11 +323,15 @@ class ItemComparisonSerializer:
         damage_diff = getattr(candidate_item, "damage", 0) - getattr(
             current_item, "damage", 0
         )
-        armor_diff = getattr(candidate_item, "armor", 0) - getattr(current_item, "armor", 0)
+        armor_diff = getattr(candidate_item, "armor", 0) - getattr(
+            current_item, "armor", 0
+        )
         weight_diff = getattr(candidate_item, "weight", 0) - getattr(
             current_item, "weight", 0
         )
-        value_diff = getattr(candidate_item, "value", 0) - getattr(current_item, "value", 0)
+        value_diff = getattr(candidate_item, "value", 0) - getattr(
+            current_item, "value", 0
+        )
 
         # Determine recommendation
         if damage_diff > 0 and armor_diff >= 0:

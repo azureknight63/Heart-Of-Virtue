@@ -41,6 +41,16 @@ def _assert_no_infra_leak(data: dict) -> None:
 def _load_auth_module():
     """Load src/api/routes/auth.py directly, bypassing the routes package __init__
     (which imports every other route and drags in the game engine / tkinter)."""
+    import importlib as _il
+
+    # test_event_delay_features.py replaces sys.modules['flask'] with MagicMock
+    # at module level during pytest collection.  auth.py does `from flask import Blueprint`
+    # at module level, so we must restore the real flask *before* exec_module runs.
+    _flask_mod = sys.modules.get("flask")
+    if _flask_mod is None or isinstance(_flask_mod, MagicMock):
+        sys.modules.pop("flask", None)
+        sys.modules["flask"] = _il.import_module("flask")
+
     auth_svc = MagicMock()
     auth_svc.create_user = AsyncMock(return_value={"id": "test-id"})
     auth_svc.authenticate_user = AsyncMock(return_value=None)
@@ -60,11 +70,14 @@ def _load_auth_module():
     _stubs["src.api.services.auth_service"].auth_service = auth_svc
     _stubs["src.api.middleware.auth"].require_session = lambda f: f
 
-    injected = {}
+    # Always inject stubs, saving originals so teardown can restore them.
+    # (The real src.api.* modules may already be in sys.modules from other test
+    # files imported during pytest collection — we must overwrite them here.)
+    saved = {}
     for name, mod in _stubs.items():
-        if name not in sys.modules:
-            sys.modules[name] = mod
-            injected[name] = mod
+        saved[name] = sys.modules.get(name)
+        sys.modules[name] = mod
+    injected = saved  # keys to restore on teardown
 
     # Load auth.py as a standalone module (not via the package __init__)
     auth_path = ROOT / "src" / "api" / "routes" / "auth.py"
@@ -80,14 +93,31 @@ def auth_setup():
     """Load the auth module and return (auth_bp, auth_svc, sm_mock)."""
     auth_mod, auth_svc, sm_mock, injected = _load_auth_module()
     yield auth_mod, auth_svc, sm_mock
-    for name in injected:
-        sys.modules.pop(name, None)
+    # Restore pre-test sys.modules state (originals or absent)
+    for name, original in injected.items():
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
 
 
 @pytest.fixture(scope="module")
 def auth_client(auth_setup):
     """Create a minimal Flask test client with just the auth blueprint."""
-    from flask import Flask
+    import sys
+    import importlib
+
+    # test_event_delay_features.py replaces sys.modules['flask'] with MagicMock at
+    # module level during pytest collection.  Reload the real flask if it was mocked
+    # so this fixture always builds a real Flask app regardless of test ordering.
+    from unittest.mock import MagicMock as _MM
+    _flask = sys.modules.get("flask")
+    if _flask is None or isinstance(_flask, _MM):
+        sys.modules.pop("flask", None)
+        _flask = importlib.import_module("flask")
+        sys.modules["flask"] = _flask
+    Flask = _flask.Flask
+
     auth_mod, auth_svc, sm_mock = auth_setup
 
     app = Flask(__name__)

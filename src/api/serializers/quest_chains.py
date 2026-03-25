@@ -58,7 +58,8 @@ class QuestChainSerializer:
             "current_stage": current_stage,
             "completion_percentage": completion_percentage,
             "stages": stages,
-            "can_continue": status in [
+            "can_continue": status
+            in [
                 ChainStatus.AVAILABLE.value,
                 ChainStatus.IN_PROGRESS.value,
             ],
@@ -329,9 +330,7 @@ class ChainProgressionSerializer:
             "total_chains": total_chains,
             "completed_chains": completed_chains,
             "completion_percentage": (
-                (completed_chains / total_chains * 100)
-                if total_chains > 0
-                else 0
+                (completed_chains / total_chains * 100) if total_chains > 0 else 0
             ),
             "chains": all_progress,
         }
@@ -414,8 +413,7 @@ class ChainRewardSerializer:
 
         # Bonus for completing objectives
         objective_bonus = (
-            (bonus_objectives_completed / total_bonus_objectives)
-            * 0.5
+            (bonus_objectives_completed / total_bonus_objectives) * 0.5
             if total_bonus_objectives > 0
             else 0
         )
