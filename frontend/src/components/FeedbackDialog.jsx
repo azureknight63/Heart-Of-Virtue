@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import { colors, spacing, fonts } from '../styles/theme'
@@ -264,6 +264,7 @@ export default function FeedbackDialog({ onClose }) {
   const [featureFields, setFeatureFields] = useState({ ...EMPTY_FEATURE })
   const [generalFields, setGeneralFields] = useState({ ...EMPTY_GENERAL })
   const [ratings, setRatings] = useState({ ...EMPTY_RATINGS })
+  const submittingRef = useRef(false)
 
   const handleTypeChange = (type) => {
     setActiveType(type)
@@ -288,20 +289,23 @@ export default function FeedbackDialog({ onClose }) {
   }
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return
     if (!title.trim()) {
       toastError('Please enter a title for your feedback.')
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
     try {
       const fields = getActiveFields()
-      const resp = await feedbackApi.submitIssue(activeType, title.trim(), fields, anonymous)
+      await feedbackApi.submitIssue(activeType, title.trim(), fields, anonymous)
       toastSuccess('Feedback submitted! Thank you.')
       onClose()
     } catch (err) {
       const msg = err?.response?.data?.error || 'Could not submit feedback — please try again later.'
       toastError(msg)
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }

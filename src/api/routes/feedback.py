@@ -3,8 +3,11 @@ Feedback API routes
 Handles in-game player feedback and creates GitHub issues.
 """
 import os
+import re
+import time
 import logging
 import requests
+from collections import defaultdict
 from flask import Blueprint, request, jsonify
 
 from src.api.middleware.auth_middleware import get_session_and_player
@@ -29,6 +32,27 @@ SEVERITY_EMOJI = {
 }
 
 STAR_BLOCK = "⭐"
+
+MAX_TITLE_LENGTH = 256
+MAX_FIELD_LENGTH = 2000
+_MARKDOWN_UNSAFE = re.compile(r"[*_`\[\]()#\\]")
+
+# Simple in-memory rate limiter: 10 submissions per session per hour.
+# Per-worker (not shared across Gunicorn workers) — sufficient for beta.
+_RATE_LIMIT = 10
+_RATE_WINDOW = 3600  # seconds
+_rate_limit_store: dict = defaultdict(list)
+
+
+def _is_rate_limited(session_id: str) -> bool:
+    now = time.time()
+    cutoff = now - _RATE_WINDOW
+    hits = [t for t in _rate_limit_store[session_id] if t > cutoff]
+    _rate_limit_store[session_id] = hits
+    if len(hits) >= _RATE_LIMIT:
+        return True
+    _rate_limit_store[session_id].append(now)
+    return False
 
 
 def _build_bug_body(fields, attribution):
@@ -130,7 +154,7 @@ def _create_github_issue(title, body, labels):
     payload = {"title": title, "body": body, "labels": labels}
 
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=10)
+        resp = requests.post(url, json=payload, headers=headers, timeout=5)
     except requests.exceptions.RequestException as exc:
         logger.error("GitHub API request failed: %s", exc)
         return None, "Could not reach GitHub. Please try again later."
@@ -138,7 +162,7 @@ def _create_github_issue(title, body, labels):
     if resp.status_code == 201:
         return resp.json().get("html_url"), None
 
-    logger.error("GitHub API returned %s: %s", resp.status_code, resp.text)
+    logger.error("GitHub API returned %s", resp.status_code)
     return None, "GitHub rejected the submission. Please try again later."
 
 
@@ -163,19 +187,30 @@ def submit_feedback():
     if error:
         return error[0], error[1]
 
-    username = getattr(player, "name", "Unknown Player")
+    if _is_rate_limited(session.session_id):
+        return jsonify({"success": False, "error": "Too many feedback submissions. Please wait before trying again."}), 429
+
+    username = _MARKDOWN_UNSAFE.sub("", getattr(player, "name", "Unknown Player"))
 
     data = request.get_json(silent=True) or {}
     feedback_type = data.get("type", "").lower()
     title = (data.get("title") or "").strip()
     anonymous = bool(data.get("anonymous", False))
     fields = data.get("fields") or {}
+    if not isinstance(fields, dict):
+        fields = {}
 
     if feedback_type not in ("bug", "feature", "general"):
         return jsonify({"success": False, "error": "Invalid feedback type"}), 400
 
     if not title:
         return jsonify({"success": False, "error": "Title is required"}), 400
+
+    if len(title) > MAX_TITLE_LENGTH:
+        return jsonify({"success": False, "error": f"Title must be {MAX_TITLE_LENGTH} characters or fewer"}), 400
+
+    # Truncate oversized text fields to avoid enormous GitHub issues
+    fields = {k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v) for k, v in fields.items()}
 
     attribution = "Submitted anonymously via in-game feedback" if anonymous else f"Submitted in-game by: **{username}**"
 
