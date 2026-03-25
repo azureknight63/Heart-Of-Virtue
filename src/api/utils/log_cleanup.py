@@ -3,7 +3,6 @@ Log cleanup utility for managing browser log files.
 Automatically removes old log files based on retention policy.
 """
 
-import os
 from pathlib import Path
 from datetime import datetime, timedelta
 import logging

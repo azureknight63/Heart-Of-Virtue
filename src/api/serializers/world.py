@@ -1,6 +1,6 @@
 """Serializers for world navigation data."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 from src.api.serializers.item_serializer import ItemSerializer

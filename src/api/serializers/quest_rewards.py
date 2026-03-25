@@ -11,9 +11,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from player import Player
 
-import sys
-from pathlib import Path
-
 
 class QuestRewardSerializer:
     """Serializes quest reward data."""

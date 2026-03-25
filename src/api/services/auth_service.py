@@ -4,7 +4,6 @@ from argon2 import PasswordHasher
 from cryptography.fernet import Fernet
 from typing import Optional, Dict, Any
 from src.api.db import db
-from datetime import datetime
 
 
 class AuthService:
