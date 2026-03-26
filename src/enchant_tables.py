@@ -14,14 +14,16 @@ class Enchantment:
         self.rarity = rarity  # likelihood of this enchantment being selected
         self.group = group  # prefix or suffix
         self.value = value  # multiplier against the item's base value; 1.5 = 50% increase in gold value
-        self.equip_states = []  # enchantments can cause states to be applied to the player when the item is equipped
+        self.equip_states = (
+            []
+        )  # enchantments can cause states to be applied to the player when the item is equipped
 
     def _add_resistance(self, key, amount):
         """
         Safely add or increment a resistance on the item. Works whether add_resistance
         is a dict (e.g. loaded from JSON) or an object with attributes.
         """
-        ar = getattr(self.item, 'add_resistance', None)
+        ar = getattr(self.item, "add_resistance", None)
         if ar is None:
             # create a dict by default
             self.item.add_resistance = {key: amount}
@@ -72,7 +74,7 @@ class Sharp(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = item_types['weapons']['archetypes']["Blade"]
+        allowed_subtypes = item_types["weapons"]["archetypes"]["Blade"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -81,6 +83,7 @@ class Sharp(Enchantment):
 
 class Weighted(Enchantment):
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Weighted", rarity=0, group="Prefix", value=1)
 
@@ -96,7 +99,7 @@ class Weighted(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = item_types['weapons']['archetypes']["Blunt"]
+        allowed_subtypes = item_types["weapons"]["archetypes"]["Blunt"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -105,6 +108,7 @@ class Weighted(Enchantment):
 
 class Balanced(Enchantment):
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Balanced", rarity=0, group="Prefix", value=1)
 
@@ -121,7 +125,7 @@ class Balanced(Enchantment):
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = item_types['weapons']['archetypes']["Ranged"]
+        allowed_subtypes = item_types["weapons"]["archetypes"]["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -130,6 +134,7 @@ class Balanced(Enchantment):
 
 class Hollow(Enchantment):  # reduced weight and damage
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Hollow", rarity=0, group="Prefix", value=1.1)
 
@@ -142,7 +147,7 @@ class Hollow(Enchantment):  # reduced weight and damage
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_subtypes = item_types['weapons']['archetypes']["Ranged"]
+        allowed_subtypes = item_types["weapons"]["archetypes"]["Ranged"]
         if self.item.subtype in allowed_subtypes:
             return True
         else:
@@ -151,6 +156,7 @@ class Hollow(Enchantment):  # reduced weight and damage
 
 class Polished(Enchantment):  # it's shiny! 10% increase in gold value
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Polished", rarity=0, group="Prefix", value=1.1)
 
@@ -166,6 +172,7 @@ class Polished(Enchantment):  # it's shiny! 10% increase in gold value
 
 class Encrusted(Enchantment):  # encrusted with gems; +30% gold value
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Encrusted", rarity=0, group="Prefix", value=1.3)
 
@@ -181,6 +188,7 @@ class Encrusted(Enchantment):  # encrusted with gems; +30% gold value
 
 class Dirty(Enchantment):  # it's dirty! 10% decrease in gold value
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Dirty", rarity=0, group="Prefix", value=0.9)
 
@@ -196,24 +204,20 @@ class Dirty(Enchantment):  # it's dirty! 10% decrease in gold value
 
 class Studded(Enchantment):  # improves protection rating of armor by 1-3
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="Studded", rarity=0, group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(1, 3)
         self.item.protection += mod
-        self.item.value += (mod * 21)
+        self.item.value += mod * 21
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_maintypes = [
-            "Armor",
-            "Helm",
-            "Gloves",
-            "Boots"
-                            ]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots"]
         if self.item.maintype in allowed_maintypes:
             return True
         else:
@@ -222,24 +226,20 @@ class Studded(Enchantment):  # improves protection rating of armor by 1-3
 
 class Reinforced(Enchantment):  # improves protection rating of armor by 3-5
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Reinforced", rarity=0, group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(3, 5)
         self.item.protection += mod
-        self.item.value += (mod * 21)
+        self.item.value += mod * 21
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_maintypes = [
-            "Armor",
-            "Helm",
-            "Gloves",
-            "Boots"
-                            ]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots"]
         if self.item.maintype in allowed_maintypes:
             return True
         else:
@@ -248,32 +248,31 @@ class Reinforced(Enchantment):  # improves protection rating of armor by 3-5
 
 class Plated(Enchantment):  # improves protection rating of armor by 5-10
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Plated", rarity=0, group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(5, 10)
         self.item.protection += mod
-        self.item.value += (mod * 21)
+        self.item.value += mod * 21
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_maintypes = [
-            "Armor",
-            "Helm",
-            "Gloves",
-            "Boots"
-                            ]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots"]
         if self.item.maintype in allowed_maintypes:
             return True
         else:
             return False
 
 
-class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-permanent. Also adds resistance to poison.
+class Poisonous(
+    Enchantment
+):  # inflicts Poison state when equipped; non-permanent. Also adds resistance to poison.
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
         self.equip_states = [Poisoned(None)]
@@ -287,13 +286,7 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
         self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
-        allowed_maintypes = [
-            "Armor",
-            "Helm",
-            "Gloves",
-            "Boots",
-            "Accessory"
-                            ]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         if self.item.maintype in allowed_maintypes:
             return True
         else:
@@ -302,6 +295,7 @@ class Poisonous(Enchantment):  # inflicts Poison state when equipped; non-perman
 
 class Dousing(Enchantment):  # grants resistance to fire when equipped
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Dousing", rarity=0, group="Prefix", value=1.25)
 
@@ -312,21 +306,18 @@ class Dousing(Enchantment):  # grants resistance to fire when equipped
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, treated against flame.".format(self.item.name)
+        self.item.announce = "There's a {} here, treated against flame.".format(
+            self.item.name
+        )
 
     def requirements(self):
-        allowed_maintypes = [
-            "Armor",
-            "Helm",
-            "Gloves",
-            "Boots",
-            "Accessory"
-        ]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         return self.item.maintype in allowed_maintypes
 
 
 class Flaming(Enchantment):
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Flaming", rarity=0, group="Prefix", value=1.3)
 
@@ -342,14 +333,17 @@ class Flaming(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, crackling with heat.".format(self.item.name)
+        self.item.announce = "There's a {} here, crackling with heat.".format(
+            self.item.name
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Icy(Enchantment):
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Icy", rarity=0, group="Prefix", value=1.25)
 
@@ -361,17 +355,18 @@ class Icy(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "ice"
         # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1 )/ 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here, rimed in frost.".format(self.item.name)
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Shocking(Enchantment):
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Shocking", rarity=0, group="Prefix", value=1.35)
 
@@ -386,14 +381,17 @@ class Shocking(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, humming with electricity.".format(self.item.name)
+        self.item.announce = "There's a {} here, humming with electricity.".format(
+            self.item.name
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Earthen(Enchantment):
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Earthen", rarity=0, group="Prefix", value=1.2)
 
@@ -408,14 +406,19 @@ class Earthen(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, bound with the weight of the earth.".format(self.item.name)
+        self.item.announce = (
+            "There's a {} here, bound with the weight of the earth.".format(
+                self.item.name
+            )
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Radiant(Enchantment):
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Radiant", rarity=0, group="Prefix", value=1.5)
 
@@ -427,17 +430,20 @@ class Radiant(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "light"
         # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1 )/ 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, glowing with a pure light.".format(self.item.name)
+        self.item.announce = "There's a {} here, glowing with a pure light.".format(
+            self.item.name
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Umbral(Enchantment):
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Umbral", rarity=0, group="Prefix", value=1.5)
 
@@ -449,17 +455,20 @@ class Umbral(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "dark"
         # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1 )/ 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, cloaked in shadow.".format(self.item.name)
+        self.item.announce = "There's a {} here, cloaked in shadow.".format(
+            self.item.name
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Spiritual(Enchantment):
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Spiritual", rarity=0, group="Prefix", value=1.4)
 
@@ -474,14 +483,19 @@ class Spiritual(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, suffused with otherworldly power.".format(self.item.name)
+        self.item.announce = (
+            "There's a {} here, suffused with otherworldly power.".format(
+                self.item.name
+            )
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
 
 
 class Pure(Enchantment):
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Pure", rarity=0, group="Prefix", value=1.4)
 
@@ -494,19 +508,25 @@ class Pure(Enchantment):
         self.item.damage += amount
         self.item.base_damage_type = "pure"
         # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1 )/ 2) + self.value
+        value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, its edge humming with uncompromising force.".format(self.item.name)
+        self.item.announce = (
+            "There's a {} here, its edge humming with uncompromising force.".format(
+                self.item.name
+            )
+        )
 
     def requirements(self):
-        return getattr(self.item, 'maintype', None) == "Weapon"
+        return getattr(self.item, "maintype", None) == "Weapon"
+
 
 ### SUFFIXES ###
 
 
 class OfHealth(Enchantment):  # it's healthy! Increase maxhp by 10-30
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="of Health", rarity=0, group="Suffix", value=1)
 
@@ -527,6 +547,7 @@ class OfHealth(Enchantment):  # it's healthy! Increase maxhp by 10-30
 
 class OfVigor(Enchantment):  # it's strong! Increase strength by 1-3
     tier = 1
+
     def __init__(self, item):
         super().__init__(item, name="of Vigor", rarity=0, group="Suffix", value=1)
 
@@ -547,8 +568,11 @@ class OfVigor(Enchantment):  # it's strong! Increase strength by 1-3
 
 class OfPerseverance(Enchantment):  # Increase max fatigue by 10-30
     tier = 1
+
     def __init__(self, item):
-        super().__init__(item, name="of Perseverance", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Perseverance", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(10, 30)
@@ -653,7 +677,9 @@ class OfSupplication(Enchantment):  # Increase faith by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Supplication", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Supplication", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -690,6 +716,7 @@ class OfRelief(Enchantment):  # Increase weight tolerance slightly
     def requirements(self):
         return True
 
+
 class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per combat
     tier = 3
 
@@ -701,22 +728,19 @@ class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per 
         self.item.value *= self.value
         self.item.value = int(self.item.value)
         self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here, radiating warmth.".format(self.item.name)
+        self.item.announce = "There's a {} here, radiating warmth.".format(
+            self.item.name
+        )
 
     def requirements(self):
         # Can be applied to armor or accessories
-        allowed_maintypes = [
-            "Armor",
-            "Helm",
-            "Gloves",
-            "Boots",
-            "Accessory"
-        ]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         return self.item.maintype in allowed_maintypes
 
 
 class Purifying(Enchantment):  # grants resistance to pure damage
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
 
@@ -727,15 +751,20 @@ class Purifying(Enchantment):  # grants resistance to pure damage
         self.item.value *= 1.5
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, tempered to guard against absolute force.".format(self.item.name)
+        self.item.announce = (
+            "There's a {} here, tempered to guard against absolute force.".format(
+                self.item.name
+            )
+        )
 
     def requirements(self):
-        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         return self.item.maintype in allowed_maintypes
 
 
 class Needleproof(Enchantment):  # grants resistance to piercing attacks
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
 
@@ -744,15 +773,18 @@ class Needleproof(Enchantment):  # grants resistance to piercing attacks
         self.item.value *= 1.2
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, its fibers woven to shrug off arrows and needles.".format(self.item.name)
+        self.item.announce = "There's a {} here, its fibers woven to shrug off arrows and needles.".format(
+            self.item.name
+        )
 
     def requirements(self):
-        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         return self.item.maintype in allowed_maintypes
 
 
 class Edgebound(Enchantment):  # reduces slashing damage
     tier = 2
+
     def __init__(self, item):
         super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
 
@@ -761,15 +793,20 @@ class Edgebound(Enchantment):  # reduces slashing damage
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, its plates deflect blade and saber alike.".format(self.item.name)
+        self.item.announce = (
+            "There's a {} here, its plates deflect blade and saber alike.".format(
+                self.item.name
+            )
+        )
 
     def requirements(self):
-        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         return self.item.maintype in allowed_maintypes
 
 
 class Bulwark(Enchantment):  # toughened against crushing impacts
     tier = 3
+
     def __init__(self, item):
         super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
 
@@ -778,8 +815,12 @@ class Bulwark(Enchantment):  # toughened against crushing impacts
         self.item.value *= 1.35
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, bulked and braced to take heavy blows.".format(self.item.name)
+        self.item.announce = (
+            "There's a {} here, bulked and braced to take heavy blows.".format(
+                self.item.name
+            )
+        )
 
     def requirements(self):
-        allowed_maintypes = ["Armor","Helm","Gloves","Boots","Accessory"]
+        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
         return self.item.maintype in allowed_maintypes

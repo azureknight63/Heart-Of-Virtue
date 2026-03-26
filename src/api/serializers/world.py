@@ -160,7 +160,10 @@ class WorldSerializer:
         """
         return {
             "old_position": {"x": old_position[0], "y": old_position[1]},
-            "new_position": {"x": getattr(player, "location_x", 0), "y": getattr(player, "location_y", 0)},
+            "new_position": {
+                "x": getattr(player, "location_x", 0),
+                "y": getattr(player, "location_y", 0),
+            },
             "room": TileSerializer.serialize(new_tile),
             "events_triggered": events_triggered,
         }

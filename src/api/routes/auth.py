@@ -31,7 +31,12 @@ async def register():
     try:
         data = request.get_json()
 
-        if not data or "username" not in data or "password" not in data or "email" not in data:
+        if (
+            not data
+            or "username" not in data
+            or "password" not in data
+            or "email" not in data
+        ):
             return (
                 jsonify(
                     {
@@ -53,7 +58,9 @@ async def register():
         except ValueError as ve:
             msg = str(ve)
             # Don't expose internal config/infrastructure details to users
-            if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
+            if any(
+                kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
+            ):
                 return (
                     jsonify(
                         {
@@ -90,6 +97,7 @@ async def register():
 
         # Get session manager from app context
         from flask import current_app
+
         session_manager = current_app.session_manager
 
         # Create session with the DB user ID
@@ -105,7 +113,7 @@ async def register():
                     "data": {
                         "session_id": session_id,
                         "message": "Account created successfully. Welcome!",
-                    }
+                    },
                 }
             ),
             201,
@@ -164,7 +172,7 @@ async def login():
 
         # Authenticate using auth_service
         user = await auth_service.authenticate_user(username, password)
-        
+
         if not user:
             return (
                 jsonify(
@@ -179,6 +187,7 @@ async def login():
 
         # Get session manager from app context
         from flask import current_app
+
         session_manager = current_app.session_manager
 
         # Create session
@@ -194,7 +203,7 @@ async def login():
                     "data": {
                         "session_id": session_id,
                         "message": "Welcome back!",
-                    }
+                    },
                 }
             ),
             200,

@@ -1,4 +1,4 @@
-__author__ = 'Alex Egbert'
+__author__ = "Alex Egbert"
 
 import src.functions as functions
 import json, inspect, importlib
@@ -7,7 +7,7 @@ from typing import Final
 from src.scenario_config import ScenarioConfig
 from src.coordinate_config import CoordinateSystemConfig
 
-RESOURCES_DIR: Final = Path(__file__).parent / 'resources'
+RESOURCES_DIR: Final = Path(__file__).parent / "resources"
 
 
 def tile_exists(map_to_check, x, y):
@@ -43,15 +43,17 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             return tile_exists(self.player.map, x, y)
         return None
 
-    def build(self, player):  # builds all the maps as they are, then loads them into self.maps
+    def build(
+        self, player
+    ):  # builds all the maps as they are, then loads them into self.maps
         # Ensure universe has a reference to the active player BEFORE loading maps so deserialization can inject it
         self.player = player
-        
+
         # Initialize config systems if player has game_config
-        if hasattr(player, 'game_config') and player.game_config:
+        if hasattr(player, "game_config") and player.game_config:
             self.scenario_config = ScenarioConfig(player)
             self.coordinate_config = CoordinateSystemConfig(player)
-        
+
         if player.saveuniv is not None and player.savestat is not None:
             self.maps = player.saveuniv
         else:  # new game
@@ -62,13 +64,13 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             legacy_map_list = []
             for location in legacy_map_list:
                 # Only load legacy if a json variant wasn't already loaded (avoid duplicates)
-                if not any(m.get('name') == location for m in self.maps):
+                if not any(m.get("name") == location for m in self.maps):
                     txt_path = RESOURCES_DIR / f"{location}.txt"
                     if txt_path.exists():
                         self.load_tiles(player, location)
             # determine starting map
             for location in self.maps:
-                if "start" in location['name'] and self.starting_map_default is None:
+                if "start" in location["name"] and self.starting_map_default is None:
                     self.starting_map_default = location
 
     # ---------------- JSON MAP SUPPORT -----------------
@@ -76,17 +78,19 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         """Return candidate directories that may contain json map files."""
         candidates = []
         # primary resources/maps under src/resources
-        maps_dir = RESOURCES_DIR / 'maps'
+        maps_dir = RESOURCES_DIR / "maps"
         candidates.append(maps_dir)
         # also accept utils/src/resources/maps (where the editor saves by default)
-        utils_variant = Path(__file__).parent.parent / 'utils' / 'src' / 'resources' / 'maps'
+        utils_variant = (
+            Path(__file__).parent.parent / "utils" / "src" / "resources" / "maps"
+        )
         candidates.append(utils_variant)
         return [c for c in candidates if c.exists()]
 
     def _load_all_json_maps(self, player):
         loaded = 0
         for root in self._json_maps_root_candidates():
-            for jf in sorted(root.glob('*.json')):
+            for jf in sorted(root.glob("*.json")):
                 try:
                     self._load_single_json_map(player, jf)
                     loaded += 1
@@ -98,31 +102,31 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         """Deserialize an instance saved by map_generator (class+module+props). Returns object or None."""
         # Recursively deserialize nested objects in props, events, etc.
         # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'items:Item'})
-        if isinstance(payload, dict) and '__class_type__' in payload:
-            spec = payload.get('__class_type__')
+        if isinstance(payload, dict) and "__class_type__" in payload:
+            spec = payload.get("__class_type__")
             try:
-                mod_name, cls_name = spec.rsplit(':', 1)
+                mod_name, cls_name = spec.rsplit(":", 1)
                 if mod_name and cls_name:
                     module = __import__(mod_name, fromlist=[cls_name])
                     return getattr(module, cls_name)
             except Exception:
                 return None
 
-        if not isinstance(payload, dict) or '__class__' not in payload:
+        if not isinstance(payload, dict) or "__class__" not in payload:
             return None
-        cls_name = payload.get('__class__')
-        mod_name = payload.get('__module__')
-        props = payload.get('props', {})
+        cls_name = payload.get("__class__")
+        mod_name = payload.get("__module__")
+        props = payload.get("props", {})
 
         # Throw error if mod name has improper format; 'src.' prefix should not be present.
-        if mod_name.startswith('src.'):
+        if mod_name.startswith("src."):
             raise ValueError(f"Invalid module name format: {mod_name}")
 
         def recursive_deserialize(value):
             if isinstance(value, dict):
-                if '__class__' in value and '__module__' in value:
+                if "__class__" in value and "__module__" in value:
                     return self._deserialize_saved_instance(value)
-                elif '__class_type__' in value:
+                elif "__class_type__" in value:
                     return self._deserialize_saved_instance(value)
                 else:
                     # Recursively check all dict values
@@ -141,11 +145,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Try to supply only parameters accepted by __init__ (excluding self)
             try:
                 sig = inspect.signature(cls.__init__)
-                pnames = [p.name for p in sig.parameters.values() if p.name != 'self']
+                pnames = [p.name for p in sig.parameters.values() if p.name != "self"]
                 init_kwargs = {k: v for k, v in props.items() if k in pnames}
                 # If 'player' is a parameter, pass self.player
-                if 'player' in pnames and 'player' not in init_kwargs:
-                    init_kwargs['player'] = self.player
+                if "player" in pnames and "player" not in init_kwargs:
+                    init_kwargs["player"] = self.player
                 inst = cls(**init_kwargs)
             except Exception:
                 inst = cls.__new__(cls)
@@ -157,12 +161,12 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             for k, v in props.items():
                 try:
                     # Skip setting player or tile if they're null - let runtime set these
-                    if k in ('player', 'tile') and v is None:
+                    if k in ("player", "tile") and v is None:
                         continue
                     if (
-                        k == 'inventory'
-                        and hasattr(inst, 'inventory')
-                        and getattr(inst, 'inventory')
+                        k == "inventory"
+                        and hasattr(inst, "inventory")
+                        and getattr(inst, "inventory")
                         and isinstance(v, list)
                         and len(v) == 0
                     ):
@@ -175,30 +179,30 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             return None
 
     def _load_single_json_map(self, player, json_path: Path):
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         map_name = json_path.stem
-        this_map: dict = {'name': map_name}
+        this_map: dict = {"name": map_name}
         # iterate coordinate keys
         for coord_str, tile_data in raw.items():
-            if coord_str == 'metadata':
-                this_map['metadata'] = tile_data
+            if coord_str == "metadata":
+                this_map["metadata"] = tile_data
                 continue
             try:
-                x_str, y_str = coord_str.strip('()').split(',')
+                x_str, y_str = coord_str.strip("()").split(",")
                 x = int(x_str)
                 y = int(y_str)
             except Exception:
                 continue
             # determine tile class name from title; fallback to generic MapTile if not found
-            title = tile_data.get('title') or tile_data.get('id') or f"tile_{x}_{y}"
-            description = tile_data.get('description', '')
+            title = tile_data.get("title") or tile_data.get("id") or f"tile_{x}_{y}"
+            description = tile_data.get("description", "")
             try:
-                tile_cls = functions.seek_class(title, 'tilesets')
+                tile_cls = functions.seek_class(title, "tilesets")
             except Exception:
                 try:
-                    tiles_mod = importlib.import_module('tiles')
-                    tile_cls = getattr(tiles_mod, 'MapTile')
+                    tiles_mod = importlib.import_module("tiles")
+                    tile_cls = getattr(tiles_mod, "MapTile")
                 except Exception:
                     from tiles import MapTile as tile_cls  # fallback
             tile_instance = tile_cls(self, this_map, x, y)
@@ -207,37 +211,39 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             if description:
                 tile_instance.description = description
             # block exits & symbol
-            if 'block_exit' in tile_data and isinstance(tile_data['block_exit'], list):
-                tile_instance.block_exit = list(tile_data['block_exit'])
-            if 'symbol' in tile_data and hasattr(tile_instance, 'symbol'):
+            if "block_exit" in tile_data and isinstance(tile_data["block_exit"], list):
+                tile_instance.block_exit = list(tile_data["block_exit"])
+            if "symbol" in tile_data and hasattr(tile_instance, "symbol"):
                 try:
-                    tile_instance.symbol = tile_data['symbol']
+                    tile_instance.symbol = tile_data["symbol"]
                 except Exception:
                     pass
             # events
-            for ev_payload in tile_data.get('events', []):
+            for ev_payload in tile_data.get("events", []):
                 inst = self._deserialize_saved_instance(ev_payload)
                 if inst:
                     try:
                         # Robust handling for events whose __init__ could not be executed (missing required args like 'tile').
                         # If the event instance lacks a 'tile' attribute entirely, attempt re-instantiation supplying player & tile.
-                        if not hasattr(inst, 'tile'):
+                        if not hasattr(inst, "tile"):
                             try:
                                 cls = inst.__class__
                                 sig = inspect.signature(cls.__init__)
                                 params = sig.parameters
                                 init_kwargs = {}
-                                if 'player' in params:
-                                    init_kwargs['player'] = player
-                                if 'tile' in params:
-                                    init_kwargs['tile'] = tile_instance
-                                if 'params' in params:
-                                    init_kwargs['params'] = None
-                                if 'repeat' in params:
-                                    init_kwargs['repeat'] = False
-                                if 'name' in params:
+                                if "player" in params:
+                                    init_kwargs["player"] = player
+                                if "tile" in params:
+                                    init_kwargs["tile"] = tile_instance
+                                if "params" in params:
+                                    init_kwargs["params"] = None
+                                if "repeat" in params:
+                                    init_kwargs["repeat"] = False
+                                if "name" in params:
                                     # Preserve existing name attribute if any, else class name
-                                    init_kwargs['name'] = getattr(inst, 'name', cls.__name__)
+                                    init_kwargs["name"] = getattr(
+                                        inst, "name", cls.__name__
+                                    )
                                 reinited = cls(**init_kwargs)
                                 inst = reinited
                             except Exception:
@@ -251,133 +257,167 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                 except Exception:
                                     pass
                         # If 'tile' exists but is None, assign it now.
-                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
+                        if (
+                            hasattr(inst, "tile")
+                            and getattr(inst, "tile", None) is None
+                        ):
                             inst.tile = tile_instance
                         # Always ensure player reference if attribute exists or expected by common pattern.
-                        if hasattr(inst, 'player'):
+                        if hasattr(inst, "player"):
                             inst.player = player
                         tile_instance.events_here.append(inst)
                     except Exception:
                         pass
             # items
-            for it_payload in tile_data.get('items', []):
+            for it_payload in tile_data.get("items", []):
                 inst = self._deserialize_saved_instance(it_payload)
                 if inst:
-                    if hasattr(inst, 'player'):
+                    if hasattr(inst, "player"):
                         inst.player = player
                     # Only assign tile if attribute exists and is currently None
                     try:
-                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
+                        if (
+                            hasattr(inst, "tile")
+                            and getattr(inst, "tile", None) is None
+                        ):
                             inst.tile = tile_instance
                     except Exception:
                         pass
                     tile_instance.items_here.append(inst)
             # npcs
-            for npc_payload in tile_data.get('npcs', []):
+            for npc_payload in tile_data.get("npcs", []):
                 inst = self._deserialize_saved_instance(npc_payload)
                 if inst:
-                    if hasattr(inst, 'player'):
+                    if hasattr(inst, "player"):
                         inst.player = player
                     # Ensure NPCs know which room they occupy. Some NPC classes expect 'current_room',
                     # others may use 'tile'. Set whichever attribute exists and is None so deserialized merchants
                     # have their current_room populated without overwriting an existing reference.
                     try:
-                        if hasattr(inst, 'current_room') and getattr(inst, 'current_room', None) is None:
+                        if (
+                            hasattr(inst, "current_room")
+                            and getattr(inst, "current_room", None) is None
+                        ):
                             inst.current_room = tile_instance
-                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
+                        if (
+                            hasattr(inst, "tile")
+                            and getattr(inst, "tile", None) is None
+                        ):
                             inst.tile = tile_instance
                     except Exception:
                         pass
                     tile_instance.npcs_here.append(inst)
             # objects
-            for obj_payload in tile_data.get('objects', []):
+            for obj_payload in tile_data.get("objects", []):
                 inst = self._deserialize_saved_instance(obj_payload)
                 if inst:
-                    if hasattr(inst, 'player'):
+                    if hasattr(inst, "player"):
                         inst.player = player
                     # Ensure objects receive a reference to their tile if they expect it, but don't overwrite
                     try:
-                        if hasattr(inst, 'tile') and getattr(inst, 'tile', None) is None:
+                        if (
+                            hasattr(inst, "tile")
+                            and getattr(inst, "tile", None) is None
+                        ):
                             inst.tile = tile_instance
                     except Exception:
                         pass
                     tile_instance.objects_here.append(inst)
             this_map[(x, y)] = tile_instance
-            if title == 'StartingRoom':
+            if title == "StartingRoom":
                 self.starting_position = (x, y)
         self.maps.append(this_map)
 
     def load_tiles(self, player, mapname):
         """Parses a file that describes the world space into the _world object"""
-        this_map: dict = {'name': mapname}
-        file_path = RESOURCES_DIR.joinpath(mapname + '.txt')
-        with open(file_path, 'r') as f:
-            rows = [line.rstrip('\n') for line in f]
+        this_map: dict = {"name": mapname}
+        file_path = RESOURCES_DIR.joinpath(mapname + ".txt")
+        with open(file_path, "r") as f:
+            rows = [line.rstrip("\n") for line in f]
         # x_max = len(rows[0].split('\t'))
         for y, row in enumerate(rows):
-            cols = row.split('\t')
+            cols = row.split("\t")
             for x, block_contents in enumerate(cols):
                 if block_contents:
                     block_list = block_contents.split("|")
                     tile_name = block_list[0]
-                    this_map[(x, y)] = functions.seek_class(tile_name, 'tilesets')(self, this_map, x, y)
+                    this_map[(x, y)] = functions.seek_class(tile_name, "tilesets")(
+                        self, this_map, x, y
+                    )
                     if len(block_list) > 1:
                         for i, param in enumerate(block_list):
                             if i != 0:
-                                if param[0] == '~':  # sets the given parameter for the tile object based on
-                                                        # what's in the map editor
-                                    parameter = param.split('=')
-                                    if hasattr(tile_exists(this_map, x, y), parameter[0]):
-                                        setattr(tile_exists(this_map, x, y), parameter[0], parameter[1])
-                                elif param[0] == '$':  # spawns any declared NPCs
-                                    param = param.replace('$', '')
-                                    p_list = param.split('.')
+                                if (
+                                    param[0] == "~"
+                                ):  # sets the given parameter for the tile object based on
+                                    # what's in the map editor
+                                    parameter = param.split("=")
+                                    if hasattr(
+                                        tile_exists(this_map, x, y), parameter[0]
+                                    ):
+                                        setattr(
+                                            tile_exists(this_map, x, y),
+                                            parameter[0],
+                                            parameter[1],
+                                        )
+                                elif param[0] == "$":  # spawns any declared NPCs
+                                    param = param.replace("$", "")
+                                    p_list = param.split(".")
                                     npc_type = p_list[0]
                                     amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
                                     for item in p_list:
                                         hidden, hfactor = self.parse_hidden(item)
-                                    if len(p_list) == 3:  # if the npc is declared hidden, set appropriate values
+                                    if (
+                                        len(p_list) == 3
+                                    ):  # if the npc is declared hidden, set appropriate values
                                         hidden = True
                                         hfactor = int(p_list[2][1:])
                                     for ix in range(0, amt):
-                                        tile_exists(this_map, x, y).spawn_npc(npc_type, hidden=hidden,
-                                                                              hfactor=hfactor)
-                                elif param[0] == '#':  # spawns any declared items
-                                    param = param.replace('#', '')
-                                    p_list = param.split('.')
+                                        tile_exists(this_map, x, y).spawn_npc(
+                                            npc_type, hidden=hidden, hfactor=hfactor
+                                        )
+                                elif param[0] == "#":  # spawns any declared items
+                                    param = param.replace("#", "")
+                                    p_list = param.split(".")
                                     item_type = p_list[0]
                                     amt = functions.randomize_amount(p_list[1])
                                     hidden = False
                                     hfactor = 0
                                     for item in p_list:
                                         hidden, hfactor = self.parse_hidden(item)
-                                    tile_exists(this_map, x, y).spawn_item(item_type, amt=amt, hidden=hidden,
-                                                                           hfactor=hfactor)
+                                    tile_exists(this_map, x, y).spawn_item(
+                                        item_type,
+                                        amt=amt,
+                                        hidden=hidden,
+                                        hfactor=hfactor,
+                                    )
 
-                                elif param[0] == '!':  # spawns any declared events
-                                    param = param.replace('!', '')
+                                elif param[0] == "!":  # spawns any declared events
+                                    param = param.replace("!", "")
                                     event_type = param
                                     repeat = False
                                     params = []
-                                    if '.' in param:
-                                        p_list = param.split('.')
+                                    if "." in param:
+                                        p_list = param.split(".")
                                         event_type = p_list.pop(0)
                                         for setting in p_list:
-                                            if setting == 'r':
+                                            if setting == "r":
                                                 repeat = True
                                                 p_list.remove(setting)
                                                 continue
                                             params.append(setting)
-                                    tile_exists(this_map, x, y).spawn_event(event_type,
-                                                                            player,
-                                                                            tile_exists(this_map, x, y),
-                                                                            repeat,
-                                                                            params)
-                                elif param[0] == '@':  # spawns any declared objects
-                                    param = param.replace('@', '')
-                                    p_list = param.split('.')
+                                    tile_exists(this_map, x, y).spawn_event(
+                                        event_type,
+                                        player,
+                                        tile_exists(this_map, x, y),
+                                        repeat,
+                                        params,
+                                    )
+                                elif param[0] == "@":  # spawns any declared objects
+                                    param = param.replace("@", "")
+                                    p_list = param.split(".")
                                     obj_type = p_list[0]
                                     amt = functions.randomize_amount(p_list[1])
                                     hidden = False
@@ -385,28 +425,40 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     params = []
                                     if len(p_list) > 2:
                                         for setting in p_list:
-                                            if setting != '':
-                                                hidden, hfactor = self.parse_hidden(setting)
+                                            if setting != "":
+                                                hidden, hfactor = self.parse_hidden(
+                                                    setting
+                                                )
                                                 if not hidden:
                                                     params.append(setting)
                                     p_list.remove(obj_type)
                                     for ix in range(0, amt):
-                                        tile_exists(this_map, x, y).spawn_object(obj_type, player,
-                                                                                 tile_exists(this_map, x, y),
-                                                                                 params=params, hidden=hidden,
-                                                                                 hfactor=hfactor)
+                                        tile_exists(this_map, x, y).spawn_object(
+                                            obj_type,
+                                            player,
+                                            tile_exists(this_map, x, y),
+                                            params=params,
+                                            hidden=hidden,
+                                            hfactor=hfactor,
+                                        )
                 else:
                     tile_name = block_contents
-                    if tile_name == '':
+                    if tile_name == "":
                         this_map[(x, y)] = None
                     else:
                         try:
-                            tiles_mod = importlib.import_module('tiles')
-                            this_map[(x, y)] = getattr(tiles_mod, tile_name)(self, this_map, x, y)
+                            tiles_mod = importlib.import_module("tiles")
+                            this_map[(x, y)] = getattr(tiles_mod, tile_name)(
+                                self, this_map, x, y
+                            )
                         except Exception:
                             # legacy fallback
-                            this_map[(x, y)] = getattr(__import__('tiles'), tile_name)(self, this_map, x, y)
-                if tile_name == 'StartingRoom':  # there can only be one of these in the game
+                            this_map[(x, y)] = getattr(__import__("tiles"), tile_name)(
+                                self, this_map, x, y
+                            )
+                if (
+                    tile_name == "StartingRoom"
+                ):  # there can only be one of these in the game
                     self.starting_position = (x, y)
 
         self.maps.append(this_map)
@@ -437,15 +489,17 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             if not isinstance(current_map, dict):
                 return
             for coord, tile in current_map.items():
-                if not isinstance(coord, tuple):  # skip non-coordinate entries like 'name'
+                if not isinstance(
+                    coord, tuple
+                ):  # skip non-coordinate entries like 'name'
                     continue
                 if tile is None:
                     continue
                 # Work on a shallow copy since event list may mutate during iteration
-                for ev in list(getattr(tile, 'events_here', [])):
-                    if hasattr(ev, 'evaluate_for_map_entry'):
-                        has_run = getattr(ev, 'has_run', False)
-                        is_repeat = getattr(ev, 'repeat', False)
+                for ev in list(getattr(tile, "events_here", [])):
+                    if hasattr(ev, "evaluate_for_map_entry"):
+                        has_run = getattr(ev, "has_run", False)
+                        is_repeat = getattr(ev, "repeat", False)
                         if (not has_run) or (process_repeats and is_repeat):
                             try:
                                 ev.evaluate_for_map_entry(self.player)

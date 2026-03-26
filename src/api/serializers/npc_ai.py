@@ -35,15 +35,16 @@ class NPCAIStateSerializer:
             "trust_level": NPCAIStateSerializer._get_trust_level(npc),
             "last_interaction": getattr(npc, "last_interaction_time", None),
             "memory": NPCAIStateSerializer._serialize_npc_memory(npc),
-            "position": {
-                "x": getattr(npc, "x", 0),
-                "y": getattr(npc, "y", 0)
-            },
+            "position": {"x": getattr(npc, "x", 0), "y": getattr(npc, "y", 0)},
             "health_status": {
                 "hp": getattr(npc, "hp", 0),
                 "maxhp": getattr(npc, "maxhp", 100),
-                "status": "healthy" if getattr(npc, "hp", 0) > getattr(npc, "maxhp", 100) * 0.5 else "wounded"
-            }
+                "status": (
+                    "healthy"
+                    if getattr(npc, "hp", 0) > getattr(npc, "maxhp", 100) * 0.5
+                    else "wounded"
+                ),
+            },
         }
 
     @staticmethod
@@ -57,10 +58,7 @@ class NPCAIStateSerializer:
         Returns:
             List of serialized NPC states
         """
-        return [
-            NPCAIStateSerializer.serialize_npc_ai_state(npc)
-            for npc in npcs
-        ]
+        return [NPCAIStateSerializer.serialize_npc_ai_state(npc) for npc in npcs]
 
     @staticmethod
     def _get_emotion_state(npc: "NPC") -> str:
@@ -136,7 +134,7 @@ class NPCAIStateSerializer:
                 "event": entry.get("event", "unknown"),
                 "timestamp": entry.get("timestamp", None),
                 "context": entry.get("context", ""),
-                "importance": entry.get("importance", 0.5)
+                "importance": entry.get("importance", 0.5),
             }
             for entry in npc.memory[:10]  # Last 10 memories
         ]
@@ -150,7 +148,7 @@ class DialogueStateSerializer:
         npc: "NPC",
         dialogue_tree: Optional[Dict[str, Any]] = None,
         current_node: Optional[str] = None,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """
         Serialize dialogue state for NPC interaction.
@@ -174,8 +172,7 @@ class DialogueStateSerializer:
             conversation_history = []
 
         current_options = DialogueStateSerializer._get_dialogue_options(
-            dialogue_tree,
-            current_node
+            dialogue_tree, current_node
         )
 
         return {
@@ -183,22 +180,24 @@ class DialogueStateSerializer:
             "npc_name": getattr(npc, "name", "Unknown"),
             "dialogue_tree": dialogue_tree.get("id", "default"),
             "current_node": current_node,
-            "current_text": DialogueStateSerializer._get_node_text(dialogue_tree, current_node),
+            "current_text": DialogueStateSerializer._get_node_text(
+                dialogue_tree, current_node
+            ),
             "options": current_options,
             "conversation_history": conversation_history[-5:],  # Last 5 exchanges
             "dialogue_flags": getattr(npc, "dialogue_flags", {}),
             "relationship": {
                 "known": getattr(npc, "player_knows_npc", False),
                 "trust": DialogueStateSerializer._calculate_trust(npc),
-                "times_talked": len(conversation_history)
-            }
+                "times_talked": len(conversation_history),
+            },
         }
 
     @staticmethod
     def serialize_dialogue_options(
         npc: "NPC",
         dialogue_tree: Optional[Dict[str, Any]] = None,
-        current_node: str = "start"
+        current_node: str = "start",
     ) -> Dict[str, Any]:
         """
         Serialize available dialogue options.
@@ -214,13 +213,17 @@ class DialogueStateSerializer:
         if not dialogue_tree:
             dialogue_tree = DialogueStateSerializer._get_default_dialogue_tree(npc)
 
-        options = DialogueStateSerializer._get_dialogue_options(dialogue_tree, current_node)
+        options = DialogueStateSerializer._get_dialogue_options(
+            dialogue_tree, current_node
+        )
 
         return {
             "npc_id": getattr(npc, "name", "unknown"),
             "current_node": current_node,
             "options": options,
-            "current_text": DialogueStateSerializer._get_node_text(dialogue_tree, current_node)
+            "current_text": DialogueStateSerializer._get_node_text(
+                dialogue_tree, current_node
+            ),
         }
 
     @staticmethod
@@ -233,47 +236,41 @@ class DialogueStateSerializer:
                     "text": f"Hello, I'm {getattr(npc, 'name', 'Unknown')}.",
                     "options": [
                         {"id": 1, "text": "Who are you?", "next": "backstory"},
-                        {"id": 2, "text": "Goodbye.", "next": "end"}
-                    ]
+                        {"id": 2, "text": "Goodbye.", "next": "end"},
+                    ],
                 },
                 "backstory": {
                     "text": "I'm just passing through.",
                     "options": [
                         {"id": 1, "text": "Anything I should know?", "next": "quest"},
-                        {"id": 2, "text": "Goodbye.", "next": "end"}
-                    ]
+                        {"id": 2, "text": "Goodbye.", "next": "end"},
+                    ],
                 },
                 "quest": {
                     "text": "Help me if you can.",
                     "options": [
                         {"id": 1, "text": "What do you need?", "next": "quest_details"},
-                        {"id": 2, "text": "I'll pass.", "next": "end"}
-                    ]
+                        {"id": 2, "text": "I'll pass.", "next": "end"},
+                    ],
                 },
                 "quest_details": {
                     "text": "I need your help with something.",
                     "options": [
                         {"id": 1, "text": "I'll help.", "next": "accept_quest"},
-                        {"id": 2, "text": "Not interested.", "next": "end"}
-                    ]
+                        {"id": 2, "text": "Not interested.", "next": "end"},
+                    ],
                 },
                 "accept_quest": {
                     "text": "Thank you! You won't regret this.",
-                    "options": [
-                        {"id": 1, "text": "Goodbye.", "next": "end"}
-                    ]
+                    "options": [{"id": 1, "text": "Goodbye.", "next": "end"}],
                 },
-                "end": {
-                    "text": "Farewell.",
-                    "options": []
-                }
-            }
+                "end": {"text": "Farewell.", "options": []},
+            },
         }
 
     @staticmethod
     def _get_dialogue_options(
-        dialogue_tree: Dict[str, Any],
-        current_node: str
+        dialogue_tree: Dict[str, Any], current_node: str
     ) -> List[Dict[str, Any]]:
         """Get options for current dialogue node."""
         nodes = dialogue_tree.get("nodes", {})
@@ -281,10 +278,7 @@ class DialogueStateSerializer:
         return node.get("options", [])
 
     @staticmethod
-    def _get_node_text(
-        dialogue_tree: Dict[str, Any],
-        current_node: str
-    ) -> str:
+    def _get_node_text(dialogue_tree: Dict[str, Any], current_node: str) -> str:
         """Get text for current dialogue node."""
         nodes = dialogue_tree.get("nodes", {})
         node = nodes.get(current_node, {})
@@ -316,16 +310,20 @@ class QuestStateSerializer:
             "quest_id": quest.get("id", "unknown"),
             "title": quest.get("title", "Unknown Quest"),
             "description": quest.get("description", ""),
-            "status": quest.get("status", "active"),  # active, completed, failed, abandoned
+            "status": quest.get(
+                "status", "active"
+            ),  # active, completed, failed, abandoned
             "progress": quest.get("progress", 0),
-            "objectives": QuestStateSerializer._serialize_objectives(quest.get("objectives", [])),
+            "objectives": QuestStateSerializer._serialize_objectives(
+                quest.get("objectives", [])
+            ),
             "rewards": quest.get("rewards", {}),
             "started_at": quest.get("started_at", None),
             "completed_at": quest.get("completed_at", None),
             "deadline": quest.get("deadline", None),
             "giver": quest.get("giver", "Unknown"),
             "tags": quest.get("tags", []),
-            "can_abandon": quest.get("can_abandon", True)
+            "can_abandon": quest.get("can_abandon", True),
         }
 
     @staticmethod
@@ -340,10 +338,7 @@ class QuestStateSerializer:
             List of active quest states
         """
         quests = getattr(player, "active_quests", [])
-        return [
-            QuestStateSerializer.serialize_quest(quest)
-            for quest in quests
-        ]
+        return [QuestStateSerializer.serialize_quest(quest) for quest in quests]
 
     @staticmethod
     def serialize_completed_quests(player: "Player") -> List[Dict[str, Any]]:
@@ -357,15 +352,10 @@ class QuestStateSerializer:
             List of completed quest states
         """
         quests = getattr(player, "completed_quests", [])
-        return [
-            QuestStateSerializer.serialize_quest(quest)
-            for quest in quests
-        ]
+        return [QuestStateSerializer.serialize_quest(quest) for quest in quests]
 
     @staticmethod
-    def serialize_quest_progress(
-        quest: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def serialize_quest_progress(quest: Dict[str, Any]) -> Dict[str, Any]:
         """
         Serialize quest progress details.
 
@@ -389,7 +379,7 @@ class QuestStateSerializer:
             "status": quest.get("status", "active"),
             "current_step": quest.get("current_step", ""),
             "next_step": quest.get("next_step", ""),
-            "time_elapsed": QuestStateSerializer._calculate_time_elapsed(quest)
+            "time_elapsed": QuestStateSerializer._calculate_time_elapsed(quest),
         }
 
     @staticmethod
@@ -401,7 +391,9 @@ class QuestStateSerializer:
                 "text": obj.get("text", "Unknown"),
                 "completed": obj.get("completed", False),
                 "progress": obj.get("progress", 0),
-                "type": obj.get("type", "task")  # task, explore, collect, defeat, speak
+                "type": obj.get(
+                    "type", "task"
+                ),  # task, explore, collect, defeat, speak
             }
             for i, obj in enumerate(objectives)
         ]
@@ -438,7 +430,7 @@ class NPCBehaviorProfileSerializer:
             "combat_style": NPCBehaviorProfileSerializer._get_combat_style(npc),
             "preferences": NPCBehaviorProfileSerializer._get_preferences(npc),
             "relationships": NPCBehaviorProfileSerializer._get_relationships(npc),
-            "skills": NPCBehaviorProfileSerializer._get_skills(npc)
+            "skills": NPCBehaviorProfileSerializer._get_skills(npc),
         }
 
     @staticmethod
@@ -449,7 +441,7 @@ class NPCBehaviorProfileSerializer:
             "traits": getattr(npc, "personality_traits", []),
             "intelligence": getattr(npc, "intelligence", 0.5),
             "courage": getattr(npc, "courage", 0.5),
-            "friendliness": getattr(npc, "friendliness", 0.5)
+            "friendliness": getattr(npc, "friendliness", 0.5),
         }
 
     @staticmethod
@@ -459,7 +451,7 @@ class NPCBehaviorProfileSerializer:
             "idle_behavior": getattr(npc, "idle_behavior", "wander"),
             "combat_behavior": getattr(npc, "combat_behavior", "aggressive"),
             "social_behavior": getattr(npc, "social_behavior", "neutral"),
-            "response_type": getattr(npc, "response_type", "defensive")
+            "response_type": getattr(npc, "response_type", "defensive"),
         }
 
     @staticmethod
@@ -469,7 +461,7 @@ class NPCBehaviorProfileSerializer:
             "preference": getattr(npc, "combat_preference", "melee"),
             "aggression": getattr(npc, "aggression", 0.5),
             "defense": getattr(npc, "defense_priority", 0.5),
-            "flee_threshold": getattr(npc, "flee_at_health_percent", 0.1)
+            "flee_threshold": getattr(npc, "flee_at_health_percent", 0.1),
         }
 
     @staticmethod
@@ -479,7 +471,7 @@ class NPCBehaviorProfileSerializer:
             "likes": getattr(npc, "likes", []),
             "dislikes": getattr(npc, "dislikes", []),
             "fears": getattr(npc, "fears", []),
-            "desires": getattr(npc, "desires", [])
+            "desires": getattr(npc, "desires", []),
         }
 
     @staticmethod
@@ -489,7 +481,7 @@ class NPCBehaviorProfileSerializer:
             "friends": getattr(npc, "friends", []),
             "enemies": getattr(npc, "enemies", []),
             "neutral": getattr(npc, "neutral_npcs", []),
-            "reputation": getattr(npc, "reputation", {})
+            "reputation": getattr(npc, "reputation", {}),
         }
 
     @staticmethod
@@ -500,5 +492,5 @@ class NPCBehaviorProfileSerializer:
             "magic": getattr(npc, "magic_skill", 0.5),
             "stealth": getattr(npc, "stealth_skill", 0.5),
             "persuasion": getattr(npc, "persuasion_skill", 0.5),
-            "tracking": getattr(npc, "tracking_skill", 0.5)
+            "tracking": getattr(npc, "tracking_skill", 0.5),
         }

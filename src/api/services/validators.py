@@ -138,7 +138,7 @@ def validate_save_name(name: str) -> Tuple[bool, Optional[str]]:
         return False, "Save name must be a non-empty string"
     if len(name) > 50:
         return False, "Save name must be 50 characters or less"
-    if any(c in name for c in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']):
+    if any(c in name for c in ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]):
         return False, "Save name contains invalid characters"
     return True, None
 
@@ -189,7 +189,10 @@ def validate_positive_integer(
 
 
 def validate_range(
-    field_name: str, value: Any, min_value: Union[int, float], max_value: Union[int, float]
+    field_name: str,
+    value: Any,
+    min_value: Union[int, float],
+    max_value: Union[int, float],
 ) -> Tuple[bool, Optional[str]]:
     """Validate a numeric value within a range.
 
@@ -242,13 +245,11 @@ def validate_equipment_slot(slot_name: str) -> Tuple[bool, Optional[str]]:
     Returns:
         Tuple of (is_valid, error_message)
     """
-    valid_slots = [
-        "head", "chest", "legs", "hands", "feet", "back", "ring1", "ring2"
-    ]
+    valid_slots = ["head", "chest", "legs", "hands", "feet", "back", "ring1", "ring2"]
     if slot_name not in valid_slots:
         return (
             False,
-            f"Invalid slot '{slot_name}'. Must be one of: {', '.join(valid_slots)}"
+            f"Invalid slot '{slot_name}'. Must be one of: {', '.join(valid_slots)}",
         )
     return True, None
 
@@ -268,10 +269,7 @@ def validate_weight_limit(
     """
     total = current_weight + item_weight
     if total > limit:
-        return (
-            False,
-            f"Weight limit exceeded: {total:.1f} > {limit:.1f}"
-        )
+        return (False, f"Weight limit exceeded: {total:.1f} > {limit:.1f}")
     return True, None
 
 

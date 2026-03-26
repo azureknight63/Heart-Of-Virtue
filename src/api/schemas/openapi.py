@@ -67,11 +67,15 @@ def generate_openapi_schema() -> Dict[str, Any]:
                                                         "type": "object",
                                                         "properties": {
                                                             "name": {"type": "string"},
-                                                            "level": {"type": "integer"},
+                                                            "level": {
+                                                                "type": "integer"
+                                                            },
                                                             "experience": {
                                                                 "type": "integer"
                                                             },
-                                                            "health": {"type": "integer"},
+                                                            "health": {
+                                                                "type": "integer"
+                                                            },
                                                         },
                                                     },
                                                 },

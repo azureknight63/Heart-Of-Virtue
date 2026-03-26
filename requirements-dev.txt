@@ -2,6 +2,7 @@
 # Includes all production API deps plus test/lint/harness tooling.
 # Usage: pip install -r requirements-dev.txt
 
+-r requirements.txt
 -r requirements-api.txt
 
 # Testing

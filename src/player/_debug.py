@@ -23,16 +23,18 @@ class PlayerDebugMixin:
         self.maxfatigue = 10000
         self.fatigue = 10000
 
-    def testevent(self, phrase=''):
+    def testevent(self, phrase=""):
         """Spawn a story event in the current tile."""
         params = phrase.split(" ")
         repeat = False
         if len(params) > 1:
             repeat = params[1]
-        self.current_room.spawn_event(params[0], self, self.current_room, repeat=repeat, params=[])  # will go fubar
+        self.current_room.spawn_event(
+            params[0], self, self.current_room, repeat=repeat, params=[]
+        )  # will go fubar
         # if the name of the event is wrong or if other parameters are present in phrase
 
-    def spawnobject(self, phrase=''):
+    def spawnobject(self, phrase=""):
         """
         Spawn an object (npc, item, room object, event) on the current tile.
 
@@ -53,29 +55,35 @@ class PlayerDebugMixin:
         myparams = None
         if len(params) > 1:
             for item in params:
-                if item == 'hidden':
+                if item == "hidden":
                     hidden = True
-                elif 'hfactor=' in item:
+                elif "hfactor=" in item:
                     hfactor = int(item[8:])
-                elif 'delay=' in item:
+                elif "delay=" in item:
                     delay = int(item[6:])
-                elif 'count=' in item:
+                elif "count=" in item:
                     count = int(item[6:])
-                elif 'repeat' in item:
+                elif "repeat" in item:
                     repeat = True
-                elif 'params=' in item:
+                elif "params=" in item:
                     myparams = item[7:].split(",")
 
         try:
             for i in range(count):
                 if obj_type == "npc":
-                    self.current_room.spawn_npc(obj, hidden=hidden, hfactor=hfactor, delay=delay)
+                    self.current_room.spawn_npc(
+                        obj, hidden=hidden, hfactor=hfactor, delay=delay
+                    )
                 elif obj_type == "item":
                     self.current_room.spawn_item(obj, hidden=hidden, hfactor=hfactor)
                 elif obj_type == "event":
-                    self.current_room.spawn_event(obj, self, self.current_room, repeat=repeat, params=myparams)
+                    self.current_room.spawn_event(
+                        obj, self, self.current_room, repeat=repeat, params=myparams
+                    )
                 elif obj_type == "object":
-                    self.current_room.spawn_object(obj, self, self.current_room, myparams, hidden=hidden, hfactor=0)
+                    self.current_room.spawn_object(
+                        obj, self, self.current_room, myparams, hidden=hidden, hfactor=0
+                    )
         except SyntaxError:
             cprint("Oops, something went wrong. \n\n" + traceback.format_exc())
 
@@ -83,7 +91,7 @@ class PlayerDebugMixin:
         """Print all story variables (debug)."""
         print(self.universe.story)
 
-    def alter(self, phrase=''):
+    def alter(self, phrase=""):
         """Set a story variable by key/value pair (debug)."""
         params = phrase.split(" ")
         if len(params) < 2:

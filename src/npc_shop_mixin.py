@@ -25,8 +25,22 @@ import time
 
 import functions  # type: ignore
 import items as items_module  # type: ignore
-from items import (Item, Gold, Rock, Fists, Key, Special, Consumable, Accessory,  # type: ignore
-                   Gloves, Helm, Boots, Armor, Weapon, Arrow)
+from items import (
+    Item,
+    Gold,
+    Rock,
+    Fists,
+    Key,
+    Special,
+    Consumable,
+    Accessory,  # type: ignore
+    Gloves,
+    Helm,
+    Boots,
+    Armor,
+    Weapon,
+    Arrow,
+)
 from objects import Container  # type: ignore
 from shop_conditions import (  # type: ignore
     ValueModifierCondition,
@@ -46,7 +60,7 @@ class MerchantShopMixin:
         Rationale: If Jean brings unpaid shop goods to the merchant, presume intent to purchase and
         surface them in the Buy menu. Similar pacing & flavor to player.drop_merchandise_items().
         """
-        if not player or not hasattr(player, 'inventory'):
+        if not player or not hasattr(player, "inventory"):
             return
         phrases = [
             "{merchant} arches a brow: 'Ahh, eyeing the {item}, are we? I'll just set that out proper.'",
@@ -84,11 +98,11 @@ class MerchantShopMixin:
             "A thin ribbon is looped about the {item} and tied by {merchant} with a flourish.",
             "'Handled gently,' {merchant} notes, placing the {item} where only careful hands may reach.",
             "{merchant} leans in, as if to tell a story about the {item}, "
-            "but decides against it and places it on display."
+            "but decides against it and places it on display.",
         ]
         took_any = False
         for it in player.inventory[:]:
-            if getattr(it, 'merchandise', False):
+            if getattr(it, "merchandise", False):
                 try:
                     player.inventory.remove(it)
                 except ValueError:
@@ -97,8 +111,7 @@ class MerchantShopMixin:
                     self.inventory = []
                 self.inventory.append(it)
                 msg = random.choice(phrases).format(
-                    merchant=self.name.split(' ')[0],
-                    item=getattr(it, 'name', 'item')
+                    merchant=self.name.split(" ")[0], item=getattr(it, "name", "item")
                 )
                 print(msg)
                 time.sleep(0.15)
@@ -122,7 +135,9 @@ class MerchantShopMixin:
         except Exception:
             Shop = None
         if Shop:
-            self.shop = Shop(merchant=self, player=None, shop_name=f"{self.name}'s Shop")
+            self.shop = Shop(
+                merchant=self, player=None, shop_name=f"{self.name}'s Shop"
+            )
         else:
             self.shop = None
 
@@ -136,13 +151,17 @@ class MerchantShopMixin:
         total = len(self.inventory)
         rooms_source = self._resolve_rooms_source()
         if rooms_source:
-            rooms = rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source
+            rooms = (
+                rooms_source.values()
+                if hasattr(rooms_source, "values")
+                else rooms_source
+            )
             for room in rooms:
                 for obj in getattr(room, "objects", []):
                     if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                         owner = getattr(obj, "merchant", None)
                         if owner == self or owner == self.name:
-                            total += len(getattr(obj, 'inventory', []))
+                            total += len(getattr(obj, "inventory", []))
         return total
 
     # ── Room/item helpers ──────────────────────────────────────────────────────
@@ -155,20 +174,20 @@ class MerchantShopMixin:
         """
         if not self.current_room:
             return None
-        rooms_source = getattr(self.current_room, 'map', None)
+        rooms_source = getattr(self.current_room, "map", None)
         if rooms_source is None:
-            uni = getattr(self.current_room, 'universe', None)
+            uni = getattr(self.current_room, "universe", None)
             if uni is not None:
-                rooms_source = getattr(uni, 'map', None)
+                rooms_source = getattr(uni, "map", None)
         return rooms_source
 
     def _remove_placed_item_from_room(self, item: Item):
         """Remove an item that was just placed into inventory from the room's item list."""
-        room_items = getattr(self.current_room, 'items_here', None)
+        room_items = getattr(self.current_room, "items_here", None)
         if room_items is None:
-            room_items = getattr(self.current_room, 'items', None)
+            room_items = getattr(self.current_room, "items", None)
         if room_items is None:
-            room_items = getattr(self.current_room, 'spawned', None)
+            room_items = getattr(self.current_room, "spawned", None)
         if room_items and item in room_items:
             try:
                 room_items.remove(item)
@@ -219,20 +238,24 @@ class MerchantShopMixin:
         that they may respawn elsewhere on the next restock cycle.
         """
         removed_unique: set[str] = set()
-        for it in getattr(self, 'inventory', []) or []:
-            if getattr(it, 'unique', False):
+        for it in getattr(self, "inventory", []) or []:
+            if getattr(it, "unique", False):
                 removed_unique.add(it.__class__.__name__)
         containers: list[Container] = []
         rooms_source = self._resolve_rooms_source()
         if rooms_source:
-            rooms = rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source
+            rooms = (
+                rooms_source.values()
+                if hasattr(rooms_source, "values")
+                else rooms_source
+            )
             for room in rooms:
                 for obj in getattr(room, "objects", []):
                     if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                         owner = getattr(obj, "merchant", None)
                         if owner == self or owner == self.name:
-                            for it in getattr(obj, 'inventory', []) or []:
-                                if getattr(it, 'unique', False):
+                            for it in getattr(obj, "inventory", []) or []:
+                                if getattr(it, "unique", False):
                                     removed_unique.add(it.__class__.__name__)
         self.inventory = []
         if not self.current_room:
@@ -245,23 +268,25 @@ class MerchantShopMixin:
             for cls_name in removed_unique:
                 items_module.unique_items_spawned.discard(cls_name)
             return containers
-        for room in (rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source):
+        for room in (
+            rooms_source.values() if hasattr(rooms_source, "values") else rooms_source
+        ):
             if isinstance(room, str):
                 continue
-            for obj in getattr(room, 'objects_here', getattr(room, 'objects', [])):
+            for obj in getattr(room, "objects_here", getattr(room, "objects", [])):
                 if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                     owner = getattr(obj, "merchant", None)
                     if owner == self or owner == self.name:
                         obj.inventory = []
                         containers.append(obj)
-            room_items = getattr(room, 'items_here', None)
+            room_items = getattr(room, "items_here", None)
             if room_items is None:
-                room_items = getattr(room, 'items', None)
+                room_items = getattr(room, "items", None)
             if room_items is None:
-                room_items = getattr(room, 'spawned', None)
+                room_items = getattr(room, "spawned", None)
             if room_items:
                 for item in list(room_items):
-                    if getattr(item, 'merchandise', None) and item.merchandise:
+                    if getattr(item, "merchandise", None) and item.merchandise:
                         try:
                             room_items.remove(item)
                         except Exception:
@@ -277,20 +302,20 @@ class MerchantShopMixin:
         Preserves the count when the template instance has one set.
         """
         desired_count = 0
-        if hasattr(item_spec, '__class__') and not isinstance(item_spec, type):
-            desired_count = getattr(item_spec, 'count', 0) or 0
+        if hasattr(item_spec, "__class__") and not isinstance(item_spec, type):
+            desired_count = getattr(item_spec, "count", 0) or 0
             item_class_name = item_spec.__class__.__name__
         else:
-            if hasattr(item_spec, '__name__'):
+            if hasattr(item_spec, "__name__"):
                 item_class_name = item_spec.__name__
             else:
                 return None
-            if getattr(item_spec, 'count', 0) > 1:
-                desired_count = getattr(item_spec, 'count', 0)
+            if getattr(item_spec, "count", 0) > 1:
+                desired_count = getattr(item_spec, "count", 0)
         if not self.current_room:
             return None
         spawned = self.current_room.spawn_item(item_class_name, merchandise=True)
-        if spawned and desired_count > 0 and hasattr(spawned, 'count'):
+        if spawned and desired_count > 0 and hasattr(spawned, "count"):
             spawned.count = desired_count
         return spawned
 
@@ -300,7 +325,7 @@ class MerchantShopMixin:
         Uses the same cumulative-band probability curve as the original implementation.
         No-ops if the item is not equippable or enchantment_rate is zero.
         """
-        if not hasattr(item, 'isequipped') or self.enchantment_rate <= 0:
+        if not hasattr(item, "isequipped") or self.enchantment_rate <= 0:
             return
         base_roll = random.random()
         no_enchant_threshold = 0.6 / self.enchantment_rate
@@ -328,7 +353,7 @@ class MerchantShopMixin:
         """
         acceptable = []
         for container in containers:
-            allowed_types = getattr(container, 'allowed_item_types', None)
+            allowed_types = getattr(container, "allowed_item_types", None)
             if not allowed_types:
                 continue
             for allowed_type in allowed_types:
@@ -357,10 +382,10 @@ class MerchantShopMixin:
             return max(0, self.stock_count - len(self.inventory))
 
         def container_slots_remaining(ct: Container) -> int:
-            cap = getattr(ct, 'stock_count', 0)
+            cap = getattr(ct, "stock_count", 0)
             if cap <= 0:
                 return 0
-            return max(0, cap - len(getattr(ct, 'inventory', [])))
+            return max(0, cap - len(getattr(ct, "inventory", [])))
 
         def all_full() -> bool:
             if merchant_slots_remaining() > 0:
@@ -374,8 +399,21 @@ class MerchantShopMixin:
             unique_factories = set(items_module.unique_item_factories)  # type: ignore[attr-defined]
         except Exception:
             unique_factories = set()
-        disallowed_classes = {Gold, Rock, Fists, Key, Special, Consumable, Accessory,
-                              Gloves, Helm, Boots, Armor, Weapon, Arrow}
+        disallowed_classes = {
+            Gold,
+            Rock,
+            Fists,
+            Key,
+            Special,
+            Consumable,
+            Accessory,
+            Gloves,
+            Helm,
+            Boots,
+            Armor,
+            Weapon,
+            Arrow,
+        }
         candidates: list[type[Item]] = []
         for _nm, obj in inspect.getmembers(items_module, inspect.isclass):
             try:
@@ -429,7 +467,7 @@ class MerchantShopMixin:
             for ct in containers:
                 if container_slots_remaining(ct) <= 0:
                     continue
-                allowed = getattr(ct, 'allowed_item_types', None)
+                allowed = getattr(ct, "allowed_item_types", None)
                 if not allowed:
                     continue
                 try:
@@ -454,9 +492,9 @@ class MerchantShopMixin:
             if not spawned:
                 continue
             self._maybe_enchant(spawned)
-            if not hasattr(spawned, 'base_value'):
+            if not hasattr(spawned, "base_value"):
                 try:
-                    setattr(spawned, 'base_value', spawned.value)
+                    setattr(spawned, "base_value", spawned.value)
                 except Exception:
                     pass
             elig = eligible_containers_for(spawned)
@@ -480,7 +518,9 @@ class MerchantShopMixin:
         for _ in range(2):
             if random.random() < 0.4:
                 weight_boost = round(random.uniform(0.25, 3.0), 2)
-                self.shop_conditions["availability"].append(RestockWeightBoostCondition(weight_boost))
+                self.shop_conditions["availability"].append(
+                    RestockWeightBoostCondition(weight_boost)
+                )
         if random.random() < 0.05:
             self.shop_conditions["unique"].append(UniqueItemInjectionCondition())
 
@@ -490,7 +530,7 @@ class MerchantShopMixin:
             return
 
         def _apply_to_item(item):
-            base_value = getattr(item, 'base_value', None)
+            base_value = getattr(item, "base_value", None)
             if base_value is None:
                 return
             modified_value = base_value
@@ -505,9 +545,14 @@ class MerchantShopMixin:
             _apply_to_item(item)
         rooms_source = self._resolve_rooms_source()
         if rooms_source:
-            for room in (rooms_source.values() if hasattr(rooms_source, 'values') else rooms_source):
+            for room in (
+                rooms_source.values()
+                if hasattr(rooms_source, "values")
+                else rooms_source
+            ):
                 for obj in getattr(room, "objects", []):
-                    if ((hasattr(obj, "inventory") and hasattr(obj, "merchant")) and
-                            getattr(obj, "merchant", None) in (self, self.name)):
+                    if (
+                        hasattr(obj, "inventory") and hasattr(obj, "merchant")
+                    ) and getattr(obj, "merchant", None) in (self, self.name):
                         for item in obj.inventory:
                             _apply_to_item(item)
