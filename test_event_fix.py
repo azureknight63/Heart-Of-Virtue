@@ -60,11 +60,11 @@ if events and events[0].get('event_id'):
     result = game_service.process_event_input(player, event_id, "continue", session_data)
     print(f"Result success: {result.get('success')}")
     print(f"Still needs input: {result.get('needs_input')}")
-    
+
     # Check if new enemies were spawned
     print(f"Combat list size: {len(player.combat_list)}")
     print(f"New event ID: {result.get('event', {}).get('event_id')}")
-    
+
     # Simulate user providing input for stage 2 (enemy spawn announcement)
     if result.get('needs_input') and result.get('event', {}).get('event_id'):
         event_id = result['event']['event_id']

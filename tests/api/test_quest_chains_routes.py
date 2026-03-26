@@ -42,7 +42,7 @@ def session_with_player(app):
     """Create a session with a player."""
     session_manager = app.session_manager
     session_id, username = session_manager.create_session("test_player")
-    
+
     # Get the player and set up quest chain data
     player = session_manager.get_player(session_id)
     player.name = "TestHero"
@@ -52,7 +52,7 @@ def session_with_player(app):
     }
     player.active_chains = ["chain_1", "chain_2"]
     player.completed_chains = {}
-    
+
     return session_id, player, session_manager
 
 
@@ -63,7 +63,7 @@ class TestQuestChainsRoutes:
     def test_get_all_chains_progress_success(self, client, session_with_player):
         """Test getting all chains progress."""
         session_id, player, session_manager = session_with_player
-        
+
         response = client.get(
             "/api/quest-chains/progress",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -94,7 +94,7 @@ class TestQuestChainsRoutes:
     def test_get_chain_progress_success(self, client, session_with_player):
         """Test getting specific chain progress."""
         session_id, player, session_manager = session_with_player
-        
+
         response = client.get(
             "/api/quest-chains/chain_1/progress",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -113,7 +113,7 @@ class TestQuestChainsRoutes:
     def test_advance_chain_stage_success(self, client, session_with_player):
         """Test advancing chain stage."""
         session_id, player, session_manager = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/advance",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -128,7 +128,7 @@ class TestQuestChainsRoutes:
     def test_advance_chain_stage_no_body(self, client, session_with_player):
         """Test advancing without request body."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/advance",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -140,7 +140,7 @@ class TestQuestChainsRoutes:
     def test_advance_chain_stage_missing_field(self, client, session_with_player):
         """Test advancing with missing field."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/advance",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -155,7 +155,7 @@ class TestQuestChainsRoutes:
     def test_advance_chain_stage_invalid_stages(self, client, session_with_player):
         """Test advancing with invalid stage values."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/advance",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -168,7 +168,7 @@ class TestQuestChainsRoutes:
     def test_complete_chain_success(self, client, session_with_player):
         """Test completing a chain."""
         session_id, player, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/complete",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -187,7 +187,7 @@ class TestQuestChainsRoutes:
     def test_check_prerequisites_success(self, client, session_with_player):
         """Test checking prerequisites."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/prerequisites",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -202,7 +202,7 @@ class TestQuestChainsRoutes:
     def test_check_prerequisites_with_list(self, client, session_with_player):
         """Test checking prerequisites with actual prerequisites."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/prerequisites",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -217,7 +217,7 @@ class TestQuestChainsRoutes:
     def test_check_prerequisites_no_body(self, client, session_with_player):
         """Test checking prerequisites without body."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/prerequisites",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -229,7 +229,7 @@ class TestQuestChainsRoutes:
     def test_check_prerequisites_missing_field(self, client, session_with_player):
         """Test checking prerequisites with missing field."""
         session_id, _, _ = session_with_player
-        
+
         response = client.post(
             "/api/quest-chains/chain_1/prerequisites",
             headers={"Authorization": f"Bearer {session_id}"},
@@ -244,11 +244,11 @@ class TestQuestChainsRoutes:
         """Test multiple chain operations in sequence."""
         session_id, _, _ = session_with_player
         header = {"Authorization": f"Bearer {session_id}"}
-        
+
         # Get progress
         resp1 = client.get("/api/quest-chains/progress", headers=header)
         assert resp1.status_code == 200
-        
+
         # Get specific chain
         resp2 = client.get("/api/quest-chains/chain_1/progress", headers=header)
         assert resp2.status_code == 200
@@ -262,30 +262,29 @@ class TestQuestChainsRoutes:
             ("POST", "/api/quest-chains/chain_1/complete"),
             ("POST", "/api/quest-chains/chain_1/prerequisites"),
         ]
-        
+
         for method, endpoint in endpoints:
             if method == "GET":
                 response = client.get(endpoint)
             else:
                 response = client.post(endpoint)
-            
+
             assert response.status_code == 401, f"{method} {endpoint} should require auth"
 
     def test_different_players_isolated(self, app, client):
         """Test that different players have isolated data."""
         session_manager = app.session_manager
-        
+
         # Create two sessions
         session_id_1, _ = session_manager.create_session("player_1")
         session_id_2, _ = session_manager.create_session("player_2")
-        
+
         # Both should be able to access endpoints
         header1 = {"Authorization": f"Bearer {session_id_1}"}
         header2 = {"Authorization": f"Bearer {session_id_2}"}
-        
+
         resp1 = client.get("/api/quest-chains/progress", headers=header1)
         resp2 = client.get("/api/quest-chains/progress", headers=header2)
-        
+
         assert resp1.status_code == 200
         assert resp2.status_code == 200
-

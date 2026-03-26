@@ -144,4 +144,3 @@ def test_attack_evaluate_various_weapons(weapon_cls):
     assert math.isclose(attack.power, expected_power)
     assert attack.mvrange == weapon.wpnrange
     assert weapon.name.lower() in attack.stage_announce[1].lower()
-

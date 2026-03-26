@@ -84,7 +84,10 @@ def validate_item_slot(slot: str) -> Tuple[bool, Optional[str]]:
         "accessory2",
     ]
     if slot.lower() not in valid_slots:
-        return False, f"Invalid slot '{slot}'. Must be one of: {', '.join(valid_slots)}"
+        return (
+            False,
+            f"Invalid slot '{slot}'. Must be one of: {', '.join(valid_slots)}",
+        )
     return True, None
 
 
@@ -106,7 +109,9 @@ def validate_combat_action(action: str) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def validate_item_index(index: Any, max_index: int) -> Tuple[bool, Optional[str]]:
+def validate_item_index(
+    index: Any, max_index: int
+) -> Tuple[bool, Optional[str]]:
     """Validate item index within inventory.
 
     Args:
@@ -217,7 +222,9 @@ def validate_range(
         return False, f"{field_name} must be a valid number"
 
 
-def validate_item_index(item_index: Any, max_items: int) -> Tuple[bool, Optional[str]]:
+def validate_item_index(
+    item_index: Any, max_items: int
+) -> Tuple[bool, Optional[str]]:
     """Validate inventory item index.
 
     Args:
@@ -230,7 +237,10 @@ def validate_item_index(item_index: Any, max_items: int) -> Tuple[bool, Optional
     try:
         idx = int(item_index)
         if idx < 0 or idx >= max_items:
-            return False, f"Invalid item index {idx}. Inventory has {max_items} items"
+            return (
+                False,
+                f"Invalid item index {idx}. Inventory has {max_items} items",
+            )
         return True, None
     except (ValueError, TypeError):
         return False, "Item index must be a valid integer"
@@ -245,7 +255,16 @@ def validate_equipment_slot(slot_name: str) -> Tuple[bool, Optional[str]]:
     Returns:
         Tuple of (is_valid, error_message)
     """
-    valid_slots = ["head", "chest", "legs", "hands", "feet", "back", "ring1", "ring2"]
+    valid_slots = [
+        "head",
+        "chest",
+        "legs",
+        "hands",
+        "feet",
+        "back",
+        "ring1",
+        "ring2",
+    ]
     if slot_name not in valid_slots:
         return (
             False,
@@ -273,7 +292,9 @@ def validate_weight_limit(
     return True, None
 
 
-def validate_currency_amount(amount: Any, available: int) -> Tuple[bool, Optional[str]]:
+def validate_currency_amount(
+    amount: Any, available: int
+) -> Tuple[bool, Optional[str]]:
     """Validate currency amount.
 
     Args:

@@ -51,16 +51,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         player.combat_position = CombatPosition(x=0, y=0, facing=Direction.N)
         enemy.combat_position = CombatPosition(x=5, y=0, facing=Direction.N)
-        
+
         player.combat_proximity[enemy] = 5
         enemy.combat_proximity[player] = 5
-        
+
         attack = Attack(player)
         attack.target = enemy
-        
+
         # Execute attack
         attack.execute(player)
-        
+
         # Player should face east (target is to the east)
         assert player.combat_position.facing.value == Direction.E.value, \
             f"Expected E, got {player.combat_position.facing.name}"
@@ -70,16 +70,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         player.combat_position = CombatPosition(x=0, y=25, facing=Direction.S)
         enemy.combat_position = CombatPosition(x=3, y=28, facing=Direction.S)
-        
+
         player.combat_proximity[enemy] = 4  # roughly diagonal
         enemy.combat_proximity[player] = 4
-        
+
         slash = Slash(player)
         slash.target = enemy
-        
+
         # Execute attack
         slash.execute(player)
-        
+
         # Player should face northeast (target is NE)
         assert player.combat_position.facing.value == Direction.NE.value, \
             f"Expected NE, got {player.combat_position.facing.name}"
@@ -89,16 +89,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         player.combat_position = CombatPosition(x=0, y=5, facing=Direction.N)
         enemy.combat_position = CombatPosition(x=0, y=0, facing=Direction.N)
-        
+
         player.combat_proximity[enemy] = 5
         enemy.combat_proximity[player] = 5
-        
+
         ps = PowerStrike(player)
         ps.target = enemy
-        
+
         # Execute attack
         ps.execute(player)
-        
+
         # Player should face south (target is to the south)
         assert player.combat_position.facing.value == Direction.S.value, \
             f"Expected S, got {player.combat_position.facing.name}"
@@ -108,16 +108,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         player.combat_position = CombatPosition(x=5, y=0, facing=Direction.E)
         enemy.combat_position = CombatPosition(x=0, y=0, facing=Direction.E)
-        
+
         player.combat_proximity[enemy] = 5
         enemy.combat_proximity[player] = 5
-        
+
         jab = Jab(player)
         jab.target = enemy
-        
+
         # Execute attack
         jab.execute(player)
-        
+
         # Player should face west (target is to the west)
         assert player.combat_position.facing.value == Direction.W.value, \
             f"Expected W, got {player.combat_position.facing.name}"
@@ -127,16 +127,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         enemy.combat_position = CombatPosition(x=0, y=0, facing=Direction.N)
         player.combat_position = CombatPosition(x=5, y=5, facing=Direction.S)
-        
+
         enemy.combat_proximity[player] = 7
         player.combat_proximity[enemy] = 7
-        
+
         npc_attack = NpcAttack(enemy)
         npc_attack.target = player
-        
+
         # Execute attack
         npc_attack.execute(enemy)
-        
+
         # NPC should face southeast (target is SE)
         assert enemy.combat_position.facing.value == Direction.NE.value, \
             f"Expected NE, got {enemy.combat_position.facing.name}"
@@ -146,16 +146,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         enemy.combat_position = CombatPosition(x=10, y=10, facing=Direction.W)
         player.combat_position = CombatPosition(x=15, y=10, facing=Direction.W)
-        
+
         enemy.combat_proximity[player] = 5
         player.combat_proximity[enemy] = 5
-        
+
         gorran = GorranClub(enemy)
         gorran.target = player
-        
+
         # Execute attack
         gorran.execute(enemy)
-        
+
         # Enemy should face east (target is to the east)
         assert enemy.combat_position.facing.value == Direction.E.value, \
             f"Expected E, got {enemy.combat_position.facing.name}"
@@ -165,16 +165,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         enemy.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
         player.combat_position = CombatPosition(x=23, y=27, facing=Direction.N)
-        
+
         enemy.combat_proximity[player] = 3  # NW direction
         player.combat_proximity[enemy] = 3
-        
+
         vc = VenomClaw(enemy)
         vc.target = player
-        
+
         # Execute attack
         vc.execute(enemy)
-        
+
         # Enemy should face northwest (target is NW)
         assert enemy.combat_position.facing.value == Direction.NW.value, \
             f"Expected NW, got {enemy.combat_position.facing.name}"
@@ -184,16 +184,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         enemy.combat_position = CombatPosition(x=25, y=20, facing=Direction.S)
         player.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
-        
+
         enemy.combat_proximity[player] = 5
         player.combat_proximity[enemy] = 5
-        
+
         sb = SpiderBite(enemy)
         sb.target = player
-        
+
         # Execute attack
         sb.execute(enemy)
-        
+
         # Enemy should face north (target is to the north)
         assert enemy.combat_position.facing.value == Direction.N.value, \
             f"Expected N, got {enemy.combat_position.facing.name}"
@@ -203,16 +203,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         enemy.combat_position = CombatPosition(x=5, y=5, facing=Direction.S)
         player.combat_position = CombatPosition(x=2, y=2, facing=Direction.S)
-        
+
         enemy.combat_proximity[player] = 4  # SW direction
         player.combat_proximity[enemy] = 4
-        
+
         bb = BatBite(enemy)
         bb.target = player
-        
+
         # Execute attack
         bb.execute(enemy)
-        
+
         # Enemy should face southwest (target is SW)
         assert enemy.combat_position.facing.value == Direction.SW.value, \
             f"Expected SW, got {enemy.combat_position.facing.name}"
@@ -222,16 +222,16 @@ class TestAttackMovesFacing:
         # Setup combat positions
         player.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
         enemy.combat_position = CombatPosition(x=21, y=29, facing=Direction.N)
-        
+
         player.combat_proximity[enemy] = 5  # NW direction
         enemy.combat_proximity[player] = 5
-        
+
         ps = PommelStrike(player)
         ps.target = enemy
-        
+
         # Execute attack
         ps.execute(player)
-        
+
         # Player should face northwest (target is NW)
         assert player.combat_position.facing.value == Direction.NW.value, \
             f"Expected NW, got {player.combat_position.facing.name}"
@@ -250,26 +250,26 @@ class TestAttackMovesFacing:
             def spawn_item(self, *args, **kwargs):
                 pass
         player.current_room = MockRoom()
-        
+
         # Setup combat positions
         player.combat_position = CombatPosition(x=10, y=10, facing=Direction.S)
         enemy.combat_position = CombatPosition(x=13, y=5, facing=Direction.S)
-        
+
         player.combat_proximity[enemy] = 6  # SE direction at range
         enemy.combat_proximity[player] = 6
-        
+
         # Need to add arrow to inventory
         from src.items import WoodenArrow  # type: ignore
         arrow = WoodenArrow()
         player.inventory.append(arrow)
-        
+
         sb = ShootBow(player)
         sb.target = enemy
         sb.arrow = arrow
-        
+
         # Execute attack
         sb.execute(player)
-        
+
         # Player should face southeast (target is SE)
         assert player.combat_position.facing.value == Direction.SE.value, \
             f"Expected SE, got {player.combat_position.facing.name}"

@@ -33,9 +33,15 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         }
         self.locked_chests = []
         self.testing_mode = False  # test mode flag from config
-        self.game_config = None  # full GameConfig object for access to all settings
-        self.scenario_config = None  # ScenarioConfig for combat scenario management
-        self.coordinate_config = None  # CoordinateSystemConfig for grid positioning
+        self.game_config = (
+            None  # full GameConfig object for access to all settings
+        )
+        self.scenario_config = (
+            None  # ScenarioConfig for combat scenario management
+        )
+        self.coordinate_config = (
+            None  # CoordinateSystemConfig for grid positioning
+        )
 
     def get_tile(self, x, y):
         """Get tile at coordinates from the current player's map."""
@@ -70,7 +76,10 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                         self.load_tiles(player, location)
             # determine starting map
             for location in self.maps:
-                if "start" in location["name"] and self.starting_map_default is None:
+                if (
+                    "start" in location["name"]
+                    and self.starting_map_default is None
+                ):
                     self.starting_map_default = location
 
     # ---------------- JSON MAP SUPPORT -----------------
@@ -82,7 +91,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         candidates.append(maps_dir)
         # also accept utils/src/resources/maps (where the editor saves by default)
         utils_variant = (
-            Path(__file__).parent.parent / "utils" / "src" / "resources" / "maps"
+            Path(__file__).parent.parent
+            / "utils"
+            / "src"
+            / "resources"
+            / "maps"
         )
         candidates.append(utils_variant)
         return [c for c in candidates if c.exists()]
@@ -130,7 +143,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     return self._deserialize_saved_instance(value)
                 else:
                     # Recursively check all dict values
-                    return {k: recursive_deserialize(v) for k, v in value.items()}
+                    return {
+                        k: recursive_deserialize(v) for k, v in value.items()
+                    }
             elif isinstance(value, list):
                 return [recursive_deserialize(v) for v in value]
             else:
@@ -145,7 +160,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             # Try to supply only parameters accepted by __init__ (excluding self)
             try:
                 sig = inspect.signature(cls.__init__)
-                pnames = [p.name for p in sig.parameters.values() if p.name != "self"]
+                pnames = [
+                    p.name for p in sig.parameters.values() if p.name != "self"
+                ]
                 init_kwargs = {k: v for k, v in props.items() if k in pnames}
                 # If 'player' is a parameter, pass self.player
                 if "player" in pnames and "player" not in init_kwargs:
@@ -195,7 +212,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             except Exception:
                 continue
             # determine tile class name from title; fallback to generic MapTile if not found
-            title = tile_data.get("title") or tile_data.get("id") or f"tile_{x}_{y}"
+            title = (
+                tile_data.get("title")
+                or tile_data.get("id")
+                or f"tile_{x}_{y}"
+            )
             description = tile_data.get("description", "")
             try:
                 tile_cls = functions.seek_class(title, "tilesets")
@@ -211,7 +232,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             if description:
                 tile_instance.description = description
             # block exits & symbol
-            if "block_exit" in tile_data and isinstance(tile_data["block_exit"], list):
+            if "block_exit" in tile_data and isinstance(
+                tile_data["block_exit"], list
+            ):
                 tile_instance.block_exit = list(tile_data["block_exit"])
             if "symbol" in tile_data and hasattr(tile_instance, "symbol"):
                 try:
@@ -341,9 +364,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if block_contents:
                     block_list = block_contents.split("|")
                     tile_name = block_list[0]
-                    this_map[(x, y)] = functions.seek_class(tile_name, "tilesets")(
-                        self, this_map, x, y
-                    )
+                    this_map[(x, y)] = functions.seek_class(
+                        tile_name, "tilesets"
+                    )(self, this_map, x, y)
                     if len(block_list) > 1:
                         for i, param in enumerate(block_list):
                             if i != 0:
@@ -353,14 +376,17 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     # what's in the map editor
                                     parameter = param.split("=")
                                     if hasattr(
-                                        tile_exists(this_map, x, y), parameter[0]
+                                        tile_exists(this_map, x, y),
+                                        parameter[0],
                                     ):
                                         setattr(
                                             tile_exists(this_map, x, y),
                                             parameter[0],
                                             parameter[1],
                                         )
-                                elif param[0] == "$":  # spawns any declared NPCs
+                                elif (
+                                    param[0] == "$"
+                                ):  # spawns any declared NPCs
                                     param = param.replace("$", "")
                                     p_list = param.split(".")
                                     npc_type = p_list[0]
@@ -368,7 +394,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     hidden = False
                                     hfactor = 0
                                     for item in p_list:
-                                        hidden, hfactor = self.parse_hidden(item)
+                                        hidden, hfactor = self.parse_hidden(
+                                            item
+                                        )
                                     if (
                                         len(p_list) == 3
                                     ):  # if the npc is declared hidden, set appropriate values
@@ -376,9 +404,13 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                         hfactor = int(p_list[2][1:])
                                     for ix in range(0, amt):
                                         tile_exists(this_map, x, y).spawn_npc(
-                                            npc_type, hidden=hidden, hfactor=hfactor
+                                            npc_type,
+                                            hidden=hidden,
+                                            hfactor=hfactor,
                                         )
-                                elif param[0] == "#":  # spawns any declared items
+                                elif (
+                                    param[0] == "#"
+                                ):  # spawns any declared items
                                     param = param.replace("#", "")
                                     p_list = param.split(".")
                                     item_type = p_list[0]
@@ -386,7 +418,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     hidden = False
                                     hfactor = 0
                                     for item in p_list:
-                                        hidden, hfactor = self.parse_hidden(item)
+                                        hidden, hfactor = self.parse_hidden(
+                                            item
+                                        )
                                     tile_exists(this_map, x, y).spawn_item(
                                         item_type,
                                         amt=amt,
@@ -394,7 +428,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                         hfactor=hfactor,
                                     )
 
-                                elif param[0] == "!":  # spawns any declared events
+                                elif (
+                                    param[0] == "!"
+                                ):  # spawns any declared events
                                     param = param.replace("!", "")
                                     event_type = param
                                     repeat = False
@@ -415,7 +451,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                         repeat,
                                         params,
                                     )
-                                elif param[0] == "@":  # spawns any declared objects
+                                elif (
+                                    param[0] == "@"
+                                ):  # spawns any declared objects
                                     param = param.replace("@", "")
                                     p_list = param.split(".")
                                     obj_type = p_list[0]
@@ -426,14 +464,16 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     if len(p_list) > 2:
                                         for setting in p_list:
                                             if setting != "":
-                                                hidden, hfactor = self.parse_hidden(
-                                                    setting
+                                                hidden, hfactor = (
+                                                    self.parse_hidden(setting)
                                                 )
                                                 if not hidden:
                                                     params.append(setting)
                                     p_list.remove(obj_type)
                                     for ix in range(0, amt):
-                                        tile_exists(this_map, x, y).spawn_object(
+                                        tile_exists(
+                                            this_map, x, y
+                                        ).spawn_object(
                                             obj_type,
                                             player,
                                             tile_exists(this_map, x, y),
@@ -453,9 +493,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                             )
                         except Exception:
                             # legacy fallback
-                            this_map[(x, y)] = getattr(__import__("tiles"), tile_name)(
-                                self, this_map, x, y
-                            )
+                            this_map[(x, y)] = getattr(
+                                __import__("tiles"), tile_name
+                            )(self, this_map, x, y)
                 if (
                     tile_name == "StartingRoom"
                 ):  # there can only be one of these in the game

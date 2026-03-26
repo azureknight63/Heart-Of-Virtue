@@ -36,13 +36,18 @@ def sanitize_event_input(
     # Type-specific validation and sanitization
     if input_type == "choice":
         # Validate against whitelist of allowed options
-        valid_values = [opt.get("value") for opt in input_options if "value" in opt]
+        valid_values = [
+            opt.get("value") for opt in input_options if "value" in opt
+        ]
 
         if not valid_values:
             return sanitized, "No valid options available"
 
         if sanitized not in valid_values:
-            return "", f"Invalid choice. Please select from: {', '.join(valid_values)}"
+            return (
+                "",
+                f"Invalid choice. Please select from: {', '.join(valid_values)}",
+            )
 
         # Choice inputs don't need further sanitization
         return sanitized, None
@@ -78,7 +83,10 @@ def sanitize_event_input(
 
         # Use bleach to strip HTML/script tags
         sanitized = bleach.clean(
-            sanitized, tags=[], attributes={}, strip=True  # No HTML tags allowed
+            sanitized,
+            tags=[],
+            attributes={},
+            strip=True,  # No HTML tags allowed
         )
 
         # Additional safety: remove null bytes

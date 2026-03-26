@@ -103,6 +103,12 @@ export const saves = {
   newGame: () => apiClient.post('/game/new'),
 }
 
+// Feedback endpoints
+export const feedback = {
+  submitIssue: (type, title, fields, anonymous = false) =>
+    apiClient.post('/feedback/issue', { type, title, fields, anonymous }),
+}
+
 export default {
   auth,
   player,
@@ -111,4 +117,5 @@ export default {
   inventory,
   equipment,
   saves,
+  feedback,
 }

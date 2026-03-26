@@ -393,7 +393,7 @@ Use when you need to:
 
 **Expert indie game sound designer.** The `/sound-designer` skill audits the game's **procedural audio synthesis system**, designs new SFX by implementing Song classes, and works with the project's sound creation tools to generate and test audio.
 
-The project uses a **Wave Synthesis Engine** (`tools/audio_engine/`) for all audio: no external AI generation. The skill writes Song class code that uses `generate_tone()`, `generate_chord()`, `mix_layers()`, and `generate_percussion_pattern()` to create SFX.
+The project uses a **Wave Synthesis Engine** (`tools/audio_engine/`) for all audio: no external AI generation. The skill writes Song class code that uses `generate_tone()`, `generate_tone_sweep()`, `generate_chord()`, `mix_layers()`, and `generate_percussion_pattern()` to create SFX.
 
 Use when you need to:
 - Audit existing sound design and identify gaps
@@ -417,15 +417,27 @@ Review SFX coverage and identify weak spots
 **Authority**: The sound designer has **full authority to improve the audio generation tools** (audio_engine, Song system) as needed to meet design goals. If synthesis capabilities are missing, add them.
 
 **Project audio tools**:
-- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_chord, mix_layers) — *can be enhanced*
-- `tools/songs/` — existing Song classes (sfx.py, adventure.py, battle.py, etc.) — *can be templated/refactored*
+- `tools/audio_engine/core.py` — synthesis functions (generate_tone, generate_tone_sweep, generate_chord, mix_layers) — *can be enhanced*
+- `tools/songs/` — Song classes: `sfx.py`, `ambient.py`, `adventure.py`, `battle.py`, etc. — *can be templated/refactored*
 - `python tools/generate_audio.py` — renders all songs to WAV files
 - `python tools/audio_player.py` — interactive testing GUI (tempo, pitch, visualization)
 - Output: `frontend/public/assets/sounds/`
 
+**Engine capabilities (as of 2026-03):**
+- `generate_tone`: ADSR envelope (attack/decay/sustain_level/release) + vibrato LFO (rate/depth)
+- `generate_tone_sweep`: phase-accumulator sweep from `start_freq` → `end_freq` with full waveform support
+- `generate_chord`: multi-frequency chord with ADSR envelope; ZeroDivision guards for very short envelopes
+- `mix_layers`, `generate_percussion_pattern`: unchanged
+
+**Existing Song classes:**
+- `sfx.py` — combat/game SFX: AttackHitSFX, AttackMissSFX, AttackParrySFX, AttackSwipeSFX, EnemyDeathSFX, MoveSFX, LevelUpSFX, QuestCompleteSFX, ItemUseSFX, HealSFX, StatusHitSFX, PlayerDeathSFX
+- `ambient.py` — ambient BGM: MineralPoolsSong, DreamSpaceSong
+- `adventure.py`, `battle.py`, `dungeon.py` — BGM tracks
+
 Key capabilities:
 - Procedural wave synthesis (sine, square, sawtooth, triangle, noise)
-- Envelope shaping (attack/release for precise control)
+- ADSR envelope shaping + vibrato LFO modulation
+- Pitch-sweep synthesis (`generate_tone_sweep`) for expressive transients
 - Frequency selection and layering strategies
 - **Audio engine enhancement** (add new synthesis functions, helper classes, templates)
 - Song class architecture and design patterns

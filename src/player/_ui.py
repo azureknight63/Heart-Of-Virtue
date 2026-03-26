@@ -65,7 +65,9 @@ def generate_output_grid(
         not row_width_compatibility_verified
     ):  # this is to make sure the rows don't get too long to display.
         # It will override any row/column parameters
-        row_length = ((cell_max_length + len(border) + 2) * cols_var) + len(border)
+        row_length = ((cell_max_length + len(border) + 2) * cols_var) + len(
+            border
+        )
         if row_length <= 300:
             row_width_compatibility_verified = True
         else:
@@ -170,11 +172,21 @@ class PlayerUIMixin:
                             break
                     if known:
                         skills_to_display.append(
-                            (skill, req, "{} (LEARNED)".format(skill.name), True)
+                            (
+                                skill,
+                                req,
+                                "{} (LEARNED)".format(skill.name),
+                                True,
+                            )
                         )
                     else:
                         skills_to_display.append(
-                            (skill, req, "{} ({})".format(skill.name, req), False)
+                            (
+                                skill,
+                                req,
+                                "{} ({})".format(skill.name, req),
+                                False,
+                            )
                         )
                 inner_selection_finished = False
                 while not inner_selection_finished:
@@ -191,7 +203,9 @@ class PlayerUIMixin:
                         elif response.lower() in ["k", "x"]:
                             inner_selection = response.lower()
                         else:
-                            cprint("Invalid response! Please try again.", "red")
+                            cprint(
+                                "Invalid response! Please try again.", "red"
+                            )
                     if (
                         inner_selection == "k"
                     ):  # The player wishes to exit the inner menu and return to
@@ -231,13 +245,20 @@ class PlayerUIMixin:
                                     ),
                                     "cyan",
                                 )
-                                response = input(colored("Selection: ", "cyan"))
+                                response = input(
+                                    colored("Selection: ", "cyan")
+                                )
                                 if response.lower() == "learn":
                                     self.learn_skill(skill_object)
-                                    self.skill_exp[subcat] -= skill_menu_choice[1]
+                                    self.skill_exp[
+                                        subcat
+                                    ] -= skill_menu_choice[1]
                                     functions.await_input()
                             else:
-                                cprint("Cost: {}".format(skill_menu_choice[1]), "red")
+                                cprint(
+                                    "Cost: {}".format(skill_menu_choice[1]),
+                                    "red",
+                                )
                                 functions.await_input()
                         else:
                             cprint("Jean knows this skill.", "cyan")
@@ -257,23 +278,34 @@ class PlayerUIMixin:
         self.refresh_protection_rating()
         cprint("=====\nStatus\n=====\n" "{}".format(self.name_long), "cyan")
         output_grid_data = [
-            "Health: {} / {} ({})".format(self.hp, self.maxhp, self.maxhp_base),
+            "Health: {} / {} ({})".format(
+                self.hp, self.maxhp, self.maxhp_base
+            ),
             "Fatigue: {} ({})".format(self.fatigue, self.maxfatigue_base),
             "Weight Tolerance: {} / {} ({})".format(
-                self.weight_current, self.weight_tolerance, self.weight_tolerance_base
+                self.weight_current,
+                self.weight_tolerance,
+                self.weight_tolerance_base,
             ),
-            "Level: {} // Exp to next: {}".format(self.level, self.exp_to_level),
+            "Level: {} // Exp to next: {}".format(
+                self.level, self.exp_to_level
+            ),
         ]
         print(
             generate_output_grid(
-                output_grid_data, border="+++", border_color="red", border_attr=["dark"]
+                output_grid_data,
+                border="+++",
+                border_color="red",
+                border_attr=["dark"],
             )
         )
 
         state_list = ""
         if len(self.states) > 0:
             for state in self.states:
-                state_list += colored("{}".format(state.name), "white") + colored(
+                state_list += colored(
+                    "{}".format(state.name), "white"
+                ) + colored(
                     " ({}) ".format(state.steps_left), "red"
                 )  # todo test this display
         else:
@@ -340,7 +372,9 @@ class PlayerUIMixin:
                     n.title()
                     + "{}".format(
                         colored(
-                            str(resistance_value) + "%", color="white", attrs=["bold"]
+                            str(resistance_value) + "%",
+                            color="white",
+                            attrs=["bold"],
                         )
                     )
                 )
@@ -360,7 +394,9 @@ class PlayerUIMixin:
                     n.title()
                     + "{}".format(
                         colored(
-                            str(resistance_value) + "%", color="red", attrs=["bold"]
+                            str(resistance_value) + "%",
+                            color="red",
+                            attrs=["bold"],
                         )
                     )
                 )
@@ -369,7 +405,9 @@ class PlayerUIMixin:
                     n.title()
                     + "{}".format(
                         colored(
-                            str(resistance_value) + "%", color="green", attrs=["bold"]
+                            str(resistance_value) + "%",
+                            color="green",
+                            attrs=["bold"],
                         )
                     )
                 )
@@ -397,7 +435,9 @@ class PlayerUIMixin:
                     n.title()
                     + "{}".format(
                         colored(
-                            str(resistance_value) + "%", color="white", attrs=["bold"]
+                            str(resistance_value) + "%",
+                            color="white",
+                            attrs=["bold"],
                         )
                     )
                 )
@@ -417,7 +457,9 @@ class PlayerUIMixin:
                     n.title()
                     + "{}".format(
                         colored(
-                            str(resistance_value) + "%", color="red", attrs=["bold"]
+                            str(resistance_value) + "%",
+                            color="red",
+                            attrs=["bold"],
                         )
                     )
                 )
@@ -455,7 +497,9 @@ class PlayerUIMixin:
         for action in possible_actions:
             cprint(
                 "{}:{}{}".format(
-                    action.name, (" " * (20 - (len(action.name) + 2))), action.hotkey
+                    action.name,
+                    (" " * (20 - (len(action.name) + 2))),
+                    action.hotkey,
                 ),
                 "blue",
             )

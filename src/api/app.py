@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from src.api.config import Config, DevelopmentConfig, TestingConfig, ProductionConfig
+from src.api.config import DevelopmentConfig
 from src.api.services import SessionManager, GameService
 import src.universe as universe_module
 
@@ -87,7 +87,10 @@ def create_app(config_class=None):
     # For testing and development, load real game universe
     # Check by class name to avoid import namespace issues
     config_class_name = config_class.__name__
-    is_dev_or_test = config_class_name in ("DevelopmentConfig", "TestingConfig")
+    is_dev_or_test = config_class_name in (
+        "DevelopmentConfig",
+        "TestingConfig",
+    )
 
     universe = None
     game_service = None
@@ -185,6 +188,7 @@ def create_app(config_class=None):
         npc_availability_bp,
         dialogue_context_bp,
         logs_bp,
+        feedback_bp,
     )
 
     app.register_blueprint(auth_bp, url_prefix="/api")
@@ -201,6 +205,7 @@ def create_app(config_class=None):
     app.register_blueprint(npc_availability_bp, url_prefix="/api")
     app.register_blueprint(dialogue_context_bp, url_prefix="/api")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
+    app.register_blueprint(feedback_bp, url_prefix="/api/feedback")
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers
@@ -220,8 +225,8 @@ def create_app(config_class=None):
 
         if request.method == "OPTIONS":
             response = make_response()
-            response.headers["Access-Control-Allow-Origin"] = request.headers.get(
-                "Origin", "http://localhost:3000"
+            response.headers["Access-Control-Allow-Origin"] = (
+                request.headers.get("Origin", "http://localhost:3000")
             )
             response.headers["Access-Control-Allow-Methods"] = (
                 "GET, POST, PUT, DELETE, OPTIONS, PATCH"
@@ -252,9 +257,14 @@ def create_app(config_class=None):
         def test_create_session():
             from flask import jsonify, request as _req
 
-            username = (_req.get_json() or {}).get("username", "inquisitor_test")
+            username = (_req.get_json() or {}).get(
+                "username", "inquisitor_test"
+            )
             session_id, _ = app.session_manager.create_session(username)
-            return jsonify({"session_id": session_id, "username": username}), 201
+            return (
+                jsonify({"session_id": session_id, "username": username}),
+                201,
+            )
 
     # API info endpoint
     @app.route("/api/info", methods=["GET"])
@@ -295,7 +305,9 @@ def create_app(config_class=None):
             routes.append(
                 {
                     "endpoint": rule.endpoint,
-                    "methods": sorted(list(rule.methods - {"HEAD", "OPTIONS"})),
+                    "methods": sorted(
+                        list(rule.methods - {"HEAD", "OPTIONS"})
+                    ),
                     "rule": str(rule),
                 }
             )

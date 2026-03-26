@@ -42,7 +42,7 @@ def session_with_player(app):
     """Create a session with a player."""
     session_manager = app.session_manager
     session_id, username = session_manager.create_session("test_player")
-    
+
     # Get the player and set up reputation data
     player = session_manager.get_player(session_id)
     player.name = "TestHero"
@@ -51,10 +51,10 @@ def session_with_player(app):
         "cave_guide": 30,
         "blacksmith": -30,
     }
-    
+
     # Save session
     session_manager.save_session(session_id)
-    
+
     return session_id
 
 

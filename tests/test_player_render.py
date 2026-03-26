@@ -14,12 +14,12 @@ from src.positions import CombatPosition, Direction
 def test_player_rendering():
     """Test if player appears on battlefield grid"""
     print("Testing player rendering on battlefield grid...")
-    
+
     # Create window
     window = CombatBattlefieldWindow("Player Rendering Test")
     try:
         window.create_window()
-        
+
         # Add ONLY the player, no enemies
         window.set_combatant(
             "Jean",
@@ -30,27 +30,27 @@ def test_player_rendering():
             health_percent=0.8,
             facing_value=180
         )
-        
+
         print(f"\nBefore render:")
         print(f"  Combatants: {window.combatants_data.keys()}")
         print(f"  Movement history: {window.movement_history.keys()}")
-        
+
         # Get the grid text
         grid_text = window.render_grid()
-        
+
         print(f"\nViewport: x=[{window.viewport_x_min}, {window.viewport_x_max}], y=[{window.viewport_y_min}, {window.viewport_y_max}]")
-        
+
         # Count P characters in grid
         p_count = grid_text.count('P')
         print(f"'P' characters in grid: {p_count}")
         assert p_count > 0, "Player 'P' not found in grid!"
-        
+
         # Print first few lines of grid
         lines = grid_text.split('\n')
         print(f"\nGrid (first 15 lines):")
         for i, line in enumerate(lines[:15]):
             print(f"  {i}: {line}")
-        
+
         # Look for the P
         found_p = False
         for i, line in enumerate(lines):

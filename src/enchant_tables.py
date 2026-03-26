@@ -85,7 +85,9 @@ class Weighted(Enchantment):
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Weighted", rarity=0, group="Prefix", value=1)
+        super().__init__(
+            item, name="Weighted", rarity=0, group="Prefix", value=1
+        )
 
     def modify(self):
         mod = random.uniform(0.05, 0.15)
@@ -110,7 +112,9 @@ class Balanced(Enchantment):
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Balanced", rarity=0, group="Prefix", value=1)
+        super().__init__(
+            item, name="Balanced", rarity=0, group="Prefix", value=1
+        )
 
     def modify(self):
         mod = random.uniform(1.05, 1.15)
@@ -136,7 +140,9 @@ class Hollow(Enchantment):  # reduced weight and damage
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Hollow", rarity=0, group="Prefix", value=1.1)
+        super().__init__(
+            item, name="Hollow", rarity=0, group="Prefix", value=1.1
+        )
 
     def modify(self):
         self.item.weight *= 0.5
@@ -158,7 +164,9 @@ class Polished(Enchantment):  # it's shiny! 10% increase in gold value
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Polished", rarity=0, group="Prefix", value=1.1)
+        super().__init__(
+            item, name="Polished", rarity=0, group="Prefix", value=1.1
+        )
 
     def modify(self):
         self.item.value *= self.value
@@ -174,7 +182,9 @@ class Encrusted(Enchantment):  # encrusted with gems; +30% gold value
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Encrusted", rarity=0, group="Prefix", value=1.3)
+        super().__init__(
+            item, name="Encrusted", rarity=0, group="Prefix", value=1.3
+        )
 
     def modify(self):
         self.item.value *= 1.3
@@ -190,7 +200,9 @@ class Dirty(Enchantment):  # it's dirty! 10% decrease in gold value
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Dirty", rarity=0, group="Prefix", value=0.9)
+        super().__init__(
+            item, name="Dirty", rarity=0, group="Prefix", value=0.9
+        )
 
     def modify(self):
         self.item.value *= self.value
@@ -206,7 +218,9 @@ class Studded(Enchantment):  # improves protection rating of armor by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Studded", rarity=0, group="Prefix", value=1)
+        super().__init__(
+            item, name="Studded", rarity=0, group="Prefix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -228,7 +242,9 @@ class Reinforced(Enchantment):  # improves protection rating of armor by 3-5
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Reinforced", rarity=0, group="Prefix", value=1)
+        super().__init__(
+            item, name="Reinforced", rarity=0, group="Prefix", value=1
+        )
 
     def modify(self):
         mod = random.randint(3, 5)
@@ -250,7 +266,9 @@ class Plated(Enchantment):  # improves protection rating of armor by 5-10
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Plated", rarity=0, group="Prefix", value=1)
+        super().__init__(
+            item, name="Plated", rarity=0, group="Prefix", value=1
+        )
 
     def modify(self):
         mod = random.randint(5, 10)
@@ -274,7 +292,9 @@ class Poisonous(
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
+        super().__init__(
+            item, name="Poisonous", rarity=0, group="Prefix", value=1
+        )
         self.equip_states = [Poisoned(None)]
 
     def modify(self):
@@ -297,7 +317,9 @@ class Dousing(Enchantment):  # grants resistance to fire when equipped
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Dousing", rarity=0, group="Prefix", value=1.25)
+        super().__init__(
+            item, name="Dousing", rarity=0, group="Prefix", value=1.25
+        )
 
     def modify(self):
         # add or increase fire resistance on the item (works for dict or object)
@@ -306,8 +328,8 @@ class Dousing(Enchantment):  # grants resistance to fire when equipped
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, treated against flame.".format(
-            self.item.name
+        self.item.announce = (
+            "There's a {} here, treated against flame.".format(self.item.name)
         )
 
     def requirements(self):
@@ -319,7 +341,9 @@ class Flaming(Enchantment):
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Flaming", rarity=0, group="Prefix", value=1.3)
+        super().__init__(
+            item, name="Flaming", rarity=0, group="Prefix", value=1.3
+        )
 
     def modify(self):
         # modest elemental damage boost
@@ -345,7 +369,9 @@ class Icy(Enchantment):
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Icy", rarity=0, group="Prefix", value=1.25)
+        super().__init__(
+            item, name="Icy", rarity=0, group="Prefix", value=1.25
+        )
 
     def modify(self):
         mod = random.uniform(1.12, 1.28)
@@ -358,7 +384,9 @@ class Icy(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, rimed in frost.".format(self.item.name)
+        self.item.announce = "There's a {} here, rimed in frost.".format(
+            self.item.name
+        )
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -368,7 +396,9 @@ class Shocking(Enchantment):
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Shocking", rarity=0, group="Prefix", value=1.35)
+        super().__init__(
+            item, name="Shocking", rarity=0, group="Prefix", value=1.35
+        )
 
     def modify(self):
         mod = random.uniform(1.10, 1.25)
@@ -381,8 +411,10 @@ class Shocking(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, humming with electricity.".format(
-            self.item.name
+        self.item.announce = (
+            "There's a {} here, humming with electricity.".format(
+                self.item.name
+            )
         )
 
     def requirements(self):
@@ -393,7 +425,9 @@ class Earthen(Enchantment):
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Earthen", rarity=0, group="Prefix", value=1.2)
+        super().__init__(
+            item, name="Earthen", rarity=0, group="Prefix", value=1.2
+        )
 
     def modify(self):
         mod = random.uniform(1.08, 1.22)
@@ -420,7 +454,9 @@ class Radiant(Enchantment):
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Radiant", rarity=0, group="Prefix", value=1.5)
+        super().__init__(
+            item, name="Radiant", rarity=0, group="Prefix", value=1.5
+        )
 
     def modify(self):
         mod = random.uniform(1.15, 1.30)
@@ -433,8 +469,10 @@ class Radiant(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, glowing with a pure light.".format(
-            self.item.name
+        self.item.announce = (
+            "There's a {} here, glowing with a pure light.".format(
+                self.item.name
+            )
         )
 
     def requirements(self):
@@ -445,7 +483,9 @@ class Umbral(Enchantment):
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Umbral", rarity=0, group="Prefix", value=1.5)
+        super().__init__(
+            item, name="Umbral", rarity=0, group="Prefix", value=1.5
+        )
 
     def modify(self):
         mod = random.uniform(1.15, 1.30)
@@ -470,7 +510,9 @@ class Spiritual(Enchantment):
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Spiritual", rarity=0, group="Prefix", value=1.4)
+        super().__init__(
+            item, name="Spiritual", rarity=0, group="Prefix", value=1.4
+        )
 
     def modify(self):
         mod = random.uniform(1.10, 1.25)
@@ -497,7 +539,9 @@ class Pure(Enchantment):
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Pure", rarity=0, group="Prefix", value=1.4)
+        super().__init__(
+            item, name="Pure", rarity=0, group="Prefix", value=1.4
+        )
 
     def modify(self):
         # 'Pure' enchanment makes attacks ignore some resistances by converting to pure damage
@@ -511,10 +555,8 @@ class Pure(Enchantment):
         value_mod = ((mod - 1) / 2) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, its edge humming with uncompromising force.".format(
-                self.item.name
-            )
+        self.item.announce = "There's a {} here, its edge humming with uncompromising force.".format(
+            self.item.name
         )
 
     def requirements(self):
@@ -528,7 +570,9 @@ class OfHealth(Enchantment):  # it's healthy! Increase maxhp by 10-30
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Health", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Health", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(10, 30)
@@ -549,7 +593,9 @@ class OfVigor(Enchantment):  # it's strong! Increase strength by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Vigor", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Vigor", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -593,7 +639,9 @@ class OfTempo(Enchantment):  # it's fast! Increase speed by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Tempo", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Tempo", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -614,7 +662,9 @@ class OfGrit(Enchantment):  # Increase endurance by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Grit", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Grit", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -635,7 +685,9 @@ class OfCharms(Enchantment):  # Increase charisma by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Charms", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Charms", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -656,7 +708,9 @@ class OfInsight(Enchantment):  # Increase intelligence by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Insight", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Insight", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -700,7 +754,9 @@ class OfRelief(Enchantment):  # Increase weight tolerance slightly
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="of Relief", rarity=0, group="Suffix", value=1)
+        super().__init__(
+            item, name="of Relief", rarity=0, group="Suffix", value=1
+        )
 
     def modify(self):
         mod = random.randint(3, 7)
@@ -717,11 +773,15 @@ class OfRelief(Enchantment):  # Increase weight tolerance slightly
         return True
 
 
-class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per combat
+class OfThePhoenix(
+    Enchantment
+):  # Grants a chance to revive on death once per combat
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="of the Phoenix", rarity=0, group="Suffix", value=2)
+        super().__init__(
+            item, name="of the Phoenix", rarity=0, group="Suffix", value=2
+        )
         self.equip_states = [PhoenixRevive(None)]
 
     def modify(self):
@@ -742,7 +802,9 @@ class Purifying(Enchantment):  # grants resistance to pure damage
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
+        super().__init__(
+            item, name="Purifying", rarity=0, group="Prefix", value=1.5
+        )
 
     def modify(self):
         # use the helper to safely add/increment pure resistance whether add_resistance
@@ -751,10 +813,8 @@ class Purifying(Enchantment):  # grants resistance to pure damage
         self.item.value *= 1.5
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, tempered to guard against absolute force.".format(
-                self.item.name
-            )
+        self.item.announce = "There's a {} here, tempered to guard against absolute force.".format(
+            self.item.name
         )
 
     def requirements(self):
@@ -766,7 +826,9 @@ class Needleproof(Enchantment):  # grants resistance to piercing attacks
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
+        super().__init__(
+            item, name="Needleproof", rarity=0, group="Prefix", value=1.2
+        )
 
     def modify(self):
         self._add_resistance("piercing", 0.3)
@@ -786,17 +848,17 @@ class Edgebound(Enchantment):  # reduces slashing damage
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
+        super().__init__(
+            item, name="Edgebound", rarity=0, group="Prefix", value=1.25
+        )
 
     def modify(self):
         self._add_resistance("slashing", 0.3)
         self.item.value *= 1.25
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, its plates deflect blade and saber alike.".format(
-                self.item.name
-            )
+        self.item.announce = "There's a {} here, its plates deflect blade and saber alike.".format(
+            self.item.name
         )
 
     def requirements(self):
@@ -808,7 +870,9 @@ class Bulwark(Enchantment):  # toughened against crushing impacts
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
+        super().__init__(
+            item, name="Bulwark", rarity=0, group="Prefix", value=1.35
+        )
 
     def modify(self):
         self._add_resistance("crushing", 0.35)

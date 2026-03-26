@@ -211,8 +211,16 @@ class NPCAIConfig:
                 bonus += 3
 
         # Bonus for flanking moves when conditions are right
-        if self.is_flanking_enabled() and hasattr(npc, "target") and npc.target:
-            if move_name.lower() in ["advance", "npc_attack", "tactical_positioning"]:
+        if (
+            self.is_flanking_enabled()
+            and hasattr(npc, "target")
+            and npc.target
+        ):
+            if move_name.lower() in [
+                "advance",
+                "npc_attack",
+                "tactical_positioning",
+            ]:
                 # Check if currently in flank range
                 if (
                     hasattr(npc, "combat_proximity")
@@ -259,7 +267,9 @@ class AIDecisionValidator:
         """
         self.ai_config = ai_config
 
-    def is_valid_flank_decision(self, npc, target, allies: list) -> Tuple[bool, str]:
+    def is_valid_flank_decision(
+        self, npc, target, allies: list
+    ) -> Tuple[bool, str]:
         """Validate if flanking decision is valid for this NPC.
 
         Args:
@@ -280,9 +290,15 @@ class AIDecisionValidator:
             return (False, "No target available")
 
         if len(allies) < 2:
-            return (False, f"Insufficient allies for flank ({len(allies)} < 2)")
+            return (
+                False,
+                f"Insufficient allies for flank ({len(allies)} < 2)",
+            )
 
-        if not hasattr(npc, "combat_proximity") or target not in npc.combat_proximity:
+        if (
+            not hasattr(npc, "combat_proximity")
+            or target not in npc.combat_proximity
+        ):
             return (False, "Target not in proximity range")
 
         distance = npc.combat_proximity[target]
@@ -323,7 +339,10 @@ class AIDecisionValidator:
                 f"Health above threshold ({health_ratio:.1%} > {threshold:.1%})",
             )
 
-        return (True, f"Health critical ({health_ratio:.1%} <= {threshold:.1%})")
+        return (
+            True,
+            f"Health critical ({health_ratio:.1%} <= {threshold:.1%})",
+        )
 
     def is_valid_flank_distance(self, distance: float) -> Tuple[bool, str]:
         """Validate if distance is within flanking range.
@@ -337,7 +356,10 @@ class AIDecisionValidator:
         min_range, max_range = self.ai_config.get_flanking_distance_range()
 
         if distance < min_range:
-            return (False, f"Distance too close ({distance:.1f} < {min_range})")
+            return (
+                False,
+                f"Distance too close ({distance:.1f} < {min_range})",
+            )
 
         if distance > max_range:
             return (False, f"Distance too far ({distance:.1f} > {max_range})")
@@ -357,7 +379,10 @@ class AIDecisionValidator:
             Tuple of (is_valid, reason_string)
         """
         if priority < 0.0 or priority > 1.0:
-            return (False, f"Priority out of range ({priority:.2f} not in 0.0-1.0)")
+            return (
+                False,
+                f"Priority out of range ({priority:.2f} not in 0.0-1.0)",
+            )
 
         if priority < 0.3:
             return (True, f"Low retreat priority ({priority:.2%})")
@@ -395,6 +420,8 @@ class AIDecisionValidator:
                 f"Flank distance range contains negative value: {min_range}-{max_range}"
             )
         if min_range > max_range:
-            issues.append(f"Flank distance min ({min_range}) > max ({max_range})")
+            issues.append(
+                f"Flank distance min ({min_range}) > max ({max_range})"
+            )
 
         return (len(issues) == 0, issues)

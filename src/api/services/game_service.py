@@ -1,15 +1,13 @@
-import os
-import json
-import glob
 import uuid
 import contextlib
 import io
 import re
-from typing import Dict, Any, Optional, List
+from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
-import src.universe as universe_module
-import src.player as player_module
 from src.interface import get_gold
+
+if TYPE_CHECKING:
+    from src import player as player_module
 from src.api.serializers.item_serializer import ItemSerializer
 from src.api.serializers.npc_serializer import NPCSerializer
 from src.api.serializers.object_serializer import ObjectSerializer
@@ -17,14 +15,9 @@ from src.api.serializers.event_serializer import EventSerializer
 from src.api.serializers.inventory import (
     InventorySerializer,
     EquipmentSerializer,
-    ItemDetailSerializer,
-    ItemComparisonSerializer,
 )
 from src.api.serializers.combat import (
     CombatStateSerializer,
-    CombatantSerializer,
-    MoveSerializer,
-    StateEffectSerializer,
 )
 from src.api.serializers.npc_ai import (
     NPCAIStateSerializer,
@@ -33,24 +26,17 @@ from src.api.serializers.npc_ai import (
     NPCBehaviorProfileSerializer,
 )
 from src.api.serializers.npc_availability import (
-    NPCLocationSerializer,
     NPCAvailabilitySerializer,
     LocationNPCSerializer,
     NPCTimelineSerializer,
-    NPCEventTriggerSerializer,
     NPCStatusSerializer,
 )
 from src.api.serializers.dialogue_context import (
     DialogueNodeSerializer,
     DialogueChoiceSerializer,
-    DialogueConditionSerializer,
-    DialogueEffectSerializer,
     ConversationHistorySerializer,
     DialogueContextSerializer,
     DialogueNode,
-    DialogueChoice,
-    DialogueCondition,
-    DialogueEffect,
     ConversationHistory,
     DialogueContext,
 )
@@ -122,9 +108,13 @@ class GameService:
                 [
                     patch(f"{mod}.cprint", mock_cprint, create=True),
                     patch(f"{mod}.print_slow", mock_print_slow, create=True),
-                    patch(f"{mod}.await_input", return_value=None, create=True),
                     patch(
-                        f"{mod}.animate_to_main_screen", return_value=None, create=True
+                        f"{mod}.await_input", return_value=None, create=True
+                    ),
+                    patch(
+                        f"{mod}.animate_to_main_screen",
+                        return_value=None,
+                        create=True,
                     ),
                     patch(f"{mod}.time.sleep", return_value=None, create=True),
                     patch(f"{mod}.input", mock_input, create=True),
@@ -160,7 +150,10 @@ class GameService:
                 for existing_id, existing in session_data.get(
                     "pending_events", {}
                 ).items():
-                    if existing.get("event_data", {}).get("name") == event_name:
+                    if (
+                        existing.get("event_data", {}).get("name")
+                        == event_name
+                    ):
                         event_id = existing_id
                         event.api_event_id = event_id
                         break
@@ -190,8 +183,12 @@ class GameService:
         session_data: Optional[Dict[str, Any]],
         tile: Any = None,
     ) -> Optional[Dict[str, Any]]:
-        if event_data.get("needs_input") and not getattr(event, "completed", False):
-            return self._store_pending_event(event, event_data, session_data, tile=tile)
+        if event_data.get("needs_input") and not getattr(
+            event, "completed", False
+        ):
+            return self._store_pending_event(
+                event, event_data, session_data, tile=tile
+            )
 
         return None
 
@@ -247,7 +244,9 @@ class GameService:
         return exits
 
     def get_current_room(
-        self, player: "player_module.Player", session_data: Dict[str, Any] = None
+        self,
+        player: "player_module.Player",
+        session_data: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """Get current room/tile data.
 
@@ -291,9 +290,13 @@ class GameService:
 
         current_map = getattr(player, "map", None)
         map_metadata = (
-            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
+            current_map.get("metadata", {})
+            if isinstance(current_map, dict)
+            else {}
         )
-        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+        map_name = (
+            current_map.get("name") if isinstance(current_map, dict) else None
+        )
 
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
@@ -313,7 +316,9 @@ class GameService:
             "bgm": map_metadata.get("bgm"),
         }
 
-    def _record_exploration(self, player: "player_module.Player", tile: Any) -> None:
+    def _record_exploration(
+        self, player: "player_module.Player", tile: Any
+    ) -> None:
         """Record a tile as explored in the player's history.
 
         Args:
@@ -329,7 +334,9 @@ class GameService:
         # (Though TileSerializer is imported at top level, let's keep it simple)
 
         # Calculate exits for this tile
-        exits_data = self._calculate_exits(player.universe, tile, tile.x, tile.y)
+        exits_data = self._calculate_exits(
+            player.universe, tile, tile.x, tile.y
+        )
 
         # Serialize items
         items_data = []
@@ -353,7 +360,9 @@ class GameService:
             "exits": exits_data,
         }
 
-    def get_explored_tiles(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_explored_tiles(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get the player's explored tiles history.
 
         Args:
@@ -392,7 +401,9 @@ class GameService:
 
         session_data["tile_modifications"][tile_key][modification_type] = data
 
-    def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
+    def apply_tile_modifications(
+        self, tile, session_data: Dict[str, Any]
+    ) -> None:
         """Apply stored modifications to a tile.
 
         Args:
@@ -474,7 +485,9 @@ class GameService:
 
         # Check for blocking objects/obstacles (if tile has validation)
         if hasattr(new_tile, "is_passable") and not new_tile.is_passable:
-            return {"error": f"Cannot move {direction_lower} - path is blocked"}
+            return {
+                "error": f"Cannot move {direction_lower} - path is blocked"
+            }
 
         # Update player position
         player.location_x = new_x
@@ -495,15 +508,23 @@ class GameService:
         self._record_exploration(player, new_tile)
 
         # Trigger tile entry events with session data for pending event storage
-        events_triggered = self.trigger_tile_events(player, new_tile, session_data)
+        events_triggered = self.trigger_tile_events(
+            player, new_tile, session_data
+        )
 
         # Store tile modifications after entry events have processed to capture state changes
         if session_data is not None:
             current_block_exit = (
-                new_tile.block_exit.copy() if hasattr(new_tile, "block_exit") else []
+                new_tile.block_exit.copy()
+                if hasattr(new_tile, "block_exit")
+                else []
             )
             self.store_tile_modification(
-                session_data, new_tile.x, new_tile.y, "block_exit", current_block_exit
+                session_data,
+                new_tile.x,
+                new_tile.y,
+                "block_exit",
+                current_block_exit,
             )
 
         # Check for combat initiation
@@ -516,7 +537,9 @@ class GameService:
 
         if combat_enemies:
             # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
+            self._initialize_combat(
+                player, combat_enemies, session_data=session_data
+            )
             combat_started = True
 
             # Get initial combat state from the adapter
@@ -611,14 +634,21 @@ class GameService:
                     )
 
                     # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
+                    with contextlib.redirect_stdout(
+                        f
+                    ), contextlib.redirect_stderr(
                         f
                     ), contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
                                 stack.enter_context(p)
-                            except (AttributeError, ImportError, TypeError, ValueError):
+                            except (
+                                AttributeError,
+                                ImportError,
+                                TypeError,
+                                ValueError,
+                            ):
                                 pass
 
                         # Ensure event has current player and room references
@@ -678,8 +708,6 @@ class GameService:
         """
         import contextlib
         import io
-        import re
-        from unittest.mock import patch
         from src.api.serializers.event_serializer import EventSerializer
 
         # Validate event exists
@@ -726,7 +754,12 @@ class GameService:
                 for p in patches:
                     try:
                         stack.enter_context(p)
-                    except (AttributeError, ImportError, TypeError, ValueError):
+                    except (
+                        AttributeError,
+                        ImportError,
+                        TypeError,
+                        ValueError,
+                    ):
                         pass
 
                 # Ensure event has current player and room references
@@ -748,7 +781,9 @@ class GameService:
                 else:
                     # Event still needs more input, update metadata
                     result["needs_input"] = True
-                    result["event"] = EventSerializer.serialize_with_input(event)
+                    result["event"] = EventSerializer.serialize_with_input(
+                        event
+                    )
                     # Preserve ID
                     result["event"]["event_id"] = event_id
                     # Update session data
@@ -756,9 +791,9 @@ class GameService:
                         "pending_events" in session_data
                         and event_id in session_data["pending_events"]
                     ):
-                        session_data["pending_events"][event_id]["event_data"] = result[
-                            "event"
-                        ]
+                        session_data["pending_events"][event_id][
+                            "event_data"
+                        ] = result["event"]
 
         except Exception as e:
             result["success"] = False
@@ -803,9 +838,13 @@ class GameService:
         # Trigger tile events after event processing to handle state changes (e.g., chest looted)
         # ONLY if the current event is completed, to allow subsequent events on the same tile to fire
         if not result.get("needs_input", False):
-            tile = player.universe.get_tile(player.location_x, player.location_y)
+            tile = player.universe.get_tile(
+                player.location_x, player.location_y
+            )
             if tile:
-                more_events = self.trigger_tile_events(player, tile, session_data)
+                more_events = self.trigger_tile_events(
+                    player, tile, session_data
+                )
                 if more_events:
                     if "events_triggered" not in result:
                         result["events_triggered"] = []
@@ -846,7 +885,9 @@ class GameService:
 
         if combat_enemies and not result.get("needs_input", False):
             # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
+            self._initialize_combat(
+                player, combat_enemies, session_data=session_data
+            )
             result["combat_started"] = True
 
             # Get initial combat state
@@ -858,11 +899,15 @@ class GameService:
                 )
             else:
                 # Fallback to direct serialization (CombatStateSerializer already imported at module level)
-                result["combat_state"] = CombatStateSerializer.serialize_combat_state(
-                    player,
-                    combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
+                result["combat_state"] = (
+                    CombatStateSerializer.serialize_combat_state(
+                        player,
+                        combat_enemies,
+                        current_turn_index=getattr(
+                            player, "combat_turn_index", 0
+                        ),
+                        round_number=getattr(player, "combat_round", 1),
+                    )
                 )
         elif combat_enemies:
             # Combat is present but we are paused for narrative
@@ -889,12 +934,18 @@ class GameService:
             return {"error": "Tile not found"}
 
         # Use serializers for consistent formatting
-        items_data = ItemSerializer.serialize_list(getattr(tile, "items_here", []))
-        npcs_data = NPCSerializer.serialize_list(getattr(tile, "npcs_here", []))
+        items_data = ItemSerializer.serialize_list(
+            getattr(tile, "items_here", [])
+        )
+        npcs_data = NPCSerializer.serialize_list(
+            getattr(tile, "npcs_here", [])
+        )
         objects_data = ObjectSerializer.serialize_list(
             getattr(tile, "objects_here", [])
         )
-        events_data = EventSerializer.serialize_list(getattr(tile, "events_here", []))
+        events_data = EventSerializer.serialize_list(
+            getattr(tile, "events_here", [])
+        )
 
         # Get exits/connections
         exits_data = {}
@@ -937,7 +988,8 @@ class GameService:
         faith = getattr(player, "faith", 10)
 
         search_ability = int(
-            ((finesse * 2) + (intelligence * 3) + faith) * random.uniform(0.5, 1.5)
+            ((finesse * 2) + (intelligence * 3) + faith)
+            * random.uniform(0.5, 1.5)
         )
 
         found_items = []
@@ -956,7 +1008,9 @@ class GameService:
                             "discovery_message",
                             f"a hidden {getattr(npc, 'name', 'NPC')}",
                         )
-                        messages.append(f"{player.name} uncovered {discovery_msg}")
+                        messages.append(
+                            f"{player.name} uncovered {discovery_msg}"
+                        )
                         something_found = True
                         found_items.append(
                             {
@@ -1116,7 +1170,10 @@ class GameService:
             is_valid = True
 
         if not is_valid:
-            return {"success": False, "message": f"Cannot {action} this target."}
+            return {
+                "success": False,
+                "message": f"Cannot {action} this target.",
+            }
 
         # Execute action and capture output
         f = io.StringIO()
@@ -1136,9 +1193,11 @@ class GameService:
                 return "x"
 
             # Patch at multiple levels since different modules import differently
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f), patch(
-                "builtins.input", mock_input
-            ), patch("functions.await_input", return_value=None), patch(
+            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
+                f
+            ), patch("builtins.input", mock_input), patch(
+                "functions.await_input", return_value=None
+            ), patch(
                 "functions.print_slow", mock_print_slow
             ), patch(
                 "time.sleep", return_value=None
@@ -1171,9 +1230,9 @@ class GameService:
                 except ImportError:
                     from src.events import LootEvent
 
-                is_container = type(target).__name__ == "Container" or isinstance(
-                    target, Container
-                )
+                is_container = type(
+                    target
+                ).__name__ == "Container" or isinstance(target, Container)
                 # More robust item check that handles subclasses and module mismatches
                 item_types = [
                     "Item",
@@ -1197,7 +1256,9 @@ class GameService:
                     loot_event = LootEvent(
                         f"Looting {target.name}", player, tile, target
                     )
-                    event_data = EventSerializer.serialize_with_input(loot_event)
+                    event_data = EventSerializer.serialize_with_input(
+                        loot_event
+                    )
 
                     if session_data is not None:
                         event_id = str(uuid.uuid4())
@@ -1224,8 +1285,12 @@ class GameService:
                         if quantity is not None
                         else getattr(target, "count", 1)
                     )
-                    transfer_item(target._parent_container, player, target, qty_to_take)
-                    if hasattr(target._parent_container, "refresh_description"):
+                    transfer_item(
+                        target._parent_container, player, target, qty_to_take
+                    )
+                    if hasattr(
+                        target._parent_container, "refresh_description"
+                    ):
                         target._parent_container.refresh_description()
 
                     if action == "take":
@@ -1238,7 +1303,9 @@ class GameService:
                     # Check signature to see if we need to pass player
                     sig = inspect.signature(method)
                     # Get parameter names excluding 'self'
-                    param_names = [p for p in sig.parameters.keys() if p != "self"]
+                    param_names = [
+                        p for p in sig.parameters.keys() if p != "self"
+                    ]
 
                     # If there are parameters beyond 'self', pass player
                     if len(param_names) > 0:
@@ -1254,7 +1321,10 @@ class GameService:
             import traceback
 
             traceback.print_exc()
-            return {"success": False, "message": f"Error executing action: {str(e)}"}
+            return {
+                "success": False,
+                "message": f"Error executing action: {str(e)}",
+            }
 
         output = f.getvalue()
 
@@ -1273,7 +1343,9 @@ class GameService:
             if action == "take_all":
                 clean_output = "Jean collects all of the available items."
             else:
-                clean_output = f"Jean successfully completes the '{action}' action."
+                clean_output = (
+                    f"Jean successfully completes the '{action}' action."
+                )
 
         # Trigger tile events after action execution to handle state changes (e.g., chest looted or wall opened)
         more_events = self.trigger_tile_events(player, tile, session_data)
@@ -1281,7 +1353,8 @@ class GameService:
             for new_event in more_events:
                 # Avoid duplicates if they somehow got in
                 if not any(
-                    e.get("name") == new_event.get("name") for e in events_triggered
+                    e.get("name") == new_event.get("name")
+                    for e in events_triggered
                 ):
                     events_triggered.append(new_event)
 
@@ -1312,7 +1385,9 @@ class GameService:
 
         if combat_enemies:
             # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
+            self._initialize_combat(
+                player, combat_enemies, session_data=session_data
+            )
             combat_started = True
 
             # Get initial combat state from the adapter
@@ -1353,7 +1428,9 @@ class GameService:
         """
         return InventorySerializer.serialize(player)
 
-    def take_item(self, player: "player_module.Player", item_id: str) -> Dict[str, Any]:
+    def take_item(
+        self, player: "player_module.Player", item_id: str
+    ) -> Dict[str, Any]:
         """Take an item from the ground.
 
         Args:
@@ -1366,7 +1443,9 @@ class GameService:
         # TODO: Implement item pickup logic
         return {"success": True, "item_id": item_id, "message": "Item taken"}
 
-    def drop_item(self, player: "player_module.Player", item_id: str) -> Dict[str, Any]:
+    def drop_item(
+        self, player: "player_module.Player", item_id: str
+    ) -> Dict[str, Any]:
         """Drop an item from inventory.
 
         Args:
@@ -1429,7 +1508,10 @@ class GameService:
             or item_index < 0
             or item_index >= len(inventory)
         ):
-            return {"success": False, "error": f"Invalid item index: {item_index}"}
+            return {
+                "success": False,
+                "error": f"Invalid item index: {item_index}",
+            }
 
         item = inventory[item_index]
 
@@ -1493,7 +1575,9 @@ class GameService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def unequip_item(self, player: "player_module.Player", slot: str) -> Dict[str, Any]:
+    def unequip_item(
+        self, player: "player_module.Player", slot: str
+    ) -> Dict[str, Any]:
         """Unequip item from slot.
 
         Args:
@@ -1523,7 +1607,10 @@ class GameService:
         item = getattr(player, attr_name, None)
 
         if not item:
-            return {"success": False, "error": f"No item equipped in slot: {slot}"}
+            return {
+                "success": False,
+                "error": f"No item equipped in slot: {slot}",
+            }
 
         try:
             # Mark as unequipped
@@ -1562,7 +1649,9 @@ class GameService:
     # ========================
 
     def trigger_combat_events(
-        self, player: "player_module.Player", session_data: Dict[str, Any] = None
+        self,
+        player: "player_module.Player",
+        session_data: Dict[str, Any] = None,
     ) -> List[Dict[str, Any]]:
         """Trigger combat-specific events.
 
@@ -1575,10 +1664,14 @@ class GameService:
         """
         tile = getattr(player, "current_room", None)
         if tile is None and hasattr(player, "universe"):
-            tile = player.universe.get_tile(player.location_x, player.location_y)
+            tile = player.universe.get_tile(
+                player.location_x, player.location_y
+            )
 
         combat_events = list(getattr(player, "combat_events", []) or [])
-        tile_events = list(getattr(tile, "events_here", []) or []) if tile else []
+        tile_events = (
+            list(getattr(tile, "events_here", []) or []) if tile else []
+        )
 
         if not combat_events and not tile_events:
             return []
@@ -1593,7 +1686,9 @@ class GameService:
             event_data = EventSerializer.serialize_with_input(event)
 
             # If event is already in interactive state, ensure it's in session and skip processing
-            if event_data.get("needs_input") and not getattr(event, "completed", False):
+            if event_data.get("needs_input") and not getattr(
+                event, "completed", False
+            ):
                 # Keep references aligned to the current room for combat-driven events.
                 event.player = player
                 if hasattr(player, "current_room"):
@@ -1648,7 +1743,9 @@ class GameService:
                     )
 
                     # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
+                    with contextlib.redirect_stdout(
+                        f
+                    ), contextlib.redirect_stderr(
                         f
                     ), contextlib.ExitStack() as stack:
 
@@ -1707,7 +1804,10 @@ class GameService:
     # ========================
 
     def start_combat(
-        self, player: "player_module.Player", enemy_id: str, session_id: str = None
+        self,
+        player: "player_module.Player",
+        enemy_id: str,
+        session_id: str = None,
     ) -> Dict[str, Any]:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
         # Find enemy in current room
@@ -1715,7 +1815,9 @@ class GameService:
 
         # 1. Try universe tile
         if hasattr(player, "universe") and player.universe:
-            tile = player.universe.get_tile(player.location_x, player.location_y)
+            tile = player.universe.get_tile(
+                player.location_x, player.location_y
+            )
             if hasattr(tile, "npcs_here"):
                 for npc in tile.npcs_here:
                     if str(id(npc)) == enemy_id:
@@ -1723,7 +1825,11 @@ class GameService:
                         break
 
         # 2. Try player.current_room (fallback for tests/specific events)
-        if not enemy and hasattr(player, "current_room") and player.current_room:
+        if (
+            not enemy
+            and hasattr(player, "current_room")
+            and player.current_room
+        ):
             if hasattr(player.current_room, "npcs_here"):
                 for npc in player.current_room.npcs_here:
                     if str(id(npc)) == enemy_id:
@@ -1733,7 +1839,9 @@ class GameService:
         if not enemy:
             return {"error": "Enemy not found"}
 
-        result = self._initialize_combat(player, [enemy], session_id=session_id)
+        result = self._initialize_combat(
+            player, [enemy], session_id=session_id
+        )
 
         # _initialize_combat returns None in the idempotency branch (already in combat
         # with the same enemy set).  Treat this as a graceful no-op.
@@ -1894,7 +2002,10 @@ class GameService:
             ):
                 # Only auto-send target if it's likely a valid ID
                 if target_id and target_id != "player":
-                    target_command = {"type": "select_target", "target_id": target_id}
+                    target_command = {
+                        "type": "select_target",
+                        "target_id": target_id,
+                    }
                     result = adapter.process_command(target_command)
 
             return result
@@ -1919,10 +2030,14 @@ class GameService:
             return adapter.process_command(command)
 
         elif move_type == "attack":
-            return self.execute_move(player, "move", "Attack", target_id, direction)
+            return self.execute_move(
+                player, "move", "Attack", target_id, direction
+            )
 
         elif move_type == "defend":
-            return self.execute_move(player, "move", "Wait", target_id, direction)
+            return self.execute_move(
+                player, "move", "Wait", target_id, direction
+            )
 
         elif move_type == "cancel":
             command = {"type": "cancel_selection"}
@@ -1949,7 +2064,10 @@ class GameService:
                 # Check if the target is still alive
                 target_enemy = None
                 for enemy in player.combat_list:
-                    if f"enemy_{id(enemy)}" == actual_target_id and enemy.is_alive():
+                    if (
+                        f"enemy_{id(enemy)}" == actual_target_id
+                        and enemy.is_alive()
+                    ):
                         target_enemy = enemy
                         break
 
@@ -1975,7 +2093,9 @@ class GameService:
         """Get current combat status."""
         if not hasattr(player, "_combat_adapter"):
             # If player is in combat, try to re-initialize the adapter
-            if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
+            if getattr(player, "in_combat", False) and hasattr(
+                player, "combat_list"
+            ):
                 from src.api.combat_adapter import ApiCombatAdapter
 
                 # Ensure the new adapter has the event callback
@@ -1983,7 +2103,9 @@ class GameService:
                     return self.trigger_combat_events(p)
 
                 player._combat_adapter = ApiCombatAdapter(
-                    player, session_id=session_id, on_event_callback=event_callback
+                    player,
+                    session_id=session_id,
+                    on_event_callback=event_callback,
                 )
                 # Synchronize initial state for the new adapter
                 player._combat_adapter.available_options = (
@@ -2005,21 +2127,27 @@ class GameService:
             # This handles cases where combat was paused for narrative events
             if player.in_combat and not adapter.awaiting_input:
                 blocking_events = (
-                    session_data.get("pending_events", {}) if session_data else {}
+                    session_data.get("pending_events", {})
+                    if session_data
+                    else {}
                 )
                 if not blocking_events:
                     # No pending events, we should be resuming or finishing
                     if len(player.combat_list) == 0:
                         # All enemies defeated after event finished - trigger victory
                         adapter._handle_victory()
-                    elif hasattr(player, "current_move") and player.current_move:
+                    elif (
+                        hasattr(player, "current_move") and player.current_move
+                    ):
                         # Resume the current move if it was interrupted
                         return adapter._execute_move(player.current_move)
                     else:
                         # Otherwise, reset to move selection
                         adapter.awaiting_input = True
                         adapter.input_type = "move_selection"
-                        adapter.available_options = adapter._get_available_moves()
+                        adapter.available_options = (
+                            adapter._get_available_moves()
+                        )
                         if session_id:
                             adapter.session_id = session_id
                         # Only start a suggestion fetch if one isn't already running
@@ -2032,20 +2160,25 @@ class GameService:
             # calling refresh_suggestions() resets suggestions_loading and clears suggested_moves,
             # creating an infinite loop where suggestions never land.
             # Suggestions are already kicked off by _execute_move() after each player action.
-            if adapter.input_type == "move_selection" and adapter.awaiting_input:
+            if (
+                adapter.input_type == "move_selection"
+                and adapter.awaiting_input
+            ):
                 adapter.available_options = adapter._get_available_moves()
                 if session_id:
                     adapter.session_id = session_id
                 # Only start a fetch if suggestions haven't been generated yet this turn
                 # (i.e., still empty AND not currently loading).
-                if not getattr(player, "suggestions_loading", False) and not getattr(
-                    player, "suggested_moves", []
-                ):
+                if not getattr(
+                    player, "suggestions_loading", False
+                ) and not getattr(player, "suggested_moves", []):
                     adapter.refresh_suggestions()
 
         return player._combat_adapter.get_combat_state()
 
-    def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_available_moves(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get available combat moves."""
         if not hasattr(player, "_combat_adapter"):
             return {"moves": []}
@@ -2055,7 +2188,9 @@ class GameService:
         if hasattr(player._combat_adapter, "available_options"):
             # If options are moves (not targets/directions)
             if player._combat_adapter.input_type == "move_selection":
-                for i, move in enumerate(player._combat_adapter.available_options):
+                for i, move in enumerate(
+                    player._combat_adapter.available_options
+                ):
                     # Handle both object and dict (adapter returns dicts now)
                     name = (
                         move.get("name")
@@ -2096,7 +2231,9 @@ class GameService:
 
         return {"moves": moves}
 
-    def get_player_status(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_player_status(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get player status (name, level, health, etc.).
 
         Args:
@@ -2141,7 +2278,9 @@ class GameService:
             ],
         }
 
-    def get_player_stats(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_player_stats(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get player stats.
 
         Args:
@@ -2188,8 +2327,14 @@ class GameService:
         if weapon:
             power = (
                 getattr(weapon, "damage", 0)
-                + (getattr(player, "strength", 10) * getattr(weapon, "str_mod", 0))
-                + (getattr(player, "finesse", 10) * getattr(weapon, "fin_mod", 0))
+                + (
+                    getattr(player, "strength", 10)
+                    * getattr(weapon, "str_mod", 0)
+                )
+                + (
+                    getattr(player, "finesse", 10)
+                    * getattr(weapon, "fin_mod", 0)
+                )
             )
 
             # Apply heat if available (default to 1.0)
@@ -2216,7 +2361,9 @@ class GameService:
 
         return stats
 
-    def get_player_skills(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_player_skills(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get player skills and experience.
 
         Args:
@@ -2240,12 +2387,16 @@ class GameService:
             )
 
         skill_tree = {}
-        if hasattr(player, "skilltree") and hasattr(player.skilltree, "subtypes"):
+        if hasattr(player, "skilltree") and hasattr(
+            player.skilltree, "subtypes"
+        ):
             for category, skills in player.skilltree.subtypes.items():
                 category_skills = []
                 for skill, req_exp in skills.items():
                     # Check if already known
-                    is_known = any(km["name"] == skill.name for km in known_moves)
+                    is_known = any(
+                        km["name"] == skill.name for km in known_moves
+                    )
 
                     category_skills.append(
                         {
@@ -2253,7 +2404,8 @@ class GameService:
                             "description": getattr(skill, "description", ""),
                             "required_exp": req_exp,
                             "is_known": is_known,
-                            "can_learn": player.skill_exp.get(category, 0) >= req_exp
+                            "can_learn": player.skill_exp.get(category, 0)
+                            >= req_exp
                             and not is_known,
                         }
                     )
@@ -2326,7 +2478,9 @@ class GameService:
             "skills": self.get_player_skills(player),
         }
 
-    def get_available_commands(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_available_commands(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get available commands/actions for the player in current room.
 
         Args:
@@ -2340,7 +2494,9 @@ class GameService:
         commands = []
 
         # Get the current tile and its available actions
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(
+            player.location_x, player.location_y
+        )
         if current_tile and hasattr(current_tile, "available_actions"):
             try:
                 available_actions = current_tile.available_actions(
@@ -2359,10 +2515,14 @@ class GameService:
 
         # Add default system commands if not already present
         if not any(c.get("name") == "Save" for c in commands):
-            commands.append({"name": "Save", "hotkey": ["ctrl", "s"], "debug": False})
+            commands.append(
+                {"name": "Save", "hotkey": ["ctrl", "s"], "debug": False}
+            )
 
         if not any(c.get("name") == "Menu" for c in commands):
-            commands.append({"name": "Menu", "hotkey": ["esc"], "debug": False})
+            commands.append(
+                {"name": "Menu", "hotkey": ["esc"], "debug": False}
+            )
 
         return {
             "commands": commands,
@@ -2378,7 +2538,9 @@ class GameService:
         import os
 
         base_path = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
         )
         saves_dir = os.path.join(base_path, "saves")
         if not os.path.exists(saves_dir):
@@ -2410,9 +2572,7 @@ class GameService:
 
         # 1. Enforcement of manual save limit
         if not is_autosave:
-            count_sql = (
-                "SELECT COUNT(*) FROM saves WHERE user_id = ? AND is_autosave = FALSE"
-            )
+            count_sql = "SELECT COUNT(*) FROM saves WHERE user_id = ? AND is_autosave = FALSE"
             res = await db.execute(count_sql, [user_id])
             count = res.rows[0][0]
             if count >= 20:
@@ -2435,15 +2595,17 @@ class GameService:
         # 2. Hybrid Autosave Logic: UPSERT for the single autosave
         if is_autosave:
             # Check if an autosave already exists for this user
-            check_sql = "SELECT id FROM saves WHERE user_id = ? AND is_autosave = TRUE"
+            check_sql = (
+                "SELECT id FROM saves WHERE user_id = ? AND is_autosave = TRUE"
+            )
             check_res = await db.execute(check_sql, [user_id])
 
             if check_res.rows:
                 # Update existing autosave
                 save_id = check_res.rows[0][0]
                 sql = """
-                UPDATE saves 
-                SET data = ?, timestamp = CURRENT_TIMESTAMP, 
+                UPDATE saves
+                SET data = ?, timestamp = CURRENT_TIMESTAMP,
                     level = ?, map_name = ?, room_title = ?, playtime = ?
                 WHERE id = ?
                 """
@@ -2451,7 +2613,11 @@ class GameService:
                     save_data,
                     getattr(player, "level", 1),
                     getattr(getattr(player, "map", None), "name", "Unknown"),
-                    getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                    getattr(
+                        getattr(player, "current_room", None),
+                        "name",
+                        "Unknown",
+                    ),
                     getattr(player, "time_elapsed", 0),
                     save_id,
                 ]
@@ -2469,7 +2635,11 @@ class GameService:
                     True,
                     getattr(player, "level", 1),
                     getattr(getattr(player, "map", None), "name", "Unknown"),
-                    getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                    getattr(
+                        getattr(player, "current_room", None),
+                        "name",
+                        "Unknown",
+                    ),
                     getattr(player, "time_elapsed", 0),
                 ]
         else:
@@ -2486,7 +2656,9 @@ class GameService:
                 False,
                 getattr(player, "level", 1),
                 getattr(getattr(player, "map", None), "name", "Unknown"),
-                getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                getattr(
+                    getattr(player, "current_room", None), "name", "Unknown"
+                ),
                 getattr(player, "time_elapsed", 0),
             ]
 
@@ -2526,7 +2698,10 @@ class GameService:
                     player.universe = universe_module.Universe(player)
 
                 # Force rebuild of transient state if needed
-                if not hasattr(player.universe, "maps") or not player.universe.maps:
+                if (
+                    not hasattr(player.universe, "maps")
+                    or not player.universe.maps
+                ):
                     player.universe.build(player)
 
                 if hasattr(player, "map"):
@@ -2550,9 +2725,9 @@ class GameService:
         from src.api.db import db
 
         sql = """
-        SELECT id, name, timestamp, is_autosave, level, map_name, room_title, playtime 
-        FROM saves 
-        WHERE user_id = ? 
+        SELECT id, name, timestamp, is_autosave, level, map_name, room_title, playtime
+        FROM saves
+        WHERE user_id = ?
         ORDER BY timestamp DESC
         """
         result = await db.execute(sql, [user_id])
@@ -2626,7 +2801,9 @@ class GameService:
         player.combat_list = enemies
         # Preserve existing party members (e.g. Gorran already recruited) — only player is reset
         existing_allies = [
-            a for a in getattr(player, "combat_list_allies", []) if a is not player
+            a
+            for a in getattr(player, "combat_list_allies", [])
+            if a is not player
         ]
         player.combat_list_allies = [player] + existing_allies
         player.in_combat = True
@@ -2652,7 +2829,9 @@ class GameService:
         # Initialize combat through the adapter
         # This will set up all combat state, process initial NPC turns if needed,
         # and return the initial combat state
-        return player._combat_adapter.initialize_combat(enemies, reinit=is_reinit)
+        return player._combat_adapter.initialize_combat(
+            enemies, reinit=is_reinit
+        )
 
     # [Legacy methods removed]
 
@@ -2785,7 +2964,9 @@ class GameService:
         if not getattr(player, "in_combat", False):
             return {"error": "Not in combat"}
 
-        if not hasattr(player, "inventory") or not getattr(player, "inventory"):
+        if not hasattr(player, "inventory") or not getattr(
+            player, "inventory"
+        ):
             return {"error": "No items in inventory"}
 
         inventory = getattr(player, "inventory", [])
@@ -2851,13 +3032,16 @@ class GameService:
             List of combatant identifiers in turn order
         """
         combatants = [("player", getattr(player, "speed", 10))] + [
-            (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
+            (f"enemy_{i}", getattr(e, "speed", 5))
+            for i, e in enumerate(enemies)
         ]
         # Sort by speed (descending) - higher speed goes first
         combatants.sort(key=lambda x: x[1], reverse=True)
         return [c[0] for c in combatants]
 
-    def _advance_turn(self, player: "player_module.Player", enemies: List[Any]) -> None:
+    def _advance_turn(
+        self, player: "player_module.Player", enemies: List[Any]
+    ) -> None:
         """Advance to the next combatant's turn.
 
         Args:
@@ -2865,7 +3049,9 @@ class GameService:
             enemies: List of enemy NPCs
         """
         turn_order = self._get_turn_order(player, enemies)
-        player.combat_turn_index = (player.combat_turn_index + 1) % len(turn_order)
+        player.combat_turn_index = (player.combat_turn_index + 1) % len(
+            turn_order
+        )
 
         # If we wrapped around, increment round
         if player.combat_turn_index == 0:
@@ -2879,7 +3065,10 @@ class GameService:
             )
 
     def _process_npc_turns(
-        self, player: "player_module.Player", enemies: List[Any], turn_order: List[str]
+        self,
+        player: "player_module.Player",
+        enemies: List[Any],
+        turn_order: List[str],
     ) -> None:
         """Process NPC turns until it's the player's turn again.
 
@@ -2974,7 +3163,9 @@ class GameService:
             Dictionary with NPC state
         """
         # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(
+            player.location_x, player.location_y
+        )
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -3000,14 +3191,18 @@ class GameService:
             Dictionary with dialogue state
         """
         # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(
+            player.location_x, player.location_y
+        )
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
         for npc in getattr(current_tile, "npcs_here", []):
             if getattr(npc, "name", "") == npc_id:
-                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                    npc, current_node="start"
+                dialogue_state = (
+                    DialogueStateSerializer.serialize_dialogue_state(
+                        npc, current_node="start"
+                    )
                 )
                 return {"success": True, "dialogue": dialogue_state}
 
@@ -3027,7 +3222,9 @@ class GameService:
             Dictionary with next dialogue state
         """
         # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(
+            player.location_x, player.location_y
+        )
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
@@ -3045,8 +3242,10 @@ class GameService:
                 )
 
                 # Return next dialogue node (stub implementation)
-                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                    npc, current_node="option_response"
+                dialogue_state = (
+                    DialogueStateSerializer.serialize_dialogue_state(
+                        npc, current_node="option_response"
+                    )
                 )
                 return {"success": True, "dialogue": dialogue_state}
 
@@ -3065,18 +3264,26 @@ class GameService:
             Dictionary with NPC behavior profile
         """
         # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        current_tile = player.universe.get_tile(
+            player.location_x, player.location_y
+        )
         if not current_tile:
             return {"success": False, "error": "Not on a valid tile"}
 
         for npc in getattr(current_tile, "npcs_here", []):
             if getattr(npc, "name", "") == npc_id:
-                profile = NPCBehaviorProfileSerializer.serialize_behavior_profile(npc)
+                profile = (
+                    NPCBehaviorProfileSerializer.serialize_behavior_profile(
+                        npc
+                    )
+                )
                 return {"success": True, "profile": profile}
 
         return {"success": False, "error": f"NPC '{npc_id}' not found"}
 
-    def get_active_quests(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_active_quests(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get list of active quests.
 
         Args:
@@ -3157,12 +3364,16 @@ class GameService:
                     if obj.get("completed", False)
                 )
                 total = len(quest.get("objectives", []))
-                quest["progress"] = int((completed / total * 100)) if total > 0 else 0
+                quest["progress"] = (
+                    int((completed / total * 100)) if total > 0 else 0
+                )
 
                 return {
                     "success": True,
                     "message": "Objective completed",
-                    "quest": QuestStateSerializer.serialize_quest_progress(quest),
+                    "quest": QuestStateSerializer.serialize_quest_progress(
+                        quest
+                    ),
                 }
 
         return {
@@ -3189,7 +3400,9 @@ class GameService:
                 return {
                     "success": True,
                     "status": "active",
-                    "quest": QuestStateSerializer.serialize_quest_progress(quest),
+                    "quest": QuestStateSerializer.serialize_quest_progress(
+                        quest
+                    ),
                 }
 
         # Check completed quests
@@ -3283,11 +3496,14 @@ class GameService:
                 break
 
         if not quest:
-            return {"success": False, "error": f"Quest '{quest_id}' not active"}
+            return {
+                "success": False,
+                "error": f"Quest '{quest_id}' not active",
+            }
 
         # Apply conditions to calculate final rewards
-        base_rewards, conditions_met = RewardConditionValidator.check_reward_conditions(
-            player, quest
+        base_rewards, conditions_met = (
+            RewardConditionValidator.check_reward_conditions(player, quest)
         )
 
         # Add condition modifiers
@@ -3313,7 +3529,9 @@ class GameService:
         # Calculate final rewards
         final_rewards = {
             "gold": int(base_rewards.get("gold", 0) * reward_modifier),
-            "experience": int(base_rewards.get("experience", 0) * reward_modifier),
+            "experience": int(
+                base_rewards.get("experience", 0) * reward_modifier
+            ),
             "items": base_rewards.get("items", []),
             "reputation": base_rewards.get("reputation", {}),
         }
@@ -3379,7 +3597,9 @@ class GameService:
 
         return {"success": True, "quest_completion": distribution_result}
 
-    def award_gold(self, player: "player_module.Player", amount: int) -> Dict[str, Any]:
+    def award_gold(
+        self, player: "player_module.Player", amount: int
+    ) -> Dict[str, Any]:
         """Award gold to player.
 
         Args:
@@ -3389,7 +3609,9 @@ class GameService:
         Returns:
             Dictionary with gold update info
         """
-        from src.api.serializers.quest_rewards import RewardDistributionSerializer
+        from src.api.serializers.quest_rewards import (
+            RewardDistributionSerializer,
+        )
         import src.items as items
 
         # Create a gold item and add it to inventory
@@ -3402,7 +3624,9 @@ class GameService:
         if hasattr(player, "refresh_weight"):
             player.refresh_weight()
 
-        result = RewardDistributionSerializer.serialize_gold_gain(player, amount)
+        result = RewardDistributionSerializer.serialize_gold_gain(
+            player, amount
+        )
 
         return {"success": True, "gold_update": result}
 
@@ -3468,7 +3692,9 @@ class GameService:
         Returns:
             Dictionary with item award info
         """
-        from src.api.serializers.quest_rewards import RewardDistributionSerializer
+        from src.api.serializers.quest_rewards import (
+            RewardDistributionSerializer,
+        )
         import src.items as items
 
         # Simplified item award (tries to find class in src.items)
@@ -3536,7 +3762,9 @@ class GameService:
         Returns:
             Dictionary with reputation update info
         """
-        from src.api.serializers.quest_rewards import RewardDistributionSerializer
+        from src.api.serializers.quest_rewards import (
+            RewardDistributionSerializer,
+        )
 
         if not hasattr(player, "reputation"):
             player.reputation = {}
@@ -3550,7 +3778,9 @@ class GameService:
 
         return {"success": True, "reputation_update": result}
 
-    def get_player_progression(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_player_progression(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get player progression stats.
 
         Args:
@@ -3559,7 +3789,9 @@ class GameService:
         Returns:
             Dictionary with progression data
         """
-        from src.api.serializers.quest_rewards import LevelingProgressSerializer
+        from src.api.serializers.quest_rewards import (
+            LevelingProgressSerializer,
+        )
 
         quests_completed = len(getattr(player, "completed_quests", []))
 
@@ -3573,7 +3805,9 @@ class GameService:
     # Reputation Methods (Stage 2)
     # ========================
 
-    def get_player_reputation(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_player_reputation(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get player's complete reputation state.
 
         Args:
@@ -3660,7 +3894,11 @@ class GameService:
         return {"success": True, "reputation_change": result}
 
     def set_relationship_flag(
-        self, player: "player_module.Player", npc_id: str, flag_name: str, value: bool
+        self,
+        player: "player_module.Player",
+        npc_id: str,
+        flag_name: str,
+        value: bool,
     ) -> Dict[str, Any]:
         """Set a relationship flag for an NPC.
 
@@ -3675,7 +3913,9 @@ class GameService:
         """
         from src.api.serializers.reputation import RelationshipFlagSerializer
 
-        result = RelationshipFlagSerializer.set_flag(player, npc_id, flag_name, value)
+        result = RelationshipFlagSerializer.set_flag(
+            player, npc_id, flag_name, value
+        )
 
         return {"success": result.get("success", True), "flag_update": result}
 
@@ -3694,8 +3934,10 @@ class GameService:
         """
         from src.api.serializers.reputation import ReputationThresholdValidator
 
-        available, reason = ReputationThresholdValidator.check_dialogue_available(
-            player, npc_id, dialogue_node
+        available, reason = (
+            ReputationThresholdValidator.check_dialogue_available(
+                player, npc_id, dialogue_node
+            )
         )
 
         return {
@@ -3749,7 +3991,9 @@ class GameService:
         """
         from src.api.serializers.quest_chains import ChainProgressionSerializer
 
-        result = ChainProgressionSerializer.get_chain_progress(player, chain_id)
+        result = ChainProgressionSerializer.get_chain_progress(
+            player, chain_id
+        )
 
         return {"success": True, "progress": result}
 
@@ -3797,7 +4041,9 @@ class GameService:
 
         return {"success": result.get("success", True), "completion": result}
 
-    def get_all_chains_progress(self, player: "player_module.Player") -> Dict[str, Any]:
+    def get_all_chains_progress(
+        self, player: "player_module.Player"
+    ) -> Dict[str, Any]:
         """Get player's progress across all chains.
 
         Args:
@@ -3808,7 +4054,9 @@ class GameService:
         """
         from src.api.serializers.quest_chains import ChainProgressionSerializer
 
-        result = ChainProgressionSerializer.serialize_all_chains_progress(player)
+        result = ChainProgressionSerializer.serialize_all_chains_progress(
+            player
+        )
 
         return {"success": True, "all_chains": result}
 
@@ -3833,8 +4081,10 @@ class GameService:
         if not hasattr(player, "completed_chains"):
             player.completed_chains = {}
 
-        is_valid, error = ChainDependencySerializer.validate_chain_dependencies(
-            chain_id, prerequisites, player.completed_chains
+        is_valid, error = (
+            ChainDependencySerializer.validate_chain_dependencies(
+                chain_id, prerequisites, player.completed_chains
+            )
         )
 
         return {
@@ -3884,7 +4134,9 @@ class GameService:
             "data": status,
         }
 
-    def get_npcs_at_location(self, player: Any, location_id: str) -> Dict[str, Any]:
+    def get_npcs_at_location(
+        self, player: Any, location_id: str
+    ) -> Dict[str, Any]:
         """
         Get all NPCs currently at a specific location.
 
@@ -3939,10 +4191,12 @@ class GameService:
             "triggers": [],
         }
 
-        is_available, availability_reason = NPCAvailabilitySerializer.is_available(
-            npc_data,
-            self._game_tick(player),
-            self._story(player),
+        is_available, availability_reason = (
+            NPCAvailabilitySerializer.is_available(
+                npc_data,
+                self._game_tick(player),
+                self._story(player),
+            )
         )
 
         availability_info = NPCAvailabilitySerializer.serialize(
@@ -4062,7 +4316,9 @@ class GameService:
         )
 
         # Record initial node visit
-        ConversationHistorySerializer.add_node_visit(history, initial_node.node_id)
+        ConversationHistorySerializer.add_node_visit(
+            history, initial_node.node_id
+        )
 
         # Get available choices for initial node
         available_choices = DialogueNodeSerializer.get_available_choices(
@@ -4070,7 +4326,9 @@ class GameService:
             player_story=self._story(player),
             player_reputation=getattr(player, "reputation", {}),
             player_level=getattr(player, "level", 1),
-            player_completed_dialogues=getattr(player, "completed_dialogues", []),
+            player_completed_dialogues=getattr(
+                player, "completed_dialogues", []
+            ),
         )
 
         # Create dialogue context
@@ -4087,7 +4345,10 @@ class GameService:
             player.dialogue_contexts = {}
         player.dialogue_contexts[conversation_id] = context
 
-        return {"success": True, "data": DialogueContextSerializer.serialize(context)}
+        return {
+            "success": True,
+            "data": DialogueContextSerializer.serialize(context),
+        }
 
     def get_dialogue_node(
         self, player: "player_module.Player", node_id: str
@@ -4117,7 +4378,9 @@ class GameService:
             player_story=self._story(player),
             player_reputation=getattr(player, "reputation", {}),
             player_level=getattr(player, "level", 1),
-            player_completed_dialogues=getattr(player, "completed_dialogues", []),
+            player_completed_dialogues=getattr(
+                player, "completed_dialogues", []
+            ),
         )
 
         return {
@@ -4125,13 +4388,17 @@ class GameService:
             "data": {
                 "node": DialogueNodeSerializer.serialize(node),
                 "available_choices": [
-                    DialogueChoiceSerializer.serialize(c) for c in available_choices
+                    DialogueChoiceSerializer.serialize(c)
+                    for c in available_choices
                 ],
             },
         }
 
     def select_dialogue_choice(
-        self, player: "player_module.Player", conversation_id: str, choice_id: str
+        self,
+        player: "player_module.Player",
+        conversation_id: str,
+        choice_id: str,
     ) -> Dict[str, Any]:
         """Process a dialogue choice selection.
 
@@ -4160,7 +4427,9 @@ class GameService:
             player_story=self._story(player),
             player_reputation=getattr(player, "reputation", {}),
             player_level=getattr(player, "level", 1),
-            player_completed_dialogues=getattr(player, "completed_dialogues", []),
+            player_completed_dialogues=getattr(
+                player, "completed_dialogues", []
+            ),
         )
 
         # Create updated context
@@ -4180,7 +4449,10 @@ class GameService:
             is_complete=False,
         )
 
-        return {"success": True, "data": DialogueContextSerializer.serialize(context)}
+        return {
+            "success": True,
+            "data": DialogueContextSerializer.serialize(context),
+        }
 
     def get_conversation_history(
         self, player: "player_module.Player", npc_id: str
@@ -4206,7 +4478,8 @@ class GameService:
                 "npc_id": npc_id,
                 "total_conversations": len(conversations),
                 "conversations": [
-                    ConversationHistorySerializer.serialize(c) for c in conversations
+                    ConversationHistorySerializer.serialize(c)
+                    for c in conversations
                 ],
             },
         }

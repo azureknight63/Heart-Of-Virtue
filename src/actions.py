@@ -128,19 +128,25 @@ class View(Action):
 class Equip(Action):
     def __init__(self):
         super().__init__(
-            method=Player.equip_item, name="Change Equipment", hotkey=("q", "equip")
+            method=Player.equip_item,
+            name="Change Equipment",
+            hotkey=("q", "equip"),
         )
 
 
 class Use(Action):
     def __init__(self):
-        super().__init__(method=Player.use_item, name="Use Item", hotkey=("u", "use"))
+        super().__init__(
+            method=Player.use_item, name="Use Item", hotkey=("u", "use")
+        )
 
 
 class Search(Action):
     def __init__(self):
         super().__init__(
-            method=Player.search, name="Search", hotkey=("search", "seek", "snoop")
+            method=Player.search,
+            name="Search",
+            hotkey=("search", "seek", "snoop"),
         )
 
 
@@ -153,25 +159,33 @@ class Menu(Action):
 
 class Save(Action):
     def __init__(self):
-        super().__init__(method=Player.save, name="Save", hotkey=("sav", "save"))
+        super().__init__(
+            method=Player.save, name="Save", hotkey=("sav", "save")
+        )
 
 
 class Take(Action):
     def __init__(self):
-        super().__init__(method=Player.take, name="Take Item", hotkey=("t", "take"))
+        super().__init__(
+            method=Player.take, name="Take Item", hotkey=("t", "take")
+        )
 
 
 class ViewMap(Action):
     def __init__(self):
         super().__init__(
-            method=Player.view_map, name="View Map", hotkey=("m", "map", "cartography")
+            method=Player.view_map,
+            name="View Map",
+            hotkey=("m", "map", "cartography"),
         )
 
 
 class Attack(Action):
     def __init__(self):
         super().__init__(
-            method=Player.attack, name="Attack", hotkey=("a", "at", "atk", "attack")
+            method=Player.attack,
+            name="Attack",
+            hotkey=("a", "at", "atk", "attack"),
         )
 
 
@@ -244,12 +258,19 @@ class SpawnObj(Action):
         )
 
 
-class RefreshMerchants(Action):  # debug utility to refresh all merchant inventories
+class RefreshMerchants(
+    Action
+):  # debug utility to refresh all merchant inventories
     def __init__(self):
         super().__init__(
             method=Player.refresh_merchants,
             name="Refresh Merchants",
-            hotkey=("rm", "refreshmerchants", "merchrefresh", "updatemerchants"),
+            hotkey=(
+                "rm",
+                "refreshmerchants",
+                "merchrefresh",
+                "updatemerchants",
+            ),
             debug=True,
             color="silver",
         )

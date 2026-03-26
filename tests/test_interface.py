@@ -479,7 +479,7 @@ class TestSpecialCategoryWithBooksAndCrystals(unittest.TestCase):
         ]
         iface = interface.InventoryInterface(player)
         iface.run()
-        
+
         # Check that all three items appear when viewing Special category
         calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
         special_items_shown = [call for call in calls if "Ancient Tome" in call or "Crystal Tear" in call or "Strange Key" in call]
@@ -499,7 +499,7 @@ class TestSpecialCategoryWithBooksAndCrystals(unittest.TestCase):
         ]
         iface = interface.InventoryInterface(player)
         iface.run()
-        
+
         # Check that Special category shows count of 4
         calls = [strip_ansi(str(call.args[0])) for call in mock_print.call_args_list]
         special_count_shown = [call for call in calls if "(s) Special: 4" in call]

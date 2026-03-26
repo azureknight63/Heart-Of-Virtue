@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useAudio } from '../context/AudioContext'
 
 export default function MovementStar({ exits = [], onMove, loading = false }) {
   const [hoveredDirection, setHoveredDirection] = useState(null)
+  const { playSFX } = useAudio()
 
   // Determine which directions are valid (available in exits)
   const isDirectionValid = (direction) => exits && exits.includes(direction)
@@ -24,6 +26,7 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
 
   const handleMove = async (direction) => {
     if (!isDirectionValid(direction) || loading) return
+    playSFX('move')
     try {
       await onMove(direction)
     } catch (err) {

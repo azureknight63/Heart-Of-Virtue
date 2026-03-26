@@ -41,17 +41,28 @@ class Ch01_Memory_Amelia(MemoryFlash):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=False, name="Ch01_Memory_Amelia"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="Ch01_Memory_Amelia",
     ):
         # Define the memory fragments with timing
         memory_lines = [
             ("The smell of old parchment and candle wax.", 2),
             ("", 1),  # Blank line for pacing
-            ("A woman's voice, soft and warm, reading aloud by firelight.", 2.5),
+            (
+                "A woman's voice, soft and warm, reading aloud by firelight.",
+                2.5,
+            ),
             ("", 1),
             ('"Jean, you always were too stubborn for your own good."', 2),
             ("", 0.5),
-            ("Laughter— her laughter— like wind chimes in a summer breeze.", 2.5),
+            (
+                "Laughter— her laughter— like wind chimes in a summer breeze.",
+                2.5,
+            ),
             ("", 1),
             ("A hand reaching out, fingers intertwining with his own.", 2),
             ("The weight of a gold ring, cool against his skin.", 2),
@@ -98,7 +109,12 @@ class Ch01StartOpenWall(Event):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=True, name="Ch01_Start_Open_Wall"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=True,
+        name="Ch01_Start_Open_Wall",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -140,7 +156,9 @@ class Ch01BridgeWall(Event):
     Opens the wall on the bridge in the starting area
     """
 
-    def __init__(self, player, tile, params=None, repeat=True, name="Ch01_Bridge_Wall"):
+    def __init__(
+        self, player, tile, params=None, repeat=True, name="Ch01_Bridge_Wall"
+    ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
@@ -184,7 +202,12 @@ class Ch01ChestRumblerBattle(Event):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=True, name="Ch01_Chest_Rumbler_Battle"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=True,
+        name="Ch01_Chest_Rumbler_Battle",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -200,7 +223,9 @@ class Ch01ChestRumblerBattle(Event):
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
                     # if len(thing.inventory) == 0:  # if the chest is empty, continue
-                    self.triggered = True  # Mark as triggered before processing
+                    self.triggered = (
+                        True  # Mark as triggered before processing
+                    )
                     self.pass_conditions_to_process()
                     break
 
@@ -224,9 +249,7 @@ class Ch01ChestRumblerBattle(Event):
             self.needs_input = True
             self.input_type = "choice"
             self.input_prompt = "What's that noise!?"
-            self.description = (
-                "Jean hears a loud rumbling noise and the sound of scraping rocks."
-            )
+            self.description = "Jean hears a loud rumbling noise and the sound of scraping rocks."
             self.input_options = [{"value": "continue", "label": "Continue"}]
             return
 
@@ -278,9 +301,13 @@ class Ch01PostRumbler(
             # Sync state from memory to this event to pause processing
             self.needs_input = True
             self.input_type = getattr(memory, "input_type", "choice")
-            self.input_prompt = getattr(memory, "input_prompt", "The memory fades...")
+            self.input_prompt = getattr(
+                memory, "input_prompt", "The memory fades..."
+            )
             self.input_options = getattr(
-                memory, "input_options", [{"value": "continue", "label": "Continue"}]
+                memory,
+                "input_options",
+                [{"value": "continue", "label": "Continue"}],
             )
             self.description = getattr(memory, "description", "")
             self._stage = 2
@@ -323,12 +350,18 @@ class Ch01PostRumbler(
             # Add follow-up events
             self.player.combat_events.append(
                 Ch01PostRumblerRep(
-                    player=self.player, tile=target_tile, params=False, repeat=True
+                    player=self.player,
+                    tile=target_tile,
+                    params=False,
+                    repeat=True,
                 )
             )
             self.player.combat_events.append(
                 Ch01PostRumbler2(
-                    player=self.player, tile=target_tile, params=False, repeat=False
+                    player=self.player,
+                    tile=target_tile,
+                    params=False,
+                    repeat=False,
                 )
             )
 
@@ -347,7 +380,12 @@ class Ch01PostRumbler(
 
 class Ch01PostRumblerRep(Event):
     def __init__(
-        self, player, tile, params=None, repeat=True, name="Ch01_PostRumbler_Rep"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=True,
+        name="Ch01_PostRumbler_Rep",
     ):  # This event is to continue repeating until the player's health is low
         super().__init__(
             name=name,
@@ -450,7 +488,10 @@ class Ch01PostRumbler2(Event):
         if self.player.combat_list:
             enemy = self.player.combat_list[0]
             enemy.hp = 0  # instagib one of the rock creatures
-            print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
+            print(
+                colored(enemy.name, "magenta")
+                + " exploded into fragments of light!"
+            )
             if enemy in target_tile.npcs_here:
                 target_tile.npcs_here.remove(enemy)
             if enemy in self.player.combat_list:
@@ -463,7 +504,8 @@ class Ch01PostRumbler2(Event):
             "cyan",
         )
         cprint(
-            "Two more rock creatures advance on him, snapping their heavy jaws.", "cyan"
+            "Two more rock creatures advance on him, snapping their heavy jaws.",
+            "cyan",
         )
         cprint(
             "Without saying a word, he hands a strange vial to Jean and gesticulates with large, clumsy hands, "
@@ -529,7 +571,9 @@ class Ch01PostRumbler3(Event):
                 "label": "There has to be another way out. (Think it through)",
             },
         ]
-        self._choice = None  # Saved initial choice (a/b/c) for multi-stage narrative
+        self._choice = (
+            None  # Saved initial choice (a/b/c) for multi-stage narrative
+        )
         self._stage = 1
 
     def check_combat_conditions(self):
@@ -570,7 +614,9 @@ class Ch01PostRumbler3(Event):
                         "\navenue of escape."
                     )
                 self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_options = [
+                    {"value": "continue", "label": "Continue"}
+                ]
                 self.input_prompt = "Continue"
                 self._stage = 3
                 return
@@ -584,7 +630,9 @@ class Ch01PostRumbler3(Event):
                     "\nmercilessly."
                 )
                 self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_options = [
+                    {"value": "continue", "label": "Continue"}
+                ]
                 self.input_prompt = "Continue"
                 self._stage = 4
                 return
@@ -599,7 +647,9 @@ class Ch01PostRumbler3(Event):
                     "\nHe manages to make it back to the long bridge connecting the two spires."
                 )
                 self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_options = [
+                    {"value": "continue", "label": "Continue"}
+                ]
                 self.input_prompt = "Continue"
                 self._stage = 5
                 return
@@ -619,7 +669,9 @@ class Ch01PostRumbler3(Event):
                     "\nbridge."
                 )
                 self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_options = [
+                    {"value": "continue", "label": "Continue"}
+                ]
                 self.input_prompt = "Continue"
                 self._stage = 6
                 return
@@ -644,10 +696,13 @@ class Ch01PostRumbler3(Event):
                     "\nquickly, smashes Jean's body against the wall of rock."
                 )
                 cprint(
-                    "Jean suffers " + str(random.randint(30, 90)) + " damage!", "red"
+                    "Jean suffers " + str(random.randint(30, 90)) + " damage!",
+                    "red",
                 )
                 self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
+                self.input_options = [
+                    {"value": "continue", "label": "Continue"}
+                ]
                 self.input_prompt = "Continue"
                 self._stage = 7
                 return
@@ -664,16 +719,22 @@ class Ch01PostRumbler3(Event):
                     "\nbears it slams him hard into the ground."
                 )
                 cprint(
-                    "Jean suffers " + str(random.randint(30, 90)) + " damage!", "red"
+                    "Jean suffers " + str(random.randint(30, 90)) + " damage!",
+                    "red",
                 )
                 cprint(
-                    "Jean suffers " + str(random.randint(10, 60)) + " damage!", "red"
+                    "Jean suffers " + str(random.randint(10, 60)) + " damage!",
+                    "red",
                 )
                 cprint(
-                    "Jean suffers " + str(random.randint(30, 90)) + " damage!", "red"
+                    "Jean suffers " + str(random.randint(30, 90)) + " damage!",
+                    "red",
                 )
                 cprint(
-                    "Jean suffers " + str(random.randint(85, 155)) + " damage!", "red"
+                    "Jean suffers "
+                    + str(random.randint(85, 155))
+                    + " damage!",
+                    "red",
                 )
                 cprint(SKULL_ART, "red")
                 cprint("Jean has died.", "red")
@@ -714,7 +775,9 @@ class Ch01PostRumbler3(Event):
             gorran.reset_combat_moves()
 
             # Set up Gorran's combat lists
-            gorran.combat_list = self.player.combat_list  # Gorran targets enemies
+            gorran.combat_list = (
+                self.player.combat_list
+            )  # Gorran targets enemies
             gorran.combat_list_allies = (
                 self.player.combat_list_allies
             )  # Gorran is allied with player's team
@@ -722,7 +785,9 @@ class Ch01PostRumbler3(Event):
             # Spawn new enemies and add them properly to combat
             new_enemies = []
             for x in range(0, 5):
-                rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
+                rumbler = self.tile.spawn_npc(
+                    "RockRumbler", delay=random.randint(0, 5)
+                )
                 new_enemies.append(rumbler)
 
             # Use add_enemies_to_combat to properly initialize battlefield positions
@@ -747,7 +812,12 @@ class AfterTheRumblerFight(Event):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=False, name="AfterTheRumblerFight"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="AfterTheRumblerFight",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -759,7 +829,9 @@ class AfterTheRumblerFight(Event):
 
     def process(self):
         time.sleep(5)
-        print("The Rock-Man lowers his club to the ground and turns toward Jean.")
+        print(
+            "The Rock-Man lowers his club to the ground and turns toward Jean."
+        )
         time.sleep(3)
         dialogue(
             "Jean",

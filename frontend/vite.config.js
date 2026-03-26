@@ -19,6 +19,12 @@ export default defineConfig({
     port: 3000,
     hmr: false,
     proxy: {
+      '/games/HeartOfVirtue/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/games\/HeartOfVirtue/, '')
+      },
+      // Keep this for any hardcoded /api paths just in case
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true

@@ -87,6 +87,7 @@ A modern React + Vite web UI is available for playing the game in your browser, 
 - **Real-Time Updates**: Combat grid, HP bars, inventory management
 - **Responsive Design**: Works on desktop and tablets
 - **Full API Integration**: Connects to the Flask backend API
+- **In-Game Feedback Form**: Report bugs, request features, or send general feedback without leaving the game — creates real GitHub issues automatically
 
 ### Quick Start (Web UI)
 

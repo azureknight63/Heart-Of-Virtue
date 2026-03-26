@@ -28,29 +28,29 @@ def test_gorran_rescue_updates_battlefield_positions():
     player.in_combat = True
     player.current_room = Mock(spec=MapTile)
     player.combat_events = []
-    
+
     # Create mock tile
     tile = Mock(spec=MapTile)
-    
+
     # Mock spawn_npc to return mock NPCs
     mock_gorran = Mock()
     mock_gorran.name = "Gorran"
     mock_gorran.in_combat = False
-    
+
     mock_rumblers = []
     for i in range(5):
         rumbler = Mock()
         rumbler.name = f"RockRumbler{i}"
         rumbler.in_combat = False
         mock_rumblers.append(rumbler)
-    
+
     spawn_calls = [mock_gorran] + mock_rumblers
     tile.spawn_npc = Mock(side_effect=spawn_calls)
     tile.events_here = []
-    
+
     # Create the event
     event = Ch01PostRumbler3(player=player, tile=tile)
-    
+
     # Mock the cprint and time.sleep to avoid delays
     with patch('story.ch01.cprint'), \
          patch('story.ch01.time.sleep'), \
@@ -86,24 +86,24 @@ def test_gorran_rescue_sets_combat_lists():
     player.in_combat = True
     player.current_room = Mock(spec=MapTile)
     player.combat_events = []
-    
+
     # Create mock tile
     tile = Mock(spec=MapTile)
-    
+
     # Mock spawn_npc to return mock NPCs
     mock_gorran = Mock()
     mock_gorran.name = "Gorran"
     mock_gorran.in_combat = False
-    
+
     mock_rumblers = [Mock() for _ in range(5)]
-    
+
     spawn_calls = [mock_gorran] + mock_rumblers
     tile.spawn_npc = Mock(side_effect=spawn_calls)
     tile.events_here = []
-    
+
     # Create the event
     event = Ch01PostRumbler3(player=player, tile=tile)
-    
+
     # Mock the cprint and time.sleep to avoid delays
     with patch('story.ch01.cprint'), \
          patch('story.ch01.time.sleep'), \
@@ -127,14 +127,14 @@ def test_gorran_rescue_coward_choice():
     player.combat_list_allies = [player]
     player.hp = 100
     player.combat_events = []
-    
+
     # Create mock tile
     tile = Mock(spec=MapTile)
     tile.spawn_npc = Mock()
-    
+
     # Create the event
     event = Ch01PostRumbler3(player=player, tile=tile)
-    
+
     # Mock the cprint and time.sleep to avoid delays
     with patch('story.ch01.cprint'), \
          patch('story.ch01.time.sleep'), \

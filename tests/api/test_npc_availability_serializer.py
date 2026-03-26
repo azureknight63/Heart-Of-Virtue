@@ -37,7 +37,7 @@ class TestNPCLocationSerializer:
             "description": "Blacksmith's Forge",
         }
         result = NPCLocationSerializer.serialize(location_data)
-        
+
         assert result["location_id"] == "loc_forge"
         assert result["map_name"] == "village"
         assert result["coords"] == [10, 20]
@@ -52,7 +52,7 @@ class TestNPCLocationSerializer:
             "description": "Blacksmith's Forge",
         }
         result = NPCLocationSerializer.deserialize(location_dict)
-        
+
         assert result["location_id"] == "loc_forge"
         assert result["coords"] == (10, 20)  # Should be tuple
         assert isinstance(result["coords"], tuple)
@@ -73,9 +73,9 @@ class TestNPCLocationSerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         location = NPCLocationSerializer.get_location(npc_data, game_tick=100, player_story=player_story)
-        
+
         assert location is not None
         assert location["location_id"] == "loc_forge"
 
@@ -91,9 +91,9 @@ class TestNPCLocationSerializer:
             ],
         }
         player_story = {}  # Gate not met
-        
+
         location = NPCLocationSerializer.get_location(npc_data, game_tick=100, player_story=player_story)
-        
+
         assert location is None
 
     def test_get_location_tick_requirement_not_met(self):
@@ -109,10 +109,10 @@ class TestNPCLocationSerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         # Only at tick 100, but need 500
         location = NPCLocationSerializer.get_location(npc_data, game_tick=100, player_story=player_story)
-        
+
         assert location is None
 
     def test_get_location_tick_requirement_met(self):
@@ -131,10 +131,10 @@ class TestNPCLocationSerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         # At tick 600, should be available
         location = NPCLocationSerializer.get_location(npc_data, game_tick=600, player_story=player_story)
-        
+
         assert location is not None
         assert location["location_id"] == "loc_forge"
 
@@ -151,11 +151,11 @@ class TestNPCLocationSerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         is_here = NPCLocationSerializer.is_at_location(
             "kael", "loc_forge", npc_data, game_tick=100, player_story=player_story
         )
-        
+
         assert is_here is True
 
     def test_is_at_location_false(self):
@@ -170,11 +170,11 @@ class TestNPCLocationSerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         is_here = NPCLocationSerializer.is_at_location(
             "kael", "loc_tavern", npc_data, game_tick=100, player_story=player_story
         )
-        
+
         assert is_here is False
 
 
@@ -189,9 +189,9 @@ class TestNPCAvailabilitySerializer:
             }
         }
         player_story = {"ch01_forge_unlocked": "1", "ch02_apprentice": "1"}
-        
+
         is_met, missing = NPCAvailabilitySerializer.check_story_gates(npc_data, player_story)
-        
+
         assert is_met is True
         assert missing is None
 
@@ -203,9 +203,9 @@ class TestNPCAvailabilitySerializer:
             }
         }
         player_story = {"ch01_forge_unlocked": "1"}  # Missing ch02_apprentice
-        
+
         is_met, missing = NPCAvailabilitySerializer.check_story_gates(npc_data, player_story)
-        
+
         assert is_met is False
         assert missing == "ch02_apprentice"
 
@@ -220,7 +220,7 @@ class TestNPCAvailabilitySerializer:
         is_met, ticks_until = NPCAvailabilitySerializer.check_tick_requirements(
             npc_data, game_tick=350, gate_completion_tick=100
         )
-        
+
         assert is_met is True
         assert ticks_until is None
 
@@ -235,7 +235,7 @@ class TestNPCAvailabilitySerializer:
         is_met, ticks_until = NPCAvailabilitySerializer.check_tick_requirements(
             npc_data, game_tick=150, gate_completion_tick=100
         )
-        
+
         assert is_met is False
         assert ticks_until == 150  # (100 + 200) - 150 = 150
 
@@ -254,11 +254,11 @@ class TestNPCAvailabilitySerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         is_available, reason = NPCAvailabilitySerializer.is_available(
             npc_data, game_tick=100, player_story=player_story
         )
-        
+
         assert is_available is True
         assert reason == AvailabilityReason.AVAILABLE
 
@@ -270,11 +270,11 @@ class TestNPCAvailabilitySerializer:
             },
         }
         player_story = {}  # Gate not met
-        
+
         is_available, reason = NPCAvailabilitySerializer.is_available(
             npc_data, game_tick=100, player_story=player_story
         )
-        
+
         assert is_available is False
         assert reason == AvailabilityReason.STORY_GATE_NOT_MET
 
@@ -288,11 +288,11 @@ class TestNPCAvailabilitySerializer:
             "locations": [],  # No locations available
         }
         player_story = {}
-        
+
         is_available, reason = NPCAvailabilitySerializer.is_available(
             npc_data, game_tick=100, player_story=player_story
         )
-        
+
         assert is_available is False
         assert reason == AvailabilityReason.NOT_IN_WORLD
 
@@ -315,9 +315,9 @@ class TestNPCAvailabilitySerializer:
             ],
         }
         player_story = {"ch01_forge_unlocked": "1"}
-        
+
         result = NPCAvailabilitySerializer.serialize(npc_data, game_tick=100, player_story=player_story)
-        
+
         assert result["available"] is True
         assert result["story_gates_met"] is True
         assert result["in_world"] is True
@@ -330,11 +330,11 @@ class TestLocationNPCSerializer:
     def test_get_npcs_at_location_empty(self):
         """Test getting NPCs at a location with no NPCs."""
         all_npcs = []
-        
+
         npcs = LocationNPCSerializer.get_npcs_at_location(
             "loc_forge", all_npcs, game_tick=100, player_story={}
         )
-        
+
         assert npcs == []
 
     def test_get_npcs_at_location_single_npc(self):
@@ -356,11 +356,11 @@ class TestLocationNPCSerializer:
                 ],
             }
         ]
-        
+
         npcs = LocationNPCSerializer.get_npcs_at_location(
             "loc_forge", all_npcs, game_tick=100, player_story={}
         )
-        
+
         assert len(npcs) == 1
         assert npcs[0]["npc_id"] == "kael"
         assert npcs[0]["available"] is True
@@ -378,9 +378,9 @@ class TestNPCTimelineSerializer:
             "available_after_ticks": 0,
             "priority": 1,
         }
-        
+
         entry = NPCTimelineSerializer.get_timeline_entry(location)
-        
+
         assert entry["location_id"] == "loc_forge"
         assert "ch01_forge_unlocked" in entry["trigger"]
         assert entry["priority"] == 1
@@ -407,9 +407,9 @@ class TestNPCTimelineSerializer:
                 },
             ],
         }
-        
+
         result = NPCTimelineSerializer.serialize(npc_data)
-        
+
         assert result["npc_id"] == "kael"
         assert result["name"] == "Kael"
         assert len(result["timeline"]) == 2
@@ -425,11 +425,11 @@ class TestNPCEventTriggerSerializer:
             "required_story_gate": "ch01_complete",
             "required_min_ticks": 100,
         }
-        
+
         result = NPCEventTriggerSerializer.check_trigger_conditions(
             trigger_data, game_tick=200, player_story={"ch01_complete": "1"}
         )
-        
+
         assert result is True
 
     def test_check_trigger_conditions_story_gate_not_met(self):
@@ -437,11 +437,11 @@ class TestNPCEventTriggerSerializer:
         trigger_data = {
             "required_story_gate": "ch01_complete",
         }
-        
+
         result = NPCEventTriggerSerializer.check_trigger_conditions(
             trigger_data, game_tick=100, player_story={}
         )
-        
+
         assert result is False
 
     def test_check_trigger_conditions_ticks_not_met(self):
@@ -449,11 +449,11 @@ class TestNPCEventTriggerSerializer:
         trigger_data = {
             "required_min_ticks": 500,
         }
-        
+
         result = NPCEventTriggerSerializer.check_trigger_conditions(
             trigger_data, game_tick=100, player_story={}
         )
-        
+
         assert result is False
 
     def test_get_active_triggers(self):
@@ -473,12 +473,12 @@ class TestNPCEventTriggerSerializer:
                 },
             ],
         }
-        
+
         # Only first trigger is active
         active = NPCEventTriggerSerializer.get_active_triggers(
             npc_data, game_tick=100, player_story={"ch01_complete": "1"}
         )
-        
+
         assert len(active) == 1
         assert active[0]["trigger_id"] == "trigger_1"
 
@@ -506,11 +506,11 @@ class TestNPCStatusSerializer:
                 }
             ],
         }
-        
+
         result = NPCStatusSerializer.serialize(
             npc_data, game_tick=100, player_story={"ch01_forge_unlocked": "1"}
         )
-        
+
         assert result["npc_id"] == "kael"
         assert result["name"] == "Kael the Blacksmith"
         assert result["available"] is True
@@ -528,10 +528,10 @@ class TestNPCStatusSerializer:
             },
             "locations": [],
         }
-        
+
         result = NPCStatusSerializer.serialize(
             npc_data, game_tick=100, player_story={}  # Gate not met
         )
-        
+
         assert result["available"] is False
         assert "story_gate" in result["availability_reason"]

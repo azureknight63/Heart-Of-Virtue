@@ -158,4 +158,3 @@ def test_get_class_hierarchy(monkeypatch):
         assert h['ItemSub'] is ItemSub
     finally:
         del sys.modules['items']
-

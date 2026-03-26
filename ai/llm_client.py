@@ -3,7 +3,7 @@ import os
 import logging
 import threading
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 try:
     import requests
 except ImportError:

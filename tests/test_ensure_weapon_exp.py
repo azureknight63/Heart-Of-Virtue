@@ -165,4 +165,3 @@ def test_eq_weapon_none_graceful():
     _ensure_weapon_exp(user)
     assert user.combat_exp == {'Basic': 0}
     assert user.skill_exp == {'Basic': 0}
-

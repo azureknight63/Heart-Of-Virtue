@@ -16,11 +16,15 @@ import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
+import FeedbackDialog from './FeedbackDialog'
+
+const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
 function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
   const [showAttributes, setShowAttributes] = useState(false)
   const [showStatus, setShowStatus] = useState(false)
   const [showSkills, setShowSkills] = useState(false)
@@ -170,6 +174,16 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
           else if (msg.includes('victory')) {
             playBGM('fanfare')
+          } else if (msg.includes('heal') || msg.includes('restores') || msg.includes('restored')) {
+            playSFX('heal')
+          } else if (msg.includes('poisoned') || msg.includes('burned') || msg.includes('paralyz') || msg.includes('stunned') || msg.includes('afflict') || msg.includes('inflict')) {
+            playSFX('status_hit')
+          } else if (msg.includes(' uses ')) {
+            playSFX('item_use')
+          }
+
+          if (msg.includes('quest') && (msg.includes('complete') || msg.includes('finished') || msg.includes('accomplished'))) {
+            playSFX('quest_complete')
           }
 
           if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
@@ -470,6 +484,33 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             🔊
           </button>
           <button
+            onClick={() => setShowFeedback(true)}
+            className={BETA_MODE ? 'beta-feedback-glow' : undefined}
+            style={{
+              padding: '4px 10px',
+              backgroundColor: colors.primaryDark,
+              color: colors.text.inverse,
+              border: BETA_MODE ? '1px solid #00FFFF' : `1px solid ${colors.text.inverse}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              fontFamily: 'monospace',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = colors.primary
+              e.target.style.boxShadow = `0 0 8px ${colors.primary}CC`
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = colors.primaryDark
+              e.target.style.boxShadow = BETA_MODE ? '' : 'none'
+            }}
+            title="Send Feedback"
+          >
+            Feedback
+          </button>
+          <button
             onClick={() => setShowAccount(true)}
             style={{
               padding: '4px 12px',
@@ -721,6 +762,10 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           onRefetch={onRefetch}
           onTypingChange={onInteractionTypingChange}
         />
+      )}
+
+      {showFeedback && (
+        <FeedbackDialog onClose={() => setShowFeedback(false)} />
       )}
 
       {showAccount && (

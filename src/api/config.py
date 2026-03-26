@@ -12,7 +12,11 @@ class Config:
     if not _secret_env and os.environ.get("FLASK_ENV") == "production":
         raise RuntimeError("SECRET_KEY must be set in production")
     SECRET_KEY = _secret_env or os.urandom(24).hex()
-    DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() not in ("0", "false", "no")
+    DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() not in (
+        "0",
+        "false",
+        "no",
+    )
     TESTING = False
 
     # Session settings

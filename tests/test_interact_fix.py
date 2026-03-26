@@ -17,7 +17,7 @@ from src.api.services.game_service import GameService
 
 def test_interact_fix():
     print("Setting up test...")
-    
+
     # Mock Universe and Tile
     mock_universe = MagicMock()
     mock_tile = MagicMock()
@@ -34,31 +34,31 @@ def test_interact_fix():
     mock_item = MagicMock()
     mock_item.name = "Test Item"
     mock_item.keywords = ["take"]
-    
+
     # Mock the take method to simulate the error condition
     def take_side_effect(player):
         if player.current_room is None:
             raise AttributeError("'NoneType' object has no attribute 'items_here'")
         print("Item taken successfully! player.current_room is set.")
-    
+
     mock_item.take = MagicMock(side_effect=take_side_effect)
-    
+
     # Add item to tile
     mock_tile.items_here.append(mock_item)
-    
+
     # Initialize GameService
     service = GameService(mock_universe)
-    
+
     # Try to interact
     target_id = str(id(mock_item))
-    
+
     print(f"Attempting to take item with ID: {target_id}")
-    
+
     # This call should now set player.current_room = mock_tile before calling mock_item.take(player)
     result = service.interact_with_target(mock_player, target_id, "take")
-    
+
     print("Result:", result)
-    
+
     if result["success"]:
         print("SUCCESS: Interaction completed without error.")
     else:

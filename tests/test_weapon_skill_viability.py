@@ -23,7 +23,7 @@ from src import items as items_mod  # type: ignore
 class DummyEnemy:
     """Dummy enemy for testing viability checks."""
     is_alive = True
-    
+
     def __init__(self):
         self.combat_position = (25, 25)
 
@@ -33,14 +33,14 @@ def create_player_with_weapon(weapon_class):
     player = Player()
     weapon = weapon_class()
     player.eq_weapon = weapon
-    
+
     # Set up combat context
     dummy = DummyEnemy()
     player.combat_proximity = {dummy: 3}  # Enemy 3 feet away
-    
+
     # For coordinate-based systems, set player position
     player.combat_position = (25, 22)
-    
+
     return player, weapon
 
 
@@ -97,11 +97,11 @@ SKILL_CATEGORIES = {
 def test_dagger_skills_viable():
     """Test Dagger skill viability."""
     player, weapon = create_player_with_weapon(items_mod.Dagger)
-    
+
     # Slash should be viable
     slash = moves.Slash(player)
     assert slash.viable(), "Slash should be viable with Dagger"
-    
+
     # Quick Swap should be viable (doesn't require specific weapon)
     quick_swap = moves.QuickSwap(player)
     # QuickSwap might not be viable depending on party setup, just test instantiation
@@ -111,11 +111,11 @@ def test_dagger_skills_viable():
 def test_axe_skills_viable():
     """Test Axe skill viability - THIS VERIFIES THE SLASH FIX."""
     player, weapon = create_player_with_weapon(items_mod.Battleaxe)
-    
+
     # Slash should be viable with Axe (this is the fix we're testing!)
     slash = moves.Slash(player)
     assert slash.viable(), "Slash should be viable with Axe (FIXED)"
-    
+
     # Parry should be viable
     parry = moves.Parry(player)
     assert parry.viable(), "Parry should be viable with Axe"
@@ -128,7 +128,7 @@ def test_slash_with_all_allowed_weapons():
         ("Shortsword", items_mod.Shortsword),
         ("Battleaxe", items_mod.Battleaxe),
     ]
-    
+
     for weapon_name, weapon_class in allowed_weapons:
         player, weapon = create_player_with_weapon(weapon_class)
         slash = moves.Slash(player)
@@ -138,7 +138,7 @@ def test_slash_with_all_allowed_weapons():
 def test_bludgeon_power_strike_viable():
     """Test Bludgeon Power Strike viability."""
     player, weapon = create_player_with_weapon(items_mod.Mace)
-    
+
     # Power Strike should be viable only with Bludgeon
     power_strike = moves.PowerStrike(player)
     assert power_strike.viable(), "Power Strike should be viable with Bludgeon"
@@ -147,7 +147,7 @@ def test_bludgeon_power_strike_viable():
 def test_bow_skills_viable():
     """Test Bow skill viability."""
     player, weapon = create_player_with_weapon(items_mod.Longbow)
-    
+
     # Tactical Retreat should be viable with Bow
     tactical_retreat = moves.TacticalRetreat(player)
     assert tactical_retreat.viable(), "Tactical Retreat should be viable with Bow"
@@ -157,12 +157,12 @@ def test_unarmed_skills_viable():
     """Test Unarmed skill viability."""
     player = Player()
     player.eq_weapon = None  # Unarmed
-    
+
     # Set up combat context
     dummy = DummyEnemy()
     player.combat_proximity = {dummy: 3}
     player.combat_position = (25, 22)
-    
+
     # Jab should be viable when unarmed
     jab = moves.Jab(player)
     assert jab.viable(), "Jab should be viable when unarmed"
@@ -172,12 +172,12 @@ def test_slash_not_viable_without_weapon():
     """Test that Slash is NOT viable when unarmed."""
     player = Player()
     player.eq_weapon = None  # Unarmed
-    
+
     # Set up combat context
     dummy = DummyEnemy()
     player.combat_proximity = {dummy: 3}
     player.combat_position = (25, 22)
-    
+
     slash = moves.Slash(player)
     assert not slash.viable(), "Slash should NOT be viable when unarmed"
 
@@ -187,7 +187,7 @@ def test_parry_not_viable_without_weapon():
     player = Player()
     player.name = "Jean"  # Important: Parry checks if player is Jean
     player.eq_weapon = None  # Unarmed
-    
+
     parry = moves.Parry(player)
     assert not parry.viable(), "Parry should NOT be viable when unarmed as Jean"
 
@@ -195,7 +195,7 @@ def test_parry_not_viable_without_weapon():
 def test_power_strike_not_viable_with_wrong_weapon():
     """Test that Power Strike is NOT viable with non-Bludgeon weapons."""
     player, weapon = create_player_with_weapon(items_mod.Shortsword)
-    
+
     power_strike = moves.PowerStrike(player)
     assert not power_strike.viable(), "Power Strike should NOT be viable with Sword (not Bludgeon)"
 
@@ -203,4 +203,3 @@ def test_power_strike_not_viable_with_wrong_weapon():
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])
-
