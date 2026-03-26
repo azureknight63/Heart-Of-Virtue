@@ -1,5 +1,5 @@
 from ..audio_engine.song import Song
-from ..audio_engine.core import generate_tone, generate_chord, mix_layers
+from ..audio_engine.core import generate_tone, generate_tone_sweep, generate_chord, mix_layers
 
 
 # ── UI / Menu SFX (retro chiptune aesthetic) ─────────────────────────────────
@@ -185,3 +185,127 @@ class LowHealthWarningSFX(Song):
                                   attack_time=0.005, release_time=0.01)
             data += silence
         return data
+
+
+# ── Progression / Reward SFX ─────────────────────────────────────────────────
+
+class LevelUpSFX(Song):
+    """Rising arpeggio sweep + sparkle overtone — character levels up."""
+    def __init__(self):
+        super().__init__("SFX: Level Up", "sfx_level_up.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # Rising C major arpeggio two octaves
+        arp = b''
+        notes = [fr(f) for f in [262, 330, 392, 523, 659, 784, 1047]]
+        for i, f in enumerate(notes):
+            dur = d(0.07) if i < len(notes) - 1 else d(0.35)
+            arp += generate_tone(f, dur, volume=0.55, wave_type='square',
+                                 attack_time=0.003, release_time=d(0.03))
+        # Sparkle: a bright sine sweep overlay
+        sweep = generate_tone_sweep(fr(1047), fr(2093), d(0.5),
+                                    volume=0.25, wave_type='sine',
+                                    attack_time=d(0.05), release_time=d(0.3))
+        return mix_layers([arp, sweep])
+
+
+class QuestCompleteSFX(Song):
+    """Two-chord resolution stab — quest milestone achieved."""
+    def __init__(self):
+        super().__init__("SFX: Quest Complete", "sfx_quest_complete.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # IV → I in C major (F maj → C maj): classic resolution
+        chord_f = generate_chord([fr(349), fr(440), fr(523)], d(0.18),
+                                 volume=0.55, wave_type='square',
+                                 attack_time=0.005, release_time=0.04)
+        silence = b'\x00\x00' * int(44100 * d(0.04))
+        chord_c = generate_chord([fr(262), fr(330), fr(392)], d(0.55),
+                                 volume=0.60, wave_type='square',
+                                 attack_time=0.005, release_time=d(0.3))
+        # High melody note over the resolution
+        melody = b'\x00\x00' * int(44100 * d(0.22))  # wait for the F chord + pause
+        melody += generate_tone(fr(1047), d(0.55), volume=0.4, wave_type='sine',
+                                attack_time=0.01, release_time=d(0.3))
+        return mix_layers([chord_f + silence + chord_c, melody])
+
+
+class ItemUseSFX(Song):
+    """Soft shimmer + warm thud — using an item from inventory."""
+    def __init__(self):
+        super().__init__("SFX: Item Use", "sfx_item_use.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # Gentle descending shimmer
+        shimmer = generate_tone_sweep(fr(880), fr(440), d(0.25),
+                                      volume=0.35, wave_type='sine',
+                                      attack_time=d(0.03), release_time=d(0.15))
+        # Soft thud underneath
+        thud = generate_tone(fr(120), d(0.18), volume=0.45, wave_type='triangle',
+                             attack_time=0.005, decay_time=0.04, sustain_level=0.3,
+                             release_time=0.12)
+        return mix_layers([shimmer, thud])
+
+
+class HealSFX(Song):
+    """Warm ascending tone + soft chord — HP restored."""
+    def __init__(self):
+        super().__init__("SFX: Heal", "sfx_heal.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # Ascending sine tones with vibrato — warm and organic
+        notes = [fr(f) for f in [262, 330, 392, 523]]
+        melody = b''
+        for f in notes:
+            melody += generate_tone(f, d(0.12), volume=0.4, wave_type='sine',
+                                    attack_time=d(0.02), release_time=d(0.06),
+                                    vibrato_rate=5.0, vibrato_depth=0.015)
+        # Chord swell underneath
+        chord = generate_chord([fr(262), fr(330), fr(392)], d(0.6),
+                               volume=0.25, wave_type='sine',
+                               attack_time=d(0.1), release_time=d(0.35))
+        return mix_layers([melody, chord])
+
+
+class StatusHitSFX(Song):
+    """Buzzing square warble — a status effect lands on a target."""
+    def __init__(self):
+        super().__init__("SFX: Status Hit", "sfx_status_hit.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # Dissonant wobble: square wave with fast vibrato
+        warble = generate_tone(fr(220), d(0.22), volume=0.55, wave_type='square',
+                               attack_time=0.004, release_time=d(0.1),
+                               vibrato_rate=18.0, vibrato_depth=0.06)
+        # High crackle accent
+        crackle = generate_tone(fr(880), d(0.08), volume=0.4, wave_type='square',
+                                attack_time=0.002, release_time=0.06)
+        return mix_layers([warble, crackle])
+
+
+class PlayerDeathSFX(Song):
+    """Slow descending sawtooth drone — Jean is defeated."""
+    def __init__(self):
+        super().__init__("SFX: Player Death", "sfx_player_death.wav")
+
+    def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
+        def d(dur): return dur / tempo_scale
+        def fr(freq): return freq * (2 ** (pitch_shift / 12))
+        # Slow descending sweep — falling
+        fall = generate_tone_sweep(fr(330), fr(55), d(1.8),
+                                   volume=0.65, wave_type='sawtooth',
+                                   attack_time=d(0.05), release_time=d(0.8))
+        # Low noise rumble underneath
+        rumble = generate_tone(0, d(1.8), volume=0.3, wave_type='noise',
+                               attack_time=d(0.1), release_time=d(1.0))
+        return mix_layers([fall, rumble])
