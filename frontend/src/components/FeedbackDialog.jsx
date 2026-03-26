@@ -252,10 +252,11 @@ const EMPTY_FEATURE = { description: '', use_case: '' }
 const EMPTY_GENERAL = { message: '' }
 const EMPTY_RATINGS = { story: 0, combat: 0, audio: 0, visuals: 0, difficulty: 0 }
 
-export default function FeedbackDialog({ onClose }) {
+export default function FeedbackDialog({ onClose, initialType = 'bug' }) {
   const { success: toastSuccess, error: toastError } = useToast()
 
-  const [activeType, setActiveType] = useState('bug')
+  const validInitialType = TYPES.some(t => t.id === initialType) ? initialType : 'bug'
+  const [activeType, setActiveType] = useState(validInitialType)
   const [title, setTitle] = useState('')
   const [anonymous, setAnonymous] = useState(false)
   const [submitting, setSubmitting] = useState(false)

@@ -11,6 +11,8 @@ import RightPanel from '../components/RightPanel'
 import EventManager from '../components/EventManager'
 import CombatManager from '../components/CombatManager'
 import GameOverScreen from '../components/GameOverScreen'
+import BetaEndDialog from '../components/BetaEndDialog'
+import FeedbackDialog from '../components/FeedbackDialog'
 
 export default function GamePage() {
   // API hooks
@@ -35,6 +37,10 @@ export default function GamePage() {
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
   const [displayedLogCount, setDisplayedLogCount] = useState(0)
+
+  // Beta end dialog state
+  const [showBetaEndDialog, setShowBetaEndDialog] = useState(false)
+  const [showBetaFeedback, setShowBetaFeedback] = useState(false)
 
   // Game over state (triggered by narrative events that kill the player)
   const [showGameOver, setShowGameOver] = useState(false)
@@ -368,11 +374,15 @@ export default function GamePage() {
    * Handle victory dialog close
    */
   const handleVictoryClose = async () => {
+    const isBetaEnd = endState?.beta_end
     setShowVictoryDialog(false)
     setEndState(null)
     setMode('exploration')
     await handleRefetch()
     await fetchCombatStatus()
+    if (isBetaEnd) {
+      setShowBetaEndDialog(true)
+    }
   }
 
   /**
@@ -472,6 +482,25 @@ export default function GamePage() {
 
       {/* Game Over Screen - shown when Jean dies via narrative event */}
       {showGameOver && <GameOverScreen message={gameOverMessage} />}
+
+      {/* Beta End Dialog - shown after defeating the Lurker */}
+      {showBetaEndDialog && (
+        <BetaEndDialog
+          onSendFeedback={() => {
+            setShowBetaEndDialog(false)
+            setShowBetaFeedback(true)
+          }}
+          onContinue={() => setShowBetaEndDialog(false)}
+        />
+      )}
+
+      {/* Feedback Dialog opened from the beta end screen (preset to general) */}
+      {showBetaFeedback && (
+        <FeedbackDialog
+          initialType="general"
+          onClose={() => setShowBetaFeedback(false)}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 {
   "name": "heart-of-virtue-web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Web UI for Heart of Virtue RPG",
   "type": "module",
   "private": true,
