@@ -843,8 +843,8 @@ class AfterGorranIntro(Event):
 
 class Ch01GorranCautionJunction(Event):
     """
-    Gorran reads the violence-marked junction at (4,3) and signals Jean to slow down.
-    Fires once on tile entry. Non-blocking.
+    Gorran reads the violence-marked junction at (4,3) and briefly signals Jean.
+    Subtle — he slows rather than stops, scanning without alarm. Fires once on tile entry.
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Caution_Junction'):
@@ -855,18 +855,19 @@ class Ch01GorranCautionJunction(Event):
 
     def process(self):
         time.sleep(0.5)
-        cprint("Gorran stops at the threshold of the junction. His head lowers slowly, "
-               "scanning the floor. He raises one flat palm toward Jean without turning — "
-               "a gesture that needs no translation.", "cyan")
-        time.sleep(1.5)
-        cprint("He holds that stillness for a moment, then drops his hand and moves forward.", "cyan")
+        cprint("Gorran slows as he enters the junction, his head dropping to read the floor. "
+               "He takes one long look — left passage, right passage, the marks on the stone — "
+               "then raises a hand briefly: wait.", "cyan")
+        time.sleep(1)
+        cprint("After a moment he lowers it and moves forward, unhurried.", "cyan")
         time.sleep(0.5)
 
 
 class Ch01GorranMarkings(Event):
     """
-    Gorran briefly acknowledges the Golemite markings on the crystal at (5,6),
-    establishing his familiarity with these tunnels. Fires once. Non-blocking.
+    Gorran pauses at the Golemite markings on the crystal at (5,6). His touch
+    lingers, and when he moves on his attention stays ahead — tracking something.
+    Fires once. Non-blocking.
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Markings'):
@@ -877,16 +878,17 @@ class Ch01GorranMarkings(Event):
 
     def process(self):
         time.sleep(0.5)
-        cprint("Gorran passes the crystal without slowing, but as he moves by he reaches out "
-               "and drags his fingertips across the worn markings at its base — the way a man "
-               "touches a familiar doorframe. He does not stop.", "cyan")
-        time.sleep(1)
+        cprint("Gorran pauses at the crystal, fingertips trailing across the worn markings "
+               "at its base. He holds the contact a beat longer than passage requires.", "cyan")
+        time.sleep(1.5)
+        cprint("When he moves on, his eyes stay ahead — not at the walls, but at the space beyond them.", "cyan")
+        time.sleep(0.5)
 
 
 class Ch01GorranDarkChamber(Event):
     """
-    Gorran becomes very still in the dark chamber at (7,6), signaling Jean
-    to stay close before the Lurker encounter. Fires once. Non-blocking.
+    Gorran goes completely still in the dark chamber at (7,6), registering a threat
+    before Jean can perceive one. Pronounced — a full stop, a firm signal. Fires once.
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Dark_Chamber'):
@@ -897,6 +899,8 @@ class Ch01GorranDarkChamber(Event):
 
     def process(self):
         time.sleep(0.5)
-        cprint("Gorran stops. He does not move, does not turn. One hand comes back slowly, "
-               "palm out — stay. The darkness ahead is different from the darkness behind.", "cyan")
+        cprint("Gorran stops entirely. His weight settles — a deliberate stillness, not a pause. "
+               "One hand comes back behind him, flat, slow: stay.", "cyan")
         time.sleep(2)
+        cprint("He does not move. He does not turn. Whatever is ahead, he heard it first.", "cyan")
+        time.sleep(1)
