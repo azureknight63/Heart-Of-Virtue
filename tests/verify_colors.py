@@ -18,7 +18,7 @@ def verify_colors_working():
     """Verify that all color tags are correctly applied to combatants."""
     window = CombatBattlefieldWindow("Verification")
     window.create_window()
-    
+
     # Add test combatants
     combatants = [
         ("Player", 10, 10, True, False, 1.0, 0, "player"),
@@ -26,7 +26,7 @@ def verify_colors_working():
         ("Enemy1", 8, 10, True, False, 0.2, 180, "enemy_critical"),
         ("DeadEnemy", 6, 10, False, False, 0.0, 270, "dead"),
     ]
-    
+
     for name, x, y, is_alive, is_ally, health, facing, expected_tag in combatants:
         is_player = (name == "Player")
         window.set_combatant(
@@ -38,18 +38,18 @@ def verify_colors_working():
             health_percent=health,
             facing_value=facing,
         )
-    
+
     window.update_display()
-    
+
     print("=" * 60)
     print("BATTLEFIELD COLOR VERIFICATION")
     print("=" * 60)
-    
+
     # Verify each combatant has correct tag
     results = []
     for name, x, y, is_alive, is_ally, health, facing, expected_tag in combatants:
         is_player = (name == "Player")
-        
+
         # Determine character to search for
         if is_alive:
             if is_player:
@@ -65,20 +65,20 @@ def verify_colors_working():
                 char = "a"
             else:
                 char = "e"
-        
+
         # Find the character in the text widget
         pos = window.text_widget.search(char, "1.0", tk.END)
         if pos:
             tags = window.text_widget.tag_names(pos)
             tag_match = expected_tag in tags if tags else False
-            
+
             # Get tag color
             if tags and tags[0]:
                 color_config = window.text_widget.tag_configure(tags[0])
                 color = color_config.get('foreground')
             else:
                 color = "NONE"
-            
+
             results.append({
                 'name': name,
                 'char': char,
@@ -98,21 +98,21 @@ def verify_colors_working():
                 'match': False,
                 'color': "N/A",
             })
-    
+
     # Print results
     all_pass = True
     for r in results:
         status = "✓ PASS" if r['match'] else "✗ FAIL"
         print(f"{status} {r['name']:15} | Char: {r['char']} | Tag: {r['tags']} | Expected: {r['expected']} | Color: {r['color']}")
         all_pass = all_pass and r['match']
-    
+
     print("=" * 60)
     if all_pass:
         print("SUCCESS! All combatant colors are working correctly!")
     else:
         print("ERROR! Some combatants don't have correct tags.")
     print("=" * 60)
-    
+
     # Close without mainloop
     window.window.destroy()
     return all_pass

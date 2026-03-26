@@ -11,7 +11,9 @@ Endpoints:
 
 from flask import Blueprint, request, current_app, jsonify
 
-npc_availability_bp = Blueprint("npc_availability", __name__, url_prefix="/api")
+npc_availability_bp = Blueprint(
+    "npc_availability", __name__, url_prefix="/api"
+)
 
 
 def get_session_and_player(request):
@@ -89,7 +91,9 @@ def get_npcs_at_location(location_id):
         return response, status_code
 
     try:
-        result = current_app.game_service.get_npcs_at_location(player, location_id)
+        result = current_app.game_service.get_npcs_at_location(
+            player, location_id
+        )
         return jsonify(result), 200
     except Exception as e:
         return (
@@ -103,7 +107,9 @@ def get_npcs_at_location(location_id):
         )
 
 
-@npc_availability_bp.route("/npcs/<npc_id>/check-availability", methods=["POST"])
+@npc_availability_bp.route(
+    "/npcs/<npc_id>/check-availability", methods=["POST"]
+)
 def check_npc_availability(npc_id):
     """
     Check if an NPC is available for interaction.
@@ -119,7 +125,9 @@ def check_npc_availability(npc_id):
         data = request.get_json() or {}
         reason = data.get("reason")
 
-        result = current_app.game_service.check_npc_availability(player, npc_id, reason)
+        result = current_app.game_service.check_npc_availability(
+            player, npc_id, reason
+        )
         return jsonify(result), 200
     except Exception as e:
         return (

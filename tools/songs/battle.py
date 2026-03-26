@@ -8,9 +8,9 @@ class BattleSong(Song):
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
         def fr(freq): return freq * (2 ** (pitch_shift / 12))
-        
+
         # --- Musical Building Blocks ---
-        
+
         # Theme A: The Skirmish (Syncopated Riff in A Minor)
         # A3, C4, E4, A3, G3, A3 (Driving)
         theme_a = [
@@ -19,7 +19,7 @@ class BattleSong(Song):
             [(220, 0.2), (262, 0.2), (330, 0.1), (349, 0.1), (330, 0.1), (349, 0.1), (330, 0.2), (262, 0.2)], # Measure 3 (Trill E-F-E-F)
             [(196, 0.2), (220, 0.2), (262, 0.2), (196, 0.2), (175, 0.4)], # Measure 4
         ]
-        
+
         # Theme B: The Hero's Turn (Trumpet-like, Noble)
         # C Major / F Major lift
         theme_b = [
@@ -28,14 +28,14 @@ class BattleSong(Song):
             [(659, 0.6), (784, 0.2), (880, 0.4), (659, 0.4), (1047, 0.8)], # E-G-A-E-C
             [(988, 0.6), (880, 0.2), (784, 0.4), (698, 0.4), (659, 0.8)], # B-A-G-F-E
         ]
-        
+
         # Theme C: The Enemy Strikes (Crisis, Chromatic)
         # Chromatic descent
         theme_c = [
             [(440, 0.15), (415, 0.15), (392, 0.15), (370, 0.15)] * 2,
             [(349, 0.15), (330, 0.15), (311, 0.15), (294, 0.15)] * 2,
         ]
-        
+
         # Theme D: Victory in Sight (Major Key Climax)
         # A Major lift
         theme_d = [
@@ -64,11 +64,11 @@ class BattleSong(Song):
         intro_layer = b''
         for c, dur in fanfare_chords:
             intro_layer += generate_chord([fr(x) for x in c], d(dur), 0.4, wave_type='sawtooth')
-        
+
         # Percussion build up (Snare roll)
         intro_dur = sum(d(dur) for c, dur in fanfare_chords)
         intro_perc = generate_percussion_pattern([1, 1, 1, 1, 1, 1, 1, 1], intro_dur)
-        
+
         all_sections += mix_layers([intro_layer, intro_perc])
 
         # Main Loop x 4 (To reach ~3-4 mins)
@@ -78,7 +78,7 @@ class BattleSong(Song):
                 mel, chd, bss = b'', b'', b''
                 for phrase in theme_a:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.35, wave_type='sawtooth')
-                
+
                 # Accompaniment
                 dur = sum(d(dur) for p in theme_a for _, dur in p)
                 current_dur = 0
@@ -87,14 +87,14 @@ class BattleSong(Song):
                         if current_dur >= dur: break
                         chd += generate_chord([fr(x) for x in c], min(d(dur_c), dur - current_dur), 0.25, wave_type='square')
                         current_dur += d(dur_c)
-                
+
                 current_dur = 0
                 while current_dur < dur:
                     for f, dur_f in bass_a:
                         if current_dur >= dur: break
                         bss += generate_tone(fr(f), min(d(dur_f), dur - current_dur), 0.4, wave_type='square') # Punchy bass
                         current_dur += d(dur_f)
-                
+
                 # Driving Percussion
                 perc = generate_percussion_pattern([1, 0, 1, 1, 1, 0, 1, 0] * int(dur), dur)
                 all_sections += mix_layers([mel, chd, bss, perc])
@@ -105,7 +105,7 @@ class BattleSong(Song):
                 for phrase in theme_b:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.4, wave_type='sawtooth') # Trumpet-like
                     for f, dur in phrase: harm += generate_tone(fr(f*0.75), d(dur), 0.15, wave_type='square') # Counter-melody (lower 4th/5th)
-                
+
                 dur = sum(d(dur) for p in theme_b for _, dur in p)
                 current_dur = 0
                 while current_dur < dur:
@@ -113,14 +113,14 @@ class BattleSong(Song):
                         if current_dur >= dur: break
                         chd += generate_chord([fr(x) for x in c], min(d(dur_c), dur - current_dur), 0.2, wave_type='sawtooth')
                         current_dur += d(dur_c)
-                
+
                 current_dur = 0
                 while current_dur < dur:
                     for f, dur_f in bass_b:
                         if current_dur >= dur: break
                         bss += generate_tone(fr(f), min(d(dur_f), dur - current_dur), 0.3, wave_type='triangle')
                         current_dur += d(dur_f)
-                
+
                 perc = generate_percussion_pattern([1, 0, 1, 0] * int(dur), dur)
                 all_sections += mix_layers([mel, harm, chd, bss, perc])
 
@@ -129,7 +129,7 @@ class BattleSong(Song):
                 mel, chd, bss = b'', b'', b''
                 for phrase in theme_c:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.3, wave_type='sawtooth')
-                
+
                 dur = sum(d(dur) for p in theme_c for _, dur in p)
                 current_dur = 0
                 while current_dur < dur:
@@ -137,14 +137,14 @@ class BattleSong(Song):
                         if current_dur >= dur: break
                         chd += generate_chord([fr(x) for x in c], min(d(dur_c), dur - current_dur), 0.25, wave_type='sawtooth') # Discordant
                         current_dur += d(dur_c)
-                
+
                 current_dur = 0
                 while current_dur < dur:
                     for f, dur_f in bass_c:
                         if current_dur >= dur: break
                         bss += generate_tone(fr(f), min(d(dur_f), dur - current_dur), 0.5, wave_type='square') # Heavy Bass
                         current_dur += d(dur_f)
-                
+
                 # Chaotic Percussion
                 perc = generate_percussion_pattern([1, 1, 1, 0, 1, 1, 0, 1] * int(dur * 2), dur)
                 all_sections += mix_layers([mel, chd, bss, perc])
@@ -154,7 +154,7 @@ class BattleSong(Song):
                 mel, chd, bss = b'', b'', b''
                 for phrase in theme_d:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.4, wave_type='square')
-                
+
                 dur = sum(d(dur) for p in theme_d for _, dur in p)
                 current_dur = 0
                 while current_dur < dur:
@@ -162,14 +162,14 @@ class BattleSong(Song):
                         if current_dur >= dur: break
                         chd += generate_chord([fr(x) for x in c], min(d(dur_c), dur - current_dur), 0.3, wave_type='sawtooth')
                         current_dur += d(dur_c)
-                
+
                 current_dur = 0
                 while current_dur < dur:
                     for f, dur_f in bass_d:
                         if current_dur >= dur: break
                         bss += generate_tone(fr(f), min(d(dur_f), dur - current_dur), 0.35, wave_type='sawtooth')
                         current_dur += d(dur_f)
-                
+
                 perc = generate_percussion_pattern([1, 1, 1, 1] * int(dur), dur)
                 all_sections += mix_layers([mel, chd, bss, perc])
 

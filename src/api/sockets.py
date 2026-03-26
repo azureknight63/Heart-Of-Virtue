@@ -2,7 +2,7 @@
 
 import functools
 from flask import request, current_app
-from flask_socketio import emit, join_room, leave_room, disconnect
+from flask_socketio import emit, join_room, leave_room
 
 
 def authenticated_only(f):

@@ -91,7 +91,9 @@ class AfterDefeatingLurker(Event):
 class Ch02GuideToCitadel(
     Event
 ):  # When first in Grondia, Gorran guides Jean to the Citadel
-    def __init__(self, player, tile, params, repeat=False, name="Ch02_GuideToCitadel"):
+    def __init__(
+        self, player, tile, params, repeat=False, name="Ch02_GuideToCitadel"
+    ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
@@ -191,7 +193,9 @@ class Ch02GuideToCitadel(
             )
             time.sleep(1)
             dialogue(
-                "Elder", "You are a friend of Gorran. You are welcome here.", "green"
+                "Elder",
+                "You are a friend of Gorran. You are welcome here.",
+                "green",
             )
             time.sleep(1)
             print(
@@ -275,7 +279,9 @@ class Ch02GuideToCitadel(
                 "green",
             )
             time.sleep(2)
-            print("Jean opens his mouth. Closes it. The chamber is very quiet.")
+            print(
+                "Jean opens his mouth. Closes it. The chamber is very quiet."
+            )
             time.sleep(2)
             dialogue("Jean", "No. I didn't.", "cyan")
             time.sleep(2)
@@ -285,7 +291,9 @@ class Ch02GuideToCitadel(
             )
             time.sleep(2)
             dialogue(
-                "Votha Krr", "Then perhaps that is a question for the road.", "green"
+                "Votha Krr",
+                "Then perhaps that is a question for the road.",
+                "green",
             )
             time.sleep(2)
             print(
@@ -343,7 +351,9 @@ class Ch02GuideToCitadel(
                     "green",
                 )
                 dialogue(
-                    "Jean", 'Wait, "my kind?" There are others here like me?', "cyan"
+                    "Jean",
+                    'Wait, "my kind?" There are others here like me?',
+                    "cyan",
                 )
                 dialogue(
                     "Votha Krr",
@@ -405,7 +415,9 @@ class Ch02GuideToCitadel(
             print(
                 "Votha Krr waves a hand, and a Grondite attendant steps forward, carrying a small bundle of supplies. "
             )
-            print("The attendant hands the bundle to Jean, who takes it gratefully.")
+            print(
+                "The attendant hands the bundle to Jean, who takes it gratefully."
+            )
         # Add 5 Antidotes and 2 Restoratives to the player's inventory
         loot = [items.Antidote(5), items.Restorative(2)]
         self.player.add_items_to_inventory(loot)
@@ -527,7 +539,12 @@ class AfterDefeatingKingSlime(Event):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=False, name="AfterDefeatingKingSlime"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="AfterDefeatingKingSlime",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -660,7 +677,12 @@ class Ch02FragmentReminder(Event):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=True, name="Ch02FragmentReminder"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=True,
+        name="Ch02FragmentReminder",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -679,12 +701,15 @@ class Ch02FragmentReminder(Event):
             return
 
         # If Jean already has the fragment, nothing to remind
-        if any(i.__class__.__name__ == "MineralFragment" for i in player.inventory):
+        if any(
+            i.__class__.__name__ == "MineralFragment" for i in player.inventory
+        ):
             return
 
         # If the fragment is gone from the tile too, nothing to do
         if not any(
-            i.__class__.__name__ == "MineralFragment" for i in self.tile.items_here
+            i.__class__.__name__ == "MineralFragment"
+            for i in self.tile.items_here
         ):
             return
 
@@ -713,7 +738,8 @@ class Ch02FragmentReminder(Event):
             print_slow("Jean follows his gaze.", delay=0.05)
             time.sleep(1)
             print_slow(
-                "The fragment is still there. He walked out without it.", delay=0.03
+                "The fragment is still there. He walked out without it.",
+                delay=0.03,
             )
             time.sleep(1.5)
 
@@ -740,7 +766,12 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=False, name="Ch02KingSlimeMemoryFlash"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="Ch02KingSlimeMemoryFlash",
     ):
         memory_lines = [
             ("The edge catches Jean's finger.", 1.5),
@@ -751,15 +782,24 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
             ("", 0.3),
             ("BOOM.", 2.0),
             ("", 0.5),
-            ("A sound that is not a sound. A pressure that moves through bone.", 2.0),
+            (
+                "A sound that is not a sound. A pressure that moves through bone.",
+                2.0,
+            ),
             ("", 0.5),
             ("Screams. Human screams, many of them, very close.", 2.0),
             ("A blinding flash of white — then nothing.", 1.5),
-            ("Then swirling debris. Dust and fire and cold air rushing in.", 2.0),
+            (
+                "Then swirling debris. Dust and fire and cold air rushing in.",
+                2.0,
+            ),
             ("", 0.5),
             ("Being thrown. The sensation of the ground disappearing.", 1.5),
             ("", 0.5),
-            ("And where something warm should have been, in Jean's arms —", 2.0),
+            (
+                "And where something warm should have been, in Jean's arms —",
+                2.0,
+            ),
             ("emptiness.", 3.0),
         ]
         aftermath = [
@@ -791,7 +831,12 @@ class AfterKingSlimeReturn(Event):
     """
 
     def __init__(
-        self, player, tile, params=None, repeat=False, name="AfterKingSlimeReturn"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="AfterKingSlimeReturn",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -807,7 +852,8 @@ class AfterKingSlimeReturn(Event):
     def process(self):
         # Check if Jean actually has the MineralFragment
         has_fragment = any(
-            i.__class__.__name__ == "MineralFragment" for i in self.player.inventory
+            i.__class__.__name__ == "MineralFragment"
+            for i in self.player.inventory
         )
         if not has_fragment:
             return
@@ -821,7 +867,9 @@ class AfterKingSlimeReturn(Event):
         time.sleep(1.5)
 
         dialogue(
-            "Votha Krr", "The pools are clean, little one. You have done well.", "green"
+            "Votha Krr",
+            "The pools are clean, little one. You have done well.",
+            "green",
         )
         time.sleep(1)
         print_slow(
@@ -840,7 +888,9 @@ class AfterKingSlimeReturn(Event):
         while _frag_choice not in ["a", "b", "c"]:
             _frag_choice = input("Choice: ").strip().lower()
         if _frag_choice == "a":
-            print_slow("Jean holds it out. Votha takes it from his hand.", delay=0.03)
+            print_slow(
+                "Jean holds it out. Votha takes it from his hand.", delay=0.03
+            )
         elif _frag_choice == "b":
             dialogue("Jean", "What is this thing, exactly?", "cyan")
             time.sleep(0.5)
@@ -868,7 +918,8 @@ class AfterKingSlimeReturn(Event):
         )
         time.sleep(1)
         print_slow(
-            "A soft, contented rumble escapes him. The fragment is gone.", delay=0.04
+            "A soft, contented rumble escapes him. The fragment is gone.",
+            delay=0.04,
         )
 
         # Remove the MineralFragment from inventory

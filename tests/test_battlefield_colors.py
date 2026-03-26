@@ -19,7 +19,7 @@ def test_battlefield_colors():
     """Create a battlefield window and verify combatant colors."""
     window = CombatBattlefieldWindow("Test Battlefield Colors")
     window.create_window()  # Initialize the window
-    
+
     # Add some test combatants at different health levels
     test_combatants = [
         {
@@ -59,7 +59,7 @@ def test_battlefield_colors():
             "facing": 270,  # West
         },
     ]
-    
+
     for combatant in test_combatants:
         window.set_combatant(
             name=combatant["name"],
@@ -70,23 +70,23 @@ def test_battlefield_colors():
             health_percent=combatant["health_percent"],
             facing_value=combatant["facing"],
         )
-    
+
     window.update_display()
-    
+
     # Print out the text widget content for visual inspection
     print("=" * 60)
     print("BATTLEFIELD DISPLAY TEST")
     print("=" * 60)
-    
+
     if window.text_widget:
         content = window.text_widget.get("1.0", tk.END)
         print(content)
-        
+
         # Check tags at specific positions
         print("\n" + "=" * 60)
         print("TAG VERIFICATION")
         print("=" * 60)
-        
+
         # Find and check Jean (player)
         jean_pos = window.text_widget.search("J", "1.0", tk.END)
         if jean_pos:
@@ -95,7 +95,7 @@ def test_battlefield_colors():
             if "player" in tags:
                 tag_config = window.text_widget.tag_configure("player")
                 print(f"  Player tag color: {tag_config.get('foreground')}")
-        
+
         # Find and check first Ally
         ally_pos = window.text_widget.search("A", "1.0", tk.END)
         if ally_pos:
@@ -104,7 +104,7 @@ def test_battlefield_colors():
             if tags:
                 tag_config = window.text_widget.tag_configure(tags[0])
                 print(f"  Ally tag color: {tag_config.get('foreground')}")
-        
+
         # Find and check first Enemy
         enemy_pos = window.text_widget.search("E", "1.0", tk.END)
         if enemy_pos:
@@ -113,7 +113,7 @@ def test_battlefield_colors():
             if tags:
                 tag_config = window.text_widget.tag_configure(tags[0])
                 print(f"  Enemy tag color: {tag_config.get('foreground')}")
-    
+
     print("\n" + "=" * 60)
     print("VISUAL INSPECTION")
     print("=" * 60)
@@ -124,7 +124,7 @@ def test_battlefield_colors():
     print("  - e (DeadEnemy): Should be GRAY (dead)")
     print("\nClose the window when ready.")
     print("=" * 60)
-    
+
     # Keep window open for visual inspection
     window.window.mainloop()
 

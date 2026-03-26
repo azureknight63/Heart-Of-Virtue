@@ -107,7 +107,9 @@ class ScenarioConfig:
             return self.get_current_scenario()
 
         # Advance to next scenario in rotation
-        next_index = (self.current_rotation_index + 1) % len(self.scenario_order)
+        next_index = (self.current_rotation_index + 1) % len(
+            self.scenario_order
+        )
         return self.scenario_order[next_index]
 
     def advance_scenario(self) -> str:
@@ -282,7 +284,9 @@ class DifficultyProgressionManager:
         else:
             return base_value
 
-    def get_enemy_count_by_difficulty(self, difficulty: Optional[float] = None) -> int:
+    def get_enemy_count_by_difficulty(
+        self, difficulty: Optional[float] = None
+    ) -> int:
         """Get recommended enemy count for difficulty.
 
         Args:
@@ -314,7 +318,9 @@ class DifficultyProgressionManager:
         # Higher difficulty = more loot
         return max(0.5, difficulty)
 
-    def get_experience_multiplier(self, difficulty: Optional[float] = None) -> float:
+    def get_experience_multiplier(
+        self, difficulty: Optional[float] = None
+    ) -> float:
         """Get experience gain multiplier based on difficulty.
 
         Args:
@@ -368,7 +374,10 @@ class ScenarioValidator:
         if not self.scenario_config.is_scenario_valid(to_scenario):
             return (False, f"Invalid target scenario: {to_scenario}")
 
-        return (True, f"Valid transition from {from_scenario} to {to_scenario}")
+        return (
+            True,
+            f"Valid transition from {from_scenario} to {to_scenario}",
+        )
 
     def is_valid_difficulty_level(self, difficulty: float) -> Tuple[bool, str]:
         """Validate difficulty level.
@@ -402,7 +411,10 @@ class ScenarioValidator:
         max_rounds = self.scenario_config.get_max_rounds_before_auto_victory()
 
         if round_count > max_rounds:
-            return (False, f"Round count exceeds max: {round_count} > {max_rounds}")
+            return (
+                False,
+                f"Round count exceeds max: {round_count} > {max_rounds}",
+            )
 
         return (True, f"Round count valid: {round_count}")
 
@@ -427,7 +439,9 @@ class ScenarioValidator:
         # Check difficulty
         starting_diff = self.scenario_config.get_starting_difficulty()
         if starting_diff < 0:
-            issues.append(f"Starting difficulty cannot be negative: {starting_diff}")
+            issues.append(
+                f"Starting difficulty cannot be negative: {starting_diff}"
+            )
 
         # Check scaling
         scaling = self.scenario_config.get_difficulty_scaling_factor()

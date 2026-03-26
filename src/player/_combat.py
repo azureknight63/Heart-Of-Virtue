@@ -143,7 +143,10 @@ he lets out a barely audible whisper:""",
 
         def strike():
             print(
-                colored("Jean strikes with his " + self.eq_weapon.name + "!", "green")
+                colored(
+                    "Jean strikes with his " + self.eq_weapon.name + "!",
+                    "green",
+                )
             )
             power = (
                 self.eq_weapon.damage
@@ -189,7 +192,10 @@ he lets out a barely audible whisper:""",
         if phrase == "":
             targets_here = {}
             for i, possible_target in enumerate(self.current_room.npcs_here):
-                if not possible_target.hidden and possible_target.name != "null":
+                if (
+                    not possible_target.hidden
+                    and possible_target.name != "null"
+                ):
                     targets_here[str(i)] = possible_target
             if len(targets_here) > 0:
                 print("Which target would you like to attack?\n\n")
@@ -209,7 +215,10 @@ he lets out a barely audible whisper:""",
             lower_phrase = phrase.lower()
             success = False
             for i, potential_target in enumerate(self.current_room.npcs_here):
-                if not potential_target.hidden and potential_target.name != "null":
+                if (
+                    not potential_target.hidden
+                    and potential_target.name != "null"
+                ):
                     announce = ""
                     idle = ""
                     if hasattr(potential_target, "announce"):

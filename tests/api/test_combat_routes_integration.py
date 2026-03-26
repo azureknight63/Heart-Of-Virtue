@@ -146,7 +146,7 @@ class TestGameServiceCombatMethods:
         player = session_manager.get_player(session_id)
 
         result = game_service.get_combat_status(player)
-    
+
         assert result["combat_active"] is False
         assert "battle_state" in result
         assert "log" in result
@@ -158,7 +158,7 @@ class TestGameServiceCombatMethods:
         session_id, player_id = session_manager.create_session("testplayer")
         player = session_manager.get_player(session_id)
         result = game_service.execute_move(player, "attack", "attack")
-    
+
         assert "error" in result
         assert "not in combat" in result["error"].lower()
 
@@ -169,7 +169,7 @@ class TestGameServiceCombatMethods:
         session_id, player_id = session_manager.create_session("testplayer")
         player = session_manager.get_player(session_id)
         result = game_service.execute_move(player, "invalid_type", "attack")
-    
+
         assert "error" in result
         assert "not in combat" in result["error"].lower()  # First checks if in combat
 
@@ -180,7 +180,7 @@ class TestGameServiceCombatMethods:
         session_id, player_id = session_manager.create_session("testplayer")
         player = session_manager.get_player(session_id)
         result = game_service.get_available_moves(player)
-    
+
         assert "moves" in result
 
     def test_defend_not_in_combat(self, app):

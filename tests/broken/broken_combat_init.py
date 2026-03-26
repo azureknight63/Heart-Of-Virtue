@@ -61,7 +61,7 @@ if result.get('combat_state'):
     print(f"  Round: {result['combat_state'].get('round')}")
     print(f"  Turn index: {result['combat_state'].get('current_turn_index')}")
     print(f"  Turn order: {result['combat_state'].get('turn_order')}")
-    
+
 if hasattr(player, 'combat_log') and player.combat_log:
     print(f"\nCombat log ({len(player.combat_log)} entries):")
     for entry in player.combat_log:

@@ -1,10 +1,4 @@
-import inspect
-import json
-import os
-import importlib.util
 import random
-import re
-import time
 import genericng  # type: ignore
 import moves  # type: ignore
 import functions  # type: ignore
@@ -18,24 +12,9 @@ from items import (
     Antidote,
     Rock,
     Spear,
-    Fists,
-    Key,
-    Special,
     Consumable,
-    Accessory,
-    Gloves,
-    Helm,
-    Boots,
-    Armor,
-    Weapon,
-    Arrow,
 )  # type: ignore
-import items as items_module  # type: ignore  # added for unique item registry management
-from objects import Container  # type: ignore
-from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition  # type: ignore
 from neotermcolor import colored, cprint
-from pathlib import Path
-from npc_ai_config import NPCAIConfig  # type: ignore
 from combatant import Combatant
 from npc_shop_mixin import MerchantShopMixin  # type: ignore
 from npc_mynx_mixin import MynxLLMMixin  # type: ignore
@@ -126,9 +105,7 @@ class NPC(Combatant):
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
         self.friend = friend  # Is this a friendly NPC? Default is False (enemy). Friends will help Jean in combat.
-        self.combat_delay = (
-            0  # initial delay for combat actions. Typically randomized on unit spawn
-        )
+        self.combat_delay = 0  # initial delay for combat actions. Typically randomized on unit spawn
         self.combat_range = combat_range  # similar to weapon range, but is an attribute to the NPC since
         # NPCs don't equip items
         self.loot = loot.lev0
@@ -149,7 +126,10 @@ class NPC(Combatant):
     def die(self):
         really_die = self.before_death()
         if really_die:
-            print(colored(self.name, "magenta") + " exploded into fragments of light!")
+            print(
+                colored(self.name, "magenta")
+                + " exploded into fragments of light!"
+            )
 
     def select_move(self):
         available_moves = self.refresh_moves()
@@ -173,7 +153,9 @@ class NPC(Combatant):
             # Calculate tactical weight modifications
             weight = move.weight
             if hasattr(self, "ai_config") and self.ai_config:
-                weight += self.ai_config.get_weighted_move_bonus(self, move.name)
+                weight += self.ai_config.get_weighted_move_bonus(
+                    self, move.name
+                )
 
             # Ensure at least 1 weight for viable moves
             weight = max(1, weight)
@@ -197,9 +179,9 @@ class NPC(Combatant):
         while self.current_move is None and attempts < max_attempts:
             attempts += 1
             choice = random.randint(0, num_choices)
-            if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[
-                choice
-            ].viable():
+            if (
+                weighted_moves[choice].fatigue_cost <= self.fatigue
+            ) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
 
                 # Log NPC decision if debug tracing is enabled
@@ -209,16 +191,22 @@ class NPC(Combatant):
                         hasattr(player, "combat_debug_manager")
                         and player.combat_debug_manager
                     ):
-                        if player.combat_debug_manager.should_debug_ai_decisions():
+                        if (
+                            player.combat_debug_manager.should_debug_ai_decisions()
+                        ):
                             # Gather debug info
                             flank_bonus = 0
                             retreat_prio = 0
                             if hasattr(self, "ai_config") and self.ai_config:
-                                flank_bonus = self.ai_config.get_weighted_move_bonus(
-                                    self, self.current_move.name
+                                flank_bonus = (
+                                    self.ai_config.get_weighted_move_bonus(
+                                        self, self.current_move.name
+                                    )
                                 )
                                 retreat_prio = (
-                                    self.ai_config.calculate_retreat_priority(self, [])
+                                    self.ai_config.calculate_retreat_priority(
+                                        self, []
+                                    )
                                 )
 
                             player.combat_debug_manager.display_ai_debug_info(
@@ -226,7 +214,9 @@ class NPC(Combatant):
                                 f"Selected {self.current_move.name}",
                                 {
                                     "fatigue_cost": self.current_move.fatigue_cost,
-                                    "original_weight": weighted_moves[choice].weight,
+                                    "original_weight": weighted_moves[
+                                        choice
+                                    ].weight,
                                     "ai_bonus": flank_bonus,
                                     "retreat_priority": retreat_prio,
                                 },
@@ -263,7 +253,9 @@ class NPC(Combatant):
                     ):
                         if not hasattr(self.player_ref, "combat_drops"):
                             self.player_ref.combat_drops = []
-                        item_name = getattr(item, "name", item.__class__.__name__)
+                        item_name = getattr(
+                            item, "name", item.__class__.__name__
+                        )
                         self.player_ref.combat_drops.append(
                             {
                                 "name": item_name,
@@ -309,9 +301,15 @@ class NPC(Combatant):
         self.in_combat = True
         self.reset_combat_moves()
 
-    def roll_loot(self):  # when the NPC dies, do a roll to see if any loot drops
+    def roll_loot(
+        self,
+    ):  # when the NPC dies, do a roll to see if any loot drops
         if self.current_room is None:
-            print("### ERR: Current room for {} ({}) is None".format(self.name, self))
+            print(
+                "### ERR: Current room for {} ({}) is None".format(
+                    self.name, self
+                )
+            )
             return
         # Shuffle the dict keys to create random access
         keys = list(self.loot.keys())
@@ -332,7 +330,9 @@ class NPC(Combatant):
                 else:
                     drop = self.current_room.spawn_item(item, dropcount)
                 cprint(
-                    "{} dropped {} x {}!".format(self.name, drop.name, dropcount),
+                    "{} dropped {} x {}!".format(
+                        self.name, drop.name, dropcount
+                    ),
                     "cyan",
                     attrs=["bold"],
                 )
@@ -428,12 +428,8 @@ class Merchant(NPC, MerchantShopMixin):
         self.stock_count = (
             stock_count  # Number of items to keep in stock after each refresh
         )
-        self.always_stock = (
-            always_stock  # List of item classes the merchant always keeps in stock
-        )
-        self.base_gold = (
-            base_gold  # Amount of gold the merchant has to buy items from the player
-        )
+        self.always_stock = always_stock  # List of item classes the merchant always keeps in stock
+        self.base_gold = base_gold  # Amount of gold the merchant has to buy items from the player
         self.shop_conditions = {"value": [], "availability": [], "unique": []}
         self.shop = None
         self.initialize_shop()
@@ -514,7 +510,9 @@ class MiloCurioDealer(Merchant):
         from interface import ShopInterface as Shop
 
         shop = Shop(
-            merchant=self, player=player, shop_name="The Wandering Curiosities Shop"
+            merchant=self,
+            player=player,
+            shop_name="The Wandering Curiosities Shop",
         )
         shop.run()
 
@@ -567,7 +565,9 @@ class JamboHealsU(Merchant):
         # Local import to avoid circular import at module load
         from interface import ShopInterface as Shop
 
-        self.shop = Shop(merchant=self, player=player, shop_name="Jambo Heals U")
+        self.shop = Shop(
+            merchant=self, player=player, shop_name="Jambo Heals U"
+        )
         self.shop.exit_message = (
             "Jambo waves enthusiastically and loudly calls out, "
             "'Jambo wishes you well on your travels "
@@ -724,7 +724,9 @@ class Mynx(MynxLLMMixin, Friend):
         return False
 
     # Override talk to use the interaction framework
-    def talk(self, player, prompt: str | None = None, structured: bool = False):
+    def talk(
+        self, player, prompt: str | None = None, structured: bool = False
+    ):
         try:
             return self.interact_with_player(
                 player, prompt=prompt, structured=structured
@@ -734,16 +736,22 @@ class Mynx(MynxLLMMixin, Friend):
             return None
 
     def pet(self, player=None, structured: bool = False):
-        return self.interact_with_player(player, prompt="pet", structured=structured)
+        return self.interact_with_player(
+            player, prompt="pet", structured=structured
+        )
 
     def play(self, player=None, item=None, structured: bool = False):
         prompt = "play"
         if item:
             prompt = f"play with {str(item)}"
-        return self.interact_with_player(player, prompt=prompt, structured=structured)
+        return self.interact_with_player(
+            player, prompt=prompt, structured=structured
+        )
 
 
-class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.
+class Gorran(
+    Friend
+):  # The "rock-man" that helps Jean at the beginning of the game.
     def __init__(self):
         description = """
 A massive creature that somewhat resembles a man,
@@ -780,7 +788,8 @@ friendly enough to Jean.
 
     def before_death(self):
         print(
-            colored(self.name, "yellow", attrs=["bold"]) + " quaffs one of his potions!"
+            colored(self.name, "yellow", attrs=["bold"])
+            + " quaffs one of his potions!"
         )
         self.fatigue /= 2
         self.hp = self.maxhp
@@ -1140,7 +1149,9 @@ class TheAdjutant(Friend):
             if choice == "1":
                 try:
                     hp_val = int(
-                        input(f"  New HP (current max {player.maxhp}): ").strip()
+                        input(
+                            f"  New HP (current max {player.maxhp}): "
+                        ).strip()
                     )
                     maxhp_val = int(input("  New Max HP: ").strip())
                     player.maxhp = max(1, maxhp_val)
@@ -1306,7 +1317,9 @@ class TheAdjutant(Friend):
             print(f"  Tile {coords} not loaded — cannot modify.")
             return
 
-        cls_name = input("  NPC class name (e.g. Slime, Lurker, KingSlime): ").strip()
+        cls_name = input(
+            "  NPC class name (e.g. Slime, Lurker, KingSlime): "
+        ).strip()
         if not cls_name:
             return
 
@@ -1348,7 +1361,9 @@ class TheAdjutant(Friend):
             idx = int(raw) - 1
             if 0 <= idx < len(npcs):
                 removed = npcs.pop(idx)
-                print(f"  Removed {getattr(removed, 'name', '?')} from {name}.")
+                print(
+                    f"  Removed {getattr(removed, 'name', '?')} from {name}."
+                )
                 return
         except ValueError:
             pass
@@ -1417,7 +1432,9 @@ class TheAdjutant(Friend):
         print(f"\n  Editing: {npc_name}")
         for stat in editable:
             current = getattr(target, stat, "—")
-            raw_val = input(f"  {stat} (current {current}, blank to skip): ").strip()
+            raw_val = input(
+                f"  {stat} (current {current}, blank to skip): "
+            ).strip()
             if not raw_val:
                 continue
             # Boolean stats

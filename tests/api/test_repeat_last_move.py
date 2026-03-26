@@ -125,4 +125,3 @@ class TestRepeatLastMove:
         # Should return an error about no valid target
         assert "error" in repeat_result
         assert "target" in repeat_result["error"].lower() and "no longer available" in repeat_result["error"].lower()
-

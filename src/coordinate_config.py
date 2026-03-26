@@ -142,7 +142,9 @@ class CoordinateSystemConfig:
         dy = y2 - y1
         # atan2 gives angle from East (0°), but we want from North (0°)
         # So we need to rotate 90 degrees
-        angle_rad = math.atan2(dx, dy)  # Note: switched x and y for North-based angle
+        angle_rad = math.atan2(
+            dx, dy
+        )  # Note: switched x and y for North-based angle
         angle_deg = math.degrees(angle_rad)
         # Normalize to 0-360
         angle_deg = (angle_deg + 360) % 360
@@ -159,15 +161,24 @@ class CoordinateSystemConfig:
         Returns:
             ((min_x, min_y), (max_x, max_y)) or None if zone not found
         """
-        if not hasattr(self.player, "game_config") or not self.player.game_config:
+        if (
+            not hasattr(self.player, "game_config")
+            or not self.player.game_config
+        ):
             return None
 
         config = self.player.game_config
 
         # Map zone names to config attributes
         zone_map = {
-            "standard_player": (config.standard_player_x, config.standard_player_y),
-            "standard_enemy": (config.standard_enemy_x, config.standard_enemy_y),
+            "standard_player": (
+                config.standard_player_x,
+                config.standard_player_y,
+            ),
+            "standard_enemy": (
+                config.standard_enemy_x,
+                config.standard_enemy_y,
+            ),
             "pincer_player": (config.pincer_player_x, config.pincer_player_y),
             "pincer_enemy1": (config.pincer_enemy1_x, config.pincer_enemy1_y),
             "pincer_enemy2": (config.pincer_enemy2_x, config.pincer_enemy2_y),
@@ -272,7 +283,10 @@ class GridValidator:
         )
 
         if distance > max_distance:
-            return (False, f"Distance {distance} exceeds maximum {max_distance:.2f}")
+            return (
+                False,
+                f"Distance {distance} exceeds maximum {max_distance:.2f}",
+            )
 
         return (True, "")
 

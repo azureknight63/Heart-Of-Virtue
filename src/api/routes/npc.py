@@ -30,7 +30,10 @@ def get_session_and_player():
             None,
             None,
             jsonify(
-                {"success": False, "error": "Missing or invalid Authorization header"}
+                {
+                    "success": False,
+                    "error": "Missing or invalid Authorization header",
+                }
             ),
             401,
         )
@@ -143,7 +146,9 @@ def select_dialogue_option(npc_id):
     if not is_valid:
         return jsonify({"success": False, "error": error}), 400
 
-    is_valid, error = validate_required_fields(request.get_json() or {}, ["option_id"])
+    is_valid, error = validate_required_fields(
+        request.get_json() or {}, ["option_id"]
+    )
     if not is_valid:
         return jsonify({"success": False, "error": error}), 400
 
@@ -157,14 +162,26 @@ def select_dialogue_option(npc_id):
         option_id = int(request.json["option_id"])
         if option_id < 0:
             return (
-                jsonify({"success": False, "error": "option_id must be non-negative"}),
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "option_id must be non-negative",
+                    }
+                ),
                 400,
             )
     except (ValueError, TypeError):
-        return jsonify({"success": False, "error": "option_id must be an integer"}), 400
+        return (
+            jsonify(
+                {"success": False, "error": "option_id must be an integer"}
+            ),
+            400,
+        )
 
     # Select dialogue option
-    result = current_app.game_service.select_dialogue_option(player, npc_id, option_id)
+    result = current_app.game_service.select_dialogue_option(
+        player, npc_id, option_id
+    )
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -252,7 +269,10 @@ def accept_quest(quest_id):
     session_manager.save_session(session.session_id)
 
     status_code = 200 if result.get("success") else 404
-    return jsonify({"success": result.get("success"), "data": result}), status_code
+    return (
+        jsonify({"success": result.get("success"), "data": result}),
+        status_code,
+    )
 
 
 @npc_bp.route("/quests/<quest_id>/progress", methods=["POST"])
@@ -296,7 +316,10 @@ def update_quest_progress(quest_id):
     session_manager.save_session(session.session_id)
 
     status_code = 200 if result.get("success") else 404
-    return jsonify({"success": result.get("success"), "data": result}), status_code
+    return (
+        jsonify({"success": result.get("success"), "data": result}),
+        status_code,
+    )
 
 
 @npc_bp.route("/quests/<quest_id>/status", methods=["GET"])
@@ -325,4 +348,7 @@ def get_quest_status(quest_id):
     session_manager.save_session(session.session_id)
 
     status_code = 200 if result.get("success") else 404
-    return jsonify({"success": result.get("success"), "data": result}), status_code
+    return (
+        jsonify({"success": result.get("success"), "data": result}),
+        status_code,
+    )

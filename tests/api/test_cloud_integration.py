@@ -34,7 +34,7 @@ class TestCloudIntegration:
 
     def test_user_lifecycle_and_saves(self, client, app):
         """Test registration, login, and cloud save persistence."""
-        
+
         # 1. Test Registration
         reg_payload = {
             "username": self.test_username,
@@ -76,11 +76,11 @@ class TestCloudIntegration:
         # 5. Test Autosave
         auto_resp1 = client.post("/api/saves", json={"is_autosave": True}, headers=headers)
         assert auto_resp1.status_code == 201
-        
+
         # Perform second autosave (should UPSERT)
         auto_resp2 = client.post("/api/saves", json={"is_autosave": True}, headers=headers)
         assert auto_resp2.status_code == 201
-        
+
         # List again
         list_resp2 = client.get("/api/saves", headers=headers)
         saves_data2 = list_resp2.get_json()
@@ -95,7 +95,7 @@ class TestCloudIntegration:
         login_resp = client.post("/api/auth/login", json=login_payload)
         assert login_resp.status_code == 200
         new_session_id = login_resp.get_json()["data"]["session_id"]
-        
+
         # Verify new session access
         new_headers = {"Authorization": f"Bearer {new_session_id}"}
         list_resp3 = client.get("/api/saves", headers=new_headers)
@@ -109,7 +109,7 @@ class TestCloudIntegration:
 
     def test_auth_validations(self, client):
         """Test username/password security constraints."""
-        
+
         # Short Username
         short_user = {
             "username": "abc", # < 4

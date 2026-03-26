@@ -60,12 +60,16 @@ class ShopCondition:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ---- Price Hook -----------------------------------------------------
-    def apply_to_price(self, item: Item, base_price: float) -> float:  # noqa: D401
+    def apply_to_price(
+        self, item: Item, base_price: float
+    ) -> float:  # noqa: D401
         """Return (possibly) modified price for an item. Default: passthrough."""
         return base_price
 
     # ---- Restock Weight Hook -------------------------------------------
-    def adjust_restock_weights(self, weight_map: Dict[Type[Item], float]) -> None:
+    def adjust_restock_weights(
+        self, weight_map: Dict[Type[Item], float]
+    ) -> None:
         """Mutate in-place selection weights. Default: no-op."""
         return None
 
@@ -89,7 +93,9 @@ class ShopCondition:
                 import items as items_module  # local import to avoid cycles
 
                 subclasses: List[Type[Item]] = []
-                for _, obj in inspect.getmembers(items_module, inspect.isclass):
+                for _, obj in inspect.getmembers(
+                    items_module, inspect.isclass
+                ):
                     if (
                         obj is not Item
                         and isinstance(obj, type)
@@ -141,7 +147,9 @@ class ValueModifierCondition(ShopCondition):
             if not description:
                 sign = "+" if multiplier >= 1 else "-"
                 pct = round(abs(multiplier - 1) * 100)
-                description = f"{target_class.__name__} items {sign}{pct}% value"
+                description = (
+                    f"{target_class.__name__} items {sign}{pct}% value"
+                )
         else:
             # Fallback generic names if no target class resolved
             if not name:
@@ -200,14 +208,14 @@ class RestockWeightBoostCondition(ShopCondition):
                 name = f"{target_class.__name__} Restock Boost"
             if not description:
                 pct = round((weight_multiplier - 1) * 100)
-                description = (
-                    f"Increased chance (+{pct}%) for {target_class.__name__} items"
-                )
+                description = f"Increased chance (+{pct}%) for {target_class.__name__} items"
         else:
             if not name:
                 name = "Restock Boost"
             if not description:
-                description = f"Restock weight x{weight_multiplier} for chosen class"
+                description = (
+                    f"Restock weight x{weight_multiplier} for chosen class"
+                )
         super().__init__(
             name=name or "Restock Boost",
             description=description or "",
@@ -255,7 +263,9 @@ class UniqueItemInjectionCondition(ShopCondition):
             name = "Unique Item Injection"
         if not description:
             description = "Injects a unique item into merchant inventory"
-        super().__init__(name=name, description=description, metadata=metadata or {})
+        super().__init__(
+            name=name, description=description, metadata=metadata or {}
+        )
 
     def inject_unique_items(self, merchant: Any) -> list[Item]:  # type: ignore[override]
         try:
@@ -275,7 +285,9 @@ class UniqueItemInjectionCondition(ShopCondition):
             unique_items_spawned.add(factory.__name__)
             # Ensure uniqueness flags
             setattr(item, "unique", True)
-            setattr(item, "unique_condition", self.name or "Unique Item Injection")
+            setattr(
+                item, "unique_condition", self.name or "Unique Item Injection"
+            )
 
             # Attempt to locate a merchant container (first match)
             container = None
@@ -307,7 +319,9 @@ class UniqueItemInjectionCondition(ShopCondition):
             return []
 
     # Backwards-compatible singular variant used elsewhere in codebase
-    def inject_unique_item(self, merchant: Any):  # pragma: no cover - thin wrapper
+    def inject_unique_item(
+        self, merchant: Any
+    ):  # pragma: no cover - thin wrapper
         items = self.inject_unique_items(merchant)
         return items[0] if items else None
 

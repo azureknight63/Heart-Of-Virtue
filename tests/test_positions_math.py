@@ -86,11 +86,11 @@ class TestCombatPosition:
         """Test position copy creates independent instance."""
         original = CombatPosition(x=5, y=10, facing=Direction.E)
         copy = original.copy()
-        
+
         assert copy.x == original.x
         assert copy.y == original.y
         assert copy.facing == original.facing
-        
+
         # Modify copy, original unchanged
         copy.x = 99
         assert original.x == 5
@@ -99,7 +99,7 @@ class TestCombatPosition:
         """Test X coordinate validation (0-50)."""
         with pytest.raises(ValueError):
             CombatPosition(x=-1, y=25)
-        
+
         with pytest.raises(ValueError):
             CombatPosition(x=51, y=25)
 
@@ -107,7 +107,7 @@ class TestCombatPosition:
         """Test Y coordinate validation (0-50)."""
         with pytest.raises(ValueError):
             CombatPosition(x=25, y=-1)
-        
+
         with pytest.raises(ValueError):
             CombatPosition(x=25, y=51)
 
@@ -118,7 +118,7 @@ class TestCombatPosition:
         pos2 = CombatPosition(x=50, y=0)
         pos3 = CombatPosition(x=0, y=50)
         pos4 = CombatPosition(x=50, y=50)
-        
+
         assert pos1.x == 0 and pos1.y == 0
         assert pos2.x == 50 and pos2.y == 0
         assert pos3.x == 0 and pos3.y == 50
@@ -360,10 +360,10 @@ class TestMovement:
         from_pos = CombatPosition(x=10, y=25)
         to_pos = CombatPosition(x=20, y=25)
         distance_to_target = 10
-        
+
         # Request to move 15 squares (more than distance_to_target)
         result = move_toward(from_pos, to_pos, 15)
-        
+
         # Should stop at or before target, not overshoot
         assert result.x <= to_pos.x, "Overshooted target horizontally!"
         assert result.y == to_pos.y
@@ -374,10 +374,10 @@ class TestMovement:
         """Advance move should not overshoot target (vertical case)."""
         from_pos = CombatPosition(x=25, y=10)
         to_pos = CombatPosition(x=25, y=25)
-        
+
         # Request to move 20 squares (more than distance_to_target)
         result = move_toward(from_pos, to_pos, 20)
-        
+
         # Should stop at or before target, not overshoot
         assert result.y <= to_pos.y, "Overshooted target vertically!"
         assert result.x == to_pos.x
@@ -392,7 +392,7 @@ class TestMovement:
         to_pos = CombatPosition(x=15, y=15)  # 5 diagonal squares away
 
         actual_distance = distance_from_coords(from_pos, to_pos)
-        
+
         # Request to move much more than distance_to_target
         result = move_toward(from_pos, to_pos, actual_distance + 10)
 
@@ -406,10 +406,10 @@ class TestMovement:
         """Moving toward edge of grid with large distance request."""
         from_pos = CombatPosition(x=48, y=25)
         to_pos = CombatPosition(x=50, y=25)  # At edge
-        
+
         # Request large distance
         result = move_toward(from_pos, to_pos, 20)
-        
+
         # Should stop at target, not beyond grid
         assert result.x <= 50, "Position beyond grid boundary!"
         assert result.x == to_pos.x, "Should reach target at grid edge"
@@ -419,10 +419,10 @@ class TestMovement:
         """Moving small distance toward nearby target."""
         from_pos = CombatPosition(x=25, y=25)
         to_pos = CombatPosition(x=28, y=25)
-        
+
         # Only 3 feet away, request 5 feet of movement
         result = move_toward(from_pos, to_pos, 5)
-        
+
         # Should not overshoot
         assert result.x <= to_pos.x, "Overshooted close target!"
         assert result.x == to_pos.x or abs(result.x - to_pos.x) <= 1
@@ -431,10 +431,10 @@ class TestMovement:
         """Moving exactly the distance to target."""
         from_pos = CombatPosition(x=20, y=25)
         to_pos = CombatPosition(x=30, y=25)
-        
+
         distance = 10
         result = move_toward(from_pos, to_pos, distance)
-        
+
         # Should reach target
         assert result.x == 30 and result.y == 25
 
@@ -491,7 +491,7 @@ class TestMovement:
         center = CombatPosition(x=25, y=25, facing=Direction.N)
         flanker = CombatPosition(x=25, y=10)
         result = move_to_flank(flanker, center, distance=5)
-        
+
         # Should be roughly perpendicular (90° from target's facing)
         assert result.x != flanker.x or result.y != flanker.y
 
@@ -593,14 +593,14 @@ class TestRandomPositionGeneration:
         """Test generating random position within zone."""
         zone = ((10, 10), (30, 30))
         pos = random_position_in_zone(zone)
-        
+
         assert 10 <= pos.x <= 30
         assert 10 <= pos.y <= 30
 
     def test_random_position_bounds(self):
         """Test position is within specified bounds."""
         zone = ((0, 0), (50, 50))
-        
+
         for _ in range(10):
             pos = random_position_in_zone(zone)
             assert 0 <= pos.x <= 50
@@ -609,10 +609,10 @@ class TestRandomPositionGeneration:
     def test_random_position_seed_reproducibility(self):
         """Test same seed produces same position."""
         zone = ((20, 20), (40, 40))
-        
+
         pos1 = random_position_in_zone(zone, seed=42)
         pos2 = random_position_in_zone(zone, seed=42)
-        
+
         assert pos1.x == pos2.x
         assert pos1.y == pos2.y
 
@@ -625,7 +625,7 @@ class TestBackwardCompatibility:
         class DummyUnit:
             def __init__(self):
                 self.combat_position = None
-        
+
         unit = DummyUnit()
         result = recalculate_proximity_dict(unit, [])
         assert result == {}
@@ -634,7 +634,7 @@ class TestBackwardCompatibility:
         """Test with unit without combat_position."""
         class DummyUnit:
             pass
-        
+
         unit = DummyUnit()
         result = recalculate_proximity_dict(unit, [])
         assert result == {}
@@ -644,10 +644,10 @@ class TestBackwardCompatibility:
         class DummyUnit:
             def __init__(self, x, y):
                 self.combat_position = CombatPosition(x, y)
-        
+
         user = DummyUnit(25, 25)
         target = DummyUnit(30, 25)
-        
+
         result = recalculate_proximity_dict(user, [target])
         assert target in result
         assert result[target] == 5  # 5 feet away

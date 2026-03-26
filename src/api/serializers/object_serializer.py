@@ -140,7 +140,9 @@ class ObjectSerializer:
             obj_data["contents"] = ItemSerializer.serialize_list(obj.contents)
             obj_data["item_count"] = len(obj.contents)
         elif hasattr(obj, "items_here") and obj.items_here:
-            obj_data["contents"] = ItemSerializer.serialize_list(obj.items_here)
+            obj_data["contents"] = ItemSerializer.serialize_list(
+                obj.items_here
+            )
             obj_data["item_count"] = len(obj.items_here)
         else:
             obj_data["contents"] = []

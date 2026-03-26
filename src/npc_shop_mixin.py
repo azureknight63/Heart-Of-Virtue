@@ -111,7 +111,8 @@ class MerchantShopMixin:
                     self.inventory = []
                 self.inventory.append(it)
                 msg = random.choice(phrases).format(
-                    merchant=self.name.split(" ")[0], item=getattr(it, "name", "item")
+                    merchant=self.name.split(" ")[0],
+                    item=getattr(it, "name", "item"),
                 )
                 print(msg)
                 time.sleep(0.15)
@@ -269,11 +270,15 @@ class MerchantShopMixin:
                 items_module.unique_items_spawned.discard(cls_name)
             return containers
         for room in (
-            rooms_source.values() if hasattr(rooms_source, "values") else rooms_source
+            rooms_source.values()
+            if hasattr(rooms_source, "values")
+            else rooms_source
         ):
             if isinstance(room, str):
                 continue
-            for obj in getattr(room, "objects_here", getattr(room, "objects", [])):
+            for obj in getattr(
+                room, "objects_here", getattr(room, "objects", [])
+            ):
                 if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                     owner = getattr(obj, "merchant", None)
                     if owner == self or owner == self.name:
@@ -314,7 +319,9 @@ class MerchantShopMixin:
                 desired_count = getattr(item_spec, "count", 0)
         if not self.current_room:
             return None
-        spawned = self.current_room.spawn_item(item_class_name, merchandise=True)
+        spawned = self.current_room.spawn_item(
+            item_class_name, merchandise=True
+        )
         if spawned and desired_count > 0 and hasattr(spawned, "count"):
             spawned.count = desired_count
         return spawned
@@ -439,7 +446,11 @@ class MerchantShopMixin:
 
         weight_map: dict[type[Item], float] = {}
         for cls in candidates:
-            w = 3.0 if any(issubclass(cls, s) for s in specialty_classes) else 1.0
+            w = (
+                3.0
+                if any(issubclass(cls, s) for s in specialty_classes)
+                else 1.0
+            )
             weight_map[cls] = w
         for cond in self.shop_conditions.get("availability", []):
             try:
@@ -486,7 +497,9 @@ class MerchantShopMixin:
             if cls is None:
                 break
             try:
-                spawned = self.current_room.spawn_item(cls.__name__, merchandise=True)
+                spawned = self.current_room.spawn_item(
+                    cls.__name__, merchandise=True
+                )
             except Exception:
                 spawned = None
             if not spawned:
@@ -514,7 +527,9 @@ class MerchantShopMixin:
         for _ in range(3):
             if random.random() < 0.25:
                 amount = random.randrange(50, 151, 10) / 100
-                self.shop_conditions["value"].append(ValueModifierCondition(amount))
+                self.shop_conditions["value"].append(
+                    ValueModifierCondition(amount)
+                )
         for _ in range(2):
             if random.random() < 0.4:
                 weight_boost = round(random.uniform(0.25, 3.0), 2)
@@ -522,7 +537,9 @@ class MerchantShopMixin:
                     RestockWeightBoostCondition(weight_boost)
                 )
         if random.random() < 0.05:
-            self.shop_conditions["unique"].append(UniqueItemInjectionCondition())
+            self.shop_conditions["unique"].append(
+                UniqueItemInjectionCondition()
+            )
 
     def _apply_value_conditions(self):
         """Apply all ValueModifierConditions to every item in stock (merchant + containers)."""
@@ -536,7 +553,9 @@ class MerchantShopMixin:
             modified_value = base_value
             for condition in self.shop_conditions["value"]:
                 try:
-                    modified_value = condition.apply_to_price(item, modified_value)
+                    modified_value = condition.apply_to_price(
+                        item, modified_value
+                    )
                 except TypeError:
                     modified_value = condition.apply_to_price(modified_value)  # type: ignore[arg-type]
             item.value = max(1, int(modified_value))
