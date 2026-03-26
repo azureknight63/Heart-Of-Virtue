@@ -32,7 +32,7 @@ export default function LoginPage() {
         await login(username, password)
       }
       // Token is now in localStorage, navigate and page will reload state
-      window.location.href = '/menu'
+      navigate('/menu')
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Invalid username or password; try again or register a new account.')
