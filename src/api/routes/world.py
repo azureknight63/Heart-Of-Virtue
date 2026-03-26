@@ -17,7 +17,12 @@ def get_session_and_player(request):
     # Extract session ID from Authorization header
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"error": "Missing authorization"}), 401),
+        )
 
     session_id = auth_header[7:]
     session_manager = current_app.session_manager
@@ -25,7 +30,12 @@ def get_session_and_player(request):
     # Get session and player
     session = session_manager.get_session(session_id)
     if not session:
-        return None, None, None, (jsonify({"error": "Invalid or expired session"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"error": "Invalid or expired session"}), 401),
+        )
 
     player = session_manager.get_player(session_id)
     if not player:
@@ -57,7 +67,9 @@ def get_current_room():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -122,7 +134,9 @@ def move_player():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -198,7 +212,9 @@ def submit_event_input():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -301,7 +317,9 @@ def get_tile():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -389,7 +407,9 @@ def get_explored_tiles():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -399,13 +419,18 @@ def get_explored_tiles():
 
         if not game_service:
             return (
-                jsonify({"success": False, "error": "Game service not initialized"}),
+                jsonify(
+                    {"success": False, "error": "Game service not initialized"}
+                ),
                 500,
             )
 
         explored_tiles = game_service.get_explored_tiles(player)
 
-        return jsonify({"success": True, "explored_tiles": explored_tiles}), 200
+        return (
+            jsonify({"success": True, "explored_tiles": explored_tiles}),
+            200,
+        )
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -444,7 +469,9 @@ def get_tiles_batch():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -501,7 +528,11 @@ def get_tiles_batch():
 
         tiles = []
         for coord in coordinates:
-            if not isinstance(coord, dict) or "x" not in coord or "y" not in coord:
+            if (
+                not isinstance(coord, dict)
+                or "x" not in coord
+                or "y" not in coord
+            ):
                 continue
 
             try:
@@ -550,7 +581,9 @@ def get_available_commands():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -609,7 +642,9 @@ def interact_with_target():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -645,7 +680,11 @@ def interact_with_target():
             )
 
         result = game_service.interact_with_target(
-            player, target_id, action, quantity=quantity, session_data=session.data
+            player,
+            target_id,
+            action,
+            quantity=quantity,
+            session_data=session.data,
         )
 
         if not result["success"]:
@@ -682,7 +721,9 @@ def trigger_room_events():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -704,10 +745,15 @@ def trigger_room_events():
         # Get current tile
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
-            return jsonify({"success": False, "error": "Current tile not found"}), 404
+            return (
+                jsonify({"success": False, "error": "Current tile not found"}),
+                404,
+            )
 
         # Trigger events on the tile
-        events_triggered = game_service.trigger_tile_events(player, tile, session.data)
+        events_triggered = game_service.trigger_tile_events(
+            player, tile, session.data
+        )
 
         # Store tile modifications after events have processed
         game_service.store_tile_modification(
@@ -747,7 +793,9 @@ def get_pending_events():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 
@@ -780,7 +828,9 @@ def search_room():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error[0], error[1]
 

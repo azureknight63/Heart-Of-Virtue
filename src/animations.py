@@ -8,7 +8,12 @@ from pathlib import Path
 # clean_string is imported only where needed (inside animate_to_main_screen).
 
 from asciimatics.effects import Cycle, Stars, Print
-from asciimatics.renderers import FigletText, ColourImageFile, ImageFile, SpeechBubble
+from asciimatics.renderers import (
+    FigletText,
+    ColourImageFile,
+    ImageFile,
+    SpeechBubble,
+)
 from asciimatics.scene import Scene
 from asciimatics.screen import Screen
 from asciimatics.exceptions import ResizeScreenError
@@ -43,7 +48,9 @@ def count_gif_frames(gif_path):
 
 
 def function_exists(module, function_name):
-    return hasattr(module, function_name) and callable(getattr(module, function_name))
+    return hasattr(module, function_name) and callable(
+        getattr(module, function_name)
+    )
 
 
 def main():
@@ -93,9 +100,15 @@ def demo(screen):
 def demo2(screen):
     effects = [
         Cycle(
-            screen, FigletText("ASCIIMATICS", font="big"), int(screen.height / 2 - 8)
+            screen,
+            FigletText("ASCIIMATICS", font="big"),
+            int(screen.height / 2 - 8),
         ),
-        Cycle(screen, FigletText("ROCKS!", font="big"), int(screen.height / 2 + 3)),
+        Cycle(
+            screen,
+            FigletText("ROCKS!", font="big"),
+            int(screen.height / 2 + 3),
+        ),
         Stars(screen, 200),
     ]
     screen.play([Scene(effects, 500)])
@@ -163,7 +176,9 @@ def display_static_image(screen, file):
         print("### Animation not found!")
 
 
-def title_scene(screen):  # just for testing. I don't think I actually want to use this!
+def title_scene(
+    screen,
+):  # just for testing. I don't think I actually want to use this!
     effects = [
         Print(
             screen,

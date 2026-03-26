@@ -24,7 +24,7 @@ for i, map_data in enumerate(universe.maps):
     tiles = [k for k in map_data if isinstance(k, tuple)]
     print(f'\nMap {i}: {map_name}')
     print(f'  Tile count: {len(tiles)}')
-    
+
     if tiles:
         # Get first tile
         first_coord = tiles[0]
@@ -39,7 +39,7 @@ for i, map_data in enumerate(universe.maps):
         print(f'    NPCs: {len(getattr(tile_obj, "npcs_here", []))}')
         print(f'    Objects: {len(getattr(tile_obj, "objects_here", []))}')
         print(f'    Events: {len(getattr(tile_obj, "events_here", []))}')
-        
+
         # Show exits
         exits = getattr(tile_obj, 'exits', {})
         if exits:

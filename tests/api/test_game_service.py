@@ -230,24 +230,24 @@ class TestGameService:
     def test_trigger_tile_events_with_events(self):
         """Test triggering events on a tile with events."""
         tile = self.universe.get_tile(2, 3)
-        
+
         # Create a mock event
         class MockEvent:
             def __init__(self):
                 self.description = "Test event description"
                 self.processed = False
-            
+
             def process(self):
                 self.processed = True
 
             def check_conditions(self):
                 self.process()
-        
+
         event = MockEvent()
         tile.events_here.append(event)
-        
+
         result = self.service.trigger_tile_events(self.player, tile)
-        
+
         assert len(result) == 1
         assert result[0]["type"] == "MockEvent"
         assert result[0]["description"] == "Test event description"
@@ -256,14 +256,14 @@ class TestGameService:
     def test_get_tile_enhanced(self):
         """Test getting enhanced tile data with NPCs and items."""
         tile = self.universe.get_tile(2, 3)
-        
+
         # Add mock item
         class MockItem:
             def __init__(self):
                 self.name = "Test Item"
                 self.description = "A test item"
                 self.quantity = 1
-        
+
         # Add mock NPC
         class MockNPC:
             def __init__(self):
@@ -272,20 +272,20 @@ class TestGameService:
                 self.health = 50
                 self.max_health = 100
                 self.is_hostile = False
-        
+
         # Add mock object
         class MockObject:
             def __init__(self):
                 self.name = "Test Object"
                 self.description = "A test object"
                 self.is_passable = True
-        
+
         tile.items_here.append(MockItem())
         tile.npcs_here.append(MockNPC())
         tile.objects_here = [MockObject()]
-        
+
         result = self.service.get_tile(self.player, 2, 3)
-        
+
         assert result["name"] == "Test Room B"
         assert len(result["items"]) == 1
         assert result["items"][0]["name"] == "Test Item"

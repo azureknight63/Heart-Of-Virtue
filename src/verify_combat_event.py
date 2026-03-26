@@ -53,7 +53,9 @@ class TestCombatEventLoading(unittest.TestCase):
                 combat_event = ev
                 break
 
-        self.assertIsNotNone(combat_event, "No CombatEvent found in tile (2, 3)")
+        self.assertIsNotNone(
+            combat_event, "No CombatEvent found in tile (2, 3)"
+        )
 
         # Verify config
         config = combat_event.config

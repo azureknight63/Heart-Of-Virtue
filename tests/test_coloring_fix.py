@@ -14,7 +14,7 @@ from src.positions import CombatPosition, Direction
 def test_column_calculation():
     """Test that the column calculation for color tags is correct"""
     print("Testing column calculation fix...")
-    
+
     # Test cases: grid_x -> expected column in text
     # Remember: col = grid_x * 2 + 2
     test_cases = [
@@ -23,19 +23,19 @@ def test_column_calculation():
         (5, 12),   # Sixth cell: col = 5*2 + 2 = 12
         (25, 52),  # 26th cell (middle): col = 25*2 + 2 = 52
     ]
-    
+
     for grid_x, expected_col in test_cases:
         calculated_col = grid_x * 2 + 2
         status = "✓" if calculated_col == expected_col else "✗"
         print(f"  {status} grid_x={grid_x}: calculated={calculated_col}, expected={expected_col}")
         assert calculated_col == expected_col, f"Column calculation mismatch for grid_x={grid_x}!"
-    
+
     print("✓ All column calculations passed!")
 
 def test_display_length_calculation():
     """Test that display length is correctly calculated"""
     print("\nTesting display length calculation...")
-    
+
     test_cases = [
         # (is_alive, health_percent, expected_display_len)
         (True, 1.0, 2),       # Healthy: char + direction = 2
@@ -45,22 +45,22 @@ def test_display_length_calculation():
         (True, 0.2, 4),       # Critical (<25%): char + direction + !! = 4
         (False, 0.0, 2),      # Dead: char + direction = 2
     ]
-    
+
     for is_alive, health_pct, expected_len in test_cases:
         # Recalculate as in the fixed code
         display_len = 2  # char + direction is always 2
-        
+
         # Add health marker length if applicable
         if is_alive and health_pct < 0.75:
             if health_pct < 0.25:
                 display_len += 2  # !!
             else:
                 display_len += 1  # !
-        
+
         status = "✓" if display_len == expected_len else "✗"
         print(f"  {status} alive={is_alive}, health={health_pct*100:.0f}%: calculated={display_len}, expected={expected_len}")
         assert display_len == expected_len, f"Display length mismatch for alive={is_alive}, health={health_pct}!"
-    
+
     print("✓ All display length calculations passed!")
 
 def test_window_setup():
@@ -69,7 +69,7 @@ def test_window_setup():
     try:
         window = CombatBattlefieldWindow("Coloring Test")
         window.create_window()
-        
+
         # Add multiple enemies to test
         for i in range(1, 10):
             window.set_combatant(
@@ -81,14 +81,14 @@ def test_window_setup():
                 health_percent=max(0, 1.0 - (i * 0.1)),
                 facing_value=i * 40
             )
-        
+
         # Render and check tags are applied
         window.update_display()
-        
+
         print("✓ Window initialized and rendered without errors")
         print(f"  Combatants: {len(window.combatants_data)}")
         print(f"  Movement history: {len(window.movement_history)}")
-        
+
         window.close()
     except Exception as e:
         print(f"✗ Error during window test: {e}")

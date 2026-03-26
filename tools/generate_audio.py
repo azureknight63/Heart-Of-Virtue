@@ -51,7 +51,7 @@ SONG_LIST = [
 if __name__ == "__main__":
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
-    
+
     print("Generating Audio Assets...")
     for song in SONG_LIST:
         print(f"Generating {song.filename}...")

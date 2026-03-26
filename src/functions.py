@@ -17,7 +17,6 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from items import Item
     from player import Player
     from tiles import MapTile
-    from npcs import NPC
 
 from neotermcolor import colored, cprint
 from os import listdir
@@ -111,9 +110,13 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
     verb = action_attr.lower()
     multi_token = len(args_list) > 1
     target_fragment = (
-        args_list[1].lower() if multi_token and isinstance(args_list[1], str) else None
+        args_list[1].lower()
+        if multi_token and isinstance(args_list[1], str)
+        else None
     )
-    raw_input_lower = action_input.lower() if isinstance(action_input, str) else ""
+    raw_input_lower = (
+        action_input.lower() if isinstance(action_input, str) else ""
+    )
 
     candidates = []  # list of (thing, resolved_method_name)
 
@@ -144,7 +147,9 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
             # Action support: interactions OR method OR (keywords only used in single-token mode)
             supported = False
             inters = getattr(thing, "interactions", None)
-            if inters and any(isinstance(i, str) and i.lower() == verb for i in inters):
+            if inters and any(
+                isinstance(i, str) and i.lower() == verb for i in inters
+            ):
                 supported = True
             elif hasattr(thing, action_attr):
                 supported = True
@@ -154,13 +159,15 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
             # Single-token mode: allow keyword exact matches or interactions or attr fallback
             kws = getattr(thing, "keywords", None)
             if kws and any(
-                isinstance(k, str) and raw_input_lower == k.lower() for k in kws
+                isinstance(k, str) and raw_input_lower == k.lower()
+                for k in kws
             ):
                 candidates.append((thing, action_attr))
                 continue
             inters = getattr(thing, "interactions", None)
             if inters and any(
-                isinstance(i, str) and raw_input_lower == i.lower() for i in inters
+                isinstance(i, str) and raw_input_lower == i.lower()
+                for i in inters
             ):
                 candidates.append((thing, action_attr))
                 continue
@@ -246,13 +253,18 @@ def print_items_in_room(room):
 
 def print_objects_in_room(room):
     _print_visible_lines(
-        getattr(room, "objects_here", []), lambda o: getattr(o, "idle_message", "")
+        getattr(room, "objects_here", []),
+        lambda o: getattr(o, "idle_message", ""),
     )
 
 
-def check_for_combat(player):  # returns a list of angry enemies who are ready to fight
+def check_for_combat(
+    player,
+):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
-    npcs = getattr(getattr(player, "current_room", None), "npcs_here", []) or []
+    npcs = (
+        getattr(getattr(player, "current_room", None), "npcs_here", []) or []
+    )
     if not npcs:
         return enemy_combat_list
 
@@ -355,16 +367,21 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
     # Reinitialize positions for ALL combatants to include new enemies
     try:
         coord_config = CoordinateSystemConfig(player)
-        total_combatants = len(player.combat_list_allies) + len(player.combat_list)
+        total_combatants = len(player.combat_list_allies) + len(
+            player.combat_list
+        )
         grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
 
         # Determine scenario type based on combat composition
         scenario_type = "standard"
-        if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(
-            player.combat_list
-        ):
+        if len(player.combat_list) > 1 and len(
+            player.combat_list_allies
+        ) < len(player.combat_list):
             scenario_type = "pincer"
-        elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
+        elif (
+            len(player.combat_list_allies) == 1
+            and len(player.combat_list) == 1
+        ):
             scenario_type = "boss_arena"
 
         positions.initialize_combat_positions(
@@ -384,7 +401,9 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
 
             if len(player.combat_list_allies) > 0:
                 for ally in player.combat_list_allies:
-                    distance = int(default_proximity * random.uniform(0.75, 1.25))
+                    distance = int(
+                        default_proximity * random.uniform(0.75, 1.25)
+                    )
                     ally.combat_proximity[enemy] = distance
                     enemy.combat_proximity[ally] = distance
 
@@ -472,7 +491,9 @@ def refresh_stat_bonuses(
         for bonus_attr in present:
             target_field = bonuses_map[bonus_attr]
             bonus_value = get_attr(adder, bonus_attr)
-            if target_field == "_resistance_dict" and isinstance(bonus_value, dict):
+            if target_field == "_resistance_dict" and isinstance(
+                bonus_value, dict
+            ):
                 # Merge only known resistance keys
                 for k in resistance_keys:
                     if k in bonus_value:
@@ -486,7 +507,9 @@ def refresh_stat_bonuses(
                 for k in status_resistance_keys:
                     if k in bonus_value:
                         try:
-                            target.status_resistance[k] += float(bonus_value[k])
+                            target.status_resistance[k] += float(
+                                bonus_value[k]
+                            )
                         except Exception:
                             continue
             else:
@@ -522,15 +545,21 @@ def refresh_stat_bonuses(
                 target.refresh_weight()
             except Exception:
                 pass
-        if hasattr(target, "weight_tolerance") and hasattr(target, "weight_current"):
+        if hasattr(target, "weight_tolerance") and hasattr(
+            target, "weight_current"
+        ):
             try:
                 check_weight = target.weight_tolerance - target.weight_current
                 if check_weight > (target.weight_tolerance / 2):
-                    target.maxfatigue = int(math.ceil(target.maxfatigue * 1.25))
+                    target.maxfatigue = int(
+                        math.ceil(target.maxfatigue * 1.25)
+                    )
                 elif check_weight < 0:
                     # Overweight penalty
                     penalty = (-check_weight) * 10
-                    target.maxfatigue = int(math.ceil(target.maxfatigue - penalty))
+                    target.maxfatigue = int(
+                        math.ceil(target.maxfatigue - penalty)
+                    )
                     if target.maxfatigue < 0:
                         target.maxfatigue = 0
             except Exception:
@@ -641,10 +670,15 @@ def reset_stats(target):  # resets all stats to base level
 
     # Reset resistance dictionaries in a safe, efficient way
     try:
-        if hasattr(target, "resistance") and hasattr(target, "resistance_base"):
+        if hasattr(target, "resistance") and hasattr(
+            target, "resistance_base"
+        ):
             target.resistance.clear()
             target.resistance.update(
-                {k: v for k, v in getattr(target, "resistance_base", {}).items()}
+                {
+                    k: v
+                    for k, v in getattr(target, "resistance_base", {}).items()
+                }
             )
     except Exception:
         pass
@@ -655,13 +689,20 @@ def reset_stats(target):  # resets all stats to base level
         ):
             target.status_resistance.clear()
             target.status_resistance.update(
-                {k: v for k, v in getattr(target, "status_resistance_base", {}).items()}
+                {
+                    k: v
+                    for k, v in getattr(
+                        target, "status_resistance_base", {}
+                    ).items()
+                }
             )
     except Exception:
         pass
 
     # Preserve compatibility for weight_tolerance if present
-    if hasattr(target, "weight_tolerance") and hasattr(target, "weight_tolerance_base"):
+    if hasattr(target, "weight_tolerance") and hasattr(
+        target, "weight_tolerance_base"
+    ):
         try:
             target.weight_tolerance = getattr(target, "weight_tolerance_base")
         except Exception:
@@ -687,7 +728,9 @@ def load_select():
             file_path = os.path.join(base_path, file)
             try:
                 timestamp = str(
-                    datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
+                    datetime.datetime.fromtimestamp(
+                        os.path.getmtime(file_path)
+                    )
                 )
                 timestamp = timestamp[:-7]
             except Exception:
@@ -700,7 +743,9 @@ def load_select():
                     )
                 )
                 playtime = playtime[:-7]
-                descriptor = f"play time: {playtime}" if playtime else "play time: 0"
+                descriptor = (
+                    f"play time: {playtime}" if playtime else "play time: 0"
+                )
             except Exception:
                 descriptor = colored("UNREADABLE (legacy/incompatible)", "red")
             print(f"{i}: {file} (last modified {timestamp}) ({descriptor})")
@@ -777,7 +822,9 @@ class SafeUnpickler(pickle.Unpickler):
             except Exception:
                 pass
         # As a last resort, synthesize a dummy module + class placeholder
-        placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        placeholder_class_name = (
+            f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        )
         # Create a dynamic class so isinstance checks won't explode (but still benign)
         placeholder_cls = type(
             placeholder_class_name,
@@ -823,7 +870,9 @@ def _patch_player_integrity(obj: Any):
     This is deliberately conservative: only add missing attrs / lists.
     """
     try:
-        from player import Player  # local import to avoid circulars at module load
+        from player import (
+            Player,
+        )  # local import to avoid circulars at module load
     except Exception:
         return obj
     if not isinstance(obj, Player):
@@ -831,7 +880,9 @@ def _patch_player_integrity(obj: Any):
     for attr, factory in _PLAYER_REQUIRED_DEFAULTS.items():
         if not hasattr(obj, attr) or getattr(obj, attr) is None:
             try:
-                setattr(obj, attr, factory() if callable(factory) else factory())
+                setattr(
+                    obj, attr, factory() if callable(factory) else factory()
+                )
             except Exception:
                 # fallback simple types
                 if factory in (list, dict):
@@ -924,7 +975,9 @@ def load(filename):
         raise
     except Exception as e:
         # Re-raise with context so caller can decide to skip
-        raise RuntimeError(f"Corrupt or incompatible save '{filename}': {e}") from e
+        raise RuntimeError(
+            f"Corrupt or incompatible save '{filename}': {e}"
+        ) from e
 
 
 def save_select(player):
@@ -952,11 +1005,15 @@ def save_select(player):
                 for i, filename in enumerate(saves_list()):
                     if "autosave" not in filename:
                         timestamp = str(
-                            datetime.datetime.fromtimestamp(os.path.getmtime(filename))
+                            datetime.datetime.fromtimestamp(
+                                os.path.getmtime(filename)
+                            )
                         )
                         timestamp = timestamp[:-7]
                         print(
-                            "{}: {} (last modified {})".format(i, filename, timestamp)
+                            "{}: {} (last modified {})".format(
+                                i, filename, timestamp
+                            )
                         )
                 print("x: Cancel")
                 choice = input("Selection: ")
@@ -985,9 +1042,13 @@ def save(player, filename):  # player is the player object
 def saves_list():
     path = os.path.dirname(os.path.abspath(__file__))
     savefiles = [
-        f for f in listdir(path) if isfile(join(path, f)) and f.endswith(".sav")
+        f
+        for f in listdir(path)
+        if isfile(join(path, f)) and f.endswith(".sav")
     ]
-    savefiles.sort(key=lambda x: os.stat(os.path.join(path, x)).st_mtime, reverse=True)
+    savefiles.sort(
+        key=lambda x: os.stat(os.path.join(path, x)).st_mtime, reverse=True
+    )
     return savefiles
 
 
@@ -1068,7 +1129,9 @@ def seek_class(classname, package="all"):
         add_modules_for(package)
         add_modules_for(f"src.{package}")
     else:
-        raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
+        raise ValueError(
+            f"Cannot find class '{classname}' after searching '{package}'"
+        )
 
     for module_path in sorted(module_paths):
         try:
@@ -1077,7 +1140,9 @@ def seek_class(classname, package="all"):
                 return getattr(module, classname)
         except (AttributeError, ImportError):
             continue
-    raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
+    raise ValueError(
+        f"Cannot find class '{classname}' after searching '{package}'"
+    )
 
 
 def await_input():
@@ -1105,7 +1170,9 @@ def inflict(state, target, chance=1.0, force=False):
     """
     # Fast-fail path unless forcing
     if not force:
-        resistance = target.status_resistance.get(getattr(state, "statustype", ""), 0.0)
+        resistance = target.status_resistance.get(
+            getattr(state, "statustype", ""), 0.0
+        )
         effective_chance = chance * (1 - resistance)
         if effective_chance <= 0:
             return False  # Immune
@@ -1194,9 +1261,13 @@ def add_random_enchantments(item: "Item", count: int) -> None:
                 # - a truthy/falsey value (e.g., bool)
                 # - None (meaning 'no requirement' -> allowed)
                 requirements_ok = (
-                    req() if callable(req) else (bool(req) if req is not None else True)
+                    req()
+                    if callable(req)
+                    else (bool(req) if req is not None else True)
                 )
-                if requirements_ok and rarity >= int(getattr(ench, "rarity", 0)):
+                if requirements_ok and rarity >= int(
+                    getattr(ench, "rarity", 0)
+                ):
                     candidates.append(ench)
             except Exception:
                 # Skip classes that fail instantiation or checks
@@ -1218,7 +1289,10 @@ def add_random_enchantments(item: "Item", count: int) -> None:
                 pass
             equip_states = getattr(ench, "equip_states", None)
             if equip_states:
-                if not hasattr(item, "equip_states") or item.equip_states is None:
+                if (
+                    not hasattr(item, "equip_states")
+                    or item.equip_states is None
+                ):
                     try:
                         item.equip_states = []
                     except Exception:
@@ -1238,7 +1312,9 @@ def add_preference(player, preftype, setting):
     if preftype == "arrow":
         if player.preferences[preftype] != setting:
             player.preferences[preftype] = setting
-            print("Jean made " + colored(setting, "magenta") + " his preference.")
+            print(
+                "Jean made " + colored(setting, "magenta") + " his preference."
+            )
         else:
             player.preferences[preftype] = "None"
             print("Jean stopped preferring a specific {}.".format(preftype))
@@ -1268,7 +1344,9 @@ def clean_string(input_string):
     return cleaned_string
 
 
-def instantiate_event(event_cls, player, tile, params=None, repeat=False, name=None):
+def instantiate_event(
+    event_cls, player, tile, params=None, repeat=False, name=None
+):
     """Instantiate an Event subclass with backward-compatible argument ordering.
     Supports legacy signature: (player, tile, params, repeat=False, name='X')
     and transitional signature: (player, tile, repeat, params)
@@ -1440,6 +1518,8 @@ def learn_all_skills_from_skilltree(player: "Player"):
                 learned_count += 1
 
     if learned_count > 0:
-        cprint(f"[Config] Learned {learned_count} skills from skill tree.", "cyan")
+        cprint(
+            f"[Config] Learned {learned_count} skills from skill tree.", "cyan"
+        )
 
     return learned_count

@@ -177,4 +177,3 @@ def test_add_random_enchantments_elemental_weapon(monkeypatch):
     assert getattr(weapon, "base_damage_type", None) == "fire"
     assert weapon.value >= 100
     assert weapon.damage > 10
-

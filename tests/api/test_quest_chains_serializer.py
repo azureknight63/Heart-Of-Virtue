@@ -29,7 +29,7 @@ class TestQuestChainSerializer:
             {"name": "Stage 1", "quest_id": "q1"},
             {"name": "Stage 2", "quest_id": "q2"},
         ]
-        
+
         result = QuestChainSerializer.serialize_chain(
             "chain_1",
             "Dragon Slayer",
@@ -50,7 +50,7 @@ class TestQuestChainSerializer:
     def test_serialize_chain_in_progress(self):
         """Test serializing a chain in progress."""
         stages = [{"name": "Stage 1", "quest_id": "q1"}]
-        
+
         result = QuestChainSerializer.serialize_chain(
             "chain_1",
             "Dragon Slayer",
@@ -68,7 +68,7 @@ class TestQuestChainSerializer:
     def test_serialize_chain_completed(self):
         """Test serializing a completed chain."""
         stages = [{"name": "Stage 1", "quest_id": "q1"}]
-        
+
         result = QuestChainSerializer.serialize_chain(
             "chain_1",
             "Dragon Slayer",

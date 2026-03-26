@@ -14,12 +14,12 @@ from src.positions import CombatPosition, Direction
 def test_missing_player():
     """Test if player can be displayed on battlefield"""
     print("Testing player display on battlefield...")
-    
+
     # Create window
     window = CombatBattlefieldWindow("Player Debug Test")
     try:
         window.create_window()
-        
+
         # Test 1: Player at various positions
         test_positions = [
             (0, 0, "Top-left corner"),
@@ -27,10 +27,10 @@ def test_missing_player():
             (49, 49, "Bottom-right corner"),
             (10, 10, "Upper-left area"),
         ]
-        
+
         for x, y, desc in test_positions:
             print(f"\n  Test: {desc} ({x}, {y})")
-            
+
             # Add player
             window.set_combatant(
                 "Jean",
@@ -41,7 +41,7 @@ def test_missing_player():
                 health_percent=0.8,
                 facing_value=180
             )
-            
+
             # Add 3 enemies around the player
             for i, (ex, ey) in enumerate([(x+5, y), (x-5, y), (x, y+5)]):
                 if 0 <= ex < 50 and 0 <= ey < 50:
@@ -54,19 +54,19 @@ def test_missing_player():
                         health_percent=0.5 + (i*0.1),
                         facing_value=0
                     )
-            
+
             # Check viewport and combatants
             print(f"    Viewport: x=[{window.viewport_x_min}, {window.viewport_x_max}], y=[{window.viewport_y_min}, {window.viewport_y_max}]")
             print(f"    Combatants in data: {len(window.combatants_data)}")
-            
+
             # Update display
             window.update_display()
-            
+
             # Verify player was added
             assert "Jean" in window.combatants_data, f"Jean NOT found in combatants_data at {desc}!"
             jean_data = window.combatants_data["Jean"]
             assert jean_data['position'].x == x and jean_data['position'].y == y, f"Jean position mismatch at {desc}!"
-            
+
             # Clear for next test
             window.combatants_data.clear()
             window.movement_history.clear()

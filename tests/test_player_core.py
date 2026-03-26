@@ -30,7 +30,7 @@ class TestPlayerCore:
     def test_attack_no_target(self, player):
         player.current_room = MagicMock()
         player.current_room.npcs_here = []
-        
+
         with patch('builtins.print') as mock_print:
             player.attack()
             # Should print "There's nothing here for Jean to attack."
@@ -53,7 +53,7 @@ class TestPlayerCore:
         target.hp = 100
         target.is_alive.return_value = True
         target.alert_message = "is angry!"
-        
+
         player.current_room.npcs_here = [target]
         player.strength = 10
         player.finesse = 10
@@ -63,7 +63,7 @@ class TestPlayerCore:
         player.eq_weapon.str_mod = 1.0
         player.eq_weapon.fin_mod = 1.0
         player.combat_exp = {"Basic": 0}
-        
+
         # Mock input to select target '0'
         # Mock random to ensure a hit
         with patch('builtins.input', return_value='0'):
@@ -107,10 +107,10 @@ class TestPlayerCore:
         player.heat = 1.0
         player.change_heat(mult=2, add=0.5)
         assert player.heat == 2.5
-        
+
         player.change_heat(mult=1, add=10)
         assert player.heat == 10.0  # Max heat
-        
+
         player.change_heat(mult=1, add=-20)
         assert player.heat == 0.5  # Min heat
 
@@ -118,7 +118,7 @@ class TestPlayerCore:
         state1 = MagicMock()
         state2 = MagicMock()
         player.states = [state1, state2]
-        
+
         player.cycle_states()
         state1.process.assert_called_once_with(player)
         state2.process.assert_called_once_with(player)
@@ -148,17 +148,17 @@ class TestPlayerCore:
         item1.announce = "A heavy sword"
         item1.isequipped = False
         item1.maintype = "Weapon"
-        
+
         item2 = MagicMock()
         item2.name = "Steel Sword"
         item2.announce = "A sharp sword"
         item2.isequipped = False
         item2.maintype = "Weapon"
-        
+
         player.inventory = [item1, item2]
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         # Mock input to select the second one
         # First call to confirm(item1) -> 'n'
         # Second call to confirm(item2) -> 'y'
@@ -172,9 +172,9 @@ class TestPlayerCore:
         item.name = "Iron Sword"
         item.maintype = "Weapon"
         item.isequipped = False
-        
+
         player.inventory = [item]
-        
+
         # Mock input: 'w' to select weapons, then '0' to select the first item
         with patch('builtins.input', side_effect=['w', '0']):
             selected = player.equip_item_menu()
@@ -186,7 +186,7 @@ class TestPlayerCore:
         action.name = "Look"
         action.hotkey = "L"
         player.current_room.available_actions.return_value = [action]
-        
+
         with patch('functions.await_input') as mock_await:
             player.commands()
             mock_await.assert_called_once()
@@ -234,14 +234,14 @@ class TestPlayerCore:
         state1 = MagicMock()
         state1.name = "Poison"
         state1.compounding = False
-        
+
         state2 = MagicMock()
         state2.name = "Poison"
         state2.compounding = False
-        
+
         player.states = [state1]
         player.apply_state(state2)
-        
+
         assert state1 not in player.states
         assert state2 in player.states
         assert len(player.states) == 1
@@ -260,7 +260,7 @@ class TestPlayerCore:
         player.heat = 5.0
         player.change_heat(mult=3) # 15.0 -> 10.0
         assert player.heat == 10.0
-        
+
         player.change_heat(mult=0.01) # 0.1 -> 0.5
         assert player.heat == 0.5
 
@@ -268,11 +268,11 @@ class TestPlayerCore:
         item1 = MagicMock()
         item1.weight = 1.0
         item1.count = 5
-        
+
         item2 = MagicMock()
         item2.weight = 2.0
         item2.count = 2
-        
+
         player.inventory = [item1, item2]
         player.refresh_weight()
         assert player.weight_current == 9.0
@@ -280,7 +280,7 @@ class TestPlayerCore:
     def test_stack_gold_complex(self, player):
         player.inventory = [items.Gold(10), items.TatteredCloth(), items.Gold(20), items.Gold(5)]
         player.stack_gold()
-        
+
         gold_items = [item for item in player.inventory if isinstance(item, items.Gold)]
         assert len(gold_items) == 1
         assert gold_items[0].amt == 35
@@ -291,11 +291,11 @@ class TestPlayerCore:
         item1 = MagicMock()
         item1.weight = 5.0
         item1.count = 1
-        
+
         item2 = MagicMock()
         item2.weight = 2.0
         item2.count = 3
-        
+
         player.inventory = [item1, item2]
         player.refresh_weight()
         assert player.weight_current == 11.0
@@ -303,10 +303,10 @@ class TestPlayerCore:
     def test_get_equipped_items(self, player):
         item1 = MagicMock()
         item1.isequipped = True
-        
+
         item2 = MagicMock()
         item2.isequipped = False
-        
+
         player.inventory = [item1, item2]
         equipped = player.get_equipped_items()
         assert len(equipped) == 1
@@ -315,12 +315,12 @@ class TestPlayerCore:
     def test_learn_skill(self, player):
         skill = MagicMock()
         skill.name = "New Skill"
-        
+
         # Initially doesn't know it
         player.known_moves = []
         player.learn_skill(skill)
         assert skill in player.known_moves
-        
+
         # Learning again shouldn't add it twice
         player.learn_skill(skill)
         assert player.known_moves.count(skill) == 1
@@ -329,11 +329,11 @@ class TestPlayerCore:
         state = MagicMock()
         state.name = "Poison"
         state.compounding = False
-        
+
         player.states = []
         player.apply_state(state)
         assert state in player.states
-        
+
         # Apply same state again (non-compounding)
         state2 = MagicMock()
         state2.name = "Poison"
@@ -347,11 +347,11 @@ class TestPlayerCore:
         state = MagicMock()
         state.name = "Bleed"
         state.compounding = True
-        
+
         player.states = []
         player.apply_state(state)
         assert state in player.states
-        
+
         player.apply_state(state)
         state.compound.assert_called_once_with(player)
         assert len(player.states) == 1
@@ -360,12 +360,12 @@ class TestPlayerCore:
         player.exp = 0
         player.level = 1
         player.exp_to_level = 100
-        
+
         # Gain some exp
         player.gain_exp(50)
         assert player.exp == 50
         assert player.level == 1
-        
+
         # Gain enough to level up
         # Mock level_up to avoid interactive input and infinite loop
         def mock_level_up_side_effect():
@@ -415,7 +415,7 @@ class TestPlayerCore:
         heavy_item.count = 1
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         player.add_items_to_inventory([heavy_item])
         assert heavy_item not in player.inventory
         assert heavy_item in player.current_room.items_here
@@ -450,11 +450,11 @@ class TestPlayerCore:
         item.isequipped = False
         item.maintype = "Weapon"
         item.interactions = ["equip"]
-        
+
         player.inventory = [item]
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         player.equip_item("Sword")
         assert item.isequipped is True
         assert "unequip" in item.interactions
@@ -468,13 +468,13 @@ class TestPlayerCore:
         item.maintype = "Armor"
         item.interactions = ["equip"]
         item.weight = 5
-        
+
         player.inventory = []
         player.current_room = MagicMock()
         player.current_room.items_here = [item]
         player.weight_tolerance = 10
         player.weight_current = 0
-        
+
         player.equip_item("Shield")
         assert item.isequipped is True
         assert item in player.inventory
@@ -487,11 +487,11 @@ class TestPlayerCore:
         item.isequipped = True
         item.maintype = "Weapon"
         item.interactions = ["unequip"]
-        
+
         player.inventory = [item]
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         with patch('builtins.input', return_value='y'):
             player.equip_item("Sword")
             assert item.isequipped is False
@@ -533,9 +533,9 @@ class TestPlayerCore:
         player.exp_to_level = 100
         player.level = 1
         player.intelligence = 10
-        
+
         player.level_up()
-        
+
         assert player.level == 2
         assert player.exp == 100
         # 10 (base) + 1 (random bonus) + 2 (allocated) = 13
@@ -555,9 +555,9 @@ class TestPlayerCore:
         player.inventory = [item]
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         player.equip_item(phrase="iron")
-        
+
         assert item.isequipped is True
         assert "unequip" in item.interactions
         assert "equip" not in item.interactions
@@ -575,9 +575,9 @@ class TestPlayerCore:
         player.current_room.items_here = [item]
         player.weight_current = 0
         player.weight_tolerance = 100
-        
+
         player.equip_item(phrase="iron")
-        
+
         assert item in player.inventory
         assert item.isequipped is True
         assert item not in player.current_room.items_here
@@ -594,9 +594,9 @@ class TestPlayerCore:
         player.fists = MagicMock()
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         player.equip_item(phrase="iron")
-        
+
         assert item.isequipped is False
         assert player.eq_weapon == player.fists
         assert "equip" in item.interactions
@@ -610,7 +610,7 @@ class TestPlayerCore:
         ring1.subtype = "Ring"
         ring1.isequipped = True
         ring1.interactions = ["unequip"]
-        
+
         ring2 = MagicMock()
         ring2.name = "Ring 2"
         ring2.announce = "A ring"
@@ -618,7 +618,7 @@ class TestPlayerCore:
         ring2.subtype = "Ring"
         ring2.isequipped = True
         ring2.interactions = ["unequip"]
-        
+
         ring3 = MagicMock()
         ring3.name = "Ring 3"
         ring3.announce = "A ring"
@@ -626,13 +626,13 @@ class TestPlayerCore:
         ring3.subtype = "Ring"
         ring3.isequipped = False
         ring3.interactions = ["equip"]
-        
+
         player.inventory = [ring1, ring2, ring3]
         player.current_room = MagicMock()
         player.current_room.items_here = []
-        
+
         player.equip_item(phrase="Ring 3")
-        
+
         assert ring3.isequipped is True
         assert ring1.isequipped is True
         assert ring2.isequipped is False
@@ -655,13 +655,13 @@ class TestPlayerCore:
         player.location_x = 0
         player.location_y = 0
         player.map = {}
-        
+
         tile = MagicMock()
         tile.intro_text.return_value = "A new room"
         mock_tile_exists.return_value = tile
-        
+
         player.move(1, 0)
-        
+
         assert player.location_x == 1
         assert player.location_y == 0
         assert player.universe.game_tick == 1
@@ -670,7 +670,7 @@ class TestPlayerCore:
     def test_look(self, player):
         player.current_room = MagicMock()
         player.current_room.intro_text.return_value = "Room description"
-        
+
         with patch('functions.print_items_in_room'), \
              patch('functions.print_objects_in_room'), \
              patch('functions.advise_player_actions'):
@@ -684,12 +684,12 @@ class TestPlayerCore:
         npc.name = "Old Man"
         npc.description = "A wise old man"
         npc.hidden = False
-        
+
         player.current_room = MagicMock()
         player.current_room.npcs_here = [npc]
         player.current_room.items_here = []
         player.current_room.objects_here = []
-        
+
         player.view()
         mock_await.assert_called_once()
 
@@ -701,12 +701,12 @@ class TestPlayerCore:
         npc.hidden = False
         npc.announce = "He looks at you"
         npc.idle_message = ""
-        
+
         player.current_room = MagicMock()
         player.current_room.npcs_here = [npc]
         player.current_room.items_here = []
         player.current_room.objects_here = []
-        
+
         player.view(phrase="looks")
         mock_await.assert_called_once()
 
@@ -717,17 +717,17 @@ class TestPlayerCore:
         npc.name = "Hidden Thief"
         npc.hidden = True
         npc.hide_factor = 10
-        
+
         player.finesse = 10
         player.intelligence = 10
         player.faith = 10
         # search_ability = (10*2 + 10*3 + 10) * 1.0 = 60
-        
+
         player.current_room = MagicMock()
         player.current_room.npcs_here = [npc]
         player.current_room.items_here = []
         player.current_room.objects_here = []
-        
+
         player.search()
         assert npc.hidden is False
 
@@ -745,7 +745,7 @@ class TestPlayerCore:
         npc.hp = 20
         npc.is_alive.return_value = True
         npc.alert_message = "attacks!"
-        
+
         player.current_room = MagicMock()
         player.current_room.npcs_here = [npc]
         player.eq_weapon = MagicMock()
@@ -756,9 +756,9 @@ class TestPlayerCore:
         player.strength = 10
         player.finesse = 10
         player.combat_exp = {"Basic": 0}
-        
+
         player.attack()
-        
+
         # power = 10 + (10 * 1.0) + (10 * 0.0) = 20
         # damage = (20 - 5) * 1.0 = 15
         assert npc.hp == 5
@@ -860,12 +860,12 @@ class TestPlayerCore:
         mock_skill = MagicMock()
         mock_skill.name = "Power Strike"
         mock_skill.description = "A powerful strike."
-        
+
         player.skilltree = MagicMock()
         player.skilltree.subtypes = {"Combat": {mock_skill: 500}}
         player.known_moves = []
-        
-        # Inputs: 
+
+        # Inputs:
         # "0" (select Combat)
         # "0" (select Power Strike)
         # "learn" (learn it)
@@ -876,7 +876,7 @@ class TestPlayerCore:
              patch('functions.await_input'), \
              patch('player.functions.is_input_integer', side_effect=lambda x: x.isdigit()):
             player.skillmenu()
-            
+
             mock_learn.assert_called_once_with(mock_skill)
             assert player.skill_exp["Combat"] == 500
 
@@ -885,11 +885,11 @@ class TestPlayerCore:
         mock_tile1.discovered = True
         mock_tile1.last_entered = 1
         mock_tile1.symbol = "O"
-        
+
         mock_tile2 = MagicMock()
         mock_tile2.discovered = True
         mock_tile2.last_entered = 0 # Discovered but not visited
-        
+
         player.map = {
             'name': 'Test Map',
             (0, 0): mock_tile1,
@@ -900,7 +900,7 @@ class TestPlayerCore:
         player.location_y = 0
         player.prev_location_x = 0
         player.prev_location_y = 0
-        
+
         with patch('builtins.print') as mock_print, \
              patch('functions.await_input'):
             player.view_map()
@@ -919,15 +919,15 @@ class TestPlayerCore:
         player.map = {}
         player.location_x = 0
         player.location_y = 0
-        
+
         item1 = MagicMock()
         item1.merchandise = True
         item1.name = "Stolen Sword"
-        
+
         item2 = MagicMock()
         item2.merchandise = False
         item2.name = "My Sword"
-        
+
         player.inventory = [item1, item2]
 
         with patch('player._inventory.tile_exists', return_value=mock_tile), \
@@ -941,17 +941,17 @@ class TestPlayerCore:
     def test_recall_friends(self, player):
         player.current_room = MagicMock()
         player.current_room.npcs_here = []
-        
+
         friend_room = MagicMock()
         friend = MagicMock()
         friend.name = "Ally"
         friend.current_room = friend_room
         friend_room.npcs_here = [friend]
-        
+
         player.combat_list_allies = [player, friend]
-        
+
         player.recall_friends()
-        
+
         assert friend.current_room == player.current_room
         assert friend in player.current_room.npcs_here
         assert friend not in friend_room.npcs_here
@@ -959,19 +959,19 @@ class TestPlayerCore:
     def test_recall_friends_multiple(self, player):
         player.current_room = MagicMock()
         player.current_room.npcs_here = []
-        
+
         friend1 = MagicMock()
         friend1.name = "Ally1"
         friend1.current_room = MagicMock()
-        
+
         friend2 = MagicMock()
         friend2.name = "Ally2"
         friend2.current_room = MagicMock()
-        
+
         friend3 = MagicMock()
         friend3.name = "Ally3"
         friend3.current_room = MagicMock()
-        
+
         # Test party_size == 2
         player.combat_list_allies = [player, friend1, friend2]
         with patch('builtins.print') as mock_print:
@@ -980,7 +980,7 @@ class TestPlayerCore:
             output = "".join([call[0][0] for call in mock_print.call_args_list])
             assert "Ally1" in output
             assert "Ally2" in output
-            
+
         # Test party_size == 3
         player.combat_list_allies = [player, friend1, friend2, friend3]
         with patch('builtins.print') as mock_print:
@@ -994,21 +994,21 @@ class TestPlayerCore:
         mock_tile = MagicMock()
         mock_tile.discovered = True
         mock_tile.last_entered = 1
-        
+
         player.map = {(0, 0): mock_tile, (1, 0): mock_tile, (0, 1): mock_tile, (1, 1): mock_tile}
         player.current_room = mock_tile
-        
+
         with patch('builtins.print'), patch('functions.await_input'):
             # East
             player.prev_location_x, player.prev_location_y = 0, 0
             player.location_x, player.location_y = 1, 0
             player.view_map()
-            
+
             # South
             player.prev_location_x, player.prev_location_y = 0, 0
             player.location_x, player.location_y = 0, 1
             player.view_map()
-            
+
             # Diagonal
             player.prev_location_x, player.prev_location_y = 0, 0
             player.location_x, player.location_y = 1, 1
@@ -1018,29 +1018,29 @@ class TestPlayerCore:
         mock_tile = MagicMock()
         mock_tile.discovered = True
         mock_tile.last_entered = 1
-        
+
         player.map = {
             (0, 0): mock_tile, (1, 1): mock_tile,
             (1, 0): mock_tile, (0, 1): mock_tile
         }
         player.current_room = mock_tile
-        
+
         with patch('builtins.print'), patch('functions.await_input'):
             # SE (dx=1, dy=1)
             player.prev_location_x, player.prev_location_y = 0, 0
             player.location_x, player.location_y = 1, 1
             player.view_map()
-            
+
             # SW (dx=-1, dy=1)
             player.prev_location_x, player.prev_location_y = 1, 0
             player.location_x, player.location_y = 0, 1
             player.view_map()
-            
+
             # NE (dx=1, dy=-1)
             player.prev_location_x, player.prev_location_y = 0, 1
             player.location_x, player.location_y = 1, 0
             player.view_map()
-            
+
             # NW (dx=-1, dy=-1)
             player.prev_location_x, player.prev_location_y = 1, 1
             player.location_x, player.location_y = 0, 0
@@ -1052,7 +1052,7 @@ class TestPlayerCore:
         item2 = MagicMock()
         item2.isequipped = False
         player.inventory = [item1, item2]
-        
+
         equipped = player.get_equipped_items()
         assert item1 in equipped
         assert item2 not in equipped
@@ -1088,21 +1088,21 @@ class TestPlayerCore:
 
     def test_refresh_merchants(self, player):
         player.universe = MagicMock()
-        
+
         # Merchant 1: Success
         m1 = MagicMock()
         m1.__class__ = MagicMock()
         m1.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
         m1.name = "M1"
         m1.shop = MagicMock()
-        
+
         # Merchant 2: Needs initialization
         m2 = MagicMock()
         m2.__class__ = MagicMock()
         m2.__class__.mro.return_value = [MagicMock(__name__='Merchant')]
         m2.name = "M2"
         m2.shop = None
-        
+
         # Merchant 3: Fails update
         m3 = MagicMock()
         m3.__class__ = MagicMock()
@@ -1110,7 +1110,7 @@ class TestPlayerCore:
         m3.name = "M3"
         m3.shop = MagicMock()
         m3.update_goods.side_effect = Exception("Update failed")
-        
+
         mock_tile = MagicMock()
         mock_tile.npcs_here = [m1, m2, m3, MagicMock()] # One non-merchant
         player.universe.maps = [{(0, 0): mock_tile}, "not a dict"] # One invalid map
@@ -1150,9 +1150,9 @@ class TestPlayerCore:
         gold1 = items.Gold(10)
         gold2 = items.Gold(20)
         player.inventory = [gold1, gold2, items.TatteredCloth()]
-        
+
         player.stack_gold()
-        
+
         gold_items = [i for i in player.inventory if isinstance(i, items.Gold)]
         assert len(gold_items) == 1
         assert gold_items[0].amt == 30
@@ -1169,10 +1169,10 @@ class TestPlayerCore:
         state1.name = "Poison"
         state1.compounding = True
         player.states = [state1]
-        
+
         state2 = MagicMock()
         state2.name = "Poison"
-        
+
         player.apply_state(state2)
         state1.compound.assert_called_once_with(player)
 
@@ -1189,9 +1189,9 @@ class TestPlayerCore:
         mock_item.interactions = ["use"]
         mock_item.merchandise = False
         mock_item.__class__ = items.Restorative
-        
+
         player.inventory = [mock_item]
-        
+
         with patch('builtins.input', return_value="y"):
             player.use_item("Potion")
             mock_item.use.assert_called_once_with(player)
@@ -1246,7 +1246,7 @@ class TestPlayerCore:
         player.maxhp = 100
         player.fatigue = 75
         player.maxfatigue = 150
-        
+
         with patch('builtins.print') as mock_print:
             player.show_bars()
             assert mock_print.called
@@ -1268,7 +1268,7 @@ class TestPlayerCore:
         move2 = MagicMock()
         move2.viable.return_value = False
         player.known_moves = [move1, move2]
-        
+
         viable = player.refresh_moves()
         assert move1 in viable
         assert move2 not in viable

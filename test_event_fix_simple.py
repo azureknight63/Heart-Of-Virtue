@@ -25,7 +25,7 @@ class TestEvent(Event):
         self.completed = False
         self.needs_input = True
         self.api_event_id = "test-event-123"
-    
+
     def check_combat_conditions(self):
         pass
 

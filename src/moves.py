@@ -27,7 +27,10 @@ def _ensure_weapon_exp(user):
                 return
             if wpn.subtype not in user.combat_exp:
                 user.combat_exp[wpn.subtype] = 0
-            if hasattr(user, "skill_exp") and wpn.subtype not in user.skill_exp:
+            if (
+                hasattr(user, "skill_exp")
+                and wpn.subtype not in user.skill_exp
+            ):
                 user.skill_exp[wpn.subtype] = 0
     except Exception:
         # Silent fail to avoid disrupting combat flow if something unexpected occurs
@@ -74,7 +77,9 @@ class Move:  # master class for all moves
         self.beats_left = beats_left
         self.stage_announce = stage_announce
         self.fatigue_cost = fatigue_cost
-        self.target = target  # can be the same as the user in abilities with no targets
+        self.target = (
+            target  # can be the same as the user in abilities with no targets
+        )
         self.user = user
         self.targeted = targeted  # Is the move targeted at something?
         self.verbose_targeting = verbose_targeting  # If set to true, the target menu will always appear even with
@@ -84,11 +89,11 @@ class Move:  # master class for all moves
         self.initialized = False
         self.usercolor = "white"
         self.targetcolor = "white"
-        self.mvrange = mvrange  # tuple containing the min and max ranges for the move
-        self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
-        self.weight = (
-            1  # only used by NPCs to determine the chance that move is selected for use
+        self.mvrange = (
+            mvrange  # tuple containing the min and max ranges for the move
         )
+        self.instant = instant  # moves flagged as instant do not allow any beats to pass before completing all stages
+        self.weight = 1  # only used by NPCs to determine the chance that move is selected for use
         self.passive = passive
         self.web_animation = web_animation  # Animation type for web app ("attack", "pulse", "charge", etc.)
         # None = auto-determine based on move properties
@@ -106,7 +111,10 @@ class Move:  # master class for all moves
 
     def can_use_coordinates(self, user):
         """Check if 2D coordinate-based movement is available for this move."""
-        if not (hasattr(user, "combat_position") and user.combat_position is not None):
+        if not (
+            hasattr(user, "combat_position")
+            and user.combat_position is not None
+        ):
             return False
 
         # If targeted at someone else, they must also have coordinates
@@ -204,14 +212,17 @@ class Move:  # master class for all moves
         # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
         pass
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         pass
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
         player = ""
         # Check if user is player generally (by name or class, assuming Player class has no friend attr)
         is_user_player = (
-            self.user.name == "Jean" or self.user.__class__.__name__ == "Player"
+            self.user.name == "Jean"
+            or self.user.__class__.__name__ == "Player"
         )
 
         if is_user_player:
@@ -224,7 +235,8 @@ class Move:  # master class for all moves
                 self.usercolor = "cyan"
 
         is_target_player = (
-            self.target.name == "Jean" or self.target.__class__.__name__ == "Player"
+            self.target.name == "Jean"
+            or self.target.__class__.__name__ == "Player"
         )
 
         if is_target_player:
@@ -309,7 +321,9 @@ class Move:  # master class for all moves
                 self.target.combat_exp["Basic"] += 15
 
     def miss(self):
-        print(colored(self.user.name, self.usercolor) + "'s attack just missed!")
+        print(
+            colored(self.user.name, self.usercolor) + "'s attack just missed!"
+        )
         if self.target.name == "Jean":
             for state in self.target.states:
                 if state.name == "Dodging":
@@ -558,9 +572,13 @@ class Dodge(Move):
         )
         self.evaluate()
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         self.stage_beat = [1, 1, 5, 2]
-        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        self.fatigue_cost = 75 - (
+            (2 * self.user.endurance) + (3 * self.user.speed)
+        )
         if self.fatigue_cost <= 10:
             self.fatigue_cost = 10
 
@@ -611,9 +629,13 @@ class Parry(Move):
             viability = False
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         self.stage_beat = [1, 1, 5, 2]
-        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        self.fatigue_cost = 75 - (
+            (2 * self.user.endurance) + (3 * self.user.speed)
+        )
         if self.fatigue_cost <= 10:
             self.fatigue_cost = 10
 
@@ -726,11 +748,18 @@ class Advance(Move):
                     occupied.append(u.combat_position)
         if hasattr(user, "combat_list_allies"):
             for u in user.combat_list_allies:
-                if hasattr(u, "combat_position") and u.combat_position and u != user:
+                if (
+                    hasattr(u, "combat_position")
+                    and u.combat_position
+                    and u != user
+                ):
                     occupied.append(u.combat_position)
 
         new_pos = positions.move_toward_constrained(
-            user.combat_position, self.target.combat_position, distance_moved, occupied
+            user.combat_position,
+            self.target.combat_position,
+            distance_moved,
+            occupied,
         )
         user.combat_position = new_pos
 
@@ -765,7 +794,9 @@ class Advance(Move):
     def execute(self, user):
         if self.target and self.target.is_alive:
             cprint(
-                "{} finished advancing on {}.".format(user.name, self.target.name),
+                "{} finished advancing on {}.".format(
+                    user.name, self.target.name
+                ),
                 "green" if user.name == "Jean" else "red",
             )
 
@@ -835,7 +866,10 @@ class Withdraw(Move):
         min_distance = float("inf")
 
         for enemy in user.combat_proximity.keys():
-            if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
+            if (
+                hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
                 dist = positions.distance_from_coords(
                     user.combat_position, enemy.combat_position
                 )
@@ -847,12 +881,16 @@ class Withdraw(Move):
             return
 
         # Calculate movement distance (approx 1-2 ft per beat)
-        performance = random.randint(0, 35) + (user.speed - nearest_threat.speed)
+        performance = random.randint(0, 35) + (
+            user.speed - nearest_threat.speed
+        )
         distance_moved = max(1, performance // 20)
         distance_moved = min(distance_moved, 2)
 
         new_pos = positions.move_away_from(
-            user.combat_position, nearest_threat.combat_position, distance_moved
+            user.combat_position,
+            nearest_threat.combat_position,
+            distance_moved,
         )
         user.combat_position = new_pos
 
@@ -864,7 +902,9 @@ class Withdraw(Move):
             y=min(50, max(0, new_pos.y + direction_away_y)),
             facing=user.combat_position.facing,
         )
-        user.combat_position.facing = positions.turn_toward(new_pos, retreat_target)
+        user.combat_position.facing = positions.turn_toward(
+            new_pos, retreat_target
+        )
 
     def _beat_legacy(self, user):
         """Fallback in legacy system."""
@@ -885,7 +925,9 @@ class BullCharge(Move):
     """Aggressive charge move - advance multiple squares toward target."""
 
     def __init__(self, user):
-        description = "Charge at target with force, covering significant distance."
+        description = (
+            "Charge at target with force, covering significant distance."
+        )
         prep = 1
         execute = 3
         recoil = 2
@@ -947,11 +989,18 @@ class BullCharge(Move):
                     occupied.append(u.combat_position)
         if hasattr(user, "combat_list_allies"):
             for u in user.combat_list_allies:
-                if hasattr(u, "combat_position") and u.combat_position and u != user:
+                if (
+                    hasattr(u, "combat_position")
+                    and u.combat_position
+                    and u != user
+                ):
                     occupied.append(u.combat_position)
 
         new_pos = positions.move_toward_constrained(
-            user.combat_position, self.target.combat_position, distance_moved, occupied
+            user.combat_position,
+            self.target.combat_position,
+            distance_moved,
+            occupied,
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -984,7 +1033,9 @@ class TacticalRetreat(Move):
     """Coordinated withdrawal - retreat while maintaining defense."""
 
     def __init__(self, user):
-        description = "Strategically fall back while maintaining defensive posture."
+        description = (
+            "Strategically fall back while maintaining defensive posture."
+        )
         prep = 1
         execute = 3
         recoil = 1
@@ -1033,7 +1084,10 @@ class TacticalRetreat(Move):
         min_distance = float("inf")
 
         for enemy in user.combat_proximity.keys():
-            if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
+            if (
+                hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
                 dist = positions.distance_from_coords(
                     user.combat_position, enemy.combat_position
                 )
@@ -1046,7 +1100,9 @@ class TacticalRetreat(Move):
 
         distance_moved = random.randint(1, 2)
         new_pos = positions.move_away_from(
-            user.combat_position, nearest_threat.combat_position, distance_moved
+            user.combat_position,
+            nearest_threat.combat_position,
+            distance_moved,
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
@@ -1152,7 +1208,10 @@ class FlankingManeuver(Move):
                     "green",
                 )
             else:
-                cprint(f"{user.name} moved to the side of {self.target.name}!", "green")
+                cprint(
+                    f"{user.name} moved to the side of {self.target.name}!",
+                    "green",
+                )
         elif self.target and self.target.is_alive:
             cprint(f"{user.name} finished maneuvering.", "green")
 
@@ -1184,7 +1243,9 @@ class QuietMovement(Move):
         )
         self.evaluate()
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         pass
 
     def execute(self, user):
@@ -1249,8 +1310,12 @@ class PowerStrike(Move):
                 break
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
-        power_base = 25  # this is the default for determining the attack's power
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
+        power_base = (
+            25  # this is the default for determining the attack's power
+        )
         if hasattr(self.user, "damage"):
             power_base = self.user.damage
         elif hasattr(self.user, "eq_weapon"):
@@ -1378,7 +1443,9 @@ class Jab(Move):
     def viable(self):
         return self.standard_viability_attack("Unarmed")
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         # Use self.weapon which is already set to Fists() if unarmed
         weapon = self.weapon if self.weapon else items.Fists()
         power = (
@@ -1458,7 +1525,9 @@ PLAYER MOVES
 """
 
 
-class Check(Move):  # player checks the battlefield (shows enemies, allies, distances)
+class Check(
+    Move
+):  # player checks the battlefield (shows enemies, allies, distances)
     def __init__(self, player):
         description = "Check your surroundings."
         prep = 0
@@ -1488,7 +1557,10 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
             self._generate_api_check_data(user)
 
         # Check coordinate-based positioning if available
-        if hasattr(user, "combat_position") and user.combat_position is not None:
+        if (
+            hasattr(user, "combat_position")
+            and user.combat_position is not None
+        ):
             self._display_coordinate_info(user)
         else:
             # Fallback to legacy distance display
@@ -1553,7 +1625,9 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                 hasattr(combatant, "combat_position")
                 and combatant.combat_position is not None
             ):
-                combatant_info["facing"] = combatant.combat_position.facing.name
+                combatant_info["facing"] = (
+                    combatant.combat_position.facing.name
+                )
 
                 # Calculate direction relative to player
                 if (
@@ -1613,9 +1687,14 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
     def _display_coordinate_info(self, user):
         """Display coordinate-based positioning information."""
         for enemy, distance in user.combat_proximity.items():
-            if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
+            if (
+                hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
                 # Display coordinate position and facing
-                pos_str = f"({enemy.combat_position.x}, {enemy.combat_position.y})"
+                pos_str = (
+                    f"({enemy.combat_position.x}, {enemy.combat_position.y})"
+                )
                 facing_str = enemy.combat_position.facing.name
 
                 # Calculate attack angle from user to enemy
@@ -1652,7 +1731,9 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
             else:
                 # Fallback if enemy lacks coordinate position
                 cprint(
-                    "{} is {} ft from {}".format(enemy.name, int(distance), user.name),
+                    "{} is {} ft from {}".format(
+                        enemy.name, int(distance), user.name
+                    ),
                     "green",
                 )
 
@@ -1672,8 +1753,11 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                             ally_attack_angle = positions.angle_to_target(
                                 ally.combat_position, enemy.combat_position
                             )
-                            ally_angle_diff = positions.attack_angle_difference(
-                                ally_attack_angle, enemy.combat_position.facing
+                            ally_angle_diff = (
+                                positions.attack_angle_difference(
+                                    ally_attack_angle,
+                                    enemy.combat_position.facing,
+                                )
                             )
 
                             if ally_angle_diff < 45:
@@ -1696,7 +1780,8 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                         else:
                             cprint(
                                 "  → {} is {} ft away".format(
-                                    ally.name, int(ally.combat_proximity[enemy])
+                                    ally.name,
+                                    int(ally.combat_proximity[enemy]),
                                 ),
                                 "cyan",
                             )
@@ -1717,7 +1802,9 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
             # Terminal mode - print to console
             for enemy, distance in user.combat_proximity.items():
                 cprint(
-                    "{} is {} ft from {}".format(enemy.name, int(distance), user.name),
+                    "{} is {} ft from {}".format(
+                        enemy.name, int(distance), user.name
+                    ),
                     "green",
                 )
                 if user.combat_list_allies:
@@ -1790,12 +1877,17 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
             if functions.is_input_integer(duration):
                 duration = int(duration)
                 if duration > 10 or duration < 3:
-                    cprint("You must enter a duration between 3 and 10 beats.", "red")
+                    cprint(
+                        "You must enter a duration between 3 and 10 beats.",
+                        "red",
+                    )
                     duration = ""
         self.stage_beat[2] = duration - 2
 
 
-class Attack(Move):  # basic attack function, always uses equipped weapon, player only
+class Attack(
+    Move
+):  # basic attack function, always uses equipped weapon, player only
     def __init__(self, player):
         description = "Strike at your enemy with your equipped weapon."
         prep = int(50 / player.speed)  # starting prep of 5
@@ -1821,7 +1913,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
             mvrange=mvrange,
             stage_announce=[
                 f"{player.name} winds up for a strike...",
-                colored(f"{player.name} strikes with his " + weapon + "!", "green"),
+                colored(
+                    f"{player.name} strikes with his " + weapon + "!", "green"
+                ),
                 f"{player.name} braces himself as his weapon recoils.",
                 "",
             ],
@@ -1834,7 +1928,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         self.power = 0
         self.evaluate()
         if hasattr(player, "eq_weapon") and player.eq_weapon:
-            self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
+            self.base_damage_type = items.get_base_damage_type(
+                player.eq_weapon
+            )
         else:
             self.base_damage_type = "crushing"  # default for unarmed
         self.animations = default_animations.copy()
@@ -1870,7 +1966,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
             viability = True
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         power = (
             self.user.eq_weapon.damage
             + (self.user.strength * self.user.eq_weapon.str_mod)
@@ -1893,7 +1991,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
         fatigue_cost = int(
             math.ceil(
-                70 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)
+                70
+                + (self.user.eq_weapon.weight * 10)
+                - (5 * self.user.endurance)
             )
         )
         if fatigue_cost <= 10:
@@ -2007,7 +2107,9 @@ class Rest(Move):  # standard rest to restore fatigue.
         if recovery_amt > player.maxfatigue - player.fatigue:
             recovery_amt = player.maxfatigue - player.fatigue
         player.fatigue += recovery_amt
-        cprint("{} recovered {} FP!".format(player.name, recovery_amt), "green")
+        cprint(
+            "{} recovered {} FP!".format(player.name, recovery_amt), "green"
+        )
         player.combat_exp["Basic"] += 2
 
 
@@ -2077,7 +2179,9 @@ class Slash(
             mvrange=mvrange,
             stage_announce=[
                 f"{player.name} winds up for a strike...",
-                colored(f"{player.name} slashes with his " + weapon + "!", "green"),
+                colored(
+                    f"{player.name} slashes with his " + weapon + "!", "green"
+                ),
                 f"{player.name} braces himself as his weapon recoils.",
                 "",
             ],
@@ -2114,7 +2218,9 @@ class Slash(
             viability = True
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         # Guard against no weapon equipped
         if not self.user.eq_weapon:
             self.power = 0
@@ -2144,7 +2250,9 @@ class Slash(
 
         fatigue_cost = int(
             math.ceil(
-                85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)
+                85
+                + (self.user.eq_weapon.weight * 10)
+                - (5 * self.user.endurance)
             )
         )
         if fatigue_cost <= 10:
@@ -2260,7 +2368,9 @@ class PommelStrike(Move):
         )
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         evaluation = self.standard_evaluate_attack(
             self.power,
             self.base_damage_type,
@@ -2275,7 +2385,9 @@ class PommelStrike(Move):
 
 class TacticalPositioning(Move):
     def __init__(self, user):
-        description = "Fine-tune the distance between yourself and a target enemy."
+        description = (
+            "Fine-tune the distance between yourself and a target enemy."
+        )
         prep = 0
         execute = 4
         recoil = 0
@@ -2345,7 +2457,8 @@ class TacticalPositioning(Move):
                     self.distance - variance, self.distance + variance
                 )
                 self.target_dist_final = max(
-                    self.mvrange[0], min(self.mvrange[1], self.target_dist_final)
+                    self.mvrange[0],
+                    min(self.mvrange[1], self.target_dist_final),
                 )
 
             if self.can_use_coordinates(user):
@@ -2369,9 +2482,14 @@ class TacticalPositioning(Move):
         move_amount = min(abs(diff), 2)
 
         if diff > 0:  # Need to move closer
-            occupied = []  # Should ideally populate this, but keeping it simple for now
+            occupied = (
+                []
+            )  # Should ideally populate this, but keeping it simple for now
             new_pos = positions.move_toward_constrained(
-                user.combat_position, self.target.combat_position, move_amount, []
+                user.combat_position,
+                self.target.combat_position,
+                move_amount,
+                [],
             )
         else:  # Need to move further away
             new_pos = positions.move_away_from(
@@ -2506,7 +2624,9 @@ class ShootBow(
             hit_chance -= close_range_distraction * (hit_chance / 2)
             wpn_range_base = getattr(self.user.eq_weapon, "range_base", 0)
             if target_distance > wpn_range_base:
-                accuracy_decay = (target_distance - wpn_range_base) * self.decay
+                accuracy_decay = (
+                    target_distance - wpn_range_base
+                ) * self.decay
                 hit_chance -= accuracy_decay
             if hit_chance < 2:  # Minimum hit chance
                 hit_chance = 2
@@ -2569,7 +2689,10 @@ class ShootBow(
                 cprint("Select an arrow type...", "cyan")
                 for i, v in enumerate(arrowtypes):
                     print(
-                        colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")"
+                        colored(str(i) + ": " + v.name, "cyan")
+                        + "("
+                        + v.helptext
+                        + ")"
                     )
                 arrow_selection = None
                 while not arrow_selection:
@@ -2584,10 +2707,16 @@ class ShootBow(
         else:
             self.arrow = arrowtypes[0]
         print(
-            "{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower())
+            "{} knocks a {} and takes aim!".format(
+                player.name, self.arrow.name.lower()
+            )
         )
-        self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
-        self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+        self.base_range = (
+            player.eq_weapon.range_base * self.arrow.range_base_modifier
+        )
+        self.decay = (
+            player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+        )
         self.base_damage_type = items.get_base_damage_type(
             self.arrow
         )  # in case the arrow has a different base damage type than Piercing
@@ -2597,7 +2726,9 @@ class ShootBow(
                 if effect.trigger == "prep":
                     effect.process()
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         power = 0
         prep = int(
             100 / ((self.user.speed * 0.7) + (self.user.strength * 0.3))
@@ -2665,7 +2796,10 @@ class ShootBow(
                 self.user.inventory.remove(self.arrow)
 
         else:
-            cprint("Jean relaxes his bow as his target is no longer in range.", "green")
+            cprint(
+                "Jean relaxes his bow as his target is no longer in range.",
+                "green",
+            )
             return
         roll = random.randint(0, 100)
         arrow_recovery = self.arrow.sturdiness
@@ -2738,7 +2872,8 @@ class NpcAttack(Move):  # basic attack function, NPCs only
             mvrange=mvrange,
             stage_announce=[
                 colored(
-                    "{} coils in preparation for an attack!".format(npc.name), "red"
+                    "{} coils in preparation for an attack!".format(npc.name),
+                    "red",
                 ),
                 colored(
                     "{} lashes out at {} with "
@@ -2769,7 +2904,9 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         if isinstance(self.user, str):
             # Log the error but try to recover if possible
             import traceback
@@ -2785,7 +2922,9 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
         # Double check that self.user is an object with a damage attribute
         if not hasattr(self.user, "damage"):
-            print(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
+            print(
+                f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!"
+            )
             return
 
         power = self.user.damage * random.uniform(0.8, 1.2)
@@ -2812,7 +2951,10 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
     def refresh_announcements(self, npc):
         self.stage_announce = [
-            colored("{} coils in preparation for an attack!".format(npc.name), "red"),
+            colored(
+                "{} coils in preparation for an attack!".format(npc.name),
+                "red",
+            ),
             colored(
                 "{} lashes out at {} with "
                 "extreme violence!".format(npc.name, self.target.name),
@@ -2944,7 +3086,9 @@ class TelegraphedSurge(NpcAttack):
     _EXTRA_PREP_BEATS = 0
 
     def _prep_text(self, npc):
-        return f"{npc.name} coils in preparation — now is the time to get clear."
+        return (
+            f"{npc.name} coils in preparation — now is the time to get clear."
+        )
 
     def _hit_text(self, npc, target_name):
         return f"{npc.name} surges outward and strikes {target_name}!"
@@ -2964,7 +3108,9 @@ class TelegraphedSurge(NpcAttack):
     def refresh_announcements(self, npc):
         target_name = self.target.name if self.target else "its target"
         self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
-        self.stage_announce[1] = colored(self._hit_text(npc, target_name), "red")
+        self.stage_announce[1] = colored(
+            self._hit_text(npc, target_name), "red"
+        )
         self.stage_announce[2] = self._recoil_text(npc)
 
 
@@ -3026,7 +3172,9 @@ class TidalSurge(TelegraphedSurge):
         return f"{npc.name} settles back, the surge spent."
 
 
-class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
+class GorranClub(
+    Move
+):  # Gorran's special club attack! Massive damage, long recoil
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -3084,7 +3232,9 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
                 break
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(1.5, 3)
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -3112,11 +3262,15 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
     def refresh_announcements(self, npc):
         self.stage_announce = [
             colored(
-                "{} grips his massive club in preparation to strike!".format(npc.name),
+                "{} grips his massive club in preparation to strike!".format(
+                    npc.name
+                ),
                 "red",
             ),
             colored(
-                "{} swings his club mightily at {}!".format(npc.name, npc.target.name),
+                "{} swings his club mightily at {}!".format(
+                    npc.name, npc.target.name
+                ),
                 "red",
             ),
             "{} recoils heavily from the attack.".format(npc.name),
@@ -3186,7 +3340,8 @@ class VenomClaw(Move):  # Poisonous attack
             mvrange=mvrange,
             stage_announce=[
                 colored(
-                    "{} coils in preparation for an attack!".format(npc.name), "red"
+                    "{} coils in preparation for an attack!".format(npc.name),
+                    "red",
                 ),
                 colored(
                     "{} slashes at {} with "
@@ -3216,7 +3371,9 @@ class VenomClaw(Move):  # Poisonous attack
 
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(0.6, 1)
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -3241,7 +3398,10 @@ class VenomClaw(Move):  # Poisonous attack
 
     def refresh_announcements(self, npc):
         self.stage_announce = [
-            colored("{} coils in preparation for an attack!".format(npc.name), "red"),
+            colored(
+                "{} coils in preparation for an attack!".format(npc.name),
+                "red",
+            ),
             colored(
                 "{} slashes at {} with "
                 "its venomous claws!".format(npc.name, npc.target.name),
@@ -3315,10 +3475,15 @@ class SpiderBite(Move):  # Poisonous attack
             targeted=True,
             mvrange=mvrange,
             stage_announce=[
-                colored("{} flashes its poisonous mandibles!".format(npc.name), "red"),
+                colored(
+                    "{} flashes its poisonous mandibles!".format(npc.name),
+                    "red",
+                ),
                 colored(
                     "{} bites at {} with "
-                    "its poisonous mandibles!".format(npc.name, npc.target.name),
+                    "its poisonous mandibles!".format(
+                        npc.name, npc.target.name
+                    ),
                     "red",
                 ),
                 "{} recoils from the attack.".format(npc.name),
@@ -3347,7 +3512,9 @@ class SpiderBite(Move):  # Poisonous attack
 
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(0.8, 1.2)
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -3372,7 +3539,9 @@ class SpiderBite(Move):  # Poisonous attack
 
     def refresh_announcements(self, npc):
         self.stage_announce = [
-            colored("{} flashes its poisonous mandibles!".format(npc.name), "red"),
+            colored(
+                "{} flashes its poisonous mandibles!".format(npc.name), "red"
+            ),
             colored(
                 "{} bites at {} with "
                 "its poisonous mandibles!".format(npc.name, npc.target.name),
@@ -3482,7 +3651,9 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
 
         return viability
 
-    def evaluate(self):  # adjusts the move's attributes to match the current game state
+    def evaluate(
+        self,
+    ):  # adjusts the move's attributes to match the current game state
         power = self.user.damage * random.uniform(0.7, 1.1)
         prep = int(50 / self.user.speed)
         if prep < 1:
@@ -3509,7 +3680,9 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         self.stage_announce = [
             colored("{} bares its fangs!".format(npc.name), "red"),
             colored(
-                "{} bites {} with a ravenous nip!".format(npc.name, npc.target.name),
+                "{} bites {} with a ravenous nip!".format(
+                    npc.name, npc.target.name
+                ),
                 "red",
             ),
             "{} recoils from the attack.".format(npc.name),
@@ -3632,7 +3805,11 @@ class Turn(Move):
         # Add 8 cardinal directions
         for direction in positions.Direction:
             options.append(
-                {"label": f"{direction.name}", "direction": direction, "target": None}
+                {
+                    "label": f"{direction.name}",
+                    "direction": direction,
+                    "target": None,
+                }
             )
 
         # Add available combatants (both enemies and allies to turn toward)
@@ -3698,13 +3875,17 @@ class Turn(Move):
         if selected_option["direction"] is not None:
             self.target_direction = selected_option["direction"]
             cprint(
-                f"{self.user.name} chose to face {self.target_direction.name}.", "green"
+                f"{self.user.name} chose to face {self.target_direction.name}.",
+                "green",
             )
         # If a combatant was selected, calculate direction toward them
         elif selected_option["target"] is not None:
             target = selected_option["target"]
             self.target_direction = self._calculate_direction_to_target(target)
-            cprint(f"{self.user.name} chose to face toward {target.name}.", "green")
+            cprint(
+                f"{self.user.name} chose to face toward {target.name}.",
+                "green",
+            )
 
     def _calculate_direction_to_target(self, target):
         """Calculate the direction from user to target."""
@@ -3730,7 +3911,9 @@ class Turn(Move):
 
         # Calculate angle in degrees (0-360)
         # In our coordinate system: N=0°, E=90°, S=180°, W=270°
-        angle = math.atan2(dx, -dy) * 180 / math.pi  # -dy because y increases downward
+        angle = (
+            math.atan2(dx, -dy) * 180 / math.pi
+        )  # -dy because y increases downward
         if angle < 0:
             angle += 360
 
@@ -3756,14 +3939,19 @@ class Turn(Move):
     def execute(self, user):
         """Execute stage - rotate user to face target direction."""
         if not self.target_direction:
-            cprint(f"{user.name} couldn't determine a direction to turn!", "yellow")
+            cprint(
+                f"{user.name} couldn't determine a direction to turn!",
+                "yellow",
+            )
             return
 
         # Update user's facing
         user.combat_position.facing = self.target_direction
 
         # Announce the result
-        cprint(f"{user.name} turned to face {self.target_direction.name}!", "cyan")
+        cprint(
+            f"{user.name} turned to face {self.target_direction.name}!", "cyan"
+        )
 
         # Deduct fatigue
         user.fatigue -= self.fatigue_cost
@@ -3860,7 +4048,10 @@ class WhirlAttack(Move):
             if not enemy.is_alive:
                 continue
 
-            if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
+            if (
+                hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
                 dist = positions.distance_from_coords(
                     self.user.combat_position, enemy.combat_position
                 )
@@ -3878,7 +4069,10 @@ class WhirlAttack(Move):
                         else:
                             damage_total += base_damage
                             enemy.hp = max(0, enemy.hp - base_damage)
-                            cprint(f"{enemy.name} takes {base_damage} damage!", "red")
+                            cprint(
+                                f"{enemy.name} takes {base_damage} damage!",
+                                "red",
+                            )
                             self.affected_enemies.append(enemy)
 
         # Set random facing
@@ -3956,7 +4150,9 @@ class FeintAndPivot(Move):
                 if hasattr(wpn, "base_damage_type"):
                     self.base_damage_type = wpn.base_damage_type
                 if hasattr(wpn, "damage"):
-                    self.power = (int(wpn.damage) * 0.8) + (self.user.strength * 0.2)
+                    self.power = (int(wpn.damage) * 0.8) + (
+                        self.user.strength * 0.2
+                    )
                 else:
                     self.power = self.user.strength * 0.4
             else:
@@ -4026,7 +4222,9 @@ class FeintAndPivot(Move):
             new_y = max(0, min(50, int(round(target_pos.y + offset_y))))
 
             # Create new position - pass Direction directly
-            new_pos = positions.CombatPosition(x=new_x, y=new_y, facing=user_facing)
+            new_pos = positions.CombatPosition(
+                x=new_x, y=new_y, facing=user_facing
+            )
             return new_pos
 
         elif current_position == "flank":
@@ -4044,7 +4242,9 @@ class FeintAndPivot(Move):
             new_x = max(0, min(50, int(round(target_pos.x + offset_x))))
             new_y = max(0, min(50, int(round(target_pos.y + offset_y))))
 
-            new_pos = positions.CombatPosition(x=new_x, y=new_y, facing=user_facing)
+            new_pos = positions.CombatPosition(
+                x=new_x, y=new_y, facing=user_facing
+            )
             return new_pos
 
         else:  # "behind"
@@ -4061,7 +4261,9 @@ class FeintAndPivot(Move):
             new_x = max(0, min(50, int(round(target_pos.x + offset_x))))
             new_y = max(0, min(50, int(round(target_pos.y + offset_y))))
 
-            new_pos = positions.CombatPosition(x=new_x, y=new_y, facing=user_facing)
+            new_pos = positions.CombatPosition(
+                x=new_x, y=new_y, facing=user_facing
+            )
             return new_pos
 
     def execute(self, user):
@@ -4191,7 +4393,9 @@ class VertigoSpin(Move):
                 if hasattr(wpn, "base_damage_type"):
                     self.base_damage_type = wpn.base_damage_type
                 if hasattr(wpn, "damage"):
-                    self.power = (int(wpn.damage) * 0.9) + (self.user.strength * 0.25)
+                    self.power = (int(wpn.damage) * 0.9) + (
+                        self.user.strength * 0.25
+                    )
                 else:
                     self.power = self.user.strength * 0.6
             else:
@@ -4202,7 +4406,10 @@ class VertigoSpin(Move):
     def prep(self, user):
         """Prep stage - announce the spin."""
         if self.target:
-            cprint(f"{user.name} begins spinning toward {self.target.name}...", "red")
+            cprint(
+                f"{user.name} begins spinning toward {self.target.name}...",
+                "red",
+            )
 
     def execute(self, user):
         """Execute stage - spin attack and apply Disoriented status."""
@@ -4238,7 +4445,9 @@ class VertigoSpin(Move):
                         self.target.states.append(disoriented)
                         cprint(f"{self.target.name} is disoriented!", "red")
                 except Exception as e:
-                    cprint(f"Could not apply Disoriented status: {e}", "yellow")
+                    cprint(
+                        f"Could not apply Disoriented status: {e}", "yellow"
+                    )
         else:
             cprint(f"{user.name}'s spin attack missed!", "yellow")
 
@@ -4257,7 +4466,9 @@ class QuickSwap(Move):
     """
 
     def __init__(self, user):
-        description = "Swap positions with a nearby ally for tactical advantage."
+        description = (
+            "Swap positions with a nearby ally for tactical advantage."
+        )
         prep = 0
         execute = 2
         recoil = 0
@@ -4439,9 +4650,15 @@ class QuickSwap(Move):
 
         # Ensure bidirectional consistency
         for enemy in user.combat_proximity:
-            if hasattr(enemy, "combat_proximity") and user in enemy.combat_proximity:
+            if (
+                hasattr(enemy, "combat_proximity")
+                and user in enemy.combat_proximity
+            ):
                 enemy.combat_proximity[user] = user.combat_proximity[enemy]
 
         for enemy in ally.combat_proximity:
-            if hasattr(enemy, "combat_proximity") and ally in enemy.combat_proximity:
+            if (
+                hasattr(enemy, "combat_proximity")
+                and ally in enemy.combat_proximity
+            ):
                 enemy.combat_proximity[ally] = ally.combat_proximity[enemy]

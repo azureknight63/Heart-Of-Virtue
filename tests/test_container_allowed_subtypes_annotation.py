@@ -49,4 +49,3 @@ def test_allowed_subtypes_annotation_origin_is_list():
         f"but got {get_origin(raw_ann)!r}. Raw annotation repr: {raw_ann!r}. "
         "This indicates the annotation is still a string and should be resolved with get_type_hints."
     )
-

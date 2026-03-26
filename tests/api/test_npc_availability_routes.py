@@ -42,11 +42,11 @@ def session_with_player(app):
     session_manager = app.session_manager
     session_id, username = session_manager.create_session("test_npc_user")
     player = session_manager.get_player(session_id)
-    
+
     # Set up story switches for availability testing
     if player and hasattr(player, 'story'):
         player.story = {"ch01_forge_unlocked": "1", "ch01_priestess_met": "1"}
-    
+
     return session_id, player, session_manager
 
 
@@ -63,7 +63,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -74,7 +74,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "name" in data
@@ -85,7 +85,7 @@ class TestNPCAvailabilityRoutes:
         """Test GET /npcs/<npc_id>/status with different NPC IDs."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         for npc_id in ["kael", "merchant", "priestess"]:
             response = client.get(f"/api/npcs/{npc_id}/status", headers=headers)
             assert response.status_code == 200
@@ -101,7 +101,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/locations/loc_forge/npcs", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -111,7 +111,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/locations/loc_forge/npcs", headers=headers)
-        
+
         data = response.get_json()["data"]
         assert "location_id" in data
         assert "npcs" in data
@@ -121,7 +121,7 @@ class TestNPCAvailabilityRoutes:
         """Test GET /locations/<location_id>/npcs with different locations."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         for loc_id in ["loc_forge", "loc_tavern", "loc_temple"]:
             response = client.get(f"/api/locations/{loc_id}/npcs", headers=headers)
             assert response.status_code == 200
@@ -141,7 +141,7 @@ class TestNPCAvailabilityRoutes:
             json={"reason": "quest_dialogue"},
             headers=headers
         )
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -155,7 +155,7 @@ class TestNPCAvailabilityRoutes:
             json={},
             headers=headers
         )
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "available" in data
@@ -171,7 +171,7 @@ class TestNPCAvailabilityRoutes:
             json={"reason": "dialogue"},
             headers=headers
         )
-        
+
         assert response.status_code == 200
 
     def test_update_npc_location_requires_auth(self, client):
@@ -188,7 +188,7 @@ class TestNPCAvailabilityRoutes:
             json={},
             headers=headers
         )
-        
+
         assert response.status_code == 400
         assert "new_location_id" in response.get_json()["error"]
 
@@ -201,7 +201,7 @@ class TestNPCAvailabilityRoutes:
             json={"new_location_id": "loc_tavern"},
             headers=headers
         )
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -215,7 +215,7 @@ class TestNPCAvailabilityRoutes:
             json={"new_location_id": "loc_tavern"},
             headers=headers
         )
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "moved_to" in data
@@ -231,7 +231,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/timeline", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -241,7 +241,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/timeline", headers=headers)
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "name" in data
@@ -256,7 +256,7 @@ class TestNPCAvailabilityErrorHandling:
         """Test invalid session token returns 401."""
         headers = {"Authorization": "Bearer invalid_session_id"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 401
 
     def test_missing_auth_header_returns_401(self, client):
@@ -268,14 +268,14 @@ class TestNPCAvailabilityErrorHandling:
         """Test malformed auth header returns 401."""
         headers = {"Authorization": "InvalidFormat"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 401
 
     def test_empty_auth_header_returns_401(self, client):
         """Test empty auth header returns 401."""
         headers = {"Authorization": ""}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 401
 
 
@@ -286,26 +286,26 @@ class TestNPCAvailabilityMultiPlayer:
         """Test different players have different sessions."""
         client = app.test_client()
         session_manager = app.session_manager
-        
+
         # Create two sessions
         session1_id, _ = session_manager.create_session("player1")
         session2_id, _ = session_manager.create_session("player2")
-        
+
         player1 = session_manager.get_player(session1_id)
         player2 = session_manager.get_player(session2_id)
-        
+
         if player1 and hasattr(player1, 'story'):
             player1.story = {"ch01_forge_unlocked": "1"}
         if player2 and hasattr(player2, 'story'):
             player2.story = {}
-        
+
         # Both can call endpoints with their respective sessions
         headers1 = {"Authorization": f"Bearer {session1_id}"}
         headers2 = {"Authorization": f"Bearer {session2_id}"}
-        
+
         response1 = client.get("/api/npcs/kael/status", headers=headers1)
         response2 = client.get("/api/npcs/kael/status", headers=headers2)
-        
+
         assert response1.status_code == 200
         assert response2.status_code == 200
 
@@ -313,17 +313,17 @@ class TestNPCAvailabilityMultiPlayer:
         """Test that location updates don't affect other sessions."""
         client = app.test_client()
         session_manager = app.session_manager
-        
+
         # Create two sessions
         session1_id, _ = session_manager.create_session("player1")
         session2_id, _ = session_manager.create_session("player2")
-        
+
         player1 = session_manager.get_player(session1_id)
         player2 = session_manager.get_player(session2_id)
-        
+
         headers1 = {"Authorization": f"Bearer {session1_id}"}
         headers2 = {"Authorization": f"Bearer {session2_id}"}
-        
+
         # Player 1 updates location
         response1 = client.post(
             "/api/npcs/kael/location",
@@ -331,7 +331,7 @@ class TestNPCAvailabilityMultiPlayer:
             headers=headers1
         )
         assert response1.status_code == 200
-        
+
         # Player 2 can still query with their own session
         response2 = client.get("/api/npcs/kael/status", headers=headers2)
         assert response2.status_code == 200
@@ -344,11 +344,11 @@ class TestNPCAvailabilitySequentialOperations:
         """Test getting timeline followed by checking availability."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         # Get timeline
         timeline_resp = client.get("/api/npcs/kael/timeline", headers=headers)
         assert timeline_resp.status_code == 200
-        
+
         # Check availability
         avail_resp = client.post(
             "/api/npcs/kael/check-availability",
@@ -361,7 +361,7 @@ class TestNPCAvailabilitySequentialOperations:
         """Test updating location then querying location."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         # Update location
         update_resp = client.post(
             "/api/npcs/kael/location",
@@ -369,7 +369,7 @@ class TestNPCAvailabilitySequentialOperations:
             headers=headers
         )
         assert update_resp.status_code == 200
-        
+
         # Query location
         location_resp = client.get("/api/locations/loc_tavern/npcs", headers=headers)
         assert location_resp.status_code == 200
@@ -378,7 +378,7 @@ class TestNPCAvailabilitySequentialOperations:
         """Test checking availability multiple times."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         for _ in range(3):
             response = client.post(
                 "/api/npcs/kael/check-availability",
@@ -402,7 +402,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -413,7 +413,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "name" in data
@@ -424,7 +424,7 @@ class TestNPCAvailabilityRoutes:
         """Test GET /npcs/<npc_id>/status with different NPC IDs."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         for npc_id in ["kael", "merchant", "priestess"]:
             response = client.get(f"/api/npcs/{npc_id}/status", headers=headers)
             assert response.status_code == 200
@@ -440,7 +440,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/locations/loc_forge/npcs", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -450,7 +450,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/locations/loc_forge/npcs", headers=headers)
-        
+
         data = response.get_json()["data"]
         assert "location_id" in data
         assert "npcs" in data
@@ -460,7 +460,7 @@ class TestNPCAvailabilityRoutes:
         """Test GET /locations/<location_id>/npcs with different locations."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         for loc_id in ["loc_forge", "loc_tavern", "loc_temple"]:
             response = client.get(f"/api/locations/{loc_id}/npcs", headers=headers)
             assert response.status_code == 200
@@ -480,7 +480,7 @@ class TestNPCAvailabilityRoutes:
             json={"reason": "quest_dialogue"},
             headers=headers
         )
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -494,7 +494,7 @@ class TestNPCAvailabilityRoutes:
             json={},
             headers=headers
         )
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "available" in data
@@ -510,7 +510,7 @@ class TestNPCAvailabilityRoutes:
             json={"reason": "dialogue"},
             headers=headers
         )
-        
+
         assert response.status_code == 200
 
     def test_update_npc_location_requires_auth(self, client):
@@ -527,7 +527,7 @@ class TestNPCAvailabilityRoutes:
             json={},
             headers=headers
         )
-        
+
         assert response.status_code == 400
         assert "new_location_id" in response.get_json()["error"]
 
@@ -540,7 +540,7 @@ class TestNPCAvailabilityRoutes:
             json={"new_location_id": "loc_tavern"},
             headers=headers
         )
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -554,7 +554,7 @@ class TestNPCAvailabilityRoutes:
             json={"new_location_id": "loc_tavern"},
             headers=headers
         )
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "moved_to" in data
@@ -570,7 +570,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/timeline", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.get_json()
         assert data["success"] is True
@@ -580,7 +580,7 @@ class TestNPCAvailabilityRoutes:
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
         response = client.get("/api/npcs/kael/timeline", headers=headers)
-        
+
         data = response.get_json()["data"]
         assert "npc_id" in data
         assert "name" in data
@@ -595,7 +595,7 @@ class TestNPCAvailabilityErrorHandling:
         """Test invalid session token returns 401."""
         headers = {"Authorization": "Bearer invalid_session_id"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 401
 
     def test_missing_auth_header_returns_401(self, client):
@@ -607,18 +607,18 @@ class TestNPCAvailabilityErrorHandling:
         """Test malformed auth header returns 401."""
         headers = {"Authorization": "InvalidFormat"}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 401
 
     def test_empty_auth_header_returns_401(self, client):
         """Test empty auth header returns 401."""
         headers = {"Authorization": ""}
         response = client.get("/api/npcs/kael/status", headers=headers)
-        
+
         assert response.status_code == 401
 
 
-        
+
 
 class TestNPCAvailabilityMultiPlayer:
     """Test multi-player isolation."""
@@ -627,21 +627,21 @@ class TestNPCAvailabilityMultiPlayer:
         """Test different players have different sessions."""
         client = app.test_client()
         session_manager = app.session_manager
-        
+
         # Create two sessions (both with MinimalPlayer)
         session1_id, _ = session_manager.create_session("player1")
         session2_id, _ = session_manager.create_session("player2")
-        
+
         player1 = session_manager.get_player(session1_id)
         player2 = session_manager.get_player(session2_id)
-        
+
         # Both can call endpoints with their respective sessions
         headers1 = {"Authorization": f"Bearer {session1_id}"}
         headers2 = {"Authorization": f"Bearer {session2_id}"}
-        
+
         response1 = client.get("/api/npcs/kael/status", headers=headers1)
         response2 = client.get("/api/npcs/kael/status", headers=headers2)
-        
+
         assert response1.status_code == 200
         assert response2.status_code == 200
 
@@ -649,14 +649,14 @@ class TestNPCAvailabilityMultiPlayer:
         """Test that location updates don't affect other sessions."""
         client = app.test_client()
         session_manager = app.session_manager
-        
+
         # Create two sessions
         session1_id, _ = session_manager.create_session("player1")
         session2_id, _ = session_manager.create_session("player2")
-        
+
         headers1 = {"Authorization": f"Bearer {session1_id}"}
         headers2 = {"Authorization": f"Bearer {session2_id}"}
-        
+
         # Player 1 updates location
         response1 = client.post(
             "/api/npcs/kael/location",
@@ -664,7 +664,7 @@ class TestNPCAvailabilityMultiPlayer:
             headers=headers1
         )
         assert response1.status_code == 200
-        
+
         # Player 2 can still query with their own session
         response2 = client.get("/api/npcs/kael/status", headers=headers2)
         assert response2.status_code == 200
@@ -677,11 +677,11 @@ class TestNPCAvailabilitySequentialOperations:
         """Test getting timeline followed by checking availability."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         # Get timeline
         timeline_resp = client.get("/api/npcs/kael/timeline", headers=headers)
         assert timeline_resp.status_code == 200
-        
+
         # Check availability
         avail_resp = client.post(
             "/api/npcs/kael/check-availability",
@@ -694,7 +694,7 @@ class TestNPCAvailabilitySequentialOperations:
         """Test updating location then querying location."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         # Update location
         update_resp = client.post(
             "/api/npcs/kael/location",
@@ -702,7 +702,7 @@ class TestNPCAvailabilitySequentialOperations:
             headers=headers
         )
         assert update_resp.status_code == 200
-        
+
         # Query location
         location_resp = client.get("/api/locations/loc_tavern/npcs", headers=headers)
         assert location_resp.status_code == 200
@@ -711,7 +711,7 @@ class TestNPCAvailabilitySequentialOperations:
         """Test checking availability multiple times."""
         session_id, player, session_manager = session_with_player
         headers = {"Authorization": f"Bearer {session_id}"}
-        
+
         for _ in range(3):
             response = client.post(
                 "/api/npcs/kael/check-availability",
