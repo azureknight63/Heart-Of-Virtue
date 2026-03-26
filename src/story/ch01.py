@@ -8,7 +8,7 @@ import random
 
 from events import Event, dialogue
 import objects as objects
-from functions import print_slow, await_input
+from functions import await_input
 from story.effects import MemoryFlash
 
 SKULL_ART = '''

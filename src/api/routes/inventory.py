@@ -199,7 +199,7 @@ def take_item():
             jsonify(
                 {
                     "success": True,
-                    "message": f"Item taken",
+                    "message": "Item taken",
                     "inventory": inventory_data,
                 }
             ),
@@ -279,7 +279,7 @@ def drop_item():
             jsonify(
                 {
                     "success": True,
-                    "message": f"Item dropped",
+                    "message": "Item dropped",
                     "inventory": inventory_data,
                 }
             ),
@@ -652,7 +652,7 @@ def unequip_item():
             jsonify(
                 {
                     "success": True,
-                    "message": f"Unequipped item",
+                    "message": "Unequipped item",
                     "equipment": equipment_data,
                 }
             ),

@@ -4,7 +4,7 @@ Provides centralized debug commands and information display for testing and deve
 Integrates with config flags to enable/disable different debug features during combat testing.
 """
 
-from typing import Dict, Any, List, Tuple, Optional, Callable
+from typing import Dict, Any, List, Tuple, Callable
 
 
 class DebugManager:
@@ -241,10 +241,10 @@ class DebugManager:
             return "Debug mode disabled"
 
         info = (
-            f"Performance Monitor:\n"
-            f"  Frame Time: (would be shown) ms\n"
-            f"  Combat Rounds: (would be shown)\n"
-            f"  Memory Usage: (would be shown) MB"
+            "Performance Monitor:\n"
+            "  Frame Time: (would be shown) ms\n"
+            "  Combat Rounds: (would be shown)\n"
+            "  Memory Usage: (would be shown) MB"
         )
         self.log_command("performance_monitor", result="Performance data retrieved")
         return info

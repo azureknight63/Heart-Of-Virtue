@@ -2,8 +2,10 @@
 All the loot tables for NPCs can be found here. These are called from the npc module.
 """
 
-import inspect, random
-import items, enchant_tables, functions
+import inspect
+import random
+import items
+import functions
 
 
 class Loot:
@@ -36,7 +38,7 @@ class Loot:
         drop = tile.spawn_item(candidates[select], amt=1, hidden=False, hfactor=0)
         try:
             ench_pool = int(enchantment)
-        except:
+        except Exception:
             print(
                 "###ERR: Enchantment couldn't be turned into an int! {}".format(
                     enchantment

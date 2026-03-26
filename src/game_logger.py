@@ -4,7 +4,6 @@ Provides structured logging for combat moves, distance calculations, angle calcu
 NPC decisions, and performance monitoring. Respects config flags from game_config.
 """
 
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -293,12 +292,14 @@ class GameLogger:
 
             total_lines = len(lines)
             session_lines = [
-                l for l in lines if "Session started" in l or "SESSION_END" in l
+                line
+                for line in lines
+                if "Session started" in line or "SESSION_END" in line
             ]
-            move_lines = [l for l in lines if "MOVE:" in l]
-            decision_lines = [l for l in lines if "NPC:" in l]
+            move_lines = [line for line in lines if "MOVE:" in line]
+            decision_lines = [line for line in lines if "NPC:" in line]
 
-            summary = f"Log Summary:\n"
+            summary = "Log Summary:\n"
             summary += f"  Total entries: {total_lines}\n"
             summary += f"  Moves logged: {len(move_lines)}\n"
             summary += f"  NPC decisions logged: {len(decision_lines)}\n"

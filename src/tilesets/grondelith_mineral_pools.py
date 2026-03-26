@@ -13,7 +13,7 @@ This area covers four distinct zones:
   Zone 4  — Boss Approach + Arena  (tiles: GrondelithApproach, GrondelithArena)
 """
 
-from src.tiles import *
+from src.tiles import MapTile
 
 # ---------------------------------------------------------------------------
 # Zone 1: Sacred Atrium

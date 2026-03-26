@@ -1,4 +1,4 @@
-from src.tiles import *
+from src.tiles import MapTile
 
 
 class Boundary(MapTile):

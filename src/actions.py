@@ -183,7 +183,7 @@ class Attack(Action):
         )
 
 
-### DEBUG / CHEATS ###
+# DEBUG / CHEATS
 
 
 class Teleport(Action):

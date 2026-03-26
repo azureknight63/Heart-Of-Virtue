@@ -473,7 +473,8 @@ class GameService:
 
         # Move any party members to the new room (mirrors game.py terminal behaviour)
         if len(getattr(player, "combat_list_allies", [])) > 1:
-            import io, contextlib
+            import io
+            import contextlib
 
             with contextlib.redirect_stdout(io.StringIO()):
                 try:
@@ -1052,7 +1053,6 @@ class GameService:
         """
         import contextlib
         import io
-        import src.functions as functions
         from unittest.mock import patch
         import inspect
         import re
@@ -2429,7 +2429,6 @@ class GameService:
         """
         import uuid
         import pickle
-        from datetime import datetime
         from src.api.db import db
 
         # 1. Enforcement of manual save limit
@@ -2668,8 +2667,6 @@ class GameService:
         player.last_move_target_id = None
 
         # Create or get combat adapter
-        from src.api.combat_adapter import ApiCombatAdapter
-
         if not hasattr(player, "_combat_adapter"):
             # Define event callback for logic during beats
             def event_callback(p):

@@ -346,8 +346,13 @@ def transfer_item(
     def _set_merch_flag(obj, item_target, item_source):
         if not hasattr(obj, "merchandise"):
             return
-        is_player = lambda ent: getattr(ent, "name", None) == "Jean"
-        is_merchant = lambda ent: hasattr(ent, "shop")
+
+        def is_player(ent):
+            return getattr(ent, "name", None) == "Jean"
+
+        def is_merchant(ent):
+            return hasattr(ent, "shop")
+
         if is_player(item_target) and is_merchant(item_source):
             obj.merchandise = False
         elif is_player(item_source) and is_merchant(item_target):
@@ -615,7 +620,7 @@ class InventoryCategorySubmenu(BaseInterface):
                 self.choices.append({"label": label, "item": item})
 
     def handle_exit(self):
-        print(f"Returning to category selection...")
+        print("Returning to category selection...")
 
     def handle_choice(self, idx: int):
         item = self.choices[idx]["item"]
@@ -667,9 +672,9 @@ class InventoryInterface(BaseInterface):
     def run(self):
         while True:
             self.player.refresh_weight()
-            print(f"=====")
-            print(f"Inventory")
-            print(f"=====")
+            print("=====")
+            print("Inventory")
+            print("=====")
             print(
                 f"Weight: {self.player.weight_current} / {self.player.weight_tolerance}"
             )
@@ -1041,7 +1046,7 @@ class RoomTakeInterface(BaseInterface):
         if choices:
             choices.append({"label": "Take all", "action": "take_all"})
         super().__init__(
-            title=f"Take Items",
+            title="Take Items",
             choices=choices,
             exit_label="Cancel",
             exit_message="Nevermind.",

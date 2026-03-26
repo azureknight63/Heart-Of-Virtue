@@ -21,14 +21,14 @@ Distance Conversion:
 - Backward compatibility: distance_from_coords() converts coordinates to feet
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple, Dict, List, TYPE_CHECKING, Any
 import math
 import random
 
 if TYPE_CHECKING:
-    from npc import NPC
+    from npc import NPC  # noqa: F401
 
 
 class Direction(Enum):

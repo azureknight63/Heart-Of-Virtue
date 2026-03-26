@@ -156,8 +156,6 @@ class NPCAIConfig:
 
         # Ideal flank angle is 90-180 degrees from attacker's line to target
         # This represents attacking from the side or rear
-        threshold = self.get_flanking_threshold()
-
         # Would need position/angle tracking to implement fully
         # For now, return a calculated flank angle
         ideal_flank = 90.0  # Perpendicular to direct attack line

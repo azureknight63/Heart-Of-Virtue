@@ -412,7 +412,7 @@ class ApiCombatAdapter:
                             {"battle_state": serialized_state},
                             room=f"combat_{self.session_id}",
                         )
-                except Exception as _:
+                except Exception:
                     import traceback
 
                     traceback.print_exc()

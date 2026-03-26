@@ -1,7 +1,9 @@
 __author__ = "Alex Egbert"
 
 import src.functions as functions
-import json, inspect, importlib
+import json
+import inspect
+import importlib
 from pathlib import Path
 from typing import Final
 from src.scenario_config import ScenarioConfig

@@ -376,7 +376,7 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
             grid_width=grid_w,
             grid_height=grid_h,
         )
-    except Exception as e:
+    except Exception:
         # Fallback to legacy proximity system if position initialization fails
         for enemy in new_enemies:
             default_proximity = getattr(enemy, "default_proximity", 20)

@@ -2,9 +2,7 @@
 
 __author__ = "Alex Egbert"
 
-import os
 import random
-import importlib
 
 from neotermcolor import colored
 

@@ -443,7 +443,7 @@ class Container(Object):
             qty = getattr(item, "count", 1)
             transfer_item(self, player, item, qty)
 
-        print(f"Jean collects all of the available items.")
+        print("Jean collects all of the available items.")
         self.refresh_description()
         self.process_events()
 

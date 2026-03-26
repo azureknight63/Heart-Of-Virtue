@@ -1,4 +1,4 @@
-from src.tiles import *
+from src.tiles import MapTile
 
 
 class VerdetteRoom(MapTile):  # room Jean is dumped in after the encounter with Gorran

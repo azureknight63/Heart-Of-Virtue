@@ -109,25 +109,6 @@ def validate_combat_action(action: str) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def validate_item_index(index: Any, max_index: int) -> Tuple[bool, Optional[str]]:
-    """Validate item index within inventory.
-
-    Args:
-        index: Item index
-        max_index: Maximum valid index
-
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    try:
-        idx = int(index)
-        if idx < 0 or idx >= max_index:
-            return False, f"Item index must be between 0 and {max_index - 1}"
-        return True, None
-    except (ValueError, TypeError):
-        return False, "Item index must be a valid integer"
-
-
 def validate_save_name(name: str) -> Tuple[bool, Optional[str]]:
     """Validate save file name.
 

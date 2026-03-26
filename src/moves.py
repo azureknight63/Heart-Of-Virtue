@@ -210,14 +210,12 @@ class Move:  # master class for all moves
         pass
 
     def prep_colors(self):  # prepares usercolor, targetcolor for prints
-        player = ""
         # Check if user is player generally (by name or class, assuming Player class has no friend attr)
         is_user_player = (
             self.user.name == "Jean" or self.user.__class__.__name__ == "Player"
         )
 
         if is_user_player:
-            player = self.user
             self.usercolor = "green"
         else:
             if not getattr(self.user, "friend", False):
@@ -230,7 +228,6 @@ class Move:  # master class for all moves
         )
 
         if is_target_player:
-            player = self.target
             self.targetcolor = "green"
         else:
             if not getattr(self.target, "friend", False):
@@ -2414,7 +2411,6 @@ class TacticalPositioning(Move):
         move_amount = min(abs(diff), 2)
 
         if diff > 0:  # Need to move closer
-            occupied = []  # Should ideally populate this, but keeping it simple for now
             new_pos = positions.move_toward_constrained(
                 user.combat_position,
                 self.target.combat_position,
@@ -2833,8 +2829,6 @@ class NpcAttack(Move):  # basic attack function, NPCs only
     ):  # adjusts the move's attributes to match the current game state
         if isinstance(self.user, str):
             # Log the error but try to recover if possible
-            import traceback
-
             print(
                 f"### ERROR: self.user is a string: '{self.user}' in {self.name}.evaluate()"
             )
@@ -4160,7 +4154,7 @@ class FeintAndPivot(Move):
     def execute(self, user):
         """Execute stage - attack and strategically reposition."""
         if not self.target or not self.target.is_alive:
-            cprint(f"Target is no longer available!", "red")
+            cprint("Target is no longer available!", "red")
             return
 
         # Calculate and deal damage
@@ -4303,7 +4297,7 @@ class VertigoSpin(Move):
     def execute(self, user):
         """Execute stage - spin attack and apply Disoriented status."""
         if not self.target or not self.target.is_alive:
-            cprint(f"Target is no longer available!", "red")
+            cprint("Target is no longer available!", "red")
             return
 
         # Calculate and deal damage

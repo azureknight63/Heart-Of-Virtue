@@ -2,7 +2,8 @@
 All the loot tables for NPCs can be found here. These are called from the npc module.
 """
 
-import random, decimal
+import random
+import decimal
 from items import item_types
 from states import Poisoned, PhoenixRevive
 
@@ -52,7 +53,7 @@ class Enchantment:
         return True
 
 
-### PREFIXES ###
+# PREFIXES
 
 
 class Sharp(Enchantment):
@@ -521,7 +522,7 @@ class Pure(Enchantment):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-### SUFFIXES ###
+# SUFFIXES
 
 
 class OfHealth(Enchantment):  # it's healthy! Increase maxhp by 10-30

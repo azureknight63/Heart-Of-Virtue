@@ -331,7 +331,7 @@ class NPCTimelineSerializer:
 
         # Create human-readable trigger description
         if story_gate == "game_start":
-            trigger_desc = f"Game start"
+            trigger_desc = "Game start"
         else:
             trigger_desc = f"Story gate: {story_gate}"
 

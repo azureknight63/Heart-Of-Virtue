@@ -3,7 +3,6 @@
 import random
 import time
 
-import functions  # type: ignore
 from neotermcolor import colored, cprint
 
 

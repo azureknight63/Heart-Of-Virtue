@@ -33,7 +33,7 @@ from typing import Optional, Dict, List, Any, Tuple, TYPE_CHECKING
 from collections import deque
 
 if TYPE_CHECKING:
-    from positions import CombatPosition
+    from positions import CombatPosition  # noqa: F401
 
 
 class CombatBattlefieldWindow:

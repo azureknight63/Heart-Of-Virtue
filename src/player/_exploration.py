@@ -217,7 +217,6 @@ class PlayerExplorationMixin:
 
                 # Add connector between this and next character
                 if i < len(chars) - 1:
-                    next_x = x + 1
                     # Check if we should draw a horizontal connector
                     if prev_direction and prev_direction[0] == "horizontal":
                         if prev_direction[2] == y and prev_direction[1] == x:
@@ -246,7 +245,6 @@ class PlayerExplorationMixin:
 
                     # Add space or diagonal connector between columns
                     if i < len(chars) - 1:
-                        next_x = x + 1
                         connector_added = False
 
                         # Check for diagonal connectors (in the space between tiles)

@@ -4,7 +4,7 @@ Provides functions to display combat information based on player config settings
 Respects flags like show_combat_distance, show_unit_positions, show_damage_modifiers, etc.
 """
 
-from neotermcolor import colored, cprint
+from neotermcolor import colored
 
 
 class CombatDisplayConfig:
@@ -223,8 +223,6 @@ def display_full_coordinate_grid(player, display_config=None):
 
     if not hasattr(player, "game_config") or not player.game_config:
         return ""
-
-    grid_size = player.game_config.coordinate_grid_size
 
     # Create position map
     positions_map = {}
