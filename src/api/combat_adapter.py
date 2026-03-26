@@ -136,7 +136,8 @@ class ApiCombatAdapter:
         # They are different sys.modules entries so we set both.
         for _anim_name in ("animations", "src.animations"):
             try:
-                import importlib, sys as _sys
+                import importlib
+                import sys as _sys
                 _anim_mod = _sys.modules.get(_anim_name) or importlib.import_module(_anim_name)
                 _anim_mod.set_api_mode(True)
             except Exception:

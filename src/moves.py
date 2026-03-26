@@ -845,9 +845,11 @@ class Withdraw(Move):
                 viability = False
             elif viability:
                 # Prevent infinite flee loop: once an NPC has fled past max combat range,
-                # stop withdrawing so it re-engages or stays put (distance > 20 = escaped).
+                # stop withdrawing so it re-engages or stays put.
+                # 20 = double the max melee range (10); anything beyond is effectively escaped.
+                _MAX_FLEE_DISTANCE = 20
                 min_dist = min(self.user.combat_proximity.values(), default=0)
-                if min_dist > 20:
+                if min_dist > _MAX_FLEE_DISTANCE:
                     viability = False
         return viability
 
