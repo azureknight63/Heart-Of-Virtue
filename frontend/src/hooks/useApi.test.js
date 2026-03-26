@@ -78,7 +78,7 @@ describe('useAuth', () => {
 
     expect(localStorage.getItem('authToken')).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(window.location.href).toBe('/games/HeartOfVirtue/login');
+    expect(window.location.href).toBe('/login');
 
     window.location = originalLocation;
   });

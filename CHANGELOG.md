@@ -2,6 +2,30 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.3.0] - 2026-03-26
+
+### Fixed
+- **Deployment: Vite base path** — API client base URL, audio BGM/SFX paths, and hero panel image now all respect `BASE_URL` for subpath deployments (e.g. `/games/HeartOfVirtue/`). Used `getAssetPath()` helper for robust trailing-slash handling.
+- **Deployment: Procfile** — removed `--worker-class eventlet` from gunicorn invocation (eventlet removed from requirements); threading mode with long-polling is correct for single-player.
+- **Deployment: logout redirect** — `window.location.href` was building `${BASE_URL}login` which 404s on subpath deployments; hardcoded to `/login` which React Router always serves.
+- **Combat: wave spawn positions** — `initialize_combat_positions()` was unconditionally overwriting `combat_position` on all combatants including already-positioned ones; now passes only newly-spawned enemies without existing positions.
+- **Combat: flee loop** — fixed infinite loop when flee succeeds; added fatigue guard.
+- **Combat: exception recovery** — `_execute_move()` failure no longer leaves adapter in corrupted state; falls back to empty `available_options`.
+- **Combat: consecutive defeat dialog** — defeat fallback event `id` changed from literal `"defeat"` to `uuid4()` so `sessionStorage` de-duplication doesn't suppress a second consecutive defeat.
+- **Combat: debug log flood** — 9× `logger.info/warning("DEBUG: ...")` calls demoted to `logger.debug(...)`.
+- **Story: NPCSpawnerEvent dict class name** — added `.strip()` to class name extraction from deserialized dicts; whitespace was causing `AttributeError` on lookup.
+- **Story: NPCSpawnerEvent blocking event queue** — spawner events were incorrectly holding the queue; fixed.
+- **NPC: Rock Rumbler AI** — fixed stop-attacking regression at high beat counts; added `getattr` guard on `m.category` for partial Move init.
+- **Frontend: post-login redirect** — switched from `window.location.href` to React Router `navigate('/menu')` to avoid full page reloads.
+- **Frontend: sessionStorage persistence for lastEndStateId** — prevents duplicate victory/defeat dialog on React re-mount.
+- **Security: auth exception masking** — restored masked error responses, admin endpoint guards, and split requirements files.
+- **Tests: useApi logout** — updated assertion to match `/login` redirect.
+- **Tests: LoginPage navigate mock** — switched `window.location.href` assertions to `mockNavigate` after login now uses React Router.
+
+### Changed
+- `wsgi.py` docstring updated to document threading mode and remove eventlet references.
+- Ch01 story: added `Ch01GorranCautionJunction`, `Ch01GorranMarkings`, `Ch01GorranDarkChamber` narrative beats (from master merge).
+
 ## [0.0.2.0] - 2026-03-26
 
 ### Fixed
