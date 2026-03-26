@@ -240,5 +240,50 @@ describe('GamePage', () => {
             expect(screen.getByText(/You won!/i)).toBeDefined();
         });
     });
+
+    it('shows BetaEndDialog after closing victory dialog with beta_end=true', async () => {
+        const mockFetchCombatStatus = vi.fn().mockResolvedValue(undefined);
+
+        useCombat.mockReturnValue({
+            combat: {
+                combat_active: false,
+                end_state: {
+                    id: 'lurker-win-1',
+                    status: 'victory',
+                    message: 'Victory!',
+                    beta_end: true,
+                    exp_gained: {},
+                    items_dropped: [],
+                    level_ups: [],
+                    attribute_points_available: 0,
+                    attributes: {
+                        strength_base: 10, finesse_base: 10, speed_base: 10,
+                        endurance_base: 10, charisma_base: 10, intelligence_base: 10,
+                    },
+                }
+            },
+            inCombat: false,
+            loading: false,
+            fetchCombatStatus: mockFetchCombatStatus,
+            performAction: vi.fn()
+        });
+
+        renderGamePage();
+
+        // Victory dialog should appear
+        await waitFor(() => {
+            expect(screen.getByText(/Victory!/i)).toBeDefined();
+        });
+
+        // Close button is enabled (no points to spend)
+        const closeBtn = screen.getByText('CLOSE');
+        expect(closeBtn.disabled).toBe(false);
+        fireEvent.click(closeBtn);
+
+        // BetaEndDialog should appear
+        await waitFor(() => {
+            expect(screen.getByText('END OF BETA')).toBeDefined();
+        });
+    });
 });
 
