@@ -3,7 +3,7 @@
  * Captures console logs and sends them to the backend for file storage
  */
 
-const LOG_ENDPOINT = '/api/logs/browser';
+const LOG_ENDPOINT = `${import.meta.env.BASE_URL}api/logs/browser`;
 const BATCH_SIZE = 10;
 const FLUSH_INTERVAL = 5000; // 5 seconds
 

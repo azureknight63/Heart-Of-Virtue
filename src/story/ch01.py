@@ -914,3 +914,68 @@ class AfterGorranIntro(Event):
                 if self.player.in_combat:
                     gorran.reset_combat_moves()
         self.player.teleport("verdette-caverns", (2, 1))
+
+
+class Ch01GorranCautionJunction(Event):
+    """
+    Gorran reads the violence-marked junction at (4,3) and briefly signals Jean.
+    Subtle — he slows rather than stops, scanning without alarm. Fires once on tile entry.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Caution_Junction'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(0.5)
+        cprint("Gorran slows as he enters the junction, his head dropping to read the floor. "
+               "He takes one long look — left passage, right passage, the marks on the stone — "
+               "then raises a hand briefly: wait.", "cyan")
+        time.sleep(1)
+        cprint("After a moment he lowers it and moves forward, unhurried.", "cyan")
+        time.sleep(0.5)
+
+
+class Ch01GorranMarkings(Event):
+    """
+    Gorran pauses at the Golemite markings on the crystal at (5,6). His touch
+    lingers, and when he moves on his attention stays ahead — tracking something.
+    Fires once. Non-blocking.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Markings'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(0.5)
+        cprint("Gorran pauses at the crystal, fingertips trailing across the worn markings "
+               "at its base. He holds the contact a beat longer than passage requires.", "cyan")
+        time.sleep(1.5)
+        cprint("When he moves on, his eyes stay ahead — not at the walls, but at the space beyond them.", "cyan")
+        time.sleep(0.5)
+
+
+class Ch01GorranDarkChamber(Event):
+    """
+    Gorran goes completely still in the dark chamber at (7,6), registering a threat
+    before Jean can perceive one. Pronounced — a full stop, a firm signal. Fires once.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Dark_Chamber'):
+        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self):
+        time.sleep(0.5)
+        cprint("Gorran stops entirely. His weight settles — a deliberate stillness, not a pause. "
+               "One hand comes back behind him, flat, slow: stay.", "cyan")
+        time.sleep(2)
+        cprint("He does not move. He does not turn. Whatever is ahead, he heard it first.", "cyan")
+        time.sleep(1)

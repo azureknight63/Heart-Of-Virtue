@@ -236,10 +236,35 @@ But if the player is paying attention:
 - The world was built, as the lore establishes, for exactly this: to give Jean the space
   to grieve, to choose, to move.
 
+**Aurelion was created by God** — not by Jean's subconscious, not by narrative mechanics.
+God built a world and placed Jean in it, with enough room to make real choices and enough
+structure to make those choices matter. The world is not a dream. It is a gift Jean cannot
+yet see as one.
+
 God does not appear. God does not speak. There is no burning bush, no voice from the
 stone. What there is instead is the structure of a world that was made for Jean to
 find his way in — gently, without force, allowing him to cooperate with a plan he
 cannot see.
+
+### God-Seeding
+
+Because Aurelion is God's construction, not a neutral fantasy world, small objects and
+details may appear in it that should not logically be there — things that resonate with
+Jean's Catholic identity, his loss, or the specific shape of his grief.
+
+These are not plot holes. They are placed deliberately, the way a loving parent hides
+something for a child to find. They should be:
+
+- **Incongruous enough to notice** — but not so obvious they break immersion
+- **Explicable after the fact** — if a player asks "how did that get here?", the answer
+  is embedded in the lore (God put it there), but the game never says this aloud
+- **Resonant with Jean specifically** — a cross in a Golemite tunnel, a prayer carved
+  in stone, the residue of a fire where no one should have sheltered: things that speak
+  to a Catholic crusader-pilgrim and to no one else
+
+The drawing is the most significant God-seeding artifact and is the pivot of the faith arc.
+Smaller seeds (an old cross, a fire ring, an inscription) function as ambient reminders
+that Jean is not as alone in this world as he feels. The player may notice before Jean does.
 
 Jean's turn is his own. That is the point. He was not forced back. He chose.
 

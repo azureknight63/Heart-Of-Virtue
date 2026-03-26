@@ -123,7 +123,6 @@ function HeroPanel({
           <StatusEffectsIconPanel effects={player?.status_effects} vertical />
         </div>
 
-        {/* Hero Heart Image */}
         <img
           src={`${import.meta.env.BASE_URL}hero-heart.png`}
           alt="Hero Heart"

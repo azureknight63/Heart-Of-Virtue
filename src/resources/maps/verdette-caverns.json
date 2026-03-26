@@ -2,7 +2,7 @@
     "(2, 1)": {
         "id": "tile_2_1",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "The passage opens just enough to stand upright. A faint pink luminescence bleeds from crystal formations embedded in the walls — not torches, but living stone. The air is cool and mineral-sharp, carrying the taste of deep stone and something faintly sweet. A draft presses against Jean's face from somewhere deeper in.",
         "exits": [
             "south"
         ],
@@ -58,7 +58,7 @@
     "(8, 1)": {
         "id": "tile_8_1",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "A recessed nook where the rock face has split, leaving a hollow just large enough to shelter in. Crystal veins branch across the ceiling like a frozen river delta, glowing softly. The unsettled dust on the ground suggests something large passed through here.",
         "exits": [
             "south"
         ],
@@ -131,7 +131,7 @@
     "(2, 2)": {
         "id": "tile_2_2",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "description": "The cave narrows sharply here, forcing a sideways shuffle between slick stone walls. The crystalline growths along the floor catch the faintest light and throw it in strange, scattered directions. The air carries a faint acrid tang, and the rock near the ceiling is stained dark from years of concentrated presence.",
         "exits": [
             "north",
             "southeast",
@@ -188,7 +188,7 @@
     "(5, 2)": {
         "id": "tile_5_2",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "The path rises briefly onto a natural shelf of rock that overlooks a lower passage. The view in both directions offers nothing reassuring — darkness in one, a faint rose glow in the other. The ledge is narrow, and footing here requires care.",
         "exits": [
             "southeast",
             "southwest"
@@ -202,7 +202,7 @@
     "(8, 2)": {
         "id": "tile_8_2",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "description": "The ceiling overhead is lost in shadow, but the smell is unmistakable — thick and acrid, the kind that settles into everything. The stone floor beneath is whitened in overlapping patches. Something has nested here for a very long time.",
         "exits": [
             "north",
             "southwest"
@@ -238,7 +238,7 @@
     "(1, 3)": {
         "id": "tile_1_3",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "description": "The passage angles sharply downward before leveling out. Thin fissures in the walls breathe cold air that cuts through Jean's clothes. The crystalline fingers jutting from the rock here are denser, their pink glow brighter — the mineral composition changes at this depth.",
         "exits": [
             "south",
             "northeast"
@@ -274,7 +274,7 @@
     "(3, 3)": {
         "id": "tile_3_3",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "The chamber opens unexpectedly, the walls drawing back to reveal a gallery of crystal formations unlike anything Jean has seen before. Floor-to-ceiling pillars of pale quartz catch the ambient glow and scatter it across every surface. The silence here is different — total, almost reverent.",
         "exits": [
             "east",
             "northwest"
@@ -323,7 +323,7 @@
     "(4, 3)": {
         "id": "tile_4_3",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "A junction where several passages meet. The floor shows unmistakable signs of recent violence — deep gouges in the stone and smear marks in colors that don't bear close examination. Whatever lives in these tunnels does not negotiate territory peacefully.",
         "exits": [
             "south",
             "west",
@@ -370,6 +370,20 @@
                     "count": 1,
                     "spawned_npcs": []
                 }
+            },
+            {
+                "__class__": "Ch01GorranCautionJunction",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_Caution_Junction",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
             }
         ],
         "items": [],
@@ -380,7 +394,7 @@
     "(6, 3)": {
         "id": "tile_6_3",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "Sound behaves strangely here. Jean's footsteps return to him from multiple directions at once, offset by fractions of a second. The chamber is roughly circular, its walls curving inward at the top like cupped hands. The acoustics feel deliberate.",
         "exits": [
             "east",
             "northwest"
@@ -395,7 +409,7 @@
     "(7, 3)": {
         "id": "tile_7_3",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "An old wooden chest, half-buried in sediment, occupies the corner of this chamber. The walls around it bear smooth, deliberate markings — not random erosion, but something carved with purpose. The chest is not locked, only forgotten.",
         "exits": [
             "west",
             "northeast"
@@ -696,7 +710,7 @@
     "(1, 4)": {
         "id": "tile_1_4",
         "title": "VerdetteCavernsRoom",
-        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
+        "description": "A small side chamber, barely large enough for two people. The silence here is total. There is no reason to be in this place and no reason to linger — but carved clumsily into the wall at chest height: a small cross. Not recent work.",
         "exits": [
             "north",
             "south"
@@ -705,12 +719,33 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "A crude carving on the wall — a small cross surrounded by scratched lettering. You could READ it.",
+                    "idle_message": "Something has been carved into the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "words carved into the wall.",
+                    "announce": "Something has been carved into the wall.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "A small cross, carved badly into the wall. Around it, barely legible: 'God grant that I will see her again.'"
+                }
+            }
+        ]
     },
     "(4, 4)": {
         "id": "tile_4_4",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "The path slopes noticeably here, drawing Jean downward into darker stone. The crystalline growths thin out at this depth. What light remains comes from a faint bioluminescence on the cave walls — pale blue-green patches of something alive and patient.",
         "exits": [
             "north",
             "south"
@@ -726,7 +761,7 @@
     "(1, 5)": {
         "id": "tile_1_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "description": "The passage terminates at a low ledge. Beneath it, pooled in a natural depression, is a shallow gathering of still water. The surface reflects the crystal-glow from above in slow, shifting patterns. There is the faint smell of old blood here that Jean chooses not to investigate.",
         "exits": [
             "north"
         ],
@@ -799,7 +834,7 @@
     "(4, 5)": {
         "id": "tile_4_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "description": "The floor vanishes under a thin film of dark water — ankle-deep, cold enough to ache. Stone spires thrust up through the surface unpredictably, making footing treacherous. Deep scoring in the rock walls nearby suggests that whatever passes through here regularly does so without much concern for caution.",
         "exits": [
             "north",
             "southeast",
@@ -836,7 +871,7 @@
     "(6, 5)": {
         "id": "tile_6_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
+        "description": "The walls here are slick with a film that wasn't deposited by water. The source isn't visible, but the smell — sweet and faintly putrid — is distinctive. Jean has smelled it before. They're here.",
         "exits": [
             "south",
             "east",
@@ -874,7 +909,7 @@
     "(7, 5)": {
         "id": "tile_7_5",
         "title": "VerdetteCavernsRoom",
-        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
+        "description": "The stone here has been rearranged. Not collapsed — rearranged. Large blocks of rock have been moved aside to create a wider path, or possibly a fortification. Something powerful has passed through here repeatedly.",
         "exits": [
             "south",
             "west",
@@ -911,7 +946,7 @@
     "(3, 6)": {
         "id": "tile_3_6",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "A section of ceiling has surrendered to gravity at some point in the recent past. Rubble fills a third of the passage floor, and a crack in the ceiling still weeps fine grit. The way is passable, but barely.",
         "exits": [
             "south",
             "northeast"
@@ -926,7 +961,7 @@
     "(5, 6)": {
         "id": "tile_5_6",
         "title": "VerdetteCavernsRoom",
-        "description": "The ceiling rises quickly here as the cave opens up into a large chamber. The far wall is lost in a haze of darkness only slightly abated by \n        the soft neon glow of scattered crystal formations. There is an oppressive silence, as if the world is holding it's breath in trepidation. \n        Any traveler, too, might become wary when faced with such silence and unspeakable distances. An odd sense of vulnerability permeates the dank \n        stillness of the place.",
+        "description": "The largest crystal formation Jean has seen yet occupies the center of this chamber — a rough cluster of rose quartz taller than he is, resonating at a frequency just below hearing. Jean can feel it in his back teeth. Golemite markings cover the base, worn smooth by what looks like the repeated pressure of large hands.",
         "exits": [
             "east",
             "northeast",
@@ -934,16 +969,52 @@
             "southeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "Ch01GorranMarkings",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_Markings",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Inscription",
+                    "description": "Two sets of markings overlap on the crystal face — old glyphs and newer scratches. You could READ them.",
+                    "idle_message": "Something has been carved into the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "words carved into the wall.",
+                    "announce": "Something has been carved into the wall.",
+                    "keywords": [
+                        "read"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Golemite glyphs in slow, deliberate rows. Below them, scratched in a different hand: 'The stone remembers.'"
+                }
+            }
+        ],
         "symbol": ""
     },
     "(6, 6)": {
         "id": "tile_6_6",
         "title": "VerdetteCavernsRoom",
-        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "description": "Five passages meet here. The ceiling rises high enough that the top is lost in darkness. At the center of the floor, someone or something has arranged a loose ring of small stones — whether as a marker or a warning is unclear.",
         "exits": [
             "north",
             "south",
@@ -960,7 +1031,7 @@
     "(7, 6)": {
         "id": "tile_7_6",
         "title": "VerdetteCavernsRoom",
-        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
+        "description": "The crystal glow fades here. The chamber is darker than anything Jean has passed through, and the darkness has a quality to it — thick, directional. The walls have a glassy quality, as though whatever has lived here has polished them over years of contact. The air is colder than it should be.",
         "exits": [
             "north",
             "west",
@@ -969,7 +1040,22 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "Ch01GorranDarkChamber",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_Dark_Chamber",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -977,7 +1063,7 @@
     "(3, 7)": {
         "id": "tile_3_7",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "description": "The floor is matted with decades of nesting material. The smell is overwhelming. The ceiling is lost in shadow, and from somewhere above comes a slow, collective sound — the kind large numbers of small creatures make when resting, broken only by the occasional shift and rustle.",
         "exits": [
             "north",
             "south",
@@ -1013,7 +1099,7 @@
     "(6, 7)": {
         "id": "tile_6_7",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "Water falls in a steady rhythm from somewhere above, filling the chamber with a sound like ticking. The floor is uniformly wet, and the constant moisture has encouraged growth — pale, threadlike fungi cluster in the corners, and something bioluminescent pulses faintly in the crevices.",
         "exits": [
             "north",
             "northeast",
@@ -1103,7 +1189,7 @@
     "(8, 7)": {
         "id": "tile_8_7",
         "title": "VerdetteCavernsRoom",
-        "description": "The cave narrows a bit here and the ceiling hangs low. A steady breeze sings through crystalline fingers that thrust out at scattered points \n        along the walls and floor. Ethereal noises echo hauntingly from distant chambers. The tight space makes for an uncomfortable passage, but \n        nonetheless yields further exploration for those willing to squeeze through.",
+        "description": "A high-ceilinged antechamber, the air thick with a sound that isn't quite silence — a low, pulsing frequency that seems to come from the walls themselves. The dim light has no obvious source. The stone floor is pale and uniformly stained, worn smooth at the center as though by countless small repeated contacts.",
         "exits": [
             "south",
             "northwest"
@@ -1139,7 +1225,7 @@
     "(3, 8)": {
         "id": "tile_3_8",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "Three converging passages create a natural staging area, and it has been used as one. The floor bears the marks of repeated occupation — worn stone, embedded fragments of older battles. This place is defended.",
         "exits": [
             "north",
             "east",
@@ -1196,7 +1282,7 @@
     "(4, 8)": {
         "id": "tile_4_8",
         "title": "VerdetteCavernsRoom",
-        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "description": "The air changes here. A trace of freshness cuts through the mineral heaviness of the deep cavern — something ahead is alive and clean. A natural alcove in the rock wall bears the marks of former use: worn stone, a dark ring on the floor where a fire once burned. Someone sheltered here before pressing on toward the spring.",
         "exits": [
             "west",
             "northwest",
@@ -1303,7 +1389,7 @@
     "(8, 8)": {
         "id": "tile_8_8",
         "title": "VerdetteCavernsRoom",
-        "description": "The area brightens significantly thanks to a skylight cut into the ceiling. The opening, as brutal in shape as the painful brightness \n        spilling through it, is much too small for most creatures, but nonetheless is a welcome change from the darkness. \n        Thick tapestries of green moss cling to the walls, grateful too for the life-giving illumination. The juxtaposition of the light against \n        the darkness of the rest of the cavern carries with it the dangers of a false sense of security in this inhospitable tomb.",
+        "description": "The chamber is cold in a way that has nothing to do with temperature. The walls absorb sound. Jean's footsteps make no echo here, and the darkness pools at the edges like standing water. Long, thin gouges mark the stone floor in parallel sets, too regular to be erosion.",
         "exits": [
             "north"
         ],
@@ -1343,7 +1429,7 @@
     "(1, 9)": {
         "id": "tile_1_9",
         "title": "VerdetteCavernsRoom",
-        "description": "This cavern chamber is dimly lit with a strange pink glow. Scattered on the walls are torches with illuminated \n        crystals instead of flames. Strange, ethereal sounds echo off of the rock surfaces with no decipherable pattern. \n        The air is cold and slightly humid. The stone walls are damp to the touch.",
+        "description": "The passage angles sharply and then opens into a low tunnel leading east. The air is damp and cool, carrying the unmistakable smell of fresh water somewhere ahead. The crystal glow is absent here — the only light is the pale luminescence that coats the cave walls in thin, living films.",
         "exits": [
             "east"
         ],
@@ -1357,7 +1443,7 @@
     "(2, 9)": {
         "id": "tile_2_9",
         "title": "VerdetteCavernsRoom",
-        "description": "The floor slopes downward slightly, disappearing under a barely-discernible pool of water. The pool is ankle deep, broken only where a \n        few stone spires have dared to pierce upward from the floor into the damp air of the chamber like the groping fingers of a desperate victim. \n        Indeed, footfalls are best placed carefully here, or some of the more hidden fingers may find painful purchase.",
+        "description": "Jean can hear water now — not the irregular drip of seepage, but the clean, consistent sound of a spring. The sound makes him aware of how thirsty he is. The passage narrows before the entrance, as though the cave is drawing breath.",
         "exits": [
             "west",
             "northeast"
@@ -1371,7 +1457,7 @@
     "(5, 9)": {
         "id": "tile_5_9",
         "title": "VerdetteCavernsSpring",
-        "description": "The unmistakable sound of water trickling over rock can be heard echoing throughout this small chamber. The air is filled\n        with a fresh, life-giving smell that immediately improves Jean's mood. This would be an excellent place to stop for a short\n        rest before continuing on.",
+        "description": "The unmistakable sound of water trickling over rock fills this small chamber with something like relief. The air carries a freshness Jean hasn't tasted since the surface — not just mineral, but alive. The spring wells up through fractured rock in the center of the chamber, perfectly clear.",
         "exits": [
             "northwest"
         ],
@@ -1425,5 +1511,8 @@
             }
         ],
         "symbol": ""
+    },
+    "metadata": {
+        "bgm": "verdette_caverns"
     }
 }
