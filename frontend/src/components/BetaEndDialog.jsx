@@ -9,7 +9,7 @@ import { colors, spacing, fonts } from '../styles/theme'
  * @param {Function} props.onSendFeedback - Opens the feedback dialog (preset to general)
  * @param {Function} props.onContinue - Dismisses this dialog and returns to the game
  */
-export default function BetaEndDialog({ onSendFeedback, onContinue }) {
+export default function BetaEndDialog({ onSendFeedback = () => {}, onContinue = () => {} }) {
   return (
     <BaseDialog
       title="END OF BETA"
