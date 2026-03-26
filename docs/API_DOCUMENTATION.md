@@ -133,7 +133,8 @@ src/api/
 │   ├── inventory.py         # Inventory endpoints (3)
 │   ├── equipment.py         # Equipment endpoints (2)
 │   ├── combat.py            # Combat endpoints (4)
-│   └── saves.py             # Save/Load endpoints (4)
+│   ├── saves.py             # Save/Load endpoints (4)
+│   └── feedback.py          # Feedback → GitHub Issues (1)
 ├── handlers/
 │   ├── __init__.py
 │   └── error_handler.py      # Global error handlers (8)
@@ -701,6 +702,44 @@ Delete a saved game.
   }
 }
 ```
+
+---
+
+### Feedback (1 endpoint)
+
+#### `POST /api/feedback/issue`
+Submit in-game feedback that creates a GitHub issue on `azureknight63/heart-of-virtue`. Requires a valid session token. Rate-limited to 10 submissions per session per hour.
+
+**Request:**
+```json
+{
+  "type": "bug" | "feature" | "general",
+  "title": "Short descriptive title (max 256 chars)",
+  "anonymous": false,
+  "fields": {
+    // bug:     { "steps": "...", "expected": "...", "actual": "...", "severity": "low|medium|high" }
+    // feature: { "description": "...", "use_case": "..." }
+    // general: { "message": "...", "ratings": { "story": 1-5, "combat": 1-5, "audio": 1-5, "visuals": 1-5, "difficulty": 1-5 } }
+  }
+}
+```
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "issue_url": "https://github.com/azureknight63/heart-of-virtue/issues/123"
+}
+```
+
+**Error responses:**
+- `400` — missing/invalid `title` or unknown `type`
+- `429` — rate limit exceeded (10/hour per session)
+- `503` — `GITHUB_TOKEN` not configured on the server
+
+**Notes:**
+- Set `GITHUB_TOKEN` in your environment (see `.env.example`). Without it, the route returns 503 and the game loop is unaffected.
+- The `anonymous` flag omits the player's username from the GitHub issue body.
 
 ---
 
