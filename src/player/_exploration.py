@@ -44,9 +44,7 @@ class PlayerExplorationMixin:
                 else:
                     print("Invalid selection.")
             else:
-                print(
-                    "Jean doesn't see anything remarkable here to look at.\n"
-                )
+                print("Jean doesn't see anything remarkable here to look at.\n")
         else:
             lower_phrase = phrase.lower()
             for i, thing in enumerate(
@@ -62,11 +60,7 @@ class PlayerExplorationMixin:
                     if hasattr(thing, "idle_message"):
                         idle = thing.idle_message
                     search_item = (
-                        thing.name.lower()
-                        + " "
-                        + announce.lower()
-                        + " "
-                        + idle.lower()
+                        thing.name.lower() + " " + announce.lower() + " " + idle.lower()
                     )
                     if lower_phrase in search_item:
                         print(thing.description)
@@ -227,9 +221,7 @@ class PlayerExplorationMixin:
                     # Check if we should draw a horizontal connector
                     if prev_direction and prev_direction[0] == "horizontal":
                         if prev_direction[2] == y and prev_direction[1] == x:
-                            line_parts.append(
-                                colored("-", "white", attrs=["dark"])
-                            )
+                            line_parts.append(colored("-", "white", attrs=["dark"]))
                         else:
                             line_parts.append(" ")
                     else:
@@ -246,9 +238,7 @@ class PlayerExplorationMixin:
                     # Check if we should draw a vertical connector (in the tile position)
                     if prev_direction and prev_direction[0] == "vertical":
                         if prev_direction[1] == x and prev_direction[2] == y:
-                            vertical_parts.append(
-                                colored("|", "white", attrs=["dark"])
-                            )
+                            vertical_parts.append(colored("|", "white", attrs=["dark"]))
                         else:
                             vertical_parts.append(" ")
                     else:
@@ -299,10 +289,7 @@ class PlayerExplorationMixin:
                             elif (
                                 dy_dir < 0 and dx_dir < 0
                             ):  # NW: \ between prev and current
-                                if (
-                                    x == self.location_x
-                                    and y == self.location_y
-                                ):
+                                if x == self.location_x and y == self.location_y:
                                     vertical_parts.append(
                                         colored("\\", "white", attrs=["dark"])
                                     )

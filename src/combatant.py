@@ -80,11 +80,7 @@ class Combatant:
 
     def get_equipped_items(self):
         """Return all items in inventory that are currently equipped."""
-        return [
-            item
-            for item in self.inventory
-            if getattr(item, "isequipped", False)
-        ]
+        return [item for item in self.inventory if getattr(item, "isequipped", False)]
 
     def refresh_moves(self):
         """Return the subset of known_moves that are currently viable."""

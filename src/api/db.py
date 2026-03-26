@@ -40,9 +40,7 @@ class Database:
             auth_token = os.getenv("TURSO_AUTH_TOKEN")
             if not url:
                 raise ValueError("TURSO_DATABASE_URL is not set")
-            self._client = libsql_client.create_client(
-                url, auth_token=auth_token
-            )
+            self._client = libsql_client.create_client(url, auth_token=auth_token)
         return self._client
 
     async def execute(self, sql, params=None):

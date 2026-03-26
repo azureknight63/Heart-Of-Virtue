@@ -48,9 +48,7 @@ def count_gif_frames(gif_path):
 
 
 def function_exists(module, function_name):
-    return hasattr(module, function_name) and callable(
-        getattr(module, function_name)
-    )
+    return hasattr(module, function_name) and callable(getattr(module, function_name))
 
 
 def main():

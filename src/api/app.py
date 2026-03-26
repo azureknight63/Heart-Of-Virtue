@@ -225,8 +225,8 @@ def create_app(config_class=None):
 
         if request.method == "OPTIONS":
             response = make_response()
-            response.headers["Access-Control-Allow-Origin"] = (
-                request.headers.get("Origin", "http://localhost:3000")
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get(
+                "Origin", "http://localhost:3000"
             )
             response.headers["Access-Control-Allow-Methods"] = (
                 "GET, POST, PUT, DELETE, OPTIONS, PATCH"
@@ -257,9 +257,7 @@ def create_app(config_class=None):
         def test_create_session():
             from flask import jsonify, request as _req
 
-            username = (_req.get_json() or {}).get(
-                "username", "inquisitor_test"
-            )
+            username = (_req.get_json() or {}).get("username", "inquisitor_test")
             session_id, _ = app.session_manager.create_session(username)
             return (
                 jsonify({"session_id": session_id, "username": username}),
@@ -305,9 +303,7 @@ def create_app(config_class=None):
             routes.append(
                 {
                     "endpoint": rule.endpoint,
-                    "methods": sorted(
-                        list(rule.methods - {"HEAD", "OPTIONS"})
-                    ),
+                    "methods": sorted(list(rule.methods - {"HEAD", "OPTIONS"})),
                     "rule": str(rule),
                 }
             )

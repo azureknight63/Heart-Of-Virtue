@@ -109,12 +109,8 @@ class Skilltree:
                 moves.BullCharge(
                     user
                 ): 350,  # HV-1: Charge with momentum (heavy weapon style)
-                moves.VertigoSpin(
-                    user
-                ): 700,  # HV-1: Knockback-heavy positioning move
-                moves.WhirlAttack(
-                    user
-                ): 600,  # HV-1: Spin strike with heavy impact
+                moves.VertigoSpin(user): 700,  # HV-1: Knockback-heavy positioning move
+                moves.WhirlAttack(user): 600,  # HV-1: Spin strike with heavy impact
                 moves.QuickSwap(
                     user
                 ): 550,  # HV-1 Tier 2: Swap with ally (heavy tank coordination)

@@ -52,9 +52,7 @@ class EventSerializer:
         # Optional display delay configuration
         if hasattr(event, "delay_mode") and event.delay_mode:
             event_data["delay_mode"] = event.delay_mode
-            event_data["delay_duration"] = getattr(
-                event, "delay_duration", 3000
-            )
+            event_data["delay_duration"] = getattr(event, "delay_duration", 3000)
 
         return event_data
 
@@ -174,9 +172,7 @@ class EventSerializer:
         if hasattr(event, "dialogue"):
             event_data["dialogue"] = event.dialogue
         if hasattr(event, "choices"):
-            event_data["choice_count"] = (
-                len(event.choices) if event.choices else 0
-            )
+            event_data["choice_count"] = len(event.choices) if event.choices else 0
 
         # Combat encounters
         if hasattr(event, "enemy_spawned"):
@@ -278,9 +274,7 @@ class EventSerializer:
                 event_data["input_type"] = event.input_type
             else:
                 # Infer input type from event class
-                event_data["input_type"] = EventSerializer._infer_input_type(
-                    event
-                )
+                event_data["input_type"] = EventSerializer._infer_input_type(event)
 
             # Input prompt text
             if hasattr(event, "input_prompt"):

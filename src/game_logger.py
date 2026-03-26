@@ -51,9 +51,7 @@ class GameLogger:
             # Try to create/open log file
             with open(log_path, "a") as f:
                 f.write(f"\n{'='*80}\n")
-                f.write(
-                    f"Session started: {self.session_start_time.isoformat()}\n"
-                )
+                f.write(f"Session started: {self.session_start_time.isoformat()}\n")
                 f.write(f"{'='*80}\n")
         except Exception as e:
             print(
@@ -115,9 +113,7 @@ class GameLogger:
             with open(self._get_log_file_path(), "a") as f:
                 f.write(f"[{self._format_timestamp()}] {message}\n")
         except Exception as e:
-            print(
-                f"[Warning] Could not write to log file: {e}", file=sys.stderr
-            )
+            print(f"[Warning] Could not write to log file: {e}", file=sys.stderr)
 
     def log_combat_move(
         self,
@@ -265,9 +261,7 @@ class GameLogger:
 
         self._write_log(message)
 
-    def log_session_end(
-        self, victory: bool, duration_seconds: float = None
-    ) -> None:
+    def log_session_end(self, victory: bool, duration_seconds: float = None) -> None:
         """Log end of combat session.
 
         Args:
@@ -299,9 +293,7 @@ class GameLogger:
 
             total_lines = len(lines)
             session_lines = [
-                l
-                for l in lines
-                if "Session started" in l or "SESSION_END" in l
+                l for l in lines if "Session started" in l or "SESSION_END" in l
             ]
             move_lines = [l for l in lines if "MOVE:" in l]
             decision_lines = [l for l in lines if "NPC:" in l]

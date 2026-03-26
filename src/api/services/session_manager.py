@@ -234,13 +234,9 @@ class SessionManager:
             universe: Optional Universe instance for player positioning
         """
         self.sessions: Dict[str, Session] = {}
-        self.players: Dict[str, object] = (
-            {}
-        )  # Stores Player or MinimalPlayer objects
+        self.players: Dict[str, object] = {}  # Stores Player or MinimalPlayer objects
         self.session_to_player: Dict[str, str] = {}
-        self.universe = (
-            universe  # Reference to universe for getting starting positions
-        )
+        self.universe = universe  # Reference to universe for getting starting positions
 
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
@@ -255,9 +251,7 @@ class SessionManager:
         """Load starting position from config file specified in .env."""
         config_file = os.environ.get("CONFIG_FILE")
 
-        print(
-            f"[SessionManager] CONFIG_FILE env var: {config_file}", flush=True
-        )
+        print(f"[SessionManager] CONFIG_FILE env var: {config_file}", flush=True)
 
         if config_file:
             try:
@@ -273,9 +267,7 @@ class SessionManager:
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (4 levels up from this file: src/api/services/session_manager.py)
-                    project_root = (
-                        Path(__file__).resolve().parent.parent.parent.parent
-                    )
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent
                     config_path = project_root / config_file
                     print(
                         f"[SessionManager] Project root: {project_root}",
@@ -359,9 +351,7 @@ class SessionManager:
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (4 levels up from this file)
-                    project_root = (
-                        Path(__file__).resolve().parent.parent.parent.parent
-                    )
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent
                     config_path = project_root / config_file
 
                 if config_path.exists():
@@ -405,9 +395,7 @@ class SessionManager:
                 # If relative path, make it relative to project root
                 if not config_path.is_absolute():
                     # Get project root (4 levels up from this file)
-                    project_root = (
-                        Path(__file__).resolve().parent.parent.parent.parent
-                    )
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent
                     config_path = project_root / config_file
 
                 if config_path.exists():
@@ -543,9 +531,7 @@ class SessionManager:
             if self.game_config and hasattr(player, "game_config"):
                 player.game_config = self.game_config
                 if self.game_config.starting_exp > 0:
-                    player.apply_starting_experience(
-                        self.game_config.starting_exp
-                    )
+                    player.apply_starting_experience(self.game_config.starting_exp)
                     print(
                         f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories",
                         flush=True,
@@ -553,9 +539,7 @@ class SessionManager:
 
             # Set starting position — validate it exists in the chosen map; fall back to first valid tile
             eff_x, eff_y = self.start_x, self.start_y
-            if getattr(player, "map", None) and not player.map.get(
-                (eff_x, eff_y)
-            ):
+            if getattr(player, "map", None) and not player.map.get((eff_x, eff_y)):
                 valid_coord = next(
                     (k for k in player.map if isinstance(k, tuple)),
                     (eff_x, eff_y),
@@ -571,9 +555,7 @@ class SessionManager:
             config_items = self._create_items_from_config()
             if config_items:
                 # If player already has inventory, extend it
-                if hasattr(player, "inventory") and isinstance(
-                    player.inventory, list
-                ):
+                if hasattr(player, "inventory") and isinstance(player.inventory, list):
                     player.inventory.extend(config_items)
                     print(
                         f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
@@ -592,9 +574,7 @@ class SessionManager:
             # Add starting items from config if available
             config_items = self._create_items_from_config()
             if config_items:
-                if hasattr(player, "inventory") and isinstance(
-                    player.inventory, list
-                ):
+                if hasattr(player, "inventory") and isinstance(player.inventory, list):
                     player.inventory.extend(config_items)
                     print(
                         f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
@@ -754,9 +734,7 @@ class SessionManager:
         Returns:
             Number of sessions cleaned up
         """
-        expired_ids = [
-            sid for sid, sess in self.sessions.items() if sess.is_expired()
-        ]
+        expired_ids = [sid for sid, sess in self.sessions.items() if sess.is_expired()]
 
         for session_id in expired_ids:
             self.expire_session(session_id)

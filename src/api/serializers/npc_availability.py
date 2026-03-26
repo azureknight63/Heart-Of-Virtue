@@ -40,9 +40,7 @@ class NPCLocationSerializer:
             "location_id": location_data.get("location_id"),
             "map_name": location_data.get("map_name"),
             "coords": location_data.get("coords", [0, 0]),
-            "description": location_data.get(
-                "description", "Unknown location"
-            ),
+            "description": location_data.get("description", "Unknown location"),
         }
 
     @staticmethod
@@ -52,9 +50,7 @@ class NPCLocationSerializer:
             "location_id": location_dict.get("location_id"),
             "map_name": location_dict.get("map_name"),
             "coords": tuple(location_dict.get("coords", [0, 0])),
-            "description": location_dict.get(
-                "description", "Unknown location"
-            ),
+            "description": location_dict.get("description", "Unknown location"),
         }
 
     @staticmethod
@@ -229,10 +225,8 @@ class NPCAvailabilitySerializer:
         gates_met, missing_gate = NPCAvailabilitySerializer.check_story_gates(
             npc_data, player_story
         )
-        ticks_met, ticks_until = (
-            NPCAvailabilitySerializer.check_tick_requirements(
-                npc_data, game_tick, gate_completion_tick
-            )
+        ticks_met, ticks_until = NPCAvailabilitySerializer.check_tick_requirements(
+            npc_data, game_tick, gate_completion_tick
         )
 
         location_data = None
@@ -462,9 +456,7 @@ class NPCStatusSerializer:
         npc_id = npc_data.get("npc_id")
 
         # Get gate completion tick for this NPC's primary gate
-        gates = npc_data.get("availability_conditions", {}).get(
-            "story_gates", []
-        )
+        gates = npc_data.get("availability_conditions", {}).get("story_gates", [])
         primary_gate = gates[0] if gates else None
         gate_completion_tick = gate_completion_ticks.get(primary_gate, 0)
 

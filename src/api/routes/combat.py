@@ -69,9 +69,7 @@ def start_combat():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error
 
@@ -137,9 +135,7 @@ def execute_move():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error
 
@@ -209,9 +205,7 @@ def get_combat_status():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error
 
@@ -247,9 +241,7 @@ def get_combat_log():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error
 

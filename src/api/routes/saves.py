@@ -41,9 +41,7 @@ def get_session_and_player(request):
 async def list_saves():
     """List all saved games for player from Turso cloud storage."""
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -74,9 +72,7 @@ async def list_saves():
 async def create_save():
     """Create a new manual or auto save in Turso cloud."""
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -94,9 +90,7 @@ async def create_save():
         data = request.get_json()
         if not data or ("name" not in data and "is_autosave" not in data):
             return (
-                jsonify(
-                    {"success": False, "error": "Missing save name or type"}
-                ),
+                jsonify({"success": False, "error": "Missing save name or type"}),
                 400,
             )
 
@@ -149,9 +143,7 @@ async def create_save():
 async def load_save(save_id):
     """Load a saved game from Turso cloud."""
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -170,9 +162,7 @@ async def load_save(save_id):
 
         game_service = current_app.game_service
 
-        loaded_player = await game_service.load_game(
-            save_id, session.db_user_id
-        )
+        loaded_player = await game_service.load_game(save_id, session.db_user_id)
 
         if not loaded_player:
             return (
@@ -215,9 +205,7 @@ async def load_save(save_id):
 async def delete_save(save_id):
     """Delete a saved game from Turso cloud."""
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -240,9 +228,7 @@ async def delete_save(save_id):
 
         if success:
             return (
-                jsonify(
-                    {"success": True, "message": "Save deleted successfully"}
-                ),
+                jsonify({"success": True, "message": "Save deleted successfully"}),
                 200,
             )
         else:
@@ -282,9 +268,7 @@ def new_game():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 

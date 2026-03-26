@@ -135,9 +135,7 @@ def examine_item():
         item_index = request.args.get("index", type=int)
         if item_index is None:
             return (
-                jsonify(
-                    {"success": False, "error": "Missing index parameter"}
-                ),
+                jsonify({"success": False, "error": "Missing index parameter"}),
                 400,
             )
 
@@ -145,16 +143,12 @@ def examine_item():
         inventory_list = getattr(player, "inventory_list", None) or getattr(
             player, "inventory", []
         )
-        is_valid, error_msg = validate_item_index(
-            item_index, len(inventory_list)
-        )
+        is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 
         item = inventory_list[item_index]
-        item_data = ItemDetailSerializer.serialize(
-            item, inventory_index=item_index
-        )
+        item_data = ItemDetailSerializer.serialize(item, inventory_index=item_index)
 
         return (
             jsonify({"success": True, "item": item_data}),
@@ -249,14 +243,10 @@ def drop_item():
             )
 
         # Find the item
-        item_to_drop, actual_index = get_item_and_index(
-            player, item_id, item_index
-        )
+        item_to_drop, actual_index = get_item_and_index(player, item_id, item_index)
         if item_to_drop is None:
             return (
-                jsonify(
-                    {"success": False, "error": "Item not found in inventory"}
-                ),
+                jsonify({"success": False, "error": "Item not found in inventory"}),
                 400,
             )
 
@@ -357,9 +347,7 @@ def equip_item():
         item, actual_index = get_item_and_index(player, item_id, item_index)
         if item is None:
             return (
-                jsonify(
-                    {"success": False, "error": "Item not found in inventory"}
-                ),
+                jsonify({"success": False, "error": "Item not found in inventory"}),
                 400,
             )
 
@@ -396,24 +384,17 @@ def equip_item():
                 )
 
             # Unequip other items of same maintype if needed
-            inventory_list = getattr(
-                player, "inventory_list", None
-            ) or getattr(player, "inventory", [])
+            inventory_list = getattr(player, "inventory_list", None) or getattr(
+                player, "inventory", []
+            )
             maintype = getattr(item, "maintype", None)
             if maintype:
                 for other_item in inventory_list:
-                    if other_item != item and getattr(
-                        other_item, "isequipped", False
-                    ):
+                    if other_item != item and getattr(other_item, "isequipped", False):
                         other_maintype = getattr(other_item, "maintype", None)
                         # For accessories, only replace same subtype (except multiple jewelry)
-                        if (
-                            maintype == "Accessory"
-                            and other_maintype == "Accessory"
-                        ):
-                            other_subtype = getattr(
-                                other_item, "subtype", None
-                            )
+                        if maintype == "Accessory" and other_maintype == "Accessory":
+                            other_subtype = getattr(other_item, "subtype", None)
                             item_subtype = getattr(item, "subtype", None)
                             if item_subtype == other_subtype:
                                 # Check if it's a type that allows multiples (Ring, Bracelet, Earring)
@@ -508,9 +489,7 @@ def use_item():
         item, actual_index = get_item_and_index(player, item_id, item_index)
         if item is None:
             return (
-                jsonify(
-                    {"success": False, "error": "Item not found in inventory"}
-                ),
+                jsonify({"success": False, "error": "Item not found in inventory"}),
                 400,
             )
 
@@ -573,9 +552,7 @@ def use_item():
                 # Split by lines and add each as a log entry
                 for line in clean_output.split("\n"):
                     if line.strip():
-                        adapter._add_log_entry(
-                            current_beat, line.strip(), "combat"
-                        )
+                        adapter._add_log_entry(current_beat, line.strip(), "combat")
             else:
                 # Fallback if adapter not initialized
                 if not hasattr(player, "combat_log"):
@@ -652,9 +629,7 @@ def unequip_item():
         )
         if not equipment_dict or slot_name not in equipment_dict:
             return (
-                jsonify(
-                    {"success": False, "error": f"Invalid slot: {slot_name}"}
-                ),
+                jsonify({"success": False, "error": f"Invalid slot: {slot_name}"}),
                 400,
             )
 
@@ -723,9 +698,7 @@ def compare_items():
         )
 
         # Validate candidate index
-        is_valid, error_msg = validate_item_index(
-            candidate_index, len(inventory_list)
-        )
+        is_valid, error_msg = validate_item_index(candidate_index, len(inventory_list))
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
 

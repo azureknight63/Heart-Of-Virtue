@@ -156,9 +156,7 @@ class Ch01BridgeWall(Event):
     Opens the wall on the bridge in the starting area
     """
 
-    def __init__(
-        self, player, tile, params=None, repeat=True, name="Ch01_Bridge_Wall"
-    ):
+    def __init__(self, player, tile, params=None, repeat=True, name="Ch01_Bridge_Wall"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
@@ -223,9 +221,7 @@ class Ch01ChestRumblerBattle(Event):
             if hasattr(thing, "name"):
                 if thing.name == "Wooden Chest":
                     # if len(thing.inventory) == 0:  # if the chest is empty, continue
-                    self.triggered = (
-                        True  # Mark as triggered before processing
-                    )
+                    self.triggered = True  # Mark as triggered before processing
                     self.pass_conditions_to_process()
                     break
 
@@ -249,7 +245,9 @@ class Ch01ChestRumblerBattle(Event):
             self.needs_input = True
             self.input_type = "choice"
             self.input_prompt = "What's that noise!?"
-            self.description = "Jean hears a loud rumbling noise and the sound of scraping rocks."
+            self.description = (
+                "Jean hears a loud rumbling noise and the sound of scraping rocks."
+            )
             self.input_options = [{"value": "continue", "label": "Continue"}]
             return
 
@@ -301,9 +299,7 @@ class Ch01PostRumbler(
             # Sync state from memory to this event to pause processing
             self.needs_input = True
             self.input_type = getattr(memory, "input_type", "choice")
-            self.input_prompt = getattr(
-                memory, "input_prompt", "The memory fades..."
-            )
+            self.input_prompt = getattr(memory, "input_prompt", "The memory fades...")
             self.input_options = getattr(
                 memory,
                 "input_options",
@@ -488,10 +484,7 @@ class Ch01PostRumbler2(Event):
         if self.player.combat_list:
             enemy = self.player.combat_list[0]
             enemy.hp = 0  # instagib one of the rock creatures
-            print(
-                colored(enemy.name, "magenta")
-                + " exploded into fragments of light!"
-            )
+            print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
             if enemy in target_tile.npcs_here:
                 target_tile.npcs_here.remove(enemy)
             if enemy in self.player.combat_list:
@@ -571,9 +564,7 @@ class Ch01PostRumbler3(Event):
                 "label": "There has to be another way out. (Think it through)",
             },
         ]
-        self._choice = (
-            None  # Saved initial choice (a/b/c) for multi-stage narrative
-        )
+        self._choice = None  # Saved initial choice (a/b/c) for multi-stage narrative
         self._stage = 1
 
     def check_combat_conditions(self):
@@ -617,9 +608,7 @@ class Ch01PostRumbler3(Event):
                         "\navenue of escape."
                     )
                 self.needs_input = True
-                self.input_options = [
-                    {"value": "continue", "label": "Continue"}
-                ]
+                self.input_options = [{"value": "continue", "label": "Continue"}]
                 self.input_prompt = "Continue"
                 self._stage = 3
                 return
@@ -633,9 +622,7 @@ class Ch01PostRumbler3(Event):
                     "\nmercilessly."
                 )
                 self.needs_input = True
-                self.input_options = [
-                    {"value": "continue", "label": "Continue"}
-                ]
+                self.input_options = [{"value": "continue", "label": "Continue"}]
                 self.input_prompt = "Continue"
                 self._stage = 4
                 return
@@ -650,9 +637,7 @@ class Ch01PostRumbler3(Event):
                     "\nHe manages to make it back to the long bridge connecting the two spires."
                 )
                 self.needs_input = True
-                self.input_options = [
-                    {"value": "continue", "label": "Continue"}
-                ]
+                self.input_options = [{"value": "continue", "label": "Continue"}]
                 self.input_prompt = "Continue"
                 self._stage = 5
                 return
@@ -672,9 +657,7 @@ class Ch01PostRumbler3(Event):
                     "\nbridge."
                 )
                 self.needs_input = True
-                self.input_options = [
-                    {"value": "continue", "label": "Continue"}
-                ]
+                self.input_options = [{"value": "continue", "label": "Continue"}]
                 self.input_prompt = "Continue"
                 self._stage = 6
                 return
@@ -703,9 +686,7 @@ class Ch01PostRumbler3(Event):
                     "red",
                 )
                 self.needs_input = True
-                self.input_options = [
-                    {"value": "continue", "label": "Continue"}
-                ]
+                self.input_options = [{"value": "continue", "label": "Continue"}]
                 self.input_prompt = "Continue"
                 self._stage = 7
                 return
@@ -734,9 +715,7 @@ class Ch01PostRumbler3(Event):
                     "red",
                 )
                 cprint(
-                    "Jean suffers "
-                    + str(random.randint(85, 155))
-                    + " damage!",
+                    "Jean suffers " + str(random.randint(85, 155)) + " damage!",
                     "red",
                 )
                 cprint(SKULL_ART, "red")
@@ -778,9 +757,7 @@ class Ch01PostRumbler3(Event):
             gorran.reset_combat_moves()
 
             # Set up Gorran's combat lists
-            gorran.combat_list = (
-                self.player.combat_list
-            )  # Gorran targets enemies
+            gorran.combat_list = self.player.combat_list  # Gorran targets enemies
             gorran.combat_list_allies = (
                 self.player.combat_list_allies
             )  # Gorran is allied with player's team
@@ -788,9 +765,7 @@ class Ch01PostRumbler3(Event):
             # Spawn new enemies and add them properly to combat
             new_enemies = []
             for x in range(0, 5):
-                rumbler = self.tile.spawn_npc(
-                    "RockRumbler", delay=random.randint(0, 5)
-                )
+                rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
                 new_enemies.append(rumbler)
 
             # Use add_enemies_to_combat to properly initialize battlefield positions
@@ -832,9 +807,7 @@ class AfterTheRumblerFight(Event):
 
     def process(self):
         time.sleep(5)
-        print(
-            "The Rock-Man lowers his club to the ground and turns toward Jean."
-        )
+        print("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
         dialogue(
             "Jean",
@@ -922,17 +895,29 @@ class Ch01GorranCautionJunction(Event):
     Subtle — he slows rather than stops, scanning without alarm. Fires once on tile entry.
     """
 
-    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Caution_Junction'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+    def __init__(
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="Ch01_Gorran_Caution_Junction",
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
 
     def check_conditions(self):
         self.pass_conditions_to_process()
 
     def process(self):
         time.sleep(0.5)
-        cprint("Gorran slows as he enters the junction, his head dropping to read the floor. "
-               "He takes one long look — left passage, right passage, the marks on the stone — "
-               "then raises a hand briefly: wait.", "cyan")
+        cprint(
+            "Gorran slows as he enters the junction, his head dropping to read the floor. "
+            "He takes one long look — left passage, right passage, the marks on the stone — "
+            "then raises a hand briefly: wait.",
+            "cyan",
+        )
         time.sleep(1)
         cprint("After a moment he lowers it and moves forward, unhurried.", "cyan")
         time.sleep(0.5)
@@ -945,18 +930,28 @@ class Ch01GorranMarkings(Event):
     Fires once. Non-blocking.
     """
 
-    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Markings'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="Ch01_Gorran_Markings"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
 
     def check_conditions(self):
         self.pass_conditions_to_process()
 
     def process(self):
         time.sleep(0.5)
-        cprint("Gorran pauses at the crystal, fingertips trailing across the worn markings "
-               "at its base. He holds the contact a beat longer than passage requires.", "cyan")
+        cprint(
+            "Gorran pauses at the crystal, fingertips trailing across the worn markings "
+            "at its base. He holds the contact a beat longer than passage requires.",
+            "cyan",
+        )
         time.sleep(1.5)
-        cprint("When he moves on, his eyes stay ahead — not at the walls, but at the space beyond them.", "cyan")
+        cprint(
+            "When he moves on, his eyes stay ahead — not at the walls, but at the space beyond them.",
+            "cyan",
+        )
         time.sleep(0.5)
 
 
@@ -966,16 +961,26 @@ class Ch01GorranDarkChamber(Event):
     before Jean can perceive one. Pronounced — a full stop, a firm signal. Fires once.
     """
 
-    def __init__(self, player, tile, params=None, repeat=False, name='Ch01_Gorran_Dark_Chamber'):
-        super().__init__(name=name, player=player, tile=tile, repeat=repeat, params=params)
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="Ch01_Gorran_Dark_Chamber"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
 
     def check_conditions(self):
         self.pass_conditions_to_process()
 
     def process(self):
         time.sleep(0.5)
-        cprint("Gorran stops entirely. His weight settles — a deliberate stillness, not a pause. "
-               "One hand comes back behind him, flat, slow: stay.", "cyan")
+        cprint(
+            "Gorran stops entirely. His weight settles — a deliberate stillness, not a pause. "
+            "One hand comes back behind him, flat, slow: stay.",
+            "cyan",
+        )
         time.sleep(2)
-        cprint("He does not move. He does not turn. Whatever is ahead, he heard it first.", "cyan")
+        cprint(
+            "He does not move. He does not turn. Whatever is ahead, he heard it first.",
+            "cyan",
+        )
         time.sleep(1)

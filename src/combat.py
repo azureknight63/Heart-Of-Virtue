@@ -39,9 +39,7 @@ def _evaluate_combat_events(player):
                 event.check_combat_conditions()
         except Exception as e:
             event_name = getattr(event, "name", "UnknownEvent")
-            cprint(
-                f"[Warning] Combat event '{event_name}' failed: {e}", "yellow"
-            )
+            cprint(f"[Warning] Combat event '{event_name}' failed: {e}", "yellow")
 
 
 def combat(player, event_config: Optional[CombatEventConfig] = None):
@@ -86,9 +84,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                     else:
                         print(f"Error: Unknown enemy type '{enemy_name}'")
             except ImportError:
-                print(
-                    "Error: Could not import npc module for enemy generation"
-                )
+                print("Error: Could not import npc module for enemy generation")
 
         # Override allies if specified (not fully implemented in player structure yet, but placeholder)
         if event_config.ally_list:
@@ -99,9 +95,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         if event_config.grid_size_override:
             grid_width, grid_height = event_config.grid_size_override
         else:
-            combatant_count = len(player.combat_list) + len(
-                player.combat_list_allies
-            )
+            combatant_count = len(player.combat_list) + len(player.combat_list_allies)
             grid_width, grid_height = coordinate_config.get_dynamic_grid_size(
                 combatant_count
             )
@@ -110,22 +104,17 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
 
     else:
         # Standard combat initialization
-        combatant_count = len(player.combat_list) + len(
-            player.combat_list_allies
-        )
+        combatant_count = len(player.combat_list) + len(player.combat_list_allies)
         grid_width, grid_height = coordinate_config.get_dynamic_grid_size(
             combatant_count
         )
 
         # Determine scenario type based on combat situation
-        if len(player.combat_list) > 1 and len(
-            player.combat_list_allies
-        ) < len(player.combat_list):
-            scenario_type = "pincer"  # Ambush scenario
-        elif (
-            len(player.combat_list_allies) == 1
-            and len(player.combat_list) == 1
+        if len(player.combat_list) > 1 and len(player.combat_list_allies) < len(
+            player.combat_list
         ):
+            scenario_type = "pincer"  # Ambush scenario
+        elif len(player.combat_list_allies) == 1 and len(player.combat_list) == 1:
             scenario_type = "boss_arena"  # Single vs single
 
     # Set player reference on all combatants for config access
@@ -141,9 +130,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 if not npc.friend:
                     if player.combat_list_allies:
                         npc.target = player.combat_list_allies[
-                            random.randint(
-                                0, len(player.combat_list_allies) - 1
-                            )
+                            random.randint(0, len(player.combat_list_allies) - 1)
                         ]
                 else:
                     if player.combat_list:
@@ -160,9 +147,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                     npc.current_move.cast()
                     # Log the move execution
                     if npc.current_move:
-                        game_logger.log_combat_move(
-                            npc.name, npc.current_move.name
-                        )
+                        game_logger.log_combat_move(npc.name, npc.current_move.name)
                         if debug_manager.should_debug_ai_decisions():
                             debug_manager.display_ai_debug_info(
                                 npc, f"Used {npc.current_move.name}", {}
@@ -186,19 +171,13 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         # Calculate proximity from coordinates for units with combat_position set
         all_combatants = player.combat_list_allies + player.combat_list
         for unit in all_combatants:
-            if (
-                hasattr(unit, "combat_position")
-                and unit.combat_position is not None
-            ):
+            if hasattr(unit, "combat_position") and unit.combat_position is not None:
                 unit.combat_proximity = positions.recalculate_proximity_dict(
                     unit, all_combatants
                 )
                 # Log coordinate-based distance calculations
                 for other_unit in all_combatants:
-                    if (
-                        other_unit != unit
-                        and other_unit in unit.combat_proximity
-                    ):
+                    if other_unit != unit and other_unit in unit.combat_proximity:
                         distance = unit.combat_proximity[other_unit]
                         game_logger.log_distance_calculation(
                             unit.name, other_unit.name, distance
@@ -207,9 +186,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         # Original proximity synchronization logic for backward compatibility
         for each_ally in player.combat_list_allies:
             remove_these = []
-            for (
-                each_enemy
-            ) in each_ally.combat_proximity:  # Remove any dead enemies
+            for each_enemy in each_ally.combat_proximity:  # Remove any dead enemies
                 if not each_enemy.is_alive():
                     remove_these.append(each_enemy)
             for each_enemy in remove_these:
@@ -227,14 +204,13 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 for each_ally_that_died in remove_these:
                     del each_enemy.combat_proximity[each_ally_that_died]
                 if each_enemy in each_ally.combat_proximity:
-                    each_enemy.combat_proximity[each_ally] = (
-                        each_ally.combat_proximity[each_enemy]
-                    )
+                    each_enemy.combat_proximity[each_ally] = each_ally.combat_proximity[
+                        each_enemy
+                    ]
                 else:  # The enemy is not in the list, probably because it was added via an event mid-combat;
                     # so, let's add it!
                     each_distance = int(
-                        each_enemy.default_proximity
-                        * random.uniform(0.75, 1.25)
+                        each_enemy.default_proximity * random.uniform(0.75, 1.25)
                     )
                     each_ally.combat_proximity[each_enemy] = (
                         each_enemy.combat_proximity[each_ally]
@@ -250,8 +226,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
             for each_ally in player.combat_list_allies:
                 if each_ally not in each_enemy.combat_proximity:
                     each_distance = int(
-                        each_enemy.default_proximity
-                        * random.uniform(0.75, 1.25)
+                        each_enemy.default_proximity * random.uniform(0.75, 1.25)
                     )
                     each_ally.combat_proximity[each_enemy] = (
                         each_enemy.combat_proximity[each_ally]
@@ -299,9 +274,9 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                     each_distance = int(
                         enemy.default_proximity * random.uniform(0.75, 1.25)
                     )
-                    ally.combat_proximity[enemy] = enemy.combat_proximity[
-                        ally
-                    ] = each_distance
+                    ally.combat_proximity[enemy] = enemy.combat_proximity[ally] = (
+                        each_distance
+                    )
 
     # Reset all moves for all combatants
     for ally in player.combat_list_allies:
@@ -353,9 +328,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
             gained_exp = ""
             for subtype, value in player.combat_exp.items():
                 gained_exp += "{0:<10}:{1:>6}\n".format(subtype, int(value))
-            print(
-                "Jean gained exp in the following: \n\n{}".format(gained_exp)
-            )
+            print("Jean gained exp in the following: \n\n{}".format(gained_exp))
             for subtype, value in player.combat_exp.items():
                 player.gain_exp(int(value), exp_type=subtype)
                 player.combat_exp[subtype] = 0
@@ -379,9 +352,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 amt = 0.001
             player.heat -= amt
 
-        while (
-            player.current_move is None
-        ):  # the player must choose to do something
+        while player.current_move is None:  # the player must choose to do something
             beat_str = colored("BEAT: ", "blue") + colored(str(beat), "blue")
             heat_display = int(player.heat * 100)
             heat_str = (
@@ -436,9 +407,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 available_moves += move_str
             print(available_moves)
             selected_move = input("Selection: ")
-            while not is_input_integer(
-                selected_move
-            ):  # only allow integers here
+            while not is_input_integer(selected_move):  # only allow integers here
                 cprint("Invalid selection.", "red", attrs=["bold"])
                 selected_move = input("Selection: ")
             try:
@@ -447,36 +416,25 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 cprint("Invalid selection.", "red", attrs=["bold"])
             for i, move in enumerate(viable_moves):
                 if i == selected_move:
-                    if (
-                        player.fatigue >= move.fatigue_cost
-                        and move.current_stage == 0
-                    ):
+                    if player.fatigue >= move.fatigue_cost and move.current_stage == 0:
                         player.current_move = move
                         player.current_move.user = player
                         # Log the player's move selection
                         game_logger.log_combat_move(
-                            (
-                                player.name
-                                if hasattr(player, "name")
-                                else "Player"
-                            ),
+                            (player.name if hasattr(player, "name") else "Player"),
                             player.current_move.name,
                         )
                         if player.current_move.targeted:
                             target = None
                             acceptable_targets = []
                             range_min, range_max = player.current_move.mvrange
-                            effective_max = (
-                                player.current_move.get_effective_range_max(
-                                    player
-                                )
+                            effective_max = player.current_move.get_effective_range_max(
+                                player
                             )
                             if effective_max is not None:
                                 range_max = effective_max
                             dead_in_prox = [
-                                e
-                                for e in player.combat_proximity
-                                if not e.is_alive()
+                                e for e in player.combat_proximity if not e.is_alive()
                             ]
                             for e in dead_in_prox:
                                 del player.combat_proximity[e]
@@ -485,9 +443,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                                 distance,
                             ) in player.combat_proximity.items():
                                 if range_min <= distance <= range_max:
-                                    acceptable_targets.append(
-                                        (enemy, distance)
-                                    )
+                                    acceptable_targets.append((enemy, distance))
                             if not player.current_move.verbose_targeting:
                                 if len(acceptable_targets) > 1:
                                     acceptable_targets.sort(
@@ -537,9 +493,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                                 )  # sort acceptable_targets by distance
                                 while target is None:
                                     print("Select a target: \n")
-                                    for index, enemy in enumerate(
-                                        acceptable_targets
-                                    ):
+                                    for index, enemy in enumerate(acceptable_targets):
                                         print(
                                             colored(str(index), "magenta")
                                             + ": "
@@ -562,9 +516,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                                     if choice > len(acceptable_targets):
                                         cprint("Invalid selection!", "red")
                                         continue
-                                    for index, enemy in enumerate(
-                                        acceptable_targets
-                                    ):
+                                    for index, enemy in enumerate(acceptable_targets):
                                         if choice == index:
                                             target = enemy[0]
                                 if player.current_move:
@@ -580,10 +532,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                             ):
                                 player.current_move._prompt_direction_selection()
                                 # If no direction was selected, cancel the move
-                                if (
-                                    player.current_move.target_direction
-                                    is None
-                                ):
+                                if player.current_move.target_direction is None:
                                     player.current_move = None
 
                         if player.current_move:
@@ -591,9 +540,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                             # Display the player's action to the UI
                             print(
                                 colored(
-                                    "Jean uses "
-                                    + player.current_move.name
-                                    + "!",
+                                    "Jean uses " + player.current_move.name + "!",
                                     "cyan",
                                     attrs=["bold"],
                                 )

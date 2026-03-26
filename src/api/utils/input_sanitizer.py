@@ -36,9 +36,7 @@ def sanitize_event_input(
     # Type-specific validation and sanitization
     if input_type == "choice":
         # Validate against whitelist of allowed options
-        valid_values = [
-            opt.get("value") for opt in input_options if "value" in opt
-        ]
+        valid_values = [opt.get("value") for opt in input_options if "value" in opt]
 
         if not valid_values:
             return sanitized, "No valid options available"

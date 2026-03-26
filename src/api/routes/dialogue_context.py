@@ -22,9 +22,7 @@ from flask import Blueprint, request, jsonify, current_app
 import logging
 
 # Blueprint definition
-dialogue_context_bp = Blueprint(
-    "dialogue_context", __name__, url_prefix="/api"
-)
+dialogue_context_bp = Blueprint("dialogue_context", __name__, url_prefix="/api")
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +105,7 @@ def start_dialogue():
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             response, status_code = error
             return response, status_code
@@ -191,9 +187,7 @@ def get_dialogue_node(node_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             response, status_code = error
             return response, status_code
@@ -202,9 +196,7 @@ def get_dialogue_node(node_id):
         node_id = node_id.strip()
         if not node_id:
             return (
-                jsonify(
-                    {"success": False, "error": "node_id cannot be empty"}
-                ),
+                jsonify({"success": False, "error": "node_id cannot be empty"}),
                 400,
             )
 
@@ -252,9 +244,7 @@ def select_dialogue_choice():
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             response, status_code = error
             return response, status_code
@@ -298,9 +288,7 @@ def select_dialogue_choice():
 
         # Call GameService
         game_service = current_app.game_service
-        result = game_service.select_dialogue_choice(
-            player, conversation_id, choice_id
-        )
+        result = game_service.select_dialogue_choice(player, conversation_id, choice_id)
 
         # Save session after modifications
         session_manager.save_session(session.session_id)
@@ -346,9 +334,7 @@ def get_conversation_history(npc_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             response, status_code = error
             return response, status_code
@@ -435,9 +421,7 @@ def get_available_dialogues(npc_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             response, status_code = error
             return response, status_code

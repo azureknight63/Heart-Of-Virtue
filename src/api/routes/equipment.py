@@ -58,9 +58,7 @@ def get_equipment():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -115,9 +113,7 @@ def equip_item():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -180,9 +176,7 @@ def unequip_item():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 

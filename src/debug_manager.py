@@ -143,9 +143,7 @@ class DebugManager:
             return "Debug mode disabled"
 
         # Would mark combat as won
-        self.log_command(
-            "instant_win", result="Combat marked for instant victory"
-        )
+        self.log_command("instant_win", result="Combat marked for instant victory")
         return "Combat: Set for instant victory on next beat"
 
     def cmd_spawn_enemy(self, enemy_name: str = "", count: int = 1) -> str:
@@ -168,9 +166,7 @@ class DebugManager:
         )
         return f"Spawned {count} x {enemy_name} in current combat"
 
-    def cmd_damage_output(
-        self, attacker_name: str = "", target_name: str = ""
-    ) -> str:
+    def cmd_damage_output(self, attacker_name: str = "", target_name: str = "") -> str:
         """Debug command: Display damage calculation details.
 
         Args:
@@ -180,10 +176,7 @@ class DebugManager:
         Returns:
             Detailed damage calculation info
         """
-        if (
-            not self.is_debug_mode_enabled()
-            or not self.should_debug_damage_calc()
-        ):
+        if not self.is_debug_mode_enabled() or not self.should_debug_damage_calc():
             return "Damage debug disabled"
 
         info = (
@@ -195,9 +188,7 @@ class DebugManager:
         self.log_command("damage_output", args=[attacker_name, target_name])
         return info
 
-    def cmd_accuracy_info(
-        self, attacker_name: str = "", target_name: str = ""
-    ) -> str:
+    def cmd_accuracy_info(self, attacker_name: str = "", target_name: str = "") -> str:
         """Debug command: Display accuracy calculation details.
 
         Args:
@@ -207,10 +198,7 @@ class DebugManager:
         Returns:
             Detailed accuracy info
         """
-        if (
-            not self.is_debug_mode_enabled()
-            or not self.should_debug_accuracy()
-        ):
+        if not self.is_debug_mode_enabled() or not self.should_debug_accuracy():
             return "Accuracy debug disabled"
 
         info = (
@@ -231,10 +219,7 @@ class DebugManager:
         Returns:
             NPC decision trace info
         """
-        if (
-            not self.is_debug_mode_enabled()
-            or not self.should_debug_ai_decisions()
-        ):
+        if not self.is_debug_mode_enabled() or not self.should_debug_ai_decisions():
             return "AI decision debug disabled"
 
         info = (
@@ -261,9 +246,7 @@ class DebugManager:
             f"  Combat Rounds: (would be shown)\n"
             f"  Memory Usage: (would be shown) MB"
         )
-        self.log_command(
-            "performance_monitor", result="Performance data retrieved"
-        )
+        self.log_command("performance_monitor", result="Performance data retrieved")
         return info
 
     def cmd_toggle_feature(self, feature_name: str) -> str:
@@ -345,10 +328,7 @@ class DebugManager:
             decision: Description of decision made (e.g., "Selected BullCharge")
             details: Optional dict with additional details (e.g., {"fatigue_cost": 5})
         """
-        if (
-            not self.is_debug_mode_enabled()
-            or not self.should_debug_ai_decisions()
-        ):
+        if not self.is_debug_mode_enabled() or not self.should_debug_ai_decisions():
             return
 
         # Build debug output
@@ -369,9 +349,7 @@ class DebugManager:
 
             cprint(output, "magenta")
 
-    def execute_command(
-        self, command_name: str, args: List[str] = None
-    ) -> str:
+    def execute_command(self, command_name: str, args: List[str] = None) -> str:
         """Execute a registered debug command.
 
         Args:

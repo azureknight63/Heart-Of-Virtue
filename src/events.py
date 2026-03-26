@@ -54,10 +54,14 @@ class Event:  # master class for all events
         self.thread = None
         self.has_run = False
         self.params = params
-        self.referenceobj = None  # objects being referenced for special conditions can be put here
+        self.referenceobj = (
+            None  # objects being referenced for special conditions can be put here
+        )
         self.combat_effect = combat_effect
         self.delay_duration = delay_duration
-        self.delay_mode = delay_mode  # "exploration", "combat", or "both" (None means no delay)
+        self.delay_mode = (
+            delay_mode  # "exploration", "combat", or "both" (None means no delay)
+        )
         self.completed = False
         self.api_event_id = None
         self.needs_input = False
@@ -88,9 +92,7 @@ class CombatEvent(Event):
     Event that initiates parameterized combat using a CombatEventConfig.
     """
 
-    def __init__(
-        self, name, player=None, tile=None, repeat=False, config=None
-    ):
+    def __init__(self, name, player=None, tile=None, repeat=False, config=None):
         """
         Args:
             config (CombatEventConfig): Configuration for the combat encounter
@@ -102,15 +104,10 @@ class CombatEvent(Event):
         self.needs_input = True
         self.input_type = "choice"
         self.input_prompt = "Prepare for combat!"
-        self.input_options = [
-            {"value": "combat_start", "label": "FIGHT FOR YOUR LIFE"}
-        ]
+        self.input_options = [{"value": "combat_start", "label": "FIGHT FOR YOUR LIFE"}]
 
         # Use narrative text from config if available, otherwise use a default
-        if (
-            hasattr(self.config, "narrative_text")
-            and self.config.narrative_text
-        ):
+        if hasattr(self.config, "narrative_text") and self.config.narrative_text:
             self.description = self.config.narrative_text
         else:
             self.description = (
@@ -167,13 +164,8 @@ class LootEvent(Event):
 
     def _rebuild_options(self):
         self.input_options = []
-        if (
-            not hasattr(self.container, "inventory")
-            or not self.container.inventory
-        ):
-            self.input_options.append(
-                {"value": "exit", "label": "Close (Empty)"}
-            )
+        if not hasattr(self.container, "inventory") or not self.container.inventory:
+            self.input_options.append({"value": "exit", "label": "Close (Empty)"})
             return
 
         for i, item in enumerate(self.container.inventory):
@@ -207,9 +199,7 @@ class LootEvent(Event):
                 taken_names.append(item.name)
 
             if taken_names:
-                cprint(
-                    f"Jean takes everything: {', '.join(taken_names)}", "green"
-                )
+                cprint(f"Jean takes everything: {', '.join(taken_names)}", "green")
             else:
                 cprint("The container is empty.", "yellow")
 

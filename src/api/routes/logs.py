@@ -17,9 +17,7 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Initialize log cleanup manager
 # Default: 7 days retention, 100MB max size
-cleanup_manager = LogCleanupManager(
-    LOGS_DIR, retention_days=7, max_size_mb=100
-)
+cleanup_manager = LogCleanupManager(LOGS_DIR, retention_days=7, max_size_mb=100)
 
 
 @logs_bp.route("/browser", methods=["POST"])
@@ -61,9 +59,7 @@ def receive_browser_logs():
         # Append logs to the file
         with open(log_filepath, "a", encoding="utf-8") as f:
             for log_entry in logs:
-                timestamp = log_entry.get(
-                    "timestamp", datetime.now().isoformat()
-                )
+                timestamp = log_entry.get("timestamp", datetime.now().isoformat())
                 level = log_entry.get("level", "LOG")
                 message = log_entry.get("message", "")
                 url = log_entry.get("url", "")
@@ -111,9 +107,7 @@ def list_browser_log_files():
                     {
                         "filename": log_file.name,
                         "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(
-                            stat.st_mtime
-                        ).isoformat(),
+                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                     }
                 )
 
@@ -162,9 +156,7 @@ def cleanup_logs():
         data = request.get_json() if request.is_json else {}
 
         # Create cleanup manager with custom settings if provided
-        retention_days = data.get(
-            "retention_days", cleanup_manager.retention_days
-        )
+        retention_days = data.get("retention_days", cleanup_manager.retention_days)
         max_size_mb = data.get(
             "max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024)
         )
@@ -195,8 +187,7 @@ def get_log_stats():
                     "stats": stats,
                     "cleanup_config": {
                         "retention_days": cleanup_manager.retention_days,
-                        "max_size_mb": cleanup_manager.max_size_bytes
-                        / (1024 * 1024),
+                        "max_size_mb": cleanup_manager.max_size_bytes / (1024 * 1024),
                     },
                 }
             ),

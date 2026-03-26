@@ -109,9 +109,7 @@ def validate_combat_action(action: str) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def validate_item_index(
-    index: Any, max_index: int
-) -> Tuple[bool, Optional[str]]:
+def validate_item_index(index: Any, max_index: int) -> Tuple[bool, Optional[str]]:
     """Validate item index within inventory.
 
     Args:
@@ -222,9 +220,7 @@ def validate_range(
         return False, f"{field_name} must be a valid number"
 
 
-def validate_item_index(
-    item_index: Any, max_items: int
-) -> Tuple[bool, Optional[str]]:
+def validate_item_index(item_index: Any, max_items: int) -> Tuple[bool, Optional[str]]:
     """Validate inventory item index.
 
     Args:
@@ -292,9 +288,7 @@ def validate_weight_limit(
     return True, None
 
 
-def validate_currency_amount(
-    amount: Any, available: int
-) -> Tuple[bool, Optional[str]]:
+def validate_currency_amount(amount: Any, available: int) -> Tuple[bool, Optional[str]]:
     """Validate currency amount.
 
     Args:

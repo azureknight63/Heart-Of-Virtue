@@ -42,9 +42,7 @@ class AuthService:
 
         return {"id": user_id, "username": username, "is_premium": False}
 
-    async def authenticate_user(
-        self, username, password
-    ) -> Optional[Dict[str, Any]]:
+    async def authenticate_user(self, username, password) -> Optional[Dict[str, Any]]:
         """Authenticate a user by username and password."""
         sql = "SELECT id, username, password_hash, is_premium FROM users WHERE username = ?"
         result = await db.execute(sql, [username])

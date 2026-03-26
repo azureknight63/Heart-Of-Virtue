@@ -146,9 +146,7 @@ def select_dialogue_option(npc_id):
     if not is_valid:
         return jsonify({"success": False, "error": error}), 400
 
-    is_valid, error = validate_required_fields(
-        request.get_json() or {}, ["option_id"]
-    )
+    is_valid, error = validate_required_fields(request.get_json() or {}, ["option_id"])
     if not is_valid:
         return jsonify({"success": False, "error": error}), 400
 
@@ -172,16 +170,12 @@ def select_dialogue_option(npc_id):
             )
     except (ValueError, TypeError):
         return (
-            jsonify(
-                {"success": False, "error": "option_id must be an integer"}
-            ),
+            jsonify({"success": False, "error": "option_id must be an integer"}),
             400,
         )
 
     # Select dialogue option
-    result = current_app.game_service.select_dialogue_option(
-        player, npc_id, option_id
-    )
+    result = current_app.game_service.select_dialogue_option(player, npc_id, option_id)
 
     # Save session
     session_manager.save_session(session.session_id)

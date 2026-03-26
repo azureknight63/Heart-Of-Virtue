@@ -17,9 +17,7 @@ class PlayerInventoryMixin:
     def stack_gold(self):
         """Consolidate all Gold items in inventory into a single stack."""
         gold_objects = []
-        for (
-            item
-        ) in self.inventory:  # get the counts of each item in each category
+        for item in self.inventory:  # get the counts of each item in each category
             if isinstance(item, items.Gold):
                 gold_objects.append(item)
         if len(gold_objects) > 0:
@@ -27,11 +25,7 @@ class PlayerInventoryMixin:
             for obj in gold_objects:
                 amt += obj.amt
             remove_existing_gold_objects = []
-            for (
-                item
-            ) in (
-                self.inventory
-            ):  # get the counts of each item in each category
+            for item in self.inventory:  # get the counts of each item in each category
                 if isinstance(item, items.Gold):
                     remove_existing_gold_objects.append(item)
             for item in remove_existing_gold_objects:
@@ -47,9 +41,7 @@ class PlayerInventoryMixin:
     def drop_merchandise_items(self):
         """Drop all merchandise items in current location with individual messages."""
         try:
-            current_tile = tile_exists(
-                self.map, self.location_x, self.location_y
-            )
+            current_tile = tile_exists(self.map, self.location_x, self.location_y)
         except Exception:
             current_tile = None
         if not current_tile:
@@ -87,9 +79,7 @@ class PlayerInventoryMixin:
         """Equip an item by phrase match, direct object, or interactive menu."""
 
         def confirm(thing):
-            check = input(
-                colored("Equip {}? (y/n)".format(thing.name), "cyan")
-            )
+            check = input(colored("Equip {}? (y/n)".format(thing.name), "cyan"))
             if check.lower() in ("y", "yes"):
                 return True
             else:
@@ -103,18 +93,14 @@ class PlayerInventoryMixin:
             lower_phrase = phrase.lower()
             for item in self.inventory:
                 if hasattr(item, "isequipped"):
-                    search_item = (
-                        item.name.lower() + " " + item.announce.lower()
-                    )
+                    search_item = item.name.lower() + " " + item.announce.lower()
                     if lower_phrase in search_item:
                         candidates.append(item)
             if target_item is None:
                 to_remove = []
                 for i, item in enumerate(self.current_room.items_here):
                     if hasattr(item, "isequipped"):
-                        search_item = (
-                            item.name.lower() + " " + item.announce.lower()
-                        )
+                        search_item = item.name.lower() + " " + item.announce.lower()
                         if lower_phrase in search_item:
                             candidates.append(item)
                             to_remove.append(item)
@@ -140,12 +126,9 @@ class PlayerInventoryMixin:
                         "weight_tolerance",
                         getattr(self, "carrying_capacity", None),
                     )
-                    if capacity is not None and hasattr(
-                        self, "weight_current"
-                    ):
+                    if capacity is not None and hasattr(self, "weight_current"):
                         if (
-                            self.weight_current
-                            + getattr(target_item, "weight", 0)
+                            self.weight_current + getattr(target_item, "weight", 0)
                             > capacity
                         ):
                             cprint("It's too heavy to carry!", "red")
@@ -154,9 +137,7 @@ class PlayerInventoryMixin:
                             if (
                                 target_item in candidates
                             ):  # Was popped in candidates logic
-                                self.current_room.items_here.append(
-                                    target_item
-                                )
+                                self.current_room.items_here.append(target_item)
                             return
 
                     # Ensure it is removed from the room if it's there
@@ -197,9 +178,7 @@ class PlayerInventoryMixin:
                             # "equip" fists
                             self.eq_weapon = self.fists
                         cprint(
-                            "Jean put {} back into his bag.".format(
-                                target_item.name
-                            ),
+                            "Jean put {} back into his bag.".format(target_item.name),
                             "cyan",
                         )
                         target_item.on_unequip(self)
@@ -230,18 +209,14 @@ class PlayerInventoryMixin:
                         if replace_old:
                             olditem.isequipped = False
                             cprint(
-                                "Jean put {} back into his bag.".format(
-                                    olditem.name
-                                ),
+                                "Jean put {} back into his bag.".format(olditem.name),
                                 "cyan",
                             )
                             olditem.on_unequip(self)
                             olditem.interactions.remove("unequip")
                             olditem.interactions.append("equip")
                     target_item.isequipped = True
-                    cprint(
-                        "Jean equipped {}!".format(target_item.name), "cyan"
-                    )
+                    cprint("Jean equipped {}!".format(target_item.name), "cyan")
                     target_item.on_equip(self)
                     target_item.interactions.remove("equip")
                     target_item.interactions.append("unequip")
@@ -250,10 +225,7 @@ class PlayerInventoryMixin:
                         and target_item.maintype == "Weapon"
                     ):
                         self.eq_weapon = target_item
-                    if (
-                        hasattr(target_item, "subtype")
-                        and target_item.gives_exp
-                    ):
+                    if hasattr(target_item, "subtype") and target_item.gives_exp:
                         if target_item.subtype not in self.combat_exp:
                             self.combat_exp[target_item.subtype] = (
                                 0  # if the player hasn't equipped this
@@ -263,9 +235,7 @@ class PlayerInventoryMixin:
                             if self.testing_mode:  # noqa
                                 if (
                                     self.game_config
-                                    and hasattr(
-                                        self.game_config, "starting_exp"
-                                    )
+                                    and hasattr(self.game_config, "starting_exp")
                                     and self.game_config.starting_exp > 0
                                 ):
                                     self.skill_exp[target_item.subtype] = (
@@ -377,9 +347,7 @@ class PlayerInventoryMixin:
             while not exit_loop:
                 for (
                     item
-                ) in (
-                    self.inventory
-                ):  # get the counts of each item in each category
+                ) in self.inventory:  # get the counts of each item in each category
                     if issubclass(item.__class__, items.Consumable):
                         num_consumables += 1
                     if issubclass(item.__class__, items.Special):
@@ -411,9 +379,7 @@ class PlayerInventoryMixin:
                         item_preference_value = ""
                         for prefitem in self.preferences.values():
                             if prefitem == item.name:
-                                item_preference_value = colored(
-                                    "(P)", "magenta"
-                                )
+                                item_preference_value = colored("(P)", "magenta")
                         if hasattr(item, "isequipped"):
                             if item.isequipped:
                                 print(
@@ -471,12 +437,8 @@ class PlayerInventoryMixin:
                                     "red",
                                 )
                                 break
-                            if "use" in item.interactions and hasattr(
-                                item, "use"
-                            ):
-                                print(
-                                    "{} used {}!".format(self.name, item.name)
-                                )
+                            if "use" in item.interactions and hasattr(item, "use"):
+                                print("{} used {}!".format(self.name, item.name))
                                 item.use(self)
                             elif "prefer" in item.interactions and hasattr(
                                 item, "prefer"
@@ -512,9 +474,7 @@ class PlayerInventoryMixin:
                 if issubclass(item.__class__, items.Consumable) or issubclass(
                     item.__class__, items.Special
                 ):
-                    search_item = (
-                        item.name.lower() + " " + item.announce.lower()
-                    )
+                    search_item = item.name.lower() + " " + item.announce.lower()
                     if lower_phrase in search_item and hasattr(item, "use"):
                         # Block using merchandise items by phrase as well
                         if getattr(item, "merchandise", False):

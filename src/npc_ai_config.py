@@ -211,11 +211,7 @@ class NPCAIConfig:
                 bonus += 3
 
         # Bonus for flanking moves when conditions are right
-        if (
-            self.is_flanking_enabled()
-            and hasattr(npc, "target")
-            and npc.target
-        ):
+        if self.is_flanking_enabled() and hasattr(npc, "target") and npc.target:
             if move_name.lower() in [
                 "advance",
                 "npc_attack",
@@ -267,9 +263,7 @@ class AIDecisionValidator:
         """
         self.ai_config = ai_config
 
-    def is_valid_flank_decision(
-        self, npc, target, allies: list
-    ) -> Tuple[bool, str]:
+    def is_valid_flank_decision(self, npc, target, allies: list) -> Tuple[bool, str]:
         """Validate if flanking decision is valid for this NPC.
 
         Args:
@@ -295,10 +289,7 @@ class AIDecisionValidator:
                 f"Insufficient allies for flank ({len(allies)} < 2)",
             )
 
-        if (
-            not hasattr(npc, "combat_proximity")
-            or target not in npc.combat_proximity
-        ):
+        if not hasattr(npc, "combat_proximity") or target not in npc.combat_proximity:
             return (False, "Target not in proximity range")
 
         distance = npc.combat_proximity[target]
@@ -420,8 +411,6 @@ class AIDecisionValidator:
                 f"Flank distance range contains negative value: {min_range}-{max_range}"
             )
         if min_range > max_range:
-            issues.append(
-                f"Flank distance min ({min_range}) > max ({max_range})"
-            )
+            issues.append(f"Flank distance min ({min_range}) > max ({max_range})")
 
         return (len(issues) == 0, issues)

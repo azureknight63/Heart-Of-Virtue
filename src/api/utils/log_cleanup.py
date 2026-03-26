@@ -49,9 +49,7 @@ class LogCleanupManager:
             for log_file in self.logs_dir.glob("*.log"):
                 try:
                     # Get file modification time
-                    file_mtime = datetime.fromtimestamp(
-                        log_file.stat().st_mtime
-                    )
+                    file_mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
 
                     # Delete if older than retention period
                     if file_mtime < cutoff_date:
@@ -138,9 +136,7 @@ class LogCleanupManager:
                             f"Deleted log file for size limit: {log_info['path'].name}"
                         )
                     except Exception as e:
-                        error_msg = (
-                            f"Error deleting {log_info['path'].name}: {str(e)}"
-                        )
+                        error_msg = f"Error deleting {log_info['path'].name}: {str(e)}"
                         logger.error(error_msg)
                         errors.append(error_msg)
 
