@@ -916,7 +916,10 @@ class ApiCombatAdapter:
             self.input_type = "move_selection"
             self.pending_move_index = None
             self.awaiting_input = True
-            self.available_options = self._get_available_moves()
+            try:
+                self.available_options = self._get_available_moves()
+            except Exception:
+                self.available_options = []
             return {"error": f"Move execution failed: {e}"}
 
     def _execute_move_inner(self, move) -> Dict[str, Any]:
@@ -1110,7 +1113,7 @@ class ApiCombatAdapter:
                 }
             except Exception:
                 self.player.combat_end_summary = {
-                    "id": "defeat",
+                    "id": str(uuid.uuid4()),
                     "status": "defeat",
                     "message": "You have been defeated.",
                     "game_over": True,
@@ -1405,22 +1408,22 @@ class ApiCombatAdapter:
             from flask import current_app
 
             flask_app = current_app._get_current_object()
-            logger.info(
-                f"DEBUG: Flask app context captured for suggestion thread (App: {flask_app})"
+            logger.debug(
+                f"Flask app context captured for suggestion thread (App: {flask_app})"
             )
         except Exception as e:
-            logger.warning(f"DEBUG: Failed to capture flask app context: {e}")
+            logger.warning(f"Failed to capture flask app context: {e}")
             flask_app = None
 
         # Create and start a new thread for fetching suggestions
         def fetch_suggestions_worker():
-            logger.info(
-                f"DEBUG: Thread fetch_suggestions_worker started (Gen: {current_gen})"
+            logger.debug(
+                f"Suggestion worker started (Gen: {current_gen})"
             )
 
             def run_with_context():
-                logger.info(
-                    f"DEBUG: Async suggestion fetch started (Gen: {current_gen})"
+                logger.debug(
+                    f"Suggestion fetch started (Gen: {current_gen})"
                 )
                 try:
                     # Calculate allowed suggestions count
@@ -1435,8 +1438,8 @@ class ApiCombatAdapter:
                     if not hasattr(self.player, "combat_log"):
                         self.player.combat_log = []
 
-                    logger.info(
-                        f"DEBUG: Preparing context for strategist with {len(self.player.combat_list)} enemies and {len(self.available_options)} available moves."
+                    logger.debug(
+                        f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(self.available_options)} available moves"
                     )
                     # Gather context
                     ctx = {
@@ -1460,7 +1463,7 @@ class ApiCombatAdapter:
                     }
 
                     logger.debug(
-                        f"DEBUG: Combat context keys: {list(ctx.keys())}"
+                        f"Combat context keys: {list(ctx.keys())}"
                     )
 
                     # Fetch from strategist (this is the slow part)
@@ -1486,8 +1489,8 @@ class ApiCombatAdapter:
                     if is_current:
                         self.player.suggested_moves = suggestions
                         self.player.suggestions_loading = False
-                        logger.info(
-                            f"DEBUG: Async suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)"
+                        logger.debug(
+                            f"Suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)"
                         )
 
                         # Emit socket event to notify frontend that suggestions are ready
@@ -1496,8 +1499,8 @@ class ApiCombatAdapter:
                                 if flask_app and hasattr(
                                     flask_app, "socketio"
                                 ):
-                                    logger.info(
-                                        f"DEBUG: Emitting combat:suggestions_ready to room combat_{self.session_id} with {len(suggestions)} suggestions"
+                                    logger.debug(
+                                        f"Emitting combat:suggestions_ready to room combat_{self.session_id} ({len(suggestions)} suggestions)"
                                     )
                                     flask_app.socketio.emit(
                                         "combat:suggestions_ready",
@@ -1506,7 +1509,7 @@ class ApiCombatAdapter:
                                     )
                                 else:
                                     logger.warning(
-                                        f"DEBUG: Cannot emit suggestions - flask_app is {flask_app} or socketio missing"
+                                        f"Cannot emit suggestions - flask_app is {flask_app} or socketio missing"
                                     )
                             except Exception as e:
                                 logger.error(
@@ -1514,7 +1517,7 @@ class ApiCombatAdapter:
                                 )
                         else:
                             logger.warning(
-                                "DEBUG: Cannot emit suggestions - session_id is missing"
+                                "Cannot emit suggestions - session_id is missing"
                             )
 
                 except Exception as e:

@@ -555,8 +555,8 @@ class NPCSpawnerEvent(Event):
         if isinstance(self.npc_cls, dict):
             class_type = self.npc_cls.get("__class_type__", "")
             if ":" in class_type:
-                return class_type.split(":", 1)[1]
-            return class_type or None
+                return class_type.split(":", 1)[1].strip()
+            return class_type.strip() or None
         try:
             from npc import NPC  # local import avoids circular on module load
 

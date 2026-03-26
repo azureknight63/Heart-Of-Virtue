@@ -1,10 +1,13 @@
-"""WSGI entry point for production deployments (gunicorn).
+"""WSGI entry point for production deployments.
 
-Usage:
-    gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 wsgi:app
+async_mode="threading" — WebSockets work with Werkzeug (dev) and fall back to
+long-polling behind gunicorn sync workers (acceptable for single-player).
 
-Or with the PORT env var:
-    gunicorn --worker-class eventlet -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app
+Usage (gunicorn, threading mode):
+    gunicorn -w 1 --bind "0.0.0.0:${PORT:-5000}" wsgi:app
+
+Or with flask run (dev):
+    python tools/run_api.py
 """
 
 import os
