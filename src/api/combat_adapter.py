@@ -1653,6 +1653,22 @@ class ApiCombatAdapter:
             },
         }
 
+        # Check for beta end: player just defeated the Lurker in Verdette Caverns.
+        # Mirrors AfterDefeatingLurker.check_conditions() — no Lurker on tile,
+        # but that tile still carries the AfterDefeatingLurker event marker.
+        tile = getattr(self.player, "current_room", None)
+        if tile:
+            has_lurker_event = any(
+                e.__class__.__name__ == "AfterDefeatingLurker"
+                for e in getattr(tile, "events_here", [])
+            )
+            lurker_still_present = any(
+                n.__class__.__name__ == "Lurker"
+                for n in getattr(tile, "npcs_here", [])
+            )
+            if has_lurker_event and not lurker_still_present:
+                self.player.combat_end_summary["beta_end"] = True
+
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
         moves = []

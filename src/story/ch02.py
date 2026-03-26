@@ -33,59 +33,9 @@ class AfterDefeatingLurker(Event):
             self.pass_conditions_to_process()
 
     def process(self):
-        time.sleep(2)
-        print(
-            "Gorran breathes deeply and seems to collect himself for a moment. Then, with a glance at Jean, "
-            "he strides over to the far wall. Sliding two hands into a small crack in the wall, "
-            "he braces himself.\n\n"
-            "With a low rumble, he begins spreading the wall apart, gradually revealing a passage not unlike the "
-            "last that he opened in the same manner."
-        )
-        time.sleep(2)
-        print(
-            "Gorran turns back around to face Jean and rumbles in what has to be something like relief mixed with fatigue."
-        )
-        time.sleep(2)
-        print(
-            "He doesn't go through yet. He stands at the mouth of the passage, one hand resting on the edge "
-            "of the stone he's just parted. His fingers trace the crack where the two halves met — "
-            "the seam, barely visible now, where the wall had been."
-        )
-        time.sleep(2)
-        print(
-            "Then he turns, and for a moment he's just looking at Jean. Not prompting, not gesturing. "
-            "Just looking. As though weighing something that doesn't need to be said out loud."
-        )
-        time.sleep(2)
-        await_input()
-        # Spawn a passageway to Grondia at coordinates (1, 3)
-        self.tile.spawn_object(
-            "Passageway",
-            self.player,
-            self.tile,
-            teleport_map="grondia",
-            teleport_tile=(1, 3),
-        )
-        print(
-            "Gorran ducked low, disappearing beneath a curving shelf of grey rock. Looking closely, "
-            "Jean could see a conspicuous divot along the bottom of the shelf, near where his mighty "
-            "friend's massive head had passed just moments ago. Scratches covered the divot, marking "
-            "this route as one frequently traveled by the strange rock-like man or perhaps his companions, "
-            "if he has any."
-        )
-        time.sleep(4)
-        print(
-            "Immediately on passing under the shelf, Jean's greying whiskers were blasted by a cool "
-            "breeze. He turned his head slightly, reading the flow — east to west, coming up from somewhere "
-            "deeper in. It had the dank smell of the cavern to which Jean was just "
-            "starting to grow accustomed, but also, something more. Or, rather, a lot of things more. "
-            "There was a mixture of scents; some familiar, and some entirely alien. "
-            "The moist wetness told of a fresh water source nearby. The dust betrayed the movement "
-            "of something large, or perhaps many things. There was also - yes, Jean was sure of "
-            "it - the smells of leather and iron."
-        )
-        await_input()
-        self.player.teleport("grondia", (3, 1))
+        # Beta end: story continuation to Grondia is disabled for beta testing.
+        # The player can continue exploring Verdette Caverns freely.
+        pass
 
 
 class Ch02GuideToCitadel(
