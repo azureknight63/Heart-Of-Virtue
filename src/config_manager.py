@@ -139,7 +139,9 @@ class ConfigManager:
         """
         self.config_file = config_file
         # Allow inline comments with semicolon and hash
-        self.parser = configparser.ConfigParser(inline_comment_prefixes=(";", "#"))
+        self.parser = configparser.ConfigParser(
+            inline_comment_prefixes=(";", "#")
+        )
         self.config = GameConfig()
 
     def load(self) -> GameConfig:
@@ -171,7 +173,9 @@ class ConfigManager:
 
         # Base settings
         self.config.testmode = section.getboolean("testmode", fallback=False)
-        self.config.skipdialog = section.getboolean("skipdialog", fallback=False)
+        self.config.skipdialog = section.getboolean(
+            "skipdialog", fallback=False
+        )
         self.config.skipintro = section.getboolean("skipintro", fallback=False)
         self.config.startmap = section.get("startmap", fallback="default")
 
@@ -186,15 +190,21 @@ class ConfigManager:
             self.config.startposition = (0, 0)
 
         # Graphics
-        self.config.use_colour = section.getboolean("use_colour", fallback=True)
+        self.config.use_colour = section.getboolean(
+            "use_colour", fallback=True
+        )
         self.config.enable_animations = section.getboolean(
             "enable_animations", fallback=True
         )
-        self.config.animation_speed = section.getfloat("animation_speed", fallback=1.0)
+        self.config.animation_speed = section.getfloat(
+            "animation_speed", fallback=1.0
+        )
         self.config.starting_exp = section.getint("starting_exp", fallback=0)
 
         # Debug settings
-        self.config.debug_mode = section.getboolean("debug_mode", fallback=False)
+        self.config.debug_mode = section.getboolean(
+            "debug_mode", fallback=False
+        )
         self.config.debug_positions = section.getboolean(
             "debug_positions", fallback=False
         )
@@ -289,18 +299,26 @@ class ConfigManager:
         self.config.log_file = section.get("log_file", fallback="combat.log")
 
         # Scenarios
-        self.config.test_scenario = section.get("test_scenario", fallback="standard")
+        self.config.test_scenario = section.get(
+            "test_scenario", fallback="standard"
+        )
         self.config.max_enemies_standard = section.getint(
             "max_enemies_standard", fallback=3
         )
         self.config.max_enemies_pincer = section.getint(
             "max_enemies_pincer", fallback=4
         )
-        self.config.max_enemies_melee = section.getint("max_enemies_melee", fallback=6)
-        self.config.max_enemies_boss = section.getint("max_enemies_boss", fallback=1)
+        self.config.max_enemies_melee = section.getint(
+            "max_enemies_melee", fallback=6
+        )
+        self.config.max_enemies_boss = section.getint(
+            "max_enemies_boss", fallback=1
+        )
 
         # Performance monitoring
-        self.config.monitor_bps = section.getboolean("monitor_bps", fallback=False)
+        self.config.monitor_bps = section.getboolean(
+            "monitor_bps", fallback=False
+        )
         self.config.log_performance = section.getboolean(
             "log_performance", fallback=False
         )
@@ -327,7 +345,9 @@ class ConfigManager:
             "show_all_items", fallback=False
         )
         self.config.god_mode = section.getboolean("god_mode", fallback=False)
-        self.config.skip_combat = section.getboolean("skip_combat", fallback=False)
+        self.config.skip_combat = section.getboolean(
+            "skip_combat", fallback=False
+        )
 
     def _parse_combat_testing_section(self) -> None:
         """Parse [combat_testing] section settings."""
@@ -386,22 +406,46 @@ class ConfigManager:
         section = self.parser["testing_locations"]
 
         # Standard formation
-        self.config.standard_player_x = section.getint("standard_player_x", fallback=25)
-        self.config.standard_player_y = section.getint("standard_player_y", fallback=10)
-        self.config.standard_enemy_x = section.getint("standard_enemy_x", fallback=25)
-        self.config.standard_enemy_y = section.getint("standard_enemy_y", fallback=40)
+        self.config.standard_player_x = section.getint(
+            "standard_player_x", fallback=25
+        )
+        self.config.standard_player_y = section.getint(
+            "standard_player_y", fallback=10
+        )
+        self.config.standard_enemy_x = section.getint(
+            "standard_enemy_x", fallback=25
+        )
+        self.config.standard_enemy_y = section.getint(
+            "standard_enemy_y", fallback=40
+        )
 
         # Pincer formation
-        self.config.pincer_player_x = section.getint("pincer_player_x", fallback=25)
-        self.config.pincer_player_y = section.getint("pincer_player_y", fallback=25)
-        self.config.pincer_enemy1_x = section.getint("pincer_enemy1_x", fallback=10)
-        self.config.pincer_enemy1_y = section.getint("pincer_enemy1_y", fallback=25)
-        self.config.pincer_enemy2_x = section.getint("pincer_enemy2_x", fallback=40)
-        self.config.pincer_enemy2_y = section.getint("pincer_enemy2_y", fallback=25)
+        self.config.pincer_player_x = section.getint(
+            "pincer_player_x", fallback=25
+        )
+        self.config.pincer_player_y = section.getint(
+            "pincer_player_y", fallback=25
+        )
+        self.config.pincer_enemy1_x = section.getint(
+            "pincer_enemy1_x", fallback=10
+        )
+        self.config.pincer_enemy1_y = section.getint(
+            "pincer_enemy1_y", fallback=25
+        )
+        self.config.pincer_enemy2_x = section.getint(
+            "pincer_enemy2_x", fallback=40
+        )
+        self.config.pincer_enemy2_y = section.getint(
+            "pincer_enemy2_y", fallback=25
+        )
 
         # Melee
-        self.config.melee_center_x = section.getint("melee_center_x", fallback=25)
-        self.config.melee_center_y = section.getint("melee_center_y", fallback=25)
+        self.config.melee_center_x = section.getint(
+            "melee_center_x", fallback=25
+        )
+        self.config.melee_center_y = section.getint(
+            "melee_center_y", fallback=25
+        )
         self.config.melee_spread_radius = section.getint(
             "melee_spread_radius", fallback=5
         )

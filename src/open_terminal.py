@@ -11,7 +11,11 @@ def open_window(animation):
     filename of a gif in resources/animations, as a string
     """
     if os.name == "nt":  # for Windows
-        subprocess.call(f"start /wait python animations.py {animation}", shell=True)
+        subprocess.call(
+            f"start /wait python animations.py {animation}", shell=True
+        )
 
     else:
-        print("### Non-windows environments not yet supported for animations! ###")
+        print(
+            "### Non-windows environments not yet supported for animations! ###"
+        )

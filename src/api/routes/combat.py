@@ -14,16 +14,31 @@ def get_session_and_player(request):
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"error": "Missing authorization"}), 401),
+        )
 
     session_id = auth_header[7:]
     if not session_id:
-        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"error": "Missing authorization"}), 401),
+        )
     session_manager = current_app.session_manager
     session = session_manager.get_session(session_id)
 
     if not session:
-        return None, None, None, (jsonify({"error": "Invalid or expired session"}), 401)
+        return (
+            None,
+            None,
+            None,
+            (jsonify({"error": "Invalid or expired session"}), 401),
+        )
 
     player = session_manager.get_player(session_id)
     if not player:
@@ -54,7 +69,9 @@ def start_combat():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error
 
@@ -89,9 +106,12 @@ def start_combat():
 
         return jsonify({"success": True, **result}), 201
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in start_combat")
-        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+        return (
+            jsonify({"success": False, "error": "An internal error occurred"}),
+            500,
+        )
 
 
 @combat_bp.route("/move", methods=["POST"])
@@ -117,7 +137,9 @@ def execute_move():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error
 
@@ -162,9 +184,12 @@ def execute_move():
         session_manager.save_session(session.session_id)
         return jsonify({"success": True, **result}), 200
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in execute_move")
-        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+        return (
+            jsonify({"success": False, "error": "An internal error occurred"}),
+            500,
+        )
 
 
 @combat_bp.route("/status", methods=["GET"])
@@ -184,7 +209,9 @@ def get_combat_status():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error
 
@@ -198,9 +225,12 @@ def get_combat_status():
 
         return jsonify({"success": True, **status}), 200
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in get_combat_status")
-        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+        return (
+            jsonify({"success": False, "error": "An internal error occurred"}),
+            500,
+        )
 
 
 @combat_bp.route("/log", methods=["GET"])
@@ -217,13 +247,18 @@ def get_combat_log():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             return error
 
         log = getattr(player, "combat_log", [])
         return jsonify({"success": True, "log": log}), 200
 
-    except Exception as e:
+    except Exception as _:
         logger.exception("Unhandled error in get_combat_log")
-        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+        return (
+            jsonify({"success": False, "error": "An internal error occurred"}),
+            500,
+        )

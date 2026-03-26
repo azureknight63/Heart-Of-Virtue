@@ -57,7 +57,7 @@ def session_id(app):
     # Create session with a test username
     session_manager = app.session_manager
     created_session_id, username = session_manager.create_session("testplayer")
-    
+
     # Get the player and set up quests
     player = session_manager.get_player(created_session_id)
     player.name = "TestHero"

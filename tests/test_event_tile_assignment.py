@@ -21,4 +21,3 @@ def test_all_events_have_tile_reference():
                 if not hasattr(ev, 'tile') or ev.tile is not tile:
                     problems.append((game_map.get('name'), coord, ev.__class__.__name__, getattr(ev, 'tile', None)))
     assert not problems, f"Events missing/incorrect tile reference: {problems}"
-

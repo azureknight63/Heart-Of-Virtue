@@ -16,7 +16,7 @@ def test_config_manager_creates_default_config():
     """Test that ConfigManager creates defaults with non-existent file."""
     mgr = ConfigManager('nonexistent_config.ini')
     config = mgr.load()
-    
+
     assert isinstance(config, GameConfig)
     assert config.testmode is False
     assert config.debug_mode is False
@@ -40,10 +40,10 @@ debug_mode = true
 debug_positions = true
 coordinate_grid_size = 100, 100
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     assert config.testmode is True
     assert config.skipdialog is True
     assert config.skipintro is True
@@ -67,10 +67,10 @@ show_all_items = true
 god_mode = true
 skip_combat = true
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     assert config.enable_hot_reload is True
     assert config.show_all_items is True
     assert config.god_mode is True
@@ -93,10 +93,10 @@ npc_retreat_health_threshold = 0.5
 validate_grid_bounds = false
 validate_distance_calc = false
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     assert config.enable_scenario_rotation is True
     assert config.current_scenario == "pincer"
     assert config.starting_difficulty == 5
@@ -131,10 +131,10 @@ boss_arena_x = 20
 boss_arena_y = 20
 boss_start_distance = 35
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     assert config.standard_player_x == 15
     assert config.standard_player_y == 5
     assert config.standard_enemy_x == 15
@@ -244,10 +244,10 @@ boss_arena_x = 25
 boss_arena_y = 25
 boss_start_distance = 30
 """)
-    
+
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
-    
+
     # Verify all major settings loaded
     assert config.debug_mode is True
     assert config.coordinate_grid_size == (50, 50)
@@ -260,7 +260,7 @@ boss_start_distance = 30
 def test_gameconfig_defaults():
     """Test GameConfig has sensible defaults."""
     config = GameConfig()
-    
+
     assert config.testmode is False
     assert config.debug_mode is False
     assert config.use_colour is True

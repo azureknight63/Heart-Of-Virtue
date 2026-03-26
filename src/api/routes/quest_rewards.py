@@ -12,7 +12,9 @@ from src.api.services.validators import (
     validate_required_fields,
 )
 
-quest_rewards_bp = Blueprint("quest_rewards", __name__, url_prefix="/api/quests")
+quest_rewards_bp = Blueprint(
+    "quest_rewards", __name__, url_prefix="/api/quests"
+)
 
 
 def get_session_and_player():
@@ -29,7 +31,10 @@ def get_session_and_player():
             None,
             None,
             jsonify(
-                {"success": False, "error": "Missing or invalid Authorization header"}
+                {
+                    "success": False,
+                    "error": "Missing or invalid Authorization header",
+                }
             ),
             401,
         )
@@ -160,14 +165,21 @@ def award_gold():
         return error, status
 
     # Validate request
-    is_valid, error_msg = validate_required_fields(request.get_json() or {}, ["amount"])
+    is_valid, error_msg = validate_required_fields(
+        request.get_json() or {}, ["amount"]
+    )
     if not is_valid:
         return jsonify({"success": False, "error": error_msg}), 400
 
     amount = request.json["amount"]
     if not isinstance(amount, int) or amount <= 0:
         return (
-            jsonify({"success": False, "error": "Amount must be a positive integer"}),
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Amount must be a positive integer",
+                }
+            ),
             400,
         )
 
@@ -199,14 +211,21 @@ def award_experience():
         return error, status
 
     # Validate request
-    is_valid, error_msg = validate_required_fields(request.get_json() or {}, ["amount"])
+    is_valid, error_msg = validate_required_fields(
+        request.get_json() or {}, ["amount"]
+    )
     if not is_valid:
         return jsonify({"success": False, "error": error_msg}), 400
 
     amount = request.json["amount"]
     if not isinstance(amount, int) or amount <= 0:
         return (
-            jsonify({"success": False, "error": "Amount must be a positive integer"}),
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Amount must be a positive integer",
+                }
+            ),
             400,
         )
 
@@ -252,12 +271,19 @@ def award_item():
 
     if not isinstance(quantity, int) or quantity <= 0:
         return (
-            jsonify({"success": False, "error": "Quantity must be a positive integer"}),
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Quantity must be a positive integer",
+                }
+            ),
             400,
         )
 
     # Award item
-    result = current_app.game_service.award_item(player, item_id, item_name, quantity)
+    result = current_app.game_service.award_item(
+        player, item_id, item_name, quantity
+    )
 
     if not result.get("success"):
         return jsonify(result), 400
@@ -304,7 +330,9 @@ def award_reputation():
         )
 
     # Award reputation
-    result = current_app.game_service.award_reputation(player, npc_id, npc_name, amount)
+    result = current_app.game_service.award_reputation(
+        player, npc_id, npc_name, amount
+    )
 
     # Save session
     session_manager.save_session(session.session_id)

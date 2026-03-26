@@ -174,6 +174,16 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
           else if (msg.includes('victory')) {
             playBGM('fanfare')
+          } else if (msg.includes('heal') || msg.includes('restores') || msg.includes('restored')) {
+            playSFX('heal')
+          } else if (msg.includes('poisoned') || msg.includes('burned') || msg.includes('paralyz') || msg.includes('stunned') || msg.includes('afflict') || msg.includes('inflict')) {
+            playSFX('status_hit')
+          } else if (msg.includes(' uses ')) {
+            playSFX('item_use')
+          }
+
+          if (msg.includes('quest') && (msg.includes('complete') || msg.includes('finished') || msg.includes('accomplished'))) {
+            playSFX('quest_complete')
           }
 
           if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {

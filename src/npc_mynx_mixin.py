@@ -34,10 +34,13 @@ class MynxLLMMixin:
     _re_capitalized_token = re.compile(r"^[A-Z][A-Za-z\-']+$")
     _re_disallowed_name_token = re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
     _re_self_actions = re.compile(
-        r"\b(batting|pawing|swatting|tapping) at (?:{name}|{pronoun})\b", re.IGNORECASE
+        r"\b(batting|pawing|swatting|tapping) at (?:{name}|{pronoun})\b",
+        re.IGNORECASE,
     )
     _re_duplicate_pronoun_template = r"\b({p})\s+\1\b"
-    _gendered_pronouns = re.compile(r"\b(he|him|his|she|her|hers)\b", re.IGNORECASE)
+    _gendered_pronouns = re.compile(
+        r"\b(he|him|his|she|her|hers)\b", re.IGNORECASE
+    )
 
     # ── LLM history ────────────────────────────────────────────────────────────
 
@@ -145,12 +148,16 @@ class MynxLLMMixin:
             except Exception as e:
                 avail = False
                 if _debug:
-                    print(f"[MYNX_LLM_DEBUG] Exception checking availability: {e}")
+                    print(
+                        f"[MYNX_LLM_DEBUG] Exception checking availability: {e}"
+                    )
             if avail is True:
                 self._llm_adapter = inst
                 if _debug:
                     status = (
-                        inst.debug_status() if hasattr(inst, "debug_status") else "ok"
+                        inst.debug_status()
+                        if hasattr(inst, "debug_status")
+                        else "ok"
                     )
                     print(f"[MYNX_LLM_DEBUG] Adapter available: {status}")
             else:
@@ -203,7 +210,9 @@ class MynxLLMMixin:
                 count += 1
                 return name if count == 1 else pronoun
 
-            text = re.compile(re.escape(name), re.IGNORECASE).sub(repl_self, text)
+            text = re.compile(re.escape(name), re.IGNORECASE).sub(
+                repl_self, text
+            )
             text = re.sub(
                 rf"\b(batting|pawing|swatting|tapping) at (?:{re.escape(name)}|{pronoun})\b",
                 r"\1 playfully",
@@ -224,14 +233,18 @@ class MynxLLMMixin:
                 else:
                     cleaned.append(t)
             text = " ".join(cleaned)
-            text = re.sub(rf"\b({pronoun})\s+\1\b", pronoun, text, flags=re.IGNORECASE)
+            text = re.sub(
+                rf"\b({pronoun})\s+\1\b", pronoun, text, flags=re.IGNORECASE
+            )
             return re.sub(r"\s+", " ", text).strip()
         except Exception:
             return text
 
     # ── Pronoun enforcement (post-sanitise pass) ───────────────────────────────
 
-    def _enforce_pronouns_and_names(self, text: str, roster_set: set[str]) -> str:
+    def _enforce_pronouns_and_names(
+        self, text: str, roster_set: set[str]
+    ) -> str:
         """Replace invented names and mismatched gendered pronouns with correct forms.
 
         Sentence-aware: sentences referencing Jean use Jean's pronouns; sentences
@@ -276,7 +289,11 @@ class MynxLLMMixin:
                         else (
                             jean_obj
                             if t in ("him", "her")
-                            else (jean_poss if t in ("his", "hers") else jean_subj)
+                            else (
+                                jean_poss
+                                if t in ("his", "hers")
+                                else jean_subj
+                            )
                         )
                     )
                 if target == "mynx":
@@ -315,11 +332,15 @@ class MynxLLMMixin:
                 def repl_gendered(m, _target=target):
                     return map_token(m.group(1), _target)
 
-                processed.append(self._gendered_pronouns.sub(repl_gendered, sent))
+                processed.append(
+                    self._gendered_pronouns.sub(repl_gendered, sent)
+                )
 
             text = "".join(processed)
             dup_re = re.compile(
-                self._re_duplicate_pronoun_template.format(p=re.escape(pron_mynx)),
+                self._re_duplicate_pronoun_template.format(
+                    p=re.escape(pron_mynx)
+                ),
                 re.IGNORECASE,
             )
             return self._normalize_ws(dup_re.sub(pron_mynx, text))
@@ -424,12 +445,16 @@ class MynxLLMMixin:
             )
         return ""
 
-    def _build_pronoun_guidance(self, jean_pronoun_line: str, jean_snippet: str) -> str:
+    def _build_pronoun_guidance(
+        self, jean_pronoun_line: str, jean_snippet: str
+    ) -> str:
         """Return the pronoun-guidance sentence for inclusion in the LLM context."""
         pronouns = self.pronouns if hasattr(self, "pronouns") else {}
         mynx_personal = pronouns.get("personal", "it")
         mynx_possessive = (
-            pronouns.get("possessive_adjective") or pronouns.get("possessive") or "its"
+            pronouns.get("possessive_adjective")
+            or pronouns.get("possessive")
+            or "its"
         )
         try:
             pg = []
@@ -439,7 +464,11 @@ class MynxLLMMixin:
             pg.append(
                 "For any other nearby NPCs, prefer using their NAME; if a pronoun is needed, use they/them/their."
             )
-            return (" ".join(pg) + f" {jean_snippet}") if jean_snippet else " ".join(pg)
+            return (
+                (" ".join(pg) + f" {jean_snippet}")
+                if jean_snippet
+                else " ".join(pg)
+            )
         except Exception:
             return "Use Jean and Mynx pronouns consistently; prefer names for others or they/them."
 
@@ -460,7 +489,9 @@ class MynxLLMMixin:
         room_desc = f" You are in {room_desc_raw}." if room_desc_raw else "."
         env_lists, _ = self._gather_environment_lists()
         history_block = self._build_history_block()
-        pronoun_guidance = self._build_pronoun_guidance(jean_pronoun_line, jean_snippet)
+        pronoun_guidance = self._build_pronoun_guidance(
+            jean_pronoun_line, jean_snippet
+        )
         allowed_names = ", ".join(sorted(roster_set | {"Jean"}))
         parts = [
             "You describe only what the mynx does in one immediate, nonverbal action.",
@@ -510,9 +541,13 @@ class MynxLLMMixin:
             raw = text.strip()
             if not raw:
                 return None
-            if '"' in raw or ("'" in raw and (" says " in raw or raw.count('"') >= 2)):
+            if '"' in raw or (
+                "'" in raw and (" says " in raw or raw.count('"') >= 2)
+            ):
                 return None
-            sentences = [s.strip() for s in re.split(r"[.!?]", raw) if s.strip()]
+            sentences = [
+                s.strip() for s in re.split(r"[.!?]", raw) if s.strip()
+            ]
             if not sentences:
                 return None
             candidate = ". ".join(sentences[:2])
@@ -571,7 +606,9 @@ class MynxLLMMixin:
             action_print = "Jean offers a morsel of food to the mynx."
         elif p.startswith("play with ") or p in ("play", "toy", "tease"):
             item_name = (
-                p[len("play with ") :].strip() if p.startswith("play with ") else None
+                p[len("play with ") :].strip()
+                if p.startswith("play with ")
+                else None
             )
             action_print = (
                 f"Jean plays with the mynx using {item_name}."
@@ -591,7 +628,9 @@ class MynxLLMMixin:
         roster = []
         if getattr(self, "current_room", None) is not None:
             try:
-                for npc_inst in getattr(self.current_room, "npcs_here", []) or []:
+                for npc_inst in (
+                    getattr(self.current_room, "npcs_here", []) or []
+                ):
                     nm = getattr(npc_inst, "name", None)
                     if isinstance(nm, str):
                         roster.append(nm)
@@ -631,7 +670,9 @@ class MynxLLMMixin:
                         desc = self._sanitize_mynx_llm_text(
                             result["description"], roster_set
                         )
-                        desc = self._enforce_pronouns_and_names(desc, roster_set)
+                        desc = self._enforce_pronouns_and_names(
+                            desc, roster_set
+                        )
                         desc_checked = self._check_and_correct_mynx_text(
                             desc, p, roster
                         )
@@ -648,10 +689,14 @@ class MynxLLMMixin:
                     if isinstance(text_resp, str) and text_resp:
                         if _debug:
                             try:
-                                print(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
+                                print(
+                                    f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}"
+                                )
                             except Exception:
                                 pass
-                        sanitized = self._sanitize_mynx_llm_text(text_resp, roster_set)
+                        sanitized = self._sanitize_mynx_llm_text(
+                            text_resp, roster_set
+                        )
                         sanitized = self._enforce_pronouns_and_names(
                             sanitized, roster_set
                         )

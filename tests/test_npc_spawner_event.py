@@ -150,7 +150,7 @@ def test_multiple_spawners_with_other_events():
         def __init__(self, player, tile):
             super().__init__(name="DummyEvent", player=player, tile=tile, repeat=False, params=None)
             self.was_processed = False
-        
+
         def check_conditions(self):
             self.was_processed = True
             self.pass_conditions_to_process()
@@ -175,4 +175,3 @@ def test_multiple_spawners_with_other_events():
 
 if __name__ == '__main__':
     pytest.main([__file__])
-

@@ -18,7 +18,7 @@ def test_debug_manager_debug_mode_disabled_default():
     """Test debug mode is disabled by default."""
     player = Player()
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.is_debug_mode_enabled() is False
 
 
@@ -28,9 +28,9 @@ def test_debug_manager_debug_mode_enabled_from_config():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.is_debug_mode_enabled() is True
 
 
@@ -38,7 +38,7 @@ def test_debug_manager_should_debug_positions_default():
     """Test position debug disabled by default."""
     player = Player()
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_positions() is False
 
 
@@ -48,9 +48,9 @@ def test_debug_manager_should_debug_positions_enabled():
     config = GameConfig()
     config.debug_positions = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_positions() is True
 
 
@@ -60,9 +60,9 @@ def test_debug_manager_should_debug_movement_enabled():
     config = GameConfig()
     config.debug_movement = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_movement() is True
 
 
@@ -72,9 +72,9 @@ def test_debug_manager_should_debug_damage_calc_enabled():
     config = GameConfig()
     config.debug_damage_calc = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_damage_calc() is True
 
 
@@ -84,9 +84,9 @@ def test_debug_manager_should_debug_accuracy_enabled():
     config = GameConfig()
     config.debug_accuracy = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_accuracy() is True
 
 
@@ -96,9 +96,9 @@ def test_debug_manager_should_debug_ai_decisions_enabled():
     config = GameConfig()
     config.debug_ai_decisions = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_ai_decisions() is True
 
 
@@ -108,9 +108,9 @@ def test_debug_manager_should_debug_npc_positions_enabled():
     config = GameConfig()
     config.debug_npc_positions = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     assert debug_mgr.should_debug_npc_positions() is True
 
 
@@ -118,9 +118,9 @@ def test_debug_manager_log_command():
     """Test logging a command."""
     player = Player()
     debug_mgr = DebugManager(player)
-    
+
     debug_mgr.log_command('test_cmd', ['arg1'], 'result1')
-    
+
     history = debug_mgr.get_command_history(10)
     assert len(history) == 1
     assert history[0]['command'] == 'test_cmd'
@@ -133,11 +133,11 @@ def test_debug_manager_command_history_max_size():
     player = Player()
     debug_mgr = DebugManager(player)
     debug_mgr.max_history = 5
-    
+
     # Log more than max
     for i in range(10):
         debug_mgr.log_command(f'cmd{i}')
-    
+
     history = debug_mgr.get_command_history(100)
     assert len(history) == 5
 
@@ -146,10 +146,10 @@ def test_debug_manager_get_command_history():
     """Test retrieving command history."""
     player = Player()
     debug_mgr = DebugManager(player)
-    
+
     for i in range(5):
         debug_mgr.log_command(f'cmd{i}')
-    
+
     history = debug_mgr.get_command_history(3)
     assert len(history) == 3
 
@@ -160,9 +160,9 @@ def test_debug_manager_cmd_instant_win_disabled():
     config = GameConfig()
     config.debug_mode = False
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_instant_win()
     assert "disabled" in result.lower()
 
@@ -173,9 +173,9 @@ def test_debug_manager_cmd_instant_win_enabled():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_instant_win()
     assert "victory" in result.lower()
 
@@ -186,9 +186,9 @@ def test_debug_manager_cmd_spawn_enemy():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_spawn_enemy("Slime", 3)
     assert "Spawned" in result
     assert "Slime" in result
@@ -201,9 +201,9 @@ def test_debug_manager_cmd_damage_output_disabled():
     config.debug_mode = False
     config.debug_damage_calc = False
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_damage_output("Attacker", "Target")
     assert "disabled" in result.lower()
 
@@ -215,9 +215,9 @@ def test_debug_manager_cmd_damage_output_enabled():
     config.debug_mode = True
     config.debug_damage_calc = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_damage_output("Attacker", "Target")
     assert "Damage Calculation" in result
     assert "Attacker" in result
@@ -230,9 +230,9 @@ def test_debug_manager_cmd_accuracy_info():
     config.debug_mode = True
     config.debug_accuracy = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_accuracy_info("Archer", "Enemy")
     assert "Accuracy" in result
     assert "Archer" in result
@@ -245,9 +245,9 @@ def test_debug_manager_cmd_npc_decision_trace():
     config.debug_mode = True
     config.debug_ai_decisions = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_npc_decision_trace("Goblin")
     assert "Decision Trace" in result
     assert "Goblin" in result
@@ -259,9 +259,9 @@ def test_debug_manager_cmd_performance_monitor():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_performance_monitor()
     assert "Performance" in result
 
@@ -272,9 +272,9 @@ def test_debug_manager_cmd_toggle_feature():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_toggle_feature("debug_positions")
     assert "Toggled" in result
     assert "debug_positions" in result
@@ -286,9 +286,9 @@ def test_debug_manager_cmd_toggle_feature_invalid():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_toggle_feature("invalid_feature")
     assert "Unknown" in result
 
@@ -299,9 +299,9 @@ def test_debug_manager_cmd_spawn_item():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_spawn_item("Potion", 5)
     assert "Spawned" in result
     assert "Potion" in result
@@ -313,9 +313,9 @@ def test_debug_manager_cmd_list_stats():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_list_stats()
     assert "Stats for Player" in result
 
@@ -326,9 +326,9 @@ def test_debug_manager_cmd_list_stats_for_npc():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.cmd_list_stats("Goblin")
     assert "Stats for Goblin" in result
 
@@ -339,9 +339,9 @@ def test_debug_manager_execute_command_debug_disabled():
     config = GameConfig()
     config.debug_mode = False
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.execute_command("list_stats")
     assert "disabled" in result.lower()
 
@@ -352,9 +352,9 @@ def test_debug_manager_execute_command_unknown():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.execute_command("unknown_cmd")
     assert "Unknown" in result
 
@@ -365,9 +365,9 @@ def test_debug_manager_execute_command_valid():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     result = debug_mgr.execute_command("list_stats")
     assert "Stats" in result
 
@@ -376,7 +376,7 @@ def test_debug_manager_get_available_commands():
     """Test getting available commands."""
     player = Player()
     debug_mgr = DebugManager(player)
-    
+
     commands = debug_mgr.get_available_commands()
     assert len(commands) >= 9
     assert "instant_win" in commands
@@ -397,9 +397,9 @@ def test_debug_manager_get_debug_info_string():
     config.debug_mode = True
     config.debug_positions = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
-    
+
     info = debug_mgr.get_debug_info_string()
     assert "Debug Manager Status" in info
     assert "Overall Debug Mode: True" in info
@@ -411,7 +411,7 @@ def test_debug_validator_initialization():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     assert validator.debug_manager is debug_mgr
 
 
@@ -421,10 +421,10 @@ def test_debug_validator_is_valid_command_debug_disabled():
     config = GameConfig()
     config.debug_mode = False
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_command("list_stats")
     assert is_valid is False
     assert "disabled" in reason.lower()
@@ -436,10 +436,10 @@ def test_debug_validator_is_valid_command_unknown():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_command("unknown_cmd")
     assert is_valid is False
     assert "Unknown" in reason
@@ -451,10 +451,10 @@ def test_debug_validator_is_valid_command_known():
     config = GameConfig()
     config.debug_mode = True
     player.game_config = config
-    
+
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_command("list_stats")
     assert is_valid is True
 
@@ -464,7 +464,7 @@ def test_debug_validator_is_valid_spawn_count_positive():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_spawn_count(5)
     assert is_valid is True
 
@@ -474,7 +474,7 @@ def test_debug_validator_is_valid_spawn_count_zero():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_spawn_count(0)
     assert is_valid is False
 
@@ -484,7 +484,7 @@ def test_debug_validator_is_valid_spawn_count_negative():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_spawn_count(-1)
     assert is_valid is False
 
@@ -494,7 +494,7 @@ def test_debug_validator_is_valid_spawn_count_too_high():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_spawn_count(1000)
     assert is_valid is False
 
@@ -504,7 +504,7 @@ def test_debug_validator_is_valid_feature_name_valid():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_feature_name("debug_positions")
     assert is_valid is True
 
@@ -514,7 +514,7 @@ def test_debug_validator_is_valid_feature_name_invalid():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     is_valid, reason = validator.is_valid_feature_name("invalid_feature")
     assert is_valid is False
 
@@ -524,7 +524,7 @@ def test_debug_validator_validate_all_commands():
     player = Player()
     debug_mgr = DebugManager(player)
     validator = DebugValidator(debug_mgr)
-    
+
     all_valid, issues = validator.validate_all_commands()
     assert all_valid is True
     assert len(issues) == 0

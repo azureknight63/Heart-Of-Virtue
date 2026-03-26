@@ -65,7 +65,9 @@ class CombatPosition:
     def __post_init__(self):
         """Validate coordinates and facing."""
         if not isinstance(self.x, int) or not isinstance(self.y, int):
-            raise ValueError(f"Coordinates must be integers, got ({self.x}, {self.y})")
+            raise ValueError(
+                f"Coordinates must be integers, got ({self.x}, {self.y})"
+            )
 
         # Grid bounds validation (0-50)
         if not (0 <= self.x <= 50) or not (0 <= self.y <= 50):
@@ -82,7 +84,9 @@ class CombatPosition:
                 and self.facing.__class__.__name__ == "Direction"
             )
         ):
-            raise ValueError(f"Facing must be Direction enum, got {self.facing}")
+            raise ValueError(
+                f"Facing must be Direction enum, got {self.facing}"
+            )
 
     def copy(self) -> "CombatPosition":
         """Create an independent copy of this position."""
@@ -101,14 +105,19 @@ class CombatScenario:
     ally_spawn_zone: Tuple[
         Tuple[int, int], Tuple[int, int]
     ]  # ((x_min, y_min), (x_max, y_max))
-    enemy_spawn_zones: List[Tuple[Tuple[int, int], Tuple[int, int]]]  # List of zones
+    enemy_spawn_zones: List[
+        Tuple[Tuple[int, int], Tuple[int, int]]
+    ]  # List of zones
     formation_type: str  # "spread", "cluster", "random"
     min_spacing: int = 1  # Minimum grid squares between units
     seed: Optional[int] = None  # For reproducible positioning
 
 
 def get_combat_scenario(
-    scenario_type: str, grid_width: int, grid_height: int, seed: Optional[int] = None
+    scenario_type: str,
+    grid_width: int,
+    grid_height: int,
+    seed: Optional[int] = None,
 ) -> CombatScenario:
     """Generate a combat scenario for the given grid dimensions.
 
@@ -131,7 +140,9 @@ def get_combat_scenario(
         gap = max(4, int(grid_width * 0.2))
         ally_x_max = max(1, int(grid_width * 0.20))
         enemy_x_min = max(ally_x_max + gap, int(grid_width * 0.4))
-        enemy_x_max = min(grid_width, enemy_x_min + max(2, int(grid_width * 0.2)))
+        enemy_x_max = min(
+            grid_width, enemy_x_min + max(2, int(grid_width * 0.2))
+        )
 
         y_buffer = int(grid_height * 0.2)
         y_min = y_buffer
@@ -160,7 +171,10 @@ def get_combat_scenario(
 
         flank_width = max(2, int(grid_width * 0.15))
         left_flank = ((0, 0), (flank_width, grid_height))
-        right_flank = ((grid_width - flank_width, 0), (grid_width, grid_height))
+        right_flank = (
+            (grid_width - flank_width, 0),
+            (grid_width, grid_height),
+        )
 
         return CombatScenario(
             scenario_type="pincer",
@@ -286,7 +300,9 @@ def angle_to_target(from_pos: CombatPosition, to_pos: CombatPosition) -> float:
     return angle_deg
 
 
-def attack_angle_difference(attack_angle: float, target_facing: Direction) -> int:
+def attack_angle_difference(
+    attack_angle: float, target_facing: Direction
+) -> int:
     """Calculate angular difference between attack direction and target's facing.
 
     Returns the acute angle (0-180°) between where the attack comes from
@@ -683,7 +699,9 @@ def turn_toward(current: CombatPosition, target: CombatPosition) -> Direction:
 # ============================================================================
 
 
-def recalculate_proximity_dict(unit: Any, all_combatants: List[Any]) -> Dict[Any, int]:
+def recalculate_proximity_dict(
+    unit: Any, all_combatants: List[Any]
+) -> Dict[Any, int]:
     """Recalculate combat_proximity dict from coordinate positions.
 
     Called after any position change to maintain backward compatibility
@@ -709,7 +727,9 @@ def recalculate_proximity_dict(unit: Any, all_combatants: List[Any]) -> Dict[Any
         ):
             continue
 
-        distance = distance_from_coords(unit.combat_position, combatant.combat_position)
+        distance = distance_from_coords(
+            unit.combat_position, combatant.combat_position
+        )
         proximity[combatant] = distance
 
     return proximity
@@ -741,7 +761,9 @@ def initialize_combat_positions(
         grid_height: Height of the battlefield
         seed: Optional random seed
     """
-    scenario = get_combat_scenario(scenario_type, grid_width, grid_height, seed)
+    scenario = get_combat_scenario(
+        scenario_type, grid_width, grid_height, seed
+    )
 
     # Spawn allies in their zone
     _spawn_units_in_zone(
@@ -793,7 +815,9 @@ def initialize_combat_positions(
     # Update proximity dicts for backward compatibility
     all_combatants = allies + enemies
     for unit in all_combatants:
-        unit.combat_proximity = recalculate_proximity_dict(unit, all_combatants)
+        unit.combat_proximity = recalculate_proximity_dict(
+            unit, all_combatants
+        )
 
 
 def _spawn_units_in_zone(
@@ -911,7 +935,10 @@ def _find_clustered_position(
                     # Verify spacing
                     valid = True
                     for occupied_pos in occupied:
-                        if distance_from_coords(pos, occupied_pos) < min_spacing:
+                        if (
+                            distance_from_coords(pos, occupied_pos)
+                            < min_spacing
+                        ):
                             valid = False
                             break
 

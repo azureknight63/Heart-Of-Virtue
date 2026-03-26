@@ -9,9 +9,9 @@ class AdventureSong(Song):
         # Modifiers
         def d(dur): return dur / tempo_scale
         def fr(freq): return freq * (2 ** (pitch_shift / 12))
-        
+
         # --- Musical Building Blocks ---
-        
+
         # Theme A: Heroic & Uplifting (Staccato, Flute-like) - TIGHTENED (Double Speed)
         theme_a = [
             [(523, 0.25), (587, 0.25), (659, 0.5), (784, 0.5), (659, 0.25), (587, 0.25)],
@@ -19,7 +19,7 @@ class AdventureSong(Song):
             [(587, 0.25), (659, 0.25), (784, 0.5), (1047, 1.0)],
             [(880, 0.25), (784, 0.25), (659, 0.25), (587, 0.5), (523, 0.75)], # Extended last note to complete 8.0s
         ]
-        
+
         # Fallback Melody (Rhythmic filler) - Improved flow
         fallback_melody = [
             [(523, 0.5), (659, 0.25), (784, 0.25)], # C-E-G
@@ -27,7 +27,7 @@ class AdventureSong(Song):
             [(440, 0.25), (523, 0.25), (659, 0.25), (523, 0.25)], # A-C-E-C
             [(392, 0.5), (330, 0.25), (294, 0.25)], # G-E-D
         ]
-        
+
         # Theme B: Gentle & Reflective (Lower octave, slower)
         theme_b = [
             [(392, 0.6), (440, 0.6), (349, 1.2)],
@@ -35,7 +35,7 @@ class AdventureSong(Song):
             [(440, 0.6), (392, 0.6), (349, 0.6), (330, 0.6)],
             [(294, 1.2), (262, 1.2)],
         ]
-        
+
         # Theme C: Driving & Adventurous (Faster, arpeggiated) - Modified resolution
         theme_c = [
             [(523, 0.15), (659, 0.15), (784, 0.15), (523, 0.15), (659, 0.15), (784, 0.15)],
@@ -71,24 +71,24 @@ class AdventureSong(Song):
                 # Main Theme
                 for phrase in theme_a:
                     # Staccato phrasing: play 70%, rest 30%
-                    for f, dur in phrase: 
+                    for f, dur in phrase:
                         play_dur = d(dur) * 0.7
                         rest_dur = d(dur) * 0.3
                         mel += generate_tone(fr(f), play_dur, 0.35, wave_type='sine') # Boosted melody
                         mel += b'\x00\x00' * int(44100 * rest_dur)
-                    
+
                     for f, dur in phrase: harm += generate_tone(fr(f*1.25), d(dur), 0.15, wave_type='triangle')
-                
+
                 # Fallback Melody (Filler)
                 for phrase in fallback_melody:
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.25, wave_type='triangle')
-                    
+
                 # Harmony/Bass/Chords cover both Main Theme + Fallback
                 # Calculate total duration of Theme A + Fallback
                 dur_theme = sum(d(dur) for p in theme_a for _, dur in p)
                 dur_fallback = sum(d(dur) for p in fallback_melody for _, dur in p)
                 total_dur = dur_theme + dur_fallback
-                
+
                 # Extend accompaniment to cover full duration
                 current_dur = 0
                 while current_dur < total_dur:
@@ -96,16 +96,16 @@ class AdventureSong(Song):
                         if current_dur >= total_dur: break
                         chd += generate_chord([fr(x) for x in c], min(d(dur), total_dur - current_dur), 0.2, wave_type='triangle')
                         current_dur += d(dur)
-                
+
                 current_dur = 0
                 while current_dur < total_dur:
                     for f, dur in bass_a:
                         if current_dur >= total_dur: break
                         bss += generate_tone(fr(f), min(d(dur), total_dur - current_dur), 0.18, wave_type='triangle')
                         current_dur += d(dur)
-                
+
                 perc = generate_percussion_pattern([1, 0, 1, 0, 1, 0, 1, 1] * int(total_dur * 2), total_dur) # Light snare
-                
+
                 section_mix = mix_layers([mel, harm, chd, bss, perc])
                 all_sections += section_mix
 
@@ -123,14 +123,14 @@ class AdventureSong(Song):
                     for f, dur in phrase: mel += generate_tone(fr(f), d(dur), 0.45, wave_type='triangle') # Louder melody
                 for c, dur in prog_b: chd += generate_chord([fr(x) for x in c], d(dur), 0.2, wave_type='sine')
                 for f, dur in bass_b: bss += generate_tone(fr(f), d(dur), 0.18, wave_type='triangle')
-                
+
                 # Martial percussion - slow, steady march fitting somber mood
                 # "Roll, roll, tap, tap" pattern (da-da da-da DA DA)
                 dur_section = sum(d(dur) for p in theme_b for _, dur in p)
                 march_pattern = [1, 1, 1, 1, 1, 0, 1, 0] * 4 # 4 phrases in theme_b
-                
+
                 perc = generate_percussion_pattern(march_pattern, dur_section)
-                
+
                 all_sections += mix_layers([mel, chd, bss, perc])
 
             # --- Section 4: Theme C (The Challenge) x 2 (Shortened) - Ethereal Version ---
@@ -146,7 +146,7 @@ class AdventureSong(Song):
                 # Softer, smoother chords and bass
                 for c, dur in prog_c * 2: chd += generate_chord([fr(x) for x in c], d(dur), 0.1, wave_type='sine', attack_time=0.05)
                 for f, dur in bass_c * 2: bss += generate_tone(fr(f), d(dur), 0.08, wave_type='triangle', attack_time=0.05)
-                
+
                 total_dur = sum(d(dur) for p in theme_c for _, dur in p) * 2 # Match the chord/bass duration
                 # Sparse, light percussion
                 perc = generate_percussion_pattern([1, 0, 0, 0] * 16, total_dur)
@@ -163,7 +163,7 @@ class AdventureSong(Song):
 
             # Accompaniment
             dur_theme = sum(d(dur) for p in theme_a for _, dur in p)
-            
+
             # Loop prog/bass to match theme duration
             current_dur = 0
             while current_dur < dur_theme:
@@ -171,16 +171,16 @@ class AdventureSong(Song):
                     if current_dur >= dur_theme: break
                     chd += generate_chord([fr(x) for x in c], min(d(dur), dur_theme - current_dur), 0.3, wave_type='sawtooth')
                     current_dur += d(dur)
-            
+
             current_dur = 0
             while current_dur < dur_theme:
                 for f, dur in bass_a:
                     if current_dur >= dur_theme: break
                     bss += generate_tone(fr(f), min(d(dur), dur_theme - current_dur), 0.2, wave_type='triangle') # Reduced bass volume
                     current_dur += d(dur)
-            
+
             # Heavier percussion (Kick/Snare/Hats)
-            perc = generate_percussion_pattern([1, 1, 1, 1, 1, 1, 1, 1] * int(dur_theme * 2), dur_theme) 
+            perc = generate_percussion_pattern([1, 1, 1, 1, 1, 1, 1, 1] * int(dur_theme * 2), dur_theme)
             all_sections += mix_layers([mel, harm, chd, bss, sub, perc])
 
         return all_sections
@@ -192,7 +192,7 @@ class ThemeSnippet(Song):
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale
         def fr(freq): return freq * (2 ** (pitch_shift / 12))
-        
+
         theme_a = [
             [(523, 0.25), (587, 0.25), (659, 0.5), (784, 0.5), (659, 0.25), (587, 0.25)],
             [(523, 0.25), (659, 0.25), (784, 0.5), (880, 0.5), (784, 0.25), (659, 0.25)],
@@ -205,31 +205,31 @@ class ThemeSnippet(Song):
         mel, harm, chd, bss = b'', b'', b'', b''
         for phrase in theme_a:
             # Staccato phrasing for snippet too
-            for f, dur in phrase: 
+            for f, dur in phrase:
                 play_dur = d(dur) * 0.7
                 rest_dur = d(dur) * 0.3
                 mel += generate_tone(fr(f), play_dur, 0.3, wave_type='sine')
                 mel += b'\x00\x00' * int(44100 * rest_dur)
-                
+
             for f, dur in phrase: harm += generate_tone(fr(f*1.25), d(dur), 0.15, wave_type='triangle')
-        
+
         # Accompaniment loop
         dur_theme = sum(d(dur) for p in theme_a for _, dur in p)
-        
+
         current_dur = 0
         while current_dur < dur_theme:
             for c, dur in prog_a:
                 if current_dur >= dur_theme: break
                 chd += generate_chord([fr(x) for x in c], min(d(dur), dur_theme - current_dur), 0.2, wave_type='triangle')
                 current_dur += d(dur)
-                
+
         current_dur = 0
         while current_dur < dur_theme:
             for f, dur in bass_a:
                 if current_dur >= dur_theme: break
                 bss += generate_tone(fr(f), min(d(dur), dur_theme - current_dur), 0.3, wave_type='sawtooth')
                 current_dur += d(dur)
-        
+
         perc = generate_percussion_pattern([1, 0, 1, 0, 1, 0, 1, 1] * int(dur_theme * 2), dur_theme)
 
         return mix_layers([mel, harm, chd, bss, perc])

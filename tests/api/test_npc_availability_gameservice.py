@@ -50,7 +50,7 @@ class TestGameServiceNPCMethods:
     def test_get_npc_status_returns_dict(self, game_service, mock_player):
         """Test get_npc_status returns properly formatted dict."""
         result = game_service.get_npc_status(mock_player, "kael")
-        
+
         assert isinstance(result, dict)
         assert result["success"] is True
         assert "data" in result
@@ -59,7 +59,7 @@ class TestGameServiceNPCMethods:
     def test_get_npc_status_contains_npc_info(self, game_service, mock_player):
         """Test get_npc_status response contains NPC information."""
         result = game_service.get_npc_status(mock_player, "kael")
-        
+
         data = result["data"]
         assert "npc_id" in data
         assert "name" in data
@@ -70,14 +70,14 @@ class TestGameServiceNPCMethods:
         """Test get_npc_status with different NPC IDs."""
         result1 = game_service.get_npc_status(mock_player, "kael")
         result2 = game_service.get_npc_status(mock_player, "merchant_john")
-        
+
         assert result1["data"]["npc_id"] == "kael"
         assert result2["data"]["npc_id"] == "merchant_john"
 
     def test_get_npcs_at_location_returns_dict(self, game_service, mock_player):
         """Test get_npcs_at_location returns properly formatted dict."""
         result = game_service.get_npcs_at_location(mock_player, "loc_forge")
-        
+
         assert isinstance(result, dict)
         assert result["success"] is True
         assert "data" in result
@@ -85,7 +85,7 @@ class TestGameServiceNPCMethods:
     def test_get_npcs_at_location_data_structure(self, game_service, mock_player):
         """Test get_npcs_at_location data structure."""
         result = game_service.get_npcs_at_location(mock_player, "loc_forge")
-        
+
         data = result["data"]
         assert "location_id" in data
         assert "npcs" in data
@@ -94,7 +94,7 @@ class TestGameServiceNPCMethods:
     def test_check_npc_availability_returns_dict(self, game_service, mock_player):
         """Test check_npc_availability returns properly formatted dict."""
         result = game_service.check_npc_availability(mock_player, "kael")
-        
+
         assert isinstance(result, dict)
         assert result["success"] is True
         assert "data" in result
@@ -102,7 +102,7 @@ class TestGameServiceNPCMethods:
     def test_check_npc_availability_data_structure(self, game_service, mock_player):
         """Test check_npc_availability response structure."""
         result = game_service.check_npc_availability(mock_player, "kael")
-        
+
         data = result["data"]
         assert "npc_id" in data
         assert "available" in data
@@ -115,14 +115,14 @@ class TestGameServiceNPCMethods:
         result = game_service.check_npc_availability(
             mock_player, "kael", reason="quest_dialogue"
         )
-        
+
         assert result["success"] is True
         assert result["data"]["npc_id"] == "kael"
 
     def test_update_npc_location_returns_dict(self, game_service, mock_player):
         """Test update_npc_location returns properly formatted dict."""
         result = game_service.update_npc_location(mock_player, "kael", "loc_tavern")
-        
+
         assert isinstance(result, dict)
         assert result["success"] is True
         assert "data" in result
@@ -130,7 +130,7 @@ class TestGameServiceNPCMethods:
     def test_update_npc_location_data_structure(self, game_service, mock_player):
         """Test update_npc_location response structure."""
         result = game_service.update_npc_location(mock_player, "kael", "loc_tavern")
-        
+
         data = result["data"]
         assert "npc_id" in data
         assert "moved_to" in data
@@ -141,14 +141,14 @@ class TestGameServiceNPCMethods:
         """Test updating NPC location multiple times."""
         result1 = game_service.update_npc_location(mock_player, "kael", "loc_tavern")
         result2 = game_service.update_npc_location(mock_player, "kael", "loc_forest")
-        
+
         assert result1["data"]["moved_to"] == "loc_tavern"
         assert result2["data"]["moved_to"] == "loc_forest"
 
     def test_get_npc_timeline_returns_dict(self, game_service, mock_player):
         """Test get_npc_timeline returns properly formatted dict."""
         result = game_service.get_npc_timeline(mock_player, "kael")
-        
+
         assert isinstance(result, dict)
         assert result["success"] is True
         assert "data" in result
@@ -156,7 +156,7 @@ class TestGameServiceNPCMethods:
     def test_get_npc_timeline_data_structure(self, game_service, mock_player):
         """Test get_npc_timeline response structure."""
         result = game_service.get_npc_timeline(mock_player, "kael")
-        
+
         data = result["data"]
         assert "npc_id" in data
         assert "name" in data
@@ -166,7 +166,7 @@ class TestGameServiceNPCMethods:
     def test_get_npc_timeline_progression(self, game_service, mock_player):
         """Test get_npc_timeline shows location progression."""
         result = game_service.get_npc_timeline(mock_player, "kael")
-        
+
         timeline = result["data"]["timeline"]
         # Each entry should have location and trigger info
         for entry in timeline:
@@ -177,20 +177,20 @@ class TestGameServiceNPCMethods:
         """Test methods work with different player instances."""
         player1 = MagicMock()
         player1.story = {"ch01_complete": "1"}
-        
+
         player2 = MagicMock()
         player2.story = {}
-        
+
         result1 = game_service.get_npc_status(player1, "kael")
         result2 = game_service.get_npc_status(player2, "kael")
-        
+
         assert result1["success"] is True
         assert result2["success"] is True
 
     def test_methods_preserve_npc_id(self, game_service, mock_player):
         """Test that methods preserve the NPC ID in responses."""
         npc_ids = ["kael", "merchant_john", "priestess_lyra", "guard_thomas"]
-        
+
         for npc_id in npc_ids:
             result = game_service.get_npc_status(mock_player, npc_id)
             assert result["data"]["npc_id"] == npc_id
@@ -198,7 +198,7 @@ class TestGameServiceNPCMethods:
     def test_methods_preserve_location_id(self, game_service, mock_player):
         """Test that location methods preserve location ID."""
         location_ids = ["loc_forge", "loc_tavern", "loc_temple", "loc_forest"]
-        
+
         for loc_id in location_ids:
             result = game_service.get_npcs_at_location(mock_player, loc_id)
             assert result["data"]["location_id"] == loc_id
@@ -216,7 +216,7 @@ class TestGameServiceNPCMethods:
             lambda: game_service.update_npc_location(mock_player, "kael", "loc_tavern"),
             lambda: game_service.get_npc_timeline(mock_player, "kael"),
         ]
-        
+
         for method in methods:
             result = method()
             assert "success" in result
@@ -230,14 +230,14 @@ class TestGameServiceIntegration:
         """Test getting status and then checking availability."""
         status_result = game_service.get_npc_status(mock_player, "kael")
         avail_result = game_service.check_npc_availability(mock_player, "kael")
-        
+
         assert status_result["data"]["available"] == avail_result["data"]["available"]
 
     def test_update_location_then_get_at_location(self, game_service, mock_player):
         """Test updating NPC location then querying location."""
         game_service.update_npc_location(mock_player, "kael", "loc_tavern")
         location_result = game_service.get_npcs_at_location(mock_player, "loc_tavern")
-        
+
         assert location_result["success"] is True
         # Location should be queryable
         assert "npcs" in location_result["data"]
@@ -246,6 +246,6 @@ class TestGameServiceIntegration:
         """Test getting timeline then updating location."""
         timeline_result = game_service.get_npc_timeline(mock_player, "kael")
         status_result = game_service.get_npc_status(mock_player, "kael")
-        
+
         assert timeline_result["success"] is True
         assert status_result["success"] is True

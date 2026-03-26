@@ -19,11 +19,12 @@ Routes:
 """
 
 from flask import Blueprint, request, jsonify, current_app
-from functools import wraps
 import logging
 
 # Blueprint definition
-dialogue_context_bp = Blueprint("dialogue_context", __name__, url_prefix="/api")
+dialogue_context_bp = Blueprint(
+    "dialogue_context", __name__, url_prefix="/api"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,10 @@ def get_session_and_player(request_obj):
             None,
             None,
             None,
-            (jsonify({"success": False, "error": "Missing authentication"}), 401),
+            (
+                jsonify({"success": False, "error": "Missing authentication"}),
+                401,
+            ),
         )
 
     session_id = auth_header[7:]
@@ -103,14 +107,19 @@ def start_dialogue():
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             response, status_code = error
             return response, status_code
 
         # Validate request body
         if not request.is_json:
-            return jsonify({"success": False, "error": "Request must be JSON"}), 400
+            return (
+                jsonify({"success": False, "error": "Request must be JSON"}),
+                400,
+            )
 
         data = request.get_json()
 
@@ -153,7 +162,10 @@ def start_dialogue():
 
     except Exception as e:
         logger.error(f"Error starting dialogue: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        return (
+            jsonify({"success": False, "error": "Internal server error"}),
+            500,
+        )
 
 
 @dialogue_context_bp.route("/dialogue/node/<node_id>", methods=["GET"])
@@ -179,7 +191,9 @@ def get_dialogue_node(node_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             response, status_code = error
             return response, status_code
@@ -187,7 +201,12 @@ def get_dialogue_node(node_id):
         # Validate node_id
         node_id = node_id.strip()
         if not node_id:
-            return jsonify({"success": False, "error": "node_id cannot be empty"}), 400
+            return (
+                jsonify(
+                    {"success": False, "error": "node_id cannot be empty"}
+                ),
+                400,
+            )
 
         # Call GameService
         game_service = current_app.game_service
@@ -197,7 +216,10 @@ def get_dialogue_node(node_id):
 
     except Exception as e:
         logger.error(f"Error retrieving dialogue node: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        return (
+            jsonify({"success": False, "error": "Internal server error"}),
+            500,
+        )
 
 
 @dialogue_context_bp.route("/dialogue/select", methods=["POST"])
@@ -230,14 +252,19 @@ def select_dialogue_choice():
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             response, status_code = error
             return response, status_code
 
         # Validate request body
         if not request.is_json:
-            return jsonify({"success": False, "error": "Request must be JSON"}), 400
+            return (
+                jsonify({"success": False, "error": "Request must be JSON"}),
+                400,
+            )
 
         data = request.get_json()
 
@@ -271,7 +298,9 @@ def select_dialogue_choice():
 
         # Call GameService
         game_service = current_app.game_service
-        result = game_service.select_dialogue_choice(player, conversation_id, choice_id)
+        result = game_service.select_dialogue_choice(
+            player, conversation_id, choice_id
+        )
 
         # Save session after modifications
         session_manager.save_session(session.session_id)
@@ -280,7 +309,10 @@ def select_dialogue_choice():
 
     except Exception as e:
         logger.error(f"Error selecting dialogue choice: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        return (
+            jsonify({"success": False, "error": "Internal server error"}),
+            500,
+        )
 
 
 @dialogue_context_bp.route("/npc/<npc_id>/dialogue/history", methods=["GET"])
@@ -314,7 +346,9 @@ def get_conversation_history(npc_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             response, status_code = error
             return response, status_code
@@ -322,7 +356,10 @@ def get_conversation_history(npc_id):
         # Validate npc_id
         npc_id = npc_id.strip()
         if not npc_id:
-            return jsonify({"success": False, "error": "npc_id cannot be empty"}), 400
+            return (
+                jsonify({"success": False, "error": "npc_id cannot be empty"}),
+                400,
+            )
 
         # Get pagination parameters (optional)
         try:
@@ -342,7 +379,10 @@ def get_conversation_history(npc_id):
         except ValueError:
             return (
                 jsonify(
-                    {"success": False, "error": "limit and offset must be integers"}
+                    {
+                        "success": False,
+                        "error": "limit and offset must be integers",
+                    }
                 ),
                 400,
             )
@@ -355,7 +395,10 @@ def get_conversation_history(npc_id):
 
     except Exception as e:
         logger.error(f"Error retrieving conversation history: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        return (
+            jsonify({"success": False, "error": "Internal server error"}),
+            500,
+        )
 
 
 @dialogue_context_bp.route("/npc/<npc_id>/dialogue/available", methods=["GET"])
@@ -392,7 +435,9 @@ def get_available_dialogues(npc_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player(
+            request
+        )
         if error:
             response, status_code = error
             return response, status_code
@@ -400,7 +445,10 @@ def get_available_dialogues(npc_id):
         # Validate npc_id
         npc_id = npc_id.strip()
         if not npc_id:
-            return jsonify({"success": False, "error": "npc_id cannot be empty"}), 400
+            return (
+                jsonify({"success": False, "error": "npc_id cannot be empty"}),
+                400,
+            )
 
         # Call GameService
         game_service = current_app.game_service
@@ -410,4 +458,7 @@ def get_available_dialogues(npc_id):
 
     except Exception as e:
         logger.error(f"Error retrieving available dialogues: {str(e)}")
-        return jsonify({"success": False, "error": "Internal server error"}), 500
+        return (
+            jsonify({"success": False, "error": "Internal server error"}),
+            500,
+        )

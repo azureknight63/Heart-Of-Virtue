@@ -16,7 +16,7 @@ universe.build(player)
 # Check first tile from JSON
 with open('src/resources/maps/dark-grotto.json') as f:
     raw_map = json.load(f)
-    
+
 first_key = "(1, 1)"
 tile_json = raw_map[first_key]
 print(f'From JSON at {first_key}:')

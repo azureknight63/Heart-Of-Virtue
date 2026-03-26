@@ -27,7 +27,11 @@ def validate_numerical_input(prompt, min_value, max_value):
             choice = int(choice)
             if min_value <= choice < max_value:
                 return choice
-        print(colored("You must enter a valid number within the given range.", "red"))
+        print(
+            colored(
+                "You must enter a valid number within the given range.", "red"
+            )
+        )
 
 
 def play():
@@ -72,7 +76,9 @@ _\\|//__( | )______)_/
 
         choice = None
         enabled_options = {
-            menu[option]["Index"]: option for option in menu if menu[option]["Enabled"]
+            menu[option]["Index"]: option
+            for option in menu
+            if menu[option]["Enabled"]
         }
         while choice not in enabled_options:
             for option, data in menu.items():
@@ -174,7 +180,9 @@ _\\|//__( | )______)_/
         mark_health = player.hp
         items.get_all_subtypes()  # creates the 'All' archetypes for each item group; used for states/item effects/etc.
 
-        while player.is_alive() and not player.victory and not player.main_menu:
+        while (
+            player.is_alive() and not player.victory and not player.main_menu
+        ):
             player.refresh_weight()
             refresh_stat_bonuses(player)
             now = time.time()
@@ -276,7 +284,10 @@ _\\|//__( | )______)_/
                     if (
                         not success
                     ):  # Nothing was found matching the arbitrary input, so Jean is mightily confused
-                        cprint("Jean isn't sure exactly what he's trying to do.", "red")
+                        cprint(
+                            "Jean isn't sure exactly what he's trying to do.",
+                            "red",
+                        )
             player.universe.game_tick += 1
             time.sleep(0.5)
 

@@ -403,7 +403,7 @@ class TestSerializerIntegration:
         # Mark equipped items so they don't count as unequipped equippable
         weapon.equipped_state = True
         armor.equipped_state = True
-        
+
         player.equipped["hand"] = weapon
         player.equipped["chest"] = armor
 

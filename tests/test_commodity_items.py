@@ -201,12 +201,12 @@ class TestCrystalsClass:
         # Initially single
         crystals.stack_grammar()
         assert "some crystals" in crystals.announce
-        
+
         # Change to multiple
         crystals.count = 10
         crystals.stack_grammar()
         assert "pile of crystals" in crystals.announce
-        
+
         # Change back to single
         crystals.count = 1
         crystals.stack_grammar()
@@ -288,7 +288,7 @@ class TestCommodityPlayerInteractions:
         crystals2 = Crystals(count=5)
         player.inventory.append(crystals1)
         player.inventory.append(crystals2)
-        
+
         crystal_items = [item for item in player.inventory if isinstance(item, Crystals)]
         assert len(crystal_items) == 2
         total_count = sum(item.count for item in crystal_items)

@@ -196,4 +196,3 @@ def test_ch01_memory_amelia(app, client, authenticated_session):
         event.process(user_input="continue")
         assert event.needs_input is False
         assert event.completed is True
-

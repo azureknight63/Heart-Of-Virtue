@@ -75,14 +75,25 @@ class PlayerDebugMixin:
                         obj, hidden=hidden, hfactor=hfactor, delay=delay
                     )
                 elif obj_type == "item":
-                    self.current_room.spawn_item(obj, hidden=hidden, hfactor=hfactor)
+                    self.current_room.spawn_item(
+                        obj, hidden=hidden, hfactor=hfactor
+                    )
                 elif obj_type == "event":
                     self.current_room.spawn_event(
-                        obj, self, self.current_room, repeat=repeat, params=myparams
+                        obj,
+                        self,
+                        self.current_room,
+                        repeat=repeat,
+                        params=myparams,
                     )
                 elif obj_type == "object":
                     self.current_room.spawn_object(
-                        obj, self, self.current_room, myparams, hidden=hidden, hfactor=0
+                        obj,
+                        self,
+                        self.current_room,
+                        myparams,
+                        hidden=hidden,
+                        hfactor=0,
                     )
         except SyntaxError:
             cprint("Oops, something went wrong. \n\n" + traceback.format_exc())
@@ -99,7 +110,13 @@ class PlayerDebugMixin:
             return
         key, value = params[0], params[1]
         if key not in self.universe.story:
-            print("### ERR IN SETTING VAR; NO ENTRY: " + key + " " + value + " ###")
+            print(
+                "### ERR IN SETTING VAR; NO ENTRY: "
+                + key
+                + " "
+                + value
+                + " ###"
+            )
             return
         self.universe.story[key] = value
         print("### SUCCESS: " + key + " changed to " + value + " ###")

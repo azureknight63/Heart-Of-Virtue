@@ -67,7 +67,8 @@ def display_enemy_status(enemy, display_config):
     name = colored(enemy.name, "red", attrs=["bold"])
     hp_pct = int((enemy.hp / enemy.maxhp) * 100) if enemy.maxhp > 0 else 0
     hp_str = colored(
-        f"HP: {hp_pct}%", "red" if hp_pct < 25 else "yellow" if hp_pct < 50 else "green"
+        f"HP: {hp_pct}%",
+        "red" if hp_pct < 25 else "yellow" if hp_pct < 50 else "green",
     )
     status_parts.append(f"{name} - {hp_str}")
 
@@ -117,7 +118,9 @@ def display_all_enemies(player, display_config=None):
     return "\n".join(lines)
 
 
-def display_damage_modifier_info(attacker, defender, damage_base, display_config=None):
+def display_damage_modifier_info(
+    attacker, defender, damage_base, display_config=None
+):
     """Display damage modifier calculation if configured.
 
     Args:
@@ -139,7 +142,10 @@ def display_damage_modifier_info(attacker, defender, damage_base, display_config
     modifiers = []
 
     # Distance modifier
-    if hasattr(attacker, "combat_proximity") and defender in attacker.combat_proximity:
+    if (
+        hasattr(attacker, "combat_proximity")
+        and defender in attacker.combat_proximity
+    ):
         distance = attacker.combat_proximity[defender]
         if distance > 30:
             modifiers.append("Range (0.8x)")
@@ -147,7 +153,9 @@ def display_damage_modifier_info(attacker, defender, damage_base, display_config
             modifiers.append("Melee (1.2x)")
 
     # Positioning modifier
-    if hasattr(attacker, "combat_position") and hasattr(defender, "combat_position"):
+    if hasattr(attacker, "combat_position") and hasattr(
+        defender, "combat_position"
+    ):
         if attacker.combat_position and defender.combat_position:
             # Simple flanking check
             modifiers.append(
@@ -193,7 +201,9 @@ def display_accuracy_modifier_info(
     # Fatigue-based accuracy
     if hasattr(attacker, "fatigue") and hasattr(attacker, "maxfatigue"):
         fatigue_pct = (
-            attacker.fatigue / attacker.maxfatigue if attacker.maxfatigue > 0 else 1.0
+            attacker.fatigue / attacker.maxfatigue
+            if attacker.maxfatigue > 0
+            else 1.0
         )
         if fatigue_pct < 0.3:
             modifiers.append("Fatigued (-10%)")
@@ -285,7 +295,9 @@ def format_enemy_list_for_targeting(player, display_config=None):
 
         # Add HP
         hp_pct = int((enemy.hp / enemy.maxhp) * 100) if enemy.maxhp > 0 else 0
-        hp_color = "red" if hp_pct < 25 else "yellow" if hp_pct < 50 else "green"
+        hp_color = (
+            "red" if hp_pct < 25 else "yellow" if hp_pct < 50 else "green"
+        )
         enemy_line += f" {colored(f'HP:{hp_pct}%', hp_color)}"
 
         lines.append(enemy_line)

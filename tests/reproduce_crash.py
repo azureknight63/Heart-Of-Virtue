@@ -30,7 +30,7 @@ class TestCombatCrash(unittest.TestCase):
         self.player.known_moves = []
         self.player.combat_list = []
         self.player.combat_list_allies = [self.player]
-        
+
         # Create a real-ish NPC
         self.enemy = NPC("Slime Alpha")
         self.enemy.speed = 5
@@ -38,7 +38,7 @@ class TestCombatCrash(unittest.TestCase):
         self.enemy.maxhp = 20
         self.enemy.known_moves = []
         self.enemy.combat_delay = 0
-        
+
         self.adapter = ApiCombatAdapter(self.player)
 
     def test_crash(self):

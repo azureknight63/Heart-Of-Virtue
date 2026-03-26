@@ -8,10 +8,10 @@ class MockLLMClient:
     def __init__(self):
         self.provider = "ollama"
         self._available = True
-    
+
     def available(self):
         return self._available
-    
+
     def generate_structured(self, system_prompt, user_prompt):
         return {
             "suggestions": [
@@ -43,9 +43,9 @@ def test_get_suggestions_success(strategist):
         "last_move": "None",
         "available_moves": []
     }
-    
+
     suggestions = strategist.get_suggestions(ctx, max_suggestions=1)
-    
+
     assert len(suggestions) == 1
     assert suggestions[0]["move_name"] == "Slash"
     assert suggestions[0]["score"] == 85
@@ -53,7 +53,7 @@ def test_get_suggestions_success(strategist):
 def test_get_suggestions_sorting(strategist):
     ctx = {}
     suggestions = strategist.get_suggestions(ctx, max_suggestions=10)
-    
+
     assert len(suggestions) == 2
     assert suggestions[0]["score"] == 85
     assert suggestions[1]["score"] == 60
@@ -100,9 +100,9 @@ def test_build_user_prompt(strategist):
         "last_move": "Attack",
         "available_moves": [{"name": "Slash"}, {"name": "Dodge"}]
     }
-    
+
     prompt = strategist._build_user_prompt(ctx)
-    
+
     # Prompt now includes gender and uses "Player:" prefix
     assert "Player: Jean (Male Human) [HP: 50/100" in prompt
     assert "Heat: 1.2" in prompt

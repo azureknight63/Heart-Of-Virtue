@@ -136,7 +136,11 @@ class MemoryFlash(Event):
 class Effect(Event):
     def __init__(self, name, player):
         super().__init__(
-            name=name, player=player, tile=player.tile, repeat=False, params=None
+            name=name,
+            player=player,
+            tile=player.tile,
+            repeat=False,
+            params=None,
         )
 
     def pass_conditions_to_process(self):
@@ -147,7 +151,9 @@ class MoveEffect(Effect):  # Generic class for move-based effects.
     def __init__(self, player, name, move, target, trigger, announcement):
         super().__init__(name=name, player=player)
         self.move = move
-        self.target = target  # must be updated at the time the effect is processed!
+        self.target = (
+            target  # must be updated at the time the effect is processed!
+        )
         self.trigger = trigger  # on what stage may the effect occur?
         self.announcement = announcement
 
@@ -227,18 +233,34 @@ class Block(Event):  # blocks exit in tile, blocks all if none are declared
                 self.tile.block_exit.append("north")
             if direction == "south" and "south" not in self.tile.block_exit:
                 self.tile.block_exit.append("south")
-            if direction == "northeast" and "northeast" not in self.tile.block_exit:
+            if (
+                direction == "northeast"
+                and "northeast" not in self.tile.block_exit
+            ):
                 self.tile.block_exit.append("northeast")
-            if direction == "northwest" and "northwest" not in self.tile.block_exit:
+            if (
+                direction == "northwest"
+                and "northwest" not in self.tile.block_exit
+            ):
                 self.tile.block_exit.append("northwest")
-            if direction == "southeast" and "southeast" not in self.tile.block_exit:
+            if (
+                direction == "southeast"
+                and "southeast" not in self.tile.block_exit
+            ):
                 self.tile.block_exit.append("southeast")
-            if direction == "southwest" and "southwest" not in self.tile.block_exit:
+            if (
+                direction == "southwest"
+                and "southwest" not in self.tile.block_exit
+            ):
                 self.tile.block_exit.append("southwest")
 
 
-class MakeKey(Event):  # Spawns a key for the chest with the given alias (as a param).
-    def __init__(self, player, tile, params=None, repeat=False, name="MakeKey"):
+class MakeKey(
+    Event
+):  # Spawns a key for the chest with the given alias (as a param).
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="MakeKey"
+    ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
@@ -379,17 +401,19 @@ class StMichael(Shrine):
         return self.input_options
 
     def process(self, user_input=None):
-        print("This, particularly, is a shrine to Saint Michael the Archangel.")
-        print("There is a small statue depicting St Michael spearing a vicious dragon.")
         print(
-            """An inscription on the shrine reads,
+            "This, particularly, is a shrine to Saint Michael the Archangel."
+        )
+        print(
+            "There is a small statue depicting St Michael spearing a vicious dragon."
+        )
+        print("""An inscription on the shrine reads,
 
         Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
         Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
         qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
 
-        """
-        )
+        """)
         print(
             "Suddenly, Jean has the feeling of intense heat all around him. "
             "He hears a voice echoing inside his head."
@@ -428,7 +452,10 @@ class StMichael(Shrine):
             selection = 0
 
         drop = self.tile.spawn_item(
-            self.available_choices[selection][1], amt=1, hidden=False, hfactor=0
+            self.available_choices[selection][1],
+            amt=1,
+            hidden=False,
+            hfactor=0,
         )
         functions.add_random_enchantments(drop, 1)
         cprint(
@@ -504,7 +531,9 @@ class NPCSpawnerEvent(Event):
             except Exception:
                 pass
         try:
-            self.count = max(1, int(self.count)) if self.count is not None else 1
+            self.count = (
+                max(1, int(self.count)) if self.count is not None else 1
+            )
         except Exception:
             self.count = 1
         self.spawned_npcs: List = []
@@ -517,7 +546,9 @@ class NPCSpawnerEvent(Event):
         try:
             from npc import NPC  # local import avoids circular on module load
 
-            if isinstance(self.npc_cls, type) and issubclass(self.npc_cls, NPC):
+            if isinstance(self.npc_cls, type) and issubclass(
+                self.npc_cls, NPC
+            ):
                 return self.npc_cls.__name__
         except Exception:
             return None
@@ -608,7 +639,12 @@ class PulsingGlandEvent(NPCSpawnerEvent):
 
 class WhisperingStatue(Event):
     def __init__(
-        self, player, tile, params=None, repeat=False, name="The Whispering Statue"
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="The Whispering Statue",
     ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
@@ -666,7 +702,9 @@ class WhisperingStatue(Event):
 
             # Reward
             cprint(
-                f"{self.player.name} found a pouch of Gold!", "green", attrs=["bold"]
+                f"{self.player.name} found a pouch of Gold!",
+                "green",
+                attrs=["bold"],
             )
             self.tile.spawn_item("Gold", amt=500)
 

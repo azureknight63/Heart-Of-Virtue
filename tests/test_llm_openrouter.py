@@ -106,4 +106,3 @@ def test_openrouter_structured_generation(monkeypatch):
     assert obj.get("action") == "investigate_object"
     assert obj.get("description")
     assert obj.get("duration_seconds") == 2
-
