@@ -4,10 +4,21 @@ import LoginPage from './LoginPage';
 import { useAuth } from '../hooks/useApi';
 import { MemoryRouter } from 'react-router-dom';
 
+const mockNavigate = vi.fn();
+
 // Mock useAuth
 vi.mock('../hooks/useApi', () => ({
     useAuth: vi.fn(),
 }));
+
+// Mock useNavigate so we can assert navigate('/menu') is called after login/register
+vi.mock('react-router-dom', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        useNavigate: () => mockNavigate,
+    };
+});
 
 describe('LoginPage', () => {
     const mockLogin = vi.fn();
@@ -19,10 +30,6 @@ describe('LoginPage', () => {
             login: mockLogin,
             register: mockRegister,
         });
-
-        // Mock window.location.href
-        delete window.location;
-        window.location = { href: '' };
     });
 
     const renderLoginPage = () => {
@@ -59,7 +66,7 @@ describe('LoginPage', () => {
 
         await waitFor(() => {
             expect(mockLogin).toHaveBeenCalledWith('testuser', 'password123');
-            expect(window.location.href).toBe('/menu');
+            expect(mockNavigate).toHaveBeenCalledWith('/menu');
         });
     });
 
@@ -93,7 +100,7 @@ describe('LoginPage', () => {
 
         await waitFor(() => {
             expect(mockRegister).toHaveBeenCalledWith('newuser', 'password123456789', 'test@example.com');
-            expect(window.location.href).toBe('/menu');
+            expect(mockNavigate).toHaveBeenCalledWith('/menu');
         });
     });
 });

@@ -1152,13 +1152,16 @@ class ApiCombatAdapter:
             if new_enemies_without_position:
                 try:
                     from src.coordinate_config import CoordinateSystemConfig
-                    total = len(self.player.combat_list_allies) + len(self.player.combat_list)
+                    # Only pass the new (unpositioned) enemies — initialize_combat_positions
+                    # unconditionally overwrites combat_position on every unit it receives,
+                    # so passing the full combat_list would teleport already-placed combatants.
+                    total = len(self.player.combat_list_allies) + len(new_enemies_without_position)
                     coord_config = CoordinateSystemConfig(self.player)
                     grid_w, grid_h = coord_config.get_dynamic_grid_size(total)
                     self.combat_grid_size = (grid_w, grid_h)
                     positions.initialize_combat_positions(
-                        allies=self.player.combat_list_allies,
-                        enemies=self.player.combat_list,
+                        allies=[],
+                        enemies=new_enemies_without_position,
                         scenario_type="standard",
                         grid_width=grid_w,
                         grid_height=grid_h,

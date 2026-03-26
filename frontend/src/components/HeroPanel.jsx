@@ -125,7 +125,7 @@ function HeroPanel({
 
         {/* Hero Heart Image */}
         <img
-          src="/hero-heart.png"
+          src={`${import.meta.env.BASE_URL}hero-heart.png`}
           alt="Hero Heart"
           style={{
             width: '140px',
