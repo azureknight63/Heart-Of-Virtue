@@ -584,12 +584,15 @@ class Ch01PostRumbler3(Event):
     def process(self, user_input=None):
         # Stage 1: Show the choice prompt
         if self._stage == 1:
-            cprint(
-                "\nJean wipes the blood from his lip and steadies his breathing."
-                "\nThe rock-man is still standing — swinging a stone column like it weighs nothing,"
-                "\nsurrounded on three sides."
-                "\nThe hole in the chamber wall is open. Jean could make it in ten seconds flat."
+            narrative = (
+                "Jean wipes the blood from his lip and steadies his breathing.\n"
+                "The rock-man is still standing — swinging a stone column like it weighs nothing,\n"
+                "surrounded on three sides.\n"
+                "The hole in the chamber wall is open. Jean could make it in ten seconds flat."
             )
+            cprint("\n" + narrative)
+            # Build description for API clients: prepend narrative to the prompt text set in __init__
+            self.description = narrative + "\n\n" + self.description
             self.needs_input = True
             self._stage = 2
             return

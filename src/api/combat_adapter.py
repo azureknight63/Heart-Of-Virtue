@@ -127,21 +127,21 @@ class ApiCombatAdapter:
         # Track async suggestion loading state
         self.player.suggestions_loading = False
         self._suggestion_thread = None
-        self._suggestion_generation = (
-            0  # Generation counter for race condition prevention
-        )
-        self._suggestion_lock = (
-            threading.Lock()
-        )  # Guards generation counter and result writes
+        self._suggestion_generation = 0  # Generation counter for race condition prevention
+        self._suggestion_lock = threading.Lock()  # Guards generation counter and result writes
 
-        # Suppress terminal animations in API mode
-        try:
-            import src.animations as animations
-
-            animations.set_api_mode(True)
-        except Exception:
-            pass  # Fail silently if animations module isn't available
-
+        # Suppress terminal animations in API mode.
+        # Must set the flag on both possible module identities: moves.py imports
+        # the bare 'animations' module, while this file lives under 'src.animations'.
+        # They are different sys.modules entries so we set both.
+        for _anim_name in ("animations", "src.animations"):
+            try:
+                import importlib
+                import sys as _sys
+                _anim_mod = _sys.modules.get(_anim_name) or importlib.import_module(_anim_name)
+                _anim_mod.set_api_mode(True)
+            except Exception:
+                pass
     @property
     def awaiting_input(self):
         return self.player.combat_adapter_state.get("awaiting_input", False)
@@ -516,7 +516,7 @@ class ApiCombatAdapter:
         if not selected_move.viable():
             return {"error": "Move is not currently available"}
 
-        if self.player.fatigue < selected_move.fatigue_cost:
+        if selected_move.fatigue_cost > 0 and self.player.fatigue < selected_move.fatigue_cost:
             return {"error": "Not enough fatigue"}
 
         # If move is targeted, find target
@@ -908,7 +908,22 @@ class ApiCombatAdapter:
 
     def _execute_move(self, move) -> Dict[str, Any]:
         """Execute a move and process the combat beat(s)."""
+        try:
+            return self._execute_move_inner(move)
+        except Exception as e:
+            logger.exception("Unhandled exception in _execute_move for move '%s'", getattr(move, 'name', '?'))
+            # Reset to a consistent baseline so subsequent moves are not blocked
+            self.input_type = "move_selection"
+            self.pending_move_index = None
+            self.awaiting_input = True
+            try:
+                self.available_options = self._get_available_moves()
+            except Exception:
+                self.available_options = []
+            return {"error": f"Move execution failed: {e}"}
 
+    def _execute_move_inner(self, move) -> Dict[str, Any]:
+        """Inner move execution — called only via _execute_move which handles state recovery."""
         # Reset beat state index for this move execution
         self.current_beat_state_index = 0
 
@@ -1098,7 +1113,7 @@ class ApiCombatAdapter:
                 }
             except Exception:
                 self.player.combat_end_summary = {
-                    "id": "defeat",
+                    "id": str(uuid.uuid4()),
                     "status": "defeat",
                     "message": "You have been defeated.",
                     "game_over": True,
@@ -1128,6 +1143,34 @@ class ApiCombatAdapter:
                     self.player.combat_adapter_state["events_triggered"] = (
                         existing + new_events
                     )
+
+            # After event callbacks run, any newly-spawned enemies that were added via
+            # combat_engage() won't have a combat_position (they only got a legacy proximity
+            # entry).  Initialize positions for them now so _synchronize_distances() won't
+            # drop them from Jean's proximity dict on the next beat.
+            new_enemies_without_position = [
+                e for e in self.player.combat_list
+                if not hasattr(e, 'combat_position') or e.combat_position is None
+            ]
+            if new_enemies_without_position:
+                try:
+                    from src.coordinate_config import CoordinateSystemConfig
+                    # Only pass the new (unpositioned) enemies — initialize_combat_positions
+                    # unconditionally overwrites combat_position on every unit it receives,
+                    # so passing the full combat_list would teleport already-placed combatants.
+                    total = len(self.player.combat_list_allies) + len(new_enemies_without_position)
+                    coord_config = CoordinateSystemConfig(self.player)
+                    grid_w, grid_h = coord_config.get_dynamic_grid_size(total)
+                    self.combat_grid_size = (grid_w, grid_h)
+                    positions.initialize_combat_positions(
+                        allies=[],
+                        enemies=new_enemies_without_position,
+                        scenario_type="standard",
+                        grid_width=grid_w,
+                        grid_height=grid_h,
+                    )
+                except Exception as e:
+                    logger.warning("Position init for reinforcements failed: %s", e)
 
         # Check if events triggered (BEFORE calling get_combat_state which consumes them)
         event_just_triggered = (
@@ -1365,22 +1408,22 @@ class ApiCombatAdapter:
             from flask import current_app
 
             flask_app = current_app._get_current_object()
-            logger.info(
-                f"DEBUG: Flask app context captured for suggestion thread (App: {flask_app})"
+            logger.debug(
+                f"Flask app context captured for suggestion thread (App: {flask_app})"
             )
         except Exception as e:
-            logger.warning(f"DEBUG: Failed to capture flask app context: {e}")
+            logger.warning(f"Failed to capture flask app context: {e}")
             flask_app = None
 
         # Create and start a new thread for fetching suggestions
         def fetch_suggestions_worker():
-            logger.info(
-                f"DEBUG: Thread fetch_suggestions_worker started (Gen: {current_gen})"
+            logger.debug(
+                f"Suggestion worker started (Gen: {current_gen})"
             )
 
             def run_with_context():
-                logger.info(
-                    f"DEBUG: Async suggestion fetch started (Gen: {current_gen})"
+                logger.debug(
+                    f"Suggestion fetch started (Gen: {current_gen})"
                 )
                 try:
                     # Calculate allowed suggestions count
@@ -1395,8 +1438,8 @@ class ApiCombatAdapter:
                     if not hasattr(self.player, "combat_log"):
                         self.player.combat_log = []
 
-                    logger.info(
-                        f"DEBUG: Preparing context for strategist with {len(self.player.combat_list)} enemies and {len(self.available_options)} available moves."
+                    logger.debug(
+                        f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(self.available_options)} available moves"
                     )
                     # Gather context
                     ctx = {
@@ -1420,7 +1463,7 @@ class ApiCombatAdapter:
                     }
 
                     logger.debug(
-                        f"DEBUG: Combat context keys: {list(ctx.keys())}"
+                        f"Combat context keys: {list(ctx.keys())}"
                     )
 
                     # Fetch from strategist (this is the slow part)
@@ -1446,8 +1489,8 @@ class ApiCombatAdapter:
                     if is_current:
                         self.player.suggested_moves = suggestions
                         self.player.suggestions_loading = False
-                        logger.info(
-                            f"DEBUG: Async suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)"
+                        logger.debug(
+                            f"Suggestion fetch complete (Gen: {current_gen}, {len(suggestions)} suggestions)"
                         )
 
                         # Emit socket event to notify frontend that suggestions are ready
@@ -1456,8 +1499,8 @@ class ApiCombatAdapter:
                                 if flask_app and hasattr(
                                     flask_app, "socketio"
                                 ):
-                                    logger.info(
-                                        f"DEBUG: Emitting combat:suggestions_ready to room combat_{self.session_id} with {len(suggestions)} suggestions"
+                                    logger.debug(
+                                        f"Emitting combat:suggestions_ready to room combat_{self.session_id} ({len(suggestions)} suggestions)"
                                     )
                                     flask_app.socketio.emit(
                                         "combat:suggestions_ready",
@@ -1466,7 +1509,7 @@ class ApiCombatAdapter:
                                     )
                                 else:
                                     logger.warning(
-                                        f"DEBUG: Cannot emit suggestions - flask_app is {flask_app} or socketio missing"
+                                        f"Cannot emit suggestions - flask_app is {flask_app} or socketio missing"
                                     )
                             except Exception as e:
                                 logger.error(
@@ -1474,7 +1517,7 @@ class ApiCombatAdapter:
                                 )
                         else:
                             logger.warning(
-                                "DEBUG: Cannot emit suggestions - session_id is missing"
+                                "Cannot emit suggestions - session_id is missing"
                             )
 
                 except Exception as e:

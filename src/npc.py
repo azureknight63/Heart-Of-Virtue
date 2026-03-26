@@ -163,18 +163,32 @@ class NPC(Combatant):
             for _ in range(weight):
                 weighted_moves.append(move)
 
-        #  add additional rest moves if fatigue is low to make it a more likely choice
-        if (self.fatigue / self.maxfatigue) < 0.25:
-            for i in range(0, 5):
-                weighted_moves.append(moves.NpcRest(self))
-
         if not weighted_moves:
             # Fallback if no moves generated
             return
 
+        # If no offensive move is both affordable and viable, rest to recover fatigue.
+        # This prevents the NPC from idling forever when the preferred attack costs more
+        # fatigue than is currently available (e.g. after 2+ attacks drain the pool).
+        # Use available_moves (deduplicated) rather than weighted_moves to avoid calling
+        # viable() multiple times on the same object due to weight expansion.
+        # Use getattr in case a move was created via __new__ without calling Move.__init__.
+        can_attack = any(
+            getattr(m, 'category', '') == "Offensive" and m.fatigue_cost <= self.fatigue and m.viable()
+            for m in available_moves
+        )
+        if not can_attack and self.fatigue < self.maxfatigue:
+            # Only force-rest when advancing is not an option.  If a viable Advance move
+            # exists the NPC should close distance rather than stand still and recover.
+            can_advance = any(getattr(m, 'name', '') == 'Advance' for m in available_moves)
+            if not can_advance:
+                self.current_move = moves.NpcRest(self)
+                return
+
         num_choices = len(weighted_moves) - 1
         max_attempts = 20  # Prevent infinite loops
         attempts = 0
+        choice = 0
 
         while self.current_move is None and attempts < max_attempts:
             attempts += 1
@@ -184,43 +198,31 @@ class NPC(Combatant):
             ) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
 
-                # Log NPC decision if debug tracing is enabled
-                if hasattr(self, "player_ref") and self.player_ref:
-                    player = self.player_ref
-                    if (
-                        hasattr(player, "combat_debug_manager")
-                        and player.combat_debug_manager
-                    ):
-                        if (
-                            player.combat_debug_manager.should_debug_ai_decisions()
-                        ):
-                            # Gather debug info
-                            flank_bonus = 0
-                            retreat_prio = 0
-                            if hasattr(self, "ai_config") and self.ai_config:
-                                flank_bonus = (
-                                    self.ai_config.get_weighted_move_bonus(
-                                        self, self.current_move.name
-                                    )
-                                )
-                                retreat_prio = (
-                                    self.ai_config.calculate_retreat_priority(
-                                        self, []
-                                    )
-                                )
+        # Hard fallback: if all 20 random attempts failed, rest rather than doing nothing.
+        if self.current_move is None:
+            self.current_move = moves.NpcRest(self)
+            return
 
-                            player.combat_debug_manager.display_ai_debug_info(
-                                self,
-                                f"Selected {self.current_move.name}",
-                                {
-                                    "fatigue_cost": self.current_move.fatigue_cost,
-                                    "original_weight": weighted_moves[
-                                        choice
-                                    ].weight,
-                                    "ai_bonus": flank_bonus,
-                                    "retreat_priority": retreat_prio,
-                                },
-                            )
+        # Log NPC decision if debug tracing is enabled
+        if hasattr(self, "player_ref") and self.player_ref:
+            player = self.player_ref
+            if hasattr(player, "combat_debug_manager") and player.combat_debug_manager:
+                if player.combat_debug_manager.should_debug_ai_decisions():
+                    flank_bonus = 0
+                    retreat_prio = 0
+                    if hasattr(self, "ai_config") and self.ai_config:
+                        flank_bonus = self.ai_config.get_weighted_move_bonus(self, self.current_move.name)
+                        retreat_prio = self.ai_config.calculate_retreat_priority(self, [])
+                    player.combat_debug_manager.display_ai_debug_info(
+                        self,
+                        f"Selected {self.current_move.name}",
+                        {
+                            "fatigue_cost": self.current_move.fatigue_cost,
+                            "original_weight": weighted_moves[choice].weight,
+                            "ai_bonus": flank_bonus,
+                            "retreat_priority": retreat_prio,
+                        },
+                    )
 
     def add_move(self, move, weight=1):
         """Adds a move to the NPC's known move list. Weight is the number of times to add."""

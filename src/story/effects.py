@@ -103,6 +103,14 @@ class MemoryFlash(Event):
                 for line in self.aftermath_text:
                     cprint(line, "cyan")
 
+            # Build description for API clients from the narrative text
+            parts = ["For a moment, there is only silence...", ""]
+            parts.extend(line for line, _pause in self.memory_lines)
+            if self.aftermath_text:
+                parts.append("")
+                parts.extend(self.aftermath_text)
+            self.description = "\n".join(parts)
+
             # Signal requirement for input
             self.needs_input = True
             self.input_type = "choice"
@@ -543,6 +551,12 @@ class NPCSpawnerEvent(Event):
             return None
         if isinstance(self.npc_cls, str):
             return self.npc_cls
+        # Handle deserialized {"__class_type__": "npc:ClassName"} dict format from map JSON
+        if isinstance(self.npc_cls, dict):
+            class_type = self.npc_cls.get("__class_type__", "")
+            if ":" in class_type:
+                return class_type.split(":", 1)[1].strip()
+            return class_type.strip() or None
         try:
             from npc import NPC  # local import avoids circular on module load
 
