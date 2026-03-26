@@ -197,6 +197,14 @@ Heart of Virtue uses **terse, sensory, slightly archaic** language:
   - "Thin veins of damp quartz glint then vanish in the surrounding black."
   - "The air tastes of stone dust and old water."
 
+**Descriptions are permanent.** Tile descriptions persist after NPCs are killed and items are picked up. Never write:
+- Present-tense NPC behaviour: ~~"The bats are aware of Jean"~~, ~~"Gorran places his hand on the crystal"~~, ~~"The Rumblers move through the water"~~
+- Direct item references: ~~"The supplies left in this passage"~~
+
+Instead, describe **durable environmental evidence** that remains true regardless of entity state:
+- Staining, claw marks, gouges, worn stone, old fire rings, smells, structural changes
+- Creature *signs* rather than creature *presence*: "The floor is pale with overlapping stains" not "Thousands of bats cluster overhead"
+
 ### Gameplay Realism
 - Exits must form a connected graph (no orphaned tiles unless intentional dead-end)
 - Block exits should have clear, story-driven unlock conditions
@@ -234,6 +242,7 @@ Before finalizing, verify:
 - [ ] ASCII diagrams readable and structurally accurate
 - [ ] Prose is evocative and matches Heart of Virtue's voice
 - [ ] Rewards meaningful and thematically tied to map's purpose
+- [ ] No description references ephemeral NPC behaviour or item presence (descriptions are permanent)
 
 **For Upgrades**:
 - [ ] Current state accurately described
@@ -243,6 +252,7 @@ Before finalizing, verify:
 - [ ] Dependencies flagged where relevant
 - [ ] Tone is constructive (note strengths alongside gaps)
 - [ ] Suggestions are actionable (not vague)
+- [ ] Existing descriptions audited for ephemeral NPC/item references (flag any found as High Priority fixes)
 
 ---
 

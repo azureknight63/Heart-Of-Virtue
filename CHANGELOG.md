@@ -2,6 +2,22 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.2.0] - 2026-03-26
+
+### Fixed
+- **Duplicate Gorran NPC bug** — removed `NPCSpawnerEvent` from tile (2,1) in Verdette Caverns. `recall_friends()` already moves the ally Gorran there on every game loop tick before `evaluate_events()` runs; the spawner was creating a second non-ally Gorran instance that would corrupt the combat roster.
+- **Tile description voice** — removed a Jean-POV sentence from the (3,6) ceiling-collapse description and reworded the (1,4) cross-carving description to comply with the "descriptions are permanent" principle.
+
+### Changed
+- **Gorran traversal events escalate toward the Lurker** — the three Chapter 1 Gorran events now build a genuine arc:
+  - `(4,3)` Caution Junction: subtle — Gorran slows, reads the violence-marked floor, raises a hand briefly
+  - `(5,6)` Crystal Markings: building — his touch lingers on the Golemite crystal; when he moves on, his gaze stays ahead
+  - `(7,6)` Dark Chamber: pronounced — full stop, deliberate stillness, a firm stay signal before the Lurker encounter
+
+### Tests
+- Added `tests/test_ch01_gorran_traversal_events.py` — 14 unit tests covering instantiation, immediate fire, output line count, and minimum sleep duration for all three events
+- Added `tests/test_verdette_caverns_map.py` — 4 structural regression tests confirming the (2,1) spawner is absent and all three traversal events are correctly placed
+
 ## [0.0.1.0] - 2026-03-26
 
 ### Added

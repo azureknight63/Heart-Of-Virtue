@@ -61,6 +61,7 @@ focus: "deepen lore integration and add secrets"
 - **Progressive complexity**: Early zones are tight; later zones layer mechanics
 - **Secrets reward curiosity**: At least one genuinely discoverable secret
 - **Narrative beats embedded**: Story moments anchor to tiles, not cutscenes
+- **Descriptions are permanent**: Tile descriptions persist after NPCs are killed and items are picked up. Never write present-tense NPC behaviour ("The bats are aware of Jean", "Gorran places his hand on the crystal") or direct item references ("The supplies left here") into a description. Use durable environmental evidence instead — staining, claw marks, smells, worn stone, old fire rings — things that remain true regardless of entity state.
 
 ## Quality Standards
 
