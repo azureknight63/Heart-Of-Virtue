@@ -84,6 +84,26 @@ body {
   background: linear-gradient(90deg, #ff6600 0%, #ff8844 100%);
 }
 
+/* Beta-mode feedback button glow — set VITE_BETA_MODE=true to activate */
+@keyframes feedback-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 4px #00FFFF,
+      0 0 10px #00FFFF,
+      0 0 18px #00FFFF66;
+  }
+  50% {
+    box-shadow:
+      0 0 8px #00FFFF,
+      0 0 20px #00FFFF,
+      0 0 32px #00FFFFFFAA;
+  }
+}
+
+.beta-feedback-glow {
+  animation: feedback-glow 1.6s ease-in-out infinite;
+}
+
 /* Animations */
 @keyframes pulse-glow {
 

@@ -172,6 +172,7 @@ frontend/
     │   ├── BattlefieldGrid.jsx   # 10x10 combat grid
     │   ├── CombatLog.jsx         # Combat message log
     │   ├── WorldMap.jsx          # ASCII map view
+    │   ├── FeedbackDialog.jsx    # In-game feedback form (→ GitHub Issues)
     │   └── LoadingScreen.jsx     # Loading state
     │
     ├── api/                      # API client
