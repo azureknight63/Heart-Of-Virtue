@@ -480,7 +480,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               padding: '4px 10px',
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
-              border: BETA_MODE ? '1px solid #FFD700' : `1px solid ${colors.text.inverse}`,
+              border: BETA_MODE ? '1px solid #00FFFF' : `1px solid ${colors.text.inverse}`,
               borderRadius: '4px',
               cursor: 'pointer',
               fontSize: '12px',

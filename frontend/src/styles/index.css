@@ -88,15 +88,15 @@ body {
 @keyframes feedback-glow {
   0%, 100% {
     box-shadow:
-      0 0 4px #FFD700,
-      0 0 10px #FFD700,
-      0 0 18px #FFD70066;
+      0 0 4px #00FFFF,
+      0 0 10px #00FFFF,
+      0 0 18px #00FFFF66;
   }
   50% {
     box-shadow:
-      0 0 8px #FFFF00,
-      0 0 20px #FFFF00,
-      0 0 32px #FFD700AA;
+      0 0 8px #00FFFF,
+      0 0 20px #00FFFF,
+      0 0 32px #00FFFFFFAA;
   }
 }
 
