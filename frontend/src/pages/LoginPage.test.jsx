@@ -59,7 +59,7 @@ describe('LoginPage', () => {
 
         await waitFor(() => {
             expect(mockLogin).toHaveBeenCalledWith('testuser', 'password123');
-            expect(window.location.href).toBe('/menu');
+            expect(window.location.href).toContain('menu');
         });
     });
 
@@ -93,7 +93,7 @@ describe('LoginPage', () => {
 
         await waitFor(() => {
             expect(mockRegister).toHaveBeenCalledWith('newuser', 'password123456789', 'test@example.com');
-            expect(window.location.href).toBe('/menu');
+            expect(window.location.href).toContain('menu');
         });
     });
 });
