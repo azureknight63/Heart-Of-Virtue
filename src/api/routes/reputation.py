@@ -51,9 +51,7 @@ def get_session_and_player(
             None,
             None,
             None,
-            jsonify(
-                {"success": False, "error": "Player not found for session"}
-            ),
+            jsonify({"success": False, "error": "Player not found for session"}),
             404,
         )
 
@@ -67,8 +65,8 @@ def get_player_reputation():
     Requires: Bearer token in Authorization header
     Returns: All reputation data
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -87,8 +85,8 @@ def get_npc_relationship(npc_id: str):
     Requires: Bearer token in Authorization header
     Returns: Relationship data including reputation, attitude, and flags
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -123,8 +121,8 @@ def update_npc_relationship(npc_id: str):
     Requires: Bearer token in Authorization header
     Returns: Reputation change details
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -140,9 +138,7 @@ def update_npc_relationship(npc_id: str):
     # Validate amount
     if "amount" not in data:
         return (
-            jsonify(
-                {"success": False, "error": "Missing 'amount' in request"}
-            ),
+            jsonify({"success": False, "error": "Missing 'amount' in request"}),
             400,
         )
 
@@ -173,9 +169,7 @@ def update_npc_relationship(npc_id: str):
         )
 
     # Update reputation
-    result = current_app.game_service.update_reputation(
-        player, npc_id, amount, reason
-    )
+    result = current_app.game_service.update_reputation(player, npc_id, amount, reason)
 
     # Save session
     session_manager.save_session(session.session_id)
@@ -202,8 +196,8 @@ def set_relationship_flag(npc_id: str, flag_name: str):
     Requires: Bearer token in Authorization header
     Returns: Flag update result
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -261,8 +255,8 @@ def check_dialogue_available(npc_id: str, dialogue_node: str):
     Requires: Bearer token in Authorization header
     Returns: Availability status and lock reason if applicable
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -297,8 +291,8 @@ def check_quest_available(npc_id: str, quest_type: str):
     Requires: Bearer token in Authorization header
     Returns: Availability status and lock reason if applicable
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -315,8 +309,6 @@ def check_quest_available(npc_id: str, quest_type: str):
             400,
         )
 
-    result = current_app.game_service.check_quest_available(
-        player, npc_id, quest_type
-    )
+    result = current_app.game_service.check_quest_available(player, npc_id, quest_type)
 
     return jsonify({"success": True, "data": result}), 200

@@ -16,9 +16,7 @@ class PlayerWorldMixin:
         """
         # Defensive: guard if universe/maps not present
         if not self.universe or not hasattr(self.universe, "maps"):
-            cprint(
-                "Universe not initialized; cannot refresh merchants.", "red"
-            )
+            cprint("Universe not initialized; cannot refresh merchants.", "red")
             return
 
         target_filter = phrase.lower().strip() if phrase else ""
@@ -34,16 +32,12 @@ class PlayerWorldMixin:
                 mro = getattr(cls, "mro", None)
                 if not callable(mro):
                     return False
-                return any(
-                    getattr(c, "__name__", "") == "Merchant" for c in cls.mro()
-                )
+                return any(getattr(c, "__name__", "") == "Merchant" for c in cls.mro())
             except Exception:
                 return False
 
         merchants = []
-        for game_map in getattr(
-            self.universe, "maps", []
-        ):  # each map is a dict
+        for game_map in getattr(self.universe, "maps", []):  # each map is a dict
             if not isinstance(game_map, dict):
                 continue
             for coord, tile in game_map.items():
@@ -78,9 +72,7 @@ class PlayerWorldMixin:
         for m in merchants:
             try:
                 # If vendor needs shop initialization
-                if getattr(m, "shop", None) is None and hasattr(
-                    m, "initialize_shop"
-                ):
+                if getattr(m, "shop", None) is None and hasattr(m, "initialize_shop"):
                     try:
                         m.initialize_shop()
                     except Exception:
@@ -92,9 +84,7 @@ class PlayerWorldMixin:
                         update_fn()
                         success += 1
                     except Exception as e:
-                        failures.append(
-                            (getattr(m, "name", "<unknown>"), str(e))
-                        )
+                        failures.append((getattr(m, "name", "<unknown>"), str(e)))
                 else:
                     failures.append(
                         (

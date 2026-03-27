@@ -3,7 +3,7 @@ Combat states to be used within combat module. May also spill over to the standa
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
 
-from neotermcolor import colored, cprint
+from neotermcolor import cprint
 import random
 import functions
 
@@ -37,14 +37,10 @@ class State:  # master class for all states
         self.steps_max = int(steps_max)  # world steps
         self.steps_left = int(self.steps_max)
         self.apply_announce = apply_announce
-        self.compounding = (
-            compounding  # something happens when this state is reapplied
-        )
+        self.compounding = compounding  # something happens when this state is reapplied
         self.persistent = persistent
 
-        self.target = (
-            target  # can be the same as the user in abilities with no targets
-        )
+        self.target = target  # can be the same as the user in abilities with no targets
         self.source = source
         self.combat = combat
         self.world = world
@@ -98,9 +94,7 @@ class Dodging(State):
     def __init__(
         self, target
     ):  # increases the target's dodging ability for a short duration
-        super().__init__(
-            name="Dodging", target=target, beats_max=7, hidden=True
-        )
+        super().__init__(name="Dodging", target=target, beats_max=7, hidden=True)
         f = 50 + int(target.finesse / 3)
         self.add_fin = f
 
@@ -109,9 +103,7 @@ class Parrying(State):
     def __init__(
         self, target
     ):  # parries the next attack, giving the aggressor a large recoil duration
-        super().__init__(
-            name="Parrying", target=target, beats_max=7, hidden=True
-        )
+        super().__init__(name="Parrying", target=target, beats_max=7, hidden=True)
 
 
 class Poisoned(State):
@@ -143,8 +135,7 @@ class Poisoned(State):
         self.tick += 1
         if self.tick % self.execute_on == 0:
             damage = int(
-                target.maxhp
-                * (random.uniform(0.015, 0.035) + (self.tick * 0.003))
+                target.maxhp * (random.uniform(0.015, 0.035) + (self.tick * 0.003))
             )
             cprint(
                 "{} shudders in pain from being poisoned, suffering {} damage!".format(
@@ -156,9 +147,7 @@ class Poisoned(State):
 
     def compound(self, target):
         #  Increases the strength and duration of the poison by 25% every time it's inflicted
-        cprint(
-            "{}'s poisoning has gotten worse!".format(target.name), "magenta"
-        )
+        cprint("{}'s poisoning has gotten worse!".format(target.name), "magenta")
         self.tick *= 1.25
         self.tick = int(self.tick)
         self.beats_max *= 1.1
@@ -203,8 +192,7 @@ class Enflamed(
         self.tick += 1
         if self.tick % self.execute_on == 0:
             damage = int(
-                target.maxhp
-                * (random.uniform(0.015, 0.035) + (self.tick * 0.003))
+                target.maxhp * (random.uniform(0.015, 0.035) + (self.tick * 0.003))
             )
             cprint(
                 "{} writhes in the flames, suffering {} damage!".format(
@@ -216,9 +204,7 @@ class Enflamed(
 
     def compound(self, target):
         #  Increases the strength and duration of the flames by 25% every time it's inflicted
-        cprint(
-            "{}'s flames have grown fiercer!".format(target.name), "magenta"
-        )
+        cprint("{}'s flames have grown fiercer!".format(target.name), "magenta")
         self.tick *= 1.25
         self.tick = int(self.tick)
         self.beats_max *= 1.1
@@ -285,15 +271,11 @@ class Disoriented(State):
             persistent=False,
         )
         self.sub_finesse = int(target.finesse * 0.3)  # Reduce finesse by 30%
-        self.sub_protection = int(
-            target.protection * 0.25
-        )  # Reduce protection by 25%
+        self.sub_protection = int(target.protection * 0.25)  # Reduce protection by 25%
 
     def on_application(self, target):
         cprint(
-            "{} is disoriented and struggling to maintain balance!".format(
-                target.name
-            ),
+            "{} is disoriented and struggling to maintain balance!".format(target.name),
             "yellow",
         )
         # Apply stat reductions

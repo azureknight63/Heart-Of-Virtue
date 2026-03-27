@@ -15,9 +15,6 @@ External callers continue to use ``from player import Player`` or
 ``from player import Player, generate_output_grid`` unchanged.
 """
 
-import random
-import time
-
 import items  # type: ignore
 import functions  # type: ignore
 import moves  # type: ignore
@@ -92,19 +89,17 @@ class Player(
         self.maxfatigue_base = 150
         self.strength = 10  # attack damage with strength-based weapons, parry rating, armor efficacy, influence ability
         self.strength_base = 10
-        self.finesse = 10  # attack damage with finesse-based weapons, parry and dodge rating
-        self.finesse_base = 10
-        self.speed = (
-            10  # dodge rating, combat action frequency, combat cooldown
+        self.finesse = (
+            10  # attack damage with finesse-based weapons, parry and dodge rating
         )
+        self.finesse_base = 10
+        self.speed = 10  # dodge rating, combat action frequency, combat cooldown
         self.speed_base = 10
         self.endurance = 10  # combat cooldown, fatigue rate
         self.endurance_base = 10
         self.charisma = 10  # influence ability, yielding in combat
         self.charisma_base = 10
-        self.intelligence = (
-            10  # sacred arts, influence ability, parry and dodge rating
-        )
+        self.intelligence = 10  # sacred arts, influence ability, parry and dodge rating
         self.intelligence_base = 10
         self.faith = 10  # sacred arts, influence ability, dodge rate
         self.faith_base = 10
@@ -121,9 +116,7 @@ class Player(
             "Unarmed": 0,
         }  # place to pool all exp gained from a
         # single combat before distribution
-        self.exp = (
-            0  # exp to be gained from doing stuff rather than killing things
-        )
+        self.exp = 0  # exp to be gained from doing stuff rather than killing things
         self.skill_exp = {
             "Basic": 0,
             "Unarmed": 0,
@@ -195,15 +188,11 @@ class Player(
         self.use_colour = True  # whether to use colored terminal output
         self.enable_animations = True  # whether to enable visual animations
         self.animation_speed = 1.0  # animation speed multiplier
-        self.game_config = (
-            None  # full GameConfig object for access to all settings
-        )
+        self.game_config = None  # full GameConfig object for access to all settings
         self.preferences = {
             "arrow": "Wooden Arrow"
         }  # player defined preferences will live here; for example, "arrow" = "Wooden Arrow"
-        self.explored_tiles = (
-            {}
-        )  # key: "x,y", value: {items, npcs, objects, exits}
+        self.explored_tiles = {}  # key: "x,y", value: {items, npcs, objects, exits}
         self.combat_idle_msg = [
             "Jean breathes heavily. ",
             "Jean swallows forcefully. ",
@@ -291,11 +280,7 @@ maintenant et à l'heure de notre mort. Amen.""",
         Args:
             exp_value: The experience value to set for each skill category
         """
-        if (
-            exp_value > 0
-            and hasattr(self, "skilltree")
-            and hasattr(self, "skill_exp")
-        ):
+        if exp_value > 0 and hasattr(self, "skilltree") and hasattr(self, "skill_exp"):
             for category in self.skilltree.subtypes.keys():
                 self.skill_exp[category] = exp_value
 

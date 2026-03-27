@@ -4,7 +4,6 @@ Provides structured logging for combat moves, distance calculations, angle calcu
 NPC decisions, and performance monitoring. Respects config flags from game_config.
 """
 
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -51,9 +50,7 @@ class GameLogger:
             # Try to create/open log file
             with open(log_path, "a") as f:
                 f.write(f"\n{'='*80}\n")
-                f.write(
-                    f"Session started: {self.session_start_time.isoformat()}\n"
-                )
+                f.write(f"Session started: {self.session_start_time.isoformat()}\n")
                 f.write(f"{'='*80}\n")
         except Exception as e:
             print(
@@ -115,9 +112,7 @@ class GameLogger:
             with open(self._get_log_file_path(), "a") as f:
                 f.write(f"[{self._format_timestamp()}] {message}\n")
         except Exception as e:
-            print(
-                f"[Warning] Could not write to log file: {e}", file=sys.stderr
-            )
+            print(f"[Warning] Could not write to log file: {e}", file=sys.stderr)
 
     def log_combat_move(
         self,
@@ -265,9 +260,7 @@ class GameLogger:
 
         self._write_log(message)
 
-    def log_session_end(
-        self, victory: bool, duration_seconds: float = None
-    ) -> None:
+    def log_session_end(self, victory: bool, duration_seconds: float = None) -> None:
         """Log end of combat session.
 
         Args:
@@ -299,14 +292,14 @@ class GameLogger:
 
             total_lines = len(lines)
             session_lines = [
-                l
-                for l in lines
-                if "Session started" in l or "SESSION_END" in l
+                line
+                for line in lines
+                if "Session started" in line or "SESSION_END" in line
             ]
-            move_lines = [l for l in lines if "MOVE:" in l]
-            decision_lines = [l for l in lines if "NPC:" in l]
+            move_lines = [line for line in lines if "MOVE:" in line]
+            decision_lines = [line for line in lines if "NPC:" in line]
 
-            summary = f"Log Summary:\n"
+            summary = "Log Summary:\n"
             summary += f"  Total entries: {total_lines}\n"
             summary += f"  Moves logged: {len(move_lines)}\n"
             summary += f"  NPC decisions logged: {len(decision_lines)}\n"

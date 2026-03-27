@@ -33,7 +33,7 @@ from typing import Optional, Dict, List, Any, Tuple, TYPE_CHECKING
 from collections import deque
 
 if TYPE_CHECKING:
-    from positions import CombatPosition
+    from positions import CombatPosition  # noqa: F401
 
 
 class CombatBattlefieldWindow:
@@ -209,9 +209,7 @@ class CombatBattlefieldWindow:
         # self.text_widget.tag_config("marker_injured", foreground=self.COLOR_INJURED, font=("Courier New", 10, "bold"))
         # self.text_widget.tag_config("marker_critical", foreground=self.COLOR_CRITICAL, font=("Courier New", 10, "bold"))
 
-        self.text_widget.tag_config(
-            "breadcrumb", foreground=self.COLOR_BREADCRUMB
-        )
+        self.text_widget.tag_config("breadcrumb", foreground=self.COLOR_BREADCRUMB)
         self.text_widget.tag_config(
             "border",
             foreground=self.COLOR_GRID,
@@ -305,9 +303,7 @@ class CombatBattlefieldWindow:
             return "!"
         return ""
 
-    def _get_line_points(
-        self, start_pos: Any, end_pos: Any
-    ) -> List[Tuple[int, int]]:
+    def _get_line_points(self, start_pos: Any, end_pos: Any) -> List[Tuple[int, int]]:
         """
         Get all integer grid points between two positions using Bresenham's line algorithm.
         Includes both start and end points.
@@ -411,10 +407,7 @@ class CombatBattlefieldWindow:
         # This ensures we always have margin space visible even at edges
 
         # If left edge is at boundary, expand right
-        if (
-            self.viewport_x_min == 0
-            and max_x + self.margin < self.GRID_WIDTH - 1
-        ):
+        if self.viewport_x_min == 0 and max_x + self.margin < self.GRID_WIDTH - 1:
             desired_width = (max_x + self.margin + 1) - (min_x - self.margin)
             self.viewport_x_max = min(
                 self.GRID_WIDTH - 1,
@@ -422,20 +415,14 @@ class CombatBattlefieldWindow:
             )
 
         # If right edge is at boundary, expand left
-        if (
-            self.viewport_x_max == self.GRID_WIDTH - 1
-            and min_x - self.margin >= 0
-        ):
+        if self.viewport_x_max == self.GRID_WIDTH - 1 and min_x - self.margin >= 0:
             desired_width = (max_x + self.margin + 1) - (min_x - self.margin)
             self.viewport_x_min = max(
                 0, self.viewport_x_max - desired_width - self.margin
             )
 
         # If top edge is at boundary, expand down
-        if (
-            self.viewport_y_min == 0
-            and max_y + self.margin < self.GRID_HEIGHT - 1
-        ):
+        if self.viewport_y_min == 0 and max_y + self.margin < self.GRID_HEIGHT - 1:
             desired_height = (max_y + self.margin + 1) - (min_y - self.margin)
             self.viewport_y_max = min(
                 self.GRID_HEIGHT - 1,
@@ -443,10 +430,7 @@ class CombatBattlefieldWindow:
             )
 
         # If bottom edge is at boundary, expand up
-        if (
-            self.viewport_y_max == self.GRID_HEIGHT - 1
-            and min_y - self.margin >= 0
-        ):
+        if self.viewport_y_max == self.GRID_HEIGHT - 1 and min_y - self.margin >= 0:
             desired_height = (max_y + self.margin + 1) - (min_y - self.margin)
             self.viewport_y_min = max(
                 0, self.viewport_y_max - desired_height - self.margin
@@ -468,9 +452,7 @@ class CombatBattlefieldWindow:
         visible_height = self.viewport_y_max - self.viewport_y_min + 1
 
         # Initialize grid with empty spaces
-        grid = [
-            [" " for _ in range(visible_width)] for _ in range(visible_height)
-        ]
+        grid = [[" " for _ in range(visible_width)] for _ in range(visible_height)]
 
         # Track movement direction for each cell to enable diagonal padding
         # (x, y) -> direction tuple (dx, dy) indicating overall movement direction
@@ -485,9 +467,7 @@ class CombatBattlefieldWindow:
         # Draw breadcrumb trails first (so they appear under combatants)
         # Breadcrumbs show the complete path including intermediate points between history items
         for name, history in self.movement_history.items():
-            history_list = list(
-                history
-            )  # Convert deque to list for easier indexing
+            history_list = list(history)  # Convert deque to list for easier indexing
 
             # Draw breadcrumbs between consecutive history points
             for i in range(len(history_list) - 1):
@@ -618,9 +598,7 @@ class CombatBattlefieldWindow:
         # Convert grid to string with borders
         lines = []
         # Top border
-        max_line_width = (
-            visible_width * 2 + 2
-        )  # Each cell is 2 chars, +2 for borders
+        max_line_width = visible_width * 2 + 2  # Each cell is 2 chars, +2 for borders
         lines.append(self.BORDER_CHAR * max_line_width)
 
         # Grid content
@@ -848,9 +826,7 @@ class CombatBattlefieldWindow:
                 try:
                     # Try to copy the position object
                     history.append(
-                        position.copy()
-                        if hasattr(position, "copy")
-                        else position
+                        position.copy() if hasattr(position, "copy") else position
                     )
                 except (AttributeError, TypeError):
                     # If copy fails, just append the position as-is
@@ -880,17 +856,12 @@ class CombatBattlefieldWindow:
         alive_names = set()
 
         # Update player
-        if (
-            hasattr(player, "combat_position")
-            and player.combat_position is not None
-        ):
+        if hasattr(player, "combat_position") and player.combat_position is not None:
             player_name = player.name if hasattr(player, "name") else "Player"
             alive_names.add(player_name)
 
             health_pct = 1.0
-            if hasattr(player, "current_health") and hasattr(
-                player, "maxhealth"
-            ):
+            if hasattr(player, "current_health") and hasattr(player, "maxhealth"):
                 health_pct = player.current_health / max(1, player.maxhealth)
 
             # Extract facing value - handle Direction enum or raw value
@@ -908,9 +879,7 @@ class CombatBattlefieldWindow:
             self.set_combatant(
                 player_name,
                 player.combat_position,
-                is_alive=(
-                    player.is_alive if hasattr(player, "is_alive") else True
-                ),
+                is_alive=(player.is_alive if hasattr(player, "is_alive") else True),
                 is_player=True,
                 is_ally=True,
                 health_percent=health_pct,
@@ -919,22 +888,15 @@ class CombatBattlefieldWindow:
 
         # Update allies
         for ally in allies:
-            if (
-                hasattr(ally, "combat_position")
-                and ally.combat_position is not None
-            ):
-                ally_name = (
-                    ally.name if hasattr(ally, "name") else f"Ally_{id(ally)}"
-                )
+            if hasattr(ally, "combat_position") and ally.combat_position is not None:
+                ally_name = ally.name if hasattr(ally, "name") else f"Ally_{id(ally)}"
                 # Skip if this is the player (already added above)
                 if ally_name == player_name:
                     continue
                 alive_names.add(ally_name)
 
                 health_pct = 1.0
-                if hasattr(ally, "current_health") and hasattr(
-                    ally, "maxhealth"
-                ):
+                if hasattr(ally, "current_health") and hasattr(ally, "maxhealth"):
                     health_pct = ally.current_health / max(1, ally.maxhealth)
 
                 # Extract facing value - handle Direction enum or raw value
@@ -952,9 +914,7 @@ class CombatBattlefieldWindow:
                 self.set_combatant(
                     ally_name,
                     ally.combat_position,
-                    is_alive=(
-                        ally.is_alive if hasattr(ally, "is_alive") else True
-                    ),
+                    is_alive=(ally.is_alive if hasattr(ally, "is_alive") else True),
                     is_player=False,
                     is_ally=True,
                     health_percent=health_pct,
@@ -963,21 +923,14 @@ class CombatBattlefieldWindow:
 
         # Update enemies
         for enemy in enemies:
-            if (
-                hasattr(enemy, "combat_position")
-                and enemy.combat_position is not None
-            ):
+            if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
                 enemy_name = (
-                    enemy.name
-                    if hasattr(enemy, "name")
-                    else f"Enemy_{id(enemy)}"
+                    enemy.name if hasattr(enemy, "name") else f"Enemy_{id(enemy)}"
                 )
                 alive_names.add(enemy_name)
 
                 health_pct = 1.0
-                if hasattr(enemy, "current_health") and hasattr(
-                    enemy, "maxhealth"
-                ):
+                if hasattr(enemy, "current_health") and hasattr(enemy, "maxhealth"):
                     health_pct = enemy.current_health / max(1, enemy.maxhealth)
 
                 # Extract facing value - handle Direction enum or raw value
@@ -995,9 +948,7 @@ class CombatBattlefieldWindow:
                 self.set_combatant(
                     enemy_name,
                     enemy.combat_position,
-                    is_alive=(
-                        enemy.is_alive if hasattr(enemy, "is_alive") else True
-                    ),
+                    is_alive=(enemy.is_alive if hasattr(enemy, "is_alive") else True),
                     is_player=False,
                     is_ally=False,
                     health_percent=health_pct,

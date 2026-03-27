@@ -2,6 +2,14 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.3.1] - 2026-03-27
+
+### Changed
+- CI: removed flake8 line-length (E501) requirement — line length is Black's domain, not flake8's
+- CI: suppressed E203 (slice spacing) — Black intentionally formats slices with spaces, creating a known Black/flake8 conflict
+- Auto-formatted all `src/` files with Black (whitespace-only changes)
+- Resolved all flake8 violations in `src/`: unused imports, dead variable assignments, bare excepts, lambda assignments, ambiguous variable names, and star imports replaced with explicit imports
+
 ## [0.0.3.0] - 2026-03-27
 
 ### Added

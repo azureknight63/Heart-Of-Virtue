@@ -2,6 +2,7 @@
 Feedback API routes
 Handles in-game player feedback and creates GitHub issues.
 """
+
 import os
 import re
 import time
@@ -9,6 +10,7 @@ import logging
 import requests
 from collections import defaultdict
 from flask import Blueprint, request, jsonify
+
 
 def get_session_and_player(request):
     """Extract session and player from request.
@@ -35,6 +37,7 @@ def get_session_and_player(request):
         return None, None, None, (jsonify({"error": "Player not found"}), 404)
 
     return session_manager, session, player, None
+
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +215,15 @@ def submit_feedback():
         return error[0], error[1]
 
     if _is_rate_limited(session.session_id):
-        return jsonify({"success": False, "error": "Too many feedback submissions. Please wait before trying again."}), 429
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Too many feedback submissions. Please wait before trying again.",
+                }
+            ),
+            429,
+        )
 
     username = _MARKDOWN_UNSAFE.sub("", getattr(player, "name", "Unknown Player"))
 
@@ -231,12 +242,27 @@ def submit_feedback():
         return jsonify({"success": False, "error": "Title is required"}), 400
 
     if len(title) > MAX_TITLE_LENGTH:
-        return jsonify({"success": False, "error": f"Title must be {MAX_TITLE_LENGTH} characters or fewer"}), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": f"Title must be {MAX_TITLE_LENGTH} characters or fewer",
+                }
+            ),
+            400,
+        )
 
     # Truncate oversized text fields to avoid enormous GitHub issues
-    fields = {k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v) for k, v in fields.items()}
+    fields = {
+        k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v)
+        for k, v in fields.items()
+    }
 
-    attribution = "Submitted anonymously via in-game feedback" if anonymous else f"Submitted in-game by: **{username}**"
+    attribution = (
+        "Submitted anonymously via in-game feedback"
+        if anonymous
+        else f"Submitted in-game by: **{username}**"
+    )
 
     if feedback_type == "bug":
         body = _build_bug_body(fields, attribution)

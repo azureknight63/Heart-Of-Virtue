@@ -39,9 +39,7 @@ class Object:
         self.keywords = (
             []
         )  # action keywords to hook up an arbitrary command like "press" for a switch
-        self.action_aliases = (
-            []
-        )  # Keywords that are aliases for other primary actions
+        self.action_aliases = []  # Keywords that are aliases for other primary actions
         self.events = (
             []
         )  # a list of events that occur when the player interacts with the object.
@@ -118,9 +116,7 @@ class WallSwitch(Object):
     """
 
     def __init__(self, player, tile, params=None, position: bool = False):
-        description = (
-            "A small depression in the wall. You may be able to PRESS on it."
-        )
+        description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(
             name="Wall Depression",
             description=description,
@@ -256,9 +252,7 @@ class Container(Object):
         self._start_open = bool(value)
         # Ensure state matches the boolean flag
         self.state = (
-            self._POSSIBLE_STATES[1]
-            if self._start_open
-            else self._POSSIBLE_STATES[0]
+            self._POSSIBLE_STATES[1] if self._start_open else self._POSSIBLE_STATES[0]
         )
         # If a container starts open, it cannot be locked
         if self._start_open:
@@ -294,9 +288,7 @@ class Container(Object):
         """
         # Normalize inventory parameter: accept items alias for tests/tools
         inv = (
-            inventory
-            if inventory is not None
-            else (items if items is not None else [])
+            inventory if inventory is not None else (items if items is not None else [])
         )
         self.nickname = nickname
         self.possible_states = self._POSSIBLE_STATES
@@ -309,15 +301,11 @@ class Container(Object):
         self.start_open = start_open
         # Normalize merchant to name if an object is provided (avoid circular import of Merchant)
         try:
-            self.merchant = (
-                merchant.name if hasattr(merchant, "name") else merchant
-            )
+            self.merchant = merchant.name if hasattr(merchant, "name") else merchant
         except Exception:
             self.merchant = merchant
         # allowed_subtypes may be provided as tuple/list of types; default to Item if falsy
-        self.allowed_item_types = (
-            list(allowed_subtypes) if allowed_subtypes else [Item]
-        )
+        self.allowed_item_types = list(allowed_subtypes) if allowed_subtypes else [Item]
         self.stock_count = stock_count  # Maximum number of items the container should hold (for shop logic)
         self.inventory = inv if inv else []
 
@@ -349,9 +337,7 @@ class Container(Object):
             if "open" not in self.keywords:
                 self.keywords.append("open")
 
-        self.action_aliases.extend(
-            ["check", "view", "examine", "inspect", "peruse"]
-        )
+        self.action_aliases.extend(["check", "view", "examine", "inspect", "peruse"])
         self.keywords.extend(self.action_aliases)
 
         self.process_events()  # process initial events (triggers labeled "auto")
@@ -419,9 +405,7 @@ class Container(Object):
         if self.state == "closed":
             print(f"The {self.nickname} creaks eerily.")
             time.sleep(0.5)
-            print(
-                "The lid lifts back on the hinge, revealing the contents inside."
-            )
+            print("The lid lifts back on the hinge, revealing the contents inside.")
             self.revealed = True
             self.state = "opened"
             if "open" in self.keywords:
@@ -459,7 +443,7 @@ class Container(Object):
             qty = getattr(item, "count", 1)
             transfer_item(self, player, item, qty)
 
-        print(f"Jean collects all of the available items.")
+        print("Jean collects all of the available items.")
         self.refresh_description()
         self.process_events()
 
@@ -657,9 +641,7 @@ class Shrine(Object):
     """
 
     def __init__(self, player=None, tile=None, params=None):
-        description = (
-            "A beautiful shrine depicting a variety of saints praying to God."
-        )
+        description = "A beautiful shrine depicting a variety of saints praying to God."
         super().__init__(
             name="Shrine",
             description=description,
@@ -699,9 +681,7 @@ class Shrine(Object):
         time.sleep(random.randint(3, 10))
 
         # Robustly handle missing prayer_msg
-        prayer_messages = getattr(
-            player, "prayer_msg", ["Jean prays silently."]
-        )
+        prayer_messages = getattr(player, "prayer_msg", ["Jean prays silently."])
         selection = random.randint(0, len(prayer_messages) - 1)
         print(prayer_messages[selection])
         if getattr(self, "event", None) is not None:
@@ -772,9 +752,7 @@ class HealingSpring(Object):
 
     @staticmethod
     def clean(player):
-        print(
-            "Jean summarily begins washing himself in the cool water of the spring."
-        )
+        print("Jean summarily begins washing himself in the cool water of the spring.")
         time.sleep(2)
         print(
             "Jean closes his eyes for a moment, enjoying the feeling of simple cleanliness."
@@ -829,9 +807,7 @@ class Passageway(Object):
         self.events_after = events_after if events_after is not None else []
         self.teleport_map = teleport_map if teleport_map is not None else ""
         self.teleport_tile = teleport_tile if teleport_tile is not None else ""
-        self.persist = (
-            persist  # if True, the passageway will remain after use, else
-        )
+        self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
 
     def enter(self, player):
@@ -944,9 +920,7 @@ class Fountain(Object):
         functions.await_input()
 
     def listen(self):
-        print(
-            "Jean closes his eyes a moment, listening to the gentle splash of water."
-        )
+        print("Jean closes his eyes a moment, listening to the gentle splash of water.")
         functions.await_input()
 
     def admire(self):
@@ -992,9 +966,7 @@ class StreetLantern(Object):
 
     def _update_description(self):
         state_text = "lit" if self.lit else "dark"
-        self.description = (
-            f"An iron street lantern stands here. It is {state_text}."
-        )
+        self.description = f"An iron street lantern stands here. It is {state_text}."
 
     def light(self):
         if self.lit:
@@ -1070,9 +1042,7 @@ class NoticeBoard(Object):
         print("Jean scans the various notes:")
         for note in self.notes:
             print(f"  - {note}")
-        if self.event and (
-            not self._read_once or getattr(self.event, "repeat", False)
-        ):
+        if self.event and (not self._read_once or getattr(self.event, "repeat", False)):
             time.sleep(0.3)
             self.event.process()
             if not getattr(self.event, "repeat", False):
@@ -1210,8 +1180,7 @@ class GeminateGeode(Object):
 
     def _has_ingredient(self, cls_name: str) -> bool:
         return any(
-            item.__class__.__name__ == cls_name
-            for item in self.player.inventory
+            item.__class__.__name__ == cls_name for item in self.player.inventory
         )
 
     def _remove_ingredient(self, cls_name: str) -> None:
@@ -1225,17 +1194,11 @@ class GeminateGeode(Object):
         if player is not None:
             self.player = player
         missing = [
-            name
-            for cls, name in self._INGREDIENT_DEFS
-            if not self._has_ingredient(cls)
+            name for cls, name in self._INGREDIENT_DEFS if not self._has_ingredient(cls)
         ]
         if missing:
-            print(
-                f"The depressions wait. Jean is missing: {', '.join(missing)}."
-            )
-            print(
-                "The ritual carving in the Atrium showed the sequence clearly."
-            )
+            print(f"The depressions wait. Jean is missing: {', '.join(missing)}.")
+            print("The ritual carving in the Atrium showed the sequence clearly.")
             return
         # All three fragments present — solve the puzzle
         print(
@@ -1248,9 +1211,7 @@ class GeminateGeode(Object):
         time.sleep(1)
         print("The pale grey fragment locks into the third.")
         time.sleep(0.5)
-        print(
-            "\nA sound like a struck bell fills the chamber — the geode cracks open."
-        )
+        print("\nA sound like a struck bell fills the chamber — the geode cracks open.")
         time.sleep(1)
         print(
             "Inside: a stone pauldron, inlaid with the same tricolor veins as the walls. "

@@ -123,10 +123,7 @@ class ChainDependencySerializer:
             Tuple of (is_valid, error_message)
         """
         for prereq_chain in prerequisites:
-            if (
-                completed_chains.get(prereq_chain)
-                != ChainStatus.COMPLETED.value
-            ):
+            if completed_chains.get(prereq_chain) != ChainStatus.COMPLETED.value:
                 return False, f"Chain '{prereq_chain}' must be completed first"
 
         return True, None
@@ -336,9 +333,7 @@ class ChainProgressionSerializer:
             "total_chains": total_chains,
             "completed_chains": completed_chains,
             "completion_percentage": (
-                (completed_chains / total_chains * 100)
-                if total_chains > 0
-                else 0
+                (completed_chains / total_chains * 100) if total_chains > 0 else 0
             ),
             "chains": all_progress,
         }
@@ -365,9 +360,7 @@ class ChainRewardSerializer:
             "items": stage_rewards.get("items", []),
             "reputation": stage_rewards.get("reputation", {}),
             "skill_points": stage_rewards.get("skill_points", 0),
-            "unlocks": stage_rewards.get(
-                "unlocks", []
-            ),  # Dialogue, quests, etc.
+            "unlocks": stage_rewards.get("unlocks", []),  # Dialogue, quests, etc.
         }
 
     @staticmethod

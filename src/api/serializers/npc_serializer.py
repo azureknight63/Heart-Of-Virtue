@@ -131,9 +131,7 @@ class NPCSerializer:
 
         # Serialize inventory as shop stock
         if hasattr(npc, "inventory") and npc.inventory:
-            npc_data["shop_items"] = ItemSerializer.serialize_list(
-                npc.inventory
-            )
+            npc_data["shop_items"] = ItemSerializer.serialize_list(npc.inventory)
         else:
             npc_data["shop_items"] = []
 
@@ -157,9 +155,7 @@ class NPCSerializer:
 
         # Add inventory
         if hasattr(npc, "inventory"):
-            npc_data["inventory"] = ItemSerializer.serialize_list(
-                npc.inventory
-            )
+            npc_data["inventory"] = ItemSerializer.serialize_list(npc.inventory)
             npc_data["inventory_count"] = len(npc.inventory)
         else:
             npc_data["inventory"] = []

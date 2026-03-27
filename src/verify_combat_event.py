@@ -1,16 +1,16 @@
 import sys
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add src to path
 import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
-from universe import Universe
-from player import Player
-from events import CombatEvent
-from combat_event_config import CombatEventConfig
+from universe import Universe  # noqa: E402
+from player import Player  # noqa: E402
+from events import CombatEvent  # noqa: E402
+from combat_event_config import CombatEventConfig  # noqa: E402
 
 
 class TestCombatEventLoading(unittest.TestCase):
@@ -53,9 +53,7 @@ class TestCombatEventLoading(unittest.TestCase):
                 combat_event = ev
                 break
 
-        self.assertIsNotNone(
-            combat_event, "No CombatEvent found in tile (2, 3)"
-        )
+        self.assertIsNotNone(combat_event, "No CombatEvent found in tile (2, 3)")
 
         # Verify config
         config = combat_event.config

@@ -2,9 +2,7 @@
 
 __author__ = "Alex Egbert"
 
-import os
 import random
-import importlib
 
 from neotermcolor import colored
 
@@ -33,16 +31,10 @@ class MapTile:
         self.last_entered = 0  # describes the game_tick when the player last entered. Useful for monster/item respawns.
         self.discovered = False  # when drawing the map for the player,
         # display a ? if this is True and self.last_entered == 0
-        self.respawn_rate = (
-            9999  # tiles which respawn enemies will adjust this number.
-        )
+        self.respawn_rate = 9999  # tiles which respawn enemies will adjust this number.
         self.block_exit = []  # append a direction to block it
-        self.description = (
-            description  # used for the intro_text to make it dynamic
-        )
-        self.symbol = (
-            "●"  # symbol to mark on the map when the tile is fully discovered
-        )
+        self.description = description  # used for the intro_text to make it dynamic
+        self.symbol = "●"  # symbol to mark on the map when the tile is fully discovered
 
     def intro_text(self):
         """Information to be displayed when the player moves into this tile."""
@@ -75,9 +67,7 @@ class MapTile:
                 tile.discovered = True
         return moves
 
-    def available_actions(
-        self, callerIsApi=False, player=None
-    ) -> list[actions.Action]:
+    def available_actions(self, callerIsApi=False, player=None) -> list[actions.Action]:
         """Returns all the available actions in this room."""
         moves = []
 
@@ -85,24 +75,22 @@ class MapTile:
             moves = (
                 self.adjacent_moves()
             )  # first, add the available directions in the current room
-            default_moves = (
-                [  # these are the default moves available to the player
-                    actions.ListCommands(),
-                    actions.ViewInventory(),
-                    actions.SkillMenu(),
-                    actions.Look(),
-                    actions.View(),
-                    actions.Equip(),
-                    actions.Take(),
-                    actions.Use(),
-                    actions.Search(),
-                    actions.Menu(),
-                    actions.Save(),
-                    actions.ViewMap(),
-                    actions.Attack(),
-                    actions.ViewStatus(),
-                ]
-            )
+            default_moves = [  # these are the default moves available to the player
+                actions.ListCommands(),
+                actions.ViewInventory(),
+                actions.SkillMenu(),
+                actions.Look(),
+                actions.View(),
+                actions.Equip(),
+                actions.Take(),
+                actions.Use(),
+                actions.Search(),
+                actions.Menu(),
+                actions.Save(),
+                actions.ViewMap(),
+                actions.Attack(),
+                actions.ViewStatus(),
+            ]
         else:
             default_moves = [
                 actions.Search(),
@@ -153,9 +141,7 @@ class MapTile:
 
         # First pass: process all NPCSpawnerEvents
         spawner_events = [
-            event
-            for event in self.events_here
-            if isinstance(event, NPCSpawnerEvent)
+            event for event in self.events_here if isinstance(event, NPCSpawnerEvent)
         ]
         for event in spawner_events:
             event.check_conditions()
@@ -214,9 +200,7 @@ class MapTile:
             pass
         return npc
 
-    def spawn_item(
-        self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False
-    ):
+    def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
         # python
         import importlib
 

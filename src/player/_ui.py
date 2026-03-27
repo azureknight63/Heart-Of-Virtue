@@ -65,9 +65,7 @@ def generate_output_grid(
         not row_width_compatibility_verified
     ):  # this is to make sure the rows don't get too long to display.
         # It will override any row/column parameters
-        row_length = ((cell_max_length + len(border) + 2) * cols_var) + len(
-            border
-        )
+        row_length = ((cell_max_length + len(border) + 2) * cols_var) + len(border)
         if row_length <= 300:
             row_width_compatibility_verified = True
         else:
@@ -203,9 +201,7 @@ class PlayerUIMixin:
                         elif response.lower() in ["k", "x"]:
                             inner_selection = response.lower()
                         else:
-                            cprint(
-                                "Invalid response! Please try again.", "red"
-                            )
+                            cprint("Invalid response! Please try again.", "red")
                     if (
                         inner_selection == "k"
                     ):  # The player wishes to exit the inner menu and return to
@@ -227,9 +223,7 @@ class PlayerUIMixin:
     {}
     -------------------------
     {}
-    -------------------------""".format(
-                            skill_object.name, skill_object.description
-                        )
+    -------------------------""".format(skill_object.name, skill_object.description)
                         cprint(info, "cyan")
                         cprint(
                             "Available {} experience: {}\n".format(
@@ -245,14 +239,10 @@ class PlayerUIMixin:
                                     ),
                                     "cyan",
                                 )
-                                response = input(
-                                    colored("Selection: ", "cyan")
-                                )
+                                response = input(colored("Selection: ", "cyan"))
                                 if response.lower() == "learn":
                                     self.learn_skill(skill_object)
-                                    self.skill_exp[
-                                        subcat
-                                    ] -= skill_menu_choice[1]
+                                    self.skill_exp[subcat] -= skill_menu_choice[1]
                                     functions.await_input()
                             else:
                                 cprint(
@@ -278,18 +268,14 @@ class PlayerUIMixin:
         self.refresh_protection_rating()
         cprint("=====\nStatus\n=====\n" "{}".format(self.name_long), "cyan")
         output_grid_data = [
-            "Health: {} / {} ({})".format(
-                self.hp, self.maxhp, self.maxhp_base
-            ),
+            "Health: {} / {} ({})".format(self.hp, self.maxhp, self.maxhp_base),
             "Fatigue: {} ({})".format(self.fatigue, self.maxfatigue_base),
             "Weight Tolerance: {} / {} ({})".format(
                 self.weight_current,
                 self.weight_tolerance,
                 self.weight_tolerance_base,
             ),
-            "Level: {} // Exp to next: {}".format(
-                self.level, self.exp_to_level
-            ),
+            "Level: {} // Exp to next: {}".format(self.level, self.exp_to_level),
         ]
         print(
             generate_output_grid(
@@ -303,9 +289,7 @@ class PlayerUIMixin:
         state_list = ""
         if len(self.states) > 0:
             for state in self.states:
-                state_list += colored(
-                    "{}".format(state.name), "white"
-                ) + colored(
+                state_list += colored("{}".format(state.name), "white") + colored(
                     " ({}) ".format(state.steps_left), "red"
                 )  # todo test this display
         else:

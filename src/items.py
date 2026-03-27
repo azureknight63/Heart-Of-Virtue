@@ -81,9 +81,7 @@ def get_all_subtypes() -> None:
     collection: List[str] = []
     for group in item_types.keys():
         for subtype in item_types[group]:  # type: ignore[index]
-            collection.append(
-                subtype
-            )  # pragma: no cover - logic preserved as-is
+            collection.append(subtype)  # pragma: no cover - logic preserved as-is
         item_types[group]["archetypes"]["All"] = collection  # type: ignore[index]
 
 
@@ -150,18 +148,16 @@ class Item:
         self.interactions = [
             "drop"
         ]  # things to do with the item from the inventory menu
-        self.skills = skills  # skills that can be learned from using the item (acquiring exp)
-        self.owner = (
-            None  # used to tie an item to an owner for special interactions
+        self.skills = (
+            skills  # skills that can be learned from using the item (acquiring exp)
         )
+        self.owner = None  # used to tie an item to an owner for special interactions
         self.equip_states = (
             []
         )  # items can cause states to be applied to the player when the item is equipped
         self.add_resistance = {}
         self.add_status_resistance = {}
-        self.gives_exp = (
-            False  # checked before opening an exp category for this item
-        )
+        self.gives_exp = False  # checked before opening an exp category for this item
         if hasattr(self, "isequipped"):
             if getattr(self, "isequipped"):
                 self.interactions.append("unequip")
@@ -190,9 +186,7 @@ class Item:
                     self.isequipped = False  # type: ignore[assignment]
                     # If it is a weapon, ensure the player's eq_weapon falls back to fists
                     if issubclass(self.__class__, Weapon):
-                        player.eq_weapon = getattr(
-                            player, "fists", player.eq_weapon
-                        )
+                        player.eq_weapon = getattr(player, "fists", player.eq_weapon)
                 # restore interactions to allow equip later
                 if "unequip" in self.interactions:
                     try:
@@ -241,9 +235,7 @@ class Item:
                                 for _ in range(int(drop_count)):
                                     self.count -= 1  # type: ignore[attr-defined]
                                     itemtype = self.__class__.__name__
-                                    player.current_room.spawn_item(
-                                        item_type=itemtype
-                                    )
+                                    player.current_room.spawn_item(item_type=itemtype)
                                 if hasattr(self, "stack_grammar"):
                                     self.stack_grammar()
                                 player.current_room.stack_duplicate_items()
@@ -334,9 +326,7 @@ class Item:
                                 import importlib
 
                                 items_mod = importlib.import_module("items")
-                                item_cls = getattr(
-                                    items_mod, self.__class__.__name__
-                                )
+                                item_cls = getattr(items_mod, self.__class__.__name__)
                                 new_item = item_cls()
                                 if hasattr(new_item, "count"):
                                     new_item.count = take_count
@@ -350,9 +340,7 @@ class Item:
                                 )
 
                             functions.stack_inv_items(player)
-                            if hasattr(
-                                player.current_room, "stack_duplicate_items"
-                            ):
+                            if hasattr(player.current_room, "stack_duplicate_items"):
                                 player.current_room.stack_duplicate_items()
                         else:
                             print("Jean changed his mind.")
@@ -582,14 +570,12 @@ class Armor(Item):
                 self.weight,
             )
         else:
-            return (
-                "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                    self.name,
-                    self.description,
-                    self.value,
-                    self.protection,
-                    self.weight,
-                )
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
             )
 
 
@@ -648,14 +634,12 @@ class Boots(Item):
                 self.weight,
             )
         else:
-            return (
-                "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                    self.name,
-                    self.description,
-                    self.value,
-                    self.protection,
-                    self.weight,
-                )
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
             )
 
 
@@ -664,9 +648,7 @@ class ClothBoots(Boots):
 
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Cloth Boots",
             description="Simple stitched cloth boots. Keeps feet warm but offers almost no protection.",
@@ -690,9 +672,7 @@ class PaddedBoots(Boots):
 
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Padded Boots",
             description="Boots lined with padding to absorb small impacts and protect the feet.",
@@ -715,9 +695,7 @@ class LeatherBoots(Boots):
 
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Leather Boots",
             description="Durable leather boots treated to resist wear and offer solid protection without much bulk.",
@@ -740,9 +718,7 @@ class StuddedBoots(Boots):
 
     level: int = 2
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Studded Boots",
             description="Leather boots reinforced with small metal studs. Good protection without excessive weight.",
@@ -764,9 +740,7 @@ class ChainSabaton(Boots):
 
     level: int = 3
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Chain Sabatons",
             description="Footwear woven of small interlinked rings. Offers good protection for skirmishers and infantry.",
@@ -788,9 +762,7 @@ class IronGreaves(Boots):
 
     level: int = 4
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Iron Greaves",
             description="Heavy iron footwear that provides strong protection but reduces nimbleness.",
@@ -863,14 +835,12 @@ class Helm(Item):
                 self.weight,
             )
         else:
-            return (
-                "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                    self.name,
-                    self.description,
-                    self.value,
-                    self.protection,
-                    self.weight,
-                )
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
             )
 
 
@@ -929,14 +899,12 @@ class Gloves(Item):
                 self.weight,
             )
         else:
-            return (
-                "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                    self.name,
-                    self.description,
-                    self.value,
-                    self.protection,
-                    self.weight,
-                )
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
             )
 
 
@@ -946,9 +914,7 @@ class ClothMitts(Gloves):
 
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Cloth Mitts",
             description="Simple cloth mitts stitched from scraps. They keep hands warm but offer almost no protection.",
@@ -972,9 +938,7 @@ class PaddedGloves(Gloves):
 
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Padded Gloves",
             description="Gloves stuffed with quilted padding. Comfortable and inexpensive protection for hands.",
@@ -997,9 +961,7 @@ class LeatherGloves(Gloves):
 
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Leather Gloves",
             description="Treated leather gloves that protect the hands without overly restricting movement.",
@@ -1022,9 +984,7 @@ class StuddedGloves(Gloves):
 
     level: int = 2
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Studded Gloves",
             description="Gloves of leather with small metal studs riveted into the surface. Tough and practical.",
@@ -1046,9 +1006,7 @@ class ChainGauntlets(Gloves):
 
     level: int = 3
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Chain Gauntlets",
             description="Gauntlets woven from small metal rings. Good protection with moderate weight.",
@@ -1070,9 +1028,7 @@ class IronGauntlets(Gloves):
 
     level: int = 4
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Iron Gauntlets",
             description="Heavy iron gauntlets that provide strong protection at the cost of dexterity.",
@@ -1145,14 +1101,12 @@ class Accessory(Item):
                 self.weight,
             )
         else:
-            return (
-                "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                    self.name,
-                    self.description,
-                    self.value,
-                    self.protection,
-                    self.weight,
-                )
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
             )
 
 
@@ -1387,9 +1341,7 @@ class Crystals(Commodity):
 # ---------------------------------------------------------------------------
 # Weapons
 # ---------------------------------------------------------------------------
-class Fists(
-    Weapon
-):  # equipped automatically when Jean has no other weapon equipped
+class Fists(Weapon):  # equipped automatically when Jean has no other weapon equipped
     def __init__(self, merchandise: bool = False) -> None:
         super().__init__(
             name="fists",
@@ -1410,9 +1362,7 @@ class Fists(
 
 
 class Rock(Weapon):
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Rock",
             description="A fist-sized rock, suitable for bludgeoning.",
@@ -1434,9 +1384,7 @@ class Rock(Weapon):
 class RustedIronMace(Weapon):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Rusted Iron Mace",
             description="A small mace with some rust around the spikes. Heavy and slow, "
@@ -1459,9 +1407,7 @@ class RustedIronMace(Weapon):
 class Mace(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Mace",
             description="A small mace. Heavy and slow, but packs a decent punch.",
@@ -1483,9 +1429,7 @@ class Mace(Weapon):
 class RustedDagger(Weapon):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Rusted Dagger",
             description="A small dagger with some rust. Somewhat more dangerous than a rock.",
@@ -1508,9 +1452,7 @@ class RustedDagger(Weapon):
 class Dagger(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Dagger",
             description="A rogue's best friend.",
@@ -1533,9 +1475,7 @@ class Dagger(Weapon):
 class Baselard(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Baselard",
             description="A small, sharp dagger with an 'H'-shaped hilt.",
@@ -1558,9 +1498,7 @@ class Baselard(Weapon):
 class Shortsword(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Shortsword",
             description="A double-edged shortsword. A reliable companion in any fight.",
@@ -1583,9 +1521,7 @@ class Shortsword(Weapon):
 class Epee(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Epee",
             description="A short dueling sword. Frequently used ceremonially, "
@@ -1611,9 +1547,7 @@ class Epee(Weapon):
 class Battleaxe(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Battleaxe",
             description="A crescent blade affixed to a reinforced wooden haft. "
@@ -1637,9 +1571,7 @@ class Battleaxe(Weapon):
 class Pickaxe(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Pickaxe",
             description="A hardy weapon that can also be used to mine for rare metals, "
@@ -1664,9 +1596,7 @@ class Pickaxe(Weapon):
 class Scythe(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Scythe",
             description="An unusual weapon that, despite its intimidating appearance, "
@@ -1691,9 +1621,7 @@ class Scythe(Weapon):
 class Spear(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Spear",
             description="A weapon of simple design and great effectiveness. \n"
@@ -1717,9 +1645,7 @@ class Spear(Weapon):
 class Halberd(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Halberd",
             description="Essentially an axe mounted on top of a large pole. \n"
@@ -1743,9 +1669,7 @@ class Halberd(Weapon):
 class Hammer(Weapon):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Hammer",
             description="Great for smashing more heavily-armored foes.",
@@ -1767,9 +1691,7 @@ class Hammer(Weapon):
 class Shortbow(Weapon):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Shortbow",
             description="A reliable missile weapon. Useful as a weak bludgeon at close range.\n"
@@ -1794,9 +1716,7 @@ class Shortbow(Weapon):
 class Longbow(Weapon):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Longbow",
             description="Specialized bow for shooting long distances. Useful as a weak bludgeon at "
@@ -1822,9 +1742,7 @@ class Longbow(Weapon):
 class Crossbow(Weapon):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Crossbow",
             description="Heavier than a standard bow but able to fire more rapidly. "
@@ -1850,9 +1768,7 @@ class Crossbow(Weapon):
 class Pole(Weapon):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Pole",
             description="A large pole, great for delivering blows from a distance. \n"
@@ -1879,9 +1795,7 @@ class Pole(Weapon):
 class TatteredCloth(Armor):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Tattered Cloth",
             description="Shamefully tattered cloth wrappings. \n"
@@ -1904,9 +1818,7 @@ class PaddedJerkin(Armor):
 
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Padded Jerkin",
             description="A jerkin sewn from layers of fabric and padding. Lightweight and inexpensive.",
@@ -1929,9 +1841,7 @@ class QuiltedVest(Armor):
 
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Quilted Vest",
             description="A vest sewn with quilted padding. Good for scouts and caravan guards.",
@@ -1954,9 +1864,7 @@ class LeatherArmor(Armor):
 
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Leather Armor",
             description="Thick leather treated to resist wear and improve protection.",
@@ -1979,9 +1887,7 @@ class StuddedLeather(Armor):
 
     level: int = 2
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Studded Leather",
             description="A leather cuirass reinforced with small metal studs. Popular with rangers and skirmishers.",
@@ -2003,9 +1909,7 @@ class ChainmailShirt(Armor):
 
     level: int = 3
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Chainmail Shirt",
             description="A shirt of interlocking metal rings. Good defense against slashes.",
@@ -2027,9 +1931,7 @@ class IronCuirass(Armor):
 
     level: int = 4
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Iron Cuirass",
             description="A solid iron breastplate. Heavy, but provides strong protection for front-line fighters.",
@@ -2052,9 +1954,7 @@ class IronCuirass(Armor):
 class ClothHood(Helm):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Cloth Hood",
             description="Stained cloth hood. "
@@ -2080,9 +1980,7 @@ class LeatherCap(Helm):
 
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Leather Cap",
             description="A simple leather cap offering modest protection without much weight.",
@@ -2106,9 +2004,7 @@ class PaddedCap(Helm):
 
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Padded Cap",
             description="A cheap cap stuffed with padding. Comfortable but offers only trivial protection.",
@@ -2131,9 +2027,7 @@ class HunterHood(Helm):
 
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Hunter's Hood",
             description="A muted hood designed to muffle sound and blend into foliage. Lightweight and practical.",
@@ -2156,9 +2050,7 @@ class StuddedSkullcap(Helm):
 
     level: int = 2
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Studded Skullcap",
             description="A close-fitting cap reinforced with metal studs. Offers respectable protection for its size.",
@@ -2182,9 +2074,7 @@ class ChainCoif(Helm):
 
     level: int = 3
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Chain Coif",
             description="A hood of interlinked metal rings. Offers good protection against slashes at modest weight.",
@@ -2207,9 +2097,7 @@ class IronHelm(Helm):
 
     level: int = 4
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Iron Helm",
             description="A solid iron helm. Heavy, but provides dependable protection to the wearer.",
@@ -2307,9 +2195,7 @@ class DullMedallion(Accessory):
 class GoldRing(Accessory):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Gold Ring",
             description="A shiny gold ring. \n"
@@ -2372,9 +2258,7 @@ class JeanWeddingBand(Accessory):
 class SilverRing(Accessory):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Silver Ring",
             description="A shiny silver ring. \n"
@@ -2395,9 +2279,7 @@ class SilverRing(Accessory):
 class GoldChain(Accessory):
     level: int = 2
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Gold Chain",
             description="A shiny gold chain. \n"
@@ -2418,9 +2300,7 @@ class GoldChain(Accessory):
 class SilverChain(Accessory):
     level: int = 1
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Silver Chain",
             description="A shiny silver chain. \n"
@@ -2441,9 +2321,7 @@ class SilverChain(Accessory):
 class GoldBracelet(Accessory):
     level: int = 2
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Gold Bracelet",
             description="A shiny gold bracelet. \n"
@@ -2464,9 +2342,7 @@ class GoldBracelet(Accessory):
 class SilverBracelet(Accessory):
     level: int = 0
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Silver Bracelet",
             description="A shiny silver bracelet. \n"
@@ -2605,9 +2481,7 @@ class Draught(Consumable):
             self.description = (
                 "A box filled with bottles of a green fluid giving off a warm, pleasant glow.\n"
                 "Invigorating for any tired adventurer.\n"
-                "There appear to be {} bottles in the box.\n".format(
-                    self.count
-                )
+                "There appear to be {} bottles in the box.\n".format(self.count)
             )
             self.announce = "There is a box of small glass bottles containing glowing green fluid here."
         else:
@@ -2755,9 +2629,7 @@ class Antidote(Consumable):
                     "Jean is not beset by poison. He places the Antidote back into his bag."
                 )
             else:
-                print(
-                    "Jean is not beset by poison. He sets the Antidote back down."
-                )
+                print("Jean is not beset by poison. He sets the Antidote back down.")
 
 
 # ---------------------------------------------------------------------------
@@ -2975,9 +2847,7 @@ class DragonHeartGem(Special):
             merchandise=merchandise,
         )
         setattr(self, "unique", True)
-        self.add_resistance = {
-            "fire": 0.30
-        }  # example bonus for future systems
+        self.add_resistance = {"fire": 0.30}  # example bonus for future systems
 
 
 class CrystalTear(Special):
@@ -3049,9 +2919,7 @@ class Book(Special):
             # No file path and no text means blank book
             self._text = "This book is mysteriously blank."
 
-        self.chars_per_page = (
-            chars_per_page  # characters per page for pagination
-        )
+        self.chars_per_page = chars_per_page  # characters per page for pagination
 
     @property
     def text(self) -> str:
@@ -3115,10 +2983,7 @@ class Book(Special):
                 continue
 
             # If adding this sentence would exceed page limit and we have content, start new page
-            if (
-                len(current_page) + len(sentence) > self.chars_per_page
-                and current_page
-            ):
+            if len(current_page) + len(sentence) > self.chars_per_page and current_page:
                 pages.append(current_page.rstrip())
                 current_page = sentence
             else:
@@ -3130,14 +2995,10 @@ class Book(Special):
 
         return pages if pages else [text]
 
-    def _display_page(
-        self, page_text: str, page_num: int, total_pages: int
-    ) -> None:
+    def _display_page(self, page_text: str, page_num: int, total_pages: int) -> None:
         """Display a single page with header and footer."""
         functions.screen_clear()
-        cprint(
-            f"--- {self.name} (Page {page_num} of {total_pages}) ---", "cyan"
-        )
+        cprint(f"--- {self.name} (Page {page_num} of {total_pages}) ---", "cyan")
         print()
         # Wrap text to 80 characters for readability, preserving paragraph breaks
         import textwrap
@@ -3156,9 +3017,7 @@ class Book(Special):
         print()
         cprint(f"--- Page {page_num} of {total_pages} ---", "cyan")
 
-    def _show_page_navigation(
-        self, current_page: int, total_pages: int
-    ) -> str:
+    def _show_page_navigation(self, current_page: int, total_pages: int) -> str:
         """Display navigation options and get user input."""
         print()
         options: list[str] = []
@@ -3188,14 +3047,9 @@ class Book(Special):
                     self._display_page(
                         pages[current_page - 1], current_page, len(pages)
                     )
-                    choice = self._show_page_navigation(
-                        current_page, len(pages)
-                    )
+                    choice = self._show_page_navigation(current_page, len(pages))
 
-                    if (
-                        choice in ("p", "prev", "previous")
-                        and current_page > 1
-                    ):
+                    if choice in ("p", "prev", "previous") and current_page > 1:
                         current_page -= 1
                     elif choice in ("n", "next") and current_page < len(pages):
                         current_page += 1
@@ -3320,9 +3174,7 @@ class EnchantedGolemitePauldron(Armor):
     with luminous mineral veins. High protection; lighter than it looks.
     """
 
-    def __init__(
-        self, merchandise: bool = False, enchantment_level: int = 0
-    ) -> None:
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Golemite Blessed Pauldron",
             description=(

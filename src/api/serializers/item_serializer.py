@@ -166,9 +166,7 @@ class ItemSerializer:
         return {
             "items": [serializer(item) for item in items],
             "count": len(items),
-            "total_weight": sum(
-                getattr(item, "weight", 0.0) for item in items
-            ),
+            "total_weight": sum(getattr(item, "weight", 0.0) for item in items),
         }
 
     @staticmethod

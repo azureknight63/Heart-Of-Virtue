@@ -4,7 +4,7 @@ Provides functions to display combat information based on player config settings
 Respects flags like show_combat_distance, show_unit_positions, show_damage_modifiers, etc.
 """
 
-from neotermcolor import colored, cprint
+from neotermcolor import colored
 
 
 class CombatDisplayConfig:
@@ -118,9 +118,7 @@ def display_all_enemies(player, display_config=None):
     return "\n".join(lines)
 
 
-def display_damage_modifier_info(
-    attacker, defender, damage_base, display_config=None
-):
+def display_damage_modifier_info(attacker, defender, damage_base, display_config=None):
     """Display damage modifier calculation if configured.
 
     Args:
@@ -142,10 +140,7 @@ def display_damage_modifier_info(
     modifiers = []
 
     # Distance modifier
-    if (
-        hasattr(attacker, "combat_proximity")
-        and defender in attacker.combat_proximity
-    ):
+    if hasattr(attacker, "combat_proximity") and defender in attacker.combat_proximity:
         distance = attacker.combat_proximity[defender]
         if distance > 30:
             modifiers.append("Range (0.8x)")
@@ -153,9 +148,7 @@ def display_damage_modifier_info(
             modifiers.append("Melee (1.2x)")
 
     # Positioning modifier
-    if hasattr(attacker, "combat_position") and hasattr(
-        defender, "combat_position"
-    ):
+    if hasattr(attacker, "combat_position") and hasattr(defender, "combat_position"):
         if attacker.combat_position and defender.combat_position:
             # Simple flanking check
             modifiers.append(
@@ -201,9 +194,7 @@ def display_accuracy_modifier_info(
     # Fatigue-based accuracy
     if hasattr(attacker, "fatigue") and hasattr(attacker, "maxfatigue"):
         fatigue_pct = (
-            attacker.fatigue / attacker.maxfatigue
-            if attacker.maxfatigue > 0
-            else 1.0
+            attacker.fatigue / attacker.maxfatigue if attacker.maxfatigue > 0 else 1.0
         )
         if fatigue_pct < 0.3:
             modifiers.append("Fatigued (-10%)")
@@ -232,8 +223,6 @@ def display_full_coordinate_grid(player, display_config=None):
 
     if not hasattr(player, "game_config") or not player.game_config:
         return ""
-
-    grid_size = player.game_config.coordinate_grid_size
 
     # Create position map
     positions_map = {}
@@ -295,9 +284,7 @@ def format_enemy_list_for_targeting(player, display_config=None):
 
         # Add HP
         hp_pct = int((enemy.hp / enemy.maxhp) * 100) if enemy.maxhp > 0 else 0
-        hp_color = (
-            "red" if hp_pct < 25 else "yellow" if hp_pct < 50 else "green"
-        )
+        hp_color = "red" if hp_pct < 25 else "yellow" if hp_pct < 50 else "green"
         enemy_line += f" {colored(f'HP:{hp_pct}%', hp_color)}"
 
         lines.append(enemy_line)

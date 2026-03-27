@@ -59,9 +59,7 @@ def get_status():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -113,9 +111,7 @@ def get_full_state():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -125,9 +121,7 @@ def get_full_state():
 
         if not game_service:
             return (
-                jsonify(
-                    {"success": False, "error": "Game service not initialized"}
-                ),
+                jsonify({"success": False, "error": "Game service not initialized"}),
                 500,
             )
 
@@ -182,9 +176,7 @@ def get_stats():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -237,9 +229,7 @@ def get_skills():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -296,9 +286,7 @@ def learn_skill():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -329,9 +317,7 @@ def learn_skill():
                 400,
             )
 
-        result = game_service.learn_skill(
-            player, data["skill_name"], data["category"]
-        )
+        result = game_service.learn_skill(player, data["skill_name"], data["category"])
 
         if result.get("success"):
             return jsonify(result), 200
@@ -371,9 +357,7 @@ def allocate_level_up_points():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(
-            request
-        )
+        session_manager, session, player, error = get_session_and_player(request)
         if error:
             return error[0], error[1]
 
@@ -403,9 +387,7 @@ def allocate_level_up_points():
 
         if amount_int <= 0:
             return (
-                jsonify(
-                    {"success": False, "error": "Amount must be positive"}
-                ),
+                jsonify({"success": False, "error": "Amount must be positive"}),
                 400,
             )
 

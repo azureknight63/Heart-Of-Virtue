@@ -3,9 +3,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from typing import Any, Optional, Tuple
 
-quest_chains_bp = Blueprint(
-    "quest_chains", __name__, url_prefix="/api/quest-chains"
-)
+quest_chains_bp = Blueprint("quest_chains", __name__, url_prefix="/api/quest-chains")
 
 
 def get_session_and_player(
@@ -53,9 +51,7 @@ def get_session_and_player(
             None,
             None,
             None,
-            jsonify(
-                {"success": False, "error": "Player not found for session"}
-            ),
+            jsonify({"success": False, "error": "Player not found for session"}),
             404,
         )
 
@@ -69,8 +65,8 @@ def get_all_chains_progress():
     Requires: Bearer token in Authorization header
     Returns: Progress data for all chains
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -90,8 +86,8 @@ def get_chain_progress(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Progress data for the chain
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -123,8 +119,8 @@ def advance_chain_stage(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Updated chain progression
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -199,8 +195,8 @@ def complete_chain(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Completion result
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code
@@ -237,8 +233,8 @@ def check_prerequisites(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Prerequisite validation result
     """
-    session_manager, session, player, error, status_code = (
-        get_session_and_player(request)
+    session_manager, session, player, error, status_code = get_session_and_player(
+        request
     )
     if error:
         return error, status_code

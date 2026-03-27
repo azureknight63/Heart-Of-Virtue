@@ -57,11 +57,8 @@ class NPCRelationshipSerializer:
             "reputation": reputation,
             "attitude": attitude,
             "emoji": emoji,
-            "trust_level": NPCRelationshipSerializer._calculate_trust_level(
-                reputation
-            ),
-            "locked_dialogue": reputation
-            < 0,  # Dialogue locked at negative reputation
+            "trust_level": NPCRelationshipSerializer._calculate_trust_level(reputation),
+            "locked_dialogue": reputation < 0,  # Dialogue locked at negative reputation
         }
 
     @staticmethod
@@ -131,10 +128,8 @@ class PlayerReputationSerializer:
         for npc_id, rep_value in reputation_data.items():
             # Get NPC name from NPC registry or use ID
             npc_name = PlayerReputationSerializer._get_npc_name(npc_id)
-            relationships[npc_id] = (
-                NPCRelationshipSerializer.serialize_relationship(
-                    npc_id, npc_name, rep_value
-                )
+            relationships[npc_id] = NPCRelationshipSerializer.serialize_relationship(
+                npc_id, npc_name, rep_value
             )
 
         return {
@@ -142,12 +137,8 @@ class PlayerReputationSerializer:
             "relationships": relationships,
             "highest_reputation": max(reputation_data.values(), default=0),
             "lowest_reputation": min(reputation_data.values(), default=0),
-            "friendly_npcs": sum(
-                1 for r in reputation_data.values() if r >= 50
-            ),
-            "hostile_npcs": sum(
-                1 for r in reputation_data.values() if r <= -50
-            ),
+            "friendly_npcs": sum(1 for r in reputation_data.values() if r >= 50),
+            "hostile_npcs": sum(1 for r in reputation_data.values() if r <= -50),
         }
 
     @staticmethod
@@ -172,9 +163,7 @@ class PlayerReputationSerializer:
         """
         change = new_reputation - old_reputation
         direction = (
-            "positive"
-            if change > 0
-            else "negative" if change < 0 else "neutral"
+            "positive" if change > 0 else "negative" if change < 0 else "neutral"
         )
 
         return {
@@ -418,9 +407,7 @@ class ReputationThresholdValidator:
         reputation = getattr(player, "reputation", {}).get(npc_id, 0)
 
         # Get required reputation for this quest type
-        required = ReputationThresholdValidator.QUEST_THRESHOLDS.get(
-            quest_type, 0
-        )
+        required = ReputationThresholdValidator.QUEST_THRESHOLDS.get(quest_type, 0)
 
         if reputation >= required:
             return True, None
@@ -451,10 +438,8 @@ class ReputationThresholdValidator:
         unlocked_count = 0
 
         for dialogue_node in available_dialogues:
-            available, reason = (
-                ReputationThresholdValidator.check_dialogue_available(
-                    player, npc_id, dialogue_node
-                )
+            available, reason = ReputationThresholdValidator.check_dialogue_available(
+                player, npc_id, dialogue_node
             )
             dialogue_status[dialogue_node] = {
                 "available": available,
@@ -494,10 +479,8 @@ class ReputationThresholdValidator:
         unlocked_count = 0
 
         for quest_id, quest_type in available_quests:
-            available, reason = (
-                ReputationThresholdValidator.check_quest_available(
-                    player, npc_id, quest_type
-                )
+            available, reason = ReputationThresholdValidator.check_quest_available(
+                player, npc_id, quest_type
             )
             quest_status[quest_id] = {
                 "available": available,

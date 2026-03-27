@@ -1,9 +1,7 @@
-from src.tiles import *
+from src.tiles import MapTile
 
 
-class VerdetteRoom(
-    MapTile
-):  # room Jean is dumped in after the encounter with Gorran
+class VerdetteRoom(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
         super().__init__(
             universe,
@@ -23,9 +21,7 @@ class VerdetteRoom(
         pass
 
 
-class VerdetteRoom2(
-    MapTile
-):  # room Jean is dumped in after the encounter with Gorran
+class VerdetteRoom2(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
         super().__init__(
             universe,
@@ -45,9 +41,7 @@ class VerdetteRoom2(
         pass
 
 
-class VerdetteRoom3(
-    MapTile
-):  # room Jean is dumped in after the encounter with Gorran
+class VerdetteRoom3(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
         super().__init__(
             universe,
@@ -68,9 +62,7 @@ class VerdetteRoom3(
         pass
 
 
-class VerdetteRoom4(
-    MapTile
-):  # room Jean is dumped in after the encounter with Gorran
+class VerdetteRoom4(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
         super().__init__(
             universe,
@@ -91,9 +83,7 @@ class VerdetteRoom4(
         pass
 
 
-class VerdetteRoom5(
-    MapTile
-):  # room Jean is dumped in after the encounter with Gorran
+class VerdetteRoom5(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
         super().__init__(
             universe,
@@ -113,9 +103,7 @@ class VerdetteRoom5(
         pass
 
 
-class VerdetteSpring(
-    MapTile
-):  # room Jean is dumped in after the encounter with Gorran
+class VerdetteSpring(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
         super().__init__(
             universe,

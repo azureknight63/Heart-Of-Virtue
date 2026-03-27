@@ -136,9 +136,7 @@ class Equip(Action):
 
 class Use(Action):
     def __init__(self):
-        super().__init__(
-            method=Player.use_item, name="Use Item", hotkey=("u", "use")
-        )
+        super().__init__(method=Player.use_item, name="Use Item", hotkey=("u", "use"))
 
 
 class Search(Action):
@@ -159,16 +157,12 @@ class Menu(Action):
 
 class Save(Action):
     def __init__(self):
-        super().__init__(
-            method=Player.save, name="Save", hotkey=("sav", "save")
-        )
+        super().__init__(method=Player.save, name="Save", hotkey=("sav", "save"))
 
 
 class Take(Action):
     def __init__(self):
-        super().__init__(
-            method=Player.take, name="Take Item", hotkey=("t", "take")
-        )
+        super().__init__(method=Player.take, name="Take Item", hotkey=("t", "take"))
 
 
 class ViewMap(Action):
@@ -189,7 +183,7 @@ class Attack(Action):
         )
 
 
-### DEBUG / CHEATS ###
+# DEBUG / CHEATS
 
 
 class Teleport(Action):
@@ -258,9 +252,7 @@ class SpawnObj(Action):
         )
 
 
-class RefreshMerchants(
-    Action
-):  # debug utility to refresh all merchant inventories
+class RefreshMerchants(Action):  # debug utility to refresh all merchant inventories
     def __init__(self):
         super().__init__(
             method=Player.refresh_merchants,

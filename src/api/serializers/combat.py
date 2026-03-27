@@ -43,8 +43,7 @@ class CombatStateSerializer:
         """
         allies = allies or []
         serialized_allies = [
-            CombatantSerializer.serialize_combatant(a, reference=player)
-            for a in allies
+            CombatantSerializer.serialize_combatant(a, reference=player) for a in allies
         ]
         return {
             "status": "active",
@@ -56,31 +55,21 @@ class CombatStateSerializer:
                 CombatantSerializer.serialize_combatant(e, reference=player)
                 for e in enemies
             ],
-            "turn_order": CombatStateSerializer._get_turn_order(
-                player, enemies
-            ),
+            "turn_order": CombatStateSerializer._get_turn_order(player, enemies),
             "combatants": (
                 [CombatantSerializer.serialize_combatant(player)]
                 + serialized_allies
                 + [
-                    CombatantSerializer.serialize_combatant(
-                        e, reference=player
-                    )
+                    CombatantSerializer.serialize_combatant(e, reference=player)
                     for e in enemies
                 ]
             ),
             "suggested_moves": getattr(player, "suggested_moves", []),
-            "suggestions_loading": getattr(
-                player, "suggestions_loading", False
-            ),
+            "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
             "last_move_name": getattr(player, "last_move_name", None),
-            "last_move_target_id": getattr(
-                player, "last_move_target_id", None
-            ),
-            "player_consumables": CombatStateSerializer._get_consumables(
-                player
-            ),
+            "last_move_target_id": getattr(player, "last_move_target_id", None),
+            "player_consumables": CombatStateSerializer._get_consumables(player),
         }
 
     @staticmethod
@@ -114,11 +103,7 @@ class CombatStateSerializer:
         """
         return {
             "name": getattr(combatant, "name", "Unknown"),
-            "type": (
-                "player"
-                if combatant.__class__.__name__ == "Player"
-                else "enemy"
-            ),
+            "type": ("player" if combatant.__class__.__name__ == "Player" else "enemy"),
             "available_actions": CombatStateSerializer._get_available_actions(
                 combatant
             ),
@@ -145,9 +130,7 @@ class CombatStateSerializer:
             "enemies_defeated": sum(1 for e in enemies if e.hp <= 0),
             "total_enemies": len(enemies),
             "experience_gained": (
-                CombatStateSerializer._calculate_experience(enemies)
-                if victory
-                else 0
+                CombatStateSerializer._calculate_experience(enemies) if victory else 0
             ),
             "items_dropped": (
                 CombatStateSerializer._get_drops(enemies) if victory else []
@@ -158,8 +141,7 @@ class CombatStateSerializer:
     def _get_turn_order(player: "Player", enemies: List["NPC"]) -> List[str]:
         """Get turn order based on initiative/speed."""
         combatants = [("player", getattr(player, "speed", 10))] + [
-            (f"enemy_{i}", getattr(e, "speed", 5))
-            for i, e in enumerate(enemies)
+            (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
         ]
         return [c[0] for c in combatants]
 
@@ -204,9 +186,7 @@ class CombatantSerializer:
     """Serialize individual combatant state (player or NPC in combat)."""
 
     @staticmethod
-    def serialize_combatant(
-        combatant: Any, reference: Any = None
-    ) -> Dict[str, Any]:
+    def serialize_combatant(combatant: Any, reference: Any = None) -> Dict[str, Any]:
         """
         Serialize combatant information during combat.
 
@@ -225,9 +205,7 @@ class CombatantSerializer:
             "type": "player" if is_player else "npc",
             "level": getattr(combatant, "level", 1),
             "health": {
-                "current": getattr(
-                    combatant, "hp", getattr(combatant, "health", 0)
-                ),
+                "current": getattr(combatant, "hp", getattr(combatant, "health", 0)),
                 "max": getattr(
                     combatant, "maxhp", getattr(combatant, "max_health", 100)
                 ),
@@ -245,23 +223,13 @@ class CombatantSerializer:
             ),
             "heat": getattr(combatant, "heat", 1.0) if is_player else 1.0,
             "stats": CombatantSerializer._serialize_combat_stats(combatant),
-            "attributes": CombatantSerializer._serialize_base_attributes(
-                combatant
-            ),
-            "status_effects": CombatantSerializer._serialize_status_effects(
-                combatant
-            ),
+            "attributes": CombatantSerializer._serialize_base_attributes(combatant),
+            "status_effects": CombatantSerializer._serialize_status_effects(combatant),
             "passives": CombatantSerializer._serialize_passives(combatant),
-            "equipment": CombatantSerializer._serialize_combat_equipment(
-                combatant
-            ),
-            "distance": CombatantSerializer._get_distance(
-                combatant, reference
-            ),
+            "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
+            "distance": CombatantSerializer._get_distance(combatant, reference),
             "position": CombatantSerializer._serialize_position(combatant),
-            "current_move": CombatantSerializer._serialize_active_move(
-                combatant
-            ),
+            "current_move": CombatantSerializer._serialize_active_move(combatant),
             "move_in_process": CombatantSerializer._serialize_active_move(
                 combatant
             ),  # Alias for Strategist
@@ -405,9 +373,7 @@ class CombatantSerializer:
                             "description": getattr(
                                 move, "description", "Passive skill."
                             ),
-                            "category": getattr(
-                                move, "category", "Miscellaneous"
-                            ),
+                            "category": getattr(move, "category", "Miscellaneous"),
                         }
                     )
         return passives
@@ -435,9 +401,7 @@ class CombatantSerializer:
             if "weapon" in eq and eq["weapon"]:
                 equipment["weapon"] = {
                     "name": getattr(eq["weapon"], "name", "Unarmed"),
-                    "damage_type": getattr(
-                        eq["weapon"], "damage_type", "physical"
-                    ),
+                    "damage_type": getattr(eq["weapon"], "damage_type", "physical"),
                 }
             if "body" in eq and eq["body"]:
                 equipment["armor"] = {
@@ -447,9 +411,7 @@ class CombatantSerializer:
 
         # Add resistances
         if hasattr(combatant, "resistances"):
-            equipment["resistances"] = dict(
-                getattr(combatant, "resistances", {})
-            )
+            equipment["resistances"] = dict(getattr(combatant, "resistances", {}))
 
         return equipment
 

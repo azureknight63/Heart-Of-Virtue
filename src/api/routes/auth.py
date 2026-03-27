@@ -58,8 +58,7 @@ async def register():
             msg = str(ve)
             # Don't expose internal config/infrastructure details to users
             if any(
-                kw in msg
-                for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
+                kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
             ):
                 return (
                     jsonify(
@@ -212,10 +211,7 @@ async def login():
     except Exception as e:
         msg = str(e)
         # Don't expose internal config/infrastructure details to users
-        if any(
-            kw in msg
-            for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
-        ):
+        if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
             return (
                 jsonify(
                     {
@@ -287,9 +283,7 @@ def logout():
 
         if success:
             return (
-                jsonify(
-                    {"success": True, "message": "Logged out successfully"}
-                ),
+                jsonify({"success": True, "message": "Logged out successfully"}),
                 200,
             )
         else:
