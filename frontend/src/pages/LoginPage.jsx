@@ -6,6 +6,7 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameInput from '../components/GameInput'
 import GameText from '../components/GameText'
+import TermsOfServiceModal from '../components/TermsOfServiceModal'
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
+  const [showTos, setShowTos] = useState(false)
   const navigate = useNavigate()
   const { login, register } = useAuth()
 
@@ -233,12 +235,36 @@ export default function LoginPage() {
         <div style={{
           marginTop: spacing.xxl,
           textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: spacing.sm,
         }}>
           <GameText variant="dim" size="xs" style={{ fontFamily: 'monospace' }}>
             A text-based RPG adventure
           </GameText>
+          <button
+            onClick={() => setShowTos(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: colors.text.dim,
+              cursor: 'pointer',
+              fontFamily: 'monospace',
+              fontSize: '11px',
+              textDecoration: 'underline',
+              padding: 0,
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={(e) => e.target.style.color = colors.text.muted}
+            onMouseLeave={(e) => e.target.style.color = colors.text.dim}
+          >
+            Terms of Service &amp; Privacy Policy
+          </button>
         </div>
       </div>
+
+      {showTos && <TermsOfServiceModal onClose={() => setShowTos(false)} />}
     </div>
   )
 }
