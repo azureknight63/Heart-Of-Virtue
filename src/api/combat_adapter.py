@@ -1186,6 +1186,18 @@ class ApiCombatAdapter:
             self.pending_move_index = None
             # Start async suggestion fetch (non-blocking)
             self.refresh_suggestions()
+        else:
+            # Events just fired (e.g., reinforcement wave spawned). Clear stale
+            # pending-move state so when the player dismisses events and returns
+            # to combat they get a fresh move_selection prompt instead of a
+            # phantom target_selection loop with 0-damage attacks.
+            self.awaiting_input = True
+            self.input_type = "move_selection"
+            self.pending_move_index = None
+            try:
+                self.available_options = self._get_available_moves()
+            except Exception:
+                self.available_options = []
 
         # Final state capture (consumes events_triggered)
         result = self.get_combat_state()
