@@ -88,6 +88,25 @@ describe('LoginPage', () => {
         });
     });
 
+    it('renders Terms of Service link', () => {
+        renderLoginPage();
+        expect(screen.getByText(/Terms of Service & Privacy Policy/i)).toBeDefined();
+    });
+
+    it('opens ToS modal when link is clicked', () => {
+        renderLoginPage();
+        fireEvent.click(screen.getByText(/Terms of Service & Privacy Policy/i));
+        expect(screen.getByText(/Terms & Privacy/i)).toBeDefined();
+    });
+
+    it('closes ToS modal when onClose is triggered', () => {
+        renderLoginPage();
+        fireEvent.click(screen.getByText(/Terms of Service & Privacy Policy/i));
+        expect(screen.getByText(/Terms & Privacy/i)).toBeDefined();
+        fireEvent.click(screen.getByRole('button', { name: /Close/i }));
+        expect(screen.queryByText(/Terms & Privacy/i)).toBeNull();
+    });
+
     it('handles successful registration', async () => {
         mockRegister.mockResolvedValue({ success: true });
         renderLoginPage();

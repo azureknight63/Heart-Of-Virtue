@@ -2,6 +2,18 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.3.0] - 2026-03-27
+
+### Added
+- Terms of Service & Privacy Policy modal on the login/registration screen
+- `TermsOfServiceModal` component with tabbed navigation (Terms of Service / Privacy Policy)
+- ToS covers: account rules, AI data processing disclosure (OpenAI/OpenRouter), freemium payment model notice, IP licensing, self-service account deletion, US governing law, and children's notice
+- Privacy Policy covers: data collection (username, encrypted email, Argon2id hash, save data), AI data transmission, email opt-in/unsubscribe, planned anonymous analytics (pre-disclosed), third-party services (Turso, OpenAI), and self-service deletion without contacting support
+
+### Tests
+- 4 unit tests for `TermsOfServiceModal` (default tab, tab switching, onClose callback)
+- 3 unit tests in `LoginPage.test.jsx` for ToS link render, modal open, and modal close
+
 ## [1.0.1] - 2026-03-26
 
 ### Added

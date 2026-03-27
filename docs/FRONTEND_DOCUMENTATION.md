@@ -193,7 +193,7 @@ frontend/
 ### Page Components
 
 #### `LoginPage.jsx`
-Authentication form with register toggle.
+Authentication form with register toggle and Terms of Service link.
 
 **Features:**
 - Username/password input
@@ -201,6 +201,21 @@ Authentication form with register toggle.
 - Error display
 - Loading state during submission
 - Redirect to game on success
+- "Terms of Service & Privacy Policy" link (opens `TermsOfServiceModal`)
+
+---
+
+#### `TermsOfServiceModal.jsx`
+Modal overlay displaying Terms of Service and Privacy Policy.
+
+**Features:**
+- Tabbed navigation (Terms of Service / Privacy Policy)
+- Full legal content: account rules, AI data processing, freemium model, IP licensing, data rights, contact info
+- Uses `BaseDialog` with `role="tablist"` / `role="tab"` for screen reader support
+- `EFFECTIVE_DATE` and `CONTACT_EMAIL` constants at top of file
+
+**Props:**
+- `onClose` — callback invoked when user closes the modal
 
 **Props:** None (uses `useAuth` hook)
 
