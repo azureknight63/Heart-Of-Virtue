@@ -5,6 +5,7 @@ import GameText from './GameText'
 import GameButton from './GameButton'
 
 const EFFECTIVE_DATE = 'March 26, 2026'
+const CONTACT_EMAIL = 'asregbert@gmail.com'
 
 function Section({ title, children }) {
     return (
@@ -119,7 +120,7 @@ function TermsContent() {
 
             <Section title="14. Contact">
                 Questions or concerns? Reach us at:{' '}
-                <span style={{ color: colors.accent }}>asregbert@gmail.com</span>
+                <span style={{ color: colors.accent }}>{CONTACT_EMAIL}</span>
             </Section>
         </div>
     )
@@ -212,7 +213,7 @@ function PrivacyContent() {
 
             <Section title="Contact">
                 Privacy questions or data requests:{' '}
-                <span style={{ color: colors.accent }}>asregbert@gmail.com</span>
+                <span style={{ color: colors.accent }}>{CONTACT_EMAIL}</span>
             </Section>
         </div>
     )
@@ -246,7 +247,7 @@ export default function TermsOfServiceModal({ onClose }) {
             zIndex={1100}
         >
             {/* Tabs */}
-            <div style={{ display: 'flex', marginBottom: spacing.lg, borderBottom: `1px solid ${colors.border.light}` }}>
+            <div role="tablist" style={{ display: 'flex', marginBottom: spacing.lg, borderBottom: `1px solid ${colors.border.light}` }}>
                 <button
                     style={tabStyle('tos')}
                     onClick={() => setActiveTab('tos')}
