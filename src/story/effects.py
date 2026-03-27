@@ -568,8 +568,10 @@ class NPCSpawnerEvent(Event):
         if self.has_run and not self.repeat:
             return
         # trigger if player map matches spawn tile's map
+        # Use tile as fallback when spawn_tile was not set during JSON deserialization
         try:
-            if self.spawn_tile and self.spawn_tile.map is player.map:
+            spawn_ref = self.spawn_tile or self.tile
+            if spawn_ref and spawn_ref.map is player.map:
                 self.pass_conditions_to_process()
         except Exception:
             return

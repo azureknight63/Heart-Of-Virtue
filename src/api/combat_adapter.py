@@ -344,9 +344,13 @@ class ApiCombatAdapter:
                         move.current_stage = 0
                         move.beats_left = 0
             else:
-                # For re-init, just ensure ALL combatants are properly flagged
+                # For re-init, ensure ALL combatants are properly flagged and
+                # reset player move stages so prior cooldowns don't block new combat.
                 for ally in self.player.combat_list_allies:
                     ally.in_combat = True
+                    for move in ally.known_moves:
+                        move.current_stage = 0
+                        move.beats_left = 0
                 for enemy in self.player.combat_list:
                     enemy.in_combat = True
                     try:
@@ -356,6 +360,9 @@ class ApiCombatAdapter:
                             "Could not set player_ref on enemy %s",
                             getattr(enemy, "name", enemy),
                         )
+                    for move in enemy.known_moves:
+                        move.current_stage = 0
+                        move.beats_left = 0
 
             # Initialize combat lists for all participants (Enemies and Allies)
             # This ensures collision detection works correctly for everyone
