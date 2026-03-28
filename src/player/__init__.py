@@ -15,9 +15,6 @@ External callers continue to use ``from player import Player`` or
 ``from player import Player, generate_output_grid`` unchanged.
 """
 
-import random
-import time
-
 import items  # type: ignore
 import functions  # type: ignore
 import moves  # type: ignore
