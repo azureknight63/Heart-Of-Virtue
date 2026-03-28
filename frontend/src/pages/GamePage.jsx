@@ -322,18 +322,29 @@ export default function GamePage() {
   }, [inCombat, combat, eventQueue, currentEvent])
 
   /**
-   * Manage BGM based on mode and location metadata
+   * Manage SFX when modes change
    */
   useEffect(() => {
     if (mode === 'combat') {
-      playBGM('battle')
       playSFX('combat_start')
-    } else {
-      // Use the BGM defined in map metadata, fallback to adventure
-      const track = location?.bgm || 'adventure'
-      playBGM(track)
     }
-  }, [mode, location?.bgm, playBGM, playSFX])
+  }, [mode, playSFX])
+
+  /**
+   * Manage BGM based on mode and location metadata
+   * (Does not override active event BGM)
+   */
+  useEffect(() => {
+    if (!currentEvent) {
+      if (mode === 'combat') {
+        playBGM('battle')
+      } else {
+        // Use the BGM defined in map metadata, fallback to adventure
+        const track = location?.bgm || 'adventure'
+        playBGM(track)
+      }
+    }
+  }, [mode, location?.bgm, playBGM, currentEvent])
 
   /**
    * Check combat status on initial load only
