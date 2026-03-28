@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import apiEndpoints from '../api/endpoints'
+import { useAuthContext } from '../context/AuthContext'
 
 // Helper to transform combat data
 const transformCombatData = (data) => ({
@@ -37,56 +38,7 @@ const transformLocationData = (room) => {
 }
 
 export const useAuth = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const token = localStorage.getItem('authToken')
-    setIsAuthenticated(!!token)
-    setLoading(false)
-  }, [])
-
-  const login = async (username, password) => {
-    try {
-      const response = await apiEndpoints.auth.login(username, password)
-      const { session_id } = response.data.data
-      localStorage.setItem('authToken', session_id)
-      localStorage.setItem('username', username)
-      setIsAuthenticated(true)
-      return response.data
-    } catch (error) {
-      setIsAuthenticated(false)
-      throw error
-    }
-  }
-
-  const logout = async () => {
-    try {
-      await apiEndpoints.auth.logout()
-    } finally {
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('username')
-      setIsAuthenticated(false)
-      // Force reload to clear state and redirect to login
-      window.location.href = '/login'
-    }
-  }
-
-  const register = async (username, password, email) => {
-    try {
-      const response = await apiEndpoints.auth.register(username, password, email)
-      const { session_id } = response.data.data
-      localStorage.setItem('authToken', session_id)
-      localStorage.setItem('username', username)
-      setIsAuthenticated(true)
-      return response.data
-    } catch (error) {
-      setIsAuthenticated(false)
-      throw error
-    }
-  }
-
-  return { isAuthenticated, loading, login, logout, register }
+  return useAuthContext();
 }
 
 export const usePlayer = () => {

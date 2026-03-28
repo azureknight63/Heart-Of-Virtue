@@ -1,14 +1,21 @@
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useApi'
 import { colors } from '../styles/theme'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
 export default function AccountDialog({ player, onClose }) {
+  const navigate = useNavigate()
   const { logout } = useAuth()
   const username = localStorage.getItem('username') || 'Unknown'
 
   const handleLogout = async () => {
     await logout()
+    onClose()
+  }
+
+  const handleGoToMenu = () => {
+    navigate('/menu')
     onClose()
   }
 
@@ -59,8 +66,12 @@ export default function AccountDialog({ player, onClose }) {
           display: 'flex',
           gap: '10px',
           justifyContent: 'flex-end',
+          flexWrap: 'wrap'
         }}
       >
+        <GameButton onClick={handleGoToMenu} variant="secondary">
+          Main Menu
+        </GameButton>
         <GameButton onClick={onClose} variant="secondary">
           Close
         </GameButton>
