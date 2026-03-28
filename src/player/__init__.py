@@ -15,8 +15,13 @@ External callers continue to use ``from player import Player`` or
 ``from player import Player, generate_output_grid`` unchanged.
 """
 
-import random  # noqa: F401  — re-exported so tests can patch player.random
-import time  # noqa: F401  — re-exported so tests can patch player.time
+# These are intentionally re-exported from the package namespace so that tests
+# can patch them at the player package level (e.g. @patch('player.random.uniform')).
+# The actual usage lives in the mixin files (_combat.py, _movement.py, etc.), but
+# unittest.mock resolves patches against the module where the name is looked up,
+# which is here. Do not remove these imports — the patch targets will break.
+import random  # noqa: F401
+import time  # noqa: F401
 
 import items  # type: ignore
 import functions  # type: ignore
