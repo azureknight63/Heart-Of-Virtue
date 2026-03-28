@@ -493,8 +493,9 @@ class GameService:
         # game.py; the API must do the same so map-entry spawners (e.g. Lurker) trigger correctly.
         try:
             player.universe.game_tick_events()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning("game_tick_events failed: %s", e)
 
         # Store tile modifications after entry events have processed to capture state changes
         if session_data is not None:

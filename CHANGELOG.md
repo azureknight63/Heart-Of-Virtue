@@ -2,6 +2,27 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.4.0] - 2026-03-28
+
+### Fixed
+- **Combat API — awaiting_input stale after victory**: `_handle_victory()` now sets `awaiting_input=False` so the API stops returning "awaiting input" once the fight ends.
+- **Combat API — awaiting_input stale after defeat**: Defeat path in `_execute_move()` now sets `awaiting_input=False`, matching the victory path.
+- **Combat API — proximity gap on reinforcement spawn**: `_synchronize_distances()` is called immediately after new enemies are position-initialized so `Attack.viable()` can target them on the next beat.
+- **Combat API — current_stage deadlock after mid-combat event**: When a combat event fires mid-beat, the in-progress move is reset to stage 0 and move selection is refreshed, preventing a permanent deadlock where the interrupted move could never be re-selected.
+- **Combat API — pending_move_index not cleared on wave transition**: Clears stale pending move index when a new combat wave is detected.
+- **Game Engine — NPCSpawnerEvent tile fallback**: `evaluate_for_map_entry` now falls back to `self.tile` when `spawn_tile` is `None` (set during JSON deserialization), fixing Lurker and other map-entry spawners in the API.
+- **Game Engine — game_tick_events not called on player move**: `move_player` in `GameService` now calls `player.universe.game_tick_events()` so map-entry spawners (NPCSpawnerEvent) fire correctly, matching the terminal game loop.
+- **Frontend — login flow broken by per-instance auth state**: Restored `AuthContext.jsx` with shared React context so `App.jsx` and `LoginPage.jsx` share the same `isAuthenticated` state. Previously, each component had an independent hook instance and login never navigated away from `/login`.
+- **Frontend — logout URL ignored subpath deployment**: `AuthContext.logout()` now uses `import.meta.env.BASE_URL + 'login'` for the redirect, matching the app's `basename="/games/HeartOfVirtue"`.
+
+### Changed
+- Default API starting map changed from `"default"` to `"dark-grotto"` to match the actual game world.
+- `game_tick_events` failures now emit a `logger.warning` instead of silently swallowing the exception.
+
+### Added
+- Test-only `/api/test/heal` endpoint (TESTING mode only) to restore player HP/fatigue mid-QA run.
+- 9 regression tests in `tests/test_beta_qa_regressions.py` covering all five bugs found during beta QA.
+
 ## [0.0.3.2] - 2026-03-28
 
 ### Added
