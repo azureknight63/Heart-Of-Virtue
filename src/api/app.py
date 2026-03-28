@@ -276,7 +276,10 @@ def create_app(config_class=None):
             try:
                 player.hp = player.maxhp
                 player.fatigue = player.maxfatigue
-                return jsonify({"success": True, "hp": player.hp, "maxhp": player.maxhp}), 200
+                return (
+                    jsonify({"success": True, "hp": player.hp, "maxhp": player.maxhp}),
+                    200,
+                )
             except Exception as exc:
                 return jsonify({"success": False, "error": str(exc)}), 500
 

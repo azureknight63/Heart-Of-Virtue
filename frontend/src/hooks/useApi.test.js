@@ -1,6 +1,8 @@
+import { createElement } from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuth, usePlayer, useCombat, useWorld } from './useApi';
+import { AuthProvider } from '../context/AuthContext';
 import apiEndpoints from '../api/endpoints';
 
 vi.mock('../api/endpoints', () => ({
@@ -37,6 +39,8 @@ vi.mock('../utils/TileCache', () => ({
 }));
 
 describe('useAuth', () => {
+  const wrapper = ({ children }) => createElement(AuthProvider, null, children);
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -44,7 +48,7 @@ describe('useAuth', () => {
 
   it('initializes with token from localStorage', () => {
     localStorage.setItem('authToken', 'test-token');
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper });
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.loading).toBe(false);
   });
@@ -53,7 +57,7 @@ describe('useAuth', () => {
     const mockResponse = { data: { data: { session_id: 'new-token' } } };
     apiEndpoints.auth.login.mockResolvedValue(mockResponse);
 
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper });
 
     await act(async () => {
       await result.current.login('user', 'pass');
@@ -65,7 +69,7 @@ describe('useAuth', () => {
 
   it('logs out successfully', async () => {
     localStorage.setItem('authToken', 'test-token');
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper });
 
     // Mock window.location
     const originalLocation = window.location;
@@ -78,7 +82,8 @@ describe('useAuth', () => {
 
     expect(localStorage.getItem('authToken')).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(window.location.href).toBe('/login');
+    // BASE_URL is '/games/HeartOfVirtue/' per vite.config.js base setting
+    expect(window.location.href).toBe('/games/HeartOfVirtue/login');
 
     window.location = originalLocation;
   });
