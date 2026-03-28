@@ -488,6 +488,14 @@ class GameService:
         # Trigger tile entry events with session data for pending event storage
         events_triggered = self.trigger_tile_events(player, new_tile, session_data)
 
+        # Run universe game-tick events (increments tick counter and fires evaluate_for_map_entry
+        # spawners like NPCSpawnerEvent). The terminal game loop calls this on every action via
+        # game.py; the API must do the same so map-entry spawners (e.g. Lurker) trigger correctly.
+        try:
+            player.universe.game_tick_events()
+        except Exception:
+            pass
+
         # Store tile modifications after entry events have processed to capture state changes
         if session_data is not None:
             current_block_exit = (

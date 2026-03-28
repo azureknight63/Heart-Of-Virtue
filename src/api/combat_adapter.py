@@ -1087,6 +1087,7 @@ class ApiCombatAdapter:
         # Check win/loss conditions
         if not self.player.is_alive():
             self.player.in_combat = False
+            self.awaiting_input = False
             self._add_log_entry(
                 self.player.combat_beat, "You have been defeated!", "system"
             )
@@ -1165,6 +1166,12 @@ class ApiCombatAdapter:
                     )
                 except Exception as e:
                     logger.warning("Position init for reinforcements failed: %s", e)
+                # Immediately sync proximity so Attack.viable() can see new enemies on
+                # the next get_available_moves() call without waiting for the next beat.
+                try:
+                    self._synchronize_distances()
+                except Exception:
+                    pass
 
         # Check if events triggered (BEFORE calling get_combat_state which consumes them)
         event_just_triggered = (
@@ -1191,6 +1198,19 @@ class ApiCombatAdapter:
             # pending-move state so when the player dismisses events and returns
             # to combat they get a fresh move_selection prompt instead of a
             # phantom target_selection loop with 0-damage attacks.
+            #
+            # Also reset any in-progress move (stages 1-2 = execute/recoil) back to
+            # stage 0. When the beat loop breaks early on an event, the selected move
+            # is left mid-execution. _handle_move_selection checks current_stage != 0
+            # and returns "Move not ready yet", creating a permanent deadlock where the
+            # interrupted move can never be selected again.
+            if self.player.current_move is not None:
+                try:
+                    self.player.current_move.current_stage = 0
+                    self.player.current_move.beats_left = 0
+                except Exception:
+                    pass
+                self.player.current_move = None
             self.awaiting_input = True
             self.input_type = "move_selection"
             self.pending_move_index = None
@@ -1545,6 +1565,7 @@ class ApiCombatAdapter:
     def _handle_victory(self):
         """Handle combat victory."""
         self.player.in_combat = False
+        self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
 
         # Calculate exp
