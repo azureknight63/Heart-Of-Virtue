@@ -126,6 +126,9 @@ Key architectural work already merged into the codebase:
 - Automated bug-hunt harness live in `tools/` with 11 scenarios
 - Combat testing arena added (`src/resources/maps/combat-testing-arena.json`) with `/combat-test` skill
 - Cooldown drain bug fixed: cooldowns now only tick during active combat beats, not during resting/non-combat states
+- Beta QA pass complete (v0.0.4.0): 5 combat API bugs fixed (`awaiting_input` stale after victory/defeat, proximity gap on reinforcement spawn, `current_stage` deadlock on mid-beat event, `pending_move_index` stale on wave transition)
+- `NPCSpawnerEvent.evaluate_for_map_entry` tile fallback added — uses `self.tile` when `spawn_tile` is `None` (JSON deserialization issue), fixing Lurker and map-entry spawners via the API
+- `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
 
 ## Bug-Hunt Harness
 
