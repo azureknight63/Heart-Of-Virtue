@@ -15,6 +15,9 @@ External callers continue to use ``from player import Player`` or
 ``from player import Player, generate_output_grid`` unchanged.
 """
 
+import random  # noqa: F401  — re-exported so tests can patch player.random
+import time  # noqa: F401  — re-exported so tests can patch player.time
+
 import items  # type: ignore
 import functions  # type: ignore
 import moves  # type: ignore
