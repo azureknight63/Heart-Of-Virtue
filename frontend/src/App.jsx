@@ -17,11 +17,11 @@ function App() {
     <AudioProvider>
       <BrowserRouter basename="/games/HeartOfVirtue">
         <Routes>
-          <Route path="/login" element={isAuthenticated ? <Navigate to="/menu" /> : <LoginPage />} />
+          <Route path="/login" element={isAuthenticated ? <Navigate to="/game" /> : <LoginPage />} />
           <Route path="/menu" element={isAuthenticated ? <MainMenuPage /> : <Navigate to="/login" />} />
           <Route path="/game" element={isAuthenticated ? <GamePage /> : <Navigate to="/login" />} />
-          <Route path="/" element={<Navigate to={isAuthenticated ? '/menu' : '/login'} />} />
-          <Route path="*" element={<Navigate to={isAuthenticated ? '/menu' : '/login'} />} />
+          <Route path="/" element={<Navigate to={isAuthenticated ? '/game' : '/login'} />} />
+          <Route path="*" element={<Navigate to={isAuthenticated ? '/game' : '/login'} />} />
         </Routes>
       </BrowserRouter>
     </AudioProvider>

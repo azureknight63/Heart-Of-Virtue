@@ -90,3 +90,4 @@ bugs_*.json
 # Inquisitor browser test screenshots
 tools/inquisitor_screenshots/
 .gstack/
+.agent/instructions.md

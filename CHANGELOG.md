@@ -2,6 +2,16 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.3.2] - 2026-03-28
+
+### Added
+- "Main Menu" navigation button in `AccountDialog`.
+
+### Changed
+- Centralized frontend authentication state using `AuthContext` to prevent fragmented rendering gaps.
+- Updated login route to drop straight into `/game` default path over `/menu`.
+- Modified subpath-aware navigation in logout action.
+
 ## [0.0.3.1] - 2026-03-27
 
 ### Changed
