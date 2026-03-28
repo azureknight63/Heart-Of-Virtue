@@ -2,6 +2,7 @@
 
 __author__ = "Alex Egbert"
 
+import importlib
 import random
 
 from neotermcolor import colored
@@ -201,9 +202,6 @@ class MapTile:
         return npc
 
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-        # python
-        import importlib
-
         items_mod = importlib.import_module("items")
         amt = max(1, int(amt))
         spawned = []

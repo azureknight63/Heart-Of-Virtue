@@ -240,7 +240,7 @@ class SessionManager:
 
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
-        self.starting_map_name = "default"
+        self.starting_map_name = "dark-grotto"
         self.starting_item_types = []  # List of item class names to spawn
         self.game_config = None  # Full GameConfig object
         self._load_starting_position_from_config()

@@ -38,7 +38,7 @@ const transformLocationData = (room) => {
 }
 
 export const useAuth = () => {
-  return useAuthContext();
+  return useAuthContext()
 }
 
 export const usePlayer = () => {

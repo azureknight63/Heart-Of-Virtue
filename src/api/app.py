@@ -264,6 +264,25 @@ def create_app(config_class=None):
                 201,
             )
 
+        @app.route("/api/test/heal", methods=["POST"])
+        def test_heal_player():
+            """Restore player to full HP and fatigue. Test mode only — never active in production."""
+            from flask import jsonify, request as _req
+            from src.api.middleware.auth import get_session_and_player
+
+            session_manager, session, player, error = get_session_and_player(_req)
+            if error:
+                return error
+            try:
+                player.hp = player.maxhp
+                player.fatigue = player.maxfatigue
+                return (
+                    jsonify({"success": True, "hp": player.hp, "maxhp": player.maxhp}),
+                    200,
+                )
+            except Exception as exc:
+                return jsonify({"success": False, "error": str(exc)}), 500
+
     # API info endpoint
     @app.route("/api/info", methods=["GET"])
     def api_info():

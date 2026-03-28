@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
             localStorage.removeItem('username');
             setIsAuthenticated(false);
             setUser(null);
-            // Force reload to clear state and redirect to login, respecting subpath
+            // Force reload to clear state and redirect to login, respecting subpath deployment
             const baseUrl = import.meta.env.BASE_URL || '/';
             window.location.href = baseUrl + 'login';
         }
