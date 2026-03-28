@@ -6,14 +6,17 @@ import '@fontsource/eb-garamond/600.css'
 import './styles/index.css'
 import logger from './utils/logger.js'
 import { ToastProvider } from './context/ToastContext.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 
 // Initialize browser logging
 logger.init()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ToastProvider>
-      <App />
-    </ToastProvider>
+    <AuthProvider>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </AuthProvider>
   </React.StrictMode>,
 )
