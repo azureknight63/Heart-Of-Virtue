@@ -772,6 +772,7 @@ friendly enough to Jean.
         self.add_move(moves.NpcIdle(self))
         self.add_move(moves.Parry(self), 2)
         self.keywords = ["talk"]
+        self.battle_symbol = "G"  # distinguish from Rock Rumblers (R)
         self.pronouns = {
             "personal": "he",
             "possessive": "his",

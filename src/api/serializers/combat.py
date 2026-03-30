@@ -202,6 +202,7 @@ class CombatantSerializer:
         return {
             "id": "player" if is_player else f"enemy_{id(combatant)}",
             "name": getattr(combatant, "name", "Unknown"),
+            "battle_symbol": getattr(combatant, "battle_symbol", None),
             "type": "player" if is_player else "npc",
             "level": getattr(combatant, "level", 1),
             "health": {

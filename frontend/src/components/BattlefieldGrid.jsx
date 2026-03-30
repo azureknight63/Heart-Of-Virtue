@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
+import { useAudio } from '../context/AudioContext';
 
 // ---------------------------------------------------------------------------
 // Animation registry — module level so it is never recreated on render
@@ -100,7 +101,7 @@ const CombatantMarker = React.memo(({ entity, isPlayer, isFullMode = false, isHo
   const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
   const fatPct = maxFatigue > 0 ? Math.min(1, Math.max(0, fatigue / maxFatigue)) : 0;
 
-  const content = (entity.name && entity.name[0]) || '?';
+  const content = entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
   const triangleClass = isFullMode
     ? 'absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90'
@@ -579,6 +580,8 @@ function BattlefieldGrid({
   const [hoveredEntity, setHoveredEntity] = useState(null);
   const [selectedEntity, setSelectedEntity] = useState(null);
 
+  const { playSFX } = useAudio();
+
   // Smooth camera — zoomed mode only. All mutable values live in refs so the
   // RAF loop never needs to be recreated and only drives a React re-render
   // when the integer snap cell actually changes (i.e. Jean crosses a cell
@@ -670,6 +673,8 @@ function BattlefieldGrid({
     // and EntityLayer can fade out the marker
     if (animData.type === 'death' && animData.position) {
       setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position, entity: animData.entity }]);
+      // Enemy death SFX — play once per kill
+      playSFX('enemy_death');
     }
 
     let currentPhaseIndex = 0;
