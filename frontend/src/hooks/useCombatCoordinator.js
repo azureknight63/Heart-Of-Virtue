@@ -25,7 +25,8 @@ export function useCombatCoordinator({
     displayedLogCount,
     performAction,
     fetchCombatStatus,
-    playSFX
+    playSFX,
+    playBGM
 }) {
     // Combat dialog state
     const [combatDialogShown, setCombatDialogShown] = useState(false)
@@ -56,6 +57,8 @@ export function useCombatCoordinator({
             if (!isCombatLogProcessing && !hasPendingLogs && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 if (maybeEnd.status === 'victory') {
                     setShowVictoryDialog(true)
+                    // Switch BGM to fanfare (acts as victory sting — non-looping feel)
+                    if (playBGM) playBGM('fanfare')
                 } else {
                     setShowDefeatDialog(true)
                 }

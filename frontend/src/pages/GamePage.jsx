@@ -74,7 +74,8 @@ export default function GamePage() {
     displayedLogCount,
     performAction,
     fetchCombatStatus,
-    playSFX
+    playSFX,
+    playBGM
   })
 
   // Event management hook
@@ -302,14 +303,11 @@ export default function GamePage() {
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
 
-        // Determine mode: stay in combat if dialog is open OR if we just received a new end state
-        const isDialogOpen = showVictoryDialog || showDefeatDialog
-
-        if (isDialogOpen) {
-          setMode('combat')
-        } else {
-          setMode('exploration')
-        }
+        // Keep mode locked to 'combat' while end_state is present.
+        // handleVictoryClose / handleDefeatClose will call setMode('exploration')
+        // only after the user finishes with the dialog — preventing the jarring
+        // instant-switch that occurred when the mode flipped before the dialog opened.
+        setMode('combat')
       } else {
         setMode('exploration')
         // Refetch when transitioning from combat to exploration
