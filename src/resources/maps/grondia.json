@@ -10,7 +10,26 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Scratched Tally",
+                    "description": "A cluster of deep scratches in the rock — too deliberate for accident.",
+                    "idle_message": "Something is scratched into the passage wall here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "scratches carved into the wall!",
+                    "announce": "Something is scratched into the passage wall here.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Three grouped scratches, then a long diagonal through them. Repeated three times. A tally, perhaps — or a boundary marker. The meaning is not recoverable, but the intention was."
+                }
+            }
+        ]
     },
     "(10, 2)": {
         "id": "tile_10_2",
@@ -22,10 +41,49 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeElder"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "PrayerCandleRack",
+                "__module__": "objects",
+                "props": {
+                    "name": "Ritual Stone Rack",
+                    "description": "A low rack of small shaped mineral rods, their tips darkened where they have been burned or resonated. Several still hold a faint, slow pulse of light. Jean can LIGHT one or PRAY here.",
+                    "idle_message": "A low stone rack of mineral rods stands near the dais.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a rack of glowing mineral rods!",
+                    "announce": "A low stone rack of mineral rods stands near the dais.",
+                    "keywords": ["light", "pray", "use", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "lit_candles": 4,
+                    "event": null
+                }
+            }
+        ]
     },
     "(1, 3)": {
         "id": "tile_1_3",
@@ -39,7 +97,37 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "dusty satchel",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 12}}
+                    ],
+                    "name": "Dusty Satchel",
+                    "description": "A worn satchel of stiff, dried material propped in a niche cut into the passage wall. Whoever left it here has not returned.",
+                    "idle_message": "A stiff, dusty satchel rests in a wall niche.",
+                    "hidden": true,
+                    "hide_factor": 3,
+                    "discovery_message": "a forgotten satchel tucked into the wall!",
+                    "announce": "A stiff, dusty satchel rests in a wall niche.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(9, 3)": {
         "id": "tile_9_3",
@@ -53,10 +141,77 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeConclaveElder"},
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Shrine",
+                "__module__": "objects",
+                "props": {
+                    "name": "Golemite Plinth",
+                    "description": "A low circular plinth of polished black stone at the chamber's center. Its surface is incised with converging sigils matching the floor. There is a shallow depression at the top, worn by the placement of something over a very long time. Jean can PRAY here.",
+                    "idle_message": "A low polished plinth stands at the center of the chamber.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a low polished plinth!",
+                    "announce": "A low polished plinth stands at the center of the chamber.",
+                    "keywords": ["pray", "examine", "touch", "use"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "niche",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "CrystalTear", "__module__": "items", "props": {}},
+                        {"__class__": "GronditeMarkToken", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Conclave Niche",
+                    "description": "One of the shoulder-height niches holds a folded length of woven stone-fiber and, beneath it, a small sealed vessel.",
+                    "idle_message": "One of the wall niches holds a few stored objects.",
+                    "hidden": true,
+                    "hide_factor": 3,
+                    "discovery_message": "items stored in one of the niches!",
+                    "announce": "One of the wall niches holds a few stored objects.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(10, 3)": {
         "id": "tile_10_3",
@@ -74,7 +229,26 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Mosaic Border Text",
+                    "description": "The outer ring of the mosaic is bordered by a band of incised Golemite text, worn but legible in places.",
+                    "idle_message": "The mosaic's outer border carries an inscription.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "an inscription borders the mosaic!",
+                    "announce": "The mosaic's outer border carries an inscription.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Jean can trace some of the border characters. He recognizes the symbol for 'depth' repeated at each cardinal point. Whatever the mosaic depicts, the border says: 'here is the depth of it.' Or possibly: 'here is what lies below.' The grammar is opaque."
+                }
+            }
+        ]
     },
     "(11, 3)": {
         "id": "tile_11_3",
@@ -91,26 +265,79 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "inset shelf",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 20}}
+                    ],
+                    "name": "Inset Shelf",
+                    "description": "A low, carved shelf runs along the east wall beneath the tapestries. Several objects rest on it, partially obscured.",
+                    "idle_message": "A carved shelf runs along one wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a carved shelf along one wall!",
+                    "announce": "A carved shelf runs along one wall.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(2, 4)": {
         "id": "tile_2_4",
         "title": "Passage",
-        "description": "A crossroads of worn corridors, where several tunnels converge and the floor bears many shallow\n        grooves from travelers and carts. The stone here is smoother, rubbed bright in places. A cool eddy of air\n        moves through the junction, carrying the faint, mineral tang of deeper caverns. Light from one corridor\n        reveals a stepped recess used as a temporary shelter or resting place.",
+        "description": "A crossroads of worn corridors where several tunnels converge, the floor bearing the shallow grooves of heavy carts dragged through over generations. The stone is rubbed bright at shoulder height on both sides, left by hands seeking the wall in the dark. A stepped recess to one side holds the scorch marks of old lamp oil and a square of packed earth where something heavy rested long enough to flatten it. Cool eddies of air from each direction carry different temperatures — one passage is noticeably warmer.",
         "exits": [
             "northwest",
             "southeast"
         ],
         "block_exit": [],
         "events": [],
-        "items": [],
+        "items": [
+            {"__class__": "Gold", "__module__": "items", "props": {"amt": 7}}
+        ],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "StreetLantern",
+                "__module__": "objects",
+                "props": {
+                    "name": "Junction Lantern",
+                    "description": "An iron lantern fixed to a spike driven into the stone wall. The glass is old and slightly green-tinted; it throws a warmer, older light than the corridor lanterns Jean has seen.",
+                    "idle_message": "An iron lantern burns steadily at the junction.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a lantern burning at the junction!",
+                    "announce": "An iron lantern burns steadily at the junction.",
+                    "keywords": ["light", "douse", "extinguish", "inspect"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "lit": true,
+                    "event_on": null,
+                    "event_off": null
+                }
+            }
+        ]
     },
     "(8, 4)": {
         "id": "tile_8_4",
         "title": "Arcology",
-        "description": "A vertical hive of carved living chambers, the Arcology stacks dwellings into the rock like tiers.\n        Narrow walkways and carved doorways line the concourse; small bridges and stairlets connect levels.\n        Large crystalline protrusions descend from the ceiling, bathing the area in a steady, warm red glow that\n        softens the shadows and gives the stone a warm, polished sheen.",
+        "description": "A vertical hive of carved living chambers stacks dwellings into the rock in close, terraced tiers. Each dwelling front is distinct; some have carved lintels, others raw stone. Narrow walkways connect levels via carved steps, and small bridges of stone link opposite walls. Large crystalline protrusions descend from the ceiling, their steady red glow pooling on the concourse floor in overlapping rings of warm color. The air smells of something mineral and what might be cooked food — something slow and dense.",
         "exits": [
             "northeast",
             "south",
@@ -119,7 +346,26 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -127,7 +373,7 @@
     "(9, 4)": {
         "id": "tile_9_4",
         "title": "Residences",
-        "description": "A dense cluster of small doorways and stacked thresholds opens onto this short street of residences.\n        Each doorway is framed by carved lintels and narrow ledges where pots or small household objects might\n        be placed. Passage here is slower; the floor is swept and the architecture leans close, creating a sheltered,\n        intimate feel protected from the wider concourse.",
+        "description": "A dense cluster of small doorways and stacked thresholds opens onto a short street. Each doorway is distinct: one lintel has a handprint pressed into wet stone and dried there; another has a small groove cut across the threshold. Passage is slow here; the floor is swept to grit-free clarity. A low trough of water runs the length of the lane, fed by a seam in the rock above.",
         "exits": [
             "north",
             "northeast",
@@ -138,15 +384,63 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "planter",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "GronditeMarkToken", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Ledge Planter",
+                    "description": "A stacked stone ring on a doorway ledge holds dried mineral fiber. At the base of the planter, tucked below the fiber: a small object left there deliberately.",
+                    "idle_message": "A stone planter sits on a ledge above a doorway.",
+                    "hidden": true,
+                    "hide_factor": 2,
+                    "discovery_message": "something hidden in a ledge planter!",
+                    "announce": "A stone planter sits on a ledge above a doorway.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(10, 4)": {
         "id": "tile_10_4",
         "title": "Conclave",
-        "description": "An outer terrace of the Conclave, open to a high internal court. The floor here is arranged with\n        shallow channels that guide run-off toward a central basin and the walls hold plaques incised with lineage\n        marks and clan sigils. Light from high openings eases the gloom, and the terrace acts as a measured,\n        ceremonial threshold between the busy concourse and the inner sanctums.",
+        "description": "An outer terrace of the Conclave, open to a high internal court. The floor is arranged with shallow channels guiding condensation toward a broad central basin stained pale green at the waterline. The walls hold plaques incised with lineage marks and clan sigils; some plaques have a secondary mark cut through them at a diagonal. The terrace is spotless in a way that speaks of daily care.",
         "exits": [
             "northwest",
             "north",
@@ -158,7 +452,26 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -166,7 +479,7 @@
     "(11, 4)": {
         "id": "tile_11_4",
         "title": "Residences",
-        "description": "Clustered residences press close along a narrow, sheltered lane carved into the stone. Low thresholds\n        and carved lintels mark each doorway; woven ropes and weathered hooks hold cloth awnings and small\n        trinkets on shallow ledges. Warm, reflected light from ceiling crystals pools on the swept floor,\n        and the architecture leans inward, creating a string of private alcoves and tiny courtyards between homes.",
+        "description": "Clustered residences press close along a narrow, sheltered lane carved into the stone. Low thresholds and carved lintels mark each doorway; woven ropes and weathered hooks hold cloth awnings and small trinkets on shallow ledges. Warm, reflected light from ceiling crystals pools on the swept floor, and the architecture leans inward, creating a string of private alcoves and tiny courtyards between homes.",
         "exits": [
             "northwest",
             "north",
@@ -177,10 +490,59 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "trinket ledge",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "DriedCrystalSap", "__module__": "items", "props": {}},
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Trinket Ledge",
+                    "description": "A narrow ledge between two doorways holds several small objects: a smooth stone disc, a twist of mineral fiber, a small sealed crock.",
+                    "idle_message": "A ledge between doors holds some small objects.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a ledge with some objects on it!",
+                    "announce": "A ledge between doors holds some small objects.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(12, 4)": {
         "id": "tile_12_4",
@@ -301,7 +663,7 @@
     "(3, 5)": {
         "id": "tile_3_5",
         "title": "Passage",
-        "description": "A broad conduit cut through living rock, this passage widens here into a short, hummed corridor.\n        Scuffs and shallow wheel grooves scatter across the packed floor; occasional niches have been carved\n        into the wall for lamps or small offerings. Moisture beads along seams of the stone, and a faint, cool\n        draft pushes along the corridor toward darker tunnels beyond.",
+        "description": "A broad conduit cut through living rock, this passage widens here into a short, humred corridor. Scuffs and shallow wheel grooves scatter across the packed floor; occasional niches have been carved into the wall for lamps or small offerings. Moisture beads along seams of the stone, and a faint, cool draft pushes along the corridor toward darker tunnels beyond.",
         "exits": [
             "northwest",
             "east"
@@ -310,7 +672,37 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "stone box",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "DriedCrystalSap", "__module__": "items", "props": {}},
+                        {"__class__": "GronditeMarkToken", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Wall Niche",
+                    "description": "One of the carved niches in the wall holds a small, lidded stone box, unremarkable from a distance.",
+                    "idle_message": "A wall niche holds a small stone box.",
+                    "hidden": true,
+                    "hide_factor": 2,
+                    "discovery_message": "a small lidded box in one of the wall niches!",
+                    "announce": "A wall niche holds a small stone box.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(4, 5)": {
         "id": "tile_4_5",
@@ -329,7 +721,7 @@
     "(5, 5)": {
         "id": "tile_5_5",
         "title": "GateWest",
-        "description": "A seamless, monolithic wall rises here, its face cut and polished to an eerie smoothness. A faint\n        outline of a gate is etched into the stone, rimmed with slow-draining channels and weathered glyphs.\n        Drafts leak through tiny seams around the frame and carry the distant, muffled rhythms of the city.\n        The sheer scale and lack of an obvious mechanism make the threshold feel deliberately forbidding.",
+        "description": "A seamless, monolithic wall rises here, its face cut and polished to an eerie smoothness. A faint outline of a gate is etched into the stone, rimmed with slow-draining channels and weathered glyphs. Drafts leak through tiny seams around the frame and carry the distant, muffled rhythms of the city. The sheer scale and lack of an obvious mechanism make the threshold feel deliberately forbidding.",
         "exits": [
             "west",
             "east"
@@ -338,7 +730,26 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Gate Surround Glyphs",
+                    "description": "The weathered glyphs rimming the gate frame — dense and interlocking, worn almost to suggestion.",
+                    "idle_message": "Dense glyphs ring the gate frame.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "glyphs carved into the gate frame!",
+                    "announce": "Dense glyphs ring the gate frame.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "The glyphs do not translate to anything Jean knows. Their geometry speaks of boundary and threshold. At the base of the right column, scratched over the carved surface in a cruder hand: a small human figure with a circle around it, crossed through. Jean stares at it for a moment."
+                }
+            }
+        ]
     },
     "(6, 5)": {
         "id": "tile_6_5",
@@ -357,7 +768,7 @@
     "(7, 5)": {
         "id": "tile_7_5",
         "title": "Arcology",
-        "description": "A tiered arcade of dwellings rises on either side of a narrow concourse; terraces and carved\n        ledges stack like honeycombs into the rock. Linen awnings and ropes bridge between openings, and\n        narrow stairlets climb to upper tiers. The concourse breathes with the city's slow circulation,\n        and the warm glow of embedded crystals bathes doorways in an amber cast.",
+        "description": "A tiered arcade of dwellings rises on either side of a narrow concourse; terraces and carved ledges stack like honeycombs into the rock. Linen awnings and ropes bridge between openings, and narrow stairlets climb to upper tiers. The concourse breathes with the city's slow circulation, and the warm glow of embedded crystals bathes doorways in an amber cast. The concourse floor here carries a long row of small indentations at regular intervals — floor marks, perhaps for some procession or ceremony.",
         "exits": [
             "northeast",
             "west",
@@ -374,12 +785,31 @@
         ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Floor Marks",
+                    "description": "A row of small, even indentations at shin height on the archway supports of the concourse.",
+                    "idle_message": "Small marks are set into the concourse archway supports.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "small marks on the archway supports!",
+                    "announce": "Small marks are set into the concourse archway supports.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "They're not decorative. The spacing is too regular, too deliberate — evenly spaced, one mark per archway at a consistent height. Jean can't tell if they're counting something in, or counting something out."
+                }
+            }
+        ]
     },
     "(8, 5)": {
         "id": "tile_8_5",
         "title": "Arcology",
-        "description": "Here the arcology opens into a slightly broader tier where small bridges and bridges of stone\n        link opposite ledges. Carved gutters collect the scant runoff and channel it toward recessed basins.\n        Doorways are set into the rock in uneven rows, and the sound of distant footfalls echoes from the\n        twisting alleys that run between the stacked dwellings.",
+        "description": "The arcology opens into a slightly broader tier at this level, where stone bridges span opposite ledges. Carved gutters collect scant runoff and channel it toward recessed basins darkened with mineral residue. Doorways are set into the rock in uneven rows, each with its mark or tally; the sound of distant footfalls echoes from the twisting alleys between the stacked dwellings.",
         "exits": [
             "north",
             "northeast",
@@ -389,15 +819,36 @@
             "southeast"
         ],
         "block_exit": [],
-        "events": [],
-        "items": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
+        "items": [
+            {"__class__": "Gold", "__module__": "items", "props": {"amt": 5}}
+        ],
         "npcs": [],
         "objects": []
     },
     "(9, 5)": {
         "id": "tile_9_5",
         "title": "Arcology",
-        "description": "A busier tier of the arcology, where carved thresholds open onto a tighter weave of alleys.\n        Small stone platforms serve as outdoor workspaces, and narrow railings keep passersby from steep drops.\n        The glow from clustered crystals above throws the concourse into alternating bands of light and shadow,\n        making the levels feel both intimate and vertically extensive.",
+        "description": "A busier tier of the arcology where carved thresholds open onto a tighter weave of alleys. Small stone platforms serve as outdoor work surfaces, several currently occupied. Narrow railings of braided iron keep passersby from steep drops; and the glow from clustered crystals above throws the concourse into alternating bands of light and shadow.",
         "exits": [
             "northwest",
             "north",
@@ -409,15 +860,64 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeWorker"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "work platform",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralPowder", "__module__": "items", "props": {}},
+                        {"__class__": "FabricariumRejectionShard", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Work Platform",
+                    "description": "One of the stone platforms used as an outdoor work surface. A few items left from a recent task lie on it.",
+                    "idle_message": "A stone work platform sits here, recently used.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a work platform with items on it!",
+                    "announce": "A stone work platform sits here, recently used.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(10, 5)": {
         "id": "tile_10_5",
         "title": "Citadel",
-        "description": "The Citadel's outer forecourt opens into a solemn, orderly space of polished stone and raised\n        platforms. Banners and carved reliefs mark clan houses, and a broad stair leads upward toward the\n        inner halls. The air here feels intentionally controlled; water-swept channels and carefully placed\n        braziers regulate scent and humidity, and the architecture speaks of authority practiced with restraint.",
+        "description": "The Citadel's outer forecourt opens into a solemn, orderly space of polished stone and raised platforms. Banners and carved reliefs mark clan houses and their histories in a visual language Jean cannot read. A broad stair leads upward. The air here feels intentionally controlled; water-swept channels and carefully placed braziers regulate scent and humidity. Every surface has been worked to a standard.",
         "exits": [
             "northwest",
             "north",
@@ -434,16 +934,53 @@
                 "__class__": "AfterKingSlimeReturn",
                 "__module__": "story.ch02",
                 "props": {}
+            },
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeElder"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
             }
         ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Citadel Relief",
+                    "description": "A carved relief panel beside the entrance stair, depicting a procession of Grondite figures in low relief.",
+                    "idle_message": "A carved relief panel flanks the entrance stair.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a carved relief beside the stair!",
+                    "announce": "A carved relief panel flanks the entrance stair.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "The figures are in procession, each carrying something different: a stone block, a jar, a length of chain, an empty tray. The rear of the procession is unfinished — the carver stopped partway through the last figure, leaving it featureless. Intentional or interrupted, Jean cannot say."
+                }
+            }
+        ]
     },
     "(11, 5)": {
         "id": "tile_11_5",
         "title": "Ecumerium",
-        "description": "A broad arcade opens beneath a high, ribbed vault where carved stone ribs meet at aged bosses.\n        Long stone counters run in ordered rows, their surfaces smoothed by generations of trade; iron hooks\n        and signboards hang from low beams, marking booths and guild spaces. Light filters through\n        clerestory slits, pooling in shallow channels cut into the floor to gather runoff. The air smells\n        faintly of spice resin and warm stone; the place feels organized for steady commerce and passing crowds.",
+        "description": "A broad arcade opens beneath a high, ribbed vault. Long stone counters run in ordered rows, their surfaces smoothed by generations of trade; iron hooks and signboards hang from low beams, marking booths and guild spaces. Light filters through clerestory slits, pooling in shallow channels cut to gather runoff. The air smells faintly of spice resin and warm stone.",
         "exits": [
             "northwest",
             "north",
@@ -455,10 +992,50 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "StreetLantern",
+                "__module__": "objects",
+                "props": {
+                    "name": "Arcade Lantern",
+                    "description": "An iron lantern on a post at the arcade entrance. It is lit, throwing a working warmth across the stone counters.",
+                    "idle_message": "An iron lantern on a post stands at the arcade entrance.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a lantern at the arcade entrance!",
+                    "announce": "An iron lantern on a post stands at the arcade entrance.",
+                    "keywords": ["light", "douse", "extinguish", "inspect"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "lit": true,
+                    "event_on": null,
+                    "event_off": null
+                }
+            }
+        ]
     },
     "(12, 5)": {
         "id": "tile_12_5",
@@ -575,7 +1152,7 @@
     "(13, 5)": {
         "id": "tile_13_5",
         "title": "Ecumerium",
-        "description": "A row of recessed stalls lines this side of the Ecumerium, each set beneath a carved lintel.\n        Stone counters are inset with small basins to catch drips, and hinged shutters fold into the walls\n        when empty. Painted plaques above each stall show faded emblems and slogans; many have been repainted\n        over time. The space carries the constant low murmur of commerce and the creak of ropes and shutters.",
+        "description": "A row of recessed stalls lines this side of the Ecumerium, each set beneath a carved lintel. Stone counters are inset with small basins to catch drips, and hinged shutters fold into the walls when empty. Painted plaques above each stall show faded emblems; many have been repainted over time. The space carries the constant low murmur of commerce and the creak of ropes and shutters.",
         "exits": [
             "northwest",
             "west",
@@ -586,7 +1163,37 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "open stall",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}},
+                        {"__class__": "DriedCrystalSap", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Market Stall",
+                    "description": "An open stall counter with several items laid out on a cloth. No attendant is present.",
+                    "idle_message": "An open market stall counter holds some goods.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "an open market stall!",
+                    "announce": "An open market stall counter holds some goods.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(14, 5)": {
         "id": "tile_14_5",
@@ -597,20 +1204,87 @@
             "east"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeElder"},
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "stone table",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralPowder", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Low Stone Table",
+                    "description": "A flat stone table at the room's center, its surface worn smooth. On it: the remains of something stored — a ring of faint residue where a vessel stood, and a small fold of woven fiber.",
+                    "idle_message": "A low stone table sits in the center of the room.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a low stone table!",
+                    "announce": "A low stone table sits in the center of the room.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(15, 5)": {
         "id": "tile_15_5",
         "title": "GateEast",
-        "description": "A broad, featureless wall rises here and a rough path curls away to the east. The gate set\n        into the stone is suggested only by a faint seam and weathered grooves; no visible mechanism exists.\n        Narrow drainage channels trace the base of the wall and a shallow step leads up to the framed arch.\n        The monumentality of the barrier and the absence of a handle mark it as a threshold meant for the\n        Grondites' larger designs rather than casual passage.",
+        "description": "A broad, featureless wall rises here and a rough path curls away to the east. The gate set into the stone is suggested only by a faint seam and weathered grooves; no visible mechanism exists. Narrow drainage channels trace the base of the wall and a shallow step leads up to the framed arch. The monumentality of the barrier and the absence of a handle mark it as a threshold meant for the Grondites' larger designs rather than casual passage.",
         "exits": [
             "west"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -635,7 +1309,7 @@
     "(9, 6)": {
         "id": "tile_9_6",
         "title": "Residences",
-        "description": "Narrow thresholds open from a confined lane into a cluster of modest homes. Carved lintels\n        and patched stonework speak of continuous repair and practical care. Small ledges project from the\n        walls where simple offerings or nightly tools might rest; a low drain runs the length of the lane to\n        move away spills. The area feels private and sheltered, a quieter backstreet removed from the main\n        concourse.",
+        "description": "Narrow thresholds open from a confined lane into a cluster of modest homes. Carved lintels and patched stonework speak of continuous repair and practical care. Small ledges project from the walls where offerings or tools might rest; a low drain runs the length of the lane. The area feels private and sheltered, a quieter backstreet removed from the main concourse.",
         "exits": [
             "northwest",
             "north",
@@ -646,7 +1320,26 @@
             "southeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -654,7 +1347,7 @@
     "(10, 6)": {
         "id": "tile_10_6",
         "title": "Fabricarium",
-        "description": "The Fabricarium's working floor opens into a cross-cut gallery of workshops. Heavy stone\n        benches and low tool racks line the walls; the floors bear the dark smears of metalworking and\n        polishing. Venting channels rise toward high flues to carry away heat and dust, and iron supports\n        brace the carved roof where pulley blocks and beams transmit force. The space smells faintly of\n        warm stone and metal, and its layout prioritizes work and movement over display.",
+        "description": "The Fabricarium's working floor opens into a cross-cut gallery of workshops. Heavy stone benches and low tool racks line the walls; the floors bear dark smears of metal dust and polishing compound. Venting channels rise toward high flues to carry away heat and stone dust. Iron supports brace the carved roof where pulley blocks and rope runs transmit force between floors. The smell is warm metal and something older, like the stone itself has been worked for so long it has its own scent.",
         "exits": [
             "northwest",
             "north",
@@ -666,15 +1359,64 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeWorker"},
+                    "count": 3,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "tool rack",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralPowder", "__module__": "items", "props": {}},
+                        {"__class__": "FabricariumRejectionShard", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Tool Rack",
+                    "description": "A low rack fixed to the workshop wall, holding tools and a few spent materials.",
+                    "idle_message": "A tool rack is mounted to the workshop wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a workshop tool rack!",
+                    "announce": "A tool rack is mounted to the workshop wall.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(11, 6)": {
         "id": "tile_11_6",
         "title": "Residences",
-        "description": "A stepped courtyard opens between a row of residences, its floor worn smooth by foot traffic.\n        Low stone seats and shallow basins are set into the perimeter walls; narrow stairlets lead to upper\n        doors. The layout fosters small gatherings and domestic chores, and carved motifs over each entry\n        mark family or craft affiliations. The air is cooler here, shaded by overhanging terraces and awnings.",
+        "description": "A stepped courtyard opens between a row of residences, its floor worn smooth by foot traffic. Low stone seats and shallow basins are set into the perimeter walls; narrow stairlets lead to upper doors. Carved motifs over each entry mark family or craft affiliations — geometric symbols, repeated in different sizes as if the same thing has been restated across generations. The air is cooler here, shaded by overhanging terraces.",
         "exits": [
             "northwest",
             "north",
@@ -685,15 +1427,53 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Doorway Motif",
+                    "description": "A carved geometric symbol above one of the doorways — repeated, with slight variations, above several others.",
+                    "idle_message": "Carved motifs mark the doorways here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "carved motifs above the doorways!",
+                    "announce": "Carved motifs mark the doorways here.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Not language. The same geometric symbol appears above each door in this courtyard, scaled differently each time: large above the widest threshold, small above the narrowest. Jean traces the smallest with his finger. The stone there is slightly deeper-cut than the others — the oldest mark, perhaps, and the one the others were scaled from."
+                }
+            }
+        ]
     },
     "(12, 6)": {
         "id": "tile_12_6",
         "title": "Ecumerium",
-        "description": "At this edge of the Ecumerium, stalls give way to a broader thoroughfare with carved\n        pilasters and more elaborate signboards. Stone channels run along the center to collect runoff and\n        guide it toward covered basins. Decorative reliefs depict merchant routes and distant caverns, and\n        worn thresholds show where carts and pack carriers have passed. The space hums with movement, but\n        its architecture keeps the flow deliberate and navigable.",
+        "description": "At this edge of the Ecumerium, stalls give way to a broader thoroughfare with carved pilasters and more elaborate signboards. Stone channels run along the center to collect runoff. Decorative reliefs depict merchant routes and distant caverns, and worn thresholds show where carts and pack carriers have passed. The space hums with movement, but its architecture keeps the flow deliberate.",
         "exits": [
             "northwest",
             "north",
@@ -702,7 +1482,26 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditePasserby"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
         "objects": []
@@ -710,7 +1509,7 @@
     "(9, 7)": {
         "id": "tile_9_7",
         "title": "Fabricarium",
-        "description": "This chamber serves as a finishing floor where polished surfaces are brought to a mirror sheen.\n        Low basins of water sit beside abrasive stones and leather pads; fine metallic dust coats the ledges.\n        Overhead racks hold long tools while wheeled trolleys rest against the walls ready to carry finished\n        components. The space hums with small, precise motions rather than the raw impact of heavy forging.",
+        "description": "This chamber serves as a finishing floor where polished surfaces are brought to a mirror sheen. Low basins of water sit beside abrasive stones and leather pads; fine metallic dust coats the ledges and the backs of hands here. Overhead racks hold long-handled tools; wheeled trolleys rest against the walls loaded with finished components awaiting transfer.",
         "exits": [
             "northwest",
             "north",
@@ -720,15 +1519,64 @@
             "southwest"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeWorker"},
+                    "count": 2,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "polishing basin",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 25}},
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Polishing Basin",
+                    "description": "A broad stone basin at the floor's edge, filled with cloudy mineral water. Several worked pieces are submerged. Two small pouches have been left on the lip of the basin.",
+                    "idle_message": "A broad polishing basin sits at the floor's edge.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a broad polishing basin!",
+                    "announce": "A broad polishing basin sits at the floor's edge.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(10, 7)": {
         "id": "tile_10_7",
         "title": "Fabricarium",
-        "description": "A network of workbenches and packing stations occupies this level, where shaped pieces are\n        assembled into larger fittings. Crates and simple wooden carts stand ready along a clear aisle; pulley\n        blocks descend from carved beams to lift heavy loads for transfer. The floor bears scuffs and wheel\n        grooves from repeated traffic, and a low canopy of woven fiber shades the busiest benches.",
+        "description": "A network of workbenches and packing stations occupies this level, where shaped pieces are assembled into larger fittings. Crates and simple wooden carts stand ready along a clear aisle; pulley blocks descend from carved beams to lift heavy loads for transfer. The floor bears scuffs and wheel grooves from repeated traffic.",
         "exits": [
             "northwest",
             "north",
@@ -741,12 +1589,42 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "packing crate",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 15}}
+                    ],
+                    "name": "Packing Crate",
+                    "description": "A half-filled packing crate at a bench edge, its lid resting beside it. Whoever was packing it has stepped away.",
+                    "idle_message": "A half-filled packing crate sits at a bench edge.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a half-filled packing crate!",
+                    "announce": "A half-filled packing crate sits at a bench edge.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(11, 7)": {
         "id": "tile_11_7",
         "title": "Fabricarium",
-        "description": "A quality hall with measured jigs and templates mounted to the walls, used to check tolerances\n        and alignment. Stone pedestals support sample pieces while small lamps are fixed overhead to reveal\n        imperfections. Cross-vent channels run here to carry away smoke from nearby ovens, and the tiled\n        floor is scoured nightly to keep grit from marring finished surfaces.",
+        "description": "A quality hall where measured jigs and templates mounted to the walls are used to check tolerances and alignment. Stone pedestals support sample pieces; small lamps are fixed overhead to reveal imperfections. Cross-vent channels carry away smoke from nearby ovens, and the tiled floor is scoured nightly to keep grit from marring finished surfaces.",
         "exits": [
             "northwest",
             "north",
@@ -758,12 +1636,31 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Quality Record",
+                    "description": "A set of small incised marks covering a wall panel near the inspection jigs.",
+                    "idle_message": "A wall panel near the jigs is covered in small marks.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a quality record carved into a wall panel!",
+                    "announce": "A wall panel near the jigs is covered in small marks.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "The marks form columns of counts beside symbols Jean recognizes as Golemite numerals. Most columns are clean. Two near the right edge carry a small mark beside them — something flagged, or noted differently. What they flag is unclear. The columns continue past Jean's eye level; whoever keeps this record has kept it for a long time."
+                }
+            }
+        ]
     },
     "(8, 8)": {
         "id": "tile_8_8",
         "title": "Passage",
-        "description": "A long, echoing passage that links deeper workshops to the arcology above. The ceiling here\n        sits low and the walls are scored with old tool marks; rope rings and iron brackets are set into\n        niches where lamps or banners might be affixed. Cool drafts sweep the corridor, carrying the mixed\n        scents of stone and metal. Faint scratches in the floor trace the passage of trolleys and handcarts.",
+        "description": "A long, echoing passage linking deeper workshops to the arcology above. The ceiling sits low; the walls are scored with old tool marks, and rope rings and iron brackets are set into niches where lamps or banners might be affixed. Cool drafts sweep the corridor, carrying the mixed scents of stone and metal. Faint scratches in the floor trace the passage of trolleys and handcarts.",
         "exits": [
             "northeast",
             "southwest"
@@ -772,12 +1669,41 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "handcart",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "CrystalTear", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Handcart",
+                    "description": "A low-sided handcart parked against the wall. Its contents are covered with a cloth, but a corner has slipped loose.",
+                    "idle_message": "A handcart is parked against the passage wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a loaded handcart parked here!",
+                    "announce": "A handcart is parked against the passage wall.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(10, 8)": {
         "id": "tile_10_8",
         "title": "Fabricarium",
-        "description": "A storage and staging alcove where packed components await dispatch. Sturdy racks rise in rows,\n        bearing crates and wrapped bundles secured with woven fiber. A shallow loading ramp gives access to a\n        narrow service corridor; chalk marks on the beams record previous loads and destinations. The air here\n        is drier, and the floor is kept deliberately swept to ease handling during busy transfer hours.",
+        "description": "A storage and staging alcove where packed components await dispatch. Sturdy racks rise in rows, bearing crates and wrapped bundles secured with woven fiber. A shallow loading ramp gives access to a narrow service corridor; chalk marks on the beams record previous loads and destinations. The air here is drier, and the floor is kept swept to ease handling during busy transfer hours.",
         "exits": [
             "northwest",
             "north",
@@ -788,7 +1714,37 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "dispatch crate",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "CrystalTear", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 40}}
+                    ],
+                    "name": "Dispatch Crate",
+                    "description": "A sealed crate at the back of the lowest rack. It has no chalk mark. It has not been claimed for dispatch.",
+                    "idle_message": "A sealed, unmarked crate sits at the back of the lowest rack.",
+                    "hidden": true,
+                    "hide_factor": 2,
+                    "discovery_message": "a sealed, unmarked crate at the back of the rack!",
+                    "announce": "A sealed, unmarked crate sits at the back of the lowest rack.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
     },
     "(7, 9)": {
         "id": "tile_7_9",
@@ -846,15 +1802,53 @@
             "south"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NPCSpawnerEvent",
+                "__module__": "story.effects",
+                "props": {
+                    "name": "NPCSpawnerEvent",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "spawn_tile": null,
+                    "npc_cls": {"__class_type__": "npc:GronditeElder"},
+                    "count": 1,
+                    "spawned_npcs": []
+                }
+            }
+        ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Maintenance Marks",
+                    "description": "Rows of small runes along the base of the east wall, incised in a careful, repetitive hand.",
+                    "idle_message": "Some runes are incised neatly along the wall's base.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "careful runes at the base of the wall!",
+                    "announce": "Some runes are incised neatly along the wall's base.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Not scripture — inventory. The marks record quantities and dates in Golemite numerals. Some entries have a secondary mark through them: completed, presumably. The most recent entry is undated. The number beside it is large."
+                }
+            }
+        ]
     },
     "(10, 10)": {
         "id": "tile_10_10",
         "title": "GateSouth",
-        "description": "A massive, smooth wall extends to the north, its surface unmarred except for a faint seam\n        that hints at a concealed threshold. The approach is punctuated by small, recessed pools that glow a\n        pale blue and collect condensation from higher chambers. Heavy grooves and weathering at the base show\n        where mechanisms were once housed; the absence of visible hardware suggests deliberate concealment in\n        the original design and long, slow maintenance rather than frequent opening.",
+        "description": "A massive, smooth wall extends to the north, its surface unmarred except for a faint seam that hints at a concealed threshold. The approach is punctuated by small, recessed pools that glow a pale blue and collect condensation from higher chambers. Heavy grooves and weathering at the base show where mechanisms were once housed; the absence of visible hardware suggests deliberate concealment in the original design and long, slow maintenance rather than frequent opening.",
         "exits": [
             "north"
         ],
@@ -862,6 +1856,25 @@
         "events": [],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Gate Inscription",
+                    "description": "Characters incised low on the gate frame, almost at floor level.",
+                    "idle_message": "Something is carved near the base of the gate.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "carvings near the base of the gate!",
+                    "announce": "Something is carved near the base of the gate.",
+                    "keywords": ["read", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "Jean crouches to read it. The characters are old — older than the gate mechanism, by the look of the weathering. He can trace three of them: 'depth,' 'below,' and a third he has seen in the Conclave's floor sigils. Something about the carver's hand suggests urgency, or warning. Jean straightens slowly."
+                }
+            }
+        ]
     }
 }

@@ -3198,3 +3198,162 @@ class EnchantedGolemitePauldron(Armor):
         self.add_resistance = {
             "crushing": 0.25
         }  # mineral veins dissipate crushing/slime impacts
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Grondia city exploration rewards
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class GronditeMarkToken(Special):
+    """
+    A flat stone disc incised with a clan sigil. No mechanical use; purely a
+    flavour/collectible item found while exploring Grondia's districts.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Grondite Mark Token",
+            description=(
+                "A flat disc of pale stone, its face incised with a clan sigil that catches "
+                "the light differently depending on angle. Whatever it marks, Jean cannot say — "
+                "but it was placed somewhere deliberately."
+            ),
+            value=5,
+            weight=0.1,
+            maintype="Special",
+            subtype="Curio",
+            discovery_message="a flat stone disc marked with a sigil!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "A flat stone disc with a carved sigil rests here."
+
+
+class MineralPowder(Commodity):
+    """
+    Fine dust gathered from the Fabricarium floor. A crafting/alchemy ingredient
+    and low-value trade commodity.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Mineral Powder",
+            description=(
+                "Fine grey-green dust in a twist of woven fiber. "
+                "It smells faintly of metal and something older — the residue of long craft work."
+            ),
+            value=8,
+            weight=0.1,
+            maintype="Commodity",
+            subtype="Material",
+            discovery_message="a small packet of fine mineral powder!",
+        )
+        self.merchandise = False
+        self.interactions = ["drop"]
+        self.announce = "A small packet of mineral powder sits here."
+        self.count = 1
+
+    def stack_grammar(self) -> None:
+        if self.count == 1:
+            self.description = (
+                "Fine grey-green dust in a twist of woven fiber. "
+                "It smells faintly of metal and something older."
+            )
+        else:
+            self.description = (
+                f"{self.count} packets of fine grey-green mineral dust, "
+                "each twisted in woven fiber. A material for careful craft."
+            )
+        self.name = "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
+
+
+class DriedCrystalSap(Consumable):
+    """
+    A waxy amber nodule formed where crystal fluid has dried near Grondia's
+    crystal formations. Minor HP restoration on use.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Dried Crystal Sap",
+            description=(
+                "A small, waxy amber lump, warm to the touch even in cold tunnels. "
+                "It smells faintly of resin and ozone. Chewing it seems to dull minor wounds."
+            ),
+            value=35,
+            weight=0.1,
+            maintype="Consumable",
+            subtype="Natural",
+            discovery_message="a small waxy amber lump!",
+            power=20,
+        )
+        self.merchandise = False
+        self.interactions = ["use", "drop"]
+        self.announce = "A small waxy lump rests here, faintly warm."
+        self.count = 1
+
+    def stack_grammar(self) -> None:
+        if self.count == 1:
+            self.name = "Dried Crystal Sap"
+            self.description = (
+                "A small, waxy amber lump, warm to the touch even in cold tunnels. "
+                "Chewing it seems to dull minor wounds."
+            )
+        else:
+            self.name = f"Dried Crystal Sap x{self.count}"
+            self.description = (
+                f"{self.count} waxy amber lumps, each warm to the touch. "
+                "Chewing one seems to dull minor wounds."
+            )
+
+    def use(self, player: "Player") -> None:  # type: ignore[override]
+        import time as _time
+        heal = min(self.power, player.maxhp - player.hp)
+        if heal <= 0:
+            print("Jean is already in good health. He pockets the sap.")
+            return
+        print("Jean bites into the waxy lump. The ozone smell sharpens for a moment.")
+        _time.sleep(1)
+        player.hp += heal
+        cprint(f"HP restored by {heal}.", "green")
+        self.count -= 1
+        self.stack_grammar()
+        if self.count <= 0:
+            if self in player.inventory:
+                player.inventory.remove(self)
+
+    def drink(self, player: "Player") -> None:  # type: ignore[override]
+        self.use(player)
+
+
+class FabricariumRejectionShard(Special):
+    """
+    A flawed piece of worked stone discarded by Fabricarium craftspeople.
+    Flavour/collectible; can be EXAMINEd for lore text.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Rejection Shard",
+            description=(
+                "A piece of worked stone, its edges shaped but then discarded — "
+                "the flat face bears two parallel grooves that don't quite align. "
+                "Whatever it was meant to be, it did not pass inspection."
+            ),
+            value=1,
+            weight=0.3,
+            maintype="Special",
+            subtype="Curio",
+            discovery_message="a piece of shaped but rejected stonework!",
+        )
+        self.merchandise = False
+        self.interactions = ["examine", "drop"]
+        self.announce = "A discarded piece of shaped stone lies here."
+
+    def examine(self, player: "Player" = None) -> None:  # type: ignore[override]
+        print(self.description)
+        print(
+            "The grooves are close — very close. Whatever tolerance the Grondite craftspeople "
+            "work to, this fell just outside it."
+        )
