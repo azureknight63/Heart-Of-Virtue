@@ -34,6 +34,7 @@ Caverns after the dialog, but the main story stops there.
 
 ---
 
+// Need to check this; should be fixed with Turso env set
 ## Save warning — play in one sitting
 
 Your progress is **not saved between sessions**. If you close the browser tab or
@@ -43,7 +44,7 @@ the server restarts, your run is lost. Finish in one sitting (~1 hour).
 
 ## How to give feedback
 
-Use the **feedback button** in the top-right corner of the game at any time, or
+Use the **feedback button** near the account button, or
 click **Send Feedback** in the end-of-beta dialog. Your report goes directly to
 the development team.
 
