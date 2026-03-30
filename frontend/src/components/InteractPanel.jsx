@@ -85,9 +85,15 @@ function InteractPanel({
         prevSelectedTargetRef.current = selectedTarget
     }, [location, selectedTarget])
 
-    // Automatically close the panel if there is nothing left to interact with
+    // Automatically close the panel if there is nothing left to interact with,
+    // but ONLY if the user has actually performed an action (to prevent instant closing on empty tiles).
     useEffect(() => {
         if (location && targets.length === 0 && !selectedTarget && !error && !loading && !showHistory) {
+            // If they just opened it on an empty tile, don't auto-close (let them read the empty message).
+            if (!interactionOutput && interactionHistory.length === 0) {
+                return;
+            }
+            
             const delay = interactionOutput ? 3000 : 0;
             const timer = setTimeout(() => {
                 if (targets.length === 0 && !selectedTarget && !error && !loading && !showHistory) {
@@ -96,7 +102,7 @@ function InteractPanel({
             }, delay);
             return () => clearTimeout(timer);
         }
-    }, [targets.length, selectedTarget, interactionOutput, error, loading, showHistory, location, onClose]);
+    }, [targets.length, selectedTarget, interactionOutput, interactionHistory.length, error, loading, showHistory, location, onClose]);
 
     const handleTargetClick = (target) => {
         setSelectedTarget(target)
