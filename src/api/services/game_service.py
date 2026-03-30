@@ -285,6 +285,15 @@ class GameService:
         )
         map_name = current_map.get("name") if isinstance(current_map, dict) else None
 
+        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
+        if not bgm and map_name:
+            if "dark-grotto" in map_name.lower():
+                bgm = "dark_grotto"
+            elif "verdette" in map_name.lower():
+                bgm = "verdette_caverns"
+            elif "mineral" in map_name.lower():
+                bgm = "mineral_pools"
+
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
         tile_name = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", raw_name)
@@ -300,7 +309,7 @@ class GameService:
             "npcs": npcs_data,
             "objects": objects_data,
             "is_passable": getattr(tile, "is_passable", True),
-            "bgm": map_metadata.get("bgm"),
+            "bgm": bgm,
         }
 
     def _record_exploration(self, player: "player_module.Player", tile: Any) -> None:
