@@ -571,6 +571,13 @@ class GameService:
             return events_triggered
 
         for event in list(tile.events_here):
+            # LootEvents are created when the player interacts with a container.
+            # They must NOT auto-fire on room entry — skip them here so they are
+            # only processed via process_event_input when the player opens/loots.
+            event_type_name = type(event).__name__
+            if event_type_name == "LootEvent":
+                continue
+
             # Check if event requires input using EventSerializer
             event_data = EventSerializer.serialize_with_input(event)
 
@@ -1285,6 +1292,27 @@ class GameService:
             r"\n\s*\n", "\n", clean_output
         )  # Replace multiple newlines with single
         clean_output = clean_output.strip()
+
+        # Strip internal LLM diagnostic lines that must never reach the UI.
+        # These originate from ai/llm_client.py print() calls that get captured
+        # by redirect_stdout. All patterns below are system-internal messages.
+        _LLM_NOISE_PREFIXES = (
+            "OpenRouter returned",
+            "Primary model",
+            "Searching for fallback",
+            "Fallback model",
+            "marking as unusable",
+            "it need to output",  # leaked prompt fragment
+            "[MYNX_LLM_DEBUG]",
+            "[DEBUG]",
+            "[ERROR]",
+            "[WARNING]",
+        )
+        filtered_lines = [
+            line for line in clean_output.splitlines()
+            if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
+        ]
+        clean_output = "\n".join(filtered_lines).strip()
 
         # Provide fallback message if no output was captured
         if not clean_output:
