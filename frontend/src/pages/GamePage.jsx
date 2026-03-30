@@ -55,6 +55,7 @@ export default function GamePage() {
     showVictoryDialog,
     showDefeatDialog,
     endState,
+    lastEndStateId,
     isCombatLogProcessing,
     currentLogIndex,
     hoveredTargetId,
@@ -303,11 +304,15 @@ export default function GamePage() {
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
 
-        // Keep mode locked to 'combat' while end_state is present.
-        // handleVictoryClose / handleDefeatClose will call setMode('exploration')
-        // only after the user finishes with the dialog — preventing the jarring
-        // instant-switch that occurred when the mode flipped before the dialog opened.
-        setMode('combat')
+        // Keep mode locked to 'combat' while the dialog is open or pending.
+        // Once closed, lastEndStateId catches up and we switch back to exploration.
+        const isDialogActive = showVictoryDialog || showDefeatDialog || maybeEnd.id !== lastEndStateId;
+        
+        if (isDialogActive) {
+          setMode('combat')
+        } else {
+          setMode('exploration')
+        }
       } else {
         setMode('exploration')
         // Refetch when transitioning from combat to exploration
@@ -317,7 +322,7 @@ export default function GamePage() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inCombat, combat, eventQueue, currentEvent])
+  }, [inCombat, combat, eventQueue, currentEvent, lastEndStateId, showVictoryDialog, showDefeatDialog])
 
   /**
    * Manage SFX when modes change
