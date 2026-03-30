@@ -13,44 +13,60 @@ class ObjectSerializer:
         if not obj:
             return {}
 
+        is_dict = isinstance(obj, dict)
+
+        def get_attr(attr_name: str, default: Any = None) -> Any:
+            if is_dict:
+                return obj.get(attr_name, default)
+            return getattr(obj, attr_name, default)
+
+        def has_attr(attr_name: str) -> bool:
+            if is_dict:
+                return attr_name in obj
+            return hasattr(obj, attr_name)
+
+        # Default object id
+        obj_id = get_attr("id", id(obj))
+
         obj_data = {
-            "id": str(id(obj)),
-            "name": getattr(obj, "name", "Unknown"),
-            "type": type(obj).__name__,
-            "description": getattr(obj, "description", ""),
-            "aliases": getattr(obj, "aliases", []),
-            "action_aliases": getattr(obj, "action_aliases", []),
+            "id": str(obj_id),
+            "name": get_attr("name", "Unknown"),
+            "type": get_attr("type", "dict" if is_dict else type(obj).__name__),
+            "description": get_attr("description", ""),
+            "aliases": get_attr("aliases", []),
+            "action_aliases": get_attr("action_aliases", []),
         }
 
         # Passability and state
-        if hasattr(obj, "is_passable"):
-            obj_data["is_passable"] = obj.is_passable
+        if has_attr("is_passable"):
+            obj_data["is_passable"] = get_attr("is_passable")
 
         # Hidden/discovery info
-        if hasattr(obj, "hidden"):
-            obj_data["hidden"] = obj.hidden
-        if hasattr(obj, "hide_factor"):
-            obj_data["hide_factor"] = obj.hide_factor
+        if has_attr("hidden"):
+            obj_data["hidden"] = get_attr("hidden")
+        if has_attr("hide_factor"):
+            obj_data["hide_factor"] = get_attr("hide_factor")
 
         # Interaction keywords
-        if hasattr(obj, "keywords"):
-            obj_data["keywords"] = obj.keywords
+        if has_attr("keywords"):
+            obj_data["keywords"] = get_attr("keywords")
 
         # Specific object states
-        if hasattr(obj, "locked"):
-            obj_data["locked"] = obj.locked
+        if has_attr("locked"):
+            obj_data["locked"] = get_attr("locked")
 
         # Handle state/opened flag consistently
-        if hasattr(obj, "state"):
-            obj_data["state"] = obj.state
-            obj_data["opened"] = obj.state == "opened"
-        elif hasattr(obj, "opened"):
-            obj_data["opened"] = obj.opened
+        if has_attr("state"):
+            obj_state = get_attr("state")
+            obj_data["state"] = obj_state
+            obj_data["opened"] = obj_state == "opened"
+        elif has_attr("opened"):
+            obj_data["opened"] = get_attr("opened")
 
         # Ensure keywords are consistent with dynamic state
         if "keywords" in obj_data and isinstance(obj_data["keywords"], list):
-            has_locked = hasattr(obj, "locked")
-            has_opened_attr = hasattr(obj, "opened") or hasattr(obj, "state")
+            has_locked = has_attr("locked")
+            has_opened_attr = has_attr("opened") or has_attr("state")
 
             if has_locked or has_opened_attr:
                 current_k = obj_data["keywords"]
@@ -71,10 +87,10 @@ class ObjectSerializer:
 
                 obj_data["keywords"] = new_k
 
-        if hasattr(obj, "open_message"):
-            obj_data["open_message"] = obj.open_message
-        if hasattr(obj, "idle_message"):
-            obj_data["idle_message"] = obj.idle_message
+        if has_attr("open_message"):
+            obj_data["open_message"] = get_attr("open_message")
+        if has_attr("idle_message"):
+            obj_data["idle_message"] = get_attr("idle_message")
 
         return obj_data
 

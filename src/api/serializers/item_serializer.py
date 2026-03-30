@@ -93,8 +93,10 @@ class ItemSerializer:
         if "take" not in keywords:
             keywords.append("take")
 
-        # Add 'equip' for equippable items if not already present
-        if hasattr(item, "isequipped") and "equip" not in keywords:
+        # Add 'equip' for equippable items (Equipment subclasses: Armor, Weapon, Accessory)
+        # Guard on equip_states being non-empty — consumables never have equip_states
+        equip_states = getattr(item, "equip_states", None)
+        if hasattr(item, "isequipped") and equip_states and "equip" not in keywords:
             keywords.append("equip")
 
         item_data["keywords"] = keywords

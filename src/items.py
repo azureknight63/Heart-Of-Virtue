@@ -2442,15 +2442,7 @@ class Restorative(Consumable):
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            # Check if item is in inventory or on the ground
-            if self in player.inventory:
-                print(
-                    "Jean is already at full health. He places the Restorative back into his bag."
-                )
-            else:
-                print(
-                    "Jean is already at full health. He sets the Restorative back down."
-                )
+            raise ValueError("Jean is already at full health!")
 
 
 class Draught(Consumable):
