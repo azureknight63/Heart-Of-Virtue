@@ -526,15 +526,18 @@ def use_item():
         def mock_print_slow(text, speed="slow"):
             f.write(str(text) + "\n")
 
-        with contextlib.redirect_stdout(f), patch(
-            "neotermcolor.cprint", mock_cprint
-        ), patch("src.functions.print_slow", mock_print_slow), patch(
-            "functions.print_slow", mock_print_slow
-        ), patch(
-            "time.sleep", return_value=None
-        ):
-            # Call the item's use method
-            item.use(player)
+        try:
+            with contextlib.redirect_stdout(f), patch(
+                "neotermcolor.cprint", mock_cprint
+            ), patch("src.functions.print_slow", mock_print_slow), patch(
+                "functions.print_slow", mock_print_slow
+            ), patch(
+                "time.sleep", return_value=None
+            ):
+                # Call the item's use method
+                item.use(player)
+        except ValueError as e:
+            return jsonify({"success": False, "error": str(e)}), 400
 
         output = f.getvalue()
         # Clean up output (remove ANSI codes)
