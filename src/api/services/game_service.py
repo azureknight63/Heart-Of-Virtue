@@ -279,6 +279,16 @@ class GameService:
         if session_data:
             self.apply_tile_modifications(tile, session_data)
 
+        # On first world fetch, trigger tile events for the starting tile so
+        # intro/entry events fire even though the player never "moved" there.
+        if session_data is not None and not session_data.get("initial_tile_events_done"):
+            session_data["initial_tile_events_done"] = True
+            try:
+                self.trigger_tile_events(player, tile, session_data)
+            except Exception as e:
+                import logging as _logging
+                _logging.getLogger(__name__).warning("Initial tile event trigger failed: %s", e)
+
         # Calculate exits dynamically by checking adjacent tiles
         exits_data = self._calculate_exits(
             player.universe, tile, player.location_x, player.location_y

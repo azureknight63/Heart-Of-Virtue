@@ -351,11 +351,15 @@ export default function GamePage() {
   }, [mode, location?.bgm, playBGM, currentEvent])
 
   /**
-   * Check combat status on initial load only
+   * Check combat status and pending events on initial load only.
+   * checkPendingEvents runs here (in addition to on-mount in useEventManager)
+   * to handle the race where the mount-time poll fires before GET /world
+   * triggers starting-tile events into the session.
    */
   useEffect(() => {
     if (!playerLoading && !worldLoading) {
       fetchCombatStatus()
+      checkPendingEvents()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerLoading, worldLoading])
