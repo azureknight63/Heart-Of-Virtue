@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Skill(gstack-upgrade)",
+      "Skill(gstack-upgrade:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -9,11 +16,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(python -c \":*)"
     ]
   }
 }
