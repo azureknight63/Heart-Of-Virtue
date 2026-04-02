@@ -35,6 +35,7 @@ class InventoryItemSerializer:
         maintype = getattr(item, "maintype", "")
 
         # Build base item data
+        interactions = getattr(item, "interactions", [])
         item_data = {
             "id": str(id(item)),  # Unique identifier for this item object
             "index": index,
@@ -46,9 +47,12 @@ class InventoryItemSerializer:
             "rarity": getattr(item, "rarity", "common"),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
-            "can_equip": hasattr(item, "equip"),
-            "can_use": "use" in getattr(item, "interactions", []),
-            "can_drop": "drop" in getattr(item, "interactions", []),
+            # Use interactions list as the canonical truth for what actions are available.
+            # Fallback to hasattr checks for items that have methods but no interactions list.
+            "can_equip": "equip" in interactions or "unequip" in interactions,
+            "can_use": "use" in interactions or "drink" in interactions,
+            "can_read": "read" in interactions,
+            "can_drop": "drop" in interactions,
             "is_equipped": getattr(item, "isequipped", False),
             "is_merchandise": getattr(item, "merchandise", False),
             "description": getattr(item, "description", ""),

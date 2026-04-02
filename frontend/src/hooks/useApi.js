@@ -141,6 +141,11 @@ export const useCombat = () => {
       setLoading(true)
       const response = await apiEndpoints.combat.performAction(action, target)
       const data = response.data
+      // Game-logic errors (e.g. "no viable targets") return success:false with no
+      // combat state payload — don't overwrite current state or drop out of combat.
+      if (data.success === false) {
+        return data
+      }
       const transformed = transformCombatData(data)
       setCombat(transformed)
       setInCombat(data.combat_active)

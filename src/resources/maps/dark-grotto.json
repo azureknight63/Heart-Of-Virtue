@@ -5,7 +5,7 @@
     "(1, 1)": {
         "id": "tile_1_1",
         "title": "EmptyCave",
-        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.\nA single copper coin lies in the dust, face-down.\nThe southeastern passage is a tangle of fallen rock. No way through.",
+        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.\nThe southeastern passage is a tangle of fallen rock. No way through.",
         "exits": [
             "south",
             "east"
@@ -17,7 +17,30 @@
                 "__class__": "Gold",
                 "__module__": "items",
                 "props": {
-                    "amt": 1
+                    "amt": 1,
+                    "maintype": "Gold",
+                    "name": "Gold",
+                    "description": "A small pouch containing 1 gold pieces.",
+                    "value": 1,
+                    "type": "Currency",
+                    "subtype": "Gold",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a small pouch of gold.",
+                    "announce": "There's a small pouch of gold on the ground.",
+                    "aliases": [
+                        "pouch of gold"
+                    ],
+                    "action_aliases": [],
+                    "interactions": [],
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "count": 1
                 }
             }
         ],
@@ -51,9 +74,15 @@
                     "hide_factor": 0,
                     "discovery_message": "some words etched into the wall!",
                     "announce": "There appears to be some words inscribed in the wall.",
+                    "aliases": [
+                        "words inscribed",
+                        "inscription",
+                        "words etched"
+                    ],
                     "keywords": [
                         "read"
                     ],
+                    "action_aliases": [],
                     "events": [],
                     "tile": null,
                     "player": null,
@@ -117,11 +146,18 @@
                     "name": "Ch01_Chest_Rumbler_Battle",
                     "player": null,
                     "tile": null,
-                    "repeat": true,
+                    "repeat": false,
                     "thread": null,
                     "has_run": false,
                     "params": null,
-                    "referenceobj": null
+                    "referenceobj": null,
+                    "combat_effect": false,
+                    "delay_duration": 3000,
+                    "delay_mode": "combat",
+                    "completed": false,
+                    "api_event_id": null,
+                    "needs_input": false,
+                    "triggered": false
                 }
             }
         ],
@@ -150,7 +186,7 @@
                     "inventory": [
                         {
                             "__class__": "Gold",
-                            "__module": "items",
+                            "__module__": "items",
                             "props": {
                                 "amt": 75
                             }
@@ -159,13 +195,31 @@
                             "__class__": "Consumable",
                             "__module__": "items",
                             "props": {
-                                "name": "Dried Rations",
-                                "description": "Preserved travel rations, still edible despite their age.",
-                                "value": 5,
                                 "weight": 0.5,
                                 "maintype": "Consumable",
                                 "subtype": "Food",
-                                "count": 3
+                                "count": 3,
+                                "interactions": [
+                                    "drop"
+                                ],
+                                "stack_key": "Dried Rations",
+                                "name": "Dried Rations",
+                                "description": "Preserved travel rations, still edible despite their age.",
+                                "value": 5,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a useful item.",
+                                "announce": "There's a Dried Rations here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
                             }
                         }
                     ],
@@ -176,10 +230,21 @@
                     "hide_factor": 0,
                     "discovery_message": " a wooden chest!",
                     "announce": "A wooden chest is sitting here.",
+                    "aliases": [
+                        "wooden chest",
+                        "wooden chest"
+                    ],
                     "keywords": [
                         "open",
                         "unlock",
                         "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "action_aliases": [
                         "check",
                         "view",
                         "examine",
@@ -223,32 +288,50 @@
             "northeast"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "Ch01DarkGrottoIntro",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_DarkGrotto_Intro",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "has_run": false
+                }
+            }
+        ],
         "items": [
             {
                 "__class__": "Key",
                 "__module__": "items",
                 "props": {
-                    "name": "Iron Key",
-                    "description": "A simple iron key, tarnished with age. It bears the faint inscription 'A.T.' on the bow.",
-                    "value": 0,
                     "weight": 0.1,
                     "maintype": "Special",
                     "subtype": "Key",
-                    "lock_nickname": "wooden chest",
-                    "hidden": true,
-                    "hide_factor": 0,
-                    "discovery_message": "a hidden iron key!",
-                    "merchandise": false,
+                    "count": 1,
                     "interactions": [
                         "drop"
                     ],
+                    "name": "Iron Key",
+                    "description": "A simple iron key, tarnished with age. It bears the faint inscription 'A.T.' on the bow.",
+                    "value": 0,
+                    "type": "Special",
+                    "hidden": true,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a hidden iron key!",
+                    "announce": "There's a Key here.",
+                    "aliases": [],
+                    "action_aliases": [],
                     "skills": null,
                     "owner": null,
                     "equip_states": [],
                     "add_resistance": {},
                     "add_status_resistance": {},
-                    "gives_exp": false
+                    "gives_exp": false,
+                    "lock": null,
+                    "lock_nickname": "wooden chest"
                 }
             }
         ],
@@ -282,7 +365,13 @@
                     "thread": null,
                     "has_run": false,
                     "params": null,
-                    "referenceobj": null
+                    "referenceobj": null,
+                    "combat_effect": false,
+                    "delay_duration": 3000,
+                    "delay_mode": "combat",
+                    "completed": false,
+                    "api_event_id": null,
+                    "needs_input": false
                 }
             }
         ],
@@ -300,8 +389,16 @@
                     "hide_factor": 0,
                     "discovery_message": "a small depression in the wall!",
                     "announce": "There's a small depression in the wall.",
+                    "aliases": [
+                        "depression",
+                        "small depression"
+                    ],
                     "keywords": [
                         "press"
+                    ],
+                    "action_aliases": [
+                        "touch",
+                        "push"
                     ],
                     "events": [],
                     "tile": null,
@@ -317,7 +414,7 @@
     "(4, 2)": {
         "id": "tile_4_2",
         "title": "RockLedgeWest",
-        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as you approach — not alarmed, just waiting.",
+        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as you approach - not alarmed, just waiting.",
         "exits": [
             "east",
             "west",
@@ -492,6 +589,7 @@
                     "states": [],
                     "in_combat": false,
                     "combat_proximity": {},
+                    "combat_position": null,
                     "default_proximity": 20,
                     "hidden": false,
                     "hide_factor": 0,
@@ -508,7 +606,9 @@
                         "possessive": "its",
                         "reflexive": "itself",
                         "intensive": "itself"
-                    }
+                    },
+                    "player_ref": null,
+                    "ai_config": null
                 }
             }
         ],
@@ -542,7 +642,13 @@
                     "thread": null,
                     "has_run": false,
                     "params": null,
-                    "referenceobj": null
+                    "referenceobj": null,
+                    "combat_effect": false,
+                    "delay_duration": 3000,
+                    "delay_mode": "combat",
+                    "completed": false,
+                    "api_event_id": null,
+                    "needs_input": false
                 }
             }
         ],
@@ -554,14 +660,22 @@
                 "__module__": "objects",
                 "props": {
                     "name": "Wall Depression",
-                    "description": "A shallow indentation beside the gap where the ledge ends. Something mechanical, perhaps — built to bridge what the stone cannot. You may be able to PRESS it.",
+                    "description": "A shallow indentation beside the gap where the ledge ends. Something mechanical, perhaps - built to bridge what the stone cannot. You may be able to PRESS it.",
                     "idle_message": "There's a shallow indentation in the rock beside the gap.",
                     "hidden": false,
                     "hide_factor": 0,
                     "discovery_message": "a shallow indentation in the rock!",
                     "announce": "There's a shallow indentation in the rock beside the gap.",
+                    "aliases": [
+                        "depression",
+                        "small depression"
+                    ],
                     "keywords": [
                         "press"
+                    ],
+                    "action_aliases": [
+                        "touch",
+                        "push"
                     ],
                     "events": [],
                     "tile": null,
@@ -597,7 +711,7 @@
     "(1, 3)": {
         "id": "tile_1_3",
         "title": "EmptyCave",
-        "description": "Loose grit shifts with a soft crunch that feels loud\nin the hush. A faint metallic tang lingers, maybe\nlichen, maybe rusted memory.\nNear the northeastern wall, a heel-print in the silt — fresh enough that the edges haven't crumbled — points toward a crack that narrows to a fist-width and stops.",
+        "description": "Loose grit shifts with a soft crunch that feels loud\nin the hush. A faint metallic tang lingers, maybe\nlichen, maybe rusted memory.\nNear the northeastern wall, a heel-print in the silt - fresh enough that the edges haven't crumbled - points toward a crack that narrows to a fist-width and stops.",
         "exits": [
             "north",
             "east"
@@ -637,6 +751,10 @@
                     "merchandise": false,
                     "discovery_message": "a small pouch of gold.",
                     "announce": "There's a small pouch of gold on the ground.",
+                    "aliases": [
+                        "pouch of gold"
+                    ],
+                    "action_aliases": [],
                     "interactions": [],
                     "skills": null,
                     "owner": null,
@@ -670,6 +788,13 @@
                     "merchandise": false,
                     "discovery_message": "a useful item.",
                     "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                    "aliases": [
+                        "small glass vial",
+                        "vial",
+                        "box of small glass vials",
+                        "vials"
+                    ],
+                    "action_aliases": [],
                     "skills": null,
                     "owner": null,
                     "equip_states": [],
@@ -693,13 +818,19 @@
                     "hide_factor": 0,
                     "discovery_message": "a scrap of paper wedged in the wall!",
                     "announce": "A scrap of paper is wedged into a crack in the wall.",
+                    "aliases": [
+                        "words inscribed",
+                        "inscription",
+                        "words etched"
+                    ],
                     "keywords": [
                         "read"
                     ],
+                    "action_aliases": [],
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "text": "Day 18: Found a wooden chest near the eastern alcove, left by some previous soul.\nHid the key beneath some loose stones near the altar — a natural landmark in this cave.\nIf anyone finds this, search there.\n— Aldric"
+                    "text": "Day 18: Found a wooden chest near the eastern alcove, left by some previous soul.\nHid the key beneath some loose stones near the altar - a natural landmark in this cave.\nIf anyone finds this, search there.\n- Aldric"
                 }
             }
         ],
@@ -748,34 +879,174 @@
                 "__module__": "objects",
                 "props": {
                     "nickname": "steel lockbox",
-                    "name": "Steel Lockbox",
-                    "description": "A small steel lockbox, partially buried in rubble. Its surface is etched with protective runes.",
-                    "idle_message": "A steel lockbox is partially hidden among the rocks.",
-                    "locked": false,
-                    "state": "closed",
-                    "hidden": true,
-                    "hide_factor": 0,
-                    "discovery_message": "a hidden steel lockbox!",
-                    "allowed_item_types": [
-                        {
-                            "__class_type__": "items:Item"
-                        }
-                    ],
                     "possible_states": [
                         "closed",
                         "opened"
                     ],
                     "revealed": false,
+                    "locked": false,
+                    "state": "closed",
                     "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
                     "stock_count": 10,
                     "inventory": [
                         {
-                            "__class__": "DullMedallion",
+                            "__class__": "Restorative",
                             "__module__": "items",
                             "props": {
-                                "enchantment_level": 2
+                                "weight": 0.25,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 3,
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "stack_key": "Restorative",
+                                "name": "Restorative",
+                                "description": "A strange pink fluid of questionable chemistry.\nDrinking it seems to cause your wounds to immediately mend themselves.",
+                                "value": 100,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a useful item.",
+                                "announce": "Jean notices a small glass vial on the ground with an odd pink fluid inside and a label reading, 'Restorative.'",
+                                "aliases": [
+                                    "small glass vial",
+                                    "vial",
+                                    "box of small glass vials",
+                                    "vials"
+                                ],
+                                "action_aliases": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "power": 60
+                            }
+                        },
+                        {
+                            "__class__": "GoldChain",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 0,
+                                "str_mod": 0,
+                                "fin_mod": 0,
+                                "weight": 0.1,
+                                "isequipped": false,
+                                "maintype": "Accessory",
+                                "subtype": "Necklace",
+                                "name": "Gold Chain",
+                                "description": "A shiny gold chain. \nWorn to impress. An excellent gift for a lady.",
+                                "value": 300,
+                                "type": "Accessory",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small trinket.",
+                                "announce": "There's a Gold Chain here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        },
+                        {
+                            "__class__": "SilverRing",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 0,
+                                "str_mod": 0,
+                                "fin_mod": 0,
+                                "weight": 0.1,
+                                "isequipped": false,
+                                "maintype": "Accessory",
+                                "subtype": "Ring",
+                                "name": "Silver Ring",
+                                "description": "A shiny silver ring. \nA small bauble favored by people of typically lower class.",
+                                "value": 50,
+                                "type": "Accessory",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small trinket.",
+                                "announce": "There's a Silver Ring here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        },
+                        {
+                            "__class__": "ClothHood",
+                            "__module__": "items",
+                            "props": {
+                                "protection": 6,
+                                "str_req": 1,
+                                "str_mod": 0.1,
+                                "weight": 0.5,
+                                "isequipped": false,
+                                "maintype": "Helm",
+                                "subtype": "Light Helm",
+                                "name": "Reinforced Studded Cloth Hood",
+                                "description": "Stained cloth hood. Enough to conceal your face, but that's about it.",
+                                "value": 126,
+                                "type": "Helm",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a kind of head covering.",
+                                "announce": "There's a Reinforced Studded Cloth Hood here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
                             }
                         }
+                    ],
+                    "name": "Steel Lockbox",
+                    "description": "A small steel lockbox, partially buried in rubble. Its surface is etched with protective runes.",
+                    "idle_message": "A steel lockbox is partially hidden among the rocks.",
+                    "hidden": true,
+                    "hide_factor": 0,
+                    "discovery_message": "a hidden steel lockbox!",
+                    "announce": "A steel lockbox is partially hidden among the rocks.",
+                    "aliases": [
+                        "steel lockbox",
+                        "steel lockbox"
                     ],
                     "keywords": [
                         "open",
@@ -785,10 +1056,23 @@
                         "examine",
                         "inspect"
                     ],
+                    "action_aliases": [
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "announce": "A steel lockbox is partially hidden among the rocks."
+                    "items": [
+                        "<circular_ref:Restorative>",
+                        "<circular_ref:GoldChain>",
+                        "<circular_ref:SilverRing>",
+                        "<circular_ref:ClothHood>"
+                    ],
+                    "allowed_subtypes": []
                 }
             }
         ],
@@ -815,7 +1099,7 @@
     "(6, 4)": {
         "id": "tile_6_4",
         "title": "EmptyCave",
-        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.\nWax drippings harden in a thin line along one wall — someone walked this corridor with a candle, recently.",
+        "description": "Walls pinch close, polished where shoulders must have\nbrushed. A residual warmth clings in narrow eddies,\nthen thins, urging movement onward.\nWax drippings harden in a thin line along one wall - someone walked this corridor with a candle, recently.",
         "exits": [
             "north",
             "west",
@@ -835,7 +1119,7 @@
     "(5, 5)": {
         "id": "tile_5_5",
         "title": "EmptyCave",
-        "description": "The floor sags in a shallow basin where colder air pools.\nA faint, steady drip marks time without counting it.\nThis place feels chosen — the low ceiling, the closed curve of stone,\nthe corner where a man might set his back to the rock\nand face the dark for the last time.\nThe quiet here is different from the quiet elsewhere. It keeps a shape.",
+        "description": "The floor sags in a shallow basin where colder air pools.\nA faint, steady drip marks time without counting it.\nThis place feels chosen - the low ceiling, the closed curve of stone,\nthe corner where a man might set his back to the rock\nand face the dark for the last time.\nThe quiet here is different from the quiet elsewhere. It keeps a shape.",
         "exits": [
             "north",
             "northeast"
@@ -887,6 +1171,8 @@
                                 "merchandise": false,
                                 "discovery_message": "a small trinket.",
                                 "announce": "There's a Dull Medallion here.",
+                                "aliases": [],
+                                "action_aliases": [],
                                 "interactions": [
                                     "drop",
                                     "equip"
@@ -915,6 +1201,10 @@
                                 "merchandise": false,
                                 "discovery_message": "a small pouch of gold.",
                                 "announce": "There's a small pouch of gold on the ground.",
+                                "aliases": [
+                                    "pouch of gold"
+                                ],
+                                "action_aliases": [],
                                 "interactions": [],
                                 "skills": null,
                                 "owner": null,
@@ -929,29 +1219,35 @@
                             "__class__": "Book",
                             "__module__": "items",
                             "props": {
-                                "name": "Tattered Journal",
-                                "description": "A water-stained leather journal, its pages brittle and faded. The merchant's final thoughts are barely legible.",
-                                "value": 0,
                                 "weight": 0.5,
                                 "maintype": "Book",
                                 "subtype": "Book",
-                                "discovery_message": "a tattered journal!",
-                                "text": "Day 12: The vein of crystals in this cavern is richer than I hoped! The luminescent stones fetch a fine price in Thornhaven. I'll fill my pack and make my fortune.\n\nDay 14: Tremors today. The Rock Rumblers are migrating through these tunnels. I hid while they passed, but the shaking caused a collapse behind me. No way back.\n\nDay 18: Found a wooden chest near the eastern alcove, left by some previous soul. Locked tight. I managed to hide the key beneath some loose stones near the altar—a natural landmark in this wretched cave. If anyone finds this, search there.\n\nDay 24: Hunger gnaws. I spotted another cache in the southern alcove, but I'm too weak to reach it. The Rumblers' cave-in has left me stranded.\n\nDay 29: The cold is unbearable. I won't last much longer. To whoever reads this: the chest holds supplies. The key is beneath the altar stones. Search carefully, and may the Three guide you better than they did me.\n\n— Aldric, Gem Prospector of Thornhaven",
-                                "merchandise": false,
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "type": "Book",
+                                "count": 1,
                                 "interactions": [
                                     "drop",
                                     "read"
                                 ],
+                                "name": "Tattered Journal",
+                                "description": "A water-stained leather journal, its pages brittle and faded. The merchant's final thoughts are barely legible.",
+                                "value": 0,
+                                "type": "Book",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a tattered journal!",
+                                "announce": "There's a Tattered Journal here.",
+                                "aliases": [],
+                                "action_aliases": [],
                                 "skills": null,
                                 "owner": null,
                                 "equip_states": [],
                                 "add_resistance": {},
                                 "add_status_resistance": {},
                                 "gives_exp": false,
-                                "announce": "There's a Tattered Journal here."
+                                "event": null,
+                                "text_file_path": null,
+                                "text": "Day 18: Found a wooden chest near the eastern alcove, left by some previous soul.\nHid the key beneath some loose stones near the altar - a natural landmark in this cave.\nIf anyone finds this, search there.\n- Aldric",
+                                "chars_per_page": 800
                             }
                         },
                         {
@@ -974,6 +1270,8 @@
                                 "merchandise": false,
                                 "discovery_message": "a pair of footgear.",
                                 "announce": "There's a Cloth Boots here.",
+                                "aliases": [],
+                                "action_aliases": [],
                                 "interactions": [
                                     "drop",
                                     "equip"
@@ -995,10 +1293,21 @@
                     "hide_factor": 0,
                     "discovery_message": " a container!",
                     "announce": "The old remains of a traveler are here, leaning against the rock wall.",
+                    "aliases": [
+                        "remains",
+                        "remains"
+                    ],
                     "keywords": [
                         "open",
                         "unlock",
                         "loot",
+                        "check",
+                        "view",
+                        "examine",
+                        "inspect",
+                        "peruse"
+                    ],
+                    "action_aliases": [
                         "check",
                         "view",
                         "examine",

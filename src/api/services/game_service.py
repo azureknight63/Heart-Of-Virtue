@@ -41,6 +41,29 @@ from src.api.serializers.dialogue_context import (
     DialogueContext,
 )
 
+# Internal LLM diagnostic strings that must never reach the UI.
+# Originate from ai/llm_client.py logger calls captured via redirect_stdout,
+# plus echoed Mynx system-prompt fragments returned by low-quality model runs.
+_LLM_NOISE_PREFIXES = (
+    "OpenRouter returned",
+    "Primary model",
+    "Searching for fallback",
+    "Fallback model",
+    "marking as unusable",
+    "it need to output",
+    "it quotes",
+    "present-tense",
+    "no code fences",
+    "<=2 short",
+    "one immediate",
+    "nonverbal action",
+    "plain description",
+    "[MYNX_LLM_DEBUG]",
+    "[DEBUG]",
+    "[ERROR]",
+    "[WARNING]",
+)
+
 
 class GameService:
     """Provides stateless interface to game logic for API layer.
@@ -996,6 +1019,7 @@ class GameService:
                         )
 
         # Check Items
+        items_to_remove = []
         if hasattr(tile, "items_here"):
             for item in tile.items_here:
                 if getattr(item, "hidden", False):
@@ -1007,15 +1031,45 @@ class GameService:
                             "discovery_message",
                             f"a hidden {getattr(item, 'name', 'Item')}",
                         )
-                        messages.append(f"{player.name} found {discovery_msg}")
                         something_found = True
-                        found_items.append(
-                            {
-                                "type": "item",
-                                "name": getattr(item, "name", "Unknown"),
-                                "id": str(id(item)),
-                            }
-                        )
+                        found_entry = {
+                            "type": "item",
+                            "name": getattr(item, "name", "Unknown"),
+                            "id": str(id(item)),
+                        }
+
+                        # Auto-take items with hide_factor == 0 (intentionally findable)
+                        if hide_factor == 0:
+                            inventory = getattr(
+                                player, "inventory_list", None
+                            ) or getattr(player, "inventory", [])
+                            if isinstance(inventory, list):
+                                total_weight = sum(
+                                    getattr(i, "weight", 0) for i in inventory
+                                )
+                                capacity = getattr(player, "carrying_capacity", 100.0)
+                                item_weight = getattr(item, "weight", 0)
+                                if total_weight + item_weight <= capacity:
+                                    inventory.append(item)
+                                    items_to_remove.append(item)
+                                    found_entry["auto_taken"] = True
+                                    messages.append(
+                                        f"{player.name} finds {discovery_msg} and takes it."
+                                    )
+                                else:
+                                    messages.append(
+                                        f"{player.name} found {discovery_msg}"
+                                    )
+                            else:
+                                messages.append(f"{player.name} found {discovery_msg}")
+                        else:
+                            messages.append(f"{player.name} found {discovery_msg}")
+
+                        found_items.append(found_entry)
+
+        for item in items_to_remove:
+            if hasattr(tile, "items_here") and item in tile.items_here:
+                tile.items_here.remove(item)
 
         # Check Objects
         if hasattr(tile, "objects_here"):
@@ -1303,25 +1357,19 @@ class GameService:
         clean_output = clean_output.strip()
 
         # Strip internal LLM diagnostic lines that must never reach the UI.
-        # These originate from ai/llm_client.py print() calls that get captured
-        # by redirect_stdout. All patterns below are system-internal messages.
-        _LLM_NOISE_PREFIXES = (
-            "OpenRouter returned",
-            "Primary model",
-            "Searching for fallback",
-            "Fallback model",
-            "marking as unusable",
-            "it need to output",  # leaked prompt fragment
-            "[MYNX_LLM_DEBUG]",
-            "[DEBUG]",
-            "[ERROR]",
-            "[WARNING]",
-        )
+        pre_filter_output = clean_output
         filtered_lines = [
             line for line in clean_output.splitlines()
             if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         clean_output = "\n".join(filtered_lines).strip()
+
+        # If filtering removed everything and the raw output contained LLM noise
+        # (indicating a Mynx LLM call occurred), use a safe ambient fallback.
+        if not clean_output and any(
+            p in pre_filter_output for p in _LLM_NOISE_PREFIXES
+        ):
+            clean_output = "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
 
         # Provide fallback message if no output was captured
         if not clean_output:
@@ -1391,6 +1439,11 @@ class GameService:
             "events_triggered": events_triggered,
             "combat_started": combat_started,
             "combat_state": combat_state,
+            "object_state": {
+                "keywords": getattr(target, "keywords", []),
+                "locked": getattr(target, "locked", False),
+                "state": getattr(target, "state", ""),
+            },
         }
 
     # ========================

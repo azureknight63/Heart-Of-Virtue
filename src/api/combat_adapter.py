@@ -1456,7 +1456,18 @@ class ApiCombatAdapter:
                             entry["message"] for entry in self.player.combat_log[-20:]
                         ],  # Last 20 messages
                         "last_move": getattr(self.player, "last_move_summary", "None"),
-                        "available_moves": self.available_options,
+                        # Only send moves that are available AND (if targeted) have
+                        # at least one viable target — prevents TA from suggesting
+                        # attacks that cannot resolve at execution time.
+                        "available_moves": [
+                            m for m in self.available_options
+                            if isinstance(m, dict)
+                            and m.get("available", True)
+                            and (
+                                not m.get("targeted")
+                                or len(m.get("viable_targets", [])) > 0
+                            )
+                        ],
                     }
 
                     logger.debug(f"Combat context keys: {list(ctx.keys())}")

@@ -138,26 +138,26 @@ export function useEventManager({
         }
     }, []) // No dependencies needed - uses functional setState
 
-    useEffect(() => {
-        const fetchPendingEvents = async () => {
-            try {
-                const data = await fetchWithRetry(async () => {
-                    const response = await apiClient.get('/world/events/pending')
-                    return response.data
-                })
+    const checkPendingEvents = useCallback(async () => {
+        try {
+            const data = await fetchWithRetry(async () => {
+                const response = await apiClient.get('/world/events/pending')
+                return response.data
+            })
 
-                if (data.success && data.events && data.events.length > 0) {
-                    console.log('[DEBUG] Recovered pending events from session:', data.events)
-                    handleEventsTriggered(data.events)
-                }
-            } catch (err) {
-                console.error('Failed to fetch pending events after retries:', err)
-                // Silently fail - this is a recovery feature, not critical
+            if (data.success && data.events && data.events.length > 0) {
+                console.log('[DEBUG] Recovered pending events from session:', data.events)
+                handleEventsTriggered(data.events)
             }
+        } catch (err) {
+            console.error('Failed to fetch pending events after retries:', err)
+            // Silently fail - this is a recovery feature, not critical
         }
-
-        fetchPendingEvents()
     }, [handleEventsTriggered])
+
+    useEffect(() => {
+        checkPendingEvents()
+    }, [checkPendingEvents])
 
     /**
      * Process event queue - show next event when ready
@@ -381,6 +381,7 @@ export function useEventManager({
         setIsInteractionDelayActive,
         handleEventsTriggered,
         handleEventClose,
-        handleEventInput
+        handleEventInput,
+        checkPendingEvents,
     }
 }

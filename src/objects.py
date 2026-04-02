@@ -348,8 +348,14 @@ class Container(Object):
         if self.state == "closed":
             self.description = f"A {self.nickname} which may or may not have things inside. You can try to UNLOCK (if locked), OPEN, or LOOT it."
         elif self.inventory:
-            # Use join for efficient string building instead of concatenation
-            item_descriptions = [item.description for item in self.inventory]
+            item_descriptions = []
+            for item in self.inventory:
+                if isinstance(item, dict):
+                    # Improperly deserialized item — use dict values as fallback
+                    desc = item.get("description", item.get("name", "unknown item"))
+                else:
+                    desc = getattr(item, "description", str(item))
+                item_descriptions.append(desc)
             self.description = (
                 f"A {self.nickname}. Inside are the following things: \n\n"
                 + "\n".join(item_descriptions)

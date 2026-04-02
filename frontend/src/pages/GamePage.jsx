@@ -91,7 +91,8 @@ export default function GamePage() {
     setIsInteractionDelayActive,
     handleEventsTriggered,
     handleEventClose,
-    handleEventInput
+    handleEventInput,
+    checkPendingEvents,
   } = useEventManager({
     mode,
     isInteractionTyping,
@@ -394,6 +395,9 @@ export default function GamePage() {
     setMode('exploration')
     await handleRefetch()
     await fetchCombatStatus()
+    // Flush any combat-triggered events (e.g. Ch01PostRumbler memory flash)
+    // that were stored in session pending_events during the battle.
+    await checkPendingEvents()
     if (isBetaEnd) {
       setShowBetaEndDialog(true)
     }

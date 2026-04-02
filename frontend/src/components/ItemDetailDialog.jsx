@@ -77,6 +77,29 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
     }
   }
 
+  const handleRead = async () => {
+    setIsLoading(true)
+    try {
+      const response = await apiClient.post('/inventory/use', {
+        item_id: item.id,
+      })
+      const data = response.data || response
+      if (data.success) {
+        setActionMessage('✓ Reading...')
+        setActionResult({
+          message: <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace', lineHeight: '1.7' }}>{data.message}</div>
+        })
+        if (onRefetch) onRefetch()
+      } else {
+        setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
+      }
+    } catch (err) {
+      setActionMessage('✗ Error: ' + err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleDrop = async () => {
     setIsLoading(true)
     try {
@@ -331,6 +354,39 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
             }}
           >
             {item.is_equipped ? '✗ Unequip' : '⚔️ Equip'}
+          </button>
+        )}
+
+        {item.can_read && !item.is_merchandise && (
+          <button
+            onClick={handleRead}
+            disabled={isLoading}
+            style={{
+              flex: 1,
+              padding: '10px',
+              backgroundColor: '#2a1a4a',
+              color: '#cc88ff',
+              border: '1px solid #9955ff',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '15px',
+              fontFamily: 'monospace',
+              fontWeight: 'bold',
+              transition: 'all 0.2s',
+              opacity: isLoading ? 0.6 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading) {
+                e.target.style.backgroundColor = '#3d2266'
+                e.target.style.boxShadow = '0 0 8px rgba(153, 85, 255, 0.6)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#2a1a4a'
+              e.target.style.boxShadow = 'none'
+            }}
+          >
+            📖 Read
           </button>
         )}
 
