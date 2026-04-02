@@ -43,7 +43,11 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       }
     } catch (err) {
       const serverError = err.response?.data?.error
-      setActionMessage('✗ ' + (serverError || err.message))
+      if (serverError) {
+        setActionMessage(serverError)
+      } else {
+        setActionMessage('✗ ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -73,7 +77,13 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       }
     } catch (err) {
       const serverError = err.response?.data?.error
-      setActionMessage('✗ ' + (serverError || err.message))
+      // A 400 with a server error message is a game-logic rejection (narrative text),
+      // not a technical failure — display without the ✗ error prefix.
+      if (serverError) {
+        setActionMessage(serverError)
+      } else {
+        setActionMessage('✗ ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -97,7 +107,11 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       }
     } catch (err) {
       const serverError = err.response?.data?.error
-      setActionMessage('✗ ' + (serverError || err.message))
+      if (serverError) {
+        setActionMessage(serverError)
+      } else {
+        setActionMessage('✗ ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -126,7 +140,11 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
       }
     } catch (err) {
       const serverError = err.response?.data?.error
-      setActionMessage('✗ ' + (serverError || err.message))
+      if (serverError) {
+        setActionMessage(serverError)
+      } else {
+        setActionMessage('✗ ' + err.message)
+      }
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)
