@@ -192,11 +192,14 @@ export const AudioProvider = ({ children }) => {
         currentBGMRef.current = trackName;
         setCurrentBGM(trackName);
 
-        // When sting ends, restore loop and switch back to previous BGM
+        // When sting ends, restore loop and switch back to previous BGM.
+        // Guard: only restore if no external track switch happened during the sting
+        // (i.e., currentBGMRef still points to this sting track).
         bgmRef.current.onended = () => {
             bgmRef.current.loop = true;
             bgmRef.current.onended = null;
-            if (previousBGM && previousBGM !== trackName) {
+            if (previousBGM && previousBGM !== trackName
+                    && currentBGMRef.current === trackName) {
                 playBGM(previousBGM);
             }
         };

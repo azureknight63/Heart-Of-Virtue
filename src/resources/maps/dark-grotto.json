@@ -231,7 +231,6 @@
                     "discovery_message": " a wooden chest!",
                     "announce": "A wooden chest is sitting here.",
                     "aliases": [
-                        "wooden chest",
                         "wooden chest"
                     ],
                     "keywords": [
@@ -1045,7 +1044,6 @@
                     "discovery_message": "a hidden steel lockbox!",
                     "announce": "A steel lockbox is partially hidden among the rocks.",
                     "aliases": [
-                        "steel lockbox",
                         "steel lockbox"
                     ],
                     "keywords": [
@@ -1294,7 +1292,6 @@
                     "discovery_message": " a container!",
                     "announce": "The old remains of a traveler are here, leaning against the rock wall.",
                     "aliases": [
-                        "remains",
                         "remains"
                     ],
                     "keywords": [
