@@ -71,7 +71,8 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      const serverError = err.response?.data?.error
+      setActionMessage('✗ ' + (serverError || err.message))
     } finally {
       setIsLoading(false)
     }
@@ -94,7 +95,8 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      const serverError = err.response?.data?.error
+      setActionMessage('✗ ' + (serverError || err.message))
     } finally {
       setIsLoading(false)
     }
@@ -122,7 +124,8 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         setActionMessage('✗ ' + (data.error || 'Failed to drop'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      const serverError = err.response?.data?.error
+      setActionMessage('✗ ' + (serverError || err.message))
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)

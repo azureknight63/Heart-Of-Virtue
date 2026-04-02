@@ -5,7 +5,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
-import { colors, spacing, commonStyles, fonts } from '../styles/theme'
+import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
 
 /**

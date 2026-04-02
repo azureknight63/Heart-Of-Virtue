@@ -269,7 +269,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(screen.getByText(/Use/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Error: Use Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Use Error/i)).toBeDefined();
     });
   });
 
@@ -288,7 +288,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(dropButtons[dropButtons.length - 1]);
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Error: Drop Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Drop Error/i)).toBeDefined();
     });
   });
 

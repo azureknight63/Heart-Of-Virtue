@@ -48,6 +48,30 @@ class _JSONTools:
         return None
 
     @staticmethod
+    def extract_text_content(content) -> Optional[str]:
+        """Extract text-only content from a response that may contain thinking blocks.
+
+        OpenRouter thinking-mode models return content as a list of blocks:
+          [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "..."}]
+        This helper extracts only the text blocks and ignores thinking blocks.
+        """
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "thinking":
+                        continue  # skip thinking tokens
+                    text = block.get("text") or block.get("content") or ""
+                    if text:
+                        parts.append(str(text))
+                elif isinstance(block, str):
+                    parts.append(block)
+            return "\n".join(parts) if parts else None
+        return str(content) if content else None
+
+    @staticmethod
     def sanitize_text(text: str) -> str:
         # Remove surrounding quotes if present and collapse whitespace
         t = text.strip()
@@ -578,16 +602,16 @@ class GenericLLMClient:
             if isinstance(data, dict):
                 msg = data.get("message")
                 if isinstance(msg, dict):
-                    content = msg.get("content") or msg.get("text")
+                    content = _JSONTools.extract_text_content(msg.get("content") or msg.get("text"))
                 if content is None and isinstance(data.get("choices"), list):
                     for c in data.get("choices"):
                         if isinstance(c, dict):
                             m = c.get("message")
                             if isinstance(m, dict) and (m.get("content") or m.get("text")):
-                                content = m.get("content") or m.get("text")
+                                content = _JSONTools.extract_text_content(m.get("content") or m.get("text"))
                                 break
                             if c.get("content") or c.get("text"):
-                                content = c.get("content") or c.get("text")
+                                content = _JSONTools.extract_text_content(c.get("content") or c.get("text"))
                                 break
                 if content is None and isinstance(data.get("output"), list):
                     parts = []
@@ -767,10 +791,12 @@ class GenericLLMClient:
                         if isinstance(first, dict):
                             msg = first.get("message")
                             if isinstance(msg, dict):
-                                # Fall back to 'reasoning' for thinking-mode models
-                                content = msg.get("content") or msg.get("reasoning")
+                                # extract_text_content strips thinking blocks from thinking-mode models
+                                content = _JSONTools.extract_text_content(msg.get("content")) or msg.get("reasoning")
                             if not content:
-                                content = first.get("text") or first.get("content") or first.get("reasoning")
+                                content = _JSONTools.extract_text_content(
+                                    first.get("text") or first.get("content")
+                                ) or first.get("reasoning")
 
                 if content:
                     logger.info(f"HTTP request for {model_id} SUCCEEDED. Content length: {len(str(content))}")

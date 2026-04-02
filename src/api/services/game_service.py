@@ -966,11 +966,22 @@ class GameService:
         )
         events_data = EventSerializer.serialize_list(getattr(tile, "events_here", []))
 
-        # Get exits/connections
-        exits_data = {}
-        if hasattr(tile, "exits"):
-            for direction, (ex, ey) in tile.exits.items():
-                exits_data[direction] = {"x": ex, "y": ey}
+        # Get exits/connections using the same calculated approach as get_current_room
+        exits_data = self._calculate_exits(player.universe, tile, x, y)
+
+        current_map = getattr(player, "map", None)
+        map_metadata = (
+            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
+        )
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
+        if not bgm and map_name:
+            if "dark-grotto" in map_name.lower():
+                bgm = "dark_grotto"
+            elif "verdette" in map_name.lower():
+                bgm = "verdette_caverns"
+            elif "mineral" in map_name.lower():
+                bgm = "mineral_pools"
 
         return {
             "x": x,
@@ -983,6 +994,7 @@ class GameService:
             "events": events_data,
             "exits": exits_data,
             "is_passable": getattr(tile, "is_passable", True),
+            "bgm": bgm,
         }
 
     def search(self, player: "player_module.Player") -> Dict[str, Any]:
