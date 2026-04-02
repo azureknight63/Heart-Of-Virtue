@@ -157,7 +157,7 @@ class Ch01DarkGrottoIntro(Event):
         elif self._stage == 3:
             self.needs_input = False
             self.completed = True
-            if self in self.tile.events_here:
+            if self.tile is not None and self in self.tile.events_here:
                 self.tile.events_here.remove(self)
 
 

@@ -791,9 +791,17 @@ class GameService:
                     ):
                         pass
 
-                # Ensure event has current player and room references
+                # Ensure event has current player and room references.
+                # Prefer tile_x/tile_y stored in the pending payload (set when
+                # the event was first queued) so events that reference
+                # self.tile (e.g. to remove themselves from events_here) work
+                # correctly even when player.current_room is None in the API.
                 event.player = player
-                if hasattr(player, "current_room"):
+                tile_x = pending.get("tile_x")
+                tile_y = pending.get("tile_y")
+                if tile_x is not None and tile_y is not None:
+                    event.tile = player.universe.get_tile(tile_x, tile_y)
+                elif hasattr(player, "current_room") and player.current_room is not None:
                     event.tile = player.current_room
 
                 # Call process() or check_conditions()
