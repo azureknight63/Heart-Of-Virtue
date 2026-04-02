@@ -210,6 +210,28 @@ class GameService:
     # World Navigation Methods
     # ========================
 
+    def _resolve_bgm(self, tile: Any, player: Any) -> Optional[str]:
+        """Resolve the BGM track for a tile.
+
+        Checks (in order): tile-level bgm attribute, map metadata bgm, map-name fallback.
+        """
+        current_map = getattr(player, "map", None)
+        map_metadata = (
+            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
+        )
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+
+        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
+        if not bgm and map_name:
+            name_lower = map_name.lower()
+            if "dark-grotto" in name_lower:
+                bgm = "dark_grotto"
+            elif "verdette" in name_lower:
+                bgm = "verdette_caverns"
+            elif "mineral" in name_lower:
+                bgm = "mineral_pools"
+        return bgm
+
     def _calculate_exits(
         self, universe, tile: Any, x: int, y: int
     ) -> Dict[str, Dict[str, int]]:
@@ -312,20 +334,7 @@ class GameService:
         if hasattr(tile, "objects_here"):
             objects_data = ObjectSerializer.serialize_list(tile.objects_here)
 
-        current_map = getattr(player, "map", None)
-        map_metadata = (
-            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
-        )
-        map_name = current_map.get("name") if isinstance(current_map, dict) else None
-
-        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
-        if not bgm and map_name:
-            if "dark-grotto" in map_name.lower():
-                bgm = "dark_grotto"
-            elif "verdette" in map_name.lower():
-                bgm = "verdette_caverns"
-            elif "mineral" in map_name.lower():
-                bgm = "mineral_pools"
+        bgm = self._resolve_bgm(tile, player)
 
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
@@ -969,19 +978,7 @@ class GameService:
         # Get exits/connections using the same calculated approach as get_current_room
         exits_data = self._calculate_exits(player.universe, tile, x, y)
 
-        current_map = getattr(player, "map", None)
-        map_metadata = (
-            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
-        )
-        map_name = current_map.get("name") if isinstance(current_map, dict) else None
-        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
-        if not bgm and map_name:
-            if "dark-grotto" in map_name.lower():
-                bgm = "dark_grotto"
-            elif "verdette" in map_name.lower():
-                bgm = "verdette_caverns"
-            elif "mineral" in map_name.lower():
-                bgm = "mineral_pools"
+        bgm = self._resolve_bgm(tile, player)
 
         return {
             "x": x,

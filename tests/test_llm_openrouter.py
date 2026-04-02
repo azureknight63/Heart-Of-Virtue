@@ -106,3 +106,44 @@ def test_openrouter_structured_generation(monkeypatch):
     assert obj.get("action") == "investigate_object"
     assert obj.get("description")
     assert obj.get("duration_seconds") == 2
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _JSONTools.extract_text_content
+# ---------------------------------------------------------------------------
+from ai.llm_client import _JSONTools
+
+
+class TestExtractTextContent:
+    def test_str_passthrough(self):
+        assert _JSONTools.extract_text_content("hello") == "hello"
+
+    def test_none_returns_none(self):
+        assert _JSONTools.extract_text_content(None) is None
+
+    def test_empty_string_returns_empty(self):
+        assert _JSONTools.extract_text_content("") == ""
+
+    def test_thinking_block_stripped(self):
+        blocks = [{"type": "thinking", "thinking": "internal reasoning"}]
+        assert _JSONTools.extract_text_content(blocks) is None
+
+    def test_text_block_extracted(self):
+        blocks = [{"type": "text", "text": "Mynx shifts."}]
+        assert _JSONTools.extract_text_content(blocks) == "Mynx shifts."
+
+    def test_mixed_blocks_returns_text_only(self):
+        blocks = [
+            {"type": "thinking", "thinking": "step by step..."},
+            {"type": "text", "text": "Mynx tilts her head."},
+        ]
+        assert _JSONTools.extract_text_content(blocks) == "Mynx tilts her head."
+
+    def test_empty_list_returns_none(self):
+        assert _JSONTools.extract_text_content([]) is None
+
+    def test_bare_string_elements_in_list(self):
+        assert _JSONTools.extract_text_content(["hello", "world"]) == "hello\nworld"
+
+    def test_non_str_non_list_coerced(self):
+        assert _JSONTools.extract_text_content(42) == "42"

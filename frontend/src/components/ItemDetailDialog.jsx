@@ -42,7 +42,8 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         setActionMessage('✗ ' + (data.error || 'Failed to equip'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      const serverError = err.response?.data?.error
+      setActionMessage('✗ ' + (serverError || err.message))
     } finally {
       setIsLoading(false)
     }

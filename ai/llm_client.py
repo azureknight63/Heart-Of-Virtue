@@ -617,7 +617,7 @@ class GenericLLMClient:
                     parts = []
                     for el in data.get("output"):
                         if isinstance(el, dict):
-                            parts.append(el.get("content") or el.get("text") or "")
+                            parts.append(_JSONTools.extract_text_content(el.get("content") or el.get("text")) or "")
                         elif isinstance(el, str):
                             parts.append(el)
                     content = "\n".join(p for p in parts if p)

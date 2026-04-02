@@ -197,7 +197,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(screen.getByText(/Equip/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Error: Network Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Network Error/i)).toBeDefined();
     });
   });
 
