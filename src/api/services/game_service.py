@@ -1,8 +1,11 @@
+import logging
 import uuid
 import contextlib
 import io
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
+
+_log = logging.getLogger(__name__)
 from unittest.mock import patch
 from src.interface import get_gold
 
@@ -144,6 +147,23 @@ class GameService:
 
         return patches
 
+    # Prefixes that indicate internal error/diagnostic output — must never reach the UI.
+    _ERROR_PREFIXES = (
+        "[ERROR]",
+        "[WARNING]",
+        "Traceback (most recent call last):",
+        "  File ",
+        "NameError:",
+        "AttributeError:",
+        "TypeError:",
+        "ValueError:",
+        "KeyError:",
+        "IndexError:",
+        "Exception:",
+        "RuntimeError:",
+        "DEBUG:",
+    )
+
     def _clean_event_output(self, output: str) -> str:
         if not output:
             return ""
@@ -151,7 +171,8 @@ class GameService:
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         lines = output.splitlines()
         filtered_lines = [
-            line for line in lines if not line.strip().startswith("DEBUG:")
+            line for line in lines
+            if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
         ]
         return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
 
@@ -335,6 +356,9 @@ class GameService:
             objects_data = ObjectSerializer.serialize_list(tile.objects_here)
 
         bgm = self._resolve_bgm(tile, player)
+
+        current_map = getattr(player, "map", None)
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
 
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
@@ -715,7 +739,7 @@ class GameService:
                 except Exception as e:
                     # Log error but continue
                     event_data["error"] = str(e)
-                    print(f"[ERROR] Event processing: {e}")
+                    _log.exception("Event processing failed for %s", getattr(event, 'name', type(event).__name__))
 
                 # Capture and clean output
                 clean_output = self._clean_event_output(f.getvalue())
@@ -842,7 +866,7 @@ class GameService:
         except Exception as e:
             result["success"] = False
             result["error"] = str(e)
-            print(f"[ERROR] Event input processing: {e}")
+            _log.exception("Event input processing failed for event_id=%s", event_id)
 
         # Capture and clean output
         clean_output = self._clean_event_output(f.getvalue())
@@ -1363,9 +1387,7 @@ class GameService:
                         method()
 
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
+            _log.exception("interact_with_target action failed")
             return {
                 "success": False,
                 "message": f"Error executing action: {str(e)}",

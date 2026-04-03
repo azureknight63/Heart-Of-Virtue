@@ -1,8 +1,11 @@
 """World navigation routes."""
 
+import logging
+
 from flask import Blueprint, request, jsonify
 
 world_bp = Blueprint("world", __name__)
+_log = logging.getLogger(__name__)
 
 
 def get_session_and_player(request):
@@ -96,10 +99,7 @@ def get_current_room():
         return jsonify({"success": True, "room": room}), 200
 
     except Exception as e:
-        import traceback
-
-        print(f"[ERROR] World route exception: {e}", flush=True)
-        traceback.print_exc()
+        _log.exception("World route exception in get_current_room")
         return (
             jsonify(
                 {
@@ -271,10 +271,7 @@ def submit_event_input():
         return jsonify(result), 200
 
     except Exception as e:
-        import traceback
-
-        print(f"[ERROR] Event input route exception: {e}", flush=True)
-        traceback.print_exc()
+        _log.exception("World route exception in submit_event_input")
         return (
             jsonify(
                 {

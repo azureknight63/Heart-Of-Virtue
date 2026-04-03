@@ -1,9 +1,12 @@
 """Player status and stats routes."""
 
+import logging
+
 from flask import Blueprint, request, jsonify
 from src.api.serializers.inventory import InventorySerializer
 
 player_bp = Blueprint("player", __name__)
+_log = logging.getLogger(__name__)
 
 
 def get_session_and_player(request):
@@ -149,9 +152,7 @@ def get_full_state():
         )
 
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
+        _log.exception("Player route exception")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
