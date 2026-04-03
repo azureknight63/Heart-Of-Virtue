@@ -4,9 +4,9 @@ import contextlib
 import io
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
+from unittest.mock import patch
 
 _log = logging.getLogger(__name__)
-from unittest.mock import patch
 from src.interface import get_gold
 
 if TYPE_CHECKING:

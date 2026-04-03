@@ -201,6 +201,47 @@ describe('ItemDetailDialog', () => {
     });
   });
 
+  it('shows server narrative without ✗ prefix when equip is rejected with a 400 error body', async () => {
+    const err = new Error('Request failed with status code 400');
+    err.response = { data: { error: 'Jean is already wielding a sword.' } };
+    apiClient.post.mockRejectedValue(err);
+
+    render(
+      <ItemDetailDialog
+        item={mockItem}
+        player={mockPlayer}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Equip/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Jean is already wielding a sword\./i)).toBeDefined();
+      expect(screen.queryByText(/✗/)).toBeNull();
+    });
+  });
+
+  it('shows server narrative without ✗ prefix when use is rejected with a 400 error body', async () => {
+    const consumableItem = { ...mockItem, can_use: true, maintype: 'Consumable' };
+    const err = new Error('Request failed with status code 400');
+    err.response = { data: { error: 'Jean is already at full health. He places the Restorative back into his bag.' } };
+    apiClient.post.mockRejectedValue(err);
+
+    render(
+      <ItemDetailDialog
+        item={consumableItem}
+        player={mockPlayer}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Use/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Jean is already at full health\./i)).toBeDefined();
+      expect(screen.queryByText(/✗/)).toBeNull();
+    });
+  });
+
   it('handles backend error message', async () => {
     apiClient.post.mockResolvedValue({ data: { success: false, error: 'Custom Error' } });
 
