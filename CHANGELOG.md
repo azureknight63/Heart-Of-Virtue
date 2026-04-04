@@ -2,6 +2,30 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.4.1] - 2026-04-03
+
+### Fixed
+- **Combat API — Event Dialog blocked after post-combat events**: `_handle_victory()` now always called when enemies are defeated, even if post-combat events fire. Frontend now receives both `end_state` (victory) and `events_triggered` correctly, fixing the delay where the Event Dialog wouldn't appear until a follow-up action.
+- **Combat API — available moves filtered for suggestions**: Combat suggestions now exclude moves with no viable targets, preventing AI from suggesting attacks that cannot execute.
+- **Dark Grotto — exits whitelist from JSON not enforced**: Wall Depression now correctly unlocks the eastward passage when interacted with (NW/SW exit whitelist bug fixed).
+- **Dark Grotto — multiple map bugs**: Fixed 14 Dark Grotto issues including wall passages, NPC spawning, tile descriptions, and visual inconsistencies.
+- **Inventory — game-logic rejection messages**: Now show narrative messages without the ✗ prefix for better UX feedback on failed item usage.
+- **Inventory — ValueError handling**: Return 400 Bad Request instead of 500 Server Error when item usage raises ValueError.
+- **Event system — tile resolution**: `process_event_input` now correctly resolves tile coordinates from session payload, fixing events that reference `self.tile`.
+- **Game initialization — entry-point events**: Starting tile events now fire on initial game load, fixing intro event sequences that don't trigger when entering a map for the first time.
+- **Audio — concurrent BGM switches**: `playSting` now guards the restore logic against race conditions when the player switches tracks during a sting, preventing crashed audio.
+- **API — backend errors in EventDialog**: Backend errors and diagnostic output now filtered from event messages sent to the frontend.
+
+### Changed
+- Removed "File " prefix regression that appeared in some event messages.
+- Event error handling now logs exceptions instead of silently swallowing them.
+- Map-entry spawners (NPCSpawnerEvent) now consistently fire during player movement, matching terminal game loop behavior.
+
+### Added
+- Audio context `playSting` function for one-shot sting effects (fanfare, etc.) with automatic BGM restoration.
+- SFX audio object reference tracking to prevent dangling audio elements.
+- Regression tests for inventory error handling (400 vs 500 responses).
+
 ## [0.0.4.0] - 2026-03-28
 
 ### Fixed

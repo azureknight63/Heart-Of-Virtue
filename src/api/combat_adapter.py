@@ -1179,11 +1179,18 @@ class ApiCombatAdapter:
             and "events_triggered" in self.player.combat_adapter_state
         )
 
-        if len(self.player.combat_list) == 0 and not event_just_triggered:
+        # ALWAYS handle victory when all enemies are defeated
+        # (even if post-combat events like Ch01PostRumbler3 are firing).
+        # Events should not suppress the victory state — the frontend needs
+        # combat_end_summary to know when combat has ended.
+        if len(self.player.combat_list) == 0 and self.player.in_combat:
             self._handle_victory()
-            result = self.get_combat_state()
-            result["beat_states"] = beat_states
-            return result
+
+            # If no events are blocking, return victory immediately
+            if not event_just_triggered:
+                result = self.get_combat_state()
+                result["beat_states"] = beat_states
+                return result
 
         # Set up for next move selection if battle continues and no event is blocking
         if not event_just_triggered:

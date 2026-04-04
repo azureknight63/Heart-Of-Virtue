@@ -1243,8 +1243,8 @@
                                 "add_status_resistance": {},
                                 "gives_exp": false,
                                 "event": null,
-                                "text_file_path": null,
-                                "text": "Day 18: Found a wooden chest near the eastern alcove, left by some previous soul.\nHid the key beneath some loose stones near the altar - a natural landmark in this cave.\nIf anyone finds this, search there.\n- Aldric",
+                                "text_file_path": "src/resources/books/tattered-journal.txt",
+                                "text": "",
                                 "chars_per_page": 800
                             }
                         },

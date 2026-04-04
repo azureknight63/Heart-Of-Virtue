@@ -53,6 +53,7 @@ _LLM_NOISE_PREFIXES = (
     "Searching for fallback",
     "Fallback model",
     "marking as unusable",
+    "generate_structured received",
     "it need to output",
     "it quotes",
     "present-tense",
@@ -173,6 +174,7 @@ class GameService:
         filtered_lines = [
             line for line in lines
             if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
+            and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
 
