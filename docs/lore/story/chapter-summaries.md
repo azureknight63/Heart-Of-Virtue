@@ -56,8 +56,86 @@ Fragments should trigger at specific emotional or narrative intersections, not r
 
 ## What’s next (hinted directions)
 
-- Jean will likely pursue the Grondite quest to purge the mineral pools, pushing him further into Grondia and into contact with factions, hazards, and history tied to the Grondites.
-- The relationship with Gorran is a continuing anchor: his presence suggests future companionship, a cultural bridge, and possibly factional complications given the Grondites' social structure.
-- Jean’s memory fragments will deepen: expect revelations that complicate his identity and tie him to larger emotional stakes.
+- Jean will pursue the Grondite quest to purge the mineral pools, culminating in the King Slime fight.
+- The mineral fragment cut triggers the first real memory flash: the explosion, the pressure event, the emptiness. Jean does not name what he saw.
+- Votha Krr sends Jean west with a cryptic directive toward the Echoing Caves. The transition to Chapter 3 begins.
+
+---
+
+## Chapter 2 → Chapter 3 Transition — The Road to the Wailing Badlands
+
+*Full detail in `docs/lore/story/ch02-ch03-transition.md`.*
+
+After the King Slime defeat, Jean returns to Votha Krr. The elder receives the
+news, presses two fingers briefly to his chest in an unspoken recognition, and
+sends Jean west: *"Seek the Echoing Caves to the west, beyond the river."*
+
+The Golemite community lines the passage as Jean and Gorran leave. No ceremony.
+Their attention given as weight.
+
+Jean exits through Grondia’s eastern gate and descends a rocky southern trail
+before the route winds westward toward the river. The Resolute Plains are visible
+to the east from the high trail. He walks the other direction.
+
+On the east bank of the river: a nomad camp. Jean meets **Mara the Scavenger** —
+a human artifact trader and river-crosser who is unsentimental, attentive, and
+immediately interested in the anomaly Jean presents. She ferries them across for
+a flat fee and offers to guide west as far as the Echoing Caves, framed as
+practical arrangement: she has business that direction anyway.
+
+Her camp includes **Devet** (older, quiet, does the cooking, has seen desperate
+crossings before) and **Liss** (young, openly curious about Gorran, ends up
+sitting near him watching the river — the warmest exchange in the sequence, no
+words spoken).
+
+Optional bonus area: a hidden crack north of camp leads to the **Western Verdette
+Caverns** — a sealed bonus area with stronger enemies, lore rewards about Grondia’s
+pre-citadel history, and, deep inside, **Gorran’s memento**: the unfinished paired
+sigil his partner was carving when the rockfall came.
+
+On the west bank, first night: Jean’s hands begin the shape of prayer from habit
+and stop before he’s aware of it. He pokes the fire instead. Gorran shifts closer,
+says nothing. The player is ahead of Jean here.
+
+In the Echoing Caves: the acoustics return sound wrong — not delayed, wrong.
+Jean stops. The stone vaulting and the particular quality of crowd-silence the
+caves produce lands somewhere below conscious memory. He went into the coma in
+a covered stone market. His body was there. He has no accessible memory of it
+but his body has not forgotten the shape of that silence.
+
+Gorran makes a sound in the acoustic ring of one chamber. The cave returns it.
+He says — at the cost of everything he has at this stage of his language arc —
+*"It remembers."* Jean answers: *"It’s just echo."* Gorran looks at him and
+says nothing more. The player understands what Jean has just said about himself.
+
+At the Badlands threshold: the wail arrives before the full view. Mara says:
+*"The locals call it the Wailing Badlands. They don’t come here."* Jean goes
+forward. She follows.
+
+Tone & themes: suppression becoming active avoidance; the body knowing before
+the mind. Jean is moving because stillness is dangerous right now. The campfire
+prayer and the cave echo are two threads of the same thing surfacing — he doesn’t
+pull on either. Gorran witnesses without naming. Mara watches without extracting.
+The transition ends at the edge of the Anger stage.
+
+---
+
+## Chapter 3 — The Wailing Badlands (Anger Stage)
+
+*[Not yet implemented. See `docs/lore/environments/wailing-badlands/` for
+environment design.]*
+
+Jean enters the Wailing Badlands — a landscape of broken stone and wind-carved
+canyons that serves as the physical manifestation of his unprocessed anger.
+The omnipresent wail is not a sound effect. It is the stage.
+
+Key beats to be developed:
+- Jean encounters Elder Korash (Golemite exile) at the Broken Gate, who holds
+  the history seeded by the Western Verdette Caverns lore rewards
+- The Broken Gate history connects to Grondia’s founding — what Votha Krr
+  would not say directly
+- Gorran’s first word ("Stop") fires somewhere in the Anger stage, in an
+  emergency, at the worst possible moment
+- Jean walks through his rage rather than running from it
 
 ---
