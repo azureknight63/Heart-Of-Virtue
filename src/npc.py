@@ -1497,18 +1497,18 @@ class GronditePasserby(Friend):
 
     _TALK_LINES = [
         "The Grondite meets your gaze. A low subsonic vibration moves through the floor "
-        "beneath your feet. It turns away and continues.",
-        "The Grondite stops and looks at you — really looks, tilting its head slowly. "
-        "Then it makes a sound like two stones sliding together and moves on.",
-        "The Grondite produces three short, percussive sounds from somewhere in its chest. "
-        "It does not wait for a response.",
+        "beneath your feet. He turns away and continues.",
+        "The Grondite stops and looks at you — really looks, tilting his head slowly. "
+        "Then he makes a sound like two stones sliding together and moves on.",
+        "The Grondite produces three short, percussive sounds from somewhere in his chest. "
+        "He does not wait for a response.",
         "The Grondite gestures — a single, deliberate downward press of one hand. "
         "Jean isn't sure what it means. The Grondite continues walking.",
-        "The Grondite makes no sound. It places a fist briefly against its own sternum, "
+        "The Grondite makes no sound. He places a fist briefly against his own sternum, "
         "then turns away.",
         "A low grinding tone rises from the Grondite's chest — short, even, and then "
-        "gone. It does not slow its pace.",
-        "The Grondite regards Jean with an unhurried stillness, then tilts its head toward "
+        "gone. He does not slow his pace.",
+        "The Grondite regards Jean with an unhurried stillness, then tilts his head toward "
         "the path ahead and moves on.",
     ]
 
@@ -1517,9 +1517,9 @@ class GronditePasserby(Friend):
             name="Grondite",
             description=(
                 "A broad, heavily-built figure of living stone, unhurried and deliberate. "
-                "Its surface is a mosaic of grey and ochre rock, worn smooth at the joints "
-                "from centuries of movement. It acknowledges Jean with a slow lateral turn "
-                "of its head — enough to register, not enough to invite."
+                "His surface is a mosaic of grey and ochre rock, worn smooth at the joints "
+                "from centuries of movement. He acknowledges Jean with a slow lateral turn "
+                "of his head — enough to register, not enough to invite."
             ),
             damage=0,
             aggro=False,
@@ -1530,15 +1530,15 @@ class GronditePasserby(Friend):
             finesse=8,
             awareness=14,
             idle_message=" moves past with measured, heavy steps.",
-            alert_message=" shifts its weight and watches.",
+            alert_message=" shifts his weight and watches.",
             discovery_message="a broad, stone-skinned Grondite.",
         )
         self.keywords = ["talk"]
         self.pronouns = {
-            "personal": "it",
-            "possessive": "its",
-            "reflexive": "itself",
-            "intensive": "itself",
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
         }
         try:
             self.known_moves = [moves.NpcIdle(self)]
@@ -1556,15 +1556,15 @@ class GronditeWorker(Friend):
     """
 
     _TALK_LINES = [
-        "The worker pauses its task and straightens. It makes a low, measured sound — "
-        "not unfriendly — and returns to what it was doing.",
+        "The worker pauses his task and straightens. He makes a low, measured sound — "
+        "not unfriendly — and returns to what he was doing.",
         "The Grondite does not look up but raises one finger briefly, as if asking Jean "
-        "to wait. Then the sound it's working out of the rock fills the silence again.",
-        "It looks at Jean with an expression that is — possibly — patience. It holds up "
-        "whatever it is working on. Jean doesn't know what he is supposed to understand from this.",
-        "The worker turns its head toward Jean without stopping its motion. A low percussive "
-        "sound. Then it looks back at the work.",
-        "The Grondite sets its tool down deliberately, regards Jean for a moment, makes a "
+        "to wait. Then the sound he's working out of the rock fills the silence again.",
+        "He looks at Jean with an expression that is — possibly — patience. He holds up "
+        "whatever he is working on. Jean doesn't know what he is supposed to understand from this.",
+        "The worker turns his head toward Jean without stopping his motion. A low percussive "
+        "sound. Then he looks back at the work.",
+        "The Grondite sets his tool down deliberately, regards Jean for a moment, makes a "
         "single short vowel sound, and picks the tool back up.",
     ]
 
@@ -1574,7 +1574,7 @@ class GronditeWorker(Friend):
             description=(
                 "A Grondite whose stone-skin is darkened at the hands and forearms — "
                 "mineral dust worked into the grain over long practice. "
-                "It moves with the focused economy of someone partway through a task."
+                "He moves with the focused economy of someone partway through a task."
             ),
             damage=0,
             aggro=False,
@@ -1585,15 +1585,15 @@ class GronditeWorker(Friend):
             finesse=10,
             awareness=12,
             idle_message=" is occupied with something near the floor.",
-            alert_message=" pauses its work and watches.",
+            alert_message=" pauses his work and watches.",
             discovery_message="a Grondite working at something.",
         )
         self.keywords = ["talk"]
         self.pronouns = {
-            "personal": "it",
-            "possessive": "its",
-            "reflexive": "itself",
-            "intensive": "itself",
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
         }
         try:
             self.known_moves = [moves.NpcIdle(self)]
@@ -1612,28 +1612,28 @@ class GronditeElder(Friend):
     """
 
     _TALK_LINES = [
-        "The Elder turns. It looks at Jean the way a geologist looks at a particular "
-        "stratum — with genuine, slow interest. Then it makes a single sound, deep and "
-        "resonant, and returns its gaze to the middle distance.",
-        "The Elder does not speak. It places a hand on Jean's shoulder — briefly, a weight, "
-        "an anchor — and removes it. Then it is still again.",
-        "The Elder considers Jean for a long moment. It produces a subsonic resonance Jean "
-        "feels in his sternum before he hears it. Then it gestures toward the Conclave and "
+        "The Elder turns. He looks at Jean the way a geologist looks at a particular "
+        "stratum — with genuine, slow interest. Then he makes a single sound, deep and "
+        "resonant, and returns his gaze to the middle distance.",
+        "The Elder does not speak. He places a hand on Jean's shoulder — briefly, a weight, "
+        "an anchor — and removes it. Then he is still again.",
+        "The Elder considers Jean for a long moment. He produces a subsonic resonance Jean "
+        "feels in his sternum before he hears it. Then he gestures toward the Conclave and "
         "turns away.",
         "Two sounds: one short, one long, with a pause between them. The Elder makes them "
         "without looking at Jean, then waits — as if for a response Jean doesn't know how "
         "to give.",
-        "The Elder's attention is unhurried and complete. It takes Jean in from boots to "
-        "face, then makes a low grinding sound that rises and resolves. Then it is still.",
+        "The Elder's attention is unhurried and complete. He takes Jean in from boots to "
+        "face, then makes a low grinding sound that rises and resolves. Then he is still.",
     ]
 
     def __init__(self):
         super().__init__(
             name="Grondite Elder",
             description=(
-                "This Grondite is older — its stone-skin more cracked and mineral-threaded, "
-                "grey and iron-veined. It moves slowly, not from frailty, but from the "
-                "unhurried certainty of something that has been exactly where it is "
+                "This Grondite is older — his stone-skin more cracked and mineral-threaded, "
+                "grey and iron-veined. He moves slowly, not from frailty, but from the "
+                "unhurried certainty of one who has been exactly where he is "
                 "for a very long time."
             ),
             damage=0,
@@ -1650,10 +1650,10 @@ class GronditeElder(Friend):
         )
         self.keywords = ["talk"]
         self.pronouns = {
-            "personal": "it",
-            "possessive": "its",
-            "reflexive": "itself",
-            "intensive": "itself",
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
         }
         try:
             self.known_moves = [moves.NpcIdle(self)]
@@ -1679,9 +1679,9 @@ class GronditeConclaveElder(Friend):
             name="Conclave Elder",
             description=(
                 "An Elder Grondite who stands each day at the center of this chamber, "
-                "facing the plinth. Its stone-skin has the deep cracking and vivid mineral "
-                "banding of great age. Unlike the other Elders you have seen, it does not "
-                "merely tolerate your presence — it seems to have been expecting someone."
+                "facing the plinth. His stone-skin has the deep cracking and vivid mineral "
+                "banding of great age. Unlike the other Elders you have seen, he does not "
+                "merely tolerate your presence — he seems to have been expecting someone."
             ),
             damage=0,
             aggro=False,
@@ -1692,15 +1692,15 @@ class GronditeConclaveElder(Friend):
             finesse=6,
             awareness=25,
             idle_message=" stands before the plinth, still as carved stone.",
-            alert_message=" slowly turns its gaze toward you.",
+            alert_message=" slowly turns his gaze toward you.",
             discovery_message="a Grondite Elder standing before the plinth.",
         )
         self.keywords = ["talk"]
         self.pronouns = {
-            "personal": "it",
-            "possessive": "its",
-            "reflexive": "itself",
-            "intensive": "itself",
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
         }
         try:
             self.known_moves = [moves.NpcIdle(self)]
@@ -1715,23 +1715,23 @@ class GronditeConclaveElder(Friend):
 
         if first_time:
             print(
-                "\nThe Elder turns before Jean says anything. It had already turned — "
+                "\nThe Elder turns before Jean says anything. He had already turned — "
                 "waiting — before he reached the plinth."
             )
             time.sleep(1.5)
             print(
-                "It studies him. Then it reaches into the folds of its stone-mantle and "
+                "He studies him. Then he reaches into the folds of his stone-mantle and "
                 "produces something: a small disc, cracked cleanly in half, one piece "
-                "missing. It holds it out toward Jean."
+                "missing. He holds it out toward Jean."
             )
             time.sleep(1.5)
             print(
-                "It makes a sound: low, deliberate, with a rising inflection at the end. "
+                "He makes a sound: low, deliberate, with a rising inflection at the end. "
                 "The sound of a question."
             )
             time.sleep(1)
             print(
-                "Jean doesn't know what it is asking. But the broken disc is clearly "
+                "Jean doesn't know what he is asking. But the broken disc is clearly "
                 "meant to show him."
             )
             time.sleep(1)
@@ -1741,7 +1741,7 @@ class GronditeConclaveElder(Friend):
             )
             time.sleep(0.5)
             print(
-                "\nThe Elder lowers the broken disc. It makes one short sound — patient, "
+                "\nThe Elder lowers the broken disc. He makes one short sound — patient, "
                 "not disappointed — and turns back to the plinth."
             )
             universe_story = getattr(getattr(player, "universe", None), "story", None)
@@ -1749,7 +1749,7 @@ class GronditeConclaveElder(Friend):
                 universe_story[self._INTRO_RUN_KEY] = "1"
         else:
             lines = [
-                "The Elder turns and regards Jean for a moment. Then it produces the broken "
+                "The Elder turns and regards Jean for a moment. Then he produces the broken "
                 "disc again and holds it in the space between them.",
                 "The Elder makes the same rising sound as before. The question hasn't changed.",
                 "The Elder looks at Jean. Looks at the plinth. Looks at Jean again.",
