@@ -60,7 +60,7 @@ class Ch01_Memory_Amelia(MemoryFlash):
             ('"Jean, you always were too stubborn for your own good."', 2),
             ("", 0.5),
             (
-                "Laughter— her laughter— like wind chimes in a summer breeze.",
+                "Laughter— her laughter— bright and sudden, like pressure releasing through a clean line.",
                 2.5,
             ),
             ("", 1),

@@ -132,7 +132,7 @@ Col 5: (5,0)↔(5,1)↔(5,2)[stub],  (5,3)↔(5,4)
 
 > *Gorran pauses at the gate as it seals. His palm rests flat against the stone — one breath, maybe two. Then he turns without a word and follows.*
 >
-> *Jean does not ask what he is thinking.*
+> *Jean does not ask him.*
 
 **Implementation note:** Does not repeat. Fires only when the player's previous tile was the Grondia Eastern Gate. Should not fire on re-entry from the south.
 
@@ -350,11 +350,11 @@ Col 5: (5,0)↔(5,1)↔(5,2)[stub],  (5,3)↔(5,4)
 
 > *Jean stands at the edge of the road east.*
 >
-> *The Plains are out there — civilization, ordinary grief, the possibility of forgetting. A direction that does not lead toward whatever the river is leading toward. For a moment the pull of it is real.*
+> *The Plains are out there — open ground, light, the kind of distance you could just keep walking into. For a moment the road pulls at him in a way he doesn't examine.*
 >
-> *Then Gorran stops beside Jean and says nothing, and the moment passes.*
+> *Then Gorran's boots scrape gravel behind him, and whatever the feeling was, it passes.*
 >
-> *The south is where this goes.*
+> *South. That's where this goes.*
 
 **Mechanical effect:** On event completion, move player west to (4,2). No fight, no item cost. The east exit on this tile is present in description only — the event fires before movement resolves.
 

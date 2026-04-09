@@ -171,9 +171,9 @@ class Ch02GuideToCitadel(
             await_input()
             dialogue(
                 "Elder",
-                "Welcome, little one. I am Elder Votha Krr. Among the inhabitants "
-                "of this great city, I am among its council of leaders. "
-                "Some may even foolishly look to me for guidance from time to time.",
+                "Welcome, little one. I am Elder Votha Krr. Within this city, I serve "
+                "on its council of leaders — though some among us are more foolish than "
+                "others in how much weight they give that title.",
                 "green",
             )
             time.sleep(2)
