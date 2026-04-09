@@ -124,3 +124,9 @@ Badlands is something she is about to find as well.
 - He matters to Mara in a way she has not processed. This thread is hers, not
   Jean's — though Jean, who understands what it is to carry someone you can't
   name, may recognize the shape of it without being told.
+- **Do not instrumentalize the Corren arc for Jean's benefit.** If Mara achieves
+  some form of resolution about Corren in Chapter 3 — understanding his choice,
+  finding what he found, accepting the ambiguity — that resolution belongs to her
+  alone. It must not become a demonstration or model for Jean's grief arc, or a
+  prompt that Jean then acts on. Two arcs can run in parallel without one teaching
+  the other anything. Enforce this in scene design.

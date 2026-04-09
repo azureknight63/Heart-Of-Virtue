@@ -89,6 +89,17 @@ don't bother to say so. They just don't believe, quietly, and move on.
 
 She keeps the crucifix.
 
+**For the implementer — what the Echoing Caves did to her:** When Mara passed through
+alone, the resonance did not give her wrong sound. It gave her right sound — the
+acoustic return of one particular chamber felt like being in a place that was already
+listening. Not echo as reflection, but echo as response. She has no framework for
+this. She told herself the caves were acoustically unusual, which they are, and that
+her fatigue had made her susceptible to atmosphere, which is plausible. She believes
+neither explanation. She has not returned until now. On her second crossing — with
+Jean and Gorran — she is quieter than usual. The chamber where Gorran speaks is the
+chamber she is trying not to pause in. She continues before Jean can notice the pause.
+Or before she thinks he can.
+
 ---
 
 ## Background and History
@@ -193,12 +204,22 @@ her to admit something she isn't ready to admit.
 
 ---
 
-**For the implementer:** When Jean first sees the crucifix, he notices it the way
-you notice something familiar in the wrong context — not recognition exactly, but a
-wrongness he can't locate. He knew a crucifix like this. He cannot remember on whom.
-The mental blocking that protects him from the full weight of Amelia's death also
-protects him from knowing what he's seeing. He does not ask Mara about it. He
-looks away.
+**For the implementer — Jean's side:** When Jean first sees the crucifix, he notices
+it the way you notice something familiar in the wrong context — not recognition
+exactly, but a wrongness he can't locate. He knew a crucifix like this. He cannot
+remember on whom. The mental blocking that protects him from the full weight of
+Amelia's death also protects him from knowing what he's seeing. He does not ask
+Mara about it. He looks away.
+
+**For the implementer — Mara's side:** She notices that he noticed, and she notices
+that he looked away. He is the only person who has ever looked away from it. Most
+people glance at it, or don't; Jean's gaze finds it and then deliberately leaves it.
+She does not follow this. She returns to what she was doing. But the crucifix and
+Jean now occupy the same entry in her internal catalogue — whatever that means. She
+doesn't know yet what it means. If rendered in narration, this beat should be one
+sentence, no more, framed as observation received rather than emotion felt. Something
+like: *She notices him notice it, and notice him look away, and files both without
+comment.*
 
 This is a seed. It does not have to flower until the story is ready for it.
 
@@ -301,6 +322,30 @@ If Jean ever places what he's seeing, it will break something open in him that t
 of Aurelion has been slowly preparing him for. That moment, if it comes, belongs in
 the game's final third — not as a revelation about Mara but as a revelation about Jean.
 
+**For the implementer — example beats where the oblique tension surfaces:**
+
+These are anchors for the implementer, calibrated to specific points in the Ch2→Ch3
+sequence. None of them name the dynamic. All of them are available to the player
+without being explained.
+
+*At the west-bank campfire:* Mara is sorting artifact samples by firelight. Jean
+pokes the fire. At some point she glances up and finds him already looking at
+something in the middle distance — not at her, but in her direction. She returns
+to her samples without marking the moment. It is the kind of thing you could read
+either way. That's the point.
+
+*Crossing the threshold into the Badlands:* Mara says her line. Jean goes forward
+without hesitation. She follows. The narration can note — briefly, without
+underscoring it — that she had not decided to follow until the moment he moved. She
+had thought she was still deciding. She wasn't.
+
+*Somewhere in the Badlands (Chapter 3):* Jean says something that she would have
+said herself — reads a piece of terrain the same way she would, or draws the same
+conclusion she drew before he speaks. She doesn't point this out. She notes it in
+the same way she notes anything that doesn't fit her existing picture of a thing.
+This is the beat where she first admits, to herself and not aloud, that she has a
+picture of Jean at all.
+
 ---
 
 ## Her Camp Company
@@ -308,8 +353,8 @@ the game's final third — not as a revelation about Mara but as a revelation ab
 Mara travels with a small, loose group. Not a fixed roster — people come and go
 as routes align — but two who are present during Jean's arrival:
 
-**Devet** — Older than Mara. Related to her (the exact nature of the relationship
-is never specified in-game). He does the cooking. He is quiet in a different way
+**Devet** — Older than Mara. Related to her — possibly an uncle, possibly something
+less classifiable. The exact nature is never specified in-game. He does the cooking. He is quiet in a different way
 than Mara — not reserved but settled, finished with most opinions. He gives Jean
 one specific look when Jean arrives at camp: the look of a man who has seen people
 cross this river heading west before, and knows what the look of someone running
@@ -355,6 +400,27 @@ She doesn't follow up. She files it.
 She states this without selling it. She is not performing helpfulness. She has
 assessed that Jean is going somewhere she wants to see and has found a practical
 arrangement that lets both things happen.
+
+---
+
+**During the river crossing (illustrating the sardonic register):**
+
+Jean watching Gorran trail his hand in the current.
+
+Mara, not looking up from the raft pole:
+> *"He does that every time he's near water. I've watched other Golemites do the same.
+> They seem to find it meditative."*
+
+A beat.
+
+> *"Or they're checking for leaks. Hard to say."*
+
+She poles the raft. She doesn't explain whether she was joking.
+
+*Note for implementers: This exchange is illustrative of the register, not mandatory
+verbatim. The key elements: an observation delivered straight, a second beat that
+reframes it ambiguously, no signal as to which she meant. Mara's humor never
+announces itself.*
 
 ---
 
