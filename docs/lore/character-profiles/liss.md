@@ -56,13 +56,14 @@ whether she is being heard.
 **Jean.** Something about him doesn't fit together, and she is the only one who
 asks about this directly. Not cruelly — she is never cruel, she simply doesn't have
 the social architecture for cruelty yet — but plainly. *You look like you're dressed
-for a different story. Is that your actual mace or did you find it? Where are you
-going that you have to look like that?* She does not always get answers. She
-considers this data.
+for a different story. Where are you going that you have to look like that? Where
+did you come from?* She does not always get answers. She considers this data.
 
-**The mace specifically.** She finds religious objects fascinating in the way she
-finds all objects with a visible past fascinating. She has asked about it more than
-once. She has not gotten a satisfying answer. She is still working on this.
+**Objects with a story.** She is drawn to things that carry evidence of use — worn
+leather, a blade that has been resharpened many times, kit that has traveled far.
+If Jean is carrying anything that has that quality, she will ask about it. She finds
+objects with a visible past more interesting than new ones and wants to know who used
+them and for what and what happened after.
 
 **Where things come from and where they are going.** She thinks about routes
 differently than adults do — not as logistics but as stories. Every path leads
@@ -74,16 +75,16 @@ somewhere someone decided to go. She wants to know who decided and why.
 
 Liss interacts with Jean in a way no other NPC does: she is not reading his grief,
 not watching him from lateral attention, not offering wisdom or competence. She
-is simply curious about him as a specific person who has shown up in her camp and
-has a mace with a story she hasn't gotten to the bottom of yet.
+is simply curious about him as a specific person who has shown up in her camp
+looking like he came from somewhere specific and is going somewhere more difficult.
 
 This is, paradoxically, a relief.
 
 Jean's defenses are calibrated against people who want something from his pain —
 to understand it, to witness it, to help with it. Liss doesn't want any of those
-things. She wants to know if the mace is heavy and what the inscription means and
-whether he's going somewhere dangerous and if so whether he knows what plants are
-edible on that route because Devet does and she could ask.
+things. She wants to know where he is going and what is worth walking toward and
+whether he knows which plants are edible on that route, because Devet does and
+she could ask.
 
 She is too young to be condescending. She has no investment in Jean's identity.
 She does not need him to be the crusader or the man who has lost his faith or the
@@ -180,9 +181,9 @@ a governor.
 
 **Voice examples:**
 
-> *"What does the inscription on your mace mean? The bit near the grip —
-> that part specifically. Mara said it might be ceremonial but it looks
-> functional to me. Is it functional? Can I see it?"*
+> *"Where are you going exactly? Like — there's west and then there's*
+> *west. Devet says people who go all the way west don't usually come*
+> *back. Are you one of those people? You look like one of those people."*
 
 ---
 
@@ -226,7 +227,7 @@ a governor.
   childhood but the gradual accumulation of someone she is becoming. She remains
   recognizably herself.
 - **Do not have her ask about Jean's grief directly.** She asks about what she
-  sees: the mace, the bandage, whether he knows which plants are safe. She does
+  sees: his manner, his kit, whether he knows which plants are safe. She does
   not identify emotional states and ask about them. She has not learned to do that.
   The questions she does ask sometimes brush the grief sideways.
 - **Do not accelerate the Gorran relationship.** It builds at the speed of trust
