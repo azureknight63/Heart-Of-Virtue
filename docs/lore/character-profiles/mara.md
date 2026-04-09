@@ -359,7 +359,7 @@ than Mara — not reserved but settled, finished with most opinions. He gives Je
 one specific look when Jean arrives at camp: the look of a man who has seen people
 cross this river heading west before, and knows what the look of someone running
 toward something doesn't look like. He doesn't offer this observation aloud. He
-offers food instead.
+offers food instead. See `docs/lore/character-profiles/devet.md`.
 
 **Liss** — Young, openly curious, bad at concealing it. She has never been close
 to a Golemite. She circles Gorran's general vicinity throughout the camp sequence
@@ -367,6 +367,12 @@ without approaching directly — asking Mara questions in a low voice that Gorra
 can almost certainly hear, watching from a careful distance. She eventually sits
 near him and watches the river instead. He allows this without acknowledging it.
 It is one of the warmest moments in the sequence, without a word exchanged.
+See `docs/lore/character-profiles/liss.md`.
+
+Devet and Liss recur across subsequent chapters as Jean's path crosses the nomad
+group's trading routes. Their encounter arc — including the gradual development of
+Liss and Gorran's relationship — is documented in
+`docs/lore/story/devet-liss-recurring-encounters.md`.
 
 ---
 

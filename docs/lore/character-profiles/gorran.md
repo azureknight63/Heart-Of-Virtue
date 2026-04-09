@@ -32,6 +32,8 @@ The bond is one of mutual respect, shared hardship, and steadfast loyalty. When 
 ### A "Male" Society: 
 The Golemites are a single-gender race. Their society, born of stone and duty, is centered around the concepts of strength, endurance, and quiet resolve. These traits give their community a focused, purpose-driven identity.
 
+**Pronoun convention:** All Golemites — named or unnamed, background or foreground — use **he/him/his** throughout the game. This applies to dialogue, narration, NPC descriptions, and lore documents without exception.
+
 ### Communal Rearing
 The creation of new Golemites is a slow, spiritual process. A new Golemite doesn't have parents; he simply awakens from the earth in a sacred mineral deposit, which is a natural extension of the world itself. Once he awakens, he is immediately taken in and cared for by the entire community.
 Instead of a single family, the young Golemite learns and grows under the guidance of every Golemite in the city. An Elder might teach him about history, a warrior might teach him about duty, and a craftsman might teach him about artistry. This communal rearing ensures that every Golemite understands his purpose and his unbreakable connection to his people.
