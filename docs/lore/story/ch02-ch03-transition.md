@@ -262,6 +262,23 @@ cool air moving outward, darkness inside. The sound is the first indication that
 something is unusual — the ambient quiet has a quality to it, like the interior of
 a very large space.
 
+### Mara has been here before
+
+Mara walked through the Echoing Caves alone several years ago, on an artifact run.
+She doesn't mention this. What happened to her inside — something in the resonance
+she has never been able to classify or dismiss — is something she told herself was
+fatigue and has not examined since. She keeps finding routes that take her near the
+entrance without crossing it. This crossing, now, is the first time she has returned.
+
+She will be quieter than usual once they are inside. She does not comment on the
+acoustics. She does not share what they did to her the first time. If Jean notices
+the change in her manner, she will say the caves require attention. This is true.
+It is not the whole truth.
+
+At the chamber where Gorran speaks — the acoustic ring — she pauses a moment longer
+than the route requires. She continues before Jean can notice the pause. Or before
+she thinks he can.
+
 Inside: water-carved stone. High ceilings, low passages, chambers that open
 unexpectedly. Bioluminescent lichen on the northern walls. The acoustics are
 extreme — sound travels oddly, arrives from angles that don't match their source,

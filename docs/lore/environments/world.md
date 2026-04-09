@@ -49,6 +49,44 @@ An arid transition zone gives way to desert — the dry wastes referenced in the
 plains profile as lying on the plains' southern boundary. Not yet designed. The
 Sandwalkers may range here.
 
+For full geography notes see `docs/lore/environments/world.md`.
+
+---
+
+## Factions and Orders
+
+### The Pillar Readers
+
+A small, semi-itinerant scholarly order that studies the ancient ruins scattered
+through Aurelion's interior. They are not a religious order in name — they make
+no formal claim to faith — but their founding premise is quasi-theological: that
+the ruins predate the current age of Aurelion and contain evidence of what came
+before it. They believe this evidence, properly assembled, will reveal why Aurelion
+exists.
+
+Their methods are careful and their cataloguing thorough. The problem is that their
+senior scholars have, over generations, developed a tendency to decide what they are
+going to find before they find it. The conclusion — that the ruins prove the primacy
+of some unspecified primordial order — is fixed. The evidence is arranged around it.
+Junior members who encounter things that don't fit the framework are encouraged to
+set them aside.
+
+The Pillar Readers operate out of a travelling archive — a series of carts and
+packed cases that moves between sites and periodically resides near the Resolute
+Plains settlements for resupply and recruitment. They accept apprentices on a
+provisional basis; most leave within a few years, either because they accept the
+framework or because they can't.
+
+They are not villainous. They are genuinely curious people who have allowed their
+curiosity to calcify. Some of what they have recorded is invaluable. Some of what
+they have set aside is more important than anything they kept.
+
+**Narrative relevance:** Mara spent two years with them after her father's death.
+The inscriptions she encountered in ruins — in no language she or the Readers could
+identify — were catalogued and quietly shelved. She has not stopped turning the
+problem over. The Pillar Readers may appear as minor NPCs in later chapters,
+particularly in Resolute Plains content.
+
 ---
 
 ## Out-of-Context Information
