@@ -1243,6 +1243,24 @@ class GameService:
         if not target:
             return {"success": False, "message": "Target not found."}
 
+        # Special case: attack action on NPCs should start combat
+        if action.lower() == "attack":
+            # Check if target is an NPC by looking in current tile's NPCs
+            is_npc = hasattr(tile, "npcs_here") and target in tile.npcs_here
+            if is_npc:
+                # Redirect to start_combat instead of trying to call attack() method
+                combat_result = self.start_combat(player, target_id)
+                # Wrap start_combat response to match interact_with_target format
+                if "error" in combat_result:
+                    return {"success": False, "message": combat_result["error"]}
+                else:
+                    # Combat started successfully
+                    return {
+                        "success": True,
+                        "message": f"Combat started with {target.name}!",
+                        "combat_data": combat_result,
+                    }
+
         is_valid = False
         if hasattr(target, "keywords") and action in target.keywords:
             is_valid = True

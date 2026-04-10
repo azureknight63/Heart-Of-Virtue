@@ -47,8 +47,18 @@ class NPCSerializer:
             npc_data["alert_message"] = npc.alert_message
 
         # Keywords for interaction
-        if hasattr(npc, "keywords"):
-            npc_data["keywords"] = npc.keywords
+        keywords = []
+        if hasattr(npc, "keywords") and npc.keywords:
+            keywords = list(npc.keywords)
+
+        # Add attack keyword for hostile/aggressive NPCs
+        is_hostile = getattr(npc, "is_hostile", False)
+        is_aggressive = getattr(npc, "aggro", False)
+        if (is_hostile or is_aggressive) and "attack" not in keywords:
+            keywords.append("attack")
+
+        if keywords:
+            npc_data["keywords"] = keywords
 
         return npc_data
 
