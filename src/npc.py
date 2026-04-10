@@ -1904,10 +1904,10 @@ class NomadTrader(Friend):
         "wrapped items methodically. 'Good route. Foothills are slow.'",
         "'Four trades this week already. River camps move more than people expect.' "
         "She doesn't say what she traded. She wraps something back up.",
-        "She glances at Jean's mace without making much of it. 'Old work.' Said as "
-        "a trader assessing: flat, accurate. 'Whoever made it knew the business.'",
-        "'Not many people carry faith-kit this far east,' she says, wrapping something. "
-        "'Not many people carry anything this far east.'",
+        "She looks up briefly. 'Jean's not from the settlements.' Not a question — "
+        "she has already worked this out. She returns to her bundle.",
+        "'Not many travelers come through this far east,' she says, wrapping something. "
+        "'The ones who do are usually going somewhere specific.'",
         "'Badlands have a reputation that keeps the routes clear.' A pause. "
         "'Good for travel. Bad for trade.'",
         "'If Jean needs anything, best to ask before crossing.' She is speaking from "
