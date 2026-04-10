@@ -1755,3 +1755,302 @@ class GronditeConclaveElder(Friend):
                 "The Elder looks at Jean. Looks at the plinth. Looks at Jean again.",
             ]
             print(random.choice(lines))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Eastern Descent — Nomad Camp NPCs
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class Mara(Friend):
+    """Mara the scavenger and river-crosser. Camps on the east bank of the river.
+
+    Sardonic, precise, and unhurried. She offers passage west and a guide service
+    as far as the Echoing Caves. Does not ask direct questions; waits for things
+    to be shown. Refers to the player as Jean, not as 'you'.
+    """
+
+    _FIRST_MEETING_KEY = "mara_first_meeting"
+
+    _TALK_LINES = [
+        "Mara is sorting something from her pack. She doesn't look up. 'River's still "
+        "crossable. Current's been steady.' A pause. 'For now.'",
+        "Mara glances at Jean's mace without dwelling on it. 'That's religious kit.' "
+        "She returns to what she was doing. She doesn't follow up.",
+        "'I'm going west for a while,' she says, still focused on her work. 'If Jean's "
+        "route overlaps mine, the same terms apply.' She doesn't wait to see if he responds.",
+        "Mara looks up from the river for a moment. 'People who go that far west usually "
+        "know something I don't. Or they've decided they don't need to.' She considers. "
+        "'Hard to tell the difference from here.'",
+        "She's watching the far bank. 'The Badlands start quiet. That's the part people "
+        "don't mention.' She glances at Jean, then looks back. 'Mentioning it now.'",
+        "Mara is examining a small object — turning it over, checking something on the "
+        "underside. She doesn't put it down. 'Camp's here until tomorrow morning. After "
+        "that I go where I go.'",
+        "'Crossed this river more times than I can estimate,' she says — not proud, just "
+        "precise. 'Know the ford's depth by season. Know the current's pattern at different "
+        "hours.' She sets the object down. 'It's not the crossing that gets people.'",
+        "She watches Gorran trail a hand in the current from the bank. She doesn't look "
+        "away. 'Golemites do that near water. Seems meditative.' A beat. 'Or they're "
+        "checking for leaks. Hard to say.' She poles on without clarifying which she meant.",
+    ]
+
+    def __init__(self):
+        super().__init__(
+            name="Mara",
+            description=(
+                "A lean woman in layered, well-repaired traveling clothes. Her dark auburn "
+                "hair is tied back and her gaze is already on Jean when he notices her — "
+                "green-eyed and sharp in a way that reads without performing. Around her "
+                "neck, on a knotted cord, hangs a worn crucifix."
+            ),
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=40,
+            protection=2,
+            speed=12,
+            finesse=14,
+            awareness=18,
+            charisma=12,
+            intelligence=16,
+            idle_message=" is sorting through the contents of her pack.",
+            alert_message=" looks up with a level, measuring gaze.",
+            discovery_message="a woman already watching Jean.",
+        )
+        self.keywords = ["talk"]
+        self.pronouns = {
+            "personal": "she",
+            "possessive": "her",
+            "reflexive": "herself",
+            "intensive": "herself",
+        }
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
+    def talk(self, player):
+        import time
+
+        story = getattr(getattr(player, "universe", None), "story", {})
+        first_time = story.get(self._FIRST_MEETING_KEY, "0") == "0"
+
+        if first_time:
+            print(
+                "\nMara doesn't look up when Jean approaches. She finishes what she "
+                "was doing — cataloguing something, a methodical hand moving through "
+                "the contents of a specimen case — before she raises her eyes."
+            )
+            time.sleep(1.5)
+            print("'Crossing west?'")
+            time.sleep(1.0)
+            print(
+                "She quotes a number. A fair flat fee — no theater, no negotiation. "
+                "She looks at Jean for a moment to see if there's going to be argument, "
+                "then returns to the specimen case."
+            )
+            time.sleep(1.5)
+            print(
+                "'I'm going west for a while,' she adds, without looking up. 'Know the "
+                "terrain to the caves. Fee for two days, split from the crossing fee. "
+                "After that I go where I go.'"
+            )
+            time.sleep(1.0)
+            print(
+                "She does not perform this offer. She has assessed that Jean is going "
+                "somewhere she wants to see. It is a practical arrangement that happens "
+                "to suit both of them."
+            )
+            universe_story = getattr(getattr(player, "universe", None), "story", None)
+            if universe_story is not None:
+                universe_story[self._FIRST_MEETING_KEY] = "1"
+        else:
+            print(random.choice(self._TALK_LINES))
+
+
+class Devet(Friend):
+    """Mara's uncle. Camp cook and keeper. Old in a way that doesn't invite estimation.
+
+    Speaks rarely and briefly. Humor delivered without any markers of humor —
+    no timing pause, no register change, no waiting for a reaction. Offers food
+    as an assessment rather than a gesture.
+    """
+
+    _FIRST_MEETING_KEY = "devet_first_meeting"
+
+    _TALK_LINES = [
+        "Devet is tending the fire. He doesn't stop. 'Soup's ready,' he says, "
+        "without specifying for whom.",
+        "He looks at Jean for a moment — the look of a man who has seen many people "
+        "cross this river heading west and has already formed a view of this one. "
+        "He offers no commentary. He refills his cup.",
+        "'River's been crossed before,' Devet says, without context. He stirs the pot. "
+        "'It'll be crossed again.'",
+        "He says nothing for a long moment, then, without looking up from the fire: "
+        "'Mara knows the terrain.' A pause. 'She's been near those caves before.' "
+        "He doesn't add anything to this.",
+        "'Been traveling with her a long time,' he says, unprompted. He considers. "
+        "'Long enough that I don't remember what I was doing before.' He adds wood "
+        "to the fire. 'Probably something less useful.'",
+        "Devet glances at Jean. Then back at the fire. 'Soup,' he says.",
+        "He is watching Liss from across the camp with the patient attention of someone "
+        "who has been watching her since before she could carry her own pack. He says "
+        "nothing for a moment. Then, without preamble: 'Since she could talk.' "
+        "He seems to be answering a question Jean hasn't asked yet.",
+    ]
+
+    def __init__(self):
+        super().__init__(
+            name="Devet",
+            description=(
+                "An old man tending a fire with the unhurried efficiency of someone "
+                "who has been doing this exact thing for longer than most routes have "
+                "existed. His movements are deliberate and economical. He does not look "
+                "like a man waiting for something to happen."
+            ),
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=35,
+            protection=1,
+            speed=5,
+            finesse=6,
+            awareness=16,
+            charisma=10,
+            intelligence=14,
+            idle_message=" tends the fire without looking up.",
+            alert_message=" straightens and watches, unhurried.",
+            discovery_message="an old man at the fire.",
+        )
+        self.keywords = ["talk"]
+        self.pronouns = {
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
+        }
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
+    def talk(self, player):
+        import time
+
+        story = getattr(getattr(player, "universe", None), "story", {})
+        first_time = story.get(self._FIRST_MEETING_KEY, "0") == "0"
+
+        if first_time:
+            print(
+                "\nDevet looks at Jean the way he has looked at every person who has "
+                "come to this camp heading west: with mild attention, and without surprise."
+            )
+            time.sleep(1.5)
+            print("He reaches for a bowl.")
+            time.sleep(0.8)
+            print("'Soup's ready,' he says.")
+            time.sleep(0.5)
+            print("He does not specify that this is for Jean. He does not need to.")
+            universe_story = getattr(getattr(player, "universe", None), "story", None)
+            if universe_story is not None:
+                universe_story[self._FIRST_MEETING_KEY] = "1"
+        else:
+            print(random.choice(self._TALK_LINES))
+
+
+class Liss(Friend):
+    """Young camp member, traveling with Mara and Devet.
+
+    Asks the questions everyone else has quietly decided not to ask. Not unkind —
+    she simply hasn't learned which questions are rude yet. Fast-moving, openly
+    curious about Jean's kit, his origins, and above all about Gorran.
+    """
+
+    _FIRST_MEETING_KEY = "liss_first_meeting"
+
+    _TALK_LINES = [
+        "'Where is Jean going, exactly? Like — there's west and then there's west. "
+        "Devet says people who go all the way west don't usually come back.' A pause. "
+        "'Is Jean one of those people? Jean looks like one of those people.'",
+        "She points at the mace. 'That. It's old, isn't it? Like it's been somewhere. "
+        "How long has Jean had it? Where did Jean get it?' She seems prepared for no "
+        "answer and asks anyway.",
+        "Liss is watching Gorran from the edge of the camp. She doesn't look away "
+        "when she speaks. 'Does he talk? Mara says Golemites communicate differently. "
+        "I've been trying to figure out what different means, specifically.' A pause. "
+        "'He's very — there, isn't he. Like there's just more of him than most things.'",
+        "She looks at Jean's kit with open curiosity. 'Dressed for a different story. "
+        "Where did Jean come from, before here? Is it far?'",
+        "She holds up a flat, greenish stone with a white streak across it. 'Found this "
+        "at the bank. Think it came from the other side?' She considers it. 'I think it "
+        "came from the other side. Things look different over there. The light, I mean.'",
+        "'Jean doesn't have to be fine,' she says, not unkindly. 'Devet says it's more "
+        "efficient to eat than to be fine.' She looks at her hands, apparently having "
+        "started a gesture she decided not to finish. 'Anyway. There's soup.'",
+        "She arrives at near-running pace and stops just short of Jean. 'Does Jean know "
+        "which plants are safe on the other side? Because Devet knows the ones here, but "
+        "I asked if he knew the Badlands ones and he said he'd look into it, which usually "
+        "means no.' She is already thinking of the next question. 'Does Jean know?'",
+    ]
+
+    def __init__(self):
+        super().__init__(
+            name="Liss",
+            description=(
+                "A young woman who approaches things directly and often at a pace faster "
+                "than most adults find comfortable. She is carrying a stone — greenish, "
+                "flat, possibly from the riverbank. Her expressions are immediate and "
+                "unconcealed: whatever she is thinking is visible before she has decided "
+                "whether to share it."
+            ),
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=30,
+            protection=0,
+            speed=14,
+            finesse=10,
+            awareness=14,
+            charisma=12,
+            intelligence=12,
+            idle_message=" is examining something small near the ground.",
+            alert_message=" looks up, startled and immediately curious.",
+            discovery_message="a young woman moving at near-running pace.",
+        )
+        self.keywords = ["talk"]
+        self.pronouns = {
+            "personal": "she",
+            "possessive": "her",
+            "reflexive": "herself",
+            "intensive": "herself",
+        }
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
+    def talk(self, player):
+        story = getattr(getattr(player, "universe", None), "story", {})
+        first_time = story.get(self._FIRST_MEETING_KEY, "0") == "0"
+
+        if first_time:
+            print(
+                "\nLiss notices Jean before he has finished arriving at camp. She is "
+                "already looking at him — the expression of someone who has found something "
+                "interesting in a place she expected to be ordinary."
+            )
+            print(
+                "'Where did Jean come from?' she asks, without preamble or apology. "
+                "'Not from here — the kit's wrong for here.' She looks at the mace. "
+                "'What is that? Is that religious? It looks religious.'"
+            )
+            print(
+                "She waits with the patience of someone who has learned that interesting "
+                "people sometimes need a moment to decide what to answer."
+            )
+            universe_story = getattr(getattr(player, "universe", None), "story", None)
+            if universe_story is not None:
+                universe_story[self._FIRST_MEETING_KEY] = "1"
+        else:
+            print(random.choice(self._TALK_LINES))
