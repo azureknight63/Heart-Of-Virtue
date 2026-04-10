@@ -4535,3 +4535,57 @@ class QuickSwap(Move):
         for enemy in ally.combat_proximity:
             if hasattr(enemy, "combat_proximity") and ally in enemy.combat_proximity:
                 enemy.combat_proximity[ally] = ally.combat_proximity[enemy]
+
+
+class StrategicInsight(Move):
+    """Passive move that enhances decision-making in combat.
+
+    This is a passive move affecting the TacticalAdvisor feature.
+    It cannot be selected during combat.
+    """
+    def __init__(self, user):
+        description = "Enhanced tactical awareness and strategic insight into enemy movements."
+        prep = 0
+        execute = 0
+        recoil = 0
+        cooldown = 0
+        super().__init__(name="Strategic Insight", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=False,
+                         stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+                         target=user, user=user, category="Passive")
+
+    def evaluate(self):
+        pass
+
+    def viable(self):
+        return False  # Passive move, cannot be selected during combat
+
+    def execute(self, user):
+        pass  # No combat execution; affects TacticalAdvisor only
+
+
+class MasterTactician(Move):
+    """Passive move representing mastery of tactical combat.
+
+    This is a passive move affecting the TacticalAdvisor feature.
+    It cannot be selected during combat.
+    """
+    def __init__(self, user):
+        description = "Mastery of tactical positioning, timing, and combat strategy."
+        prep = 0
+        execute = 0
+        recoil = 0
+        cooldown = 0
+        super().__init__(name="Master Tactician", description=description, xp_gain=0, current_stage=0,
+                         stage_beat=[prep, execute, recoil, cooldown], targeted=False,
+                         stage_announce=["", "", "", ""], fatigue_cost=0, beats_left=0,
+                         target=user, user=user, category="Passive")
+
+    def evaluate(self):
+        pass
+
+    def viable(self):
+        return False  # Passive move, cannot be selected during combat
+
+    def execute(self, user):
+        pass  # No combat execution; affects TacticalAdvisor only
