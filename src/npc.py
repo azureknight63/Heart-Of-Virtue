@@ -1898,19 +1898,19 @@ class NomadTrader(Friend):
     """
 
     _TALK_LINES = [
-        "The trader looks up from a bundle he's sorting. 'Looking for anything "
-        "specific?' He doesn't gesture toward his pack. It's more general than that.",
-        "'Came up from the river settlements.' He is going through a bundle of "
+        "The trader looks up from a bundle she's sorting. 'Looking for anything "
+        "specific?' She doesn't gesture toward her pack. It's more general than that.",
+        "'Came up from the river settlements.' She is going through a bundle of "
         "wrapped items methodically. 'Good route. Foothills are slow.'",
         "'Four trades this week already. River camps move more than people expect.' "
-        "He doesn't say what he traded. He wraps something back up.",
-        "He glances at Jean's mace without making much of it. 'Old work.' Said as "
+        "She doesn't say what she traded. She wraps something back up.",
+        "She glances at Jean's mace without making much of it. 'Old work.' Said as "
         "a trader assessing: flat, accurate. 'Whoever made it knew the business.'",
-        "'Not many people carry faith-kit this far east,' he says, wrapping something. "
+        "'Not many people carry faith-kit this far east,' she says, wrapping something. "
         "'Not many people carry anything this far east.'",
         "'Badlands have a reputation that keeps the routes clear.' A pause. "
         "'Good for travel. Bad for trade.'",
-        "'If Jean needs anything, best to ask before crossing.' He is speaking from "
+        "'If Jean needs anything, best to ask before crossing.' She is speaking from "
         "experience. 'Supply's thin on the other side.'",
     ]
 
@@ -1918,10 +1918,10 @@ class NomadTrader(Friend):
         super().__init__(
             name="Nomad Trader",
             description=(
-                "A compact, practical-looking person surrounded by a small arrangement "
-                "of wrapped bundles. The organization of the bundles suggests a system "
-                "Jean doesn't have enough context to read. The trader has the manner "
-                "of someone who has assessed Jean's trade potential and filed the result."
+                "A compact woman surrounded by a small arrangement of wrapped bundles, "
+                "each one tied differently — a cataloguing system entirely her own. "
+                "She has the manner of someone who has assessed Jean's trade potential "
+                "and filed the result without interrupting what she was doing."
             ),
             damage=0,
             aggro=False,
@@ -1934,14 +1934,14 @@ class NomadTrader(Friend):
             charisma=13,
             idle_message=" is sorting through a bundle of wrapped goods.",
             alert_message=" looks up, watchful.",
-            discovery_message="a nomad with goods spread around them.",
+            discovery_message="a woman with goods arranged around her.",
         )
         self.keywords = ["talk"]
         self.pronouns = {
-            "personal": "they",
-            "possessive": "their",
-            "reflexive": "themselves",
-            "intensive": "themselves",
+            "personal": "she",
+            "possessive": "her",
+            "reflexive": "herself",
+            "intensive": "herself",
         }
         try:
             self.known_moves = [moves.NpcIdle(self)]
