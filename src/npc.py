@@ -1904,13 +1904,13 @@ class NomadTrader(Friend):
         "wrapped items methodically. 'Good route. Foothills are slow.'",
         "'Four trades this week already. River camps move more than people expect.' "
         "She doesn't say what she traded. She wraps something back up.",
-        "She looks up briefly. 'Jean's not from the settlements.' Not a question — "
+        "She looks up briefly. \"You're not from the settlements.\" Not a question — "
         "she has already worked this out. She returns to her bundle.",
         "'Not many travelers come through this far east,' she says, wrapping something. "
         "'The ones who do are usually going somewhere specific.'",
         "'Badlands have a reputation that keeps the routes clear.' A pause. "
         "'Good for travel. Bad for trade.'",
-        "'If Jean needs anything, best to ask before crossing.' She is speaking from "
+        "'If you need anything, best to ask before crossing.' She is speaking from "
         "experience. 'Supply's thin on the other side.'",
     ]
 
