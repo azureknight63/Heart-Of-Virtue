@@ -918,6 +918,20 @@
         "block_exit": [],
         "events": [
             {
+                "__class__": "Ch01GorranFirstWord",
+                "__module__": "story.ch01",
+                "props": {
+                    "name": "Ch01_Gorran_First_Word",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            },
+            {
                 "__class__": "NPCSpawnerEvent",
                 "__module__": "story.effects",
                 "props": {
