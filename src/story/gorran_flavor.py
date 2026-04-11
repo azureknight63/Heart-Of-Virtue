@@ -1,11 +1,24 @@
 """
-Gorran ambient flavor text.
+Gorran ambient flavor text — stage-aware.
 
 Two entry points:
   - maybe_combat_flavor(player, beat, cooldown)  -> int  (returns updated cooldown)
   - maybe_explore_flavor(player)                 -> None
 
 Both are no-ops when Gorran is absent. Neither crashes on unexpected state.
+
+Gorran's language acquisition arc runs across four stages (story flag
+"gorran_language_stage"). Each stage adds spoken lines on top of the
+Stage 0 narrated-gesture base. Spoken lines are rare by design — Gorran
+conserves language. At Stage 1 he has one word ("Stop"); by Stage 4 he
+has short earned sentences. The narrated pools never go away; they remain
+the primary texture throughout the game.
+
+Stage 0 — no words; all narrated gesture and sound
+Stage 1 — "Back!" in hurt contexts only; otherwise still silent
+Stage 2 — single-word directions in general rotation; name possible
+Stage 3 — short functional phrases; physical vocabulary for emotion
+Stage 4 — shorthand, very sparse, each line earned
 """
 
 import logging
@@ -14,7 +27,7 @@ import random
 from neotermcolor import colored
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Flavor pools
+# Stage 0 — Narrated base pools (present at all stages)
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Fires at any point during a normal combat beat
@@ -36,7 +49,7 @@ _COMBAT_GENERAL = [
     "Gorran's jaw is set. Whatever he's thinking, he keeps it to himself.",
 ]
 
-# Fires when Jean's HP drops below 40 %
+# Fires when Jean's HP drops below 40%
 _COMBAT_JEAN_HURT = [
     "Gorran's attention snaps to Jean. He hasn't stopped fighting, but now he's watching.",
     "A short, urgent sound from Gorran. His eyes are on Jean now.",
@@ -52,7 +65,6 @@ _COMBAT_GORRAN_HURT = [
     "Gorran makes a sound — deep, measured — that might be acknowledgement. Then he's back in it.",
     "Gorran reaches up and brushes dust from the strike site. It's a casual motion. Almost contemptuous.",
 ]
-
 
 # Fires during exploration (main game loop, not in combat)
 _EXPLORE = [
@@ -74,6 +86,89 @@ _EXPLORE = [
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Stage 1 — spoken additions (Jean hurt only; costs everything he has)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_COMBAT_S1_JEAN_HURT = [
+    # "Back!" — the same mechanism as "Stop." One word, flat, hard.
+    'Gorran\'s eyes find Jean across the field. One word cuts through everything: "Back." He doesn\'t stop moving.',
+]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 2 — single-word directions (general + hurt)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_COMBAT_S2_GENERAL = [
+    # Words used rarely; each one costs something, even now.
+    'Gorran points — a single gesture at a position to Jean\'s left. "Here." He doesn\'t wait to see if Jean moves.',
+    'A short break in Gorran\'s attention. He meets Jean\'s eyes. "Good." Then back to the fight.',
+    'Gorran\'s hand comes up once — firm, brief. "No." He\'s already past the thing he\'s refusing.',
+]
+
+_COMBAT_S2_JEAN_HURT = [
+    # "Back!" costs less now. He has the word established.
+    '"Back!" — sharp, without hesitation. He has said this before.',
+    # Name. First time he uses it in the chaos.
+    'Gorran says the name — "Jean" — and nothing else. His eyes don\'t leave the threat between them.',
+]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 3 — short phrases, physical vocabulary for emotion
+# ──────────────────────────────────────────────────────────────────────────────
+
+_COMBAT_S3_GENERAL = [
+    '"I take left." Gorran is already moving before he finishes saying it.',
+    'Gorran catches Jean\'s eye across the field. "Stand. I hold them."',
+    '"Done." He says it once, quietly, when the last one falls.',
+    # Physical vocabulary — player learns to read this alongside Jean.
+    'A sound from Gorran — low, even. Then: "Heavy." He is looking at something above them.',
+    '"Rough." Said under his breath. It might mean something other than the terrain.',
+    '"Jean — behind. Two." He\'s already adjusting before Jean can turn.',
+]
+
+_COMBAT_S3_JEAN_HURT = [
+    '"Jean. Behind." He says it plainly, like pointing at a fact.',
+    '"Jean — left. Now."',
+]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 4 — shorthand, earned, very sparse
+# ──────────────────────────────────────────────────────────────────────────────
+
+_COMBAT_S4_GENERAL = [
+    '"I see it." He does not elaborate. He moves.',
+    '"Go. I follow."',
+    # "Good." said rarely at Stage 4 lands completely differently than at Stage 2.
+    '"Good." He says it once, quietly, at the end. It is not a small thing anymore.',
+    '"Still here." He doesn\'t look at Jean when he says it.',
+]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 2–4 explore additions
+# ──────────────────────────────────────────────────────────────────────────────
+
+_EXPLORE_S2 = [
+    'Gorran slows at a fork. After a moment: "Here." He moves left.',
+    'Something ahead stops Gorran. He holds one hand out — steady, don\'t move — and listens. "Wait." Then continues.',
+]
+
+_EXPLORE_S3 = [
+    'Gorran pauses at a section of wall and presses his palm flat against it. "Cold," he says. Not to Jean. To the stone.',
+    '"Passage. Weight. Wrong." He steps around a particular stretch of floor rather than across it.',
+    'At an intersection, Gorran looks both ways. "Rough," he says, indicating the left path. He takes the right.',
+]
+
+_EXPLORE_S4 = [
+    'Gorran moves through the passage without slowing. "Still," he says once. Jean isn\'t sure if it means the space or something in Gorran.',
+    '"Here." Gorran stops at a specific point and holds it, scanning ahead. Then moves.',
+]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -87,6 +182,47 @@ def _find_gorran(player):
     except Exception:
         pass
     return None
+
+
+def get_gorran_stage(player):
+    """Return Gorran's current language stage as an int (0–4)."""
+    try:
+        return int(player.universe.story.get("gorran_language_stage", "0"))
+    except Exception:
+        return 0
+
+
+def _combat_general_for_stage(stage):
+    pool = list(_COMBAT_GENERAL)
+    if stage >= 2:
+        pool += _COMBAT_S2_GENERAL
+    if stage >= 3:
+        pool += _COMBAT_S3_GENERAL
+    if stage >= 4:
+        pool += _COMBAT_S4_GENERAL
+    return pool
+
+
+def _combat_jean_hurt_for_stage(stage):
+    pool = list(_COMBAT_JEAN_HURT)
+    if stage >= 1:
+        pool += _COMBAT_S1_JEAN_HURT
+    if stage >= 2:
+        pool += _COMBAT_S2_JEAN_HURT
+    if stage >= 3:
+        pool += _COMBAT_S3_JEAN_HURT
+    return pool
+
+
+def _explore_for_stage(stage):
+    pool = list(_EXPLORE)
+    if stage >= 2:
+        pool += _EXPLORE_S2
+    if stage >= 3:
+        pool += _EXPLORE_S3
+    if stage >= 4:
+        pool += _EXPLORE_S4
+    return pool
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -127,22 +263,22 @@ def maybe_combat_flavor(player, beat, cooldown):
         return 0
 
     try:
-        # Choose pool based on context
+        stage = get_gorran_stage(player)
+
         hp_ratio = player.hp / max(player.max_hp, 1)
         gorran_hp = getattr(gorran, "hp", None)
         gorran_prev_hp = getattr(gorran, "_prev_hp_for_flavor", gorran_hp)
 
-        if hp_ratio < _COMBAT_HURT_HP_THRESHOLD and _COMBAT_JEAN_HURT:
-            pool = _COMBAT_JEAN_HURT
+        if hp_ratio < _COMBAT_HURT_HP_THRESHOLD:
+            pool = _combat_jean_hurt_for_stage(stage)
         elif (
             gorran_hp is not None
             and gorran_prev_hp is not None
             and gorran_hp < gorran_prev_hp
-            and _COMBAT_GORRAN_HURT
         ):
             pool = _COMBAT_GORRAN_HURT
         else:
-            pool = _COMBAT_GENERAL
+            pool = _combat_general_for_stage(stage)
 
         line = random.choice(pool)
         print(colored(line, "yellow"))
@@ -184,7 +320,9 @@ def maybe_explore_flavor(player):
         if random.random() > _EXPLORE_CHANCE:
             return
 
-        line = random.choice(_EXPLORE)
+        stage = get_gorran_stage(player)
+        pool = _explore_for_stage(stage)
+        line = random.choice(pool)
         print(colored(line, "yellow"))
         story["gorran_explore_last_tick"] = str(current_tick)
 
