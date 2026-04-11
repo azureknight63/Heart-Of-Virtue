@@ -1232,7 +1232,7 @@ class PowerStrike(Move):
         self.power = 0
         self.target = user
         mvrange = (0, 5)
-        if not hasattr(user, "eq_weapon"):
+        if not hasattr(user, "eq_weapon") or user.eq_weapon is None:
             self.weapon = items.Rock()
         else:
             self.weapon = user.eq_weapon
@@ -2302,6 +2302,10 @@ class PommelStrike(Move):
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.fatigue_cost = 10
+            return
         evaluation = self.standard_evaluate_attack(
             self.power,
             self.base_damage_type,
@@ -4535,3 +4539,2855 @@ class QuickSwap(Move):
         for enemy in ally.combat_proximity:
             if hasattr(enemy, "combat_proximity") and ally in enemy.combat_proximity:
                 enemy.combat_proximity[ally] = ally.combat_proximity[enemy]
+
+
+# ============================================================================
+# WEAPON SKILLS — ADDED CLASSES
+# Grouped by weapon type. See src/skilltree.py for exp costs and assignment.
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# PASSIVE ADDITIONS TO EXISTING WEAPON TYPES
+# ---------------------------------------------------------------------------
+
+
+class ShadowStep(Move):
+    """Passive: Silent footwork. Marks player as capable of stealthy approach."""
+
+    def __init__(self, user):
+        description = (
+            "Deliberate, silent footwork lets you approach without alerting targets. "
+            "Your steps give nothing away."
+        )
+        super().__init__(
+            name="Shadow Step",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class EagleEye(Move):
+    """Passive: Sharpened long-range eye. Improves accuracy at distance."""
+
+    def __init__(self, user):
+        description = (
+            "Your eye reads distance and wind with practiced ease. "
+            "Ranged attacks suffer less accuracy decay at long range."
+        )
+        super().__init__(
+            name="Eagle Eye",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class IronFist(Move):
+    """Passive: Conditioned hands deal more damage unarmed."""
+
+    def __init__(self, user):
+        description = (
+            "Your hands have been hardened through relentless training. "
+            "Unarmed strikes carry greater force."
+        )
+        super().__init__(
+            name="Iron Fist",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class CleaveInstinct(Move):
+    """Passive: A kill carries momentum into the next attack."""
+
+    def __init__(self, user):
+        description = (
+            "The rush of the kill carries you forward. "
+            "After felling an enemy, your next strike begins with less wind-up."
+        )
+        super().__init__(
+            name="Cleave Instinct",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class HeavyHanded(Move):
+    """Passive: Bludgeon blows stagger opponents — they reel longer after impact."""
+
+    def __init__(self, user):
+        description = (
+            "Your crushing blows leave enemies reeling. "
+            "Bludgeon strikes impose additional stagger on their targets."
+        )
+        super().__init__(
+            name="Heavy Handed",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# DAGGER
+# ---------------------------------------------------------------------------
+
+
+class Backstab(Move):
+    """Strike from flank or behind for bonus damage.
+
+    Uses the positions angle system (angle_to_target / attack_angle_difference /
+    get_damage_modifier) to scale power based on attack angle. Frontal attacks
+    get a slight penalty; flanking and rear attacks deal up to +40% more.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Strike from the flank or behind to deal greatly increased damage. "
+            "Positioning is everything."
+        )
+        prep = 1
+        execute = 1
+        recoil = 2
+        cooldown = 3
+        super().__init__(
+            name="Backstab",
+            description=description,
+            xp_gain=5,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} slips toward the target's blind side...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        return self.standard_viability_attack(("Dagger",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 1, 2, 3]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=5,
+            base_damage_type="piercing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+
+    def _positional_modifier(self):
+        """Return damage multiplier based on attack angle vs target's facing."""
+        try:
+            if (
+                hasattr(self.user, "combat_position")
+                and self.user.combat_position is not None
+                and hasattr(self.target, "combat_position")
+                and self.target.combat_position is not None
+            ):
+                attack_angle = positions.angle_to_target(
+                    self.user.combat_position, self.target.combat_position
+                )
+                angle_diff = positions.attack_angle_difference(
+                    attack_angle, self.target.combat_position.facing
+                )
+                return positions.get_damage_modifier(angle_diff)
+        except Exception:
+            pass
+        return 1.0
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        mod = self._positional_modifier()
+        power = max(1, int(self.power * mod))
+
+        if mod > 1.0:
+            cprint(
+                f"{player.name} drives the blade into {self.target.name}'s blind side!",
+                "green" if player.name == "Jean" else "red",
+            )
+        else:
+            cprint(
+                f"{player.name} stabs at {self.target.name}!",
+                "green" if player.name == "Jean" else "red",
+            )
+
+        # Face the target
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            if hit_chance < 5:
+                hit_chance = 5
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+# ---------------------------------------------------------------------------
+# SWORD & SPEAR (shared)
+# ---------------------------------------------------------------------------
+
+
+class Thrust(Move):
+    """Fast piercing attack. Slightly lower power than Slash but quicker.
+
+    Viable for Sword and Spear. Each weapon's natural stats (weight, damage,
+    range) differentiate their feel: a lighter sword thrusts quicker; a spear
+    reaches farther.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Drive the point of your weapon forward in a fast, direct thrust. "
+            "Less power than a full slash but quicker to execute."
+        )
+        prep = 1
+        execute = 1
+        recoil = 1
+        cooldown = 0
+        super().__init__(
+            name="Thrust",
+            description=description,
+            xp_gain=3,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} lines up a thrust...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        return self.standard_viability_attack(("Sword", "Spear"))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 1, 1, 0]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=-5,
+            base_damage_type="piercing",
+            mod_prep=-10,
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        weapon_name = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} thrusts with his {weapon_name}!", "green"
+        )
+
+    def execute(self, player):
+        self.standard_execute_attack(player, self.power, self.base_damage_type)
+
+
+# ---------------------------------------------------------------------------
+# SWORD
+# ---------------------------------------------------------------------------
+
+
+class DisarmingSlash(Move):
+    """Calculated slash that rattles the target, applying Disoriented on hit.
+
+    Trades raw damage for a persistent status debuff that reduces the
+    target's defensive bonuses.
+    """
+
+    def __init__(self, user):
+        description = (
+            "A calculated slash aimed at the target's guard. "
+            "Deals lighter damage but leaves them rattled and disoriented."
+        )
+        prep = 1
+        execute = 1
+        recoil = 2
+        cooldown = 4
+        super().__init__(
+            name="Disarming Slash",
+            description=description,
+            xp_gain=8,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} feints at the target's guard...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "slashing"
+        self.evaluate()
+
+    def viable(self):
+        return self.standard_viability_attack(("Sword",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 1, 2, 4]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=-8,
+            base_damage_type="slashing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} slashes at {getattr(self.target, 'name', 'the target')}'s guard with his {wpn}!",
+            "green",
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                if self.target and self.target.is_alive:
+                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    if not already:
+                        try:
+                            self.target.states.append(states.Disoriented(self.target))
+                            cprint(f"{self.target.name} is disoriented!", "red")
+                        except Exception:
+                            pass
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class Riposte(Move):
+    """Counterattack delivered while still in guard — usable only while Parrying.
+
+    The heat boost from still being in guard amplifies the strike's damage.
+    Near-instant prep (guard is already up); short recoil.
+    """
+
+    def __init__(self, user):
+        description = (
+            "While your guard is up, drive a quick counterstrike into your opponent. "
+            "Only usable while actively parrying. Heat-boosted damage."
+        )
+        prep = 0
+        execute = 1
+        recoil = 2
+        cooldown = 2
+        super().__init__(
+            name="Riposte",
+            description=description,
+            xp_gain=10,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                "",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "slashing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Sword":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        is_parrying = any(isinstance(s, states.Parrying) for s in self.user.states)
+        if not is_parrying:
+            return False
+        range_min, range_max = self.mvrange
+        return any(
+            range_min <= dist <= range_max
+            for dist in self.user.combat_proximity.values()
+        )
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [0, 1, 2, 2]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=10,
+            base_damage_type="slashing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} counters with his {wpn}!", "green"
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+
+        # Heat boost: still in guard, momentum from deflection
+        old_heat = player.heat
+        player.heat = min(10.0, player.heat * 1.3)
+        try:
+            damage = (
+                ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+                * player.heat
+            ) * random.uniform(0.8, 1.2)
+        finally:
+            player.heat = old_heat
+
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 8
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class BladeMastery(Move):
+    """Passive: Sword discipline; reduces fatigue cost of sword attacks."""
+
+    def __init__(self, user):
+        description = (
+            "Years of swordsmanship have made each technique economical. "
+            "Sword attacks cost less fatigue."
+        )
+        super().__init__(
+            name="Blade Mastery",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class CounterGuard(Move):
+    """Passive: Parrying while sword-equipped costs less fatigue."""
+
+    def __init__(self, user):
+        description = (
+            "Your guard is second nature. "
+            "Maintaining a parry stance with a sword costs less fatigue."
+        )
+        super().__init__(
+            name="Counter Guard",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# SCYTHE
+# ---------------------------------------------------------------------------
+
+
+class Reap(Move):
+    """Wide frontal arc sweep hitting all enemies in front of the user.
+
+    Lower per-target damage than a single strike but covers all threats in
+    the frontal hemisphere. Falls back to full-circle hit if coordinates
+    are unavailable (mirrors WhirlAttack fallback).
+    """
+
+    def __init__(self, user):
+        description = (
+            "Sweep your scythe in a wide arc ahead of you, "
+            "striking all enemies in its path."
+        )
+        prep = 1
+        execute = 3
+        recoil = 2
+        cooldown = 2
+        super().__init__(
+            name="Reap",
+            description=description,
+            xp_gain=12,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            mvrange=(1, 20),
+            stage_announce=["", "", "", ""],
+            fatigue_cost=55,
+            beats_left=prep,
+            target=user,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "slashing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Scythe":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        return any(e.is_alive for e in self.user.combat_proximity)
+
+    def evaluate(self):
+        try:
+            wpn = getattr(self.user, "eq_weapon", None)
+            if wpn and hasattr(wpn, "damage"):
+                self.power = max(1, int(wpn.damage * 0.65) + int(self.user.strength * 0.2))
+            else:
+                self.power = max(1, int(self.user.strength * 0.5))
+        except (TypeError, AttributeError):
+            self.power = 1
+
+    def prep(self, user):
+        cprint(f"{user.name} raises the scythe for a wide sweep...", "magenta")
+
+    def execute(self, user):
+        cprint(f"{user.name} sweeps the scythe in a devastating arc!", "magenta")
+        wpn_range = getattr(getattr(self.user, "eq_weapon", None), "wpnrange", (0, 5))
+        arc_range = wpn_range[1]
+
+        for enemy in list(self.user.combat_proximity.keys()):
+            if not enemy.is_alive:
+                continue
+
+            # Frontal arc check when coordinates available
+            if (
+                hasattr(self.user, "combat_position")
+                and self.user.combat_position is not None
+                and hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
+                dist = positions.distance_from_coords(
+                    self.user.combat_position, enemy.combat_position
+                )
+                if dist > arc_range:
+                    continue
+                try:
+                    atk_angle = positions.angle_to_target(
+                        self.user.combat_position, enemy.combat_position
+                    )
+                    angle_diff = positions.attack_angle_difference(
+                        atk_angle, self.user.combat_position.facing
+                    )
+                    if angle_diff > 90:  # outside frontal hemisphere
+                        continue
+                except Exception:
+                    pass
+            else:
+                dist = self.user.combat_proximity.get(enemy, 9999)
+                if dist > arc_range:
+                    continue
+
+            base_dmg = max(1, int(self.power - enemy.protection))
+            hit_chance = max(5, (85 - enemy.finesse) + self.user.finesse)
+            if random.randint(0, 100) <= hit_chance:
+                if functions.check_parry(enemy):
+                    cprint(f"{enemy.name} parried the sweep!", "yellow")
+                else:
+                    enemy.hp = max(0, enemy.hp - base_dmg)
+                    cprint(f"{enemy.name} takes {base_dmg} damage from the sweep!", "red")
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class ReapersMark(Move):
+    """Mark a target — next attack against them deals +25% more damage.
+
+    Sets a '_reapers_mark' flag on the target that attack moves can check.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Fix your gaze on one enemy, marking them for death. "
+            "Your next attack against this target deals bonus damage."
+        )
+        prep = 1
+        execute = 1
+        recoil = 0
+        cooldown = 3
+        super().__init__(
+            name="Reaper's Mark",
+            description=description,
+            xp_gain=5,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 9999),
+            stage_announce=[
+                f"{user.name} marks a target for death...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=10,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Tactical",
+        )
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Scythe":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        return any(e.is_alive for e in self.user.combat_proximity)
+
+    def evaluate(self):
+        pass
+
+    def execute(self, user):
+        if self.target and self.target.is_alive:
+            self.target._reapers_mark = True
+            cprint(
+                f"{user.name} marks {self.target.name} — death follows close behind.",
+                "magenta",
+            )
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class DeathsHarvest(Move):
+    """Draining scythe strike — heals user for 30% of damage dealt on a hit.
+
+    Slower and heavier than Reap; designed for the final exchange in a drawn-out
+    fight where the user needs to recover while still pressing the assault.
+    """
+
+    def __init__(self, user):
+        description = (
+            "A deliberate, draining strike that channels your enemy's life force "
+            "back into you. Heals for 30% of damage dealt on a successful hit."
+        )
+        prep = 2
+        execute = 1
+        recoil = 3
+        cooldown = 5
+        super().__init__(
+            name="Death's Harvest",
+            description=description,
+            xp_gain=15,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} draws back the scythe, gathering energy...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "slashing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Scythe":
+            return False
+        return self.standard_viability_attack(("Scythe",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [2, 1, 3, 5]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=15,
+            base_damage_type="slashing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} drives his {wpn} through {getattr(self.target, 'name', 'the target')}!",
+            "magenta",
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 8
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                heal = max(1, int(damage * 0.30)) if damage > 0 else 0
+                if heal > 0:
+                    player.hp = min(player.maxhp, player.hp + heal)
+                    cprint(
+                        f"{player.name} drains {heal} HP from {self.target.name}!",
+                        "green" if player.name == "Jean" else "cyan",
+                    )
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class GrimPersistence(Move):
+    """Passive: Attacks deal bonus damage against targets below 35% HP."""
+
+    def __init__(self, user):
+        description = (
+            "You press wounded prey relentlessly. "
+            "Attacks against enemies below 35% HP deal increased damage."
+        )
+        super().__init__(
+            name="Grim Persistence",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class HauntingPresence(Move):
+    """Passive: Enemies near you suffer an unsettling aura (future hook)."""
+
+    def __init__(self, user):
+        description = (
+            "Your very presence unsettles those nearby. "
+            "Enemies in close range feel the weight of their mortality."
+        )
+        super().__init__(
+            name="Haunting Presence",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# SPEAR
+# ---------------------------------------------------------------------------
+
+
+class KeepAway(Move):
+    """Minor damage + push target back to maintain optimal spear range.
+
+    The spear is weakest when enemies close in. Keep Away deals a glancing
+    hit and shoves the target back, restoring the engagement distance.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Strike the approaching enemy aside and force them back, "
+            "restoring your spear's optimal fighting distance."
+        )
+        prep = 1
+        execute = 2
+        recoil = 1
+        cooldown = 4
+        super().__init__(
+            name="Keep Away",
+            description=description,
+            xp_gain=6,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 10),
+            stage_announce=[
+                f"{user.name} braces to push the enemy back...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Maneuver",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        return self.standard_viability_attack(("Spear", "Polearm"))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 2, 1, 4]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=-10,
+            base_damage_type="piercing",
+            mod_power="-45%",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} shoves {getattr(self.target, 'name', 'the target')} back with his {wpn}!",
+            "cyan",
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 4
+        player.combat_exp["Basic"] += 3
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                # Push target back
+                if self.target and self.target.is_alive:
+                    self._push_target(player)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+    def _push_target(self, player):
+        """Move target away from player by 3-5 units."""
+        try:
+            if (
+                hasattr(player, "combat_position")
+                and player.combat_position is not None
+                and hasattr(self.target, "combat_position")
+                and self.target.combat_position is not None
+            ):
+                occupied = []
+                for c in getattr(player, "combat_list", []) + getattr(player, "combat_list_allies", []):
+                    if c is not self.target and hasattr(c, "combat_position") and c.combat_position:
+                        occupied.append(c.combat_position)
+                new_pos = positions.move_away_constrained(
+                    self.target.combat_position, player.combat_position, 4, occupied
+                )
+                self.target.combat_position = new_pos
+                new_dist = positions.distance_from_coords(
+                    player.combat_position, self.target.combat_position
+                )
+                player.combat_proximity[self.target] = int(new_dist)
+                if hasattr(self.target, "combat_proximity"):
+                    self.target.combat_proximity[player] = int(new_dist)
+                cprint(f"{self.target.name} is pushed back!", "cyan")
+            else:
+                # Legacy push
+                current = player.combat_proximity.get(self.target, 5)
+                new_dist = min(30, current + 5)
+                player.combat_proximity[self.target] = new_dist
+                if hasattr(self.target, "combat_proximity"):
+                    self.target.combat_proximity[player] = new_dist
+                cprint(f"{self.target.name} is pushed back!", "cyan")
+        except Exception:
+            pass
+
+
+class Lunge(Move):
+    """Step forward and deliver a thrusting strike, closing distance mid-attack.
+
+    Bridges the gap when the target retreats just outside spear reach.
+    Moves the user 3 units toward the target then delivers a standard thrust.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Step sharply toward your target and drive your spear forward. "
+            "Closes the gap and delivers a piercing strike in one motion."
+        )
+        prep = 1
+        execute = 2
+        recoil = 2
+        cooldown = 4
+        super().__init__(
+            name="Lunge",
+            description=description,
+            xp_gain=6,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(3, 15),
+            stage_announce=[
+                f"{user.name} lines up a lunge...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Spear":
+            return False
+        return any(
+            3 <= dist <= 15
+            for dist in self.user.combat_proximity.values()
+        )
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 2, 2, 4]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=0,
+            base_damage_type="piercing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} lunges and drives his {wpn} forward!", "green"
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+
+        # Step toward target
+        if self.target and self.target.is_alive:
+            try:
+                if (
+                    hasattr(player, "combat_position")
+                    and player.combat_position is not None
+                    and hasattr(self.target, "combat_position")
+                    and self.target.combat_position is not None
+                ):
+                    occupied = [
+                        c.combat_position
+                        for c in getattr(player, "combat_list", []) + getattr(player, "combat_list_allies", [])
+                        if c is not player and hasattr(c, "combat_position") and c.combat_position
+                    ]
+                    new_pos = positions.move_toward_constrained(
+                        player.combat_position, self.target.combat_position, 3, occupied
+                    )
+                    player.combat_position = new_pos
+                    player.combat_position.facing = positions.turn_toward(
+                        player.combat_position, self.target.combat_position
+                    )
+                    new_dist = positions.distance_from_coords(
+                        player.combat_position, self.target.combat_position
+                    )
+                    player.combat_proximity[self.target] = int(new_dist)
+                    if hasattr(self.target, "combat_proximity"):
+                        self.target.combat_proximity[player] = int(new_dist)
+                else:
+                    cur = player.combat_proximity.get(self.target, 10)
+                    player.combat_proximity[self.target] = max(1, cur - 3)
+                    if hasattr(self.target, "combat_proximity"):
+                        self.target.combat_proximity[player] = player.combat_proximity[self.target]
+            except Exception:
+                pass
+
+        print(self.stage_announce[1])
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class Impale(Move):
+    """Penetrating thrust that ignores most of the target's protection.
+
+    The spear tip finds the gap between armour plates. Deals full weapon
+    damage against only 40% of normal protection — devastating against
+    heavily armoured foes.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Drive the spear tip through armour gaps, ignoring most protection. "
+            "Slow and committing — but punishing against heavily armoured foes."
+        )
+        prep = 2
+        execute = 1
+        recoil = 3
+        cooldown = 5
+        super().__init__(
+            name="Impale",
+            description=description,
+            xp_gain=15,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 8),
+            stage_announce=[
+                f"{user.name} lines up a penetrating thrust...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Spear":
+            return False
+        return self.standard_viability_attack(("Spear",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [2, 1, 3, 5]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=10,
+            base_damage_type="piercing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} drives his {wpn} through {getattr(self.target, 'name', 'the target')}'s armour!",
+            "green",
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+
+        # Ignore 60% of protection
+        effective_prot = self.target.protection * 0.4
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - effective_prot)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 10
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class SentinelsVigil(Move):
+    """Passive: Range-denial discipline; future hook for counter-damage on advance."""
+
+    def __init__(self, user):
+        description = (
+            "You hold your ground with absolute stillness. "
+            "Enemies who advance into your range will find you ready."
+        )
+        super().__init__(
+            name="Sentinel's Vigil",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# PICK
+# ---------------------------------------------------------------------------
+
+
+class ArmorPierce(Move):
+    """Strike that ignores the target's protection entirely.
+
+    The pick's pointed tip finds the hairline gap. Protection is set to
+    zero in the damage calculation — raw weapon power and resistance apply.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Drive the pick's point into an armour gap, bypassing all protection. "
+            "Lower raw damage than a full swing but ignores every point of armour."
+        )
+        prep = 1
+        execute = 1
+        recoil = 2
+        cooldown = 3
+        super().__init__(
+            name="Armor Pierce",
+            description=description,
+            xp_gain=8,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} eyes the gap in the armour...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Pick":
+            return False
+        return self.standard_viability_attack(("Pick",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 1, 2, 3]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=-5,
+            base_damage_type="piercing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} drives his {wpn} through the gap!", "green"
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+
+        # Ignore protection entirely
+        damage = (
+            (self.power * self.target.resistance[self.base_damage_type])
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class ChipAway(Move):
+    """Rapid series of three light strikes — each resolved independently.
+
+    Lower per-hit damage but three independent hit rolls; any or all may land.
+    Favoured against targets with high evasion where one decisive blow would miss.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Deliver a rapid series of three light strikes in quick succession. "
+            "Each hit is resolved independently — and each one chips away at any armour."
+        )
+        prep = 1
+        execute = 3
+        recoil = 1
+        cooldown = 4
+        super().__init__(
+            name="Chip Away",
+            description=description,
+            xp_gain=10,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} raises the pick for a flurry...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Pick":
+            return False
+        return self.standard_viability_attack(("Pick",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 3, 1, 4]
+            self.fatigue_cost = 15
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=0,
+            base_damage_type="piercing",
+            mod_fatigue=20,
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+
+    def prep(self, user):
+        cprint(f"{user.name} raises the pick for a rapid flurry...", "cyan")
+
+    def execute(self, user):
+        self.prep_colors()
+        cprint(
+            f"{user.name} strikes {getattr(self.target, 'name', 'the target')} with a rapid flurry!",
+            "green" if user.name == "Jean" else "red",
+        )
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse) if self.viable() else -1
+        sub_power = max(1, int(self.power * 0.4))
+        total_hits = 0
+
+        for i in range(3):
+            roll = random.randint(0, 100)
+            damage = (
+                ((sub_power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+                * user.heat
+            ) * random.uniform(0.8, 1.2)
+            damage = max(0, int(damage))
+            if hit_chance >= roll:
+                if functions.check_parry(self.target):
+                    cprint(f"{self.target.name} parried strike {i + 1}!", "yellow")
+                else:
+                    self.target.hp = max(0, self.target.hp - damage)
+                    cprint(
+                        f"Strike {i + 1}: {damage} damage to {self.target.name}!",
+                        "red",
+                    )
+                    total_hits += 1
+            else:
+                cprint(f"Strike {i + 1} missed!", "yellow")
+
+            if not self.target.is_alive:
+                break
+
+        if hasattr(user, "eq_weapon") and user.eq_weapon:
+            _ensure_weapon_exp(user)
+            user.combat_exp[user.eq_weapon.subtype] += total_hits * 3
+        user.combat_exp["Basic"] += total_hits * 2
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class ExploitWeakness(Move):
+    """Targeted strike aimed at an exposed spot — applies Disoriented on hit."""
+
+    def __init__(self, user):
+        description = (
+            "Find a weak point in the enemy's guard and strike it deliberately. "
+            "Deals piercing damage and leaves the target disoriented."
+        )
+        prep = 1
+        execute = 1
+        recoil = 2
+        cooldown = 3
+        super().__init__(
+            name="Exploit Weakness",
+            description=description,
+            xp_gain=10,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} searches for an opening...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Pick":
+            return False
+        return self.standard_viability_attack(("Pick",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [1, 1, 2, 3]
+            self.fatigue_cost = 10
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=0,
+            base_damage_type="piercing",
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} strikes {getattr(self.target, 'name', 'the target')}'s weak point with his {wpn}!",
+            "green",
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                if self.target and self.target.is_alive:
+                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    if not already:
+                        try:
+                            self.target.states.append(states.Disoriented(self.target))
+                            cprint(f"{self.target.name} is disoriented!", "red")
+                        except Exception:
+                            pass
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class Stupefy(Move):
+    """Heavy pommel blow that always applies Disoriented on a successful hit.
+
+    High recoil and cooldown — this is the closer, not an opener.
+    """
+
+    def __init__(self, user):
+        description = (
+            "A heavy blow with the back of the pick that stuns the target. "
+            "On a hit, always applies Disoriented regardless of the target's resistance."
+        )
+        prep = 2
+        execute = 1
+        recoil = 4
+        cooldown = 6
+        super().__init__(
+            name="Stupefy",
+            description=description,
+            xp_gain=12,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 5),
+            stage_announce=[
+                f"{user.name} winds up a heavy blow...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "crushing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Pick":
+            return False
+        return self.standard_viability_attack(("Pick",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [2, 1, 4, 6]
+            self.fatigue_cost = 25
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=20,
+            base_damage_type="crushing",
+            mod_fatigue=30,
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} bludgeons {getattr(self.target, 'name', 'the target')} with the back of his {wpn}!",
+            "green",
+        )
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 8
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                if self.target and self.target.is_alive:
+                    # Remove existing Disoriented, apply fresh one
+                    self.target.states = [
+                        s for s in self.target.states if not isinstance(s, states.Disoriented)
+                    ]
+                    try:
+                        self.target.states.append(states.Disoriented(self.target))
+                        cprint(f"{self.target.name} is stunned and disoriented!", "red")
+                    except Exception:
+                        pass
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class WorkTheGap(Move):
+    """Passive: Sustained assault gradually strips enemy protection (future hook)."""
+
+    def __init__(self, user):
+        description = (
+            "Every strike finds a new crack. "
+            "Sustained assault with a pick progressively reduces the target's protection."
+        )
+        super().__init__(
+            name="Work the Gap",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# CROSSBOW
+# ---------------------------------------------------------------------------
+
+
+def _crossbow_close_range_penalty(user, range_min):
+    """Return True if any enemy is within the crossbow's minimum range."""
+    if not hasattr(user, "combat_proximity"):
+        return False
+    return any(dist < range_min for dist in user.combat_proximity.values())
+
+
+class ShootCrossbow(Move):
+    """Fire a bolt from a crossbow.
+
+    Slower reload than a bow (prep=15) but heavier bolt (higher base power).
+    No arrows required — bolts are integral to the crossbow.
+    Accuracy is halved if any enemy is within minimum range (close-range penalty).
+    """
+
+    def __init__(self, user):
+        description = (
+            "Fire a heavy bolt at a target. Slower to reload than a bow "
+            "but hits harder. Enemies at close range disrupt your aim."
+        )
+        prep = 15
+        execute = 1
+        recoil = 2
+        cooldown = 5
+        fatigue_cost = max(10, 100 - (5 * user.endurance))
+        super().__init__(
+            name="Shoot Crossbow",
+            description=description,
+            xp_gain=3,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(6, 40),
+            stage_announce=[
+                f"{user.name} cranks the crossbow and loads a bolt.",
+                colored(f"{user.name} fires his crossbow!", "green"),
+                "",
+                "",
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Crossbow":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        rmin, rmax = self.mvrange
+        return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
+
+    def evaluate(self):
+        wpn = getattr(self.user, "eq_weapon", None)
+        if not wpn:
+            self.power = 0
+            self.fatigue_cost = 10
+            return
+        self.power = max(1,
+            wpn.damage + 15
+            + int(self.user.strength * wpn.str_mod)
+            + int(self.user.finesse * wpn.fin_mod)
+        )
+        self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        rmin, rmax = self.mvrange
+        if not self.viable():
+            hit_chance = -1
+        else:
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            if _crossbow_close_range_penalty(self.user, rmin):
+                hit_chance = int(hit_chance * 0.5)
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 5
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class BroadheadBolt(Move):
+    """Fire a heavy broadhead bolt — high damage, same reload as ShootCrossbow."""
+
+    def __init__(self, user):
+        description = (
+            "Load and fire a wide broadhead bolt designed for maximum damage. "
+            "The head tears a wide wound on impact."
+        )
+        prep = 15
+        execute = 1
+        recoil = 2
+        cooldown = 6
+        fatigue_cost = max(10, 110 - (5 * user.endurance))
+        super().__init__(
+            name="Broadhead Bolt",
+            description=description,
+            xp_gain=8,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(6, 40),
+            stage_announce=[
+                f"{user.name} loads a broadhead bolt...",
+                colored(f"{user.name} fires a broadhead bolt!", "green"),
+                "",
+                "",
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Crossbow":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        rmin, rmax = self.mvrange
+        return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
+
+    def evaluate(self):
+        wpn = getattr(self.user, "eq_weapon", None)
+        if not wpn:
+            self.power = 0
+            self.fatigue_cost = 15
+            return
+        self.power = max(1,
+            wpn.damage + 25
+            + int(self.user.strength * wpn.str_mod)
+            + int(self.user.finesse * wpn.fin_mod)
+        )
+        self.fatigue_cost = max(15, 110 - (5 * self.user.endurance))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+
+    def execute(self, player):
+        self.standard_execute_attack(player, self.power, self.base_damage_type)
+
+
+class AimedShot(Move):
+    """Slow, deliberate aimed shot — +50% power and +15 accuracy on top of base.
+
+    Takes 25 beats to line up. Worth the wait against high-finesse targets or
+    when one decisive shot is needed.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Take careful aim for an extended time before firing. "
+            "+50% damage and improved accuracy — but you are exposed while aiming."
+        )
+        prep = 25
+        execute = 1
+        recoil = 2
+        cooldown = 8
+        fatigue_cost = max(10, 90 - (5 * user.endurance))
+        super().__init__(
+            name="Aimed Shot",
+            description=description,
+            xp_gain=15,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(6, 40),
+            stage_announce=[
+                f"{user.name} raises the crossbow and begins to aim...",
+                colored(f"{user.name} fires a perfectly aimed shot!", "green"),
+                "",
+                "",
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Crossbow":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        rmin, rmax = self.mvrange
+        return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
+
+    def evaluate(self):
+        wpn = getattr(self.user, "eq_weapon", None)
+        if not wpn:
+            self.power = 0
+            self.fatigue_cost = 10
+            return
+        base = (
+            wpn.damage + 15
+            + int(self.user.strength * wpn.str_mod)
+            + int(self.user.finesse * wpn.fin_mod)
+        )
+        self.power = max(1, int(base * 1.5))
+        self.fatigue_cost = max(10, 90 - (5 * self.user.endurance))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        rmin, rmax = self.mvrange
+        if not self.viable():
+            hit_chance = -1
+        else:
+            hit_chance = min(100, max(5, (98 - self.target.finesse) + self.user.finesse + 15))
+            if _crossbow_close_range_penalty(self.user, rmin):
+                hit_chance = int(hit_chance * 0.5)
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 10
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class PinningBolt(Move):
+    """Bolt aimed to pin the target — deals damage and applies Disoriented on hit."""
+
+    def __init__(self, user):
+        description = (
+            "Fire a bolt aimed to pin or impede the target. "
+            "On a hit, the target is disoriented and their movement impaired."
+        )
+        prep = 15
+        execute = 1
+        recoil = 2
+        cooldown = 6
+        fatigue_cost = max(10, 100 - (5 * user.endurance))
+        super().__init__(
+            name="Pinning Bolt",
+            description=description,
+            xp_gain=10,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(6, 40),
+            stage_announce=[
+                f"{user.name} loads a bolt meant to pin...",
+                colored(f"{user.name} fires a pinning bolt!", "green"),
+                "",
+                "",
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "piercing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Crossbow":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        rmin, rmax = self.mvrange
+        return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
+
+    def evaluate(self):
+        wpn = getattr(self.user, "eq_weapon", None)
+        if not wpn:
+            self.power = 0
+            self.fatigue_cost = 10
+            return
+        self.power = max(1,
+            wpn.damage + 10
+            + int(self.user.strength * wpn.str_mod)
+            + int(self.user.finesse * wpn.fin_mod)
+        )
+        self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+
+    def execute(self, player):
+        glance = False
+        self.prep_colors()
+        print(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        rmin, rmax = self.mvrange
+        if not self.viable():
+            hit_chance = -1
+        else:
+            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            if _crossbow_close_range_penalty(self.user, rmin):
+                hit_chance = int(hit_chance * 0.5)
+
+        roll = random.randint(0, 100)
+        damage = (
+            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 6
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                if self.target and self.target.is_alive:
+                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    if not already:
+                        try:
+                            self.target.states.append(states.Disoriented(self.target))
+                            cprint(f"{self.target.name} is pinned and disoriented!", "red")
+                        except Exception:
+                            pass
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class QuickReload(Move):
+    """Passive: Crossbow reload training reduces prep time."""
+
+    def __init__(self, user):
+        description = (
+            "Practiced hands load faster. "
+            "Crossbow attacks require fewer beats to reload."
+        )
+        super().__init__(
+            name="Quick Reload",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+class MarksmanEye(Move):
+    """Passive: Accuracy bonus at range for crossbow attacks."""
+
+    def __init__(self, user):
+        description = (
+            "Distance doesn't shake your aim. "
+            "Crossbow shots maintain accuracy further out."
+        )
+        super().__init__(
+            name="Marksman's Eye",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# POLEARM
+# ---------------------------------------------------------------------------
+
+
+class OverheadSmash(Move):
+    """Bring the polearm shaft down in a heavy vertical strike.
+
+    Slower than Sweep but deals more single-target damage. The weight of the
+    weapon driving downward makes this one of the hardest hits in the polearm kit.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Raise the polearm and drive it down in a punishing vertical blow. "
+            "Slow, but hits with the full weight of the weapon."
+        )
+        prep = 2
+        execute = 1
+        recoil = 4
+        cooldown = 5
+        super().__init__(
+            name="Overhead Smash",
+            description=description,
+            xp_gain=8,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 6),
+            stage_announce=[
+                f"{user.name} heaves the polearm overhead...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=None,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "crushing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
+            return False
+        return self.standard_viability_attack(("Polearm",))
+
+    def evaluate(self):
+        if not getattr(self.user, "eq_weapon", None):
+            self.power = 0
+            self.stage_beat = [2, 1, 4, 5]
+            self.fatigue_cost = 25
+            return
+        evaluation = self.standard_evaluate_attack(
+            base_power=20,
+            base_damage_type="crushing",
+            mod_fatigue=25,
+        )
+        self.power = evaluation[0]
+        self.base_damage_type = evaluation[1]
+        wpn = self.user.eq_weapon.name
+        self.stage_announce[1] = colored(
+            f"{self.user.name} drives his {wpn} down onto {getattr(self.target, 'name', 'the target')}!",
+            "green",
+        )
+
+    def execute(self, player):
+        self.standard_execute_attack(player, self.power, self.base_damage_type)
+
+
+class Sweep(Move):
+    """Horizontal arc attack hitting all enemies within weapon range ahead of user.
+
+    Frontal arc (90° cone) when coordinates are available; full circle fallback.
+    Lower per-target damage than Overhead Smash but covers multiple enemies.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Swing the polearm in a wide horizontal arc, striking all enemies ahead. "
+            "Lower single-target damage, but clears a path through groups."
+        )
+        prep = 1
+        execute = 3
+        recoil = 2
+        cooldown = 3
+        super().__init__(
+            name="Sweep",
+            description=description,
+            xp_gain=10,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            mvrange=(1, 20),
+            stage_announce=["", "", "", ""],
+            fatigue_cost=65,
+            beats_left=prep,
+            target=user,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "crushing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        return any(e.is_alive for e in self.user.combat_proximity)
+
+    def evaluate(self):
+        try:
+            wpn = getattr(self.user, "eq_weapon", None)
+            if wpn and hasattr(wpn, "damage"):
+                self.power = max(1, int(wpn.damage * 0.65) + int(self.user.strength * 0.25))
+            else:
+                self.power = max(1, int(self.user.strength * 0.5))
+            arc_range = getattr(getattr(self.user, "eq_weapon", None), "wpnrange", (0, 6))
+            self.mvrange = (1, arc_range[1] + 2)
+        except (TypeError, AttributeError):
+            self.power = 1
+
+    def prep(self, user):
+        cprint(f"{user.name} winds up for a wide sweep...", "cyan")
+
+    def execute(self, user):
+        cprint(f"{user.name} sweeps the polearm in a broad arc!", "cyan")
+        arc_range = self.mvrange[1]
+
+        for enemy in list(self.user.combat_proximity.keys()):
+            if not enemy.is_alive:
+                continue
+
+            if (
+                hasattr(self.user, "combat_position")
+                and self.user.combat_position is not None
+                and hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
+                dist = positions.distance_from_coords(
+                    self.user.combat_position, enemy.combat_position
+                )
+                if dist > arc_range:
+                    continue
+                try:
+                    atk_angle = positions.angle_to_target(
+                        self.user.combat_position, enemy.combat_position
+                    )
+                    angle_diff = positions.attack_angle_difference(
+                        atk_angle, self.user.combat_position.facing
+                    )
+                    if angle_diff > 90:
+                        continue
+                except Exception:
+                    pass
+            else:
+                dist = self.user.combat_proximity.get(enemy, 9999)
+                if dist > arc_range:
+                    continue
+
+            base_dmg = max(1, int(self.power - enemy.protection))
+            hit_chance = max(5, (85 - enemy.finesse) + self.user.finesse)
+            if random.randint(0, 100) <= hit_chance:
+                if functions.check_parry(enemy):
+                    cprint(f"{enemy.name} blocked the sweep!", "yellow")
+                else:
+                    enemy.hp = max(0, enemy.hp - base_dmg)
+                    cprint(f"{enemy.name} takes {base_dmg} damage from the sweep!", "red")
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class BracePosition(Move):
+    """Set a guarding stance — applies Parrying state with a polearm announcement.
+
+    Mechanically identical to Parry but flavoured for the defensive polearm style.
+    The user plants the weapon and waits to intercept.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Plant your polearm and brace for impact. "
+            "Enters a guarding stance to intercept the next incoming attack."
+        )
+        prep = 1
+        execute = 1
+        recoil = 5
+        cooldown = 3
+        super().__init__(
+            name="Brace Position",
+            description=description,
+            xp_gain=5,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            mvrange=(0, 9999),
+            stage_announce=[
+                f"{user.name} plants the polearm and braces...",
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=0,
+            beats_left=prep,
+            target=user,
+            user=user,
+            category="Defensive",
+        )
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        return getattr(self.user.eq_weapon, "subtype", None) == "Polearm"
+
+    def evaluate(self):
+        self.fatigue_cost = max(10, 75 - ((2 * self.user.endurance) + (3 * self.user.speed)))
+
+    def execute(self, user):
+        wpn = getattr(user.eq_weapon, "name", "polearm") if getattr(user, "eq_weapon", None) else "polearm"
+        cprint(
+            f"{user.name} plants the {wpn} and holds the line!",
+            "cyan",
+        )
+        # Remove any existing Parrying state then apply fresh
+        user.states = [s for s in user.states if not isinstance(s, states.Parrying)]
+        user.states.append(states.Parrying(user))
+        user.fatigue -= self.fatigue_cost
+        if user.fatigue < 0:
+            user.fatigue = 0
+
+
+class HalberdSpin(Move):
+    """360-degree spin at full polearm reach — extended range, heavier recoil.
+
+    Similar to WhirlAttack but with the polearm's greater natural range.
+    More damaging per enemy than Sweep but costs more fatigue and has longer
+    cooldown.
+    """
+
+    def __init__(self, user):
+        description = (
+            "Spin the polearm in a full circle at maximum reach, "
+            "striking every enemy in range. High fatigue; heavy recoil."
+        )
+        prep = 2
+        execute = 3
+        recoil = 3
+        cooldown = 5
+        super().__init__(
+            name="Halberd Spin",
+            description=description,
+            xp_gain=18,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            mvrange=(1, 20),
+            stage_announce=["", "", "", ""],
+            fatigue_cost=80,
+            beats_left=prep,
+            target=user,
+            user=user,
+            category="Offensive",
+        )
+        self.power = 0
+        self.base_damage_type = "slashing"
+        self.evaluate()
+
+    def viable(self):
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+        if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
+            return False
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        return any(
+            e.is_alive
+            and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
+            for e in self.user.combat_proximity
+        )
+
+    def evaluate(self):
+        try:
+            wpn = getattr(self.user, "eq_weapon", None)
+            if wpn and hasattr(wpn, "damage"):
+                self.power = max(1, int(wpn.damage * 0.75) + int(self.user.strength * 0.3))
+                arc_range = getattr(wpn, "wpnrange", (0, 6))
+                self.mvrange = (1, arc_range[1] + 3)
+            else:
+                self.power = max(1, int(self.user.strength * 0.6))
+        except (TypeError, AttributeError):
+            self.power = 1
+
+    def prep(self, user):
+        cprint(f"{user.name} begins a wide spinning stance...", "cyan")
+
+    def execute(self, user):
+        cprint(f"{user.name} spins the halberd in a devastating full circle!", "cyan")
+        arc_range = self.mvrange[1]
+
+        for enemy in list(self.user.combat_proximity.keys()):
+            if not enemy.is_alive:
+                continue
+
+            if (
+                hasattr(self.user, "combat_position")
+                and self.user.combat_position is not None
+                and hasattr(enemy, "combat_position")
+                and enemy.combat_position is not None
+            ):
+                dist = positions.distance_from_coords(
+                    self.user.combat_position, enemy.combat_position
+                )
+                if dist > arc_range:
+                    continue
+            else:
+                dist = self.user.combat_proximity.get(enemy, 9999)
+                if dist > arc_range:
+                    continue
+
+            base_dmg = max(1, int(self.power - enemy.protection))
+            hit_chance = max(5, (85 - enemy.finesse) + self.user.finesse)
+            if random.randint(0, 100) <= hit_chance:
+                if functions.check_parry(enemy):
+                    cprint(f"{enemy.name} parried the spin!", "yellow")
+                else:
+                    enemy.hp = max(0, enemy.hp - base_dmg)
+                    cprint(f"{enemy.name} takes {base_dmg} damage!", "red")
+
+        # Random facing after spin
+        try:
+            if hasattr(user, "combat_position") and user.combat_position is not None:
+                import positions as _pos
+                user.combat_position.facing = random.choice(list(_pos.Direction))
+        except Exception:
+            pass
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class ReachMastery(Move):
+    """Passive: Extended range training — polearm attacks reach further."""
+
+    def __init__(self, user):
+        description = (
+            "You have mastered the reach of your weapon. "
+            "Polearm attacks are effective at slightly greater range."
+        )
+        super().__init__(
+            name="Reach Mastery",
+            description=description,
+            xp_gain=0,
+            current_stage=0,
+            stage_beat=[0, 0, 0, 0],
+            targeted=False,
+            stage_announce=["", "", "", ""],
+            fatigue_cost=0,
+            beats_left=0,
+            target=user,
+            user=user,
+            category="Passive",
+            passive=True,
+        )
+
+    def viable(self):
+        return False
