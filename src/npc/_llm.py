@@ -66,7 +66,7 @@ class MynxLLMMixin:
         if self._jean_advisor is not None:
             return self._jean_advisor
         try:
-            root = Path(__file__).resolve().parent.parent
+            root = Path(__file__).resolve().parent.parent.parent
             jean_path = root / "ai" / "player" / "jean.json"
             if jean_path.exists():
                 with open(jean_path, "r", encoding="utf-8") as f:
@@ -111,7 +111,7 @@ class MynxLLMMixin:
                 )
             return None
         try:
-            root = Path(__file__).resolve().parent.parent
+            root = Path(__file__).resolve().parent.parent.parent
             adapter_path = root / "ai" / "llm_client.py"
             if not adapter_path.exists():
                 self._llm_adapter = None
