@@ -1,0 +1,206 @@
+{
+    "metadata": {
+        "bgm": "mineral_pools"
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "The Guesthold",
+        "description": "A low-ceilinged common space warmed by a channel of vented heat running beneath the floor. Stone benches line two walls, each with a woven fiber mat and a shallow indent for a rolled sleeping mat. A carved stone counter divides the room. The smell is warm mineral and something faintly resinous — incense, or sealing compound.",
+        "exits": [
+            "north",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Restorative",
+                "__module__": "items",
+                "props": {}
+            }
+        ],
+        "npcs": [
+            {
+                "__class__": "GronditePasserby",
+                "__module__": "npc",
+                "props": {}
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "Fountain",
+                "__module__": "objects",
+                "props": {
+                    "name": "Stone Basin",
+                    "description": "A low stone basin fed by a thin trickle from a wall spout. The water is clear and slightly warm. You could DRINK from it.",
+                    "idle_message": "A low stone basin trickles quietly near the entrance.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a trickling stone basin near the entrance!",
+                    "announce": "A low stone basin trickles quietly near the entrance.",
+                    "keywords": ["drink", "listen", "admire", "use"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "NoticeBoard",
+                "__module__": "objects",
+                "props": {
+                    "name": "Notice Board",
+                    "description": "A flat stone panel fixed to the wall near the entrance, its face smoothed. Two notes in different hands are pinned to it.",
+                    "idle_message": "A flat notice panel is fixed to the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a notice panel fixed to the wall!",
+                    "announce": "A flat notice panel is fixed to the wall.",
+                    "keywords": ["read", "use"],
+                    "notes": [
+                        "[Golemite symbols. Three trade-tongue words marked in a different hand: 'pool. closed. elder.']",
+                        "Beds free if you behave. Strange city. Warm though. — M."
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "event": null
+                }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Guesthold Entrance",
+                    "description": "A broad doorway leads back out to the Ecumerium arcade.",
+                    "idle_message": "The entrance to the Guesthold leads back to the arcade.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "the entrance leading back to the arcade!",
+                    "announce": "The entrance to the Guesthold leads back to the arcade.",
+                    "keywords": ["leave", "exit", "go", "outside"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia",
+                    "teleport_tile": [11, 5],
+                    "persist": true
+                }
+            }
+        ]
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "The Guesthold — Sleeping Quarters",
+        "description": "A long alcove fitted with four sleeping niches cut directly into the stone, each with a shallow mat-channel and a small carved ledge at head height. The ceiling is lower here; the walls have been smoothed and sealed with a pale grey compound that still carries faint tool marks. Names and tally marks scratched at one niche — the record of someone's stay, counted out in nights.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "ledge niche",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "Restorative", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 35}},
+                        {"__class__": "SilverRing", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Ledge Niche",
+                    "description": "A narrow recess cut into the stone wall at shoulder height, masked by a fitted stone panel. Whatever was left here has been here for some time.",
+                    "idle_message": "A stone panel covers a recess in the wall.",
+                    "hidden": true,
+                    "hide_factor": 3,
+                    "discovery_message": "a recess in the wall, hidden behind a fitted stone panel!",
+                    "announce": "A stone panel covers a recess in the wall.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(3, 2)": {
+        "id": "tile_3_2",
+        "title": "The Guesthold — Proprietor's Corner",
+        "description": "A recessed alcove behind the main counter, its walls lined with stone shelves and a broad work surface worn level by long use. Small carved bins hold supplies in ordered rows. A board of hooks on one wall holds iron ring loops, the kind used to secure provisions. The back wall bears a shallow carved relief: a figure at rest, one hand open — cut with more care than the utilitarian surroundings might suggest.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "GronditeElder",
+                "__module__": "npc",
+                "props": {}
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "stone counter shelf",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Book",
+                            "__module__": "items",
+                            "props": {
+                                "name": "A Traveller's Record",
+                                "description": "A slim journal in a plain leather cover, its spine well worn. The handwriting inside is small and cramped.",
+                                "value": 10,
+                                "weight": 0.5,
+                                "maintype": "Book",
+                                "subtype": "Book",
+                                "type": "Book",
+                                "interactions": ["drop", "read"],
+                                "merchandise": false,
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "discovery_message": "a slim traveller's journal!",
+                                "announce": "A slim leather-bound journal rests here.",
+                                "text": "Day twelve in Grondia. The stone holds heat differently here than I expected — not cold like a cave, but warm, almost like sleeping near an oven that never goes out. One of the Golemites brought food without being asked — mineral broth, which is precisely what it sounds like, but warming. The city runs on an unspoken schedule. Movement, then stillness. Work, then gathering. No bells — they seem to know. I asked my host how. He touched his chest and said nothing I could translate. The mineral pools are closed. Posted at every passage leading to them: flat stone slabs with the same inscription. Jambo translated it as 'passage withdrawn pending restoration.' No one will say more than that."
+                            }
+                        },
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 20}}
+                    ],
+                    "name": "Stone Counter Shelf",
+                    "description": "A broad stone shelf behind the counter, its surface worn flat by years of use. Several items rest on it within reach.",
+                    "idle_message": "A broad stone shelf stands behind the counter.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a broad stone shelf behind the counter!",
+                    "announce": "A broad stone shelf stands behind the counter.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    }
+}

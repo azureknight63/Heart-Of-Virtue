@@ -1,0 +1,110 @@
+{
+    "metadata": {
+        "bgm": "mineral_pools"
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "Vacated Dwelling — Main Chamber",
+        "description": "A single-room dwelling of dressed stone, its proportions compact but not cramped. Stone sleeping niches are built into one wall, their mat-channels empty. A low hearth cut into the floor is cold and clean — the ash removed, the grate stacked neatly to one side. A shallow depression near the entrance holds the ghost of a worn mat, its outline visible in the slightly different shade of stone beneath. The dwelling is tidy in the way of someone who left intending to return.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Book",
+                "__module__": "items",
+                "props": {
+                    "name": "Urrath's Record",
+                    "description": "A flat piece of mineral-paper with dense, careful script. The hand is not human.",
+                    "value": 5,
+                    "weight": 0.2,
+                    "maintype": "Book",
+                    "subtype": "Book",
+                    "type": "Book",
+                    "interactions": ["drop", "read"],
+                    "merchandise": false,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a piece of mineral-paper with writing on it!",
+                    "announce": "A piece of mineral-paper with writing lies on the floor.",
+                    "text": "I write in trade speech. For who finds this.\n\nWe are Urrath and Pelb his son. We left when the smell changed. Lower pipes. Sour. Means pool is wrong.\n\nPelb was heavy in sleep. Slow to wake. Conclave said: pool-water in the pipes. We left.\n\nWe are in upper Arcology. Pelb is better.\n\nThis place is empty now. Take what is here. Better used than dark.\n\nUrrath — son of Kellath — Forty-Second Rising"
+                }
+            },
+            {
+                "__class__": "Antidote",
+                "__module__": "items",
+                "props": {}
+            }
+        ],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Dwelling Door",
+                    "description": "A narrow stone door leads back out to the residential lane.",
+                    "idle_message": "A narrow stone door leads back to the residential lane.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "the dwelling door leading back to the residential lane!",
+                    "announce": "A narrow stone door leads back to the residential lane.",
+                    "keywords": ["leave", "exit", "go", "outside", "door"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia",
+                    "teleport_tile": [9, 6],
+                    "persist": true
+                }
+            }
+        ]
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "Vacated Dwelling — Inner Room",
+        "description": "A small inner chamber off the main room, its entrance framed by a carved lintel bearing a stylized wave pattern. Stone shelves hold only the impressions where objects once rested. The floor has been swept. One flagstone near the north wall sits slightly higher than the rest — its edge is cleaner than the surrounding stone, as if it has been lifted and reset.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "loose floor stone",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "GronditeMarkToken", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 65}}
+                    ],
+                    "name": "Loose Floor Stone",
+                    "description": "A flagstone that lifts free from the floor, revealing a shallow recess beneath. Whatever was hidden here was left deliberately.",
+                    "idle_message": "One flagstone near the north wall sits slightly higher than the rest.",
+                    "hidden": true,
+                    "hide_factor": 4,
+                    "discovery_message": "a flagstone that sits slightly proud of the floor, its edge clean!",
+                    "announce": "One flagstone near the north wall sits slightly higher than the rest.",
+                    "keywords": ["open", "loot", "check", "examine", "lift", "pry"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    }
+}
