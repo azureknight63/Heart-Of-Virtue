@@ -284,11 +284,13 @@ class IronFist(PassiveMove):
     def __init__(self, user):
         super().__init__(user, "Iron Fist", ( "Your hands have been hardened through relentless training. " "Unarmed strikes carry greater force." ))
 
+
 class CleaveInstinct(PassiveMove):
     """Passive: A kill carries momentum into the next attack."""
 
     def __init__(self, user):
         super().__init__(user, "Cleave Instinct", ( "The rush of the kill carries you forward. " "After felling an enemy, your next strike begins with less wind-up." ))
+
 
 class HeavyHanded(PassiveMove):
     """Passive: Bludgeon blows stagger opponents — they reel longer after impact."""

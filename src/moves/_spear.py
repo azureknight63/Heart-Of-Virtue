@@ -427,6 +427,8 @@ class SentinelsVigil(PassiveMove):
 
     def __init__(self, user):
         super().__init__(user, "Sentinel's Vigil", ( "You hold your ground with absolute stillness. " "Enemies who advance into your range will find you ready." ))
+
+
 class ArmorPierce(Move):
     """Strike that ignores the target's protection entirely.
 

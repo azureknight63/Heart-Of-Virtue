@@ -414,6 +414,8 @@ class ShadowStep(PassiveMove):
 
     def __init__(self, user):
         super().__init__(user, "Shadow Step", ( "Deliberate, silent footwork lets you approach without alerting targets. " "Your steps give nothing away." ))
+
+
 class Backstab(Move):
     """Strike from flank or behind for bonus damage.
 

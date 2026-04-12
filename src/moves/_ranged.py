@@ -320,6 +320,8 @@ class EagleEye(PassiveMove):
 
     def __init__(self, user):
         super().__init__(user, "Eagle Eye", ( "Your eye reads distance and wind with practiced ease. " "Ranged attacks suffer less accuracy decay at long range." ))
+
+
 class ShootCrossbow(Move):
     """Fire a bolt from a crossbow.
 

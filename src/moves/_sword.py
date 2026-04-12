@@ -651,6 +651,7 @@ class BladeMastery(PassiveMove):
     def __init__(self, user):
         super().__init__(user, "Blade Mastery", ( "Years of swordsmanship have made each technique economical. " "Sword attacks cost less fatigue." ))
 
+
 class CounterGuard(PassiveMove):
     """Passive: Parrying while sword-equipped costs less fatigue."""
 

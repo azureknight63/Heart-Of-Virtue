@@ -266,11 +266,11 @@ def build_passive_replacement(class_name, original_lines):
     if docstring_match:
         doc = f'    """{docstring_match.group(1).strip()}"""\n\n'
 
-    result = f'\nclass {class_name}(PassiveMove):\n'
+    result = f'\n\nclass {class_name}(PassiveMove):\n'
     if doc:
         result += doc
     result += f'    def __init__(self, user):\n'
-    result += f'        super().__init__(user, "{_class_name_to_display(class_name)}", {desc_text})\n'
+    result += f'        super().__init__(user, "{_class_name_to_display(class_name)}", {desc_text})\n\n'
     return result
 
 

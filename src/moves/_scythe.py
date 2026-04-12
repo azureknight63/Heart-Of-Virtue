@@ -308,6 +308,7 @@ class GrimPersistence(PassiveMove):
     def __init__(self, user):
         super().__init__(user, "Grim Persistence", ( "You press wounded prey relentlessly. " "Attacks against enemies below 35% HP deal increased damage." ))
 
+
 class HauntingPresence(PassiveMove):
     """Passive: Enemies near you suffer an unsettling aura (future hook)."""
 
