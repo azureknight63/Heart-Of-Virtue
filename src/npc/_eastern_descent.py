@@ -13,7 +13,6 @@ import random
 import moves  # type: ignore
 from ._base import Friend
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Eastern Descent — Nomad Camp NPCs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,7 +160,7 @@ class NomadTrader(Friend):
         "wrapped items methodically. 'Good route. Foothills are slow.'",
         "'Four trades this week already. River camps move more than people expect.' "
         "She doesn't say what she traded. She wraps something back up.",
-        "She looks up briefly. \"You're not from the settlements.\" Not a question. "
+        'She looks up briefly. "You\'re not from the settlements." Not a question. '
         "She returns to her bundle.",
         "'Not many travelers come through this far east,' she says, wrapping something. "
         "'The ones who do are usually going somewhere specific.'",
