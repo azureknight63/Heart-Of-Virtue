@@ -170,8 +170,77 @@ friendly enough to Jean.
                 )
             )
             self.current_room.universe.story["gorran_first"] = "1"
+            return
+
+        stage = int(self.current_room.universe.story.get("gorran_language_stage", "0"))
+
+        if stage == 0:
+            # Stage 0: gesture and sound only — no words
+            responses = [
+                "Gorran turns toward you. A long, low vibration moves through the stone floor. "
+                "He holds your gaze for a moment, then looks ahead.",
+                "Gorran raises one hand — not a wave, not a greeting. A brief, deliberate "
+                "acknowledgment. He faces forward again.",
+                "Gorran makes a sound — low, even, the kind that doesn't require translation. "
+                "He doesn't add to it.",
+                "Gorran looks at you. His jaw shifts. Whatever he was considering, he keeps it.",
+                "A subsonic pressure moves through the stone at your feet. Gorran does not turn. "
+                "He is still here. That is the message.",
+            ]
+            print(colored(random.choice(responses), "yellow"))
+
+        elif stage == 1:
+            # Stage 1: gesture and sound only — same as Stage 0, but the silence
+            # now has a different texture. He has spoken once. He knows he can.
+            # He is choosing not to.
+            responses = [
+                "Gorran meets your gaze. His jaw shifts — something almost happens. "
+                "Then he looks away. The stone is quiet.",
+                "Gorran turns toward you slowly. A long pause. He doesn't fill it. "
+                "He faces forward again.",
+                "A low sound from Gorran — steady, not urgent. He holds your gaze "
+                "for a moment, then lets it go.",
+                "Gorran looks at you the way stone looks at water. Patient. Present. "
+                "Whatever he considered, he keeps it.",
+                "Gorran doesn't speak. But the silence feels different than it did before — "
+                "deliberate, not empty.",
+            ]
+            print(colored(random.choice(responses), "yellow"))
+
+        elif stage == 2:
+            # Stage 2: single words, said simply and without elaboration
+            responses = [
+                colored('"Good."', "green") + " He says it once and doesn't repeat it.",
+                (
+                    "Gorran turns. He looks at you — really looks — and says your name: "
+                    + colored('"Jean."', "green")
+                    + "\n\nThen he faces forward. That was the whole of it."
+                ),
+                (
+                    "A pause. "
+                    + colored('"No."', "green")
+                    + " Clear and final. He's already past whatever he refused."
+                ),
+            ]
+            print(random.choice(responses))
+
         else:
-            print(self.name + " has nothing to say.")
+            # Stage 3 and 4: short phrases, said with effort
+            responses = [
+                (
+                    "Gorran studies the way ahead. After a moment: "
+                    + colored('"Passage. Safe."', "green")
+                    + "\n\nHe's checked."
+                ),
+                colored('"Still here,"', "green")
+                + " he says. He settles his weight and waits.",
+                (
+                    "He tilts his head. "
+                    + colored('"Heavy."', "green")
+                    + " He doesn't look at you when he says it."
+                ),
+            ]
+            print(random.choice(responses))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -402,6 +471,7 @@ class GronditeConclaveElder(Friend):
 
     def talk(self, player):
         import time
+
         # Check if intro has already fired this session
         story = getattr(getattr(player, "universe", None), "story", {})
         first_time = story.get(self._INTRO_RUN_KEY, "0") == "0"

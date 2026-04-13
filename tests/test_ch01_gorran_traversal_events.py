@@ -32,6 +32,7 @@ def make_player_and_tile():
     player.combat_list = []
     player.combat_list_allies = [player]
     player.in_combat = False
+    player.universe.story = {}
     tile = Mock(spec=MapTile)
     tile.events_here = []
     return player, tile

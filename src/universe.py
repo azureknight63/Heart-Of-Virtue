@@ -31,7 +31,14 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.starting_map_default = None
         self.story = {  # global switches and variables.
             # Putting them in a dict will make it easier to change on the fly while debugging
-            "gorran_first": "0"
+            "gorran_first": "0",
+            # Gorran language acquisition arc. Values: "0"–"4" matching narrative stages.
+            # Stage 0 — no words (all gesture/sound).
+            # Stage 1 — "Stop" (first word, emergency, set by Ch01GorranFirstWord event).
+            # Stage 2 — single-word directions (here/there/wait/good/no/name).
+            # Stage 3 — short phrases, physical vocabulary for emotion.
+            # Stage 4 — effortful sentences; the crisis scene.
+            "gorran_language_stage": "0",
         }
         self.locked_chests = []
         self.testing_mode = False  # test mode flag from config
