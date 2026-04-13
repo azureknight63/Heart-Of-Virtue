@@ -4811,7 +4811,10 @@ class Backstab(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -4997,7 +5000,10 @@ class DisarmingSlash(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -5017,7 +5023,9 @@ class DisarmingSlash(Move):
             else:
                 self.hit(damage, glance)
                 if self.target and self.target.is_alive:
-                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    already = any(
+                        isinstance(s, states.Disoriented) for s in self.target.states
+                    )
                     if not already:
                         try:
                             self.target.states.append(states.Disoriented(self.target))
@@ -5132,7 +5140,10 @@ class Riposte(Move):
         player.heat = min(10.0, player.heat * 1.3)
         try:
             damage = (
-                ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+                (
+                    (self.power * self.target.resistance[self.base_damage_type])
+                    - self.target.protection
+                )
                 * player.heat
             ) * random.uniform(0.8, 1.2)
         finally:
@@ -5272,7 +5283,9 @@ class Reap(Move):
         try:
             wpn = getattr(self.user, "eq_weapon", None)
             if wpn and hasattr(wpn, "damage"):
-                self.power = max(1, int(wpn.damage * 0.65) + int(self.user.strength * 0.2))
+                self.power = max(
+                    1, int(wpn.damage * 0.65) + int(self.user.strength * 0.2)
+                )
             else:
                 self.power = max(1, int(self.user.strength * 0.5))
         except (TypeError, AttributeError):
@@ -5325,7 +5338,9 @@ class Reap(Move):
                     cprint(f"{enemy.name} parried the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
-                    cprint(f"{enemy.name} takes {base_dmg} damage from the sweep!", "red")
+                    cprint(
+                        f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
+                    )
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -5480,7 +5495,10 @@ class DeathsHarvest(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -5659,7 +5677,10 @@ class KeepAway(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -5698,8 +5719,14 @@ class KeepAway(Move):
                 and self.target.combat_position is not None
             ):
                 occupied = []
-                for c in getattr(player, "combat_list", []) + getattr(player, "combat_list_allies", []):
-                    if c is not self.target and hasattr(c, "combat_position") and c.combat_position:
+                for c in getattr(player, "combat_list", []) + getattr(
+                    player, "combat_list_allies", []
+                ):
+                    if (
+                        c is not self.target
+                        and hasattr(c, "combat_position")
+                        and c.combat_position
+                    ):
                         occupied.append(c.combat_position)
                 new_pos = positions.move_away_constrained(
                     self.target.combat_position, player.combat_position, 4, occupied
@@ -5771,10 +5798,7 @@ class Lunge(Move):
             return False
         if getattr(self.user.eq_weapon, "subtype", None) != "Spear":
             return False
-        return any(
-            3 <= dist <= 15
-            for dist in self.user.combat_proximity.values()
-        )
+        return any(3 <= dist <= 15 for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
@@ -5808,8 +5832,11 @@ class Lunge(Move):
                 ):
                     occupied = [
                         c.combat_position
-                        for c in getattr(player, "combat_list", []) + getattr(player, "combat_list_allies", [])
-                        if c is not player and hasattr(c, "combat_position") and c.combat_position
+                        for c in getattr(player, "combat_list", [])
+                        + getattr(player, "combat_list_allies", [])
+                        if c is not player
+                        and hasattr(c, "combat_position")
+                        and c.combat_position
                     ]
                     new_pos = positions.move_toward_constrained(
                         player.combat_position, self.target.combat_position, 3, occupied
@@ -5828,7 +5855,9 @@ class Lunge(Move):
                     cur = player.combat_proximity.get(self.target, 10)
                     player.combat_proximity[self.target] = max(1, cur - 3)
                     if hasattr(self.target, "combat_proximity"):
-                        self.target.combat_proximity[player] = player.combat_proximity[self.target]
+                        self.target.combat_proximity[player] = player.combat_proximity[
+                            self.target
+                        ]
             except Exception:
                 pass
 
@@ -5841,7 +5870,10 @@ class Lunge(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -5959,7 +5991,10 @@ class Impale(Move):
         # Ignore 60% of protection
         effective_prot = self.target.protection * 0.4
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - effective_prot)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - effective_prot
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -6107,8 +6142,7 @@ class ArmorPierce(Move):
 
         # Ignore protection entirely
         damage = (
-            (self.power * self.target.resistance[self.base_damage_type])
-            * player.heat
+            (self.power * self.target.resistance[self.base_damage_type]) * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -6215,14 +6249,21 @@ class ChipAway(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse) if self.viable() else -1
+        hit_chance = (
+            max(5, (98 - self.target.finesse) + self.user.finesse)
+            if self.viable()
+            else -1
+        )
         sub_power = max(1, int(self.power * 0.4))
         total_hits = 0
 
         for i in range(3):
             roll = random.randint(0, 100)
             damage = (
-                ((sub_power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+                (
+                    (sub_power * self.target.resistance[self.base_damage_type])
+                    - self.target.protection
+                )
                 * user.heat
             ) * random.uniform(0.8, 1.2)
             damage = max(0, int(damage))
@@ -6335,7 +6376,10 @@ class ExploitWeakness(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -6355,7 +6399,9 @@ class ExploitWeakness(Move):
             else:
                 self.hit(damage, glance)
                 if self.target and self.target.is_alive:
-                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    already = any(
+                        isinstance(s, states.Disoriented) for s in self.target.states
+                    )
                     if not already:
                         try:
                             self.target.states.append(states.Disoriented(self.target))
@@ -6457,7 +6503,10 @@ class Stupefy(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -6479,7 +6528,9 @@ class Stupefy(Move):
                 if self.target and self.target.is_alive:
                     # Remove existing Disoriented, apply fresh one
                     self.target.states = [
-                        s for s in self.target.states if not isinstance(s, states.Disoriented)
+                        s
+                        for s in self.target.states
+                        if not isinstance(s, states.Disoriented)
                     ]
                     try:
                         self.target.states.append(states.Disoriented(self.target))
@@ -6592,10 +6643,12 @@ class ShootCrossbow(Move):
             self.power = 0
             self.fatigue_cost = 10
             return
-        self.power = max(1,
-            wpn.damage + 15
+        self.power = max(
+            1,
+            wpn.damage
+            + 15
             + int(self.user.strength * wpn.str_mod)
-            + int(self.user.finesse * wpn.fin_mod)
+            + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
@@ -6625,7 +6678,10 @@ class ShootCrossbow(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -6705,10 +6761,12 @@ class BroadheadBolt(Move):
             self.power = 0
             self.fatigue_cost = 15
             return
-        self.power = max(1,
-            wpn.damage + 25
+        self.power = max(
+            1,
+            wpn.damage
+            + 25
             + int(self.user.strength * wpn.str_mod)
-            + int(self.user.finesse * wpn.fin_mod)
+            + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = max(15, 110 - (5 * self.user.endurance))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
@@ -6775,7 +6833,8 @@ class AimedShot(Move):
             self.fatigue_cost = 10
             return
         base = (
-            wpn.damage + 15
+            wpn.damage
+            + 15
             + int(self.user.strength * wpn.str_mod)
             + int(self.user.finesse * wpn.fin_mod)
         )
@@ -6802,13 +6861,18 @@ class AimedShot(Move):
         if not self.viable():
             hit_chance = -1
         else:
-            hit_chance = min(100, max(5, (98 - self.target.finesse) + self.user.finesse + 15))
+            hit_chance = min(
+                100, max(5, (98 - self.target.finesse) + self.user.finesse + 15)
+            )
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -6888,10 +6952,12 @@ class PinningBolt(Move):
             self.power = 0
             self.fatigue_cost = 10
             return
-        self.power = max(1,
-            wpn.damage + 10
+        self.power = max(
+            1,
+            wpn.damage
+            + 10
             + int(self.user.strength * wpn.str_mod)
-            + int(self.user.finesse * wpn.fin_mod)
+            + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
@@ -6921,7 +6987,10 @@ class PinningBolt(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -6941,11 +7010,15 @@ class PinningBolt(Move):
             else:
                 self.hit(damage, glance)
                 if self.target and self.target.is_alive:
-                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    already = any(
+                        isinstance(s, states.Disoriented) for s in self.target.states
+                    )
                     if not already:
                         try:
                             self.target.states.append(states.Disoriented(self.target))
-                            cprint(f"{self.target.name} is pinned and disoriented!", "red")
+                            cprint(
+                                f"{self.target.name} is pinned and disoriented!", "red"
+                            )
                         except Exception:
                             pass
         else:
@@ -7135,10 +7208,14 @@ class Sweep(Move):
         try:
             wpn = getattr(self.user, "eq_weapon", None)
             if wpn and hasattr(wpn, "damage"):
-                self.power = max(1, int(wpn.damage * 0.65) + int(self.user.strength * 0.25))
+                self.power = max(
+                    1, int(wpn.damage * 0.65) + int(self.user.strength * 0.25)
+                )
             else:
                 self.power = max(1, int(self.user.strength * 0.5))
-            arc_range = getattr(getattr(self.user, "eq_weapon", None), "wpnrange", (0, 6))
+            arc_range = getattr(
+                getattr(self.user, "eq_weapon", None), "wpnrange", (0, 6)
+            )
             self.mvrange = (1, arc_range[1] + 2)
         except (TypeError, AttributeError):
             self.power = 1
@@ -7188,7 +7265,9 @@ class Sweep(Move):
                     cprint(f"{enemy.name} blocked the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
-                    cprint(f"{enemy.name} takes {base_dmg} damage from the sweep!", "red")
+                    cprint(
+                        f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
+                    )
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -7239,10 +7318,16 @@ class BracePosition(Move):
         return getattr(self.user.eq_weapon, "subtype", None) == "Polearm"
 
     def evaluate(self):
-        self.fatigue_cost = max(10, 75 - ((2 * self.user.endurance) + (3 * self.user.speed)))
+        self.fatigue_cost = max(
+            10, 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        )
 
     def execute(self, user):
-        wpn = getattr(user.eq_weapon, "name", "polearm") if getattr(user, "eq_weapon", None) else "polearm"
+        wpn = (
+            getattr(user.eq_weapon, "name", "polearm")
+            if getattr(user, "eq_weapon", None)
+            else "polearm"
+        )
         cprint(
             f"{user.name} plants the {wpn} and holds the line!",
             "cyan",
@@ -7299,8 +7384,7 @@ class HalberdSpin(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
         return any(
-            e.is_alive
-            and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
+            e.is_alive and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
             for e in self.user.combat_proximity
         )
 
@@ -7308,7 +7392,9 @@ class HalberdSpin(Move):
         try:
             wpn = getattr(self.user, "eq_weapon", None)
             if wpn and hasattr(wpn, "damage"):
-                self.power = max(1, int(wpn.damage * 0.75) + int(self.user.strength * 0.3))
+                self.power = max(
+                    1, int(wpn.damage * 0.75) + int(self.user.strength * 0.3)
+                )
                 arc_range = getattr(wpn, "wpnrange", (0, 6))
                 self.mvrange = (1, arc_range[1] + 3)
             else:
@@ -7356,6 +7442,7 @@ class HalberdSpin(Move):
         try:
             if hasattr(user, "combat_position") and user.combat_position is not None:
                 import positions as _pos
+
                 user.combat_position.facing = random.choice(list(_pos.Direction))
         except Exception:
             pass

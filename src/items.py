@@ -3257,7 +3257,9 @@ class MineralPowder(Commodity):
                 f"{self.count} packets of fine grey-green mineral dust, "
                 "each twisted in woven fiber. A material for careful craft."
             )
-        self.name = "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
+        self.name = (
+            "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
+        )
 
 
 class DriedCrystalSap(Consumable):
@@ -3301,6 +3303,7 @@ class DriedCrystalSap(Consumable):
 
     def use(self, player: "Player") -> None:  # type: ignore[override]
         import time as _time
+
         heal = min(self.power, player.maxhp - player.hp)
         if heal <= 0:
             print("Jean is already in good health. He pockets the sap.")

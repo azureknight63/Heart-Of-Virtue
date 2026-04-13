@@ -172,9 +172,7 @@ friendly enough to Jean.
             self.current_room.universe.story["gorran_first"] = "1"
             return
 
-        stage = int(
-            self.current_room.universe.story.get("gorran_language_stage", "0")
-        )
+        stage = int(self.current_room.universe.story.get("gorran_language_stage", "0"))
 
         if stage == 0:
             # Stage 0: gesture and sound only — no words
@@ -234,7 +232,8 @@ friendly enough to Jean.
                     + colored('"Passage. Safe."', "green")
                     + "\n\nHe's checked."
                 ),
-                colored('"Still here,"', "green") + " he says. He settles his weight and waits.",
+                colored('"Still here,"', "green")
+                + " he says. He settles his weight and waits.",
                 (
                     "He tilts his head. "
                     + colored('"Heavy."', "green")
@@ -472,6 +471,7 @@ class GronditeConclaveElder(Friend):
 
     def talk(self, player):
         import time
+
         # Check if intro has already fired this session
         story = getattr(getattr(player, "universe", None), "story", {})
         first_time = story.get(self._INTRO_RUN_KEY, "0") == "0"
