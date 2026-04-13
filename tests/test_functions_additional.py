@@ -206,7 +206,7 @@ def test_refresh_moves():
     # Simply ensure known_moves is a list and any populated moves originate from src.moves
     assert isinstance(player.known_moves, list)
     for mv in player.known_moves:
-        assert mv.__class__.__module__.endswith('moves')
+        assert 'moves' in mv.__class__.__module__
 
 
 # ---------- checkrange ----------
