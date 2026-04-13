@@ -5,15 +5,16 @@ This package replaces the monolithic src/npc.py with a structured set of
 mixin files and concrete-class groupings, mirroring the src/player/ pattern.
 
 Package layout:
-    _combat.py      NPCCombatMixin  — AI move selection and combat engagement
-    _loot.py        NPCLootMixin    — death hooks, loot table rolls, inventory drops
-    _shop.py        MerchantShopMixin — shop inventory management (was npc_shop_mixin.py)
-    _llm.py         MynxLLMMixin    — LLM-driven ambient behaviour (was npc_mynx_mixin.py)
-    _base.py        NPC, Friend     — base classes (NPC inherits both mixins + Combatant)
-    _enemies.py     hostile combat NPCs + StatusDummy (arena test target)
-    _merchants.py   Merchant and concrete merchant subclasses
-    _friends.py     Mynx, Gorran, Grondite citizen NPCs
-    _adjutant.py    TheAdjutant     — arena-only configuration NPC
+    _combat.py          NPCCombatMixin  — AI move selection and combat engagement
+    _loot.py            NPCLootMixin    — death hooks, loot table rolls, inventory drops
+    _shop.py            MerchantShopMixin — shop inventory management (was npc_shop_mixin.py)
+    _llm.py             MynxLLMMixin    — LLM-driven ambient behaviour (was npc_mynx_mixin.py)
+    _base.py            NPC, Friend     — base classes (NPC inherits both mixins + Combatant)
+    _enemies.py         hostile combat NPCs + StatusDummy (arena test target)
+    _merchants.py       Merchant and concrete merchant subclasses
+    _friends.py         Mynx, Gorran, Grondite citizen NPCs
+    _adjutant.py        TheAdjutant     — arena-only configuration NPC
+    _eastern_descent.py NomadCamper, NomadScout, NomadTrader — east-bank camp NPCs
 
 All public names are re-exported here so that existing imports of the form
     from npc import NPC, Slime, Merchant, ...
@@ -46,6 +47,7 @@ from ._friends import (
     GronditeConclaveElder,
 )
 from ._adjutant import TheAdjutant
+from ._eastern_descent import NomadCamper, NomadScout, NomadTrader
 
 __all__ = [
     # Base classes
@@ -79,4 +81,8 @@ __all__ = [
     "GronditeConclaveElder",
     # Arena testing NPC
     "TheAdjutant",
+    # Eastern Descent — nomad camp NPCs
+    "NomadCamper",
+    "NomadScout",
+    "NomadTrader",
 ]

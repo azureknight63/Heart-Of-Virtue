@@ -2,7 +2,7 @@
     "(1, 2)": {
         "id": "tile_1_2",
         "title": "Passage",
-        "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use,\n        and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered,\n        and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift as you move.\n        The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
+        "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use,\n        and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered,\n        and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift with any movement.\n        The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
         "exits": [
             "south"
         ],
