@@ -38,6 +38,10 @@ function InteractPanel({
     const isSyncingTarget = useRef(false)
     // Ref to store previous selected target for comparison
     const prevSelectedTargetRef = useRef(selectedTarget)
+    // Tracks whether the panel was ever opened with targets present.
+    // Distinguishes "opened on an already-empty tile" (no auto-close) from
+    // "opened with targets that later all disappeared" (auto-close allowed).
+    const hasHadTargetsRef = useRef(false)
 
     useEffect(() => {
         if (location) {
@@ -85,12 +89,22 @@ function InteractPanel({
         prevSelectedTargetRef.current = selectedTarget
     }, [location, selectedTarget])
 
+    // Track whether we have ever had targets so the auto-close effect can
+    // tell apart "opened on empty tile" from "targets disappeared after open".
+    useEffect(() => {
+        if (targets.length > 0) {
+            hasHadTargetsRef.current = true
+        }
+    }, [targets.length])
+
     // Automatically close the panel if there is nothing left to interact with,
-    // but ONLY if the user has actually performed an action (to prevent instant closing on empty tiles).
+    // but ONLY if the user has actually performed an action OR if targets were
+    // present when the panel opened (to prevent instant closing on empty tiles).
     useEffect(() => {
         if (location && targets.length === 0 && !selectedTarget && !error && !loading && !showHistory) {
-            // If they just opened it on an empty tile, don't auto-close (let them read the empty message).
-            if (!interactionOutput && interactionHistory.length === 0) {
+            // If the panel was opened on an already-empty tile and no interaction
+            // has been performed, don't auto-close — let the user read the message.
+            if (!interactionOutput && interactionHistory.length === 0 && !hasHadTargetsRef.current) {
                 return;
             }
             

@@ -8,7 +8,8 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import Move  # noqa: F401
+
 
 class NpcAttack(Move):  # basic attack function, NPCs only
     def __init__(self, npc):
@@ -881,5 +882,3 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
 # ============================================================================
 # PHASE 3: ADVANCED POSITIONING MOVES
 # ============================================================================
-
-

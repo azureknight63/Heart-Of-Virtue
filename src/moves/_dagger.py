@@ -8,7 +8,12 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+    _ensure_weapon_exp,
+)  # noqa: F401
+
 
 class Slash(
     Move
@@ -408,12 +413,18 @@ class FeintAndPivot(Move):
         user.fatigue -= self.fatigue_cost
 
 
-
 class ShadowStep(PassiveMove):
     """Passive: Silent footwork. Marks player as capable of stealthy approach."""
 
     def __init__(self, user):
-        super().__init__(user, "Shadow Step", ( "Deliberate, silent footwork lets you approach without alerting targets. " "Your steps give nothing away." ))
+        super().__init__(
+            user,
+            "Shadow Step",
+            (
+                "Deliberate, silent footwork lets you approach without alerting targets. "
+                "Your steps give nothing away."
+            ),
+        )
 
 
 class Backstab(Move):
@@ -530,7 +541,10 @@ class Backstab(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -560,5 +574,3 @@ class Backstab(Move):
 # ---------------------------------------------------------------------------
 # SWORD & SPEAR (shared)
 # ---------------------------------------------------------------------------
-
-

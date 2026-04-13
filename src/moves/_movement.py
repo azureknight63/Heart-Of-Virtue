@@ -8,7 +8,8 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import Move  # noqa: F401
+
 
 class Dodge(Move):
     def __init__(self, user):
@@ -1272,5 +1273,3 @@ class QuickSwap(Move):
 # ---------------------------------------------------------------------------
 # PASSIVE ADDITIONS TO EXISTING WEAPON TYPES
 # ---------------------------------------------------------------------------
-
-

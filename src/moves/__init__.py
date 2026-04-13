@@ -23,28 +23,65 @@ continue to work without any changes in calling code.
 """
 
 from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations
-from ._utility import StrategicInsight, MasterTactician, Check, Wait, Rest, UseItem, Attack
+from ._utility import (
+    StrategicInsight,
+    MasterTactician,
+    Check,
+    Wait,
+    Rest,
+    UseItem,
+    Attack,
+)
 from ._movement import (
-    Dodge, Parry, Advance, Withdraw, BullCharge, TacticalRetreat,
-    FlankingManeuver, QuietMovement, TacticalPositioning, Turn, QuickSwap,
+    Dodge,
+    Parry,
+    Advance,
+    Withdraw,
+    BullCharge,
+    TacticalRetreat,
+    FlankingManeuver,
+    QuietMovement,
+    TacticalPositioning,
+    Turn,
+    QuickSwap,
 )
 from ._unarmed import PowerStrike, Jab, IronFist, CleaveInstinct, HeavyHanded
 from ._dagger import Slash, Backstab, FeintAndPivot, ShadowStep
 from ._sword import (
-    PommelStrike, Thrust, DisarmingSlash, Riposte, WhirlAttack,
-    VertigoSpin, BladeMastery, CounterGuard,
+    PommelStrike,
+    Thrust,
+    DisarmingSlash,
+    Riposte,
+    WhirlAttack,
+    VertigoSpin,
+    BladeMastery,
+    CounterGuard,
 )
 from ._scythe import Reap, ReapersMark, DeathsHarvest, GrimPersistence, HauntingPresence
 from ._spear import KeepAway, Lunge, Impale, SentinelsVigil, ArmorPierce
 from ._pick import ChipAway, ExploitWeakness, Stupefy, WorkTheGap
 from ._ranged import (
-    ShootBow, ShootCrossbow, BroadheadBolt, AimedShot,
-    PinningBolt, QuickReload, EagleEye, MarksmanEye,
+    ShootBow,
+    ShootCrossbow,
+    BroadheadBolt,
+    AimedShot,
+    PinningBolt,
+    QuickReload,
+    EagleEye,
+    MarksmanEye,
 )
 from ._polearm import OverheadSmash, Sweep, BracePosition, HalberdSpin, ReachMastery
 from ._npc import (
-    NpcAttack, NpcRest, NpcIdle, TelegraphedSurge, SlimeVolley,
-    TidalSurge, GorranClub, VenomClaw, SpiderBite, BatBite,
+    NpcAttack,
+    NpcRest,
+    NpcIdle,
+    TelegraphedSurge,
+    SlimeVolley,
+    TidalSurge,
+    GorranClub,
+    VenomClaw,
+    SpiderBite,
+    BatBite,
 )
 
 __all__ = [

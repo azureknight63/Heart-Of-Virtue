@@ -8,7 +8,19 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+    _ensure_weapon_exp,
+)  # noqa: F401
+
+
+def _crossbow_close_range_penalty(user, range_min):
+    """Return True if any enemy is within the crossbow's minimum range."""
+    if not hasattr(user, "combat_proximity"):
+        return False
+    return any(dist < range_min for dist in user.combat_proximity.values())
+
 
 class ShootBow(
     Move
@@ -314,12 +326,18 @@ NPC MOVES
 """
 
 
-
 class EagleEye(PassiveMove):
     """Passive: Sharpened long-range eye. Improves accuracy at distance."""
 
     def __init__(self, user):
-        super().__init__(user, "Eagle Eye", ( "Your eye reads distance and wind with practiced ease. " "Ranged attacks suffer less accuracy decay at long range." ))
+        super().__init__(
+            user,
+            "Eagle Eye",
+            (
+                "Your eye reads distance and wind with practiced ease. "
+                "Ranged attacks suffer less accuracy decay at long range."
+            ),
+        )
 
 
 class ShootCrossbow(Move):
@@ -380,10 +398,12 @@ class ShootCrossbow(Move):
             self.power = 0
             self.fatigue_cost = 10
             return
-        self.power = max(1,
-            wpn.damage + 15
+        self.power = max(
+            1,
+            wpn.damage
+            + 15
             + int(self.user.strength * wpn.str_mod)
-            + int(self.user.finesse * wpn.fin_mod)
+            + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
@@ -413,7 +433,10 @@ class ShootCrossbow(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -493,10 +516,12 @@ class BroadheadBolt(Move):
             self.power = 0
             self.fatigue_cost = 15
             return
-        self.power = max(1,
-            wpn.damage + 25
+        self.power = max(
+            1,
+            wpn.damage
+            + 25
             + int(self.user.strength * wpn.str_mod)
-            + int(self.user.finesse * wpn.fin_mod)
+            + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = max(15, 110 - (5 * self.user.endurance))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
@@ -563,7 +588,8 @@ class AimedShot(Move):
             self.fatigue_cost = 10
             return
         base = (
-            wpn.damage + 15
+            wpn.damage
+            + 15
             + int(self.user.strength * wpn.str_mod)
             + int(self.user.finesse * wpn.fin_mod)
         )
@@ -590,13 +616,18 @@ class AimedShot(Move):
         if not self.viable():
             hit_chance = -1
         else:
-            hit_chance = min(100, max(5, (98 - self.target.finesse) + self.user.finesse + 15))
+            hit_chance = min(
+                100, max(5, (98 - self.target.finesse) + self.user.finesse + 15)
+            )
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -676,10 +707,12 @@ class PinningBolt(Move):
             self.power = 0
             self.fatigue_cost = 10
             return
-        self.power = max(1,
-            wpn.damage + 10
+        self.power = max(
+            1,
+            wpn.damage
+            + 10
             + int(self.user.strength * wpn.str_mod)
-            + int(self.user.finesse * wpn.fin_mod)
+            + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
@@ -709,7 +742,10 @@ class PinningBolt(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -729,11 +765,15 @@ class PinningBolt(Move):
             else:
                 self.hit(damage, glance)
                 if self.target and self.target.is_alive:
-                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    already = any(
+                        isinstance(s, states.Disoriented) for s in self.target.states
+                    )
                     if not already:
                         try:
                             self.target.states.append(states.Disoriented(self.target))
-                            cprint(f"{self.target.name} is pinned and disoriented!", "red")
+                            cprint(
+                                f"{self.target.name} is pinned and disoriented!", "red"
+                            )
                         except Exception:
                             pass
         else:
@@ -772,9 +812,15 @@ class QuickReload(Move):
         return False
 
 
-
 class MarksmanEye(PassiveMove):
     """Passive: Accuracy bonus at range for crossbow attacks."""
 
     def __init__(self, user):
-        super().__init__(user, "Marksman's Eye", ( "Distance doesn't shake your aim. " "Crossbow shots maintain accuracy further out." ))
+        super().__init__(
+            user,
+            "Marksman's Eye",
+            (
+                "Distance doesn't shake your aim. "
+                "Crossbow shots maintain accuracy further out."
+            ),
+        )

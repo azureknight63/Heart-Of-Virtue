@@ -8,7 +8,12 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+    _ensure_weapon_exp,
+)  # noqa: F401
+
 
 class KeepAway(Move):
     """Minor damage + push target back to maintain optimal spear range.
@@ -94,7 +99,10 @@ class KeepAway(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -133,8 +141,14 @@ class KeepAway(Move):
                 and self.target.combat_position is not None
             ):
                 occupied = []
-                for c in getattr(player, "combat_list", []) + getattr(player, "combat_list_allies", []):
-                    if c is not self.target and hasattr(c, "combat_position") and c.combat_position:
+                for c in getattr(player, "combat_list", []) + getattr(
+                    player, "combat_list_allies", []
+                ):
+                    if (
+                        c is not self.target
+                        and hasattr(c, "combat_position")
+                        and c.combat_position
+                    ):
                         occupied.append(c.combat_position)
                 new_pos = positions.move_away_constrained(
                     self.target.combat_position, player.combat_position, 4, occupied
@@ -206,10 +220,7 @@ class Lunge(Move):
             return False
         if getattr(self.user.eq_weapon, "subtype", None) != "Spear":
             return False
-        return any(
-            3 <= dist <= 15
-            for dist in self.user.combat_proximity.values()
-        )
+        return any(3 <= dist <= 15 for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
         if not getattr(self.user, "eq_weapon", None):
@@ -243,8 +254,11 @@ class Lunge(Move):
                 ):
                     occupied = [
                         c.combat_position
-                        for c in getattr(player, "combat_list", []) + getattr(player, "combat_list_allies", [])
-                        if c is not player and hasattr(c, "combat_position") and c.combat_position
+                        for c in getattr(player, "combat_list", [])
+                        + getattr(player, "combat_list_allies", [])
+                        if c is not player
+                        and hasattr(c, "combat_position")
+                        and c.combat_position
                     ]
                     new_pos = positions.move_toward_constrained(
                         player.combat_position, self.target.combat_position, 3, occupied
@@ -263,7 +277,9 @@ class Lunge(Move):
                     cur = player.combat_proximity.get(self.target, 10)
                     player.combat_proximity[self.target] = max(1, cur - 3)
                     if hasattr(self.target, "combat_proximity"):
-                        self.target.combat_proximity[player] = player.combat_proximity[self.target]
+                        self.target.combat_proximity[player] = player.combat_proximity[
+                            self.target
+                        ]
             except Exception:
                 pass
 
@@ -276,7 +292,10 @@ class Lunge(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -394,7 +413,10 @@ class Impale(Move):
         # Ignore 60% of protection
         effective_prot = self.target.protection * 0.4
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - effective_prot)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - effective_prot
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -421,12 +443,18 @@ class Impale(Move):
             self.user.fatigue = 0
 
 
-
 class SentinelsVigil(PassiveMove):
     """Passive: Range-denial discipline; future hook for counter-damage on advance."""
 
     def __init__(self, user):
-        super().__init__(user, "Sentinel's Vigil", ( "You hold your ground with absolute stillness. " "Enemies who advance into your range will find you ready." ))
+        super().__init__(
+            user,
+            "Sentinel's Vigil",
+            (
+                "You hold your ground with absolute stillness. "
+                "Enemies who advance into your range will find you ready."
+            ),
+        )
 
 
 class ArmorPierce(Move):
@@ -517,8 +545,7 @@ class ArmorPierce(Move):
 
         # Ignore protection entirely
         damage = (
-            (self.power * self.target.resistance[self.base_damage_type])
-            * player.heat
+            (self.power * self.target.resistance[self.base_damage_type]) * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -542,5 +569,3 @@ class ArmorPierce(Move):
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
             self.user.fatigue = 0
-
-

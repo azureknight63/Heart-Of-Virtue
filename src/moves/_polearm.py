@@ -8,7 +8,11 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+)  # noqa: F401
+
 
 class OverheadSmash(Move):
     """Bring the polearm shaft down in a heavy vertical strike.
@@ -128,10 +132,14 @@ class Sweep(Move):
         try:
             wpn = getattr(self.user, "eq_weapon", None)
             if wpn and hasattr(wpn, "damage"):
-                self.power = max(1, int(wpn.damage * 0.65) + int(self.user.strength * 0.25))
+                self.power = max(
+                    1, int(wpn.damage * 0.65) + int(self.user.strength * 0.25)
+                )
             else:
                 self.power = max(1, int(self.user.strength * 0.5))
-            arc_range = getattr(getattr(self.user, "eq_weapon", None), "wpnrange", (0, 6))
+            arc_range = getattr(
+                getattr(self.user, "eq_weapon", None), "wpnrange", (0, 6)
+            )
             self.mvrange = (1, arc_range[1] + 2)
         except (TypeError, AttributeError):
             self.power = 1
@@ -181,7 +189,9 @@ class Sweep(Move):
                     cprint(f"{enemy.name} blocked the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
-                    cprint(f"{enemy.name} takes {base_dmg} damage from the sweep!", "red")
+                    cprint(
+                        f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
+                    )
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -232,10 +242,16 @@ class BracePosition(Move):
         return getattr(self.user.eq_weapon, "subtype", None) == "Polearm"
 
     def evaluate(self):
-        self.fatigue_cost = max(10, 75 - ((2 * self.user.endurance) + (3 * self.user.speed)))
+        self.fatigue_cost = max(
+            10, 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        )
 
     def execute(self, user):
-        wpn = getattr(user.eq_weapon, "name", "polearm") if getattr(user, "eq_weapon", None) else "polearm"
+        wpn = (
+            getattr(user.eq_weapon, "name", "polearm")
+            if getattr(user, "eq_weapon", None)
+            else "polearm"
+        )
         cprint(
             f"{user.name} plants the {wpn} and holds the line!",
             "cyan",
@@ -292,8 +308,7 @@ class HalberdSpin(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
         return any(
-            e.is_alive
-            and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
+            e.is_alive and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
             for e in self.user.combat_proximity
         )
 
@@ -301,7 +316,9 @@ class HalberdSpin(Move):
         try:
             wpn = getattr(self.user, "eq_weapon", None)
             if wpn and hasattr(wpn, "damage"):
-                self.power = max(1, int(wpn.damage * 0.75) + int(self.user.strength * 0.3))
+                self.power = max(
+                    1, int(wpn.damage * 0.75) + int(self.user.strength * 0.3)
+                )
                 arc_range = getattr(wpn, "wpnrange", (0, 6))
                 self.mvrange = (1, arc_range[1] + 3)
             else:
@@ -349,6 +366,7 @@ class HalberdSpin(Move):
         try:
             if hasattr(user, "combat_position") and user.combat_position is not None:
                 import positions as _pos
+
                 user.combat_position.facing = random.choice(list(_pos.Direction))
         except Exception:
             pass
@@ -358,9 +376,15 @@ class HalberdSpin(Move):
             self.user.fatigue = 0
 
 
-
 class ReachMastery(PassiveMove):
     """Passive: Extended range training — polearm attacks reach further."""
 
     def __init__(self, user):
-        super().__init__(user, "Reach Mastery", ( "You have mastered the reach of your weapon. " "Polearm attacks are effective at slightly greater range." ))
+        super().__init__(
+            user,
+            "Reach Mastery",
+            (
+                "You have mastered the reach of your weapon. "
+                "Polearm attacks are effective at slightly greater range."
+            ),
+        )

@@ -91,7 +91,7 @@ _EXPLORE = [
 
 _COMBAT_S1_JEAN_HURT = [
     # "Back!" — the same mechanism as "Stop." One word, flat, hard.
-    'Gorran\'s eyes find Jean across the field. One word cuts through everything: "Back." He doesn\'t stop moving.',
+    "Gorran's eyes find Jean across the field. One word cuts through everything: \"Back.\" He doesn't stop moving.",
 ]
 
 
@@ -101,9 +101,9 @@ _COMBAT_S1_JEAN_HURT = [
 
 _COMBAT_S2_GENERAL = [
     # Words used rarely; each one costs something, even now.
-    'Gorran points — a single gesture at a position to Jean\'s left. "Here." He doesn\'t wait to see if Jean moves.',
-    'A short break in Gorran\'s attention. He meets Jean\'s eyes. "Good." Then back to the fight.',
-    'Gorran\'s hand comes up once — firm, brief. "No." He\'s already past the thing he\'s refusing.',
+    "Gorran points — a single gesture at a position to Jean's left. \"Here.\" He doesn't wait to see if Jean moves.",
+    "A short break in Gorran's attention. He meets Jean's eyes. \"Good.\" Then back to the fight.",
+    "Gorran's hand comes up once — firm, brief. \"No.\" He's already past the thing he's refusing.",
 ]
 
 _COMBAT_S2_JEAN_HURT = [

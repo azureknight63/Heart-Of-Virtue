@@ -8,7 +8,11 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    _ensure_weapon_exp,
+)  # noqa: F401
+
 
 class ChipAway(Move):
     """Rapid series of three light strikes — each resolved independently.
@@ -91,14 +95,21 @@ class ChipAway(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse) if self.viable() else -1
+        hit_chance = (
+            max(5, (98 - self.target.finesse) + self.user.finesse)
+            if self.viable()
+            else -1
+        )
         sub_power = max(1, int(self.power * 0.4))
         total_hits = 0
 
         for i in range(3):
             roll = random.randint(0, 100)
             damage = (
-                ((sub_power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+                (
+                    (sub_power * self.target.resistance[self.base_damage_type])
+                    - self.target.protection
+                )
                 * user.heat
             ) * random.uniform(0.8, 1.2)
             damage = max(0, int(damage))
@@ -211,7 +222,10 @@ class ExploitWeakness(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -231,7 +245,9 @@ class ExploitWeakness(Move):
             else:
                 self.hit(damage, glance)
                 if self.target and self.target.is_alive:
-                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    already = any(
+                        isinstance(s, states.Disoriented) for s in self.target.states
+                    )
                     if not already:
                         try:
                             self.target.states.append(states.Disoriented(self.target))
@@ -333,7 +349,10 @@ class Stupefy(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -355,7 +374,9 @@ class Stupefy(Move):
                 if self.target and self.target.is_alive:
                     # Remove existing Disoriented, apply fresh one
                     self.target.states = [
-                        s for s in self.target.states if not isinstance(s, states.Disoriented)
+                        s
+                        for s in self.target.states
+                        if not isinstance(s, states.Disoriented)
                     ]
                     try:
                         self.target.states.append(states.Disoriented(self.target))
@@ -396,17 +417,3 @@ class WorkTheGap(Move):
 
     def viable(self):
         return False
-
-
-# ---------------------------------------------------------------------------
-# CROSSBOW
-# ---------------------------------------------------------------------------
-
-
-def _crossbow_close_range_penalty(user, range_min):
-    """Return True if any enemy is within the crossbow's minimum range."""
-    if not hasattr(user, "combat_proximity"):
-        return False
-    return any(dist < range_min for dist in user.combat_proximity.values())
-
-

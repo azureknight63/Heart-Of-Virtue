@@ -8,7 +8,12 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+    _ensure_weapon_exp,
+)  # noqa: F401
+
 
 class Reap(Move):
     """Wide frontal arc sweep hitting all enemies in front of the user.
@@ -59,7 +64,9 @@ class Reap(Move):
         try:
             wpn = getattr(self.user, "eq_weapon", None)
             if wpn and hasattr(wpn, "damage"):
-                self.power = max(1, int(wpn.damage * 0.65) + int(self.user.strength * 0.2))
+                self.power = max(
+                    1, int(wpn.damage * 0.65) + int(self.user.strength * 0.2)
+                )
             else:
                 self.power = max(1, int(self.user.strength * 0.5))
         except (TypeError, AttributeError):
@@ -112,7 +119,9 @@ class Reap(Move):
                     cprint(f"{enemy.name} parried the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
-                    cprint(f"{enemy.name} takes {base_dmg} damage from the sweep!", "red")
+                    cprint(
+                        f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
+                    )
 
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
@@ -267,7 +276,10 @@ class DeathsHarvest(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -301,16 +313,29 @@ class DeathsHarvest(Move):
             self.user.fatigue = 0
 
 
-
 class GrimPersistence(PassiveMove):
     """Passive: Attacks deal bonus damage against targets below 35% HP."""
 
     def __init__(self, user):
-        super().__init__(user, "Grim Persistence", ( "You press wounded prey relentlessly. " "Attacks against enemies below 35% HP deal increased damage." ))
+        super().__init__(
+            user,
+            "Grim Persistence",
+            (
+                "You press wounded prey relentlessly. "
+                "Attacks against enemies below 35% HP deal increased damage."
+            ),
+        )
 
 
 class HauntingPresence(PassiveMove):
     """Passive: Enemies near you suffer an unsettling aura (future hook)."""
 
     def __init__(self, user):
-        super().__init__(user, "Haunting Presence", ( "Your very presence unsettles those nearby. " "Enemies in close range feel the weight of their mortality." ))
+        super().__init__(
+            user,
+            "Haunting Presence",
+            (
+                "Your very presence unsettles those nearby. "
+                "Enemies in close range feel the weight of their mortality."
+            ),
+        )

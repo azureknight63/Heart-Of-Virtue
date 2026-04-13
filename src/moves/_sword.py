@@ -8,7 +8,12 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+    _ensure_weapon_exp,
+)  # noqa: F401
+
 
 class PommelStrike(Move):
     """
@@ -479,7 +484,10 @@ class DisarmingSlash(Move):
 
         roll = random.randint(0, 100)
         damage = (
-            ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
             * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
@@ -499,7 +507,9 @@ class DisarmingSlash(Move):
             else:
                 self.hit(damage, glance)
                 if self.target and self.target.is_alive:
-                    already = any(isinstance(s, states.Disoriented) for s in self.target.states)
+                    already = any(
+                        isinstance(s, states.Disoriented) for s in self.target.states
+                    )
                     if not already:
                         try:
                             self.target.states.append(states.Disoriented(self.target))
@@ -614,7 +624,10 @@ class Riposte(Move):
         player.heat = min(10.0, player.heat * 1.3)
         try:
             damage = (
-                ((self.power * self.target.resistance[self.base_damage_type]) - self.target.protection)
+                (
+                    (self.power * self.target.resistance[self.base_damage_type])
+                    - self.target.protection
+                )
                 * player.heat
             ) * random.uniform(0.8, 1.2)
         finally:
@@ -644,16 +657,29 @@ class Riposte(Move):
             self.user.fatigue = 0
 
 
-
 class BladeMastery(PassiveMove):
     """Passive: Sword discipline; reduces fatigue cost of sword attacks."""
 
     def __init__(self, user):
-        super().__init__(user, "Blade Mastery", ( "Years of swordsmanship have made each technique economical. " "Sword attacks cost less fatigue." ))
+        super().__init__(
+            user,
+            "Blade Mastery",
+            (
+                "Years of swordsmanship have made each technique economical. "
+                "Sword attacks cost less fatigue."
+            ),
+        )
 
 
 class CounterGuard(PassiveMove):
     """Passive: Parrying while sword-equipped costs less fatigue."""
 
     def __init__(self, user):
-        super().__init__(user, "Counter Guard", ( "Your guard is second nature. " "Maintaining a parry stance with a sword costs less fatigue." ))
+        super().__init__(
+            user,
+            "Counter Guard",
+            (
+                "Your guard is second nature. "
+                "Maintaining a parry stance with a sword costs less fatigue."
+            ),
+        )

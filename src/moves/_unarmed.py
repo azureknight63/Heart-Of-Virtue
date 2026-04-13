@@ -8,7 +8,11 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    PassiveMove,
+)  # noqa: F401
+
 
 class PowerStrike(Move):
     def __init__(self, user):
@@ -277,23 +281,43 @@ PLAYER MOVES
 """
 
 
-
 class IronFist(PassiveMove):
     """Passive: Conditioned hands deal more damage unarmed."""
 
     def __init__(self, user):
-        super().__init__(user, "Iron Fist", ( "Your hands have been hardened through relentless training. " "Unarmed strikes carry greater force." ))
+        super().__init__(
+            user,
+            "Iron Fist",
+            (
+                "Your hands have been hardened through relentless training. "
+                "Unarmed strikes carry greater force."
+            ),
+        )
 
 
 class CleaveInstinct(PassiveMove):
     """Passive: A kill carries momentum into the next attack."""
 
     def __init__(self, user):
-        super().__init__(user, "Cleave Instinct", ( "The rush of the kill carries you forward. " "After felling an enemy, your next strike begins with less wind-up." ))
+        super().__init__(
+            user,
+            "Cleave Instinct",
+            (
+                "The rush of the kill carries you forward. "
+                "After felling an enemy, your next strike begins with less wind-up."
+            ),
+        )
 
 
 class HeavyHanded(PassiveMove):
     """Passive: Bludgeon blows stagger opponents — they reel longer after impact."""
 
     def __init__(self, user):
-        super().__init__(user, "Heavy Handed", ( "Your crushing blows leave enemies reeling. " "Bludgeon strikes impose additional stagger on their targets." ))
+        super().__init__(
+            user,
+            "Heavy Handed",
+            (
+                "Your crushing blows leave enemies reeling. "
+                "Bludgeon strikes impose additional stagger on their targets."
+            ),
+        )

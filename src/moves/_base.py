@@ -38,7 +38,6 @@ default_animations = {
 }
 
 
-
 class Move:  # master class for all moves
     def __init__(
         self,
@@ -483,7 +482,6 @@ class Move:  # master class for all moves
 """
 ANY MOVES
 """
-
 
 
 class PassiveMove(Move):

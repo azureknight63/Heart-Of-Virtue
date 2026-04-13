@@ -8,7 +8,11 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, PassiveMove, _ensure_weapon_exp, default_animations  # noqa: F401
+from ._base import (
+    Move,
+    default_animations,
+)  # noqa: F401
+
 
 class StrategicInsight(Move):
     def __init__(self, user):
@@ -651,5 +655,3 @@ class UseItem(Move):
     def execute(self, player):
         player.use_item()  # opens the category view for the standard "use item" action
         player.combat_exp["Basic"] += 1
-
-
