@@ -254,6 +254,191 @@ class KingSlime(NPC):
         self.add_move(moves.NpcIdle(self), 1)
 
 
+class TalusHound(NPC):
+    """A lean, shaggy pack hunter of the eastern slope. Territorial and coordinated,
+    hunts in small groups. Dangerous in numbers due to flanking tactics and hit-and-run
+    coordination. When hunting alone, exhibits defensive hit-and-run behavior. When in a
+    pack, prioritizes flanking maneuvers and coordinated strikes.
+    """
+
+    def __init__(self):
+        description = (
+            "A lean, shaggy quadruped roughly the size of a large dog. Its hide is layered "
+            "— thick, close-lying fur over a leathery undercoat — in mottled grey-brown tones. "
+            "Heavily muscled legs suggest explosive speed on rough terrain. The head is broad "
+            "and low-set, with pale amber eyes adapted for detecting movement at distance."
+        )
+        super().__init__(
+            name="Talus Hound " + genericng.generate(2, 4),
+            description=description,
+            maxhp=50,
+            damage=14,
+            protection=8,
+            awareness=30,
+            aggro=True,
+            exp_award=80,
+        )
+        self.add_move(moves.NpcAttack(self), 5)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.Withdraw(self), 3)  # Hit-and-run is core tactic
+        self.add_move(moves.FlankingManeuver(self), 3)  # Flanking when in pack
+        self.add_move(moves.Dodge(self), 2)
+        self.add_move(moves.NpcIdle(self), 1)
+
+    def _count_pack_members(self):
+        """Count how many other living TalusHounds are in this combat."""
+        if not hasattr(self, "combat_list"):
+            return 0
+        pack_count = 0
+        for npc in self.combat_list:
+            if (
+                npc is not self
+                and isinstance(npc, TalusHound)
+                and getattr(npc, "is_alive", True)
+            ):
+                pack_count += 1
+        return pack_count
+
+    def select_move(self):
+        """Pack-aware move selection. Behavior adapts based on number of nearby pack members."""
+        import random
+
+        available_moves = self.refresh_moves()
+
+        pack_size = self._count_pack_members()
+
+        # Initialize AI config if we have a player reference (combat started)
+        if (
+            (not hasattr(self, "ai_config") or self.ai_config is None)
+            and hasattr(self, "player_ref")
+            and self.player_ref
+        ):
+            try:
+                from npc_ai_config import NPCAIConfig
+
+                self.ai_config = NPCAIConfig(self.player_ref)
+            except ImportError:
+                pass
+
+        # Build weighted move pool with pack-aware adjustments
+        weighted_moves = []
+        for move in available_moves:
+            weight = move.weight
+
+            # Pack-aware tactics: prioritize different moves based on pack size
+            if pack_size >= 2:
+                # Large pack: emphasize flanking and coordinated attacks
+                if move.name == "Flanking Maneuver":
+                    weight += 6  # Significantly boost flanking when pack is present
+                elif move.name == "Advance":
+                    weight += 3  # Position for coordinated strikes
+                elif move.name == "NpcAttack":
+                    weight += 2  # Basic attacks with pack support
+                elif move.name == "Withdraw":
+                    weight -= 2  # Less need to retreat with backup
+            elif pack_size == 1:
+                # Small pack: hit-and-run tactics with occasional flanking
+                if move.name == "Withdraw":
+                    weight += 4  # Emphasize tactical retreat and reset
+                elif move.name == "Advance":
+                    weight += 2  # Advance after opponent recovers from hits
+                elif move.name == "Flanking Maneuver":
+                    weight += 2  # Single ally helps with flanking attempts
+                elif move.name == "Dodge":
+                    weight += 1  # Evasion important when outnumbered
+            else:
+                # Solo: aggressive hit-and-run, evasion, and lone wolf tactics
+                if move.name == "Withdraw":
+                    weight += 5  # Heavy emphasis on tactical retreat when alone
+                elif move.name == "Dodge":
+                    weight += 3  # Solo hounds rely on evasion
+                elif move.name == "Advance":
+                    weight += 1  # Less predictable advance patterns
+                if move.name == "Flanking Maneuver":
+                    weight -= 3  # Flanking less useful without allies
+
+            # Apply AI config bonuses if available
+            if hasattr(self, "ai_config") and self.ai_config:
+                weight += self.ai_config.get_weighted_move_bonus(self, move.name)
+
+            # Ensure at least 1 weight for viable moves
+            weight = max(1, weight)
+
+            for _ in range(weight):
+                weighted_moves.append(move)
+
+        if not weighted_moves:
+            return
+
+        # Fatigue management: rest if can't attack
+        can_attack = any(
+            getattr(m, "category", "") == "Offensive"
+            and m.fatigue_cost <= self.fatigue
+            and m.viable()
+            for m in available_moves
+        )
+        if not can_attack and self.fatigue < self.maxfatigue:
+            can_advance = any(
+                getattr(m, "name", "") == "Advance" for m in available_moves
+            )
+            if not can_advance:
+                self.current_move = moves.NpcRest(self)
+                return
+
+        num_choices = len(weighted_moves) - 1
+        max_attempts = 20
+        attempts = 0
+        choice = 0
+
+        while self.current_move is None and attempts < max_attempts:
+            attempts += 1
+            choice = random.randint(0, num_choices)
+            if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[
+                choice
+            ].viable():
+                self.current_move = weighted_moves[choice]
+
+        # Hard fallback
+        if self.current_move is None:
+            self.current_move = moves.NpcRest(self)
+            return
+
+
+class ScarpAdder(NPC):
+    """A thick-bodied ambush serpent of the eastern slope. Solitary, patient,
+    strikes with venom. Uses the rocks themselves as cover and weapon.
+    """
+
+    def __init__(self):
+        description = (
+            "A thick-bodied serpent, 1.5–2 metres in length. Its scales are layered like "
+            "flakes of split shale — dark grey with silver edges. The head is broad and "
+            "triangular, with heat-sensing pits along the jaw. Coiled at rest, nearly invisible "
+            "against stone. The pale blue tongue flickers in the air."
+        )
+        super().__init__(
+            name="Scarp Adder " + genericng.generate(2, 4),
+            description=description,
+            maxhp=38,
+            damage=20,
+            protection=5,
+            awareness=40,
+            aggro=True,
+            exp_award=95,
+        )
+        # Slight resistance to physical damage due to fragile scales;
+        # Affinity with stone (slight resistance to earth magic)
+        self.resistance_base["earth"] = 0.8
+        self.resistance_base["crushing"] = 1.2
+        self.resistance_base["slashing"] = 1.1
+
+        self.add_move(moves.NpcAttack(self), 5)
+        self.add_move(moves.VenomClaw(self), 3)  # Re-use venom mechanic
+        self.add_move(moves.Withdraw(self), 2)
+        self.add_move(moves.NpcIdle(self), 1)
+        self.add_move(moves.Dodge(self), 1)
+
+
 class StatusDummy(NPC):
     """A status-effect testing target.
 

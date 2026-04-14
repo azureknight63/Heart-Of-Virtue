@@ -518,3 +518,312 @@ class GronditeConclaveElder(Friend):
                 "The Elder looks at Jean. Looks at the plinth. Looks at Jean again.",
             ]
             print(random.choice(lines))
+
+
+class Mara(Friend):
+    """Scavenger, ferry operator, and guide. First human Jean encounters outside any
+    institutional context. Sardonic, watchful, practical. Skilled in precision combat,
+    positioning, and tactical awareness. Fights with the same observant efficiency as
+    she moves through the world.
+    """
+
+    def __init__(self):
+        description = (
+            "A woman in her late twenties, lean and self-contained. She stands with "
+            "the efficiency of someone who wastes no motion. Dark auburn hair, cut to "
+            "the shoulder and tied back. Her eyes are sharp and green — the first thing "
+            "you notice is that she's already noticed you. She wears layered travel gear, "
+            "well-maintained. Around her neck, on a knotted cord, hangs a worn crucifix."
+        )
+        super().__init__(
+            name="Mara",
+            description=description,
+            maxhp=95,
+            damage=38,
+            protection=12,
+            speed=8,
+            finesse=8,
+            awareness=35,
+            aggro=False,
+            exp_award=0,
+            combat_range=(0, 5),
+            idle_message=" stands off to the side, sorting through her samples.",
+            alert_message=" straightens, hand moving to her weapon.",
+            discovery_message="a scavenger woman by the campfire.",
+        )
+        self.keywords = ["talk", "trade"]
+        self.pronouns = {
+            "personal": "she",
+            "possessive": "her",
+            "reflexive": "herself",
+            "intensive": "herself",
+        }
+        # Mara's combat style: precision, positioning, and tactical awareness
+        # She switches between bow (medium/long range) and dagger (close range)
+        self.add_move(moves.NpcAttack(self), 5)  # Dagger attacks at close range
+        self.add_move(moves.Advance(self), 3)
+        self.add_move(moves.Withdraw(self), 3)  # Tactical retreat to reset
+        self.add_move(moves.FlankingManeuver(self), 2)  # Positioning for better angles
+        self.add_move(moves.Dodge(self), 3)  # High finesse means good evasion
+        self.add_move(moves.Parry(self), 2)  # Defensive positioning
+        self.add_move(moves.NpcIdle(self), 1)
+
+        self.battle_symbol = "M"
+
+        # Equipment state tracking for weapon switching
+        self.preferred_range = None  # Will be set dynamically based on combat distance
+        self.bow_range = (8, 25)  # Bow effective range
+        self.dagger_range = (0, 3)  # Dagger effective range
+
+    def talk(self, player):
+        """Mara's dialogue is sparse, practical, observant."""
+        lines = [
+            "Mara glances up from what she's doing. Her gaze finds Jean briefly, takes in what "
+            "it needs to, and returns to her work.",
+            "Mara nods once. She doesn't elaborate.",
+            "Mara says, 'The river's crossable this time of year. Careful of the current at "
+            "the bend.'",
+            "Mara's eyes narrow slightly as she studies Jean. Then she returns to her sorting.",
+        ]
+        print(random.choice(lines))
+
+    def _get_optimal_range_to_target(self):
+        """Determine what range Mara should maintain based on nearest enemy (not allies)."""
+        if not hasattr(self, "combat_proximity") or not self.combat_proximity:
+            return None
+
+        # Filter proximity dict to only include enemies, not allies
+        enemy_distances = {}
+        if hasattr(self, "player_ref") and self.player_ref:
+            enemies = getattr(self.player_ref, "combat_list", [])
+            for enemy in enemies:
+                if enemy in self.combat_proximity:
+                    enemy_distances[enemy] = self.combat_proximity[enemy]
+
+        if not enemy_distances:
+            return None
+
+        nearest_distance = min(enemy_distances.values())
+
+        # Bow range (8-25): stay at medium-long range for precision archery
+        if nearest_distance >= self.bow_range[0]:
+            return "bow"
+        # Dagger range (0-3): close quarters with evasion and precision strikes
+        elif nearest_distance <= self.dagger_range[1]:
+            return "dagger"
+        # Transition zone (4-7): decide based on fatigue and health
+        else:
+            # If hurt or fatigued, maintain bow range; otherwise close to dagger range
+            health_percent = self.hp / self.maxhp
+            fatigue_percent = self.fatigue / self.maxfatigue
+            if health_percent < 0.6 or fatigue_percent < 0.4:
+                return "bow"
+            else:
+                return "dagger"
+
+    def select_move(self):
+        """Mara's move selection reflects her nature: precise, observant, tactical.
+        She switches between bow (medium/long range) and dagger (close range) based on
+        combat distance, maintaining optimal positioning for her current weapon."""
+        available_moves = self.refresh_moves()
+
+        # Initialize AI config if we have a player reference (combat started)
+        if (
+            (not hasattr(self, "ai_config") or self.ai_config is None)
+            and hasattr(self, "player_ref")
+            and self.player_ref
+        ):
+            try:
+                from npc_ai_config import NPCAIConfig
+
+                self.ai_config = NPCAIConfig(self.player_ref)
+            except ImportError:
+                pass
+
+        # Determine optimal weapon range based on current situation
+        optimal_range = self._get_optimal_range_to_target()
+
+        # Mara favors tactical positioning over raw aggression
+        weighted_moves = []
+        for move in available_moves:
+            weight = move.weight
+
+            # Core tactical moves that apply to both bow and dagger modes
+            if move.name == "Dodge":
+                weight += 3  # High finesse means constant opportunistic evasion
+            elif move.name == "Flanking Maneuver":
+                weight += 2  # Seeks advantageous angles
+
+            # Weapon-specific positioning
+            if optimal_range == "bow":
+                # Bow mode: maintain distance, retreat if enemies close in
+                if move.name == "Withdraw":
+                    weight += 4  # Actively maintain bow range
+                elif move.name == "Advance":
+                    weight -= 2  # Don't advance in bow mode unless necessary
+                elif move.name == "NpcAttack":
+                    weight += 1  # Bow strikes when at optimal range
+                elif move.name == "Parry":
+                    weight -= 1  # Less relevant when staying at range
+            elif optimal_range == "dagger":
+                # Dagger mode: close quarters, precision, evasion
+                if move.name == "Advance":
+                    weight += 3  # Close the distance for dagger work
+                elif move.name == "Withdraw":
+                    weight += 1  # Tactical retreat to dodge and reset
+                elif move.name == "NpcAttack":
+                    weight += 3  # Aggressive dagger strikes at close range
+                elif move.name == "Parry":
+                    weight += 2  # Parrying matters in close quarters
+
+            # Apply AI config bonuses
+            if hasattr(self, "ai_config") and self.ai_config:
+                weight += self.ai_config.get_weighted_move_bonus(self, move.name)
+
+            weight = max(1, weight)
+            for _ in range(weight):
+                weighted_moves.append(move)
+
+        if not weighted_moves:
+            return
+
+        # Fatigue management
+        can_attack = any(
+            getattr(m, "category", "") == "Offensive"
+            and m.fatigue_cost <= self.fatigue
+            and m.viable()
+            for m in available_moves
+        )
+        if not can_attack and self.fatigue < self.maxfatigue:
+            can_advance = any(
+                getattr(m, "name", "") == "Advance" for m in available_moves
+            )
+            if not can_advance:
+                self.current_move = moves.NpcRest(self)
+                return
+
+        num_choices = len(weighted_moves) - 1
+        max_attempts = 20
+        attempts = 0
+        choice = 0
+
+        while self.current_move is None and attempts < max_attempts:
+            attempts += 1
+            choice = random.randint(0, num_choices)
+            if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[
+                choice
+            ].viable():
+                self.current_move = weighted_moves[choice]
+
+        # Hard fallback
+        if self.current_move is None:
+            self.current_move = moves.NpcRest(self)
+            return
+
+
+class Devet(Friend):
+    """Camp cook, older, unhurried. Quietly observant. Offers food and healing.
+    Uncle or relation of Mara — exact nature left ambiguous.
+    """
+
+    def __init__(self):
+        description = (
+            "An older man, weathered by years on the road but settled into his own pace. "
+            "He moves without urgency, each gesture economical. His hands are scarred and "
+            "capable. He tends the fire with the attention of someone who has done this "
+            "ten thousand times and expects to do it ten thousand more."
+        )
+        super().__init__(
+            name="Devet",
+            description=description,
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=100,
+            protection=10,
+            speed=4,
+            finesse=5,
+            awareness=30,
+            idle_message=" tends the fire.",
+            alert_message=" straightens from the fire.",
+            discovery_message="an older man tending the campfire.",
+        )
+        self.keywords = ["talk"]
+        self.pronouns = {
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
+        }
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
+    def talk(self, player):
+        """Devet's dialogue is sparse but warm. He observes without commenting."""
+        lines = [
+            "Devet hands Jean a bowl of warm food without asking if he's hungry. It's clear "
+            "this is not a question.",
+            "Devet studies Jean for a long moment. Then he says, 'Jean's come from the city.' "
+            "It's not a question.",
+            "Devet says quietly, 'The west's not kind. But then, nowhere is, if a man's not ready "
+            "for it.'",
+            "Devet tends the fire. When he speaks, his voice is low. 'Jean will want to rest here. "
+            "The crossing can wait until morning.'",
+        ]
+        print(random.choice(lines))
+
+
+class Liss(Friend):
+    """Young, openly curious, observant. Part of Mara's nomad group. At the camp's edge,
+    watching the river and the world beyond.
+    """
+
+    def __init__(self):
+        description = (
+            "A girl about nine years old, dark-haired and open-faced. She has the restless "
+            "energy of someone who hasn't yet learned to hide what she's thinking. She "
+            "watches everything — Jean's gear, his bearing, the way he moves. Her curiosity "
+            "is unconcealed, almost tactile in its intensity."
+        )
+        super().__init__(
+            name="Liss",
+            description=description,
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=60,
+            protection=5,
+            speed=8,
+            finesse=6,
+            awareness=28,
+            idle_message=" sits near the camp's edge, watching the river.",
+            alert_message=" turns to look at Jean.",
+            discovery_message="a young girl at the camp's edge.",
+        )
+        self.keywords = ["talk"]
+        self.pronouns = {
+            "personal": "she",
+            "possessive": "her",
+            "reflexive": "herself",
+            "intensive": "herself",
+        }
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
+    def talk(self, player):
+        """Liss's dialogue is curious and direct. She asks questions without preface."""
+        lines = [
+            "Liss says, 'Where's Jean headed?' She doesn't wait for an answer before asking "
+            "another question. 'What's beyond the Badlands? Does anyone actually know?'",
+            "Liss watches Jean with open curiosity. 'Mara said he was going west. Most people "
+            "don't go west unless they have nowhere else to go.'",
+            "Liss says, 'I've never seen a Golemite up close before. The one with Jean — he's "
+            "different, isn't he?' She doesn't elaborate on what 'different' means.",
+            "Liss looks at Jean directly. 'Jean looks like he's carrying something. Not in his "
+            "pack. In his — ' She makes a vague gesture, 'everything, I guess.'",
+        ]
+        print(random.choice(lines))
