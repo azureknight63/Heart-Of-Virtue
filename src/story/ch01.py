@@ -983,3 +983,92 @@ class Ch01GorranDarkChamber(Event):
             "cyan",
         )
         time.sleep(1)
+        # Record that the warning happened — used by Ch01GorranFirstWord as context.
+        self.player.universe.story["gorran_dark_chamber_seen"] = "1"
+
+
+class Ch01GorranFirstWord(Event):
+    """
+    Gorran's first spoken word.
+
+    Fires when Jean enters the rearranged-stone passage at (7,5) in the
+    Verdette Caverns. Gorran has already signalled 'stay' at (7,6) and
+    cannot physically intercept Jean in time — so he does the one thing
+    he has not done yet.
+
+    Gate conditions:
+      - gorran_first == "1"  (Gorran has been formally introduced)
+      - gorran_language_stage == "0"  (he has not yet spoken)
+
+    On completion: sets gorran_language_stage to "1".
+
+    Attach to tile (7,5) in verdette-caverns.json, before the
+    NPCSpawnerEvent — the Rumblers spawned there vindicate the warning.
+    """
+
+    def __init__(
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="Ch01_Gorran_First_Word",
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, "story", {})
+        if (
+            story.get("gorran_first", "0") == "1"
+            and story.get("gorran_language_stage", "0") == "0"
+        ):
+            self.pass_conditions_to_process()
+
+    def process(self):
+        if self.player.skip_dialog:
+            self.player.universe.story["gorran_language_stage"] = "1"
+            self.tile.remove_event(self.name)
+            return
+
+        time.sleep(0.5)
+        cprint(
+            "The stone here has been moved with intention. Not a collapse — something large "
+            "passed through repeatedly and the passage rearranged itself around that fact. "
+            "Jean moves forward.",
+            "cyan",
+        )
+        time.sleep(2)
+        cprint(
+            "From behind him — from Gorran, across the dark chamber, too far back to intercept —",
+            "cyan",
+        )
+        time.sleep(1.5)
+
+        # The first word. Flat vowel. Consonants too hard. Unmistakably human.
+        cprint('"Stop."', "green")
+
+        time.sleep(2.5)
+        cprint("Jean stops.", "cyan")
+        time.sleep(1.5)
+        cprint(
+            "He stands there for a moment. He'd expected a rumble, a sound, the usual. Not that.",
+            "cyan",
+        )
+        time.sleep(2)
+        cprint(
+            "He turns. Gorran is at the threshold of the passage behind him, several paces back. "
+            "He has not moved into this space. He is looking past Jean, at the corridor ahead.",
+            "cyan",
+        )
+        time.sleep(1.5)
+        cprint(
+            "He doesn't explain. He said the word he had. He waits.",
+            "cyan",
+        )
+        time.sleep(2)
+        await_input()
+
+        self.player.universe.story["gorran_language_stage"] = "1"
+        self.tile.remove_event(self.name)

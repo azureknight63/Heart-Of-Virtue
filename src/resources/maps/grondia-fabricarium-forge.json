@@ -1,0 +1,188 @@
+{
+    "metadata": {
+        "bgm": "mineral_pools"
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "Fabricarium Forge — Workshop Floor",
+        "description": "A broad workshop floor of dark, worn stone, its surface ingrained with mineral dust and the scorch marks of long forge-work. Heavy stone benches occupy both side walls; iron tool racks are fixed at intervals. Two heating channels run beneath floor grates toward the north wall, where the forge bloom hangs above a deep fire pit. The smell is hot metal and something compound — the specific odour of processed mineral that Jean has not encountered anywhere else in the city.",
+        "exits": [
+            "east",
+            "north"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "GronditeWorker",
+                "__module__": "npc",
+                "props": {}
+            },
+            {
+                "__class__": "GronditeWorker",
+                "__module__": "npc",
+                "props": {}
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Allocation Board",
+                    "description": "A stone board fixed to the workshop wall, its face covered in production marks — columns of symbols, quantities, classification glyphs.",
+                    "idle_message": "A stone production board is mounted to the workshop wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a stone production board mounted to the wall!",
+                    "announce": "A stone production board is mounted to the workshop wall.",
+                    "keywords": ["read", "examine", "inspect", "view", "check"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": "[A stone board covered in Golemite production marks — columns of symbols, quantities, classification glyphs. Jean cannot read most of it. In the margin, two words have been scratched in trade tongue by a different hand: 'pool. closed.' Below that, a single symbol Jean does not recognise, circled twice.]"
+                }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Forge Entrance",
+                    "description": "A wide rectangular doorway leads back out to the Fabricarium workshop gallery.",
+                    "idle_message": "The forge entrance leads back to the workshop gallery.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "the doorway leading back to the workshop gallery!",
+                    "announce": "The forge entrance leads back to the workshop gallery.",
+                    "keywords": ["leave", "exit", "go", "outside"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia",
+                    "teleport_tile": [10, 6],
+                    "persist": true
+                }
+            }
+        ]
+    },
+    "(3, 2)": {
+        "id": "tile_3_2",
+        "title": "Fabricarium Forge — Materials Store",
+        "description": "A storage chamber off the main workshop, its walls fitted with deep shelf-cuts holding crates, sacks, and sealed stone bins of processed material. The floor is dusted with mineral powder ground fine. Labels in Golemite script are carved above each section. Two open crates near the door hold surplus stock, their lids propped aside.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "materials crate",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}},
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}},
+                        {"__class__": "MineralPowder", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 40}}
+                    ],
+                    "name": "Materials Crate",
+                    "description": "A large stone-sided crate of standard Fabricarium issue, its label marking it as processed mineral stock.",
+                    "idle_message": "A large materials crate stands open near the shelves.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a large materials crate standing open!",
+                    "announce": "A large materials crate stands open near the shelves.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            },
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "open crate",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "MineralFragment", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Open Crate",
+                    "description": "A smaller crate with its lid propped against the wall. The contents are accessible.",
+                    "idle_message": "A smaller open crate rests against the wall.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a smaller open crate against the wall!",
+                    "announce": "A smaller open crate rests against the wall.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "Fabricarium Forge — Master's Bench",
+        "description": "A raised alcove at the north end of the workshop, separated from the main floor by a low stone step. A long, wide bench of dressed stone occupies most of the space, its surface covered in fine parallel scratches from decades of tool-work. Above it, a wall mount holds empty brackets where larger tools once hung. An iron lockbox is mortared into the base of the bench, its face flush with the stone.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "iron lockbox",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [{"__class_type__": "items:Item"}],
+                    "stock_count": 10,
+                    "inventory": [
+                        {"__class__": "DriedCrystalSap", "__module__": "items", "props": {}},
+                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 25}},
+                        {"__class__": "Restorative", "__module__": "items", "props": {}}
+                    ],
+                    "name": "Iron Lockbox",
+                    "description": "A small iron lockbox mortared into the base of the master's bench. The lock has been forced at some point and no longer holds.",
+                    "idle_message": "An iron lockbox is mortared into the base of the bench.",
+                    "hidden": true,
+                    "hide_factor": 3,
+                    "discovery_message": "an iron lockbox mortared into the base of the bench!",
+                    "announce": "An iron lockbox is mortared into the base of the bench.",
+                    "keywords": ["open", "loot", "check", "examine"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    }
+}

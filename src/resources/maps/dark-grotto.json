@@ -5,7 +5,7 @@
     "(1, 1)": {
         "id": "tile_1_1",
         "title": "EmptyCave",
-        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time you can't\nmeasure. The air tastes of stone dust and old water.\nA single copper coin lies in the dust, face-down.\nThe southeastern passage is a tangle of fallen rock. No way through.",
+        "description": "Thin veins of damp quartz glint then vanish in the\nsurrounding black. A slow drip counts time. There is no other measure here.\nThe air tastes of stone dust and old water.\nA single copper coin lies in the dust, face-down.\nThe southeastern passage is a tangle of fallen rock. No way through.",
         "exits": [
             "south",
             "east"
@@ -317,7 +317,7 @@
     "(4, 2)": {
         "id": "tile_4_2",
         "title": "RockLedgeWest",
-        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as you approach — not alarmed, just waiting.",
+        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as Jean approaches — not alarmed, just waiting.",
         "exits": [
             "east",
             "west",

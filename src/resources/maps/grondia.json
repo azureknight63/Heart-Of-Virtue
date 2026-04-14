@@ -2,7 +2,7 @@
     "(1, 2)": {
         "id": "tile_1_2",
         "title": "Passage",
-        "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use,\n        and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered,\n        and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift as you move.\n        The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
+        "description": "A low, well-worn passage carved through damp stone. Scuffed flagstones and muddy ruts mark long use,\n        and a steady drip rings faintly in the cool air. Pale mineral veins lace the walls where water once lingered,\n        and faint, distant light filters in from farther chambers, throwing long, soft shadows that shift with any movement.\n        The scent is mineral and cold; the corridor feels older than the city above it, patient and quietly kept.",
         "exits": [
             "south"
         ],
@@ -293,6 +293,28 @@
                     "events": [],
                     "tile": null,
                     "player": null
+                }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Archive Door",
+                    "description": "A low archway sealed by a heavy stone door on iron pivot hinges, currently open. The door's face bears an inlaid geometric design — concentric circles interrupted by radial lines.",
+                    "idle_message": "A low stone archway leads into the Conclave Archive.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a stone archway leading into the Conclave Archive!",
+                    "announce": "A low stone archway into the Conclave Archive is here.",
+                    "keywords": ["enter", "archive", "go", "door", "inside"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia-conclave-archive",
+                    "teleport_tile": [2, 2],
+                    "persist": true
                 }
             }
         ]
@@ -1034,6 +1056,28 @@
                     "event_on": null,
                     "event_off": null
                 }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "The Guesthold",
+                    "description": "A broad doorway cut into the arcade's inner wall, framed by carved relief showing a line of figures in various states of rest. A worn stone step descends slightly into the interior, polished bright by use.",
+                    "idle_message": "A broad doorway leads into The Guesthold.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a broad doorway leading into The Guesthold!",
+                    "announce": "The entrance to The Guesthold is cut into the arcade wall here.",
+                    "keywords": ["enter", "go", "guesthold", "inn", "inside"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia-guesthold",
+                    "teleport_tile": [2, 2],
+                    "persist": true
+                }
             }
         ]
     },
@@ -1342,7 +1386,30 @@
         ],
         "items": [],
         "npcs": [],
-        "objects": []
+        "objects": [
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Dwelling Door",
+                    "description": "A narrow stone door set into a recessed frame, its lower edge worn to a concave depression from decades of passage. The door stands ajar, held open by a wedge of stone jammed beneath it.",
+                    "idle_message": "A narrow stone door in the lane wall stands ajar.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a narrow stone door standing ajar in the lane wall!",
+                    "announce": "A narrow dwelling door stands ajar in the lane wall here.",
+                    "keywords": ["enter", "door", "dwelling", "go", "inside"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia-vacated-dwelling",
+                    "teleport_tile": [2, 2],
+                    "persist": true
+                }
+            }
+        ]
     },
     "(10, 6)": {
         "id": "tile_10_6",
@@ -1409,6 +1476,28 @@
                     "events": [],
                     "tile": null,
                     "player": null
+                }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Forge Entrance",
+                    "description": "A wide rectangular doorway in the workshop's outer wall, edged with iron plate set flush to the stone. The floor just inside is darker from mineral staining, and the smell of hot stone and compound drifts outward.",
+                    "idle_message": "A wide workshop doorway leads into the Fabricarium Forge.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a wide doorway leading into the Fabricarium Forge!",
+                    "announce": "The entrance to the Fabricarium Forge is here.",
+                    "keywords": ["enter", "forge", "workshop", "go", "inside"],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "grondia-fabricarium-forge",
+                    "teleport_tile": [2, 2],
+                    "persist": true
                 }
             }
         ]

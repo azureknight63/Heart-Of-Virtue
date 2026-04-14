@@ -886,7 +886,9 @@ class AfterKingSlimeReturn(Event):
             "green",
         )
         time.sleep(1)
-        print_slow("He says it simply. As an observation, not a compliment.", delay=0.03)
+        print_slow(
+            "He says it simply. As an observation, not a compliment.", delay=0.03
+        )
         time.sleep(1.5)
         dialogue(
             "Votha Krr",
