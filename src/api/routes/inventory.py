@@ -181,7 +181,7 @@ def take_item():
         return (
             jsonify({
                 "success": True,
-                "message": f"Item taken",
+                "message": "Item taken",
                 "inventory": inventory_data,
             }),
             200,
@@ -243,7 +243,7 @@ def drop_item():
         return (
             jsonify({
                 "success": True,
-                "message": f"Item dropped",
+                "message": "Item dropped",
                 "inventory": inventory_data,
             }),
             200,
@@ -550,7 +550,7 @@ def unequip_item():
         return (
             jsonify({
                 "success": True,
-                "message": f"Unequipped item",
+                "message": "Unequipped item",
                 "equipment": equipment_data,
             }),
             200,
@@ -616,6 +616,9 @@ def compare_items():
 def get_stats():
     """Get player stats with equipment bonuses.
 
+    Delegates to game_service.get_player_stats to keep attribute access
+    centralised and avoid directly reaching into engine internals.
+
     Returns:
         JSON with all player statistics
     """
@@ -624,27 +627,8 @@ def get_stats():
         return error, status
 
     try:
-        stats = {
-            "health": getattr(player, "health", 100),
-            "max_health": getattr(player, "max_health", 100),
-            "stamina": getattr(player, "stamina", 100),
-            "max_stamina": getattr(player, "max_stamina", 100),
-            "attack": getattr(player, "attack", 10),
-            "defense": getattr(player, "defense", 5),
-            "magic_attack": getattr(player, "magic_attack", 8),
-            "magic_defense": getattr(player, "magic_defense", 5),
-            "speed": getattr(player, "speed", 10),
-            "accuracy": getattr(player, "accuracy", 85),
-            "evasion": getattr(player, "evasion", 10),
-            "crit_chance": getattr(player, "crit_chance", 5),
-            "level": getattr(player, "level", 1),
-            "experience": getattr(player, "experience", 0),
-        }
-
-        return (
-            jsonify({"success": True, "stats": stats}),
-            200,
-        )
+        stats = current_app.game_service.get_player_stats(player)
+        return jsonify({"success": True, "stats": stats}), 200
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

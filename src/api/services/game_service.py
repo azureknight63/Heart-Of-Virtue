@@ -597,22 +597,30 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
-            combat_started = True
-
-            # Get initial combat state from the adapter
-            if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
-                combat_state = adapter_state.get("battle_state")
+            # Do not initialize the new combat while the player has unspent level-up
+            # attribute points — same race-condition guard as in process_event_input.
+            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
+            if pending_points > 0:
+                # Stash enemies so get_combat_status can auto-resume when points hit 0
+                player._combat_deferred_enemies = combat_enemies
+                combat_started = False
             else:
-                # Fallback to direct serialization if adapter not available
-                combat_state = CombatStateSerializer.serialize_combat_state(
-                    player,
-                    combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
-                )
+                # Initialize combat
+                self._initialize_combat(player, combat_enemies, session_data=session_data)
+                combat_started = True
+
+                # Get initial combat state from the adapter
+                if hasattr(player, "_combat_adapter"):
+                    adapter_state = player._combat_adapter.get_combat_state()
+                    combat_state = adapter_state.get("battle_state")
+                else:
+                    # Fallback to direct serialization if adapter not available
+                    combat_state = CombatStateSerializer.serialize_combat_state(
+                        player,
+                        combat_enemies,
+                        current_turn_index=getattr(player, "combat_turn_index", 0),
+                        round_number=getattr(player, "combat_round", 1),
+                    )
 
         return {
             "success": True,
@@ -950,25 +958,43 @@ class GameService:
         combat_enemies = check_for_combat(player)
 
         if combat_enemies and not result.get("needs_input", False):
-            # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
-            result["combat_started"] = True
-
-            # Get initial combat state
-            if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
-                # If we resumed a move, the adapter state already contains the full battle_state
-                result["combat_state"] = (
-                    adapter_state.get("battle_state") or adapter_state
-                )
+            # Do NOT initialize the new combat while the player still has unspent
+            # level-up attribute points.  _initialize_combat emits "combat:started"
+            # which races with the level-up dialog and leaves the frontend in a
+            # corrupt state — subsequent allocate calls get 400s ("Not enough points")
+            # because the points counter is correct but the frontend has already
+            # moved to the combat screen.
+            #
+            # Since the aggro NPCs remain in the room, check_for_combat will find
+            # them again on the very next player action (move / event input) and
+            # combat will initialize cleanly after level-up is resolved.
+            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
+            if pending_points > 0:
+                result["combat_started"] = False
+                result["combat_deferred"] = True
+                result["combat_deferred_reason"] = "level_up_pending"
+                # Stash enemies so get_combat_status can auto-resume when points hit 0
+                player._combat_deferred_enemies = combat_enemies
             else:
-                # Fallback to direct serialization (CombatStateSerializer already imported at module level)
-                result["combat_state"] = CombatStateSerializer.serialize_combat_state(
-                    player,
-                    combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
-                )
+                # Initialize combat
+                self._initialize_combat(player, combat_enemies, session_data=session_data)
+                result["combat_started"] = True
+
+                # Get initial combat state
+                if hasattr(player, "_combat_adapter"):
+                    adapter_state = player._combat_adapter.get_combat_state()
+                    # If we resumed a move, the adapter state already contains the full battle_state
+                    result["combat_state"] = (
+                        adapter_state.get("battle_state") or adapter_state
+                    )
+                else:
+                    # Fallback to direct serialization (CombatStateSerializer already imported at module level)
+                    result["combat_state"] = CombatStateSerializer.serialize_combat_state(
+                        player,
+                        combat_enemies,
+                        current_turn_index=getattr(player, "combat_turn_index", 0),
+                        round_number=getattr(player, "combat_round", 1),
+                    )
         elif combat_enemies:
             # Combat is present but we are paused for narrative
             result["combat_started"] = True
@@ -2165,7 +2191,18 @@ class GameService:
         session_data: Dict = None,
     ) -> Dict[str, Any]:
         """Get current combat status."""
-        if not hasattr(player, "_combat_adapter"):
+        # If a previous combat initialization was deferred (level-up pending) and the
+        # player has now spent all their attribute points, auto-resume the deferred
+        # combat. The frontend calls fetchCombatStatus() after every allocation, so the
+        # last point spent will trigger this path and start combat seamlessly.
+        deferred_enemies = getattr(player, "_combat_deferred_enemies", None)
+        pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
+        if deferred_enemies and pending_points == 0:
+            player._combat_deferred_enemies = None
+            self._initialize_combat(
+                player, deferred_enemies, session_id=session_id, session_data=session_data
+            )
+
             # If player is in combat, try to re-initialize the adapter
             if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
                 from src.api.combat_adapter import ApiCombatAdapter

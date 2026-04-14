@@ -273,7 +273,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                                     ally.name,
                                     ally.combat_position.x,
                                     ally.combat_position.y,
-                                    int(ally.combat_proximity[enemy]),
+                                    int(ally.combat_proximity.get(enemy, 0)),
                                     ally_dir,
                                 ),
                                 "cyan",
@@ -282,7 +282,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                             cprint(
                                 "  → {} is {} ft away".format(
                                     ally.name,
-                                    int(ally.combat_proximity[enemy]),
+                                    int(ally.combat_proximity.get(enemy, 0)),
                                 ),
                                 "cyan",
                             )
