@@ -4342,3 +4342,168 @@ class GameService:
                 "dialogues": available,
             },
         }
+
+    def _find_chat_npc(self, player: "player_module.Player", npc_key: str):
+        """Find an NPC on the current tile matching the given npc_key.
+
+        Tries multiple matching strategies:
+        1. Exact _chat_npc_key attribute match
+        2. Class name prefix match (e.g. "NomadCamper" from "NomadCamper_0")
+        3. Name attribute match
+
+        Args:
+            player: The player instance
+            npc_key: NPC identifier to search for
+
+        Returns:
+            NPC object if found, None otherwise
+        """
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        if not current_tile:
+            return None
+
+        for npc in getattr(current_tile, "npcs_here", []):
+            # Try _chat_npc_key match first
+            if getattr(npc, "_chat_npc_key", None) == npc_key:
+                return npc
+
+            # Try class name prefix match (e.g. "NomadCamper" from "NomadCamper_0")
+            class_name = type(npc).__name__
+            if npc_key.startswith(class_name):
+                return npc
+
+            # Try name attribute match
+            if getattr(npc, "name", "") == npc_key:
+                return npc
+
+        return None
+
+    def npc_chat_open(self, player: "player_module.Player", npc_id: str) -> Dict[str, Any]:
+        """Start an LLM conversation with a human NPC.
+
+        Args:
+            player: The player instance
+            npc_id: NPC identifier (name or class name)
+
+        Returns:
+            Dict with success status and conversation state
+        """
+        # Find NPC in current tile
+        current_tile = player.universe.get_tile(player.location_x, player.location_y)
+        if not current_tile:
+            return {"success": False, "error": "Not on a valid tile"}
+
+        npc = None
+        for npc_candidate in getattr(current_tile, "npcs_here", []):
+            if (type(npc_candidate).__name__ == npc_id or
+                getattr(npc_candidate, "name", "") == npc_id):
+                npc = npc_candidate
+                break
+
+        if not npc:
+            return {"success": False, "error": f"NPC '{npc_id}' not found"}
+
+        # Check if NPC supports chat
+        if not hasattr(npc, "chat_open"):
+            return {"success": False, "error": "NPC does not support chat"}
+
+        # Store active chat NPC ID
+        player.__dict__["_active_chat_npc_id"] = npc_id
+
+        # Call NPC's chat_open method
+        try:
+            result = npc.chat_open(player)
+            return result
+        except Exception as e:
+            return {"success": False, "error": f"Failed to open chat: {str(e)}"}
+
+    def npc_chat_respond(self, player: "player_module.Player", npc_key: str,
+                        jean_text: str, jean_tone: str = "direct") -> Dict[str, Any]:
+        """Process Jean's dialogue choice and get NPC response.
+
+        Args:
+            player: The player instance
+            npc_key: NPC identifier for active chat
+            jean_text: Jean's dialogue text
+            jean_tone: Tone of Jean's response ("direct", "guarded", "open", etc.)
+
+        Returns:
+            Dict with success status and NPC response
+        """
+        # Find NPC on current tile
+        npc = self._find_chat_npc(player, npc_key)
+        if not npc:
+            return {"success": False, "error": "Active chat NPC not found"}
+
+        # Check if NPC supports chat_respond
+        if not hasattr(npc, "chat_respond"):
+            return {"success": False, "error": "NPC does not support respond"}
+
+        # Call NPC's chat_respond method
+        try:
+            result = npc.chat_respond(player, jean_text, jean_tone)
+            return result
+        except Exception as e:
+            return {"success": False, "error": f"Failed to respond: {str(e)}"}
+
+    def npc_chat_end(self, player: "player_module.Player", npc_key: str) -> Dict[str, Any]:
+        """End an NPC conversation and flush state.
+
+        Args:
+            player: The player instance
+            npc_key: NPC identifier for active chat
+
+        Returns:
+            Dict with success status and conversation summary
+        """
+        # Clear active chat NPC
+        player.__dict__.pop("_active_chat_npc_id", None)
+
+        # Get conversation count from history if available
+        count = 0
+        if hasattr(player, "npc_chat_histories") and npc_key in player.npc_chat_histories:
+            count = player.npc_chat_histories[npc_key].get("conversation_count", 0)
+
+        return {
+            "success": True,
+            "data": {
+                "conversation_count": count
+            }
+        }
+
+    def npc_chat_history(self, player: "player_module.Player", npc_key: str) -> Dict[str, Any]:
+        """Get stored conversation history for an NPC.
+
+        Args:
+            player: The player instance
+            npc_key: NPC identifier to retrieve history for
+
+        Returns:
+            Dict with success status and conversation exchanges
+        """
+        # Check if player has chat histories
+        if not hasattr(player, "npc_chat_histories"):
+            return {"success": False, "error": "No chat history available"}
+
+        hist = player.npc_chat_histories.get(npc_key)
+        if not hist:
+            return {"success": False, "error": f"No history for '{npc_key}'"}
+
+        # Get display name
+        npc_name = npc_key.split("_")[0] if "_" in npc_key else npc_key
+        personality = hist.get("personality")
+        if personality and personality.get("given_name"):
+            npc_name = personality["given_name"]
+
+        return {
+            "success": True,
+            "data": {
+                "npc_key": npc_key,
+                "npc_name": npc_name,
+                "exchanges": hist.get("exchanges", []),
+                "conversation_count": hist.get("conversation_count", 0),
+                "last_talked_tick": hist.get("last_talked_tick", 0),
+                "loquacity_current": hist.get("loquacity_current", 0),
+                "loquacity_max": hist.get("loquacity_max", 0),
+            }
+        }
