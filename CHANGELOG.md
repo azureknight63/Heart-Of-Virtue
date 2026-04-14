@@ -25,6 +25,10 @@ All notable changes to Heart of Virtue will be documented in this file.
 - Audio context `playSting` function for one-shot sting effects (fanfare, etc.) with automatic BGM restoration.
 - SFX audio object reference tracking to prevent dangling audio elements.
 - Regression tests for inventory error handling (400 vs 500 responses).
+- ItemDetailDialog `onBack` prop for navigation back to inventory list after actions.
+
+### Security
+- **axios 1.13.5 → 1.15.0**: Updated axios to patch CRITICAL security vulnerability in HTTP client.
 
 ## [0.0.4.0] - 2026-03-28
 
