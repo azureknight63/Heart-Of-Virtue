@@ -2,7 +2,30 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.5.1] - 2026-04-14
+
+### Fixed
+- **Combat — level-up dialog race condition**: Combat initialization is now deferred when the player has unspent attribute points. Previously, the next combat in a multi-battle chain would start immediately, dismissing the level-up dialog before the player could make selections and corrupting game state.
+- **Combat — deferred combat auto-resume**: When a combat initialization is deferred due to a level-up, the waiting enemies are stashed on the player. Once all attribute points are spent, the next `GET /combat/status` poll (fired automatically by the frontend after each allocation) detects the stash and starts combat seamlessly — no manual re-trigger required.
+- **Combat — KeyError in Check move with chained battles**: `Check`'s coordinate display no longer raises `KeyError` when an ally's proximity data hasn't yet been synchronized with new enemies from a chained battle. Safe `.get(enemy, 0)` fallback returns 0 ft rather than crashing.
+- **Inventory — stats endpoint regression**: `GET /inventory/stats` was rewritten with bare `getattr` fallbacks for non-existent attributes (`health`, `stamina`, `magic_attack`), causing the stats panel to display all-default values. Reverted to `game_service.get_player_stats()` which reads correct attribute names (`hp`, `maxhp`, `strength`, `finesse`, etc.) and applies equipment bonuses.
+- **Inventory — item inspection opens in dialog overlay**: Inspecting an item from the Inventory panel now opens `ItemDetailDialog` inside the `BaseDialog` overlay rather than redirecting to the Left Panel, keeping proper layering and interactivity.
+- **Ch01 — chest battle event premature trigger**: `Ch01ChestRumblerBattle` now only fires after the chest has been opened/looted. Story state is persisted so the event cannot re-trigger across sessions.
+- **Dark Grotto intro event**: Added `Ch01DarkGrottoIntro` event — a two-stage narrative sequence that plays out for new games starting in the Dark Grotto (mirrors the CLI intro scene).
+- **Session — player stats from config**: `SessionManager` now applies player stats from the config file after player creation, ensuring stat overrides defined in `config.json` take effect on session start.
+- **Moves — StrategicInsight and MasterTactician converted to `PassiveMove`**: Both moves now extend the correct `PassiveMove` base class (they cannot be selected during combat). Previous implementation used the selectable `Move` base with `passive=True` flag, which was ignored by the adapter.
+
+### Added
+- **LLM client — structured output error handling**: `generate_structured` now handles non-dict provider responses gracefully, logging a warning and returning an empty dict instead of raising `TypeError`.
+- Regression test suite for OpenRouter structured generation edge cases (`tests/test_llm_openrouter.py`).
+- Local development setup guide (`docs/LOCAL_DEV_SETUP.md`).
+- Bug reproduction guide for the Rumbler loot bug (`docs/RUMBLER_LOOT_BUG_REPRODUCTION.md`).
+
+### Security
+- **axios 1.13.5 → 1.15.0**: Patched CRITICAL security vulnerability (already shipped in 0.0.4.1; re-documented here for completeness since branch was rebased).
+
 ## [0.0.5.0] - 2026-04-13
+
 
 ### Added
 - **Eastern Descent map**: New 35-tile environment for Chapter 3 spanning 5 zones (Gate Approach, Upper Boulder Field, Deep Labyrinth, Lower Slope, Nomad Camp) with descriptive prose and environmental storytelling
