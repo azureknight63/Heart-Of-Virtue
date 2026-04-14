@@ -43,6 +43,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onRefetch={mockOnRefetch}
         onItemRemoved={mockOnItemRemoved}
         onItemUpdated={mockOnItemUpdated}
@@ -63,6 +64,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemUpdated={mockOnItemUpdated}
         onRefetch={mockOnRefetch}
       />
@@ -102,6 +104,7 @@ describe('ItemDetailDialog', () => {
         item={consumableItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemRemoved={mockOnItemRemoved}
         onRefetch={mockOnRefetch}
       />
@@ -127,6 +130,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemRemoved={mockOnItemRemoved}
       />
     );
@@ -155,6 +159,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -176,7 +181,7 @@ describe('ItemDetailDialog', () => {
       name: 'Health Potion',
     };
 
-    render(<ItemDetailDialog item={consumableItem} player={mockPlayer} />);
+    render(<ItemDetailDialog item={consumableItem} player={mockPlayer} onBack={mockOnBack} />);
 
     const useBtn = screen.getByText(/Use/i);
     fireEvent.mouseEnter(useBtn);
@@ -191,6 +196,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -210,6 +216,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -231,6 +238,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -249,6 +257,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -267,6 +276,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -284,6 +294,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -304,6 +315,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -321,6 +333,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -338,6 +351,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
         combatMode={true}
       />
     );
@@ -355,6 +369,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
       />
     );
 
@@ -395,6 +410,7 @@ describe('ItemDetailDialog', () => {
         item={complexItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
       />
     );
 
@@ -413,6 +429,7 @@ describe('ItemDetailDialog', () => {
         item={equippedItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemUpdated={mockOnItemUpdated}
       />
     );
@@ -432,6 +449,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
       />
     );
 
