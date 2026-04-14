@@ -3,7 +3,7 @@ Chapter 03 events
 """
 
 from src.events import Event
-from src.functions import print_slow, await_input
+from src.functions import print_slow
 from neotermcolor import colored
 import time
 
@@ -81,8 +81,6 @@ class EasternRoadTurnbackEvent(Event):
             time.sleep(0.5)
 
         # Move player west to (4, 2)
-        from src.universe import Universe
-
         if self.tile and self.player:
             universe = getattr(self.player, "universe", None)
             if universe:
