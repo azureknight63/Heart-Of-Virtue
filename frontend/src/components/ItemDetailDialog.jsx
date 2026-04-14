@@ -480,7 +480,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1100, // Higher than drop confirm
+          zIndex: 1700, // Higher than BaseDialog (1500) and drop confirm (1600)
         }}>
           <div style={{
             backgroundColor: 'rgba(30, 20, 5, 0.98)',
@@ -563,7 +563,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1000,
+          zIndex: 1600, // Higher than BaseDialog (1500)
         }}>
           <div style={{
             backgroundColor: 'rgba(50, 20, 0, 0.95)',

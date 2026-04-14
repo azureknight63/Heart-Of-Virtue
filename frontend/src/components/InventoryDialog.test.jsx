@@ -4,10 +4,10 @@ import InventoryDialog from './InventoryDialog';
 
 // Mock ItemDetailDialog
 vi.mock('./ItemDetailDialog', () => ({
-  default: ({ item, onClose }) => (
+  default: ({ item, onBack }) => (
     <div data-testid="item-detail">
       <h2>{item.name}</h2>
-      <button onClick={onClose}>Back</button>
+      <button onClick={onBack}>Back</button>
     </div>
   )
 }));
