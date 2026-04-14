@@ -2,6 +2,19 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.5.0] - 2026-04-13
+
+### Added
+- **Eastern Descent map**: New 35-tile environment for Chapter 3 spanning 5 zones (Gate Approach, Upper Boulder Field, Deep Labyrinth, Lower Slope, Nomad Camp) with descriptive prose and environmental storytelling
+- **TalusHound enemy class**: Pack hunter with pack-aware tactical AI — flanking and coordinated strikes in groups, hit-and-run tactics when solo
+- **ScarpAdder enemy class**: Ambush serpent with venom attacks and earth affinity, solitary and patient in strategy
+- **Mara full combatant upgrade**: Scavenger companion with weapon-switching tactics (bow 8–25 range for precision, dagger 0–3 range for close quarters), tactical positioning, and observant dialogue
+- **Devet Friend NPC**: Camp cook, older and unhurried, with gentle dialogue and presence at the nomad camp
+- **Liss Friend NPC**: Young, curious, observant (age 9), present at camp's edge with inquisitive character-driven dialogue
+- **Chapter 3 story events**: GorranGestureEvent (Gorran touches the sealed gate on exit from Grondia), EasternRoadTurnbackEvent (Jean reaches eastern road stub, pulled by desire to escape, then turned back by Gorran's presence)
+- **New consumable items**: IronRation (HP +30, travel provisions), Bitterroot (HP +60, mountain herb), MerchantJournalFragment (readable lore item with creature observations and references to Mara)
+- **Nomad camp resident NPCs**: NomadCamper, NomadScout, NomadTrader — background population with gesture-based interaction
+
 ## [0.0.4.1] - 2026-04-03
 
 ### Fixed
@@ -29,6 +42,7 @@ All notable changes to Heart of Virtue will be documented in this file.
 
 ### Security
 - **axios 1.13.5 → 1.15.0**: Updated axios to patch CRITICAL security vulnerability in HTTP client.
+
 
 ## [0.0.4.0] - 2026-03-28
 

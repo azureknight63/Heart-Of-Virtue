@@ -3272,7 +3272,9 @@ class MineralPowder(Commodity):
                 f"{self.count} packets of fine grey-green mineral dust, "
                 "each twisted in woven fiber. A material for careful craft."
             )
-        self.name = "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
+        self.name = (
+            "Mineral Powder" if self.count == 1 else f"Mineral Powder x{self.count}"
+        )
 
 
 class DriedCrystalSap(Consumable):
@@ -3316,6 +3318,7 @@ class DriedCrystalSap(Consumable):
 
     def use(self, player: "Player") -> None:  # type: ignore[override]
         import time as _time
+
         heal = min(self.power, player.maxhp - player.hp)
         if heal <= 0:
             print("Jean is already in good health. He pockets the sap.")
@@ -3364,3 +3367,200 @@ class FabricariumRejectionShard(Special):
             "The grooves are close — very close. Whatever tolerance the Grondite craftspeople "
             "work to, this fell just outside it."
         )
+
+
+class IronRation(Consumable):
+    """Travel rations: hardtack, preserved meat, dried fruit. Sustenance for the road.
+    Restores minimal HP and removes fatigue status if implemented."""
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Iron Ration",
+            description=(
+                "A compact bundle of preserved travel rations: hardened bread, dried meat, "
+                "and dried fruit bound in cloth. Dry, dense, and built to survive the road. "
+                "Not appetizing, but effective."
+            ),
+            value=15,
+            weight=0.5,
+            maintype="Consumable",
+            subtype="Food",
+            count=count,
+            merchandise=merchandise,
+            discovery_message="travel rations!",
+        )
+        self.power = 30  # Modest HP restore
+        self.interactions = ["use", "eat", "consume", "drop"]
+        self.announce = "Jean notices a bundle of travel rations wrapped in cloth."
+
+    def stack_grammar(self) -> None:
+        if self.count > 1:
+            self.description = (
+                "Bundles of preserved travel rations: hardened bread, dried meat, "
+                "and dried fruit. Dense and built to survive the road.\n"
+                "There appear to be {} portions here.\n".format(self.count)
+            )
+            self.announce = "There are bundles of travel rations here."
+        else:
+            self.description = (
+                "A compact bundle of preserved travel rations: hardened bread, dried meat, "
+                "and dried fruit bound in cloth. Dry, dense, and built to survive the road. "
+                "Not appetizing, but effective."
+            )
+            self.announce = "Jean notices a bundle of travel rations wrapped in cloth."
+
+    def use(self, player: "Player") -> None:
+        if getattr(self, "merchandise", False):
+            cprint(
+                "{} must purchase {} before using or equipping it.".format(
+                    player.name, self.name
+                ),
+                "red",
+            )
+            return
+        if player.hp < player.maxhp:
+            print(
+                "Jean tears into the rations. The hardtack is stale, the meat tough, "
+                "but he chews through them methodically. The familiar taste settles "
+                "something in him.\n"
+            )
+            amount: int = int((self.power * random.uniform(0.9, 1.1)))
+            missing_hp: int = player.maxhp - player.hp
+            if amount > missing_hp:
+                amount = missing_hp
+            player.hp += amount
+            cprint("Jean recovered {} HP!".format(amount), "green")
+            self.count -= 1
+            self.stack_grammar()
+            if self.count <= 0:
+                player.inventory.remove(self)
+        else:
+            print("Jean is already in good health. He stows the rations for later.")
+
+    def eat(self, player: "Player") -> None:
+        self.use(player)
+
+    def consume(self, player: "Player") -> None:
+        self.use(player)
+
+
+class Bitterroot(Consumable):
+    """A mountain herb with restorative properties. Bitter to taste, potent in effect.
+    More effective than rations; rarer."""
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Bitterroot",
+            description=(
+                "A twisted, fibrous root the size of a thumb, dried and brittle. "
+                "When held near the nose, it carries a sharp, medicinal scent — "
+                "bitter, almost acrid, but unmistakably alive with properties. "
+                "The mountain dwellers know this plant."
+            ),
+            value=40,
+            weight=0.1,
+            maintype="Consumable",
+            subtype="Herb",
+            count=count,
+            merchandise=merchandise,
+            discovery_message="a mountain herb!",
+        )
+        self.power = 60  # Stronger restore than rations
+        self.interactions = ["use", "consume", "eat", "chew", "drop"]
+        self.announce = "A dried root lies here, sharp-smelling even from a distance."
+
+    def stack_grammar(self) -> None:
+        if self.count > 1:
+            self.description = (
+                "Twisted, fibrous roots the size of a thumb, dried and brittle. "
+                "Each carries a sharp, medicinal scent — bitter, almost acrid.\n"
+                "There appear to be {} roots here.\n".format(self.count)
+            )
+            self.announce = "Several dried roots lie here."
+        else:
+            self.description = (
+                "A twisted, fibrous root the size of a thumb, dried and brittle. "
+                "When held near the nose, it carries a sharp, medicinal scent — "
+                "bitter, almost acrid, but unmistakably alive with properties. "
+                "The mountain dwellers know this plant."
+            )
+            self.announce = (
+                "A dried root lies here, sharp-smelling even from a distance."
+            )
+
+    def use(self, player: "Player") -> None:
+        if getattr(self, "merchandise", False):
+            cprint(
+                "{} must purchase {} before using it.".format(player.name, self.name),
+                "red",
+            )
+            return
+        if player.hp < player.maxhp:
+            print(
+                "Jean places the bitterroot on his tongue. The taste is immediate — "
+                "sharp, almost painful, cutting through every sense. For a moment he gags. "
+                "Then warmth spreads from his chest outward, and the ache in his muscles "
+                "begins to fade.\n"
+            )
+            amount: int = int((self.power * random.uniform(0.85, 1.15)))
+            missing_hp: int = player.maxhp - player.hp
+            if amount > missing_hp:
+                amount = missing_hp
+            player.hp += amount
+            cprint("Jean recovered {} HP!".format(amount), "green")
+            self.count -= 1
+            self.stack_grammar()
+            if self.count <= 0:
+                player.inventory.remove(self)
+        else:
+            print("Jean is already in good health. He pockets the root for later.")
+
+    def eat(self, player: "Player") -> None:
+        self.use(player)
+
+    def chew(self, player: "Player") -> None:
+        self.use(player)
+
+    def consume(self, player: "Player") -> None:
+        self.use(player)
+
+
+class MerchantJournalFragment(Book):
+    """A fragment of a merchant's journal found at the Far Reach on the eastern slope.
+    Readable lore item revealing context about the eastern road and creature behavior.
+    """
+
+    def __init__(self) -> None:
+        journal_text = (
+            "— reached the eastern slope without incident. The gate Golemites do not turn "
+            "away anyone carrying legitimate cargo, but they ask questions I am not yet "
+            "comfortable answering. I have decided to camp here tonight rather than seek "
+            "the gate tomorrow. The view is clear enough to watch the pass for movement.\n\n"
+            "The creatures on this slope are more organized than I expected. The serpents "
+            "in particular — I watched one this afternoon from this vantage point. It was "
+            "not hunting. It was waiting. There is a difference. I will note the observation "
+            "and move on in the morning.\n\n"
+            "If you are reading this and I am not present: the gate is three hours north. "
+            "The river is two hours south. The people at the river camp are decent. "
+            "Tell Mara I said so."
+        )
+
+        super().__init__(
+            name="Merchant's Journal Fragment",
+            description=(
+                "Pages torn from a leather-bound journal, the edges weathered and "
+                "discoloured by years of exposure. The writing is neat, pragmatic, "
+                "the hand of someone used to recording observations quickly and without "
+                "flourish. The ink has faded to brown, but remains legible. The last entry "
+                "trails off — the final line is there, completed, but the author never "
+                "returned to finish the thought."
+            ),
+            value=0,
+            weight=0.2,
+            text=journal_text,
+            chars_per_page=600,
+            merchandise=False,
+            discovery_message="a weathered journal fragment!",
+        )
+        self.interactions = ["read", "examine", "drop"]
+        self.announce = "Pages from a worn journal lie here."

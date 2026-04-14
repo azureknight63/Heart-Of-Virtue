@@ -1428,7 +1428,8 @@ class GameService:
         # Strip internal LLM diagnostic lines that must never reach the UI.
         pre_filter_output = clean_output
         filtered_lines = [
-            line for line in clean_output.splitlines()
+            line
+            for line in clean_output.splitlines()
             if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         clean_output = "\n".join(filtered_lines).strip()

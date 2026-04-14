@@ -1,0 +1,897 @@
+{
+    "metadata": {
+        "bgm": "TBD"
+    },
+    "(0, 0)": {
+        "id": "tile_0_0",
+        "title": "GrondiaEasternGate",
+        "description": "The mountain air hits without warning — cold, thin, carrying the smell of raw stone and something older than either. Behind Jean, the Eastern Gate of Grondia has drawn itself shut: a slow grinding of counterweights that finishes with a sound like a word being swallowed. The rock face here is dressed stone giving way to undressed rock within a few paces. A worn path descends south along the bluff's edge.",
+        "exits": [
+            "south",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "GorranGestureEvent",
+                "__module__": "story.ch03",
+                "props": {
+                    "name": "Gorran_Gesture",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 0)": {
+        "id": "tile_1_0",
+        "title": "HighLedge",
+        "description": "A narrow ledge of pale grey rock juts east from the gate bluff, swept clean by the wind that funnels up the mountain's eastern face. The sky is enormous here — a shock after weeks of stone ceilings. Far below and to the south, the land is visible: a dark river threading through pale ground, and beyond it, nothing defined yet.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "RockRumbler",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(2, 0)": {
+        "id": "tile_2_0",
+        "title": "Windbreak",
+        "description": "Two boulders the size of cart horses lean against each other, forming a rough shelter where the constant wind off the peak cannot follow. The ground between them is scoured clean. Someone — something — has slept here: a dark stain on the lee-side rock that might be old fire, might be older.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 0)": {
+        "id": "tile_3_0",
+        "title": "WaymarkerStone",
+        "description": "A boulder taller than Jean stands alone at a widening in the path, as though placed rather than fallen. Its south face has been worked — not carved with skill, but with patience. Marks run in a vertical column down the stone: angular, deliberate.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "WallInscription",
+                "__module__": "objects",
+                "props": {
+                    "name": "Carved Stone Marker",
+                    "description": "The marks are Golemite script — older than the current Ecumerium district by at least two generations, if Jean's rough reading is right. It names this point Veth Orak — 'the eastern watch.' Below the name, a tally: forty-three vertical strokes in groups of five, then a single horizontal slash. Forty-four rotations of the watch, then nothing. At the bottom, a single glyph Jean doesn't recognize — it looks like the Golemite symbol for door, but inverted.",
+                    "idle_message": "Marks have been cut into the stone's south face.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "Carved marks on the stone's face!",
+                    "announce": "Marks have been cut into the stone's south face.",
+                    "keywords": [
+                        "read",
+                        "examine",
+                        "look"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "text": ""
+                }
+            }
+        ]
+    },
+    "(4, 0)": {
+        "id": "tile_4_0",
+        "title": "CrowsPerch",
+        "description": "The path narrows to a ledge barely wide enough for two abreast, the drop on the south side steeper here than anywhere above. A cluster of large black birds occupy the rock above, watching with no particular urgency. Their droppings have whitened the stone below their roost. The smell is sharp.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 0)": {
+        "id": "tile_5_0",
+        "title": "Precipice",
+        "description": "The ledge ends in open air. There is no path east — the mountain face drops away in a sheer crack, the bottom invisible. But standing here and looking south and southeast, the land below is laid out without obstruction: the boulder field filling the slope, the dark thread of the river, and beyond, so far it might be cloud, the pale open expanse of the Resolute Plains.",
+        "exits": [
+            "west",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(0, 1)": {
+        "id": "tile_0_1",
+        "title": "FirstSwitchback",
+        "description": "The main path bends here, forced south by a shelf of rock that angles across the slope. The ground is loose: flat stones stacked by frost and time, shifting underfoot. The boulder field begins in earnest to the east — shapes too large and too numerous to count, crowded together with narrow dark passages between them.",
+        "exits": [
+            "north",
+            "south",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 1)": {
+        "id": "tile_1_1",
+        "title": "BoulderGate",
+        "description": "Two boulders flank the only clear passage east — not a gate anyone built, but one the mountain made. The rock faces on either side are close enough that pack and shoulders brush both at once. Beyond, the maze opens into irregular chambers of stone.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 1)": {
+        "id": "tile_2_1",
+        "title": "ScreeShelf",
+        "description": "A wide shelf of loose flat stones tilts gently southward — the accumulated wreckage of a larger boulder that shattered at some point, its pieces spreading. The footing here is treacherous: each step shifts what's below. The scree is scored with claw marks wider than Jean's palm.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "RockRumbler",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(3, 1)": {
+        "id": "tile_3_1",
+        "title": "HoundsWarren",
+        "description": "A cluster of medium boulders has collapsed inward, forming a rough hollow at ground level — low-ceilinged, littered with old bone fragments and tufts of coarse grey fur snagged on the rock edges. The entrance faces west. The smell is animal.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            },
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(4, 1)": {
+        "id": "tile_4_1",
+        "title": "TiltedSlab",
+        "description": "A single enormous slab of grey stone leans against its neighbors at a steep angle, creating a sheltered wedge of shadow underneath. The space beneath is just large enough to crawl into. The rock face of the slab is streaked with pale mineral deposits in roughly vertical lines.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "crevice",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 20
+                            }
+                        },
+                        {
+                            "__class__": "IronRation",
+                            "__module__": "items",
+                            "props": {
+                                "count": 1
+                            }
+                        }
+                    ],
+                    "name": "Rocky Crevice",
+                    "description": "A dark space beneath the tilted slab.",
+                    "idle_message": "The shadow under the tilted slab is deep.",
+                    "hidden": true,
+                    "hide_factor": 2,
+                    "discovery_message": "Wedged into the darkest corner of the space beneath the slab, wrapped in oilskin that has seen better years: a small bundle.",
+                    "announce": "The shadow under the tilted slab is deep.",
+                    "keywords": [
+                        "search",
+                        "look under",
+                        "crawl",
+                        "check"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(5, 1)": {
+        "id": "tile_5_1",
+        "title": "LookoutCrack",
+        "description": "A vertical crack splits the rock face here, wide enough to stand in sideways. Inside, the stone amplifies the wind into a low, sustained note. From the eastern lip of the crack, the eastern horizon is fully visible: the plains far beyond, and the road that would lead there.",
+        "exits": [
+            "north",
+            "west",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(0, 2)": {
+        "id": "tile_0_2",
+        "title": "LongDescent",
+        "description": "The main path continues its long pull southward. The slope is more pronounced here; the path is worn into two shallow ruts by generations of something — Golemite scouts, animals, erosion. The boulder field crowds close on the east side. To the west, the mountain face is bare and vertical.",
+        "exits": [
+            "north",
+            "south",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 2)": {
+        "id": "tile_1_2",
+        "title": "RubblePath",
+        "description": "The passage between boulders here is choked with smaller rubble — the residue of older boulders worn down to knee-height chunks. Progress east or west requires careful footing. A wall of stacked debris closes the southern direction entirely.",
+        "exits": [
+            "north",
+            "west",
+            "east"
+        ],
+        "block_exit": [
+            "south"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "RockRumbler",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(2, 2)": {
+        "id": "tile_2_2",
+        "title": "Hollow",
+        "description": "The boulders open briefly into a rough oval clearing — not large, but large enough to see the sky directly overhead. The ground here is darker than the surrounding scree: earth and old leaf litter carried by the wind over years. Deep scratches mark the boulders on all sides at roughly hip height.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            },
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(3, 2)": {
+        "id": "tile_3_2",
+        "title": "RainCatch",
+        "description": "A natural basin in the rock — barely the size of a wash basin — holds a few inches of standing water, cold and perfectly clear. Pale green algae lines the basin edge. A faint smell of mineral water. The mud at the basin's edge holds overlapping prints.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "pot",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "IronRation",
+                            "__module__": "items",
+                            "props": {
+                                "count": 1
+                            }
+                        }
+                    ],
+                    "name": "Muddy Ledge",
+                    "description": "A wax-sealed clay pot hidden behind the water basin.",
+                    "idle_message": "The rock around the water basin is slick with moisture.",
+                    "hidden": true,
+                    "hide_factor": 3,
+                    "discovery_message": "Behind the basin, wedged into a crack below the waterline: a wax-sealed clay pot, still intact.",
+                    "announce": "The rock around the water basin is slick with moisture.",
+                    "keywords": [
+                        "search",
+                        "look",
+                        "check basin",
+                        "examine"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(4, 2)": {
+        "id": "tile_4_2",
+        "title": "EasternTrailhead",
+        "description": "The boulders part just enough here to reveal what was once a proper trail heading east — more worn than the surrounding rock, edged on both sides by stones set deliberately in the ground, though many have shifted or sunk over time. The trail looks maintained for longer than it looks abandoned.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 2)": {
+        "id": "tile_5_2",
+        "title": "RoadEast",
+        "description": "The trail widens here into something that was, unmistakably, a road. The ground is level, the verge cleared. Ahead, the mountain's eastern shoulder drops away and the land opens — genuinely open, in a way Jean hasn't seen in weeks. The Resolute Plains begin somewhere out there in the haze. The road leads to them.",
+        "exits": [
+            "north",
+            "west"
+        ],
+        "block_exit": [],
+        "events": [
+            {
+                "__class__": "EasternRoadTurnbackEvent",
+                "__module__": "story.ch03",
+                "props": {
+                    "name": "Eastern_Road_Turnback",
+                    "player": null,
+                    "tile": null,
+                    "repeat": true,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(0, 3)": {
+        "id": "tile_0_3",
+        "title": "LowerBend",
+        "description": "The path bends again, this time eastward before resuming its southward fall. The slope here is steep enough that the path is cut into the hillside in a shallow ledge. A large flat rock juts from the west face like a shelf; it has been used as a seat by something — the surface is worn smooth.",
+        "exits": [
+            "north",
+            "south",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 3)": {
+        "id": "tile_1_3",
+        "title": "MossShelf",
+        "description": "A wide horizontal surface of rock, perhaps two metres above the path, extends along the boulder face. Reaching it requires a short scramble. The surface is covered in a thick, damp moss — vivid green against the grey, incongruous this high on the slope. Something small lives in the moss; the surface is dimpled with tiny burrow-openings.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [
+            "north"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "crack",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Bitterroot",
+                            "__module__": "items",
+                            "props": {
+                                "count": 1
+                            }
+                        },
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 8
+                            }
+                        }
+                    ],
+                    "name": "Mossy Crack",
+                    "description": "A crack in the rock base of the moss shelf.",
+                    "idle_message": "The moss surface is cool and dense underfoot.",
+                    "hidden": true,
+                    "hide_factor": 3,
+                    "discovery_message": "In a crack running along the base of the moss shelf: a small bundle, damp but intact. Someone left this deliberately — the crack is too regular to be accidental.",
+                    "announce": "The moss surface is cool and dense underfoot.",
+                    "keywords": [
+                        "search",
+                        "look",
+                        "check",
+                        "climb"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(2, 3)": {
+        "id": "tile_2_3",
+        "title": "NestHollow",
+        "description": "A low hollow beneath an overhang, barely deep enough to shelter in. The floor is dry and pale — shed scales, dozens of them, layered over each other in the dust. The scales are large: each one roughly the size of a playing card, dark grey with silver edges that catch the light at certain angles.",
+        "exits": [
+            "north",
+            "west",
+            "east"
+        ],
+        "block_exit": [
+            "south"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "ScarpAdder",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(3, 3)": {
+        "id": "tile_3_3",
+        "title": "DenRock",
+        "description": "A massive boulder sits apart from its neighbors, with a cleared space around it on all sides. The ground near the boulder is heavily disturbed — earth churned up, smaller rocks displaced, a shallow scrape-pit worn into the dirt on the western side. It smells strongly of musk.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            },
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            },
+            {
+                "__class__": "TalusHound",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(4, 3)": {
+        "id": "tile_4_3",
+        "title": "DeepCrack",
+        "description": "A deep vertical crack runs through the rock here — not wide enough to enter, but deep enough that no light reaches the bottom. The crack smells faintly of sulfur, or something like it. The rock around the crack's edges is slightly discoloured — a pale orange band, as though heat once passed through here.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "ScarpAdder",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(5, 3)": {
+        "id": "tile_5_3",
+        "title": "FarReach",
+        "description": "The easternmost point accessible on this slope — a narrow platform of rock where the boulder maze butts up against the raw cliff face, creating a dead end open to the sky. Wind moves through constantly. At the base of the cliff face, a dark gap suggests a shallow recess, large enough to have sheltered someone.",
+        "exits": [
+            "west",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Container",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "recess",
+                    "possible_states": [
+                        "closed",
+                        "opened"
+                    ],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "closed",
+                    "merchant": "",
+                    "allowed_item_types": [
+                        {
+                            "__class_type__": "items:Item"
+                        }
+                    ],
+                    "stock_count": 10,
+                    "inventory": [
+                        {
+                            "__class__": "Gold",
+                            "__module__": "items",
+                            "props": {
+                                "amt": 40
+                            }
+                        },
+                        {
+                            "__class__": "Longsword",
+                            "__module__": "items",
+                            "props": {
+                                "damage": 35
+                            }
+                        },
+                        {
+                            "__class__": "MerchantJournalFragment",
+                            "__module__": "items",
+                            "props": null
+                        }
+                    ],
+                    "name": "Shallow Recess",
+                    "description": "A dark recess at the base of the cliff face.",
+                    "idle_message": "The base of the cliff face is in shadow.",
+                    "hidden": true,
+                    "hide_factor": 2,
+                    "discovery_message": "Inside the recess: a merchant's satchel, leather cracked but intact. The contents have survived in better condition than the bag.",
+                    "announce": "The base of the cliff face is in shadow.",
+                    "keywords": [
+                        "search",
+                        "look",
+                        "check recess",
+                        "examine gap"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ]
+    },
+    "(0, 4)": {
+        "id": "tile_0_4",
+        "title": "Footing",
+        "description": "The gradient eases here — not flat, but no longer the lean-into-it effort of the upper slope. The rock underfoot gives way to packed earth threaded through with root systems. To the east, the boulders are smaller and more scattered, like a field thinning out. The sound of water is just barely present — more felt than heard.",
+        "exits": [
+            "north",
+            "south",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 4)": {
+        "id": "tile_1_4",
+        "title": "GrassBreak",
+        "description": "The first real grass of the descent: not the isolated tufts that appear in crevices higher up, but a proper spread of it, ankle-high and wind-bent. It grows in the spaces between the remaining boulders, which are now sparse enough to walk between without effort. The colour is vivid after so much grey.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 4)": {
+        "id": "tile_2_4",
+        "title": "LowerField",
+        "description": "A broad, roughly level stretch of mixed ground — grass and exposed rock in roughly equal parts. Boulders are present but isolated, no longer a maze. The slope is gentle enough here that the river is now visible to the south as a definite dark line through lighter ground.",
+        "exits": [
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [
+            "north"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(3, 4)": {
+        "id": "tile_3_4",
+        "title": "RiverOutlook",
+        "description": "From this slightly elevated point the river is clearly visible — wide, dark-edged, moving. The sound reaches here: low, constant, without particular urgency. On the near bank, small shapes that might be structures are visible. The smell of water and woodsmoke is faint but distinct.",
+        "exits": [
+            "north",
+            "west",
+            "east",
+            "south"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(4, 4)": {
+        "id": "tile_4_4",
+        "title": "FinalSlope",
+        "description": "The slope ends here in a steep short drop to the bank below — not climbable without finding another route. Looking south, the river bank is visible and close, but the descent requires doubling back west to the main path. Looking north, the full extent of the boulder field is visible from below: more vast than it seemed from inside.",
+        "exits": [
+            "north",
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(5, 4)": {
+        "id": "tile_5_4",
+        "title": "AddersShelf",
+        "description": "A narrow shelf of rock, cut off from the lower slope by the same steep drop that closes the southeast corner of the mountain. The shelf is warm — it faces south and catches the sun for most of the day. Coiled things have been here: smooth depressions in the dust, old shed skins draped over a low rock like discarded clothing.",
+        "exits": [
+            "north"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "ScarpAdder",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(0, 5)": {
+        "id": "tile_0_5",
+        "title": "BankApproach",
+        "description": "The slope levels completely. Underfoot is soft river-bottom soil, damp at the edges where the bank floods seasonally. A rough track leads east — wide enough for a cart, though no cart has been through recently. The river is audible but not yet visible past the bank's low rise.",
+        "exits": [
+            "north",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(1, 5)": {
+        "id": "tile_1_5",
+        "title": "EasternBank",
+        "description": "The riverbank proper: a shelf of packed gravel and dark earth dropping perhaps a metre to the water's edge. The river itself is wide — thirty metres or more — moving with a low, unhurried strength. The water is cold-looking, grey-green, carrying occasional debris. On the far bank, the land is dark and different: lower, flatter, the beginning of something else entirely.",
+        "exits": [
+            "north",
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    },
+    "(2, 5)": {
+        "id": "tile_2_5",
+        "title": "NomadCamp",
+        "description": "The camp occupies a natural hollow in the bank — sheltered from the prevailing wind, with a clear sightline upstream. The shelters are lean-tos of oiled canvas over light poles, practical to a degree that suggests long use. A fire ring sits at the centre, its stones black with years of use. The smell of woodsmoke and dried meat is warm and immediate after hours of cold rock.",
+        "exits": [
+            "north",
+            "west",
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Mara",
+                "__module__": "npc",
+                "props": null
+            },
+            {
+                "__class__": "Devet",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(3, 5)": {
+        "id": "tile_3_5",
+        "title": "CampsEdge",
+        "description": "The camp's east edge is defined by a line of larger stones arranged in a rough semicircle — a windbreak or boundary marker, well-established. Beyond it, the bank continues east, empty and featureless. A low post has been driven into the ground here; on it hangs a small wooden shape on a cord, turning slowly in the river wind.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "Liss",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": []
+    },
+    "(4, 5)": {
+        "id": "tile_4_5",
+        "title": "RiversBend",
+        "description": "The river curves here, and the bank curves with it. Looking west, the full width of the crossing is visible — the far bank seems both close and impossibly far. Looking north, the mountain's eastern face rises steep and bare: the slope just descended, seen all at once. A flat rock at the water's edge has been worn glass-smooth by seasonal flooding.",
+        "exits": [
+            "west"
+        ],
+        "block_exit": [
+            "north"
+        ],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": []
+    }
+}

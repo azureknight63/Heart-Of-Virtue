@@ -35,7 +35,20 @@ src/
 │   └── schemas/            # OpenAPI definitions
 ├── combat.py               # Core turn-based combat engine
 ├── combatant.py            # Base class for Player + NPC (shared resistance/state logic)
-├── moves.py                # Combat abilities/moves (large file, ~152KB)
+├── moves/                  # Combat abilities/moves — package (was moves.py, ~252KB)
+│   ├── __init__.py         # Re-exports all 73+ classes; callers use `import moves` unchanged
+│   ├── _base.py            # Move, PassiveMove base classes; _ensure_weapon_exp, default_animations
+│   ├── _utility.py         # StrategicInsight, Check, Wait, Rest, UseItem, Attack
+│   ├── _movement.py        # Dodge, Parry, Advance, Withdraw, BullCharge, TacticalRetreat, …
+│   ├── _unarmed.py         # PowerStrike, Jab; passives: IronFist, CleaveInstinct, HeavyHanded
+│   ├── _dagger.py          # Slash, Backstab, FeintAndPivot; passive: ShadowStep
+│   ├── _sword.py           # PommelStrike, Thrust, DisarmingSlash, Riposte, …
+│   ├── _scythe.py          # Reap, ReapersMark, DeathsHarvest; passives: GrimPersistence, …
+│   ├── _spear.py           # KeepAway, Lunge, Impale, ArmorPierce; passive: SentinelsVigil
+│   ├── _pick.py            # ChipAway, ExploitWeakness, Stupefy, WorkTheGap
+│   ├── _ranged.py          # ShootBow, ShootCrossbow, AimedShot, …; passives: EagleEye, …
+│   ├── _polearm.py         # OverheadSmash, Sweep, BracePosition, HalberdSpin; passive: ReachMastery
+│   └── _npc.py             # NpcAttack, NpcRest, TelegraphedSurge, SlimeVolley, TidalSurge, …
 ├── states.py               # Status effects (buffs/debuffs)
 ├── player.py               # Player class (~90KB), inherits Combatant
 ├── npc.py                  # NPC class (~49KB), inherits Combatant
@@ -108,6 +121,7 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 - Game logic lives in the Python engine. The API layer adapts; it does not reimplement.
 - `CombatAdapter` is the bridge between terminal output and JSON — changes to combat serialization go there
 - `Combatant` base class owns shared resistance/status-effect logic for Player and NPC. Do not duplicate this in subclasses.
+- New passive moves (flag-only, never castable, `viable()→False`) must inherit `PassiveMove` from `src/moves/_base.py`, not `Move` directly. Subclasses only supply `name` and `description`.
 - `GameService` + `SessionManager` abstract the game loop for stateless API calls
 
 ### GameService patterns (critical gotchas)
@@ -129,6 +143,7 @@ Key architectural work already merged into the codebase:
 - Beta QA pass complete (v0.0.4.0): 5 combat API bugs fixed (`awaiting_input` stale after victory/defeat, proximity gap on reinforcement spawn, `current_stage` deadlock on mid-beat event, `pending_move_index` stale on wave transition)
 - `NPCSpawnerEvent.evaluate_for_map_entry` tile fallback added — uses `self.tile` when `spawn_tile` is `None` (JSON deserialization issue), fixing Lurker and map-entry spawners via the API
 - `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
+- `src/moves.py` split into `src/moves/` package (13 submodules, 73 classes) — `PassiveMove` base class added to eliminate ~200 lines of repeated passive-move boilerplate; all callers unchanged via `__init__.py` re-exports
 
 ## Bug-Hunt Harness
 

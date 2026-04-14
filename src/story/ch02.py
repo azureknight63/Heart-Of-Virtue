@@ -53,7 +53,8 @@ class Ch02GuideToCitadel(
     def process(self):
         if not self.player.skip_dialog:
             print(
-                "Gorran looks at Jean, his eyes wide with excitement. He gestures for Jean to follow him.\n"
+                "Gorran turns. His great head swings toward the passage that leads into the city.\n"
+                "He makes a sound — short, low, the kind that doesn't require translation — and moves.\n"
                 "Not wanting to disappoint his new friend, Jean follows him through the passageway.\n\n"
             )
             time.sleep(0.5)
@@ -171,9 +172,9 @@ class Ch02GuideToCitadel(
             await_input()
             dialogue(
                 "Elder",
-                "Welcome, little one. I am Elder Votha Krr. Among the inhabitants "
-                "of this great city, I am among its council of leaders. "
-                "Some may even foolishly look to me for guidance from time to time.",
+                "Welcome, little one. I am Elder Votha Krr. Within this city, I serve "
+                "on its council of leaders — though some among us are more foolish than "
+                "others in how much weight they give that title.",
                 "green",
             )
             time.sleep(2)
@@ -871,23 +872,43 @@ class AfterKingSlimeReturn(Event):
         time.sleep(1.5)
         dialogue(
             "Votha Krr",
-            "The corruption is gone. But I sense... a great disturbance within you. "
-            "A sorrow that is not of this stone. "
-            "The world outside these stones holds many shards. "
-            "Some bring strength, some bring pain. "
-            "Sometimes, the deepest truths are found in the broken places.",
+            "The pools are clean. You have done what we could not do alone, little one.",
             "green",
         )
         time.sleep(1)
+        print_slow(
+            "He studies Jean's face. Then — the bleeding finger. "
+            "He regards it for a moment without comment.",
+            delay=0.03,
+        )
+        time.sleep(1.5)
+        dialogue(
+            "Votha Krr",
+            "You came back.",
+            "green",
+        )
+        time.sleep(1)
+        print_slow(
+            "He says it simply. As an observation, not a compliment.", delay=0.03
+        )
+        time.sleep(1.5)
         dialogue(
             "Votha Krr",
             "To mend what is broken, one must first understand the cracks. "
             "Go now. Seek the Echoing Caves to the west, beyond the river. "
             "There, the earth sings the songs of lost things. "
-            "Perhaps you will find a different kind of strength there... "
+            "Perhaps you will find a different kind of strength there — "
             "or, at the very least, a clearer path.",
             "green",
         )
+        time.sleep(1)
+        print_slow(
+            "He does not elaborate. When Jean opens his mouth, Votha Krr's only answer "
+            "is to press two fingers briefly to his own chest — over the place a human "
+            "would call the heart — and then withdraw.",
+            delay=0.03,
+        )
+        time.sleep(1.5)
         time.sleep(0.5)
         await_input()
 
