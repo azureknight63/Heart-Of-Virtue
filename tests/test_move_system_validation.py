@@ -140,7 +140,7 @@ class TestAdvanceMoveValidation:
 
         # Execute advance (simulate one beat of movement)
         advance.current_stage = 1  # execute stage
-        advance.beats_left = 0
+        advance.beats_left = 1
         advance.advance(player)
 
         # Verify movement toward target
@@ -286,7 +286,7 @@ class TestBullChargeMoveValidation:
 
         # Execute charge (simulate one beat of movement)
         bull_charge.current_stage = 1  # execute stage
-        bull_charge.beats_left = 0
+        bull_charge.beats_left = 1
         bull_charge.advance(player)
 
         # Verify significant movement
@@ -344,7 +344,7 @@ class TestTacticalRetreatMoveValidation:
 
         # Execute retreat (simulate one beat of movement)
         tactical_retreat.current_stage = 1  # execute stage
-        tactical_retreat.beats_left = 0
+        tactical_retreat.beats_left = 1
         tactical_retreat.advance(player)
 
         if player.combat_position is not None:
@@ -418,7 +418,7 @@ class TestFlankingManeuverMoveValidation:
 
         # Execute flanking (simulate one beat of movement)
         flanking.current_stage = 1  # execute stage
-        flanking.beats_left = 0
+        flanking.beats_left = 1
         flanking.advance(player)
 
         if player.combat_position is not None:
@@ -465,7 +465,7 @@ class TestMoveIntegration:
 
         # Execute advance (simulate one beat of movement)
         advance.current_stage = 1  # execute stage
-        advance.beats_left = 0
+        advance.beats_left = 1
         advance.advance(player)
 
         after_advance_distance = positions.distance_from_coords(
@@ -485,7 +485,7 @@ class TestMoveIntegration:
 
         # Execute withdraw (simulate one beat of movement)
         withdraw.current_stage = 1  # execute stage
-        withdraw.beats_left = 0
+        withdraw.beats_left = 1
         withdraw.advance(player)
         after_withdraw_distance = positions.distance_from_coords(
             player.combat_position, enemy.combat_position
@@ -657,7 +657,7 @@ class TestMoveEdgeCases:
 
         # Execute flanking (simulate one beat of movement)
         flanking.current_stage = 1  # execute stage
-        flanking.beats_left = 0
+        flanking.beats_left = 1
         flanking.advance(player)
 
         if player.combat_position is not None:
