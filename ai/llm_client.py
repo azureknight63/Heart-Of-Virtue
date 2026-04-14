@@ -911,3 +911,363 @@ class MynxLLMAdapter(GenericLLMClient):
                     "Only produce nonverbal action descriptions or compact JSON action objects."
                 ),
             }
+
+
+# ---------------------------------------------------------------------------
+# NPC Chat adapter — conversational human NPCs
+# ---------------------------------------------------------------------------
+
+_NPC_CHAT_HUMAN_DIR = os.path.join(AI_DIR, "npc", "human")
+_NPC_CHAT_WORLD_FACTS_PATH = os.path.join(_NPC_CHAT_HUMAN_DIR, "world_facts.json")
+
+
+class NpcChatLLMAdapter(GenericLLMClient):
+    """LLM adapter for conversational human NPC dialogue.
+
+    Provides three generation methods used by HumanNPCLLMMixin:
+      - generate_personality: one-shot personality seeding for generic nomads
+      - generate_npc_turn:    NPC opening line or response; returns structured JSON
+      - generate_jean_options: three Jean dialogue options in a single call
+
+    Configuration (re-uses the Mynx env vars plus one new gate):
+      NPC_CHAT_LLM_ENABLED=1      gate specifically for human NPC chat
+      NPC_CHAT_TEMP_PERSONALITY   float override for personality call (default 0.7)
+      NPC_CHAT_TEMP_NPC           float override for NPC turn call (default 0.65)
+      NPC_CHAT_TEMP_OPTIONS       float override for Jean options call (default 0.8)
+    """
+
+    # Per-class singleton cache so we don't re-init the adapter on every API call.
+    _instances: Dict[str, "NpcChatLLMAdapter"] = {}
+    _instances_lock = threading.Lock()
+
+    def __init__(self):
+        super().__init__()
+        # Override the enabled check: use NPC_CHAT_LLM_ENABLED
+        self.enabled = os.getenv("NPC_CHAT_LLM_ENABLED", "0") in ("1", "true", "True")
+        self._world_facts: Optional[Dict[str, Any]] = None
+        self._load_world_facts()
+
+    @classmethod
+    def get_instance(cls) -> "NpcChatLLMAdapter":
+        """Return the shared adapter instance, creating it on first call."""
+        with cls._instances_lock:
+            if "default" not in cls._instances:
+                cls._instances["default"] = cls()
+            return cls._instances["default"]
+
+    def _load_world_facts(self) -> None:
+        try:
+            with open(_NPC_CHAT_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
+                self._world_facts = json.load(f)
+        except Exception:
+            self._world_facts = {
+                "world_name": "Aurelion",
+                "allowed_proper_nouns": ["Jean", "Gorran", "Mara", "Devet", "Liss",
+                                         "Aurelion", "Grondia", "Badlands", "Echoing Caves"],
+                "tone_notes": "Low fantasy, grounded, practical.",
+            }
+
+    def _world_facts_block(self) -> str:
+        if not self._world_facts:
+            return "Setting: Aurelion, a low-fantasy world."
+        wf = self._world_facts
+        geo = ", ".join(wf.get("geography", []))
+        factions = ", ".join(wf.get("factions_and_peoples", []))
+        rules = " ".join(wf.get("world_rules", []))
+        tone = wf.get("tone_notes", "")
+        return (
+            f"WORLD: {wf.get('world_name','Aurelion')}. {wf.get('brief_description','')}\n"
+            f"Places: {geo}.\nPeoples: {factions}.\n{rules}\nTone: {tone}"
+        )
+
+    # ------------------------------------------------------------------
+    # Call 1 — Personality generation (generic nomads, once per instance)
+    # ------------------------------------------------------------------
+
+    def generate_personality(self, npc_class_display: str) -> Optional[Dict[str, Any]]:
+        """Generate a unique personality seed for a generic nomad NPC.
+
+        Returns dict with keys: given_name, voice, knowledge, attitude_to_strangers,
+        speech_sample, loquacity_base.
+        Returns None if LLM unavailable.
+        """
+        if not self.enabled:
+            return None
+
+        system = (
+            "You are a character generator for a low-fantasy text RPG set in Aurelion. "
+            "Generate a distinct personality for a nomad NPC. "
+            "Return ONLY valid JSON. No commentary, no code fences."
+        )
+        wf = self._world_facts or {}
+        allowed = ", ".join(wf.get("allowed_proper_nouns", []))
+        user = (
+            f"Generate personality JSON for a {npc_class_display}. "
+            "Return exactly these keys:\n"
+            '"given_name": a simple nomadic first name (no invented proper nouns),\n'
+            '"voice": one sentence describing speech rhythm (e.g. "sparse, declarative"),\n'
+            '"knowledge": list of 2 topics this person knows well,\n'
+            '"attitude_to_strangers": one of "wary", "indifferent", "curious", "guarded",\n'
+            '"speech_sample": one in-character line (10-20 words),\n'
+            '"loquacity_base": integer 40-90 representing social patience.\n'
+            f"Do NOT invent locations, factions, or creatures not in: {allowed}."
+        )
+        temp = float(os.getenv("NPC_CHAT_TEMP_PERSONALITY", "0.7"))
+        raw = self._call_llm(system, user, max_tokens=256, temperature=temp)
+        if not raw:
+            return None
+        parsed = _JSONTools.try_parse_json(raw)
+        if not isinstance(parsed, dict):
+            return None
+        required = {"given_name", "voice", "knowledge", "attitude_to_strangers",
+                    "speech_sample", "loquacity_base"}
+        if not required.issubset(parsed.keys()):
+            return None
+        return parsed
+
+    # ------------------------------------------------------------------
+    # Call 2 — NPC turn (opening line + each NPC response)
+    # ------------------------------------------------------------------
+
+    def generate_npc_turn(
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        is_opening: bool,
+        jean_text: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate one NPC conversational turn.
+
+        Returns dict: {npc_text, conversation_quality, conversation_end}
+        conversation_quality: "positive" | "neutral" | "negative" | "offensive"
+        conversation_end: bool
+        """
+        if not self.enabled:
+            return None
+
+        history_block = self._format_history(history)
+        if is_opening:
+            task = "Generate the NPC's opening line. Vary it — do not repeat anything in the history above. Do not begin with 'Hello' or 'Greetings'."
+        else:
+            task = f'Jean said: "{jean_text}". Generate the NPC\'s response.'
+
+        user = (
+            f"{history_block}\n\n"
+            f"[TASK]\n{task}\n\n"
+            "Return ONLY this JSON (no code fences, no extra keys):\n"
+            '{"npc_text": "...", "conversation_quality": "positive|neutral|negative|offensive", "conversation_end": false}\n'
+            "conversation_quality reflects how the NPC felt about this exchange: "
+            "positive=enjoyed/interested, neutral=tolerated, negative=annoyed/offended, offensive=deeply offended.\n"
+            "Set conversation_end to true ONLY if the NPC is done talking entirely (loquacity exhausted or deeply offended)."
+        )
+
+        temp = float(os.getenv("NPC_CHAT_TEMP_NPC", "0.65"))
+        raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
+        if not raw:
+            return None
+        parsed = _JSONTools.try_parse_json(raw)
+        if not isinstance(parsed, dict):
+            return None
+        if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
+            return None
+        # Normalise fields
+        valid_qualities = {"positive", "neutral", "negative", "offensive"}
+        quality = str(parsed.get("conversation_quality", "neutral")).lower()
+        if quality not in valid_qualities:
+            quality = "neutral"
+        parsed["conversation_quality"] = quality
+        parsed["conversation_end"] = bool(parsed.get("conversation_end", False))
+        parsed["npc_text"] = _JSONTools.sanitize_text(parsed["npc_text"])
+        return parsed
+
+    # ------------------------------------------------------------------
+    # Call 3 — Jean's three response options (single call)
+    # ------------------------------------------------------------------
+
+    def generate_jean_options(
+        self,
+        npc_name: str,
+        npc_voice_summary: str,
+        last_npc_line: str,
+        history: List[Dict[str, str]],
+        turn: int,
+    ) -> Optional[List[Dict[str, str]]]:
+        """Generate three Jean dialogue options with varied tones.
+
+        Returns list of 3 dicts: [{tone, text}, ...]
+        tones: "direct", "guarded", "open"
+        """
+        if not self.enabled:
+            return None
+
+        system = (
+            "You generate player dialogue options for a text RPG. "
+            "The player is Jean (he/him), a cautious, observant traveler in a low-fantasy world. "
+            "Jean is not heroic in a loud way. He is measured, careful, occasionally guarded. "
+            "Generate options that are plausible for Jean. Never have Jean reveal information he would not know. "
+            "Keep each option 8-20 words. Return ONLY valid JSON. No commentary, no code fences."
+        )
+
+        recent_jean_lines = [ex.get("jean", "") for ex in history[-4:] if ex.get("jean")]
+        history_hint = " | ".join(recent_jean_lines) if recent_jean_lines else "none yet"
+
+        user = (
+            f"NPC: {npc_name} — {npc_voice_summary}\n"
+            f'{npc_name} just said: "{last_npc_line}"\n\n'
+            f"Jean's recent lines (avoid repeating these): {history_hint}\n\n"
+            "Generate exactly 3 Jean response options. Return this JSON array:\n"
+            '[{"tone": "direct", "text": "..."}, {"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]\n\n'
+            "Rules:\n"
+            "- direct: brief, factual, Jean gets to the point\n"
+            "- guarded: Jean deflects, doesn't commit, or keeps his distance\n"
+            "- open: Jean engages with some warmth or genuine curiosity\n"
+            "- No option may echo the recent history above\n"
+            "- All options must be plausible for a careful, measured human traveler\n"
+            f"- This is turn {turn} of the conversation — options should feel natural for mid-conversation, not just openers"
+        )
+
+        temp = float(os.getenv("NPC_CHAT_TEMP_OPTIONS", "0.8"))
+        raw = self._call_llm(system, user, max_tokens=300, temperature=temp)
+        if not raw:
+            return None
+        # Try parsing as list
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(l for l in raw.splitlines() if not l.strip().startswith("```")).strip()
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            start = raw.find("[")
+            end = raw.rfind("]")
+            if start != -1 and end != -1:
+                try:
+                    parsed = json.loads(raw[start:end + 1])
+                except Exception:
+                    return None
+            else:
+                return None
+        if not isinstance(parsed, list) or len(parsed) < 3:
+            return None
+        result = []
+        expected_tones = ["direct", "guarded", "open"]
+        for i, item in enumerate(parsed[:3]):
+            if not isinstance(item, dict) or "text" not in item:
+                return None
+            tone = str(item.get("tone", expected_tones[i])).lower()
+            if tone not in expected_tones:
+                tone = expected_tones[i]
+            result.append({"tone": tone, "text": str(item["text"])[:200]})
+        return result
+
+    # ------------------------------------------------------------------
+    # Internal LLM call dispatcher
+    # ------------------------------------------------------------------
+
+    def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ) -> Optional[str]:
+        """Dispatch to the active provider. Returns raw text or None."""
+        if not self.enabled:
+            return None
+        if self.provider == "ollama":
+            return self._call_ollama(system_prompt, user_prompt, max_tokens, temperature)
+        elif self.provider == "openrouter":
+            return self._call_openrouter(system_prompt, user_prompt, max_tokens, temperature)
+        return None
+
+    def _call_ollama(
+        self, system: str, user: str, max_tokens: int, temperature: float
+    ) -> Optional[str]:
+        if requests is None:
+            return None
+        try:
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                    "top_p": 0.9,
+                },
+            }
+            r = requests.post(
+                self.base_url + "/api/chat",
+                json=payload,
+                timeout=30,
+            )
+            r.raise_for_status()
+            data = r.json()
+            return data.get("message", {}).get("content", "").strip() or None
+        except Exception as e:
+            logger.warning(f"NpcChatLLMAdapter Ollama error: {e}")
+            return None
+
+    def _call_openrouter(
+        self, system: str, user: str, max_tokens: int, temperature: float
+    ) -> Optional[str]:
+        if requests is None or not self._openrouter_api_key:
+            return None
+        model = self._get_openrouter_model()
+        if not model:
+            return None
+        headers = {
+            "Authorization": f"Bearer {self._openrouter_api_key}",
+            "Content-Type": "application/json",
+        }
+        if self._openrouter_site:
+            headers["HTTP-Referer"] = self._openrouter_site
+        if self._openrouter_site_title:
+            headers["X-Title"] = self._openrouter_site_title
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.9,
+        }
+        try:
+            r = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=45,
+            )
+            r.raise_for_status()
+            data = r.json()
+            return data["choices"][0]["message"]["content"].strip() or None
+        except Exception as e:
+            logger.warning(f"NpcChatLLMAdapter OpenRouter error: {e}")
+            return None
+
+    def _get_openrouter_model(self) -> Optional[str]:
+        """Return the configured model or the first available free model."""
+        if self.model and self.model != "auto":
+            return self.model
+        if GenericLLMClient._free_models_cache:
+            return GenericLLMClient._free_models_cache[0]
+        return self.STABLE_FREE_FALLBACKS[0]
+
+    @staticmethod
+    def _format_history(history: List[Dict[str, str]]) -> str:
+        if not history:
+            return "[CONVERSATION HISTORY]\nNone yet."
+        lines = ["[CONVERSATION HISTORY]"]
+        for ex in history[-8:]:
+            npc_line = ex.get("npc", "")
+            jean_line = ex.get("jean", "")
+            if npc_line:
+                lines.append(f"NPC: {npc_line}")
+            if jean_line:
+                lines.append(f"Jean: {jean_line}")
+        return "\n".join(lines)
