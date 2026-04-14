@@ -125,7 +125,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             return None
         cls_name = payload.get("__class__")
         mod_name = payload.get("__module__")
-        props = payload.get("props", {})
+        props = payload.get("props") or {}
 
         # Throw error if mod name has improper format; 'src.' prefix should not be present.
         if mod_name.startswith("src."):
