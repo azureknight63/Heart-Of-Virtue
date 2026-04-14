@@ -43,7 +43,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + (data.error || 'Failed to equip'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      // For server responses with error messages (400s), show without ✗ prefix
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -72,7 +77,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      // For server responses with error messages (400s), show without ✗ prefix
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -100,7 +110,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + (data.error || 'Failed to drop'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      // For server responses with error messages (400s), show without ✗ prefix
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)

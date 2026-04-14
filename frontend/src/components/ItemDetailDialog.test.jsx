@@ -84,8 +84,8 @@ describe('ItemDetailDialog', () => {
 
     // Click Ok on success dialog
     fireEvent.click(screen.getByText(/Ok/i));
-    // Close IS called on equip to close the detail view after success
-    expect(mockOnClose).toHaveBeenCalled();
+    // onBack IS called to return to inventory list after success
+    expect(mockOnBack).toHaveBeenCalled();
   });
 
   it('handles use action successfully', async () => {
@@ -203,7 +203,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(screen.getByText(/Equip/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Network Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Error.*Network Error/i)).toBeDefined();
     });
   });
 
@@ -322,7 +322,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(screen.getByText(/Use/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Use Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Error.*Use Error/i)).toBeDefined();
     });
   });
 
@@ -342,7 +342,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(dropButtons[dropButtons.length - 1]);
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Drop Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Error.*Drop Error/i)).toBeDefined();
     });
   });
 
