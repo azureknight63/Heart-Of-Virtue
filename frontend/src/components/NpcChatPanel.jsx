@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import npcChat from '../api/npcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
@@ -22,7 +22,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [latestNpcText, setLatestNpcText] = useState(null)
-  const [retryFn, setRetryFn] = useState(null)
+  const retryFnRef = useRef(null)
 
   // On mount, open the conversation
   useEffect(() => {
@@ -50,8 +50,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         setPhase('waiting_jean')
       } catch (err) {
         const errorMsg = err.response?.data?.error || 'Failed to open conversation'
+        retryFnRef.current = openConversation
         setError(errorMsg)
-        setRetryFn(() => openConversation)
         setPhase('ended')
       } finally {
         setLoading(false)
@@ -59,7 +59,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     }
 
     openConversation()
-  }, [npcId, npcName])
+  }, [npcId])
 
   const handleOptionClick = async (option) => {
     if (phase !== 'waiting_jean' || !npcKey) return
@@ -104,8 +104,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'NPC did not respond'
+      retryFnRef.current = () => handleOptionClick(option)
       setError(errorMsg)
-      setRetryFn(() => handleOptionClick(option))
       setPhase('waiting_jean')
     } finally {
       setLoading(false)
@@ -279,7 +279,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
               <GameButton
                 variant="secondary"
                 size="small"
-                onClick={retryFn}
+                onClick={() => retryFnRef.current?.()}
               >
                 Retry
               </GameButton>

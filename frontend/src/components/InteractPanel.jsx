@@ -130,6 +130,7 @@ function InteractPanel({
         setPendingAction(null)
         setQuantity(1)
         setIsLocked(false)
+        setShowChatPanel(false)
     }
 
     const handleActionClick = async (action, qty = null) => {

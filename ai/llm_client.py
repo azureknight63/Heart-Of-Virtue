@@ -991,9 +991,6 @@ class NpcChatLLMAdapter(GenericLLMClient):
         speech_sample, loquacity_base.
         Returns None if LLM unavailable.
         """
-        if not self.enabled:
-            return None
-
         system = (
             "You are a character generator for a low-fantasy text RPG set in Aurelion. "
             "Generate a distinct personality for a nomad NPC. "
@@ -1042,9 +1039,6 @@ class NpcChatLLMAdapter(GenericLLMClient):
         conversation_quality: "positive" | "neutral" | "negative" | "offensive"
         conversation_end: bool
         """
-        if not self.enabled:
-            return None
-
         history_block = self._format_history(history)
         if is_opening:
             task = "Generate the NPC's opening line. Vary it — do not repeat anything in the history above. Do not begin with 'Hello' or 'Greetings'."
@@ -1097,9 +1091,6 @@ class NpcChatLLMAdapter(GenericLLMClient):
         Returns list of 3 dicts: [{tone, text}, ...]
         tones: "direct", "guarded", "open"
         """
-        if not self.enabled:
-            return None
-
         system = (
             "You generate player dialogue options for a text RPG. "
             "The player is Jean (he/him), a cautious, observant traveler in a low-fantasy world. "

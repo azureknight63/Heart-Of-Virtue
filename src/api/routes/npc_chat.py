@@ -203,8 +203,5 @@ def npc_chat_history(npc_key):
     # Call game service
     result = current_app.game_service.npc_chat_history(player, npc_key)
 
-    # Save session (defensive)
-    session_manager.save_session(session.session_id)
-
     status_code = 200 if result.get("success") else 400
     return jsonify(result), status_code

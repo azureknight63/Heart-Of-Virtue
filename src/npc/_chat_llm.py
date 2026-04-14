@@ -114,28 +114,36 @@ _GENERIC_FALLBACKS = [
 class HumanNPCLLMMixin:
     """LLM-driven conversational dialogue mixin for human nomad NPCs."""
 
+    # Class-level caches: files are read once per process, not once per NPC instance.
+    _world_facts_cache: Optional[Dict[str, Any]] = None
+    _char_config_cache: Dict[str, Any] = {}
+
     def _init_chat_attrs(self):
         """Initialize all chat-related attributes. Called at end of host __init__."""
         # Config path can be set by subclass before calling this
         self._chat_config_path: Optional[str] = getattr(self, "_chat_config_path", None)
 
-        # Load character config if path provided
+        # Load character config if path provided (class-level cache)
         self._chat_char_config: Optional[Dict[str, Any]] = None
         if self._chat_config_path:
-            try:
-                with open(self._chat_config_path, "r", encoding="utf-8") as f:
-                    self._chat_char_config = json.load(f)
-            except Exception as e:
-                logger.debug(f"Could not load chat config from {self._chat_config_path}: {e}")
+            if self._chat_config_path not in HumanNPCLLMMixin._char_config_cache:
+                try:
+                    with open(self._chat_config_path, "r", encoding="utf-8") as f:
+                        HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = json.load(f)
+                except Exception as e:
+                    logger.debug(f"Could not load chat config from {self._chat_config_path}: {e}")
+                    HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = None
+            self._chat_char_config = HumanNPCLLMMixin._char_config_cache[self._chat_config_path]
 
-        # Load world facts
-        self._chat_world_facts: Optional[Dict[str, Any]] = None
-        try:
-            with open(_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
-                self._chat_world_facts = json.load(f)
-        except Exception as e:
-            logger.debug(f"Could not load world facts: {e}")
-            self._chat_world_facts = {}
+        # Load world facts (class-level cache)
+        if HumanNPCLLMMixin._world_facts_cache is None:
+            try:
+                with open(_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
+                    HumanNPCLLMMixin._world_facts_cache = json.load(f)
+            except Exception as e:
+                logger.debug(f"Could not load world facts: {e}")
+                HumanNPCLLMMixin._world_facts_cache = {}
+        self._chat_world_facts: Optional[Dict[str, Any]] = HumanNPCLLMMixin._world_facts_cache
 
         # For generic nomads: generated on first talk
         self._chat_personality: Optional[Dict[str, Any]] = None
@@ -149,11 +157,16 @@ class HumanNPCLLMMixin:
         # LLM adapter (lazy-loaded)
         self._chat_adapter: Optional[Any] = None
 
-        # Regeneration guard
-        self._chat_regen_count: int = 0
-
         # Fallback rotation index
         self._chat_fallback_idx: int = 0
+
+        # Pre-compile prohibited phrase regexes for story NPCs
+        self._prohibited_patterns: List[Any] = []
+        if self._chat_char_config:
+            self._prohibited_patterns = [
+                re.compile(re.escape(phrase), re.IGNORECASE)
+                for phrase in self._chat_char_config.get("prohibited_phrases", [])
+            ]
 
         # Loquacity system
         self.loquacity_current: int = 0
@@ -167,8 +180,13 @@ class HumanNPCLLMMixin:
         if "chat" not in self.keywords:
             self.keywords.append("chat")
 
+    # Sentinel distinguishing "load failed" from "not yet attempted"
+    _ADAPTER_FAILED = object()
+
     def _get_adapter(self) -> Optional[Any]:
         """Lazy-load NpcChatLLMAdapter via importlib. Return None on failure."""
+        if self._chat_adapter is self._ADAPTER_FAILED:
+            return None
         if self._chat_adapter is not None:
             return self._chat_adapter
 
@@ -183,11 +201,13 @@ class HumanNPCLLMMixin:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 self._chat_adapter = module.NpcChatLLMAdapter.get_instance()
+            else:
+                self._chat_adapter = self._ADAPTER_FAILED
         except Exception as e:
             logger.debug(f"HumanNPCLLMMixin: could not load adapter: {e}")
-            self._chat_adapter = None
+            self._chat_adapter = self._ADAPTER_FAILED
 
-        return self._chat_adapter
+        return self._chat_adapter if self._chat_adapter is not self._ADAPTER_FAILED else None
 
     def _story(self, player) -> Dict[str, Any]:
         """Get story dict from player.universe, or empty dict."""
@@ -445,23 +465,15 @@ class HumanNPCLLMMixin:
         if not text or len(text) < 10:
             return None
 
-        # Step 6: Prohibited phrases (story chars only)
-        if self._chat_char_config:
-            prohibited = self._chat_char_config.get("prohibited_phrases", [])
-            for phrase in prohibited:
-                pattern = re.compile(re.escape(phrase), re.IGNORECASE)
-                text = pattern.sub("[...]", text)
+        # Step 6: Prohibited phrases (story chars only, patterns pre-compiled in _init_chat_attrs)
+        for pattern in self._prohibited_patterns:
+            text = pattern.sub("[...]", text)
 
-        # Step 7: Repetition guard
+        # Step 7: Repetition guard — caller's retry loop handles the second attempt
         for prior in history[-8:]:
             prior_npc = prior.get("npc", "")
             if prior_npc and self._jaccard(text, prior_npc) > 0.7:
-                self._chat_regen_count += 1
-                if self._chat_regen_count <= 1:
-                    return None
-                # Else accept with warning
-                logger.warning(f"HumanNPCLLMMixin: repetition detected but accepting (count={self._chat_regen_count})")
-                break
+                return None
 
         # Step 8: Terminal punctuation
         if text and text[-1] not in ".!?":
@@ -511,7 +523,6 @@ class HumanNPCLLMMixin:
     def chat_open(self, player) -> Dict[str, Any]:
         """Start conversation. Returns opening line + 3 Jean options."""
         try:
-            self._chat_regen_count = 0
             self._compute_loquacity(player)
             npc_key = self._get_npc_key(player)
             self._load_history_from_persistence(player)
@@ -549,7 +560,6 @@ class HumanNPCLLMMixin:
                         if cleaned:
                             npc_opening = cleaned
                             break
-                        self._chat_regen_count += 1
 
             if not npc_opening:
                 npc_opening = self._get_fallback_npc_line(is_opening=True, player=player)
@@ -632,7 +642,6 @@ class HumanNPCLLMMixin:
                             npc_response = cleaned
                             conversation_quality = result.get("conversation_quality", "neutral")
                             break
-                        self._chat_regen_count += 1
 
             if not npc_response:
                 npc_response = self._get_fallback_npc_line(is_opening=False, player=player)
@@ -647,11 +656,13 @@ class HumanNPCLLMMixin:
             chapter = self._get_chapter(player)
             if self._chat_history and not self._chat_history[-1].get("npc"):
                 self._chat_history[-1]["npc"] = npc_response
+                self._save_exchange_to_persistence(
+                    player, npc_response, jean_text, game_tick, chapter
+                )
             else:
                 self._save_exchange_to_persistence(
                     player, npc_response, jean_text, game_tick, chapter
                 )
-            self._save_exchange_to_persistence(player, npc_response, jean_text, game_tick, chapter)
 
             # Check conversation end
             conversation_ended = (
@@ -696,6 +707,8 @@ class HumanNPCLLMMixin:
 
     def loquacity_tick(self):
         """Recover loquacity each game beat (called outside active conversation)."""
+        if self.loquacity_max == 0:
+            return  # Not yet initialised; skip until first conversation
         self.loquacity_current = min(
             self.loquacity_max,
             self.loquacity_current + self.loquacity_recovery,
