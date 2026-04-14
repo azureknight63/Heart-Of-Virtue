@@ -302,6 +302,7 @@ class TalusHound(NPC):
     def select_move(self):
         """Pack-aware move selection. Behavior adapts based on number of nearby pack members."""
         import random
+
         available_moves = self.refresh_moves()
 
         pack_size = self._count_pack_members()

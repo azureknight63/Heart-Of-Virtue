@@ -3469,7 +3469,9 @@ class Bitterroot(Consumable):
                 "bitter, almost acrid, but unmistakably alive with properties. "
                 "The mountain dwellers know this plant."
             )
-            self.announce = "A dried root lies here, sharp-smelling even from a distance."
+            self.announce = (
+                "A dried root lies here, sharp-smelling even from a distance."
+            )
 
     def use(self, player: "Player") -> None:
         if getattr(self, "merchandise", False):
@@ -3510,7 +3512,8 @@ class Bitterroot(Consumable):
 
 class MerchantJournalFragment(Book):
     """A fragment of a merchant's journal found at the Far Reach on the eastern slope.
-    Readable lore item revealing context about the eastern road and creature behavior."""
+    Readable lore item revealing context about the eastern road and creature behavior.
+    """
 
     def __init__(self) -> None:
         journal_text = (

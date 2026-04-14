@@ -17,9 +17,7 @@ class GorranGestureEvent(Event):
     Event fires once on first entry to (0,0) when arriving from the west (Grondia).
     """
 
-    def __init__(
-        self, player, tile, params=None, repeat=False, name="GorranGesture"
-    ):
+    def __init__(self, player, tile, params=None, repeat=False, name="GorranGesture"):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
@@ -67,9 +65,7 @@ class EasternRoadTurnbackEvent(Event):
         if not self.player.skip_dialog:
             print("\n")
             time.sleep(0.3)
-            print_slow(
-                "Jean stands at the edge of the road east.\n"
-            )
+            print_slow("Jean stands at the edge of the road east.\n")
             time.sleep(1)
             print_slow(
                 "The Plains are out there — open ground, light, the kind of distance you could "
@@ -81,9 +77,7 @@ class EasternRoadTurnbackEvent(Event):
                 "it passes.\n"
             )
             time.sleep(1)
-            print_slow(
-                colored("South. That's where this goes.", "cyan") + "\n"
-            )
+            print_slow(colored("South. That's where this goes.", "cyan") + "\n")
             time.sleep(0.5)
 
         # Move player west to (4, 2)
