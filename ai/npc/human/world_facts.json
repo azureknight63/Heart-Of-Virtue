@@ -1,0 +1,48 @@
+{
+  "file_version": "1.0",
+  "world_name": "Aurelion",
+  "brief_description": "A strange, luminous wilderness. Stone, water, and something older. Not all of it mapped.",
+  "geography": [
+    "the east-bank nomad camp",
+    "the river",
+    "the western bank",
+    "the Wailing Badlands",
+    "the Echoing Caves",
+    "Grondia",
+    "the eastern settlements",
+    "the foothills"
+  ],
+  "factions_and_peoples": [
+    "Golemites (mechanical stone soldiers, not human)",
+    "Pillar Readers (religious scholars of ruins)",
+    "nomads (free travelers, no fixed home)",
+    "Grondites (stone-people of Grondia)",
+    "Conclave (scholarly order)"
+  ],
+  "known_npcs": [
+    "Jean (the player, he/him, a crusader-type wanderer)",
+    "Gorran (a Golemite, Jean's companion)",
+    "Mara (scavenger, ferry operator, guide)",
+    "Devet (camp cook, Mara's uncle by practice)",
+    "Liss (young nomad, curious)"
+  ],
+  "world_rules": [
+    "No modern technology. Pre-gunpowder.",
+    "Magic is rare and poorly understood, not commonplace.",
+    "The world is dangerous but not gratuitously violent.",
+    "Religion exists but is personal, not institutional in this camp."
+  ],
+  "allowed_proper_nouns": [
+    "Jean", "Gorran", "Mara", "Devet", "Liss",
+    "Aurelion", "Grondia", "Badlands", "Wailing Badlands", "Echoing Caves",
+    "Golemites", "Pillar Readers", "Conclave", "Grondites"
+  ],
+  "prohibited_inventions": [
+    "Do NOT invent new place names not on the allowed list.",
+    "Do NOT invent new faction names.",
+    "Do NOT invent new NPC names beyond those already known.",
+    "Do NOT reference modern concepts (guns, cars, internet, democracy as a word, etc.).",
+    "Do NOT invent historical events not established in this context."
+  ],
+  "tone_notes": "Low fantasy. Grounded, practical. People here have seen hardship and are not romantic about it. Dialogue should feel like actual conversation, not exposition."
+}

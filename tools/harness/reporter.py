@@ -21,6 +21,7 @@ class BugCategory(str, Enum):
     LOGIC = "logic"              # game logic incorrect
     AUTH = "auth"                # session / auth failures
     MISSING_FIELD = "missing"    # required field absent from response
+    UI = "ui"                    # browser/rendering/JS error
 
 
 @dataclass

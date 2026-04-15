@@ -50,6 +50,18 @@ class NPCSerializer:
         if hasattr(npc, "keywords"):
             npc_data["keywords"] = npc.keywords
 
+        # LLM chat capability flags (set by HumanNPCLLMMixin)
+        import os
+        chat_enabled_env = os.getenv("NPC_CHAT_LLM_ENABLED", "0") in ("1", "true", "True")
+        has_mixin = hasattr(npc, "_init_chat_attrs")
+        npc_data["llm_chat_enabled"] = has_mixin and chat_enabled_env
+        loquacity_max = getattr(npc, "loquacity_max", 0)
+        loquacity_current = getattr(npc, "loquacity_current", 0)
+        loquacity_threshold = getattr(npc, "loquacity_threshold", 0)
+        npc_data["loquacity_available"] = (
+            has_mixin and loquacity_current >= loquacity_threshold and loquacity_max > 0
+        ) if loquacity_max > 0 else has_mixin
+
         return npc_data
 
     @staticmethod
