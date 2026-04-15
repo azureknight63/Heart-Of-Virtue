@@ -929,8 +929,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
       - generate_npc_turn:    NPC opening line or response; returns structured JSON
       - generate_jean_options: three Jean dialogue options in a single call
 
-    Configuration (re-uses the Mynx env vars plus one new gate):
-      NPC_CHAT_LLM_ENABLED=1      gate specifically for human NPC chat
+    Configuration (re-uses the Mynx env vars plus NPC-specific overrides):
+      NPC_CHAT_LLM_ENABLED=1            gate specifically for human NPC chat
+      NPC_CHAT_LLM_PROVIDER=ollama|openrouter
+                                         provider override (falls back to MYNX_LLM_PROVIDER)
+      NPC_CHAT_LLM_MODEL=<model-id>      model override for the chosen provider
       NPC_CHAT_TEMP_PERSONALITY   float override for personality call (default 0.7)
       NPC_CHAT_TEMP_NPC           float override for NPC turn call (default 0.65)
       NPC_CHAT_TEMP_OPTIONS       float override for Jean options call (default 0.8)
@@ -944,6 +947,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
         super().__init__()
         # Override the enabled check: use NPC_CHAT_LLM_ENABLED
         self.enabled = os.getenv("NPC_CHAT_LLM_ENABLED", "0") in ("1", "true", "True")
+        # Allow per-feature provider/model override so NPC chat can use a different
+        # provider than Mynx without affecting the Mynx configuration.
+        npc_provider = os.getenv("NPC_CHAT_LLM_PROVIDER", "").strip().lower()
+        if npc_provider:
+            self.provider = npc_provider
+        npc_model = os.getenv("NPC_CHAT_LLM_MODEL", "").strip()
+        if npc_model:
+            self.model = npc_model
         self._world_facts: Optional[Dict[str, Any]] = None
         self._load_world_facts()
 
