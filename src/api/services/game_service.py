@@ -1409,47 +1409,6 @@ class GameService:
         """
         return InventorySerializer.serialize(player)
 
-    def take_item(self, player: "player_module.Player", item_id: str) -> Dict[str, Any]:
-        """Take an item from the ground.
-
-        Args:
-            player: The Player instance
-            item_id: ID of item to take
-
-        Returns:
-            Result of action
-        """
-        # TODO: Implement item pickup logic
-        return {"success": True, "item_id": item_id, "message": "Item taken"}
-
-    def drop_item(self, player: "player_module.Player", item_id: str) -> Dict[str, Any]:
-        """Drop an item from inventory.
-
-        Args:
-            player: The Player instance
-            item_id: ID of item to drop
-
-        Returns:
-            Result of action
-        """
-        # TODO: Implement item drop logic
-        return {"success": True, "item_id": item_id, "message": "Item dropped"}
-
-    def examine_item(
-        self, player: "player_module.Player", item_id: str
-    ) -> Dict[str, Any]:
-        """Examine an item in inventory.
-
-        Args:
-            player: The Player instance
-            item_id: ID of item to examine
-
-        Returns:
-            Dictionary with item details
-        """
-        # TODO: Implement item examination logic
-        return {"item_id": item_id, "message": "Unknown item"}
-
     # ========================
     # Equipment Methods
     # ========================
