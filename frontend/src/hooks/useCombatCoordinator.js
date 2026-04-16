@@ -26,7 +26,7 @@ export function useCombatCoordinator({
     performAction,
     fetchCombatStatus,
     playSFX,
-    playBGM
+    playSting
 }) {
     // Combat dialog state
     const [combatDialogShown, setCombatDialogShown] = useState(false)
@@ -57,8 +57,8 @@ export function useCombatCoordinator({
             if (!isCombatLogProcessing && !hasPendingLogs && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 if (maybeEnd.status === 'victory') {
                     setShowVictoryDialog(true)
-                    // Switch BGM to fanfare (acts as victory sting — non-looping feel)
-                    if (playBGM) playBGM('fanfare')
+                    // Play fanfare as a one-shot sting (non-looping)
+                    if (playSting) playSting('fanfare')
                 } else {
                     setShowDefeatDialog(true)
                 }
@@ -66,7 +66,7 @@ export function useCombatCoordinator({
                 sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
             }
         }
-    }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log])
+    }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log, playSting])
 
     /**
      * Reset combat dialog state when combat ends

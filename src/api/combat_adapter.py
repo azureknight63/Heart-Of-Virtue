@@ -1179,11 +1179,18 @@ class ApiCombatAdapter:
             and "events_triggered" in self.player.combat_adapter_state
         )
 
-        if len(self.player.combat_list) == 0 and not event_just_triggered:
+        # ALWAYS handle victory when all enemies are defeated
+        # (even if post-combat events like Ch01PostRumbler3 are firing).
+        # Events should not suppress the victory state — the frontend needs
+        # combat_end_summary to know when combat has ended.
+        if len(self.player.combat_list) == 0 and self.player.in_combat:
             self._handle_victory()
-            result = self.get_combat_state()
-            result["beat_states"] = beat_states
-            return result
+
+            # If no events are blocking, return victory immediately
+            if not event_just_triggered:
+                result = self.get_combat_state()
+                result["beat_states"] = beat_states
+                return result
 
         # Set up for next move selection if battle continues and no event is blocking
         if not event_just_triggered:
@@ -1456,7 +1463,19 @@ class ApiCombatAdapter:
                             entry["message"] for entry in self.player.combat_log[-20:]
                         ],  # Last 20 messages
                         "last_move": getattr(self.player, "last_move_summary", "None"),
-                        "available_moves": self.available_options,
+                        # Only send moves that are available AND (if targeted) have
+                        # at least one viable target — prevents TA from suggesting
+                        # attacks that cannot resolve at execution time.
+                        "available_moves": [
+                            m
+                            for m in self.available_options
+                            if isinstance(m, dict)
+                            and m.get("available", True)
+                            and (
+                                not m.get("targeted")
+                                or len(m.get("viable_targets", [])) > 0
+                            )
+                        ],
                     }
 
                     logger.debug(f"Combat context keys: {list(ctx.keys())}")

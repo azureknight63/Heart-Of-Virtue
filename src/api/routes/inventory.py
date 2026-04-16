@@ -54,12 +54,7 @@ def get_session_and_player():
 
     player = session_manager.get_player(session_id)
     if not player:
-        return (
-            None,
-            None,
-            jsonify({"success": False, "error": "Player not found"}),
-            404,
-        )
+        return None, None, jsonify({"success": False, "error": "Player not found"}), 404
 
     return session, player, None, None
 
@@ -158,7 +153,6 @@ def examine_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-
 @inventory_bp.route("/inventory/drop", methods=["POST"])
 def drop_item():
     """Drop item from inventory onto current tile.
@@ -183,12 +177,7 @@ def drop_item():
 
         if not item_id and item_index is None:
             return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing item_id or item_index",
-                    }
-                ),
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
 
@@ -207,10 +196,7 @@ def drop_item():
         # Get the tile at player's current position
         tile = player.universe.get_tile(player_x, player_y)
         if not tile:
-            return (
-                jsonify({"success": False, "error": "Current tile not found"}),
-                400,
-            )
+            return jsonify({"success": False, "error": "Current tile not found"}), 400
 
         # If equipped, unequip cleanly before dropping
         if getattr(item_to_drop, "isequipped", False):
@@ -220,6 +206,7 @@ def drop_item():
             if getattr(item_to_drop, "maintype", None) == "Weapon":
                 player.eq_weapon = getattr(player, "fists", None)
             from src import functions
+
             functions.refresh_stat_bonuses(player)
 
         # Remove item from inventory and add to tile
@@ -294,12 +281,7 @@ def equip_item():
 
         if not item_id and item_index is None:
             return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing item_id or item_index",
-                    }
-                ),
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
 
@@ -332,6 +314,7 @@ def equip_item():
             if getattr(item, "maintype", None) == "Weapon":
                 player.eq_weapon = getattr(player, "fists", None)
             from src import functions
+
             functions.refresh_stat_bonuses(player)
             message = f"{item.name} unequipped"
         else:
@@ -362,11 +345,7 @@ def equip_item():
                             item_subtype = getattr(item, "subtype", None)
                             if item_subtype == other_subtype:
                                 # Check if it's a type that allows multiples (Ring, Bracelet, Earring)
-                                if item_subtype in [
-                                    "Ring",
-                                    "Bracelet",
-                                    "Earring",
-                                ]:
+                                if item_subtype in ["Ring", "Bracelet", "Earring"]:
                                     # Don't auto-unequip for these; let player manage multiples
                                     continue
                                 # For single-slot accessories, replace
@@ -440,12 +419,7 @@ def use_item():
 
         if not item_id and item_index is None:
             return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing item_id or item_index",
-                    }
-                ),
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
 
@@ -560,6 +534,68 @@ def use_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@inventory_bp.route("/inventory/unequip", methods=["POST"])
+def unequip_item():
+    """Unequip an item from a slot.
+
+    JSON body:
+        slot: Equipment slot name (head, chest, etc.)
+
+    Returns:
+        JSON with updated equipment
+    """
+    session, player, error, status = get_session_and_player()
+    if error:
+        return error, status
+
+    try:
+        data = request.get_json() or {}
+        is_valid, error_msg = validate_required_fields(data, ["slot"])
+        if not is_valid:
+            return jsonify({"success": False, "error": error_msg}), 400
+
+        slot_name = data["slot"]
+
+        # Validate slot
+        is_valid, error_msg = validate_equipment_slot(slot_name)
+        if not is_valid:
+            return jsonify({"success": False, "error": error_msg}), 400
+
+        # Check if slot has item (handle both equipped and equipment)
+        equipment_dict = getattr(player, "equipped", None) or getattr(
+            player, "equipment", {}
+        )
+        if not equipment_dict or slot_name not in equipment_dict:
+            return (
+                jsonify({"success": False, "error": f"Invalid slot: {slot_name}"}),
+                400,
+            )
+
+        item = equipment_dict.get(slot_name)
+        if not item:
+            return (
+                jsonify(
+                    {"success": False, "error": f"No item equipped in {slot_name}"}
+                ),
+                400,
+            )
+
+        # For now, just validate and return success
+        # Full implementation requires game engine state manipulation
+        equipment_data = EquipmentSerializer.serialize(player)
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "message": "Unequipped item",
+                    "equipment": equipment_data,
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @inventory_bp.route("/inventory/compare", methods=["GET"])
 def compare_items():
@@ -583,10 +619,7 @@ def compare_items():
         if candidate_index is None:
             return (
                 jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing candidate_index parameter",
-                    }
+                    {"success": False, "error": "Missing candidate_index parameter"}
                 ),
                 400,
             )

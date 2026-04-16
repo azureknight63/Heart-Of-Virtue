@@ -6,7 +6,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
 import TypewriterOutput from './TypewriterOutput'
-import { colors, spacing, commonStyles, fonts } from '../styles/theme'
+import { colors, spacing, commonStyles, fonts, shadows } from '../styles/theme'
 import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
 
 /**
@@ -165,6 +165,18 @@ function InteractPanel({
                 setInteractionOutput(message)
                 if (onTypingChange) onTypingChange(true)
                 setInteractionHistory(prev => [...prev, message])
+
+                // Update local object state immediately from the response so action
+                // buttons (e.g. "open" after "unlock") appear without requiring a
+                // back-and-re-select round trip.
+                if (data.object_state) {
+                    setSelectedTarget(prev => prev ? {
+                        ...prev,
+                        keywords: data.object_state.keywords ?? prev.keywords,
+                        locked: data.object_state.locked ?? prev.locked,
+                        state: data.object_state.state ?? prev.state,
+                    } : prev)
+                }
 
                 // Check if this action should lock the panel (e.g. item moved)
                 const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']

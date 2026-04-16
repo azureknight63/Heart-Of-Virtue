@@ -4,6 +4,7 @@ const AudioContext = createContext({
     playBGM: () => {},
     stopBGM: () => {},
     playSFX: () => {},
+    playSting: () => {},
     musicVolume: 0.5,
     setMusicVolume: () => {},
     sfxVolume: 0.5,
@@ -73,6 +74,7 @@ export const AudioProvider = ({ children }) => {
     const bgmRef = useRef(new Audio());
     const trackProgress = useRef({}); // Stores currentTime for each track ID
     const fadeIntervalRef = useRef(null);
+    const activeSFXRef = useRef(new Set());
     // Ref mirrors currentBGM state so playBGM/stopBGM can read it without
     // closing over state (which would force new function references on every
     // track change and trigger unrelated useEffects in consumers).
@@ -165,13 +167,49 @@ export const AudioProvider = ({ children }) => {
         const path = getAssetPath(`/assets/sounds/sfx_${sfxName}.wav`);
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
-        audio.play().catch(e => console.warn("SFX play failed:", e));
+        activeSFXRef.current.add(audio);
+        audio.onended = () => activeSFXRef.current.delete(audio);
+        audio.play().catch(e => {
+            console.warn("SFX play failed:", e);
+            activeSFXRef.current.delete(audio);
+        });
     }, [isSfxMuted, sfxVolume]);
+
+    const playSting = useCallback((trackName) => {
+        const previousBGM = currentBGMRef.current;
+        const path = BGM_MAP[trackName] || getAssetPath(`/assets/sounds/bgm_${trackName}.wav`);
+
+        // Save progress of current track before switching
+        if (currentBGMRef.current) {
+            trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
+        }
+
+        bgmRef.current.loop = false; // One-shot
+        bgmRef.current.src = path;
+        bgmRef.current.currentTime = 0;
+        bgmRef.current.volume = isMusicMuted ? 0 : musicVolume;
+        bgmRef.current.play().catch(e => console.warn("Sting play failed:", e));
+        currentBGMRef.current = trackName;
+        setCurrentBGM(trackName);
+
+        // When sting ends, restore loop and switch back to previous BGM.
+        // Guard: only restore if no external track switch happened during the sting
+        // (i.e., currentBGMRef still points to this sting track).
+        bgmRef.current.onended = () => {
+            bgmRef.current.loop = true;
+            bgmRef.current.onended = null;
+            if (previousBGM && previousBGM !== trackName
+                    && currentBGMRef.current === trackName) {
+                playBGM(previousBGM);
+            }
+        };
+    }, [isMusicMuted, musicVolume, playBGM]);
 
     const value = {
         playBGM,
         stopBGM,
         playSFX,
+        playSting,
         musicVolume,
         setMusicVolume,
         sfxVolume,

@@ -102,6 +102,64 @@ class Ch01_Memory_Amelia(MemoryFlash):
         )
 
 
+class Ch01DarkGrottoIntro(Event):
+    """
+    One-shot intro sequence for new games starting in the Dark Grotto.
+    Mirrors the CLI intro_scene.py narrative, adapted for the web UI.
+    """
+
+    def __init__(
+        self,
+        player,
+        tile,
+        params=None,
+        repeat=False,
+        name="Ch01_DarkGrotto_Intro",
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self, user_input=None):
+        if not hasattr(self, "_stage"):
+            self._stage = 1
+
+        if self._stage == 1:
+            self.needs_input = True
+            self.input_type = "choice"
+            self.description = (
+                "Darkness. Silence. Jean is surrounded by these, thick as fog — "
+                "suffocating his senses. He tries to cry out but can't feel his mouth. "
+                "Not even the sound of his own heartbeat penetrates the void."
+            )
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 2
+            return
+
+        elif self._stage == 2:
+            self.needs_input = True
+            self.input_type = "choice"
+            self.description = (
+                "Gradually, a sound rises from nowhere. Distant at first, like a whisper. "
+                "'The body of Christ...' Then again, closer: 'The body of Christ...' "
+                "Slowly, light and sound begin to return."
+            )
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 3
+            return
+
+        elif self._stage == 3:
+            self.needs_input = False
+            self.completed = True
+            if self.tile is not None and self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+
+
 class Ch01StartOpenWall(Event):
     """
     The first event. Opens the wall in the starting room when the player 'presses' the wall depression
@@ -212,15 +270,22 @@ class Ch01ChestRumblerBattle(Event):
         self.triggered = False  # Track if we've already started the narrative
 
     def check_conditions(self):
-        # Only check if we haven't triggered yet
+        # Don't fire again if already triggered (persisted in story state)
         if self.triggered:
+            return
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("ch01_chest_battle_triggered", "0") == "1":
             return
 
         for thing in self.tile.objects_here:
-            if hasattr(thing, "name"):
-                if thing.name == "Wooden Chest":
-                    # if len(thing.inventory) == 0:  # if the chest is empty, continue
+            if hasattr(thing, "name") and thing.name == "Wooden Chest":
+                # Only trigger after the chest has been opened/looted by the player
+                chest_opened = getattr(thing, "state", "closed") == "opened" or getattr(
+                    thing, "revealed", False
+                )
+                if chest_opened:
                     self.triggered = True  # Mark as triggered before processing
+                    story["ch01_chest_battle_triggered"] = "1"
                     self.pass_conditions_to_process()
                     break
 

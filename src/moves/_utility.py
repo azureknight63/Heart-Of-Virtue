@@ -10,48 +10,35 @@ import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
+    PassiveMove,
     default_animations,
 )  # noqa: F401
 
 
-class StrategicInsight(Move):
+class StrategicInsight(PassiveMove):
+    """Passive move that enhances decision-making in combat.
+
+    This is a passive move affecting the TacticalAdvisor feature.
+    It cannot be selected during combat.
+    """
+
     def __init__(self, user):
-        description = "Provides advanced tactical suggestions during combat."
-        super().__init__(
-            name="Strategic Insight",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[0, 0, 0, 0],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=0,
-            beats_left=0,
-            target=user,
-            user=user,
-            category="Special",
-            passive=True,
+        description = (
+            "Enhanced tactical awareness and strategic insight into enemy movements."
         )
+        super().__init__(user, name="Strategic Insight", description=description)
 
 
-class MasterTactician(Move):
+class MasterTactician(PassiveMove):
+    """Passive move representing mastery of tactical combat.
+
+    This is a passive move affecting the TacticalAdvisor feature.
+    It cannot be selected during combat.
+    """
+
     def __init__(self, user):
-        description = "Expertly analyzes the battlefield to provide the best possible tactical moves."
-        super().__init__(
-            name="Master Tactician",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[0, 0, 0, 0],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=0,
-            beats_left=0,
-            target=user,
-            user=user,
-            category="Special",
-            passive=True,
-        )
+        description = "Mastery of tactical positioning, timing, and combat strategy."
+        super().__init__(user, name="Master Tactician", description=description)
 
 
 class Check(Move):  # player checks the battlefield (shows enemies, allies, distances)
@@ -285,7 +272,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                                     ally.name,
                                     ally.combat_position.x,
                                     ally.combat_position.y,
-                                    int(ally.combat_proximity[enemy]),
+                                    int(ally.combat_proximity.get(enemy, 0)),
                                     ally_dir,
                                 ),
                                 "cyan",
@@ -294,7 +281,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
                             cprint(
                                 "  → {} is {} ft away".format(
                                     ally.name,
-                                    int(ally.combat_proximity[enemy]),
+                                    int(ally.combat_proximity.get(enemy, 0)),
                                 ),
                                 "cyan",
                             )

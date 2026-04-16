@@ -91,7 +91,8 @@ export default function GamePage() {
     setIsInteractionDelayActive,
     handleEventsTriggered,
     handleEventClose,
-    handleEventInput
+    handleEventInput,
+    checkPendingEvents,
   } = useEventManager({
     mode,
     isInteractionTyping,
@@ -266,7 +267,7 @@ export default function GamePage() {
   useEffect(() => {
     if (inCombat) {
       // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
-      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent) {
+      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent && !showVictoryDialog && !showDefeatDialog) {
         const logEntries = combat?.log || []
 
         const alertMessages = logEntries
@@ -350,11 +351,15 @@ export default function GamePage() {
   }, [mode, location?.bgm, playBGM, currentEvent])
 
   /**
-   * Check combat status on initial load only
+   * Check combat status and pending events on initial load only.
+   * checkPendingEvents runs here (in addition to on-mount in useEventManager)
+   * to handle the race where the mount-time poll fires before GET /world
+   * triggers starting-tile events into the session.
    */
   useEffect(() => {
     if (!playerLoading && !worldLoading) {
       fetchCombatStatus()
+      checkPendingEvents()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerLoading, worldLoading])
@@ -394,6 +399,9 @@ export default function GamePage() {
     setMode('exploration')
     await handleRefetch()
     await fetchCombatStatus()
+    // Flush any combat-triggered events (e.g. Ch01PostRumbler memory flash)
+    // that were stored in session pending_events during the battle.
+    await checkPendingEvents()
     if (isBetaEnd) {
       setShowBetaEndDialog(true)
     }

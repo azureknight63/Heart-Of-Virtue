@@ -91,3 +91,4 @@ bugs_*.json
 tools/inquisitor_screenshots/
 .gstack/
 .agent/instructions.md
+.claude/settings.json

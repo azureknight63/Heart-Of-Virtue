@@ -137,6 +137,8 @@ class Move:  # master class for all moves
         self,
     ):  # this is what happens when the ability is first chosen by the player
         self.current_stage = 0  # initialize prep stage
+        if hasattr(self, "refresh_announcements"):
+            self.refresh_announcements(self.user)
         if self.stage_announce[0] != "":
             print(
                 self.stage_announce[0]

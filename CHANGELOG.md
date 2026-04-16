@@ -2,7 +2,30 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.5.1] - 2026-04-14
+
+### Fixed
+- **Combat — level-up dialog race condition**: Combat initialization is now deferred when the player has unspent attribute points. Previously, the next combat in a multi-battle chain would start immediately, dismissing the level-up dialog before the player could make selections and corrupting game state.
+- **Combat — deferred combat auto-resume**: When a combat initialization is deferred due to a level-up, the waiting enemies are stashed on the player. Once all attribute points are spent, the next `GET /combat/status` poll (fired automatically by the frontend after each allocation) detects the stash and starts combat seamlessly — no manual re-trigger required.
+- **Combat — KeyError in Check move with chained battles**: `Check`'s coordinate display no longer raises `KeyError` when an ally's proximity data hasn't yet been synchronized with new enemies from a chained battle. Safe `.get(enemy, 0)` fallback returns 0 ft rather than crashing.
+- **Inventory — stats endpoint regression**: `GET /inventory/stats` was rewritten with bare `getattr` fallbacks for non-existent attributes (`health`, `stamina`, `magic_attack`), causing the stats panel to display all-default values. Reverted to `game_service.get_player_stats()` which reads correct attribute names (`hp`, `maxhp`, `strength`, `finesse`, etc.) and applies equipment bonuses.
+- **Inventory — item inspection opens in dialog overlay**: Inspecting an item from the Inventory panel now opens `ItemDetailDialog` inside the `BaseDialog` overlay rather than redirecting to the Left Panel, keeping proper layering and interactivity.
+- **Ch01 — chest battle event premature trigger**: `Ch01ChestRumblerBattle` now only fires after the chest has been opened/looted. Story state is persisted so the event cannot re-trigger across sessions.
+- **Dark Grotto intro event**: Added `Ch01DarkGrottoIntro` event — a two-stage narrative sequence that plays out for new games starting in the Dark Grotto (mirrors the CLI intro scene).
+- **Session — player stats from config**: `SessionManager` now applies player stats from the config file after player creation, ensuring stat overrides defined in `config.json` take effect on session start.
+- **Moves — StrategicInsight and MasterTactician converted to `PassiveMove`**: Both moves now extend the correct `PassiveMove` base class (they cannot be selected during combat). Previous implementation used the selectable `Move` base with `passive=True` flag, which was ignored by the adapter.
+
+### Added
+- **LLM client — structured output error handling**: `generate_structured` now handles non-dict provider responses gracefully, logging a warning and returning an empty dict instead of raising `TypeError`.
+- Regression test suite for OpenRouter structured generation edge cases (`tests/test_llm_openrouter.py`).
+- Local development setup guide (`docs/LOCAL_DEV_SETUP.md`).
+- Bug reproduction guide for the Rumbler loot bug (`docs/RUMBLER_LOOT_BUG_REPRODUCTION.md`).
+
+### Security
+- **axios 1.13.5 → 1.15.0**: Patched CRITICAL security vulnerability (already shipped in 0.0.4.1; re-documented here for completeness since branch was rebased).
+
 ## [0.0.5.0] - 2026-04-13
+
 
 ### Added
 - **Eastern Descent map**: New 35-tile environment for Chapter 3 spanning 5 zones (Gate Approach, Upper Boulder Field, Deep Labyrinth, Lower Slope, Nomad Camp) with descriptive prose and environmental storytelling
@@ -14,6 +37,35 @@ All notable changes to Heart of Virtue will be documented in this file.
 - **Chapter 3 story events**: GorranGestureEvent (Gorran touches the sealed gate on exit from Grondia), EasternRoadTurnbackEvent (Jean reaches eastern road stub, pulled by desire to escape, then turned back by Gorran's presence)
 - **New consumable items**: IronRation (HP +30, travel provisions), Bitterroot (HP +60, mountain herb), MerchantJournalFragment (readable lore item with creature observations and references to Mara)
 - **Nomad camp resident NPCs**: NomadCamper, NomadScout, NomadTrader — background population with gesture-based interaction
+
+## [0.0.4.1] - 2026-04-03
+
+### Fixed
+- **Combat API — Event Dialog blocked after post-combat events**: `_handle_victory()` now always called when enemies are defeated, even if post-combat events fire. Frontend now receives both `end_state` (victory) and `events_triggered` correctly, fixing the delay where the Event Dialog wouldn't appear until a follow-up action.
+- **Combat API — available moves filtered for suggestions**: Combat suggestions now exclude moves with no viable targets, preventing AI from suggesting attacks that cannot execute.
+- **Dark Grotto — exits whitelist from JSON not enforced**: Wall Depression now correctly unlocks the eastward passage when interacted with (NW/SW exit whitelist bug fixed).
+- **Dark Grotto — multiple map bugs**: Fixed 14 Dark Grotto issues including wall passages, NPC spawning, tile descriptions, and visual inconsistencies.
+- **Inventory — game-logic rejection messages**: Now show narrative messages without the ✗ prefix for better UX feedback on failed item usage.
+- **Inventory — ValueError handling**: Return 400 Bad Request instead of 500 Server Error when item usage raises ValueError.
+- **Event system — tile resolution**: `process_event_input` now correctly resolves tile coordinates from session payload, fixing events that reference `self.tile`.
+- **Game initialization — entry-point events**: Starting tile events now fire on initial game load, fixing intro event sequences that don't trigger when entering a map for the first time.
+- **Audio — concurrent BGM switches**: `playSting` now guards the restore logic against race conditions when the player switches tracks during a sting, preventing crashed audio.
+- **API — backend errors in EventDialog**: Backend errors and diagnostic output now filtered from event messages sent to the frontend.
+
+### Changed
+- Removed "File " prefix regression that appeared in some event messages.
+- Event error handling now logs exceptions instead of silently swallowing them.
+- Map-entry spawners (NPCSpawnerEvent) now consistently fire during player movement, matching terminal game loop behavior.
+
+### Added
+- Audio context `playSting` function for one-shot sting effects (fanfare, etc.) with automatic BGM restoration.
+- SFX audio object reference tracking to prevent dangling audio elements.
+- Regression tests for inventory error handling (400 vs 500 responses).
+- ItemDetailDialog `onBack` prop for navigation back to inventory list after actions.
+
+### Security
+- **axios 1.13.5 → 1.15.0**: Updated axios to patch CRITICAL security vulnerability in HTTP client.
+
 
 ## [0.0.4.0] - 2026-03-28
 

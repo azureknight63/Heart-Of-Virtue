@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import apiClient from '../api/client'
-import BaseDialog from './BaseDialog'
-import { colors } from '../styles/theme'
 
-export default function ItemDetailDialog({ item, player, onClose, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
+export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
   const [showDropConfirm, setShowDropConfirm] = useState(false)
@@ -38,11 +36,19 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         if (onRefetch) {
           onRefetch()
         }
+
+        // We no longer auto-close/timeout here because the dialog handles it
+        // when the user clicks Ok
       } else {
         setActionMessage('✗ ' + (data.error || 'Failed to equip'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      // For server responses with error messages (400s), show without ✗ prefix
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -71,7 +77,12 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      // For server responses with error messages (400s), show without ✗ prefix
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -99,21 +110,79 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         setActionMessage('✗ ' + (data.error || 'Failed to drop'))
       }
     } catch (err) {
-      setActionMessage('✗ Error: ' + err.message)
+      // For server responses with error messages (400s), show without ✗ prefix
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
     } finally {
       setIsLoading(false)
       setShowDropConfirm(false)
     }
   }
 
+  const categoryType = (item.maintype || item.subtype || item.type || '').toLowerCase()
+  const isWeapon = categoryType.includes('weapon')
+
   return (
-    <BaseDialog
-      title={item.name}
-      onClose={onClose}
-      zIndex={1600}
-      maxWidth="500px"
-    >
+    <div style={{
+      backgroundColor: 'rgba(50, 20, 0, 0.3)',
+      border: '2px solid #ffaa00',
+      borderRadius: '6px',
+      padding: '16px',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      gap: '12px',
+    }}>
+      {/* Header */}
       <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '8px',
+        paddingBottom: '8px',
+        borderBottom: '2px solid #ffaa00',
+      }}>
+        <div style={{
+          color: '#ffff00',
+          fontWeight: 'bold',
+          fontSize: '20px',
+          fontFamily: 'monospace',
+        }}>
+          {item.name}
+        </div>
+        <button
+          onClick={onBack}
+          style={{
+            padding: '6px 10px',
+            backgroundColor: '#cc4400',
+            color: '#ffff00',
+            border: '1px solid #ff6600',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            fontSize: '15px',
+            fontFamily: 'monospace',
+            fontWeight: 'bold',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.backgroundColor = '#ff6600'
+            e.target.style.boxShadow = '0 0 8px rgba(255, 102, 0, 0.8)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.backgroundColor = '#cc4400'
+            e.target.style.boxShadow = 'none'
+          }}
+        >
+          ← Back
+        </button>
+      </div>
+
+      {/* Item Info */}
+      <div style={{
+        flex: 1,
         backgroundColor: 'rgba(30, 15, 0, 0.4)',
         border: '1px solid #664400',
         borderRadius: '4px',
@@ -126,7 +195,6 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
-        marginBottom: '16px'
       }}>
         {/* Properties Grid - Inline */}
         <div style={{
@@ -288,7 +356,6 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
           fontSize: '15px',
           fontFamily: 'monospace',
           textAlign: 'center',
-          marginBottom: '16px'
         }}>
           {actionMessage}
         </div>
@@ -413,7 +480,7 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 2100, // Higher than BaseDialog
+          zIndex: 1700, // Higher than BaseDialog (1500) and drop confirm (1600)
         }}>
           <div style={{
             backgroundColor: 'rgba(30, 20, 5, 0.98)',
@@ -449,7 +516,7 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
               <button
                 onClick={() => {
                   setActionResult(null)
-                  onClose() // Close the item detail pop-out
+                  onBack() // Go back to inventory list
                 }}
                 style={{
                   padding: '8px 32px',
@@ -496,7 +563,7 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 2000,
+          zIndex: 1600, // Higher than BaseDialog (1500)
         }}>
           <div style={{
             backgroundColor: 'rgba(50, 20, 0, 0.95)',
@@ -598,6 +665,6 @@ export default function ItemDetailDialog({ item, player, onClose, onRefetch, onI
           </div>
         </div>
       )}
-    </BaseDialog>
+    </div>
   )
 }

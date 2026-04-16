@@ -66,7 +66,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }, [combat?.turn_number, combat?.combat_id])
 
   // Audio context
-  const { playSFX, playBGM } = useAudio()
+  const { playSFX, playSting } = useAudio()
 
   // Log processing state
   const [isProcessingLog, setIsProcessingLog] = useState(false)
@@ -173,7 +173,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           else if (msg.includes('parr')) playSFX('attack_parry')
           else if (msg.includes('defeated') || msg.includes('died')) playSFX('enemy_death')
           else if (msg.includes('victory')) {
-            playBGM('fanfare')
+            playSting('fanfare')
           } else if (msg.includes('heal') || msg.includes('restores') || msg.includes('restored')) {
             playSFX('heal')
           } else if (msg.includes('poisoned') || msg.includes('burned') || msg.includes('paralyz') || msg.includes('stunned') || msg.includes('afflict') || msg.includes('inflict')) {

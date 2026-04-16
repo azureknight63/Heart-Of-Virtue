@@ -469,6 +469,93 @@ class SessionManager:
 
         return items
 
+    def _apply_player_stats_from_config(self, player) -> None:
+        """Apply player stats from [player] section of config file.
+
+        Args:
+            player: Player instance to apply stats to
+        """
+        config_file = os.environ.get("CONFIG_FILE")
+
+        if not config_file:
+            return
+
+        try:
+            config_file = config_file.strip("'\"")
+            config_path = Path(config_file)
+
+            if not config_path.is_absolute():
+                project_root = Path(__file__).resolve().parent.parent.parent.parent
+                config_path = project_root / config_file
+
+            if not config_path.exists():
+                print(
+                    f"[SessionManager] [DEBUG] Config file not found: {config_path}",
+                    flush=True,
+                )
+                return
+
+            parser = configparser.ConfigParser()
+            parser.read(config_path)
+
+            if not parser.has_section("player"):
+                print(
+                    "[SessionManager] [DEBUG] No [player] section in config", flush=True
+                )
+                return
+
+            player_section = parser["player"]
+            stats_applied = []
+
+            # Map of config keys to player attributes (both attribute and _base variant)
+            stat_mapping = {
+                "hp": ("hp",),
+                "maxhp": ("maxhp", "maxhp_base"),
+                "strength": ("strength", "strength_base"),
+                "finesse": ("finesse", "finesse_base"),
+                "speed": ("speed", "speed_base"),
+                "endurance": ("endurance", "endurance_base"),
+                "charisma": ("charisma", "charisma_base"),
+                "intelligence": ("intelligence", "intelligence_base"),
+                "faith": ("faith", "faith_base"),
+                "heat": ("heat",),
+                "level": ("level",),
+                "exp": ("exp",),
+            }
+
+            for config_key, attr_tuple in stat_mapping.items():
+                if config_key in player_section:
+                    try:
+                        # Parse as float for flexibility, then convert if needed
+                        value_str = player_section.get(config_key)
+
+                        if config_key in ("heat",):
+                            value = float(value_str)
+                        else:
+                            value = int(value_str)
+
+                        # Set all attributes in the tuple
+                        for attr in attr_tuple:
+                            if hasattr(player, attr):
+                                setattr(player, attr, value)
+                                stats_applied.append(f"{attr}={value}")
+                    except (ValueError, TypeError) as e:
+                        print(
+                            f"[SessionManager] [WARN] Could not parse {config_key}={player_section.get(config_key)}: {e}",
+                            flush=True,
+                        )
+
+            if stats_applied:
+                print(
+                    f"[SessionManager] [OK] Applied player stats from config: {', '.join(stats_applied)}",
+                    flush=True,
+                )
+        except Exception as e:
+            print(
+                f"[SessionManager] [ERROR] Error applying player stats from config: {e}",
+                flush=True,
+            )
+
     def _create_player_for_session(self, username: str) -> object:
         """Create a fresh player instance for a session.
 
@@ -563,6 +650,9 @@ class SessionManager:
                         flush=True,
                     )
 
+            # Apply player stats from config if available
+            self._apply_player_stats_from_config(player)
+
             return player
         except Exception as e:
             print(f"[SessionManager] Error creating player: {e}", flush=True)
@@ -581,6 +671,9 @@ class SessionManager:
                         f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
                         flush=True,
                     )
+
+            # Apply player stats from config if available
+            self._apply_player_stats_from_config(player)
 
             return player
 

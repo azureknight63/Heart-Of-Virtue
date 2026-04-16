@@ -2442,7 +2442,9 @@ class Restorative(Consumable):
             if self.count <= 0:
                 player.inventory.remove(self)
         else:
-            raise ValueError("Jean is already at full health!")
+            raise ValueError(
+                "Jean is already at full health. He places the Restorative back into his bag."
+            )
 
 
 class Draught(Consumable):
@@ -2897,6 +2899,9 @@ class Book(Special):
         )
         self.event = event
         self.interactions.append("read")
+        self.interactions.append(
+            "use"
+        )  # Alias so /inventory/use works for API-based reading
         self.text_file_path = text_file_path
         self._text: Optional[str] = None  # Cache for loaded text
 
@@ -3064,6 +3069,20 @@ class Book(Special):
             if not getattr(self.event, "repeat", False):
                 self.event = None
             functions.await_input()
+
+    def use(self, player=None) -> None:
+        """API-friendly reading method: prints the full text without interactive pagination.
+        This is called by the /inventory/use endpoint so text can be captured via redirect_stdout.
+        """
+        cprint(f"--- {self.name} ---", "cyan")
+        print()
+        text = self.text
+        if text:
+            print(text)
+        else:
+            print(self.description)
+        print()
+        cprint(f"--- {self.name} ---", "cyan")
 
 
 # ---------------------------------------------------------------------------

@@ -43,6 +43,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onRefetch={mockOnRefetch}
         onItemRemoved={mockOnItemRemoved}
         onItemUpdated={mockOnItemUpdated}
@@ -63,6 +64,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemUpdated={mockOnItemUpdated}
         onRefetch={mockOnRefetch}
       />
@@ -82,8 +84,8 @@ describe('ItemDetailDialog', () => {
 
     // Click Ok on success dialog
     fireEvent.click(screen.getByText(/Ok/i));
-    // Close IS called on equip to close the detail view after success
-    expect(mockOnClose).toHaveBeenCalled();
+    // onBack IS called to return to inventory list after success
+    expect(mockOnBack).toHaveBeenCalled();
   });
 
   it('handles use action successfully', async () => {
@@ -102,6 +104,7 @@ describe('ItemDetailDialog', () => {
         item={consumableItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemRemoved={mockOnItemRemoved}
         onRefetch={mockOnRefetch}
       />
@@ -127,6 +130,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemRemoved={mockOnItemRemoved}
       />
     );
@@ -155,6 +159,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -176,7 +181,7 @@ describe('ItemDetailDialog', () => {
       name: 'Health Potion',
     };
 
-    render(<ItemDetailDialog item={consumableItem} player={mockPlayer} />);
+    render(<ItemDetailDialog item={consumableItem} player={mockPlayer} onBack={mockOnBack} />);
 
     const useBtn = screen.getByText(/Use/i);
     fireEvent.mouseEnter(useBtn);
@@ -191,13 +196,57 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
     fireEvent.click(screen.getByText(/Equip/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Error: Network Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Error.*Network Error/i)).toBeDefined();
+    });
+  });
+
+  it('shows server narrative without ✗ prefix when equip is rejected with a 400 error body', async () => {
+    const err = new Error('Request failed with status code 400');
+    err.response = { data: { error: 'Jean is already wielding a sword.' } };
+    apiClient.post.mockRejectedValue(err);
+
+    render(
+      <ItemDetailDialog
+        item={mockItem}
+        player={mockPlayer}
+        onBack={mockOnBack}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Equip/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Jean is already wielding a sword\./i)).toBeDefined();
+      expect(screen.queryByText(/✗/)).toBeNull();
+    });
+  });
+
+  it('shows server narrative without ✗ prefix when use is rejected with a 400 error body', async () => {
+    const consumableItem = { ...mockItem, can_use: true, maintype: 'Consumable' };
+    const err = new Error('Request failed with status code 400');
+    err.response = { data: { error: 'Jean is already at full health. He places the Restorative back into his bag.' } };
+    apiClient.post.mockRejectedValue(err);
+
+    render(
+      <ItemDetailDialog
+        item={consumableItem}
+        player={mockPlayer}
+        onBack={mockOnBack}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Use/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Jean is already at full health\./i)).toBeDefined();
+      expect(screen.queryByText(/✗/)).toBeNull();
     });
   });
 
@@ -208,6 +257,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -226,6 +276,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -243,6 +294,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -263,13 +315,14 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
     fireEvent.click(screen.getByText(/Use/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Error: Use Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Error.*Use Error/i)).toBeDefined();
     });
   });
 
@@ -280,6 +333,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
       />
     );
 
@@ -288,7 +342,7 @@ describe('ItemDetailDialog', () => {
     fireEvent.click(dropButtons[dropButtons.length - 1]);
 
     await waitFor(() => {
-      expect(screen.getByText(/✗ Error: Drop Error/i)).toBeDefined();
+      expect(screen.getByText(/✗ Error.*Drop Error/i)).toBeDefined();
     });
   });
 
@@ -297,6 +351,7 @@ describe('ItemDetailDialog', () => {
       <ItemDetailDialog
         item={mockItem}
         player={mockPlayer}
+        onBack={mockOnBack}
         combatMode={true}
       />
     );
@@ -314,6 +369,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
       />
     );
 
@@ -354,6 +410,7 @@ describe('ItemDetailDialog', () => {
         item={complexItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
       />
     );
 
@@ -372,6 +429,7 @@ describe('ItemDetailDialog', () => {
         item={equippedItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
         onItemUpdated={mockOnItemUpdated}
       />
     );
@@ -391,6 +449,7 @@ describe('ItemDetailDialog', () => {
         item={mockItem}
         player={mockPlayer}
         onClose={mockOnClose}
+        onBack={mockOnBack}
       />
     );
 

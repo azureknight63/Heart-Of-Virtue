@@ -1,9 +1,11 @@
+import logging
 import uuid
 import contextlib
 import io
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
+
 from src.interface import get_gold
 
 if TYPE_CHECKING:
@@ -39,6 +41,32 @@ from src.api.serializers.dialogue_context import (
     DialogueNode,
     ConversationHistory,
     DialogueContext,
+)
+
+_log = logging.getLogger(__name__)
+
+# Internal LLM diagnostic strings that must never reach the UI.
+# Originate from ai/llm_client.py logger calls captured via redirect_stdout,
+# plus echoed Mynx system-prompt fragments returned by low-quality model runs.
+_LLM_NOISE_PREFIXES = (
+    "OpenRouter returned",
+    "Primary model",
+    "Searching for fallback",
+    "Fallback model",
+    "marking as unusable",
+    "generate_structured received",
+    "it need to output",
+    "it quotes",
+    "present-tense",
+    "no code fences",
+    "<=2 short",
+    "one immediate",
+    "nonverbal action",
+    "plain description",
+    "[MYNX_LLM_DEBUG]",
+    "[DEBUG]",
+    "[ERROR]",
+    "[WARNING]",
 )
 
 
@@ -121,6 +149,23 @@ class GameService:
 
         return patches
 
+    # Prefixes that indicate internal error/diagnostic output — must never reach the UI.
+    _ERROR_PREFIXES = (
+        "[ERROR]",
+        "[WARNING]",
+        "Traceback (most recent call last):",
+        "  File ",
+        "NameError:",
+        "AttributeError:",
+        "TypeError:",
+        "ValueError:",
+        "KeyError:",
+        "IndexError:",
+        "Exception:",
+        "RuntimeError:",
+        "DEBUG:",
+    )
+
     def _clean_event_output(self, output: str) -> str:
         if not output:
             return ""
@@ -128,7 +173,10 @@ class GameService:
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         lines = output.splitlines()
         filtered_lines = [
-            line for line in lines if not line.strip().startswith("DEBUG:")
+            line
+            for line in lines
+            if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
+            and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
 
@@ -186,6 +234,28 @@ class GameService:
     # ========================
     # World Navigation Methods
     # ========================
+
+    def _resolve_bgm(self, tile: Any, player: Any) -> Optional[str]:
+        """Resolve the BGM track for a tile.
+
+        Checks (in order): tile-level bgm attribute, map metadata bgm, map-name fallback.
+        """
+        current_map = getattr(player, "map", None)
+        map_metadata = (
+            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
+        )
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+
+        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
+        if not bgm and map_name:
+            name_lower = map_name.lower()
+            if "dark-grotto" in name_lower:
+                bgm = "dark_grotto"
+            elif "verdette" in name_lower:
+                bgm = "verdette_caverns"
+            elif "mineral" in name_lower:
+                bgm = "mineral_pools"
+        return bgm
 
     def _calculate_exits(
         self, universe, tile: Any, x: int, y: int
@@ -256,6 +326,21 @@ class GameService:
         if session_data:
             self.apply_tile_modifications(tile, session_data)
 
+        # On first world fetch, trigger tile events for the starting tile so
+        # intro/entry events fire even though the player never "moved" there.
+        if session_data is not None and not session_data.get(
+            "initial_tile_events_done"
+        ):
+            session_data["initial_tile_events_done"] = True
+            try:
+                self.trigger_tile_events(player, tile, session_data)
+            except Exception as e:
+                import logging as _logging
+
+                _logging.getLogger(__name__).warning(
+                    "Initial tile event trigger failed: %s", e
+                )
+
         # Calculate exits dynamically by checking adjacent tiles
         exits_data = self._calculate_exits(
             player.universe, tile, player.location_x, player.location_y
@@ -279,20 +364,10 @@ class GameService:
         if hasattr(tile, "objects_here"):
             objects_data = ObjectSerializer.serialize_list(tile.objects_here)
 
-        current_map = getattr(player, "map", None)
-        map_metadata = (
-            current_map.get("metadata", {}) if isinstance(current_map, dict) else {}
-        )
-        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+        bgm = self._resolve_bgm(tile, player)
 
-        bgm = getattr(tile, "bgm", None) or map_metadata.get("bgm")
-        if not bgm and map_name:
-            if "dark-grotto" in map_name.lower():
-                bgm = "dark_grotto"
-            elif "verdette" in map_name.lower():
-                bgm = "verdette_caverns"
-            elif "mineral" in map_name.lower():
-                bgm = "mineral_pools"
+        current_map = getattr(player, "map", None)
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
 
         raw_name = getattr(tile, "name", None) or type(tile).__name__
         # Humanize CamelCase class names (e.g. "EmptyCave" → "Empty Cave")
@@ -529,22 +604,32 @@ class GameService:
         combat_state = None
 
         if combat_enemies:
-            # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
-            combat_started = True
-
-            # Get initial combat state from the adapter
-            if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
-                combat_state = adapter_state.get("battle_state")
+            # Do not initialize the new combat while the player has unspent level-up
+            # attribute points — same race-condition guard as in process_event_input.
+            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
+            if pending_points > 0:
+                # Stash enemies so get_combat_status can auto-resume when points hit 0
+                player._combat_deferred_enemies = combat_enemies
+                combat_started = False
             else:
-                # Fallback to direct serialization if adapter not available
-                combat_state = CombatStateSerializer.serialize_combat_state(
-                    player,
-                    combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
+                # Initialize combat
+                self._initialize_combat(
+                    player, combat_enemies, session_data=session_data
                 )
+                combat_started = True
+
+                # Get initial combat state from the adapter
+                if hasattr(player, "_combat_adapter"):
+                    adapter_state = player._combat_adapter.get_combat_state()
+                    combat_state = adapter_state.get("battle_state")
+                else:
+                    # Fallback to direct serialization if adapter not available
+                    combat_state = CombatStateSerializer.serialize_combat_state(
+                        player,
+                        combat_enemies,
+                        current_turn_index=getattr(player, "combat_turn_index", 0),
+                        round_number=getattr(player, "combat_round", 1),
+                    )
 
         return {
             "success": True,
@@ -631,10 +716,8 @@ class GameService:
                         mock_print_slow,
                     )
 
-                    # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
-                        f
-                    ), contextlib.ExitStack() as stack:
+                    # Capture stdout only (stderr is global/not thread-safe to redirect)
+                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -673,7 +756,10 @@ class GameService:
                 except Exception as e:
                     # Log error but continue
                     event_data["error"] = str(e)
-                    print(f"[ERROR] Event processing: {e}")
+                    _log.exception(
+                        "Event processing failed for %s",
+                        getattr(event, "name", type(event).__name__),
+                    )
 
                 # Capture and clean output
                 clean_output = self._clean_event_output(f.getvalue())
@@ -742,10 +828,8 @@ class GameService:
                 mock_print_slow,
             )
 
-            # Process the event with captured output
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
-                f
-            ), contextlib.ExitStack() as stack:
+            # Capture stdout only (stderr is global/not thread-safe to redirect)
+            with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
 
                 for p in patches:
                     try:
@@ -758,9 +842,19 @@ class GameService:
                     ):
                         pass
 
-                # Ensure event has current player and room references
+                # Ensure event has current player and room references.
+                # Prefer tile_x/tile_y stored in the pending payload (set when
+                # the event was first queued) so events that reference
+                # self.tile (e.g. to remove themselves from events_here) work
+                # correctly even when player.current_room is None in the API.
                 event.player = player
-                if hasattr(player, "current_room"):
+                tile_x = pending.get("tile_x")
+                tile_y = pending.get("tile_y")
+                if tile_x is not None and tile_y is not None:
+                    event.tile = player.universe.get_tile(tile_x, tile_y)
+                elif (
+                    hasattr(player, "current_room") and player.current_room is not None
+                ):
                     event.tile = player.current_room
 
                 # Call process() or check_conditions()
@@ -792,7 +886,7 @@ class GameService:
         except Exception as e:
             result["success"] = False
             result["error"] = str(e)
-            print(f"[ERROR] Event input processing: {e}")
+            _log.exception("Event input processing failed for event_id=%s", event_id)
 
         # Capture and clean output
         clean_output = self._clean_event_output(f.getvalue())
@@ -874,25 +968,47 @@ class GameService:
         combat_enemies = check_for_combat(player)
 
         if combat_enemies and not result.get("needs_input", False):
-            # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
-            result["combat_started"] = True
-
-            # Get initial combat state
-            if hasattr(player, "_combat_adapter"):
-                adapter_state = player._combat_adapter.get_combat_state()
-                # If we resumed a move, the adapter state already contains the full battle_state
-                result["combat_state"] = (
-                    adapter_state.get("battle_state") or adapter_state
-                )
+            # Do NOT initialize the new combat while the player still has unspent
+            # level-up attribute points.  _initialize_combat emits "combat:started"
+            # which races with the level-up dialog and leaves the frontend in a
+            # corrupt state — subsequent allocate calls get 400s ("Not enough points")
+            # because the points counter is correct but the frontend has already
+            # moved to the combat screen.
+            #
+            # Since the aggro NPCs remain in the room, check_for_combat will find
+            # them again on the very next player action (move / event input) and
+            # combat will initialize cleanly after level-up is resolved.
+            pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
+            if pending_points > 0:
+                result["combat_started"] = False
+                result["combat_deferred"] = True
+                result["combat_deferred_reason"] = "level_up_pending"
+                # Stash enemies so get_combat_status can auto-resume when points hit 0
+                player._combat_deferred_enemies = combat_enemies
             else:
-                # Fallback to direct serialization (CombatStateSerializer already imported at module level)
-                result["combat_state"] = CombatStateSerializer.serialize_combat_state(
-                    player,
-                    combat_enemies,
-                    current_turn_index=getattr(player, "combat_turn_index", 0),
-                    round_number=getattr(player, "combat_round", 1),
+                # Initialize combat
+                self._initialize_combat(
+                    player, combat_enemies, session_data=session_data
                 )
+                result["combat_started"] = True
+
+                # Get initial combat state
+                if hasattr(player, "_combat_adapter"):
+                    adapter_state = player._combat_adapter.get_combat_state()
+                    # If we resumed a move, the adapter state already contains the full battle_state
+                    result["combat_state"] = (
+                        adapter_state.get("battle_state") or adapter_state
+                    )
+                else:
+                    # Fallback to direct serialization (CombatStateSerializer already imported at module level)
+                    result["combat_state"] = (
+                        CombatStateSerializer.serialize_combat_state(
+                            player,
+                            combat_enemies,
+                            current_turn_index=getattr(player, "combat_turn_index", 0),
+                            round_number=getattr(player, "combat_round", 1),
+                        )
+                    )
         elif combat_enemies:
             # Combat is present but we are paused for narrative
             result["combat_started"] = True
@@ -925,11 +1041,10 @@ class GameService:
         )
         events_data = EventSerializer.serialize_list(getattr(tile, "events_here", []))
 
-        # Get exits/connections
-        exits_data = {}
-        if hasattr(tile, "exits"):
-            for direction, (ex, ey) in tile.exits.items():
-                exits_data[direction] = {"x": ex, "y": ey}
+        # Get exits/connections using the same calculated approach as get_current_room
+        exits_data = self._calculate_exits(player.universe, tile, x, y)
+
+        bgm = self._resolve_bgm(tile, player)
 
         return {
             "x": x,
@@ -942,6 +1057,7 @@ class GameService:
             "events": events_data,
             "exits": exits_data,
             "is_passable": getattr(tile, "is_passable", True),
+            "bgm": bgm,
         }
 
     def search(self, player: "player_module.Player") -> Dict[str, Any]:
@@ -996,6 +1112,7 @@ class GameService:
                         )
 
         # Check Items
+        items_to_remove = []
         if hasattr(tile, "items_here"):
             for item in tile.items_here:
                 if getattr(item, "hidden", False):
@@ -1007,15 +1124,45 @@ class GameService:
                             "discovery_message",
                             f"a hidden {getattr(item, 'name', 'Item')}",
                         )
-                        messages.append(f"{player.name} found {discovery_msg}")
                         something_found = True
-                        found_items.append(
-                            {
-                                "type": "item",
-                                "name": getattr(item, "name", "Unknown"),
-                                "id": str(id(item)),
-                            }
-                        )
+                        found_entry = {
+                            "type": "item",
+                            "name": getattr(item, "name", "Unknown"),
+                            "id": str(id(item)),
+                        }
+
+                        # Auto-take items with hide_factor == 0 (intentionally findable)
+                        if hide_factor == 0:
+                            inventory = getattr(
+                                player, "inventory_list", None
+                            ) or getattr(player, "inventory", [])
+                            if isinstance(inventory, list):
+                                total_weight = sum(
+                                    getattr(i, "weight", 0) for i in inventory
+                                )
+                                capacity = getattr(player, "carrying_capacity", 100.0)
+                                item_weight = getattr(item, "weight", 0)
+                                if total_weight + item_weight <= capacity:
+                                    inventory.append(item)
+                                    items_to_remove.append(item)
+                                    found_entry["auto_taken"] = True
+                                    messages.append(
+                                        f"{player.name} finds {discovery_msg} and takes it."
+                                    )
+                                else:
+                                    messages.append(
+                                        f"{player.name} found {discovery_msg}"
+                                    )
+                            else:
+                                messages.append(f"{player.name} found {discovery_msg}")
+                        else:
+                            messages.append(f"{player.name} found {discovery_msg}")
+
+                        found_items.append(found_entry)
+
+        for item in items_to_remove:
+            if hasattr(tile, "items_here") and item in tile.items_here:
+                tile.items_here.remove(item)
 
         # Check Objects
         if hasattr(tile, "objects_here"):
@@ -1136,6 +1283,24 @@ class GameService:
         if not target:
             return {"success": False, "message": "Target not found."}
 
+        # Special case: attack action on NPCs should start combat
+        if action.lower() == "attack":
+            # Check if target is an NPC by looking in current tile's NPCs
+            is_npc = hasattr(tile, "npcs_here") and target in tile.npcs_here
+            if is_npc:
+                # Redirect to start_combat instead of trying to call attack() method
+                combat_result = self.start_combat(player, target_id)
+                # Wrap start_combat response to match interact_with_target format
+                if "error" in combat_result:
+                    return {"success": False, "message": combat_result["error"]}
+                else:
+                    # Combat started successfully
+                    return {
+                        "success": True,
+                        "message": f"Combat started with {target.name}!",
+                        "combat_data": combat_result,
+                    }
+
         is_valid = False
         if hasattr(target, "keywords") and action in target.keywords:
             is_valid = True
@@ -1167,7 +1332,7 @@ class GameService:
                 return "x"
 
             # Patch at multiple levels since different modules import differently
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f), patch(
+            with contextlib.redirect_stdout(f), patch(
                 "builtins.input", mock_input
             ), patch("functions.await_input", return_value=None), patch(
                 "functions.print_slow", mock_print_slow
@@ -1282,9 +1447,7 @@ class GameService:
                         method()
 
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
+            _log.exception("interact_with_target action failed")
             return {
                 "success": False,
                 "message": f"Error executing action: {str(e)}",
@@ -1303,26 +1466,22 @@ class GameService:
         clean_output = clean_output.strip()
 
         # Strip internal LLM diagnostic lines that must never reach the UI.
-        # These originate from ai/llm_client.py print() calls that get captured
-        # by redirect_stdout. All patterns below are system-internal messages.
-        _LLM_NOISE_PREFIXES = (
-            "OpenRouter returned",
-            "Primary model",
-            "Searching for fallback",
-            "Fallback model",
-            "marking as unusable",
-            "it need to output",  # leaked prompt fragment
-            "[MYNX_LLM_DEBUG]",
-            "[DEBUG]",
-            "[ERROR]",
-            "[WARNING]",
-        )
+        pre_filter_output = clean_output
         filtered_lines = [
             line
             for line in clean_output.splitlines()
             if not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         clean_output = "\n".join(filtered_lines).strip()
+
+        # If filtering removed everything and the raw output contained LLM noise
+        # (indicating a Mynx LLM call occurred), use a safe ambient fallback.
+        if not clean_output and any(
+            p in pre_filter_output for p in _LLM_NOISE_PREFIXES
+        ):
+            clean_output = (
+                "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
+            )
 
         # Provide fallback message if no output was captured
         if not clean_output:
@@ -1392,6 +1551,11 @@ class GameService:
             "events_triggered": events_triggered,
             "combat_started": combat_started,
             "combat_state": combat_state,
+            "object_state": {
+                "keywords": getattr(target, "keywords", []),
+                "locked": getattr(target, "locked", False),
+                "state": getattr(target, "state", ""),
+            },
         }
 
     # ========================
@@ -1671,9 +1835,7 @@ class GameService:
                     )
 
                     # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
-                        f
-                    ), contextlib.ExitStack() as stack:
+                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -2002,7 +2164,21 @@ class GameService:
         session_data: Dict = None,
     ) -> Dict[str, Any]:
         """Get current combat status."""
-        if not hasattr(player, "_combat_adapter"):
+        # If a previous combat initialization was deferred (level-up pending) and the
+        # player has now spent all their attribute points, auto-resume the deferred
+        # combat. The frontend calls fetchCombatStatus() after every allocation, so the
+        # last point spent will trigger this path and start combat seamlessly.
+        deferred_enemies = getattr(player, "_combat_deferred_enemies", None)
+        pending_points = int(getattr(player, "pending_attribute_points", 0) or 0)
+        if deferred_enemies and pending_points == 0:
+            player._combat_deferred_enemies = None
+            self._initialize_combat(
+                player,
+                deferred_enemies,
+                session_id=session_id,
+                session_data=session_data,
+            )
+
             # If player is in combat, try to re-initialize the adapter
             if getattr(player, "in_combat", False) and hasattr(player, "combat_list"):
                 from src.api.combat_adapter import ApiCombatAdapter
@@ -2030,6 +2206,12 @@ class GameService:
                     "battle_state": None,
                 }
         else:
+            if not hasattr(player, "_combat_adapter"):
+                return {
+                    "combat_active": getattr(player, "in_combat", False),
+                    "log": getattr(player, "combat_log", []),
+                    "battle_state": None,
+                }
             adapter = player._combat_adapter
 
             # Resume logic: If battle is active but not awaiting input, check why
@@ -4337,7 +4519,9 @@ class GameService:
 
         return None
 
-    def npc_chat_open(self, player: "player_module.Player", npc_id: str) -> Dict[str, Any]:
+    def npc_chat_open(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
         """Start an LLM conversation with a human NPC.
 
         Args:
@@ -4354,8 +4538,10 @@ class GameService:
 
         npc = None
         for npc_candidate in getattr(current_tile, "npcs_here", []):
-            if (type(npc_candidate).__name__ == npc_id or
-                getattr(npc_candidate, "name", "") == npc_id):
+            if (
+                type(npc_candidate).__name__ == npc_id
+                or getattr(npc_candidate, "name", "") == npc_id
+            ):
                 npc = npc_candidate
                 break
 
@@ -4376,8 +4562,13 @@ class GameService:
         except Exception as e:
             return {"success": False, "error": f"Failed to open chat: {str(e)}"}
 
-    def npc_chat_respond(self, player: "player_module.Player", npc_key: str,
-                        jean_text: str, jean_tone: str = "direct") -> Dict[str, Any]:
+    def npc_chat_respond(
+        self,
+        player: "player_module.Player",
+        npc_key: str,
+        jean_text: str,
+        jean_tone: str = "direct",
+    ) -> Dict[str, Any]:
         """Process Jean's dialogue choice and get NPC response.
 
         Args:
@@ -4405,7 +4596,9 @@ class GameService:
         except Exception as e:
             return {"success": False, "error": f"Failed to respond: {str(e)}"}
 
-    def npc_chat_end(self, player: "player_module.Player", npc_key: str) -> Dict[str, Any]:
+    def npc_chat_end(
+        self, player: "player_module.Player", npc_key: str
+    ) -> Dict[str, Any]:
         """End an NPC conversation and flush state.
 
         Args:
@@ -4420,17 +4613,17 @@ class GameService:
 
         # Get conversation count from history if available
         count = 0
-        if hasattr(player, "npc_chat_histories") and npc_key in player.npc_chat_histories:
+        if (
+            hasattr(player, "npc_chat_histories")
+            and npc_key in player.npc_chat_histories
+        ):
             count = player.npc_chat_histories[npc_key].get("conversation_count", 0)
 
-        return {
-            "success": True,
-            "data": {
-                "conversation_count": count
-            }
-        }
+        return {"success": True, "data": {"conversation_count": count}}
 
-    def npc_chat_history(self, player: "player_module.Player", npc_key: str) -> Dict[str, Any]:
+    def npc_chat_history(
+        self, player: "player_module.Player", npc_key: str
+    ) -> Dict[str, Any]:
         """Get stored conversation history for an NPC.
 
         Args:
@@ -4464,5 +4657,5 @@ class GameService:
                 "last_talked_tick": hist.get("last_talked_tick", 0),
                 "loquacity_current": hist.get("loquacity_current", 0),
                 "loquacity_max": hist.get("loquacity_max", 0),
-            }
+            },
         }

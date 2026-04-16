@@ -89,6 +89,14 @@ class Parry(Move):
         )
         self.evaluate()
 
+    def refresh_announcements(self, user):
+        self.stage_announce = [
+            "",
+            "{} attempts to parry the next attack.".format(user.name),
+            "",
+            "",
+        ]
+
     def viable(self):
         viability = True
         if self.user.name == "Jean" and not self.user.eq_weapon:
@@ -136,6 +144,9 @@ class Advance(Move):
         )
         self.fatigue_per_beat = 1
         self.evaluate()
+
+    def refresh_announcements(self, user):
+        self.stage_announce = [f"{user.name} begins advancing...", "", "", ""]
 
     def viable(self):
         """Advance is only viable if there are enemies beyond striking distance OR current target is at a good distance"""

@@ -127,6 +127,7 @@ class TestAdvanceMoveValidation:
                 break
 
         advance.target = enemy
+        player.current_move = advance  # Set as current move for process_stage to execute
 
         # Make random predictable for testing
         monkeypatch.setattr(random, 'randint', lambda a, b: (a + b) // 2)
@@ -140,7 +141,7 @@ class TestAdvanceMoveValidation:
         # Execute advance (simulate one beat of movement)
         advance.current_stage = 1  # execute stage
         advance.beats_left = 1
-        advance.beat_update(player)
+        advance.advance(player)
 
         # Verify movement toward target
         if player.combat_position is not None:
@@ -275,6 +276,7 @@ class TestBullChargeMoveValidation:
 
         bull_charge = BullCharge(player)
         bull_charge.target = enemy
+        player.current_move = bull_charge  # Set as current move for process_stage to execute
 
         monkeypatch.setattr(random, 'randint', lambda a, b: 5)  # Middle of 4-6
 
@@ -285,7 +287,7 @@ class TestBullChargeMoveValidation:
         # Execute charge (simulate one beat of movement)
         bull_charge.current_stage = 1  # execute stage
         bull_charge.beats_left = 1
-        bull_charge.beat_update(player)
+        bull_charge.advance(player)
 
         # Verify significant movement
         if player.combat_position is not None:
@@ -332,6 +334,7 @@ class TestTacticalRetreatMoveValidation:
         player.combat_proximity[enemy] = 10.0
 
         tactical_retreat = TacticalRetreat(player)
+        player.current_move = tactical_retreat  # Set as current move for process_stage to execute
 
         monkeypatch.setattr(random, 'randint', lambda a, b: (a + b) // 2)
 
@@ -342,7 +345,7 @@ class TestTacticalRetreatMoveValidation:
         # Execute retreat (simulate one beat of movement)
         tactical_retreat.current_stage = 1  # execute stage
         tactical_retreat.beats_left = 1
-        tactical_retreat.beat_update(player)
+        tactical_retreat.advance(player)
 
         if player.combat_position is not None:
             final_distance = positions.distance_from_coords(
@@ -409,13 +412,14 @@ class TestFlankingManeuverMoveValidation:
 
         flanking = FlankingManeuver(player)
         flanking.target = enemy
+        player.current_move = flanking  # Set as current move for process_stage to execute
 
         monkeypatch.setattr(random, 'randint', lambda a, b: 3)
 
         # Execute flanking (simulate one beat of movement)
         flanking.current_stage = 1  # execute stage
         flanking.beats_left = 1
-        flanking.beat_update(player)
+        flanking.advance(player)
 
         if player.combat_position is not None:
             # Calculate angle to target
@@ -452,6 +456,7 @@ class TestMoveIntegration:
                 break
 
         advance.target = enemy
+        player.current_move = advance  # Set as current move for process_stage to execute
         monkeypatch.setattr(random, 'randint', lambda a, b: 2)
 
         starting_distance = positions.distance_from_coords(
@@ -461,7 +466,7 @@ class TestMoveIntegration:
         # Execute advance (simulate one beat of movement)
         advance.current_stage = 1  # execute stage
         advance.beats_left = 1
-        advance.beat_update(player)
+        advance.advance(player)
 
         after_advance_distance = positions.distance_from_coords(
             player.combat_position, enemy.combat_position
@@ -476,10 +481,12 @@ class TestMoveIntegration:
                 withdraw = move
                 break
 
+        player.current_move = withdraw  # Set as current move for process_stage to execute
+
         # Execute withdraw (simulate one beat of movement)
         withdraw.current_stage = 1  # execute stage
         withdraw.beats_left = 1
-        withdraw.beat_update(player)
+        withdraw.advance(player)
         after_withdraw_distance = positions.distance_from_coords(
             player.combat_position, enemy.combat_position
         )
@@ -642,6 +649,7 @@ class TestMoveEdgeCases:
 
         flanking = FlankingManeuver(player)
         flanking.target = enemy
+        player.current_move = flanking  # Set as current move for process_stage to execute
 
         monkeypatch.setattr(random, 'randint', lambda a, b: 3)
 
@@ -650,7 +658,7 @@ class TestMoveEdgeCases:
         # Execute flanking (simulate one beat of movement)
         flanking.current_stage = 1  # execute stage
         flanking.beats_left = 1
-        flanking.beat_update(player)
+        flanking.advance(player)
 
         if player.combat_position is not None:
             # Position should have changed

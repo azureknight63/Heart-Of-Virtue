@@ -10,8 +10,6 @@ import random
 from pathlib import Path
 
 import functions  # type: ignore
-
-_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
 import genericng  # type: ignore
 import moves  # type: ignore
 from neotermcolor import colored  # type: ignore
@@ -19,6 +17,8 @@ from neotermcolor import colored  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from ._llm import MynxLLMMixin
+
+_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
 
 
 # Mynx: a friendly, non-combatant monkey-cat hybrid NPC with LLM-driven interaction hooks.
@@ -157,6 +157,28 @@ friendly enough to Jean.
             "reflexive": "himself",
             "intensive": "himself",
         }
+
+    @property
+    def name(self):
+        story = None
+        if hasattr(self, "current_room") and self.current_room is not None:
+            if hasattr(self.current_room, "universe"):
+                story = self.current_room.universe.story
+        elif hasattr(self, "player_ref") and self.player_ref is not None:
+            if hasattr(self.player_ref, "universe"):
+                story = self.player_ref.universe.story
+
+        if story and (
+            story.get("gorran_first", "0") == "1"
+            or story.get("gorran_language_stage", "0") != "0"
+        ):
+            return "Gorran"
+
+        return getattr(self, "_name", "Rock-Man")
+
+    @name.setter
+    def name(self, value):
+        self._name = value
 
     def before_death(self):
         print(
@@ -630,7 +652,8 @@ class Mara(HumanNPCLLMMixin, Friend):
     def select_move(self):
         """Mara's move selection reflects her nature: precise, observant, tactical.
         She switches between bow (medium/long range) and dagger (close range) based on
-        combat distance, maintaining optimal positioning for her current weapon."""
+        combat distance, maintaining optimal positioning for her current weapon.
+        """
         available_moves = self.refresh_moves()
 
         # Initialize AI config if we have a player reference (combat started)

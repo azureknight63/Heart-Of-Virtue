@@ -48,6 +48,30 @@ class _JSONTools:
         return None
 
     @staticmethod
+    def extract_text_content(content) -> Optional[str]:
+        """Extract text-only content from a response that may contain thinking blocks.
+
+        OpenRouter thinking-mode models return content as a list of blocks:
+          [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "..."}]
+        This helper extracts only the text blocks and ignores thinking blocks.
+        """
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "thinking":
+                        continue  # skip thinking tokens
+                    text = block.get("text") or block.get("content") or ""
+                    if text:
+                        parts.append(str(text))
+                elif isinstance(block, str):
+                    parts.append(block)
+            return "\n".join(parts) if parts else None
+        return str(content) if content else None
+
+    @staticmethod
     def sanitize_text(text: str) -> str:
         # Remove surrounding quotes if present and collapse whitespace
         t = text.strip()
@@ -386,7 +410,7 @@ class GenericLLMClient:
                         cls._free_models_cache = ranked
                     logger.info("Nightly model refresh complete.")
                 except Exception as e:
-                    logger.warning(f"Nightly model refresh failed: {e}")
+                    logger.debug(f"Nightly model refresh failed: {e}")
 
         t = threading.Thread(target=_refresh_loop, daemon=True, name="llm-model-refresh")
         t.start()
@@ -419,7 +443,7 @@ class GenericLLMClient:
             self._available = True
             return
 
-        logger.warning(f"Primary model {self.model} failed. Searching for fallback...")
+        logger.debug(f"Primary model {self.model} failed. Searching for fallback...")
         self._mark_model_failed(self.model, duration_minutes=30)
 
         # Build candidate list: dynamic free cache first, then static stable list
@@ -578,22 +602,22 @@ class GenericLLMClient:
             if isinstance(data, dict):
                 msg = data.get("message")
                 if isinstance(msg, dict):
-                    content = msg.get("content") or msg.get("text")
+                    content = _JSONTools.extract_text_content(msg.get("content") or msg.get("text"))
                 if content is None and isinstance(data.get("choices"), list):
                     for c in data.get("choices"):
                         if isinstance(c, dict):
                             m = c.get("message")
                             if isinstance(m, dict) and (m.get("content") or m.get("text")):
-                                content = m.get("content") or m.get("text")
+                                content = _JSONTools.extract_text_content(m.get("content") or m.get("text"))
                                 break
                             if c.get("content") or c.get("text"):
-                                content = c.get("content") or c.get("text")
+                                content = _JSONTools.extract_text_content(c.get("content") or c.get("text"))
                                 break
                 if content is None and isinstance(data.get("output"), list):
                     parts = []
                     for el in data.get("output"):
                         if isinstance(el, dict):
-                            parts.append(el.get("content") or el.get("text") or "")
+                            parts.append(_JSONTools.extract_text_content(el.get("content") or el.get("text")) or "")
                         elif isinstance(el, str):
                             parts.append(el)
                     content = "\n".join(p for p in parts if p)
@@ -653,7 +677,7 @@ class GenericLLMClient:
                 models_to_try.append(fallback)
 
         attempts = 0
-        max_attempts = 3  # Primary + up to 2 fallbacks per request
+        max_attempts = 2  # Primary + 1 fallback per request
 
         for model_id in models_to_try:
             if self._is_model_failed(model_id):
@@ -661,18 +685,18 @@ class GenericLLMClient:
 
             attempts += 1
             if attempts > max_attempts:
-                logger.warning(f"Reached max attempts ({max_attempts}) for LLM request. Stopping.")
+                logger.debug(f"Reached max attempts ({max_attempts}) for LLM request. Stopping.")
                 break
 
             # Use a shorter timeout for fallback attempts to fail fast
-            timeout = 20 if attempts == 1 else 10
+            timeout = 10 if attempts == 1 else 5
             res = self._openrouter_chat_single(model_id, system_prompt, user_prompt, structured, timeout=timeout)
             if res is not None:
                 if model_id != self.model:
                     logger.info(f"Successfully used fallback model: {model_id}")
                 return res
 
-            logger.warning(f"Model {model_id} failed, marking as unusable.")
+            logger.debug(f"Model {model_id} failed, marking as unusable.")
             self._mark_model_failed(model_id)
 
         return None
@@ -712,9 +736,9 @@ class GenericLLMClient:
                         return _JSONTools.try_parse_json(str(content))
                     return _JSONTools.sanitize_text(str(content))
                 else:
-                    logger.warning(f"SDK request for {model_id} returned no content.")
+                    logger.debug(f"SDK request for {model_id} returned no content.")
             except Exception as e:
-                logger.warning(f"SDK request failed for {model_id}: {str(e)[:200]}")
+                logger.debug(f"SDK request failed for {model_id}: {str(e)[:200]}")
                 # Fall through to the direct HTTP path
 
         # Direct HTTP fallback
@@ -746,7 +770,7 @@ class GenericLLMClient:
             )
 
             if resp.status_code == 429:
-                logger.warning(f"OpenRouter returned 429 Rate Limit for {model_id}")
+                logger.debug(f"OpenRouter returned 429 Rate Limit for {model_id}")
                 # Short penalty — don't let the caller overwrite with a longer one
                 self._mark_model_failed(model_id, duration_minutes=2)
                 return None
@@ -758,7 +782,7 @@ class GenericLLMClient:
                 if isinstance(data, dict):
                     # Some providers embed errors inside a 200 payload
                     if "error" in data:
-                        logger.warning(f"OpenRouter returned error in 200 payload for {model_id}: {data['error']}")
+                        logger.debug(f"OpenRouter returned error in 200 payload for {model_id}: {data['error']}")
                         return None
 
                     choices = data.get("choices")
@@ -767,10 +791,12 @@ class GenericLLMClient:
                         if isinstance(first, dict):
                             msg = first.get("message")
                             if isinstance(msg, dict):
-                                # Fall back to 'reasoning' for thinking-mode models
-                                content = msg.get("content") or msg.get("reasoning")
+                                # extract_text_content strips thinking blocks from thinking-mode models
+                                content = _JSONTools.extract_text_content(msg.get("content")) or msg.get("reasoning")
                             if not content:
-                                content = first.get("text") or first.get("content") or first.get("reasoning")
+                                content = _JSONTools.extract_text_content(
+                                    first.get("text") or first.get("content")
+                                ) or first.get("reasoning")
 
                 if content:
                     logger.info(f"HTTP request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
@@ -778,11 +804,11 @@ class GenericLLMClient:
                         return _JSONTools.try_parse_json(str(content))
                     return _JSONTools.sanitize_text(str(content))
                 else:
-                    logger.warning(f"HTTP request for {model_id} returned no content in choices.")
+                    logger.debug(f"HTTP request for {model_id} returned no content in choices.")
 
-            logger.warning(f"HTTP request failed for {model_id} with {resp.status_code}: {resp.text[:500]}")
+            logger.debug(f"HTTP request failed for {model_id} with {resp.status_code}: {resp.text[:500]}")
         except Exception as e:
-            logger.error(f"HTTP request exception for {model_id}: {e}", exc_info=True)
+            logger.debug(f"HTTP request exception for {model_id}: {e}")
 
         return None
 
@@ -813,7 +839,7 @@ class GenericLLMClient:
             existing = GenericLLMClient._failed_models.get(model_id)
             if existing is None or new_expiry > existing:
                 GenericLLMClient._failed_models[model_id] = new_expiry
-                logger.info(f"Model {model_id} marked as failed until {new_expiry.strftime('%H:%M:%S')}")
+                logger.debug(f"Model {model_id} marked as failed until {new_expiry.strftime('%H:%M:%S')}")
 
 
 class MynxLLMAdapter(GenericLLMClient):
