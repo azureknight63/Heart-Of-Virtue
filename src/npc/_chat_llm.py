@@ -47,7 +47,9 @@ _SLANG_PATTERN = re.compile(
 )
 
 # Jean-dialogue guard: reject if NPC text describes Jean speaking
-_JEAN_DIALOG_PATTERN = re.compile(r"jean\s+(said|replied|asked|told)\b|jean:\s*[\"']", re.IGNORECASE)
+_JEAN_DIALOG_PATTERN = re.compile(
+    r"jean\s+(said|replied|asked|told)\b|jean:\s*[\"']", re.IGNORECASE
+)
 
 # Capitalized token finder (for invented proper noun scan)
 _CAP_TOKEN_PATTERN = re.compile(r"\b([A-Z][A-Za-z\-]{2,})\b")
@@ -129,11 +131,17 @@ class HumanNPCLLMMixin:
             if self._chat_config_path not in HumanNPCLLMMixin._char_config_cache:
                 try:
                     with open(self._chat_config_path, "r", encoding="utf-8") as f:
-                        HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = json.load(f)
+                        HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = (
+                            json.load(f)
+                        )
                 except Exception as e:
-                    logger.debug(f"Could not load chat config from {self._chat_config_path}: {e}")
+                    logger.debug(
+                        f"Could not load chat config from {self._chat_config_path}: {e}"
+                    )
                     HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = None
-            self._chat_char_config = HumanNPCLLMMixin._char_config_cache[self._chat_config_path]
+            self._chat_char_config = HumanNPCLLMMixin._char_config_cache[
+                self._chat_config_path
+            ]
 
         # Load world facts (class-level cache)
         if HumanNPCLLMMixin._world_facts_cache is None:
@@ -143,7 +151,9 @@ class HumanNPCLLMMixin:
             except Exception as e:
                 logger.debug(f"Could not load world facts: {e}")
                 HumanNPCLLMMixin._world_facts_cache = {}
-        self._chat_world_facts: Optional[Dict[str, Any]] = HumanNPCLLMMixin._world_facts_cache
+        self._chat_world_facts: Optional[Dict[str, Any]] = (
+            HumanNPCLLMMixin._world_facts_cache
+        )
 
         # For generic nomads: generated on first talk
         self._chat_personality: Optional[Dict[str, Any]] = None
@@ -207,7 +217,11 @@ class HumanNPCLLMMixin:
             logger.debug(f"HumanNPCLLMMixin: could not load adapter: {e}")
             self._chat_adapter = self._ADAPTER_FAILED
 
-        return self._chat_adapter if self._chat_adapter is not self._ADAPTER_FAILED else None
+        return (
+            self._chat_adapter
+            if self._chat_adapter is not self._ADAPTER_FAILED
+            else None
+        )
 
     def _story(self, player) -> Dict[str, Any]:
         """Get story dict from player.universe, or empty dict."""
@@ -249,13 +263,27 @@ class HumanNPCLLMMixin:
                 else:
                     equip_names.append(str(v).lower())
         equip_text = " ".join(equip_names)
-        equip_mod = 10 if any(x in equip_text for x in ("crucifix", "religious token", "nomad gear")) else 0
+        equip_mod = (
+            10
+            if any(
+                x in equip_text for x in ("crucifix", "religious token", "nomad gear")
+            )
+            else 0
+        )
 
         # Party check (Gorran in allies)
         allies = getattr(player, "allies", [])
         party_mod = 10 if any(getattr(a, "name", "") == "Gorran" for a in allies) else 0
 
-        loquacity_max = max(20, base + npc_charisma_bonus + story_mod + jean_stat_mod + equip_mod + party_mod)
+        loquacity_max = max(
+            20,
+            base
+            + npc_charisma_bonus
+            + story_mod
+            + jean_stat_mod
+            + equip_mod
+            + party_mod,
+        )
 
         self.loquacity_max = loquacity_max
         self.loquacity_threshold = max(10, loquacity_max // 5)
@@ -326,7 +354,12 @@ class HumanNPCLLMMixin:
 
         entry = hists[key]
         entry["exchanges"].append(
-            {"npc": npc_text, "jean": jean_text, "game_tick": game_tick, "chapter": chapter}
+            {
+                "npc": npc_text,
+                "jean": jean_text,
+                "game_tick": game_tick,
+                "chapter": chapter,
+            }
         )
 
         # Keep only last 20 exchanges
@@ -503,7 +536,9 @@ class HumanNPCLLMMixin:
                 return None
 
             # No meta-speech
-            if re.search(r"\[Option|\bAs Jean\b|I don.t know what to say", text, re.IGNORECASE):
+            if re.search(
+                r"\[Option|\bAs Jean\b|I don.t know what to say", text, re.IGNORECASE
+            ):
                 return None
 
             tone = str(opt.get("tone", ["direct", "guarded", "open"][i])).lower()
@@ -556,13 +591,17 @@ class HumanNPCLLMMixin:
                         system, self._chat_history, is_opening=True
                     )
                     if result and result.get("npc_text"):
-                        cleaned = self._qc_npc_text(result["npc_text"], self._chat_history)
+                        cleaned = self._qc_npc_text(
+                            result["npc_text"], self._chat_history
+                        )
                         if cleaned:
                             npc_opening = cleaned
                             break
 
             if not npc_opening:
-                npc_opening = self._get_fallback_npc_line(is_opening=True, player=player)
+                npc_opening = self._get_fallback_npc_line(
+                    is_opening=True, player=player
+                )
                 llm_available = False
 
             # Generate Jean options
@@ -582,7 +621,9 @@ class HumanNPCLLMMixin:
 
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
-            self._save_exchange_to_persistence(player, npc_opening, "", game_tick, chapter)
+            self._save_exchange_to_persistence(
+                player, npc_opening, "", game_tick, chapter
+            )
 
             return {
                 "success": True,
@@ -600,9 +641,7 @@ class HumanNPCLLMMixin:
             logger.error(f"HumanNPCLLMMixin.chat_open error: {e}")
             return {"success": False, "error": str(e)}
 
-    def chat_respond(
-        self, player, jean_text: str, jean_tone: str
-    ) -> Dict[str, Any]:
+    def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
         """Process Jean's response. Returns NPC reply + 3 new Jean options."""
         try:
             self._compute_loquacity(player)
@@ -613,10 +652,17 @@ class HumanNPCLLMMixin:
             if self._chat_history and not self._chat_history[-1].get("jean"):
                 self._chat_history[-1]["jean"] = jean_text
             else:
-                game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
+                game_tick = (
+                    getattr(getattr(player, "universe", None), "game_tick", 0) or 0
+                )
                 chapter = self._get_chapter(player)
                 self._chat_history.append(
-                    {"npc": "", "jean": jean_text, "game_tick": game_tick, "chapter": chapter}
+                    {
+                        "npc": "",
+                        "jean": jean_text,
+                        "game_tick": game_tick,
+                        "chapter": chapter,
+                    }
                 )
 
             self._ensure_personality(player)
@@ -637,14 +683,20 @@ class HumanNPCLLMMixin:
                         jean_text=jean_text,
                     )
                     if result and result.get("npc_text"):
-                        cleaned = self._qc_npc_text(result["npc_text"], self._chat_history)
+                        cleaned = self._qc_npc_text(
+                            result["npc_text"], self._chat_history
+                        )
                         if cleaned:
                             npc_response = cleaned
-                            conversation_quality = result.get("conversation_quality", "neutral")
+                            conversation_quality = result.get(
+                                "conversation_quality", "neutral"
+                            )
                             break
 
             if not npc_response:
-                npc_response = self._get_fallback_npc_line(is_opening=False, player=player)
+                npc_response = self._get_fallback_npc_line(
+                    is_opening=False, player=player
+                )
                 llm_available = False
 
             # Drain loquacity
@@ -665,9 +717,7 @@ class HumanNPCLLMMixin:
                 )
 
             # Check conversation end
-            conversation_ended = (
-                self.loquacity_current < self.loquacity_threshold
-            )
+            conversation_ended = self.loquacity_current < self.loquacity_threshold
 
             # Generate Jean options or return closing
             jean_options = []
@@ -738,9 +788,7 @@ class HumanNPCLLMMixin:
         ]
         return fallbacks[idx]
 
-    def _get_fallback_npc_line(
-        self, is_opening: bool, player
-    ) -> str:
+    def _get_fallback_npc_line(self, is_opening: bool, player) -> str:
         """Get fallback NPC line (no LLM)."""
         if self._chat_char_config:
             chapter = self._get_chapter(player)

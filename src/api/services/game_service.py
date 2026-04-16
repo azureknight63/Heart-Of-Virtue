@@ -4518,7 +4518,9 @@ class GameService:
 
         return None
 
-    def npc_chat_open(self, player: "player_module.Player", npc_id: str) -> Dict[str, Any]:
+    def npc_chat_open(
+        self, player: "player_module.Player", npc_id: str
+    ) -> Dict[str, Any]:
         """Start an LLM conversation with a human NPC.
 
         Args:
@@ -4535,8 +4537,10 @@ class GameService:
 
         npc = None
         for npc_candidate in getattr(current_tile, "npcs_here", []):
-            if (type(npc_candidate).__name__ == npc_id or
-                getattr(npc_candidate, "name", "") == npc_id):
+            if (
+                type(npc_candidate).__name__ == npc_id
+                or getattr(npc_candidate, "name", "") == npc_id
+            ):
                 npc = npc_candidate
                 break
 
@@ -4557,8 +4561,13 @@ class GameService:
         except Exception as e:
             return {"success": False, "error": f"Failed to open chat: {str(e)}"}
 
-    def npc_chat_respond(self, player: "player_module.Player", npc_key: str,
-                        jean_text: str, jean_tone: str = "direct") -> Dict[str, Any]:
+    def npc_chat_respond(
+        self,
+        player: "player_module.Player",
+        npc_key: str,
+        jean_text: str,
+        jean_tone: str = "direct",
+    ) -> Dict[str, Any]:
         """Process Jean's dialogue choice and get NPC response.
 
         Args:
@@ -4586,7 +4595,9 @@ class GameService:
         except Exception as e:
             return {"success": False, "error": f"Failed to respond: {str(e)}"}
 
-    def npc_chat_end(self, player: "player_module.Player", npc_key: str) -> Dict[str, Any]:
+    def npc_chat_end(
+        self, player: "player_module.Player", npc_key: str
+    ) -> Dict[str, Any]:
         """End an NPC conversation and flush state.
 
         Args:
@@ -4601,17 +4612,17 @@ class GameService:
 
         # Get conversation count from history if available
         count = 0
-        if hasattr(player, "npc_chat_histories") and npc_key in player.npc_chat_histories:
+        if (
+            hasattr(player, "npc_chat_histories")
+            and npc_key in player.npc_chat_histories
+        ):
             count = player.npc_chat_histories[npc_key].get("conversation_count", 0)
 
-        return {
-            "success": True,
-            "data": {
-                "conversation_count": count
-            }
-        }
+        return {"success": True, "data": {"conversation_count": count}}
 
-    def npc_chat_history(self, player: "player_module.Player", npc_key: str) -> Dict[str, Any]:
+    def npc_chat_history(
+        self, player: "player_module.Player", npc_key: str
+    ) -> Dict[str, Any]:
         """Get stored conversation history for an NPC.
 
         Args:
@@ -4645,5 +4656,5 @@ class GameService:
                 "last_talked_tick": hist.get("last_talked_tick", 0),
                 "loquacity_current": hist.get("loquacity_current", 0),
                 "loquacity_max": hist.get("loquacity_max", 0),
-            }
+            },
         }

@@ -155,7 +155,6 @@ def examine_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-
 @inventory_bp.route("/inventory/drop", methods=["POST"])
 def drop_item():
     """Drop item from inventory onto current tile.
@@ -209,6 +208,7 @@ def drop_item():
             if getattr(item_to_drop, "maintype", None) == "Weapon":
                 player.eq_weapon = getattr(player, "fists", None)
             from src import functions
+
             functions.refresh_stat_bonuses(player)
 
         # Remove item from inventory and add to tile
@@ -316,6 +316,7 @@ def equip_item():
             if getattr(item, "maintype", None) == "Weapon":
                 player.eq_weapon = getattr(player, "fists", None)
             from src import functions
+
             functions.refresh_stat_bonuses(player)
             message = f"{item.name} unequipped"
         else:
