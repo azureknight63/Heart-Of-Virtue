@@ -267,7 +267,7 @@ export default function GamePage() {
   useEffect(() => {
     if (inCombat) {
       // Only show the "Enemy Encounter" dialog if we aren't currently showing a story event
-      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent) {
+      if (!combatDialogShown && eventQueue.length === 0 && !currentEvent && !showVictoryDialog && !showDefeatDialog) {
         const logEntries = combat?.log || []
 
         const alertMessages = logEntries

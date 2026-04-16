@@ -67,6 +67,13 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
       // Check for backend success (some APIs might return result directly or result.data)
       // Based on GamePage.jsx, it returns result.data which should have .success
       if (result && result.success) {
+        // If all points are now spent, auto-close the dialog so the parent can
+        // cleanly start any deferred combat without stale state blocking things.
+        if ((result.remaining_points ?? 1) === 0) {
+          setIsSubmitting(false)
+          onClose()
+          return
+        }
         // Success - reset amount to 1 and the parent will refresh endState
         setAmount('1')
         setError('')
