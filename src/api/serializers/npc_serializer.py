@@ -51,10 +51,11 @@ class NPCSerializer:
         if hasattr(npc, "keywords") and npc.keywords:
             keywords = list(npc.keywords)
 
-        # Add attack keyword for hostile/aggressive NPCs
+        # Add attack keyword for hostile/aggressive NPCs, unless they are friendly
         is_hostile = getattr(npc, "is_hostile", False)
         is_aggressive = getattr(npc, "aggro", False)
-        if (is_hostile or is_aggressive) and "attack" not in keywords:
+        is_friend = getattr(npc, "friend", False)
+        if (is_hostile or is_aggressive) and not is_friend and "attack" not in keywords:
             keywords.append("attack")
 
         if keywords:
