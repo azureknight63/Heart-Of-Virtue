@@ -6,6 +6,43 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   const [actionMessage, setActionMessage] = useState('')
   const [showDropConfirm, setShowDropConfirm] = useState(false)
   const [actionResult, setActionResult] = useState(null)
+  const [showAllyPicker, setShowAllyPicker] = useState(false)
+
+  const partyMembers = player?.party_members || []
+  const hasPartyMembers = partyMembers.length > 0
+
+  const handleUseOnAlly = async (ally) => {
+    setShowAllyPicker(false)
+    setIsLoading(true)
+    try {
+      const response = await apiClient.post('/inventory/use', {
+        item_id: item.id,
+        target_id: ally.id,
+      })
+      const data = response.data || response
+      if (data.success) {
+        setActionResult({
+          message: (
+            <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>
+              <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{item.name}</span> on <strong>{ally.name}</strong>.{data.message ? `\n\n${data.message}` : ''}
+            </div>
+          )
+        })
+        if (onItemRemoved) onItemRemoved(item.id)
+        if (onRefetch) onRefetch()
+      } else {
+        setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
+      }
+    } catch (err) {
+      if (err.response?.data?.error) {
+        setActionMessage(err.response.data.error)
+      } else {
+        setActionMessage('✗ Error: ' + err.message)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleEquip = async () => {
     if (!item.can_equip) return
@@ -402,36 +439,71 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         )}
 
         {item.can_use && !item.is_merchandise && (
-          <button
-            onClick={handleUse}
-            disabled={isLoading}
-            style={{
-              flex: 1,
-              padding: '10px',
-              backgroundColor: '#663300',
-              color: '#ffff00',
-              border: '1px solid #ffaa00',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '15px',
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              transition: 'all 0.2s',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-            onMouseEnter={(e) => {
-              if (!isLoading) {
-                e.target.style.backgroundColor = '#994400'
-                e.target.style.boxShadow = '0 0 8px rgba(255, 170, 0, 0.6)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = '#663300'
-              e.target.style.boxShadow = 'none'
-            }}
-          >
-            💊 Use
-          </button>
+          <>
+            <button
+              onClick={handleUse}
+              disabled={isLoading}
+              style={{
+                flex: 1,
+                padding: '10px',
+                backgroundColor: '#663300',
+                color: '#ffff00',
+                border: '1px solid #ffaa00',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                transition: 'all 0.2s',
+                opacity: isLoading ? 0.6 : 1,
+              }}
+              onMouseEnter={(e) => {
+                if (!isLoading) {
+                  e.target.style.backgroundColor = '#994400'
+                  e.target.style.boxShadow = '0 0 8px rgba(255, 170, 0, 0.6)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = '#663300'
+                e.target.style.boxShadow = 'none'
+              }}
+            >
+              💊 Use
+            </button>
+            {hasPartyMembers && (
+              <button
+                onClick={() => setShowAllyPicker(true)}
+                disabled={isLoading}
+                title="Use this item on a party member"
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#004466',
+                  color: '#00ccff',
+                  border: '1px solid #0099cc',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s',
+                  opacity: isLoading ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.target.style.backgroundColor = '#006699'
+                    e.target.style.boxShadow = '0 0 8px rgba(0, 204, 255, 0.6)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = '#004466'
+                  e.target.style.boxShadow = 'none'
+                }}
+              >
+                👥 Use on...
+              </button>
+            )}
+          </>
         )}
 
         {item.can_drop && !combatMode && (
@@ -662,6 +734,76 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                 {isLoading ? '...' : '🗑️ Drop'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showAllyPicker && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1700,
+        }}>
+          <div style={{
+            backgroundColor: 'rgba(0, 20, 40, 0.98)',
+            border: '2px solid #0099cc',
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '90%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            boxShadow: '0 0 20px rgba(0, 153, 204, 0.3)',
+          }}>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#00ccff', fontFamily: 'monospace', borderBottom: '1px solid #0099cc', paddingBottom: '10px' }}>
+              👥 USE ON — {item.name}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {partyMembers.map((member) => {
+                const hpPct = Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)
+                const outOfRange = member.in_range === false
+                return (
+                  <button
+                    key={member.id}
+                    onClick={() => !outOfRange && handleUseOnAlly(member)}
+                    disabled={outOfRange}
+                    title={outOfRange ? 'Out of range — use Advance to close distance first' : `Use ${item.name} on ${member.name}`}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: outOfRange ? 'rgba(40,40,40,0.6)' : 'rgba(0,30,50,0.8)',
+                      border: `1px solid ${outOfRange ? '#444' : '#0099cc'}`,
+                      borderRadius: '6px',
+                      cursor: outOfRange ? 'not-allowed' : 'pointer',
+                      textAlign: 'left',
+                      opacity: outOfRange ? 0.5 : 1,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ color: outOfRange ? '#888' : '#00ccff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px' }}>{member.name}</span>
+                      {outOfRange && <span style={{ color: '#ff6666', fontSize: '11px', fontFamily: 'monospace' }}>OUT OF RANGE</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '10px', color: '#ff6666', fontFamily: 'monospace', minWidth: '28px' }}>HP</span>
+                      <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
+                        <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444', borderRadius: '2px' }} />
+                      </div>
+                      <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{member.hp}/{member.max_hp}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              onClick={() => setShowAllyPicker(false)}
+              style={{ padding: '8px 24px', backgroundColor: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '13px', alignSelf: 'center' }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

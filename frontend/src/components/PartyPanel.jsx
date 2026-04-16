@@ -1,13 +1,52 @@
+import { useState } from 'react'
 import BaseDialog from './BaseDialog'
-import { colors, spacing } from '../styles/theme'
+import { colors } from '../styles/theme'
+import apiClient from '../api/client'
 
 /**
- * PartyPanel - View current party members and their vital stats
+ * PartyPanel - View current party members and their vital stats.
+ * Allows using consumable items on individual party members out of combat.
  */
-export default function PartyPanel({ player, onClose }) {
+export default function PartyPanel({ player, onClose, onRefetch }) {
   if (!player) return null
 
   const partyMembers = player.party_members || []
+  const [useItemTarget, setUseItemTarget] = useState(null) // member being targeted
+  const [actionResult, setActionResult] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Gather consumables from player inventory (serialized shape: {id, name, can_use, ...})
+  const consumables = (player.inventory || []).filter(
+    (it) => it.can_use && !it.is_merchandise
+  )
+
+  const handleUseItem = async (item, member) => {
+    setIsLoading(true)
+    try {
+      const response = await apiClient.post('/inventory/use', {
+        item_id: item.id,
+        target_id: member.id,
+      })
+      const data = response.data || response
+      if (data.success) {
+        setActionResult({
+          memberName: member.name,
+          itemName: item.name,
+          message: data.message || '',
+        })
+        setUseItemTarget(null)
+        if (onRefetch) onRefetch()
+      } else {
+        setActionResult({ error: data.error || 'Failed to use item' })
+        setUseItemTarget(null)
+      }
+    } catch (err) {
+      setActionResult({ error: err.response?.data?.error || err.message })
+      setUseItemTarget(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <BaseDialog
@@ -101,9 +140,44 @@ export default function PartyPanel({ player, onClose }) {
                     padding: '8px',
                     backgroundColor: 'rgba(0,0,0,0.2)',
                     borderRadius: '4px',
+                    marginBottom: '8px',
                   }}>
                     "{member.description}"
                   </div>
+                )}
+
+                {/* USE ITEM button */}
+                {consumables.length > 0 && (
+                  <button
+                    onClick={() => setUseItemTarget(member)}
+                    disabled={isLoading}
+                    style={{
+                      width: '100%',
+                      padding: '7px',
+                      backgroundColor: '#004466',
+                      color: '#00ccff',
+                      border: '1px solid #0099cc',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontFamily: 'monospace',
+                      fontWeight: 'bold',
+                      transition: 'all 0.2s',
+                      opacity: isLoading ? 0.6 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isLoading) {
+                        e.target.style.backgroundColor = '#006699'
+                        e.target.style.boxShadow = '0 0 8px rgba(0,204,255,0.5)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = '#004466'
+                      e.target.style.boxShadow = 'none'
+                    }}
+                  >
+                    💊 USE ITEM
+                  </button>
                 )}
               </div>
             ))}
@@ -138,7 +212,120 @@ export default function PartyPanel({ player, onClose }) {
           </button>
         </div>
       </div>
+
+      {/* Consumable picker overlay */}
+      {useItemTarget && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 2500,
+        }}>
+          <div style={{
+            backgroundColor: 'rgba(0, 20, 40, 0.98)',
+            border: '2px solid #0099cc',
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '380px',
+            width: '90%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            boxShadow: '0 0 20px rgba(0,153,204,0.3)',
+          }}>
+            <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#00ccff', fontFamily: 'monospace', borderBottom: '1px solid #0099cc', paddingBottom: '10px' }}>
+              💊 USE ON — {useItemTarget.name}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '50vh', overflowY: 'auto' }}>
+              {consumables.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => handleUseItem(item, useItemTarget)}
+                  disabled={isLoading}
+                  style={{
+                    padding: '10px 14px',
+                    backgroundColor: 'rgba(10,30,50,0.9)',
+                    border: '1px solid #0099cc',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    color: '#ffcc00',
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.15s',
+                    opacity: isLoading ? 0.6 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isLoading) {
+                      e.target.style.backgroundColor = 'rgba(0,60,100,0.9)'
+                      e.target.style.borderColor = '#00ccff'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = 'rgba(10,30,50,0.9)'
+                    e.target.style.borderColor = '#0099cc'
+                  }}
+                >
+                  {item.name}
+                  {item.quantity > 1 && <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '8px' }}>×{item.quantity}</span>}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setUseItemTarget(null)}
+              style={{ padding: '7px 20px', backgroundColor: 'transparent', color: '#888', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px', alignSelf: 'center' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Action result overlay */}
+      {actionResult && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 2500,
+        }}>
+          <div style={{
+            backgroundColor: 'rgba(10,20,10,0.98)',
+            border: `2px solid ${actionResult.error ? '#ff4444' : '#00ff88'}`,
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '380px',
+            width: '90%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            boxShadow: `0 0 20px ${actionResult.error ? 'rgba(255,68,68,0.3)' : 'rgba(0,255,136,0.3)'}`,
+          }}>
+            <div style={{ color: actionResult.error ? '#ff8888' : '#00ff88', fontFamily: 'monospace', fontSize: '14px', textAlign: 'center', lineHeight: '1.5' }}>
+              {actionResult.error
+                ? `✗ ${actionResult.error}`
+                : <>
+                    <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{actionResult.itemName}</span> on <strong>{actionResult.memberName}</strong>.
+                    {actionResult.message && <div style={{ marginTop: '8px', whiteSpace: 'pre-wrap', textAlign: 'left' }}>{actionResult.message}</div>}
+                  </>
+              }
+            </div>
+            <button
+              onClick={() => setActionResult(null)}
+              style={{ padding: '8px 28px', backgroundColor: '#004400', color: '#00ff00', border: '1px solid #00ff00', borderRadius: '3px', cursor: 'pointer', fontSize: '13px', fontFamily: 'monospace', fontWeight: 'bold', alignSelf: 'center', textTransform: 'uppercase' }}
+            >
+              Ok
+            </button>
+          </div>
+        </div>
+      )}
     </BaseDialog>
   )
 }
-

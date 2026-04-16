@@ -2344,11 +2344,18 @@ class GameService:
             "state": "normal",  # TODO: Get actual status effects
             "party_members": [
                 {
+                    "id": f"ally_{id(a)}",
                     "name": getattr(a, "name", "Unknown"),
                     "hp": getattr(a, "hp", 0),
                     "max_hp": getattr(a, "maxhp", 0),
                     "level": getattr(a, "level", 1),
                     "description": getattr(a, "description", "").strip(),
+                    # in_range: True outside combat (no restriction) or within 5 ft in combat
+                    "in_range": (
+                        getattr(player, "combat_proximity", {}).get(a, 0) <= 5
+                        if getattr(player, "in_combat", False)
+                        else True
+                    ),
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],

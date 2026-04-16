@@ -10,6 +10,8 @@ This module provides serialization for:
 
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
+_ITEM_USE_RANGE = 5
+
 if TYPE_CHECKING:
     from player import Player
     from npc import NPC
@@ -198,9 +200,15 @@ class CombatantSerializer:
             Dict with combatant state
         """
         is_player = combatant.__class__.__name__ == "Player"
+        is_ally = not is_player and getattr(combatant, "friend", False)
+        # Derive in_range from distance to the reference (player). Allies within 5 ft
+        # are targetable with healing items; enemies within range are attackable.
+        distance_to_ref = CombatantSerializer._get_distance(combatant, reference)
+        in_range = distance_to_ref <= _ITEM_USE_RANGE if reference is not None else True
 
         return {
-            "id": "player" if is_player else f"enemy_{id(combatant)}",
+            "id": "player" if is_player else (f"ally_{id(combatant)}" if is_ally else f"enemy_{id(combatant)}"),
+            "in_range": in_range,
             "name": getattr(combatant, "name", "Unknown"),
             "battle_symbol": getattr(combatant, "battle_symbol", None),
             "type": "player" if is_player else "npc",
@@ -228,7 +236,7 @@ class CombatantSerializer:
             "status_effects": CombatantSerializer._serialize_status_effects(combatant),
             "passives": CombatantSerializer._serialize_passives(combatant),
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
-            "distance": CombatantSerializer._get_distance(combatant, reference),
+            "distance": distance_to_ref,
             "position": CombatantSerializer._serialize_position(combatant),
             "current_move": CombatantSerializer._serialize_active_move(combatant),
             "move_in_process": CombatantSerializer._serialize_active_move(

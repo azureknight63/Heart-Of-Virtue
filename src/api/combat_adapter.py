@@ -30,6 +30,17 @@ _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
 logger = logging.getLogger(__name__)
 
+_ALLY_HEAL_THRESHOLD = 0.5  # NPC uses item on ally below this HP fraction
+_ITEM_USE_RANGE = 5  # ft — max range for in-combat item targeting
+
+
+def _strip_combatant_prefix(target_id: str) -> str:
+    """Strip 'enemy_' or 'ally_' prefix and return the raw Python id string."""
+    for prefix in ("enemy_", "ally_"):
+        if target_id.startswith(prefix):
+            return target_id[len(prefix):]
+    return target_id
+
 
 class CombatOutputCapture:
     """Captures print statements and stores them in a combat log."""
@@ -540,7 +551,7 @@ class ApiCombatAdapter:
 
             if target_id:
                 # Try to find the specified target
-                target_obj_id = target_id.replace("enemy_", "")
+                target_obj_id = _strip_combatant_prefix(target_id)
                 all_combatants = (
                     self.player.combat_list + self.player.combat_list_allies
                 )
@@ -560,7 +571,7 @@ class ApiCombatAdapter:
                     if not isinstance(single_target_id, str):
                         return {"error": "Invalid target"}
 
-                    target_obj_id = single_target_id.replace("enemy_", "")
+                    target_obj_id = _strip_combatant_prefix(single_target_id)
                     all_combatants = (
                         self.player.combat_list + self.player.combat_list_allies
                     )
@@ -647,7 +658,7 @@ class ApiCombatAdapter:
                 if not isinstance(single_target_id, str):
                     return {"error": "Invalid target"}
 
-                target_obj_id = single_target_id.replace("enemy_", "")
+                target_obj_id = _strip_combatant_prefix(single_target_id)
                 target = None
                 all_combatants = (
                     self.player.combat_list + self.player.combat_list_allies
@@ -721,8 +732,7 @@ class ApiCombatAdapter:
         # Find target in available options
         target = None
         # Look up target by ID from player's combat list (enemies) or allies
-        # We need to parse the target_id (e.g. "enemy_123456")
-        target_obj_id = target_id.replace("enemy_", "")
+        target_obj_id = _strip_combatant_prefix(target_id)
 
         all_combatants = self.player.combat_list + self.player.combat_list_allies
         for combatant in all_combatants:
@@ -1330,6 +1340,10 @@ class ApiCombatAdapter:
             npc.combat_delay -= 1
         else:
             if npc.current_move is None:
+                # Ally-healing check: use a consumable on a nearby friendly below threshold
+                if self._npc_try_heal_ally(npc):
+                    return
+
                 # Select target
                 if not npc.friend:
                     npc.target = random.choice(self.player.combat_list_allies)
@@ -1389,6 +1403,83 @@ class ApiCombatAdapter:
 
         for move in moves_to_advance:
             move.advance(npc)
+
+    def _npc_try_heal_ally(self, npc) -> bool:
+        """Check whether this NPC should spend its turn healing a nearby ally.
+
+        Applies to any NPC that has consumable items in its inventory.  Returns
+        True and executes the heal (consuming the item) if a valid target was
+        found; returns False so normal move-selection proceeds otherwise.
+        """
+        import items as items_module
+
+        inventory = getattr(npc, "inventory", [])
+        consumables = [
+            it for it in inventory
+            if isinstance(it, items_module.Consumable) and hasattr(it, "use")
+        ]
+        if not consumables:
+            return False
+
+        # Build list of friendlies (allies share the same faction)
+        if npc.friend:
+            # Friendly NPC: allies are player + other friends; enemies are combat_list
+            friendlies = list(getattr(self.player, "combat_list_allies", []))
+        else:
+            # Enemy NPC: allies are other enemies
+            friendlies = list(getattr(self.player, "combat_list", []))
+
+        # Find a living friendly below the heal threshold that is within range
+        heal_target = None
+        for friendly in friendlies:
+            if friendly is npc or not friendly.is_alive():
+                continue
+            maxhp = getattr(friendly, "maxhp", 1) or 1
+            hp_frac = getattr(friendly, "hp", maxhp) / maxhp
+            if hp_frac >= _ALLY_HEAL_THRESHOLD:
+                continue
+            dist = npc.combat_proximity.get(friendly, 9999)
+            if dist > _ITEM_USE_RANGE:
+                continue
+            # Prefer the most-injured friendly
+            if heal_target is None:
+                heal_target = friendly
+            elif (getattr(friendly, "hp", 0) / maxhp) < (
+                getattr(heal_target, "hp", 0) / (getattr(heal_target, "maxhp", 1) or 1)
+            ):
+                heal_target = friendly
+
+        if heal_target is None:
+            return False
+
+        item = consumables[0]
+        item_name = getattr(item, "name", "item")
+        with self._capture_output():
+            item.use(heal_target)
+
+        # Remove consumed item from NPC inventory
+        if item in inventory:
+            inventory.remove(item)
+
+        target_label = "player" if heal_target == self.player else f"ally_{id(heal_target)}"
+        self._add_log_entry(
+            self.player.combat_beat,
+            f"{npc.name} uses {item_name} on {heal_target.name}!",
+            "combat",
+        )
+        self._add_log_entry(
+            self.player.combat_beat,
+            f"{npc.name} uses {item_name}",
+            "animation",
+            beat_index=self.current_beat_state_index,
+            animation_data={
+                "type": "pulse",
+                "source_id": f"{'ally' if npc.friend else 'enemy'}_{id(npc)}",
+                "target_id": target_label,
+                "move_name": f"Use {item_name}",
+            },
+        )
+        return True
 
     def _update_heat(self):
         """Update the heat multiplier."""
@@ -1773,6 +1864,7 @@ class ApiCombatAdapter:
                     "id": f"enemy_{id(enemy)}",
                     "name": enemy.name,
                     "distance": distance,
+                    "is_ally": False,
                     "health": {
                         "current": getattr(enemy, "hp", getattr(enemy, "health", 0)),
                         "max": getattr(
@@ -1786,6 +1878,26 @@ class ApiCombatAdapter:
                     target_data["hit_chance"] = move.calculate_hit_chance(enemy)
 
                 targets.append(target_data)
+
+        # Include allies when the move explicitly accepts them (e.g. Advance for healing setup)
+        if getattr(move, "accepts_ally_target", False):
+            for ally in self.player.combat_list_allies:
+                if ally == self.player or not ally.is_alive():
+                    continue
+                distance = self.player.combat_proximity.get(ally, 0)
+                if range_min <= distance <= range_max:
+                    targets.append(
+                        {
+                            "id": f"ally_{id(ally)}",
+                            "name": ally.name,
+                            "distance": distance,
+                            "is_ally": True,
+                            "health": {
+                                "current": getattr(ally, "hp", 0),
+                                "max": getattr(ally, "maxhp", 100),
+                            },
+                        }
+                    )
 
         # Sort by distance
         targets.sort(key=lambda t: t["distance"])

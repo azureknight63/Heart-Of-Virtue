@@ -338,8 +338,14 @@ class PlayerInventoryMixin:
             # Out of range -> re-loop
             continue
 
-    def use_item(self, phrase=""):
-        """Use a consumable or special item, either by phrase match or interactive menu."""
+    def use_item(self, phrase="", target=None):
+        """Use a consumable or special item, either by phrase match or interactive menu.
+
+        Args:
+            phrase: Optional phrase to match item name (skips menu).
+            target: Optional combatant to receive the item's effect. Defaults to self.
+        """
+        _target = target if target is not None else self
         if phrase == "":
             num_consumables = 0
             num_special = 0
@@ -439,7 +445,7 @@ class PlayerInventoryMixin:
                                 break
                             if "use" in item.interactions and hasattr(item, "use"):
                                 print("{} used {}!".format(self.name, item.name))
-                                item.use(self)
+                                item.use(_target)
                             elif "prefer" in item.interactions and hasattr(
                                 item, "prefer"
                             ):
@@ -491,7 +497,7 @@ class PlayerInventoryMixin:
                             "YES",
                         ]
                         if confirm in acceptable_confirm_phrases:
-                            item.use(self)
+                            item.use(_target)
                             break
 
     def stack_inv_items(self):
