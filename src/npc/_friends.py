@@ -180,14 +180,6 @@ friendly enough to Jean.
     def name(self, value):
         self._name = value
 
-    def before_death(self):
-        print(
-            colored(self.name, "yellow", attrs=["bold"]) + " quaffs one of his potions!"
-        )
-        self.fatigue /= 2
-        self.hp = self.maxhp
-        return False
-
     def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
             self.current_room.events_here.append(
