@@ -1,184 +1,290 @@
 {
-    "metadata": {
-        "bgm": "mineral_pools"
-    },
-    "(2, 2)": {
-        "id": "tile_2_2",
-        "title": "Conclave Archive — Reading Hall",
-        "description": "A high-ceilinged chamber lined with stone tablet-shelves, their contents arranged in sequences Jean cannot read. The stone here is a warmer, darker grey than the concourse outside — different mineral composition, or simply more carefully dressed. A low plinth at the centre is polished to a bright ring where hands have rested on it over many years. The air is noticeably still.",
-        "exits": [
-            "east",
-            "north"
-        ],
-        "block_exit": [],
-        "events": [],
-        "items": [
+  "metadata": {
+    "bgm": "mineral_pools"
+  },
+  "(2, 2)": {
+    "id": "tile_2_2",
+    "title": "Conclave Archive \u2014 Reading Hall",
+    "description": "A high-ceilinged chamber lined with stone tablet-shelves, their contents arranged in sequences Jean cannot read. The stone here is a warmer, darker grey than the concourse outside \u2014 different mineral composition, or simply more carefully dressed. A low plinth at the centre is polished to a bright ring where hands have rested on it over many years. The air is noticeably still.",
+    "exits": [
+      "east",
+      "north"
+    ],
+    "block_exit": [],
+    "events": [],
+    "items": [
+      {
+        "__class__": "GronditeMarkToken",
+        "__module__": "items",
+        "props": {}
+      }
+    ],
+    "npcs": [
+      {
+        "__class__": "GronditeConclaveElder",
+        "__module__": "npc",
+        "props": {}
+      }
+    ],
+    "objects": [
+      {
+        "__class__": "WallInscription",
+        "__module__": "objects",
+        "props": {
+          "name": "Stone Tablets",
+          "description": "Dense Golemite script carved into stone tablets along the wall. The lettering is smaller and more formal than Jean has seen elsewhere in the city.",
+          "idle_message": "Dense script is carved into stone tablets along the wall.",
+          "hidden": false,
+          "hide_factor": 0,
+          "discovery_message": "dense script carved into the wall tablets!",
+          "announce": "Dense script is carved into stone tablets along the wall.",
+          "keywords": [
+            "read",
+            "examine",
+            "inspect",
+            "view",
+            "check"
+          ],
+          "events": [],
+          "tile": null,
+          "player": null,
+          "text": "[Dense Golemite script on stone tablets. Jean cannot read most of it. At the base of the nearest slab, a single line in trade tongue has been scratched \u2014 a translation note in a different hand: 'Before stone: weight. From weight: us. The pool is the first gift.']"
+        }
+      },
+      {
+        "__class__": "Passageway",
+        "__module__": "objects",
+        "props": {
+          "name": "Archive Door",
+          "description": "A low stone archway leads back out to the Conclave annex.",
+          "idle_message": "The archive door leads back to the Conclave annex.",
+          "hidden": false,
+          "hide_factor": 0,
+          "discovery_message": "the archive door leading back to the Conclave annex!",
+          "announce": "The archive door leads back to the Conclave annex.",
+          "keywords": [
+            "leave",
+            "exit",
+            "go",
+            "outside",
+            "door"
+          ],
+          "events": [],
+          "tile": null,
+          "player": null,
+          "events_before": [],
+          "events_after": [],
+          "teleport_map": "grondia",
+          "teleport_tile": [
+            11,
+            3
+          ],
+          "persist": true
+        }
+      }
+    ]
+  },
+  "(3, 2)": {
+    "id": "tile_3_2",
+    "title": "Conclave Archive \u2014 Deep Stacks",
+    "description": "Narrow aisles between floor-to-ceiling tablet racks, the upper reaches accessible only by iron handholds set into the stone. The organization follows a system Jean cannot parse \u2014 marks and sigils, not an alphabet. The tablets are well-maintained; some carry small clay seals at their bases. A sealed stone plate is mortared into the far wall at knee height.",
+    "exits": [
+      "west"
+    ],
+    "block_exit": [],
+    "events": [],
+    "items": [],
+    "npcs": [],
+    "objects": [
+      {
+        "__class__": "Container",
+        "__module__": "objects",
+        "props": {
+          "nickname": "sealed stone plate",
+          "possible_states": [
+            "closed",
+            "opened"
+          ],
+          "revealed": false,
+          "locked": false,
+          "state": "closed",
+          "merchant": "",
+          "allowed_item_types": [
             {
-                "__class__": "GronditeMarkToken",
-                "__module__": "items",
-                "props": {}
+              "__class_type__": "items:Item"
             }
-        ],
-        "npcs": [
+          ],
+          "stock_count": 10,
+          "inventory": [
             {
-                "__class__": "GronditeConclaveElder",
-                "__module__": "npc",
-                "props": {}
-            }
-        ],
-        "objects": [
-            {
-                "__class__": "WallInscription",
-                "__module__": "objects",
-                "props": {
-                    "name": "Stone Tablets",
-                    "description": "Dense Golemite script carved into stone tablets along the wall. The lettering is smaller and more formal than Jean has seen elsewhere in the city.",
-                    "idle_message": "Dense script is carved into stone tablets along the wall.",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "discovery_message": "dense script carved into the wall tablets!",
-                    "announce": "Dense script is carved into stone tablets along the wall.",
-                    "keywords": ["read", "examine", "inspect", "view", "check"],
-                    "events": [],
-                    "tile": null,
-                    "player": null,
-                    "text": "[Dense Golemite script on stone tablets. Jean cannot read most of it. At the base of the nearest slab, a single line in trade tongue has been scratched — a translation note in a different hand: 'Before stone: weight. From weight: us. The pool is the first gift.']"
-                }
+              "__class__": "Book",
+              "__module__": "items",
+              "props": {
+                "name": "The Grondelith Concordat",
+                "description": "A flat stone tablet, its face engraved with dense formal script. A stamp at the top reads 'Office of Exchange' in trade tongue.",
+                "value": 20,
+                "weight": 1.5,
+                "maintype": "Book",
+                "subtype": "Book",
+                "type": "Book",
+                "interactions": [
+                  "drop",
+                  "read"
+                ],
+                "merchandise": false,
+                "hidden": false,
+                "hide_factor": 0,
+                "discovery_message": "an engraved stone tablet!",
+                "announce": "A flat engraved stone tablet rests here.",
+                "text": "GRONDELITH CONCORDAT. Office of Exchange, trade-speech rendering.\n\nEighth Conclave. All present: agreed.\n\nPools: held by all. No one commands. No one takes alone. The pools feed the living. The pools take back the dead.\n\nIf pools are spoiled \u2014 infection, overflow, damage \u2014 address before all other work. All capable bodies respond.\n\nSignatories held in Archive. Not for copying."
+              }
             },
             {
-                "__class__": "Passageway",
-                "__module__": "objects",
-                "props": {
-                    "name": "Archive Door",
-                    "description": "A low stone archway leads back out to the Conclave annex.",
-                    "idle_message": "The archive door leads back to the Conclave annex.",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "discovery_message": "the archive door leading back to the Conclave annex!",
-                    "announce": "The archive door leads back to the Conclave annex.",
-                    "keywords": ["leave", "exit", "go", "outside", "door"],
-                    "events": [],
-                    "tile": null,
-                    "player": null,
-                    "events_before": [],
-                    "events_after": [],
-                    "teleport_map": "grondia",
-                    "teleport_tile": [11, 3],
-                    "persist": true
-                }
-            }
-        ]
-    },
-    "(3, 2)": {
-        "id": "tile_3_2",
-        "title": "Conclave Archive — Deep Stacks",
-        "description": "Narrow aisles between floor-to-ceiling tablet racks, the upper reaches accessible only by iron handholds set into the stone. The organization follows a system Jean cannot parse — marks and sigils, not an alphabet. The tablets are well-maintained; some carry small clay seals at their bases. A sealed stone plate is mortared into the far wall at knee height.",
-        "exits": [
-            "west"
-        ],
-        "block_exit": [],
-        "events": [],
-        "items": [],
-        "npcs": [],
-        "objects": [
+              "__class__": "Gold",
+              "__module__": "items",
+              "props": {
+                "amt": 30
+              }
+            },
             {
-                "__class__": "Container",
-                "__module__": "objects",
-                "props": {
-                    "nickname": "sealed stone plate",
-                    "possible_states": ["closed", "opened"],
-                    "revealed": false,
-                    "locked": false,
-                    "state": "closed",
-                    "merchant": "",
-                    "allowed_item_types": [{"__class_type__": "items:Item"}],
-                    "stock_count": 10,
-                    "inventory": [
-                        {
-                            "__class__": "Book",
-                            "__module__": "items",
-                            "props": {
-                                "name": "The Grondelith Concordat",
-                                "description": "A flat stone tablet, its face engraved with dense formal script. A stamp at the top reads 'Office of Exchange' in trade tongue.",
-                                "value": 20,
-                                "weight": 1.5,
-                                "maintype": "Book",
-                                "subtype": "Book",
-                                "type": "Book",
-                                "interactions": ["drop", "read"],
-                                "merchandise": false,
-                                "hidden": false,
-                                "hide_factor": 0,
-                                "discovery_message": "an engraved stone tablet!",
-                                "announce": "A flat engraved stone tablet rests here.",
-                                "text": "GRONDELITH CONCORDAT. Office of Exchange, trade-speech rendering.\n\nEighth Conclave. All present: agreed.\n\nPools: held by all. No one commands. No one takes alone. The pools feed the living. The pools take back the dead.\n\nIf pools are spoiled — infection, overflow, damage — address before all other work. All capable bodies respond.\n\nSignatories held in Archive. Not for copying."
-                            }
-                        },
-                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 30}},
-                        {"__class__": "Restorative", "__module__": "items", "props": {}}
-                    ],
-                    "name": "Sealed Stone Plate",
-                    "description": "A flat stone plate mortared into the base of the far wall, its face flush with the surrounding stone. The edge shows signs of occasional opening.",
-                    "idle_message": "A sealed stone plate is set into the base of the far wall.",
-                    "hidden": true,
-                    "hide_factor": 4,
-                    "discovery_message": "a sealed stone plate set into the base of the wall!",
-                    "announce": "A sealed stone plate is set into the base of the far wall.",
-                    "keywords": ["open", "loot", "check", "examine"],
-                    "events": [],
-                    "tile": null,
-                    "player": null
-                }
+              "__class__": "Restorative",
+              "__module__": "items",
+              "props": {}
             }
-        ]
-    },
-    "(2, 1)": {
-        "id": "tile_2_1",
-        "title": "Conclave Archive — Relic Alcove",
-        "description": "A small side chamber barely wide enough for two people, its walls incised with a repeating geometric border — concentric rings interrupted by radial lines, the same pattern Jean has seen on the archive door. A stone plinth stands at the centre, bare; the surface discolouration shows where something rested on it for a long time. One wall holds a deeply carved niche sealed with a fitted stone panel, its edge worn where fingers have tested it.",
-        "exits": [
-            "south"
-        ],
-        "block_exit": [],
-        "events": [],
-        "items": [
+          ],
+          "name": "Sealed Stone Plate",
+          "description": "A flat stone plate mortared into the base of the far wall, its face flush with the surrounding stone. The edge shows signs of occasional opening.",
+          "idle_message": "A sealed stone plate is set into the base of the far wall.",
+          "hidden": true,
+          "hide_factor": 4,
+          "discovery_message": "a sealed stone plate set into the base of the wall!",
+          "announce": "A sealed stone plate is set into the base of the far wall.",
+          "keywords": [
+            "open",
+            "loot",
+            "check",
+            "examine"
+          ],
+          "events": [],
+          "tile": null,
+          "player": null
+        }
+      },
+      {
+        "__class__": "Container",
+        "__module__": "objects",
+        "props": {
+          "nickname": "archive coffer",
+          "possible_states": [
+            "closed",
+            "opened"
+          ],
+          "revealed": false,
+          "locked": true,
+          "state": "closed",
+          "merchant": "",
+          "allowed_item_types": [
             {
-                "__class__": "GronditeMarkToken",
-                "__module__": "items",
-                "props": {}
+              "__class_type__": "items:Item"
             }
-        ],
-        "npcs": [],
-        "objects": [
+          ],
+          "stock_count": 10,
+          "inventory": [
             {
-                "__class__": "Container",
-                "__module__": "objects",
-                "props": {
-                    "nickname": "carved niche",
-                    "possible_states": ["closed", "opened"],
-                    "revealed": false,
-                    "locked": false,
-                    "state": "closed",
-                    "merchant": "",
-                    "allowed_item_types": [{"__class_type__": "items:Item"}],
-                    "stock_count": 10,
-                    "inventory": [
-                        {"__class__": "PaleGreyFragment", "__module__": "items", "props": {}},
-                        {"__class__": "Gold", "__module__": "items", "props": {"amt": 20}}
-                    ],
-                    "name": "Carved Niche",
-                    "description": "A deep recess in the wall sealed by a fitted stone panel. The niche is carved with greater care than the surrounding alcove.",
-                    "idle_message": "A fitted stone panel seals a niche in the wall.",
-                    "hidden": true,
-                    "hide_factor": 5,
-                    "discovery_message": "a fitted stone panel concealing a deep niche in the wall!",
-                    "announce": "A fitted stone panel seals a niche in the wall.",
-                    "keywords": ["open", "loot", "check", "examine"],
-                    "events": [],
-                    "tile": null,
-                    "player": null
-                }
+              "__class__": "DissentingRecord",
+              "__module__": "items",
+              "props": {}
             }
-        ]
-    }
+          ],
+          "name": "Stone Coffer",
+          "description": "A squat stone coffer on the highest shelf, sealed with a carved disc lock bearing a Conclave sigil. The lock matches the authorization stones kept in the ritual basins \u2014 this coffer was never meant to be permanently sealed, only restricted.",
+          "idle_message": "A squat stone coffer on the highest shelf is sealed with a disc lock bearing a Conclave sigil.",
+          "hidden": false,
+          "hide_factor": 0,
+          "discovery_message": "a stone coffer sealed with a Conclave sigil disc lock!",
+          "announce": "A squat stone coffer on the highest shelf is sealed with a disc lock bearing a Conclave sigil.",
+          "keywords": [
+            "open",
+            "unlock",
+            "examine",
+            "inspect"
+          ],
+          "events": [],
+          "tile": null,
+          "player": null
+        }
+      }
+    ]
+  },
+  "(2, 1)": {
+    "id": "tile_2_1",
+    "title": "Conclave Archive \u2014 Relic Alcove",
+    "description": "A small side chamber barely wide enough for two people, its walls incised with a repeating geometric border \u2014 concentric rings interrupted by radial lines, the same pattern Jean has seen on the archive door. A stone plinth stands at the centre, bare; the surface discolouration shows where something rested on it for a long time. One wall holds a deeply carved niche sealed with a fitted stone panel, its edge worn where fingers have tested it.",
+    "exits": [
+      "south"
+    ],
+    "block_exit": [],
+    "events": [],
+    "items": [
+      {
+        "__class__": "GronditeMarkToken",
+        "__module__": "items",
+        "props": {}
+      }
+    ],
+    "npcs": [],
+    "objects": [
+      {
+        "__class__": "Container",
+        "__module__": "objects",
+        "props": {
+          "nickname": "carved niche",
+          "possible_states": [
+            "closed",
+            "opened"
+          ],
+          "revealed": false,
+          "locked": false,
+          "state": "closed",
+          "merchant": "",
+          "allowed_item_types": [
+            {
+              "__class_type__": "items:Item"
+            }
+          ],
+          "stock_count": 10,
+          "inventory": [
+            {
+              "__class__": "PaleGreyFragment",
+              "__module__": "items",
+              "props": {}
+            },
+            {
+              "__class__": "Gold",
+              "__module__": "items",
+              "props": {
+                "amt": 20
+              }
+            }
+          ],
+          "name": "Carved Niche",
+          "description": "A deep recess in the wall sealed by a fitted stone panel. The niche is carved with greater care than the surrounding alcove.",
+          "idle_message": "A fitted stone panel seals a niche in the wall.",
+          "hidden": true,
+          "hide_factor": 5,
+          "discovery_message": "a fitted stone panel concealing a deep niche in the wall!",
+          "announce": "A fitted stone panel seals a niche in the wall.",
+          "keywords": [
+            "open",
+            "loot",
+            "check",
+            "examine"
+          ],
+          "events": [],
+          "tile": null,
+          "player": null
+        }
+      }
+    ]
+  }
 }
