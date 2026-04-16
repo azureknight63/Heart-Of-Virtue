@@ -28,7 +28,6 @@ Instance attributes (set by _init_chat_attrs):
 import importlib.util
 import json
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional

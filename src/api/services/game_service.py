@@ -6,7 +6,6 @@ import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
-_log = logging.getLogger(__name__)
 from src.interface import get_gold
 
 if TYPE_CHECKING:
@@ -43,6 +42,8 @@ from src.api.serializers.dialogue_context import (
     ConversationHistory,
     DialogueContext,
 )
+
+_log = logging.getLogger(__name__)
 
 # Internal LLM diagnostic strings that must never reach the UI.
 # Originate from ai/llm_client.py logger calls captured via redirect_stdout,

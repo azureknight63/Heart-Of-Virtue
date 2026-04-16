@@ -10,8 +10,6 @@ import random
 from pathlib import Path
 
 import functions  # type: ignore
-
-_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
 import genericng  # type: ignore
 import moves  # type: ignore
 from neotermcolor import colored  # type: ignore
@@ -19,6 +17,8 @@ from neotermcolor import colored  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from ._llm import MynxLLMMixin
+
+_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
 
 
 # Mynx: a friendly, non-combatant monkey-cat hybrid NPC with LLM-driven interaction hooks.

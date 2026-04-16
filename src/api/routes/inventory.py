@@ -14,11 +14,9 @@ import re
 from unittest.mock import patch
 
 from src.api.services.validators import (
-    validate_currency_amount,
     validate_equipment_slot,
     validate_item_index,
     validate_required_fields,
-    validate_weight_limit,
 )
 from src.api.serializers.inventory import (
     EquipmentSerializer,
