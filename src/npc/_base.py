@@ -182,5 +182,10 @@ class Friend(NPC):
             friend=friend,
         )
 
+    def wounded_flavor(self):
+        """Return a one-line string of flavor text indicating this ally is hurt,
+        or None to suppress output. Override per companion for voice-appropriate lines."""
+        return None
+
     def talk(self, player):
         print(self.name + " has nothing to say.")
