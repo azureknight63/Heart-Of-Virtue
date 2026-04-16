@@ -158,6 +158,28 @@ friendly enough to Jean.
             "intensive": "himself",
         }
 
+    @property
+    def name(self):
+        story = None
+        if hasattr(self, "current_room") and self.current_room is not None:
+            if hasattr(self.current_room, "universe"):
+                story = self.current_room.universe.story
+        elif hasattr(self, "player_ref") and self.player_ref is not None:
+            if hasattr(self.player_ref, "universe"):
+                story = self.player_ref.universe.story
+
+        if story and (
+            story.get("gorran_first", "0") == "1"
+            or story.get("gorran_language_stage", "0") != "0"
+        ):
+            return "Gorran"
+        
+        return getattr(self, "_name", "Rock-Man")
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+
     def before_death(self):
         print(
             colored(self.name, "yellow", attrs=["bold"]) + " quaffs one of his potions!"
