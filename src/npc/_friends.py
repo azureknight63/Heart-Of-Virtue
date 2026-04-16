@@ -18,7 +18,9 @@ from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from ._llm import MynxLLMMixin
 
-_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
+_HUMAN_NPC_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
+)
 
 
 # Mynx: a friendly, non-combatant monkey-cat hybrid NPC with LLM-driven interaction hooks.
@@ -103,7 +105,9 @@ class Mynx(MynxLLMMixin, Friend):
         return False
 
     # Override talk to use the interaction framework
-    def talk(self, player, prompt: str | None = None, structured: bool = False):
+    def talk(
+        self, player, prompt: str | None = None, structured: bool = False
+    ):
         try:
             return self.interact_with_player(
                 player, prompt=prompt, structured=structured
@@ -113,16 +117,22 @@ class Mynx(MynxLLMMixin, Friend):
             return None
 
     def pet(self, player=None, structured: bool = False):
-        return self.interact_with_player(player, prompt="pet", structured=structured)
+        return self.interact_with_player(
+            player, prompt="pet", structured=structured
+        )
 
     def play(self, player=None, item=None, structured: bool = False):
         prompt = "play"
         if item:
             prompt = f"play with {str(item)}"
-        return self.interact_with_player(player, prompt=prompt, structured=structured)
+        return self.interact_with_player(
+            player, prompt=prompt, structured=structured
+        )
 
 
-class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.
+class Gorran(
+    Friend
+):  # The "rock-man" that helps Jean at the beginning of the game.
     def __init__(self):
         description = """
 A massive creature that somewhat resembles a man,
@@ -182,7 +192,8 @@ friendly enough to Jean.
 
     def before_death(self):
         print(
-            colored(self.name, "yellow", attrs=["bold"]) + " quaffs one of his potions!"
+            colored(self.name, "yellow", attrs=["bold"])
+            + " quaffs one of his potions!"
         )
         self.fatigue /= 2
         self.hp = self.maxhp
@@ -198,7 +209,9 @@ friendly enough to Jean.
             self.current_room.universe.story["gorran_first"] = "1"
             return
 
-        stage = int(self.current_room.universe.story.get("gorran_language_stage", "0"))
+        stage = int(
+            self.current_room.universe.story.get("gorran_language_stage", "0")
+        )
 
         if stage == 0:
             # Stage 0: gesture and sound only — no words
@@ -236,7 +249,8 @@ friendly enough to Jean.
         elif stage == 2:
             # Stage 2: single words, said simply and without elaboration
             responses = [
-                colored('"Good."', "green") + " He says it once and doesn't repeat it.",
+                colored('"Good."', "green")
+                + " He says it once and doesn't repeat it.",
                 (
                     "Gorran turns. He looks at you — really looks — and says your name: "
                     + colored('"Jean."', "green")
@@ -533,7 +547,9 @@ class GronditeConclaveElder(Friend):
                 "\nThe Elder lowers the broken disc. He makes one short sound — patient, "
                 "not disappointed — and turns back to the plinth."
             )
-            universe_story = getattr(getattr(player, "universe", None), "story", None)
+            universe_story = getattr(
+                getattr(player, "universe", None), "story", None
+            )
             if universe_story is not None:
                 universe_story[self._INTRO_RUN_KEY] = "1"
         else:
@@ -586,10 +602,14 @@ class Mara(HumanNPCLLMMixin, Friend):
         }
         # Mara's combat style: precision, positioning, and tactical awareness
         # She switches between bow (medium/long range) and dagger (close range)
-        self.add_move(moves.NpcAttack(self), 5)  # Dagger attacks at close range
+        self.add_move(
+            moves.NpcAttack(self), 5
+        )  # Dagger attacks at close range
         self.add_move(moves.Advance(self), 3)
         self.add_move(moves.Withdraw(self), 3)  # Tactical retreat to reset
-        self.add_move(moves.FlankingManeuver(self), 2)  # Positioning for better angles
+        self.add_move(
+            moves.FlankingManeuver(self), 2
+        )  # Positioning for better angles
         self.add_move(moves.Dodge(self), 3)  # High finesse means good evasion
         self.add_move(moves.Parry(self), 2)  # Defensive positioning
         self.add_move(moves.NpcIdle(self), 1)
@@ -597,7 +617,9 @@ class Mara(HumanNPCLLMMixin, Friend):
         self.battle_symbol = "M"
 
         # Equipment state tracking for weapon switching
-        self.preferred_range = None  # Will be set dynamically based on combat distance
+        self.preferred_range = (
+            None  # Will be set dynamically based on combat distance
+        )
         self.bow_range = (8, 25)  # Bow effective range
         self.dagger_range = (0, 3)  # Dagger effective range
         self._chat_config_path = str(_HUMAN_NPC_DIR / "mara.json")
@@ -652,7 +674,8 @@ class Mara(HumanNPCLLMMixin, Friend):
     def select_move(self):
         """Mara's move selection reflects her nature: precise, observant, tactical.
         She switches between bow (medium/long range) and dagger (close range) based on
-        combat distance, maintaining optimal positioning for her current weapon."""
+        combat distance, maintaining optimal positioning for her current weapon.
+        """
         available_moves = self.refresh_moves()
 
         # Initialize AI config if we have a player reference (combat started)
@@ -678,7 +701,9 @@ class Mara(HumanNPCLLMMixin, Friend):
 
             # Core tactical moves that apply to both bow and dagger modes
             if move.name == "Dodge":
-                weight += 3  # High finesse means constant opportunistic evasion
+                weight += (
+                    3  # High finesse means constant opportunistic evasion
+                )
             elif move.name == "Flanking Maneuver":
                 weight += 2  # Seeks advantageous angles
 
@@ -706,7 +731,9 @@ class Mara(HumanNPCLLMMixin, Friend):
 
             # Apply AI config bonuses
             if hasattr(self, "ai_config") and self.ai_config:
-                weight += self.ai_config.get_weighted_move_bonus(self, move.name)
+                weight += self.ai_config.get_weighted_move_bonus(
+                    self, move.name
+                )
 
             weight = max(1, weight)
             for _ in range(weight):
@@ -738,9 +765,9 @@ class Mara(HumanNPCLLMMixin, Friend):
         while self.current_move is None and attempts < max_attempts:
             attempts += 1
             choice = random.randint(0, num_choices)
-            if (weighted_moves[choice].fatigue_cost <= self.fatigue) and weighted_moves[
-                choice
-            ].viable():
+            if (
+                weighted_moves[choice].fatigue_cost <= self.fatigue
+            ) and weighted_moves[choice].viable():
                 self.current_move = weighted_moves[choice]
 
         # Hard fallback
