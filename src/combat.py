@@ -593,10 +593,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                         player.current_room.npcs_here.remove(ally)
                         player.combat_list_allies.remove(ally)
                     else:
-                        process_npc(ally)
-                        gorran_beat_cooldown = maybe_combat_flavor(
-                            player, beat, gorran_beat_cooldown
-                        )
+                        process_npc(ally)  # revived by before_death(); act this beat
             else:
                 process_npc(ally)
                 gorran_beat_cooldown = maybe_combat_flavor(

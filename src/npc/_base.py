@@ -181,10 +181,15 @@ class Friend(NPC):
             target=target,
             friend=friend,
         )
+        self.knocked_out = False  # True while sitting out a fight after being KO'd
 
     def wounded_flavor(self):
-        """Return a one-line string of flavor text indicating this ally is hurt,
-        or None to suppress output. Override per companion for voice-appropriate lines."""
+        """Return a one-line flavor string shown periodically when this ally is
+        below half HP, or None to suppress output.
+
+        Override this in every named companion class with character-appropriate
+        lines — the base implementation is intentionally silent so generic
+        Friend instances don't produce out-of-character output."""
         return None
 
     def talk(self, player):

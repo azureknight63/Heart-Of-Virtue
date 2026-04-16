@@ -208,7 +208,7 @@ _\\|//__( | )______)_/
                     if actor is player:
                         continue
                     if actor.hp < actor.maxhp // 2:
-                        flavor = getattr(actor, "wounded_flavor", lambda: None)()
+                        flavor = actor.wounded_flavor()
                         if flavor:
                             print(colored(flavor, "yellow"))
             player.current_room.evaluate_events()
