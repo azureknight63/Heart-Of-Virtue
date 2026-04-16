@@ -28,7 +28,8 @@ export default function SkillsPanel({ player, onClose }) {
       if (response.data.success) {
         setSkillsData(response.data.skills)
         if (!selectedCategory && response.data.skills.skill_tree) {
-          const categories = Object.keys(response.data.skills.skill_tree)
+          const exp = response.data.skills.skill_exp || {}
+          const categories = Object.keys(response.data.skills.skill_tree).filter(cat => (exp[cat] || 0) > 0)
           if (categories.length > 0) {
             setSelectedCategory(categories[0])
           }
@@ -81,7 +82,7 @@ export default function SkillsPanel({ player, onClose }) {
   }
 
   const { skill_tree, skill_exp } = skillsData
-  const categories = Object.keys(skill_tree || {})
+  const categories = Object.keys(skill_tree || {}).filter(cat => (skill_exp?.[cat] || 0) > 0)
 
   return (
     <BaseDialog
