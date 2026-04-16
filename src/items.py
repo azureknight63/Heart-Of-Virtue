@@ -3354,6 +3354,296 @@ class FabricariumRejectionShard(Special):
         )
 
 
+class ElderWritOfCleansing(Book):
+    """
+    The Conclave's ritual cleansing rite, recovered from the dry basin on the Outer Terrace.
+    References pool water as the sacred medium for pre-ritual purification.
+    """
+
+    def __init__(self) -> None:
+        text = (
+            "ELDER'S WRIT OF CLEANSING — Office of the Conclave, inner rites.\n\n"
+            "Before you enter the ritual chamber, you must be made ready.\n\n"
+            "Draw pool water into the basin. Submerge both hands to the second knuckle. "
+            "Hold still for a count of twelve. The water is the medium through which the "
+            "earth speaks; it carries the intention of the stone and the memory of what "
+            "came before you.\n\n"
+            "When you rise, you are clean. Not of body — the body is always clean. "
+            "Of intention. You enter knowing what you are and what you are not.\n\n"
+            "The rite cannot be performed if the basin is empty. "
+            "It is not suggested that it be omitted. "
+            "The Conclave has made no provision for this."
+        )
+        super().__init__(
+            name="Elder's Writ of Cleansing",
+            description=(
+                "A thin stone tile engraved with dense formal text. "
+                "The script is careful and precise — the hand of someone who expected "
+                "it to be read many times."
+            ),
+            value=0,
+            weight=0.3,
+            text=text,
+            merchandise=False,
+            discovery_message="an engraved stone tile — a Conclave rite!",
+        )
+        self.interactions = ["read", "examine", "drop"]
+        self.announce = "A small engraved stone tile rests here."
+
+
+class DissentingRecord(Book):
+    """
+    A hidden personal archive from Conclave Elder Vreth, recording how a previous
+    pool Dormancy was resolved — not by ritual, but by physical investigation.
+    """
+
+    def __init__(self) -> None:
+        text = (
+            "DISSENTING RECORD — THE FIRST DORMANCY\n"
+            "Personal archive, Conclave Elder Vreth. Not for general circulation.\n\n"
+            "Six hundred years ago, approximately, the pools fell silent for a period "
+            "of eleven seasons. No new Awakenings occurred. The water did not change in "
+            "appearance, but the sacred basins produced nothing.\n\n"
+            "I was not alive. I write from the accounts of those who were.\n\n"
+            "The Conclave at that time declared the Dormancy a spiritual failing — "
+            "collective unworthiness — and prescribed increased rites, longer vigils, "
+            "deeper fasting. Eleven seasons of this. No Awakenings came.\n\n"
+            "What ended the Dormancy was not the rites. Elder Tesshar — alone, acting "
+            "without Conclave authorization — entered the lower channels and found a "
+            "mineralite blockage in the primary inflow. A crystalline deposit had grown "
+            "over six decades until it narrowed the channel to a thread. "
+            "He broke it free with his own hands, over three days.\n\n"
+            "The Awakenings resumed the following season.\n\n"
+            "The Conclave declared Tesshar's work blessed and retroactively approved. "
+            "No record was made in the main archive of the Conclave's error.\n\n"
+            "This is that record.\n\n"
+            "I place it here because I believe what occurred then may recur. "
+            "If you find it and the pools are silent: look at what the water cannot "
+            "pass through before you look at what you have done wrong."
+        )
+        super().__init__(
+            name="Dissenting Record — The First Dormancy",
+            description=(
+                "A stone tablet sealed with a clay disc — the seal broken long ago "
+                "and re-pressed imperfectly, as if someone read it and tried to "
+                "restore it. The text inside is not Conclave script. It is personal."
+            ),
+            value=0,
+            weight=0.8,
+            text=text,
+            merchandise=False,
+            discovery_message="a sealed personal stone tablet — marked 'not for circulation'!",
+        )
+        self.interactions = ["read", "examine", "drop"]
+        self.announce = "A personal stone tablet rests in the coffer."
+
+
+class HeartkeeperNote(Book):
+    """
+    A folded note left in a cold hearth by a resident who fled the Arcology.
+    Second independent witness to pipe contamination before the pool closure.
+    """
+
+    def __init__(self) -> None:
+        text = (
+            "We moved to the upper tier two weeks ago. The pipe water started smelling "
+            "wrong before they closed the pools — wet stone and something else I cannot "
+            "name, something that coated the back of the throat. I cleaned the basin every "
+            "morning. It kept coming back.\n\n"
+            "The elder who came to check our section said the smell was normal, seasonal "
+            "variance. That was before the pools were closed.\n\n"
+            "Don't drink from the pipes if you're still here. "
+            "Use the fountain in the Ecumerium. "
+            "I do not know how far it has spread.\n\n"
+            "— T."
+        )
+        super().__init__(
+            name="Hearthkeeper's Note",
+            description=(
+                "A small fold of mineral-paper, its edges softened by damp. "
+                "The writing is quick — someone who needed to say something and "
+                "did not have time for more."
+            ),
+            value=0,
+            weight=0.1,
+            text=text,
+            merchandise=False,
+            discovery_message="a folded note tucked beneath a hearthstone!",
+        )
+        self.interactions = ["read", "examine", "drop"]
+        self.announce = "A folded slip of mineral-paper lies beneath the hearthstone."
+
+
+class QualityReport117K(Book):
+    """
+    Fabricarium quality report for Batch 117-K — the first hard documentary evidence
+    connecting pool-output contamination to production failures.
+    """
+
+    def __init__(self) -> None:
+        text = (
+            "FABRICARIUM QUALITY RECORD — BATCH 117-K\n"
+            "Overseer Berath, Quality Hall, Grondia Fabricarium.\n\n"
+            "Batch 117-K: structural components, standard specification, second run. "
+            "Rejected in full.\n\n"
+            "Cause: crystalline contamination. Pale blue mineralite inclusions present "
+            "throughout the composite, source traced to the pool output conduit supplying "
+            "the bonding compound vats. The inclusions are not a surface defect; they have "
+            "penetrated the bonding matrix. Material consistency has degraded by "
+            "approximately 30%. Components produced from this batch will fail under load.\n\n"
+            "Recommendation: halt all production relying on pool output compound "
+            "until source is assessed.\n\n"
+            "This finding was flagged to the Elder Conclave under emergency protocol "
+            "on the date of inspection.\n\n"
+            "No response has been received.\n\n"
+            "I have flagged it twice more since. Still no response.\n\n"
+            "The batch has been quarantined. The machines are running on old compound "
+            "stock. When that stock is exhausted, production will stop.\n\n"
+            "— Overseer Berath"
+        )
+        super().__init__(
+            name="Quality Report — Batch 117-K",
+            description=(
+                "A stiff mineral-paper sheet folded in quarters and tucked beneath "
+                "the heaviest sample. The text is methodical, formatted — "
+                "the record of someone who followed every correct procedure "
+                "and received no answer."
+            ),
+            value=0,
+            weight=0.2,
+            text=text,
+            merchandise=False,
+            discovery_message="a folded quality report tucked beneath a sample!",
+        )
+        self.interactions = ["read", "examine", "drop"]
+        self.announce = "A folded quality report is hidden beneath the sample."
+
+
+class CompactOfSilence(Book):
+    """
+    A secret pact between Fabricarium masters to suppress the Batch 117-K contamination
+    findings from outside traders. Found hidden in a floor channel grate.
+    """
+
+    def __init__(self) -> None:
+        text = (
+            "FABRICARIUM COMPACT — PRIVATE MATTER\n\n"
+            "We the undersigned, master craftsmen of the Grondia Fabricarium, "
+            "agree as follows.\n\n"
+            "The events relating to Batch 117-K and the associated quality findings "
+            "are not to be shared with outside traders, visiting merchants, "
+            "or non-Fabricarium contacts.\n\n"
+            "This matter is internal to Grondia and will be resolved by the Conclave. "
+            "We understand the current delay. We have confidence in the process.\n\n"
+            "No orders will be cancelled, no contracts revised, no customers informed. "
+            "The affected batches have been quarantined. "
+            "Production continues on existing stock.\n\n"
+            "We are not suppressing anything. We are being patient. "
+            "These are different.\n\n"
+            "[Three marks are pressed below the text — distinct, forceful, "
+            "overlapping slightly at the edges.]"
+        )
+        super().__init__(
+            name="Compact of Silence",
+            description=(
+                "A sheet of mineral-paper wrapped around a flat iron disc. "
+                "The writing is formal, carefully chosen — "
+                "the language of people who know exactly what they are doing "
+                "and have decided on the phrasing."
+            ),
+            value=0,
+            weight=0.2,
+            text=text,
+            merchandise=False,
+            discovery_message="a wrapped document hidden in the channel grate!",
+        )
+        self.interactions = ["read", "examine", "drop"]
+        self.announce = "A wrapped document is wedged in the channel grate."
+
+
+class ConclaveSignalStone(Key):
+    """
+    A flat stone authorization disc bearing a Conclave sigil.
+    Kept in the Ritual Cleansing Basin as standing authorization for archivists.
+    Unlocks the Stone Coffer in the Conclave Archive.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(lock_nickname="archive coffer")
+        self.name = "Conclave Signal Stone"
+        self.description = (
+            "A flat disc of pale stone, its face incised with a Conclave authorization "
+            "sigil — the same mark Jean has seen on the disc lock of the archive coffer. "
+            "It was kept in the ritual basin. Whoever placed it there expected "
+            "someone to find it eventually."
+        )
+        self.value = 0
+        self.weight = 0.1
+        self.discovery_message = "a flat stone disc bearing a Conclave authorization sigil!"
+        self.announce = "A flat stone authorization disc rests here."
+        self.interactions = ["examine", "drop"]
+
+    def examine(self, player: "Player" = None) -> None:  # type: ignore[override]
+        print(self.description)
+
+
+class FabricariumCompactSeal(Key):
+    """
+    A flat iron disc stamped with three masters' marks — the physical seal of the
+    Compact of Silence. Also fits the combination disc lock of the Iron Component Locker.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(lock_nickname="component locker")
+        self.name = "Fabricarium Compact Seal"
+        self.description = (
+            "A flat disc of worked iron, its face stamped with three distinct makers' marks "
+            "pressed close together. One of the marks Jean recognizes from the voided mold "
+            "downstairs. This is the physical seal of whatever agreement the masters made — "
+            "and it fits the disc lock on the component locker."
+        )
+        self.value = 0
+        self.weight = 0.2
+        self.discovery_message = "a flat iron disc stamped with three makers' marks!"
+        self.announce = "A flat iron seal disc lies here."
+        self.interactions = ["examine", "drop"]
+
+    def examine(self, player: "Player" = None) -> None:  # type: ignore[override]
+        print(self.description)
+
+
+class GronditeAlloyBracer(Accessory):
+    """
+    A worked bracer of Golemite alloy, forged in the Fabricarium.
+    Found locked in the Iron Component Locker — one of the masters' private valuables.
+    Provides modest protection; heavier than it looks.
+    """
+
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
+        super().__init__(
+            name="Golemite Alloy Bracer",
+            description=(
+                "A wristguard of worked Golemite alloy — dark grey with a faint "
+                "mineral lustre, its surface etched with a repeating geometric pattern "
+                "Jean has seen on Fabricarium production marks. "
+                "Heavier than the size suggests, and fitted for a larger wrist than his, "
+                "but the adjustment grooves allow it to sit firm. "
+                "It was made here, by the people whose city he is standing in."
+            ),
+            isequipped=False,
+            value=150,
+            protection=2,
+            str_mod=0,
+            fin_mod=0,
+            weight=0.4,
+            maintype="Accessory",
+            subtype="Wristguard",
+            discovery_message="a worked Golemite alloy bracer!",
+            merchandise=merchandise,
+            enchantment_level=enchantment_level,
+        )
+
+
 class IronRation(Consumable):
     """Travel rations: hardtack, preserved meat, dried fruit. Sustenance for the road.
     Restores minimal HP and removes fatigue status if implemented."""
