@@ -41,7 +41,6 @@ class MasterTactician(PassiveMove):
         super().__init__(user, name="Master Tactician", description=description)
 
 
-
 class Check(Move):  # player checks the battlefield (shows enemies, allies, distances)
     def __init__(self, player):
         description = "Check your surroundings."

@@ -488,14 +488,19 @@ class SessionManager:
                 config_path = project_root / config_file
 
             if not config_path.exists():
-                print(f"[SessionManager] [DEBUG] Config file not found: {config_path}", flush=True)
+                print(
+                    f"[SessionManager] [DEBUG] Config file not found: {config_path}",
+                    flush=True,
+                )
                 return
 
             parser = configparser.ConfigParser()
             parser.read(config_path)
 
             if not parser.has_section("player"):
-                print("[SessionManager] [DEBUG] No [player] section in config", flush=True)
+                print(
+                    "[SessionManager] [DEBUG] No [player] section in config", flush=True
+                )
                 return
 
             player_section = parser["player"]

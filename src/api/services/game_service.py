@@ -172,7 +172,8 @@ class GameService:
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         lines = output.splitlines()
         filtered_lines = [
-            line for line in lines
+            line
+            for line in lines
             if not any(line.strip().startswith(p) for p in self._ERROR_PREFIXES)
             and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
@@ -326,13 +327,18 @@ class GameService:
 
         # On first world fetch, trigger tile events for the starting tile so
         # intro/entry events fire even though the player never "moved" there.
-        if session_data is not None and not session_data.get("initial_tile_events_done"):
+        if session_data is not None and not session_data.get(
+            "initial_tile_events_done"
+        ):
             session_data["initial_tile_events_done"] = True
             try:
                 self.trigger_tile_events(player, tile, session_data)
             except Exception as e:
                 import logging as _logging
-                _logging.getLogger(__name__).warning("Initial tile event trigger failed: %s", e)
+
+                _logging.getLogger(__name__).warning(
+                    "Initial tile event trigger failed: %s", e
+                )
 
         # Calculate exits dynamically by checking adjacent tiles
         exits_data = self._calculate_exits(
@@ -606,7 +612,9 @@ class GameService:
                 combat_started = False
             else:
                 # Initialize combat
-                self._initialize_combat(player, combat_enemies, session_data=session_data)
+                self._initialize_combat(
+                    player, combat_enemies, session_data=session_data
+                )
                 combat_started = True
 
                 # Get initial combat state from the adapter
@@ -749,7 +757,10 @@ class GameService:
                 except Exception as e:
                     # Log error but continue
                     event_data["error"] = str(e)
-                    _log.exception("Event processing failed for %s", getattr(event, 'name', type(event).__name__))
+                    _log.exception(
+                        "Event processing failed for %s",
+                        getattr(event, "name", type(event).__name__),
+                    )
 
                 # Capture and clean output
                 clean_output = self._clean_event_output(f.getvalue())
@@ -844,7 +855,9 @@ class GameService:
                 tile_y = pending.get("tile_y")
                 if tile_x is not None and tile_y is not None:
                     event.tile = player.universe.get_tile(tile_x, tile_y)
-                elif hasattr(player, "current_room") and player.current_room is not None:
+                elif (
+                    hasattr(player, "current_room") and player.current_room is not None
+                ):
                     event.tile = player.current_room
 
                 # Call process() or check_conditions()
@@ -977,7 +990,9 @@ class GameService:
                 player._combat_deferred_enemies = combat_enemies
             else:
                 # Initialize combat
-                self._initialize_combat(player, combat_enemies, session_data=session_data)
+                self._initialize_combat(
+                    player, combat_enemies, session_data=session_data
+                )
                 result["combat_started"] = True
 
                 # Get initial combat state
@@ -989,11 +1004,13 @@ class GameService:
                     )
                 else:
                     # Fallback to direct serialization (CombatStateSerializer already imported at module level)
-                    result["combat_state"] = CombatStateSerializer.serialize_combat_state(
-                        player,
-                        combat_enemies,
-                        current_turn_index=getattr(player, "combat_turn_index", 0),
-                        round_number=getattr(player, "combat_round", 1),
+                    result["combat_state"] = (
+                        CombatStateSerializer.serialize_combat_state(
+                            player,
+                            combat_enemies,
+                            current_turn_index=getattr(player, "combat_turn_index", 0),
+                            round_number=getattr(player, "combat_round", 1),
+                        )
                     )
         elif combat_enemies:
             # Combat is present but we are paused for narrative
@@ -1465,7 +1482,9 @@ class GameService:
         if not clean_output and any(
             p in pre_filter_output for p in _LLM_NOISE_PREFIXES
         ):
-            clean_output = "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
+            clean_output = (
+                "The Mynx shifts its weight, bioluminescent patches pulsing faintly."
+            )
 
         # Provide fallback message if no output was captured
         if not clean_output:
@@ -2200,7 +2219,10 @@ class GameService:
         if deferred_enemies and pending_points == 0:
             player._combat_deferred_enemies = None
             self._initialize_combat(
-                player, deferred_enemies, session_id=session_id, session_data=session_data
+                player,
+                deferred_enemies,
+                session_id=session_id,
+                session_data=session_data,
             )
 
             # If player is in combat, try to re-initialize the adapter

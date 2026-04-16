@@ -606,7 +606,7 @@ class AfterDefeatingKingSlime(Event):
         )
         time.sleep(1)
 
-        #TODO: All of the map tiles referencing active corruption or "rumbling" (in reference to the now-defeated King Slime) need to get revised descriptions to match the present state of affairs.
+        # TODO: All of the map tiles referencing active corruption or "rumbling" (in reference to the now-defeated King Slime) need to get revised descriptions to match the present state of affairs.
 
         self.tile.remove_event(self.name)
 

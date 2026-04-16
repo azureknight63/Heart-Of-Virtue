@@ -223,7 +223,16 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             if "block_exit" in tile_data and isinstance(tile_data["block_exit"], list):
                 tile_instance.block_exit = list(tile_data["block_exit"])
             # exits whitelist: if the JSON specifies allowed exits, block every other direction
-            _all_dirs = {"north", "south", "east", "west", "northeast", "northwest", "southeast", "southwest"}
+            _all_dirs = {
+                "north",
+                "south",
+                "east",
+                "west",
+                "northeast",
+                "northwest",
+                "southeast",
+                "southwest",
+            }
             if "exits" in tile_data and isinstance(tile_data["exits"], list):
                 allowed = set(tile_data["exits"])
                 for _dir in _all_dirs - allowed:

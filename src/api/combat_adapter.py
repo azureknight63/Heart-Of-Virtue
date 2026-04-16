@@ -1467,7 +1467,8 @@ class ApiCombatAdapter:
                         # at least one viable target — prevents TA from suggesting
                         # attacks that cannot resolve at execution time.
                         "available_moves": [
-                            m for m in self.available_options
+                            m
+                            for m in self.available_options
                             if isinstance(m, dict)
                             and m.get("available", True)
                             and (

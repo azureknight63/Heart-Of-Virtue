@@ -273,16 +273,15 @@ class Ch01ChestRumblerBattle(Event):
         # Don't fire again if already triggered (persisted in story state)
         if self.triggered:
             return
-        story = getattr(getattr(self.player, 'universe', None), 'story', {})
+        story = getattr(getattr(self.player, "universe", None), "story", {})
         if story.get("ch01_chest_battle_triggered", "0") == "1":
             return
 
         for thing in self.tile.objects_here:
             if hasattr(thing, "name") and thing.name == "Wooden Chest":
                 # Only trigger after the chest has been opened/looted by the player
-                chest_opened = (
-                    getattr(thing, "state", "closed") == "opened"
-                    or getattr(thing, "revealed", False)
+                chest_opened = getattr(thing, "state", "closed") == "opened" or getattr(
+                    thing, "revealed", False
                 )
                 if chest_opened:
                     self.triggered = True  # Mark as triggered before processing
