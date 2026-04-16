@@ -195,7 +195,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
         )
 
     def refresh_announcements(self, npc):
-        self.stage_announce=[
+        self.stage_announce = [
             "{} rests for a moment.".format(npc.name),
             colored("{} is resting.".format(npc.name), "white"),
             "",
@@ -235,7 +235,7 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
         )
 
     def refresh_announcements(self, npc):
-        self.stage_announce=["", str(npc.name + npc.idle_message), "", ""]
+        self.stage_announce = ["", str(npc.name + npc.idle_message), "", ""]
 
     def execute(self, npc):
         print(self.stage_announce[1])

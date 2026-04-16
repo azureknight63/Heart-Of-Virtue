@@ -173,7 +173,7 @@ friendly enough to Jean.
             or story.get("gorran_language_stage", "0") != "0"
         ):
             return "Gorran"
-        
+
         return getattr(self, "_name", "Rock-Man")
 
     @name.setter
