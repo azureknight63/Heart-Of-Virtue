@@ -86,9 +86,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
         # Double check that self.user is an object with a damage attribute
         if not hasattr(self.user, "damage"):
-            print(
-                f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!"
-            )
+            print(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
             return
 
         power = self.user.damage * random.uniform(0.8, 1.2)
@@ -261,9 +259,7 @@ class TelegraphedSurge(NpcAttack):
     _EXTRA_PREP_BEATS = 0
 
     def _prep_text(self, npc):
-        return (
-            f"{npc.name} coils in preparation — now is the time to get clear."
-        )
+        return f"{npc.name} coils in preparation — now is the time to get clear."
 
     def _hit_text(self, npc, target_name):
         return f"{npc.name} surges outward and strikes {target_name}!"
@@ -283,9 +279,7 @@ class TelegraphedSurge(NpcAttack):
     def refresh_announcements(self, npc):
         target_name = self.target.name if self.target else "its target"
         self.stage_announce[0] = colored(self._prep_text(npc), "yellow")
-        self.stage_announce[1] = colored(
-            self._hit_text(npc, target_name), "red"
-        )
+        self.stage_announce[1] = colored(self._hit_text(npc, target_name), "red")
         self.stage_announce[2] = self._recoil_text(npc)
 
 
@@ -347,9 +341,7 @@ class TidalSurge(TelegraphedSurge):
         return f"{npc.name} settles back, the surge spent."
 
 
-class GorranClub(
-    Move
-):  # Gorran's special club attack! Massive damage, long recoil
+class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -437,15 +429,11 @@ class GorranClub(
     def refresh_announcements(self, npc):
         self.stage_announce = [
             colored(
-                "{} grips his massive club in preparation to strike!".format(
-                    npc.name
-                ),
+                "{} grips his massive club in preparation to strike!".format(npc.name),
                 "red",
             ),
             colored(
-                "{} swings his club mightily at {}!".format(
-                    npc.name, npc.target.name
-                ),
+                "{} swings his club mightily at {}!".format(npc.name, npc.target.name),
                 "red",
             ),
             "{} recoils heavily from the attack.".format(npc.name),
@@ -656,9 +644,7 @@ class SpiderBite(Move):  # Poisonous attack
                 ),
                 colored(
                     "{} bites at {} with "
-                    "its poisonous mandibles!".format(
-                        npc.name, npc.target.name
-                    ),
+                    "its poisonous mandibles!".format(npc.name, npc.target.name),
                     "red",
                 ),
                 "{} recoils from the attack.".format(npc.name),
@@ -714,9 +700,7 @@ class SpiderBite(Move):  # Poisonous attack
 
     def refresh_announcements(self, npc):
         self.stage_announce = [
-            colored(
-                "{} flashes its poisonous mandibles!".format(npc.name), "red"
-            ),
+            colored("{} flashes its poisonous mandibles!".format(npc.name), "red"),
             colored(
                 "{} bites at {} with "
                 "its poisonous mandibles!".format(npc.name, npc.target.name),
@@ -855,9 +839,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         self.stage_announce = [
             colored("{} bares its fangs!".format(npc.name), "red"),
             colored(
-                "{} bites {} with a ravenous nip!".format(
-                    npc.name, npc.target.name
-                ),
+                "{} bites {} with a ravenous nip!".format(npc.name, npc.target.name),
                 "red",
             ),
             "{} recoils from the attack.".format(npc.name),
