@@ -8,49 +8,7 @@
         ],
         "block_exit": [],
         "events": [],
-        "items": [
-            {
-                "__class__": "Battleaxe",
-                "__module__": "items",
-                "props": {
-                    "damage": 120.96010380979605,
-                    "str_req": 5,
-                    "fin_req": 5,
-                    "str_mod": 1,
-                    "fin_mod": 0.5,
-                    "weight": 2,
-                    "isequipped": false,
-                    "maintype": "Weapon",
-                    "subtype": "Axe",
-                    "wpnrange": [
-                        0,
-                        5
-                    ],
-                    "name": "Spiritual Umbral Battleaxe",
-                    "description": "A crescent blade affixed to a reinforced wooden haft. It is light and easy to swing.",
-                    "value": 238,
-                    "type": "Weapon",
-                    "hidden": false,
-                    "hide_factor": 0,
-                    "merchandise": false,
-                    "discovery_message": "a kind of weapon.",
-                    "announce": "There's a Spiritual Umbral Battleaxe here.",
-                    "interactions": [
-                        "drop",
-                        "equip"
-                    ],
-                    "skills": null,
-                    "owner": null,
-                    "equip_states": [],
-                    "add_resistance": {},
-                    "add_status_resistance": {},
-                    "gives_exp": true,
-                    "base_damage_type": "spiritual",
-                    "twohand": false,
-                    "enchantment_level": 99
-                }
-            }
-        ],
+        "items": [],
         "npcs": [],
         "objects": [],
         "symbol": ""

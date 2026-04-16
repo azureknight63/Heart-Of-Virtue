@@ -391,7 +391,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
             prep = 1
         execute = 1
         recoil = 1  # modified later, based on player weapon
-        cooldown = 5 - int(player.speed / 10)
+        cooldown = 3 - int(player.speed / 10)
         if cooldown < 0:
             cooldown = 0
         weapon = "fist"  # modified later, based on player weapon

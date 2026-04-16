@@ -594,7 +594,6 @@ def refresh_moves(player):
         "Attack",
         "Dodge",
         "Parry",
-        "Jab",
     )
     for move_name in default_moves:
         if _moves is None or not hasattr(_moves, move_name):

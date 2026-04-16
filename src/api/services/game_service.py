@@ -3708,6 +3708,8 @@ class GameService:
                 item.count = quantity
             if hasattr(item, "amt") and item.name == "Gold":
                 item.amt = quantity
+            if hasattr(item, "stack_grammar"):
+                item.stack_grammar()
         else:
             # Fallback to generic item dictionary ONLY if class not found
             # (Warning: engine may not support this everywhere)
