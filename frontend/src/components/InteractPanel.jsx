@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
+import NpcChatPanel from './NpcChatPanel'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
@@ -33,6 +34,7 @@ function InteractPanel({
     const [quantity, setQuantity] = useState(1)
     const [showQuantityInput, setShowQuantityInput] = useState(false)
     const [pendingAction, setPendingAction] = useState(null)
+    const [showChatPanel, setShowChatPanel] = useState(false)
 
     // Ref to track if we're currently syncing to prevent infinite loops
     const isSyncingTarget = useRef(false)
@@ -45,7 +47,7 @@ function InteractPanel({
 
     useEffect(() => {
         if (location) {
-            const npcs = (location.npcs || []).map(n => ({ ...n, type: 'npc' }))
+            const npcs = (location.npcs || []).map(n => ({ ...n, npc_class: n.type, type: 'npc' }))
             const objects = (location.objects || []).map(o => ({ ...o, type: 'object' }))
             const items = (location.items || []).map(i => ({ ...i, type: 'item' }))
 
@@ -128,10 +130,17 @@ function InteractPanel({
         setPendingAction(null)
         setQuantity(1)
         setIsLocked(false)
+        setShowChatPanel(false)
     }
 
     const handleActionClick = async (action, qty = null) => {
         if (isLocked) return
+
+        // Open LLM chat panel for talk action on LLM-capable NPCs
+        if (action.toLowerCase() === 'talk' && selectedTarget?.llm_chat_enabled && selectedTarget?.loquacity_available !== false) {
+            setShowChatPanel(true)
+            return
+        }
 
         // Check if we need to ask for quantity
         const isStackableAction = ['take', 'pickup', 'drop'].some(a => action.toLowerCase().includes(a))
@@ -233,7 +242,7 @@ function InteractPanel({
         }
     }
 
-    return (
+    return (<>
         <BaseDialog
             title={selectedTarget ? `✨ ${selectedTarget.name}` : "👋 INTERACT"}
             onClose={onClose}
@@ -575,6 +584,17 @@ function InteractPanel({
                 )}
             </div>
         </BaseDialog>
+        {showChatPanel && selectedTarget && (
+            <NpcChatPanel
+                npcId={selectedTarget.npc_class || selectedTarget.name}
+                npcName={selectedTarget.name}
+                onClose={() => {
+                    setShowChatPanel(false)
+                    if (onRefetch) onRefetch()
+                }}
+            />
+        )}
+    </>
     )
 }
 

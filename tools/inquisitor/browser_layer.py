@@ -29,7 +29,7 @@ from tools.inquisitor.game_tools import ToolResult
 ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = ROOT / "frontend"
 API_URL = "http://localhost:5000"
-FRONTEND_URL = "http://localhost:3000"
+FRONTEND_URL = "http://localhost:3000/games/HeartOfVirtue/"
 SERVER_STARTUP_TIMEOUT = 120  # seconds — Vite cold-starts slowly on first run
 SCREENSHOT_DIR = ROOT / "tools" / "inquisitor_screenshots"
 
@@ -234,7 +234,8 @@ class BrowserLayer:
                     os.path.expanduser(
                         "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome"
                     )
-                ),
+                )
+                + _glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"),
                 reverse=True,  # prefer highest build number
             )
             if not candidates:
@@ -245,10 +246,11 @@ class BrowserLayer:
         context = self._browser.new_context()
         self._page = context.new_page()
 
-        # Collect JS errors
+        # Collect JS errors and HTTP 4xx/5xx responses
         self._page.on("console", self._on_console)
         self._page.on("pageerror", self._on_page_error)
         self._page.on("requestfailed", self._on_request_failed)
+        self._page.on("response", self._on_response)
 
     def _login(self):
         """Register a fresh test account and extract the auth token."""
@@ -316,10 +318,13 @@ class BrowserLayer:
 
     def _on_console(self, msg):
         if msg.type in ("error", "warning"):
+            loc = msg.location or {}
+            loc_url = loc.get("url", "") if isinstance(loc, dict) else ""
             self._console_errors.append({
                 "type": msg.type,
-                "text": msg.text,
-                "location": str(msg.location),
+                # Include the location URL in text so _is_noise() can pattern-match it
+                "text": msg.text + (f" [{loc_url}]" if loc_url else ""),
+                "location": str(loc),
             })
 
     def _on_page_error(self, exc):
@@ -331,6 +336,15 @@ class BrowserLayer:
             "failure": request.failure,
             "method": request.method,
         })
+
+    def _on_response(self, response):
+        """Capture HTTP 4xx/5xx responses as network failures for noise filtering."""
+        if response.status >= 400:
+            self._network_failures.append({
+                "url": response.url,
+                "failure": f"HTTP {response.status}",
+                "method": response.request.method,
+            })
 
     # ------------------------------------------------------------------
     # HTTP helpers (uses real server + auth token)
@@ -466,6 +480,8 @@ class BrowserLayer:
         # External font CDNs are unreachable in offline / sandboxed CI.
         "fonts.googleapis.com",
         "fonts.gstatic.com",
+        # favicon.ico is not present in the dev build — harmless in production.
+        "favicon.ico",
         # React Router v6 → v7 migration warnings — known, tracked upstream.
         "React Router Future Flag Warning",
         "React.startTransition",

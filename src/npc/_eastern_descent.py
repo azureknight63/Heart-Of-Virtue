@@ -12,13 +12,14 @@ import random
 
 import moves  # type: ignore
 from ._base import Friend
+from ._chat_llm import HumanNPCLLMMixin
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Eastern Descent — Nomad Camp NPCs
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class NomadCamper(Friend):
+class NomadCamper(HumanNPCLLMMixin, Friend):
     """A generic nomad resting at the east-bank camp between routes.
 
     Not a fighter, not a guide — someone between places, occupying the camp
@@ -79,12 +80,15 @@ class NomadCamper(Friend):
             self.known_moves = [moves.NpcIdle(self)]
         except Exception:
             self.known_moves = []
+        self._chat_config_path = None
+        self._init_chat_attrs()
 
     def talk(self, player):
+        """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
         print(random.choice(self._TALK_LINES))
 
 
-class NomadScout(Friend):
+class NomadScout(HumanNPCLLMMixin, Friend):
     """A nomad who watches the eastern approaches and knows the terrain.
 
     Economical with words. Has practical knowledge of the paths between the
@@ -140,12 +144,15 @@ class NomadScout(Friend):
             self.known_moves = [moves.NpcIdle(self)]
         except Exception:
             self.known_moves = []
+        self._chat_config_path = None
+        self._init_chat_attrs()
 
     def talk(self, player):
+        """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
         print(random.choice(self._TALK_LINES))
 
 
-class NomadTrader(Friend):
+class NomadTrader(HumanNPCLLMMixin, Friend):
     """A nomad who barters goods picked up along the eastern routes.
 
     Not a full merchant — no shop, no stock list. Trades as part of nomadic
@@ -203,6 +210,9 @@ class NomadTrader(Friend):
             self.known_moves = [moves.NpcIdle(self)]
         except Exception:
             self.known_moves = []
+        self._chat_config_path = None
+        self._init_chat_attrs()
 
     def talk(self, player):
+        """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
         print(random.choice(self._TALK_LINES))

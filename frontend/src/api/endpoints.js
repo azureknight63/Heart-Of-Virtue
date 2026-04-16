@@ -84,14 +84,11 @@ export const combat = {
 // Inventory endpoints
 export const inventory = {
   useItem: (itemId) => apiClient.post('/inventory/use', { item_id: itemId }),
-  dropItem: (itemId) => apiClient.post('/inventory/drop', { item_id: itemId }),
-  pickupItem: (itemId) => apiClient.post('/inventory/take', { item_id: itemId }),
 }
 
 // Equipment endpoints
 export const equipment = {
   equipItem: (itemId, slot) => apiClient.post('/inventory/equip', { item_id: itemId, slot }),
-  unequipItem: (slot) => apiClient.post('/inventory/unequip', { slot }),
 }
 
 // Save/Load endpoints

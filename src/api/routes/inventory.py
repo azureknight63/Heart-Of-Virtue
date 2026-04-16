@@ -155,56 +155,6 @@ def examine_item():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@inventory_bp.route("/inventory/take", methods=["POST"])
-def take_item():
-    """Take item from current tile into inventory.
-
-    JSON body:
-        index: Item index on tile
-
-    Returns:
-        JSON with updated inventory
-    """
-    session, player, error, status = get_session_and_player()
-    if error:
-        return error, status
-
-    try:
-        data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["index"])
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
-
-        item_index = data["index"]
-
-        # Get current tile
-        x, y = int(player.location_x), int(player.location_y)
-        tile_data = current_app.game_service.get_tile(player, x, y)
-        if not tile_data or "error" in tile_data:
-            return jsonify({"success": False, "error": "Tile not found"}), 404
-
-        # For now, just validate the index and return success
-        # Full implementation requires game engine state manipulation
-        is_valid, error_msg = validate_item_index(
-            item_index, len(tile_data.get("items", []))
-        )
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
-
-        inventory_data = InventorySerializer.serialize(player)
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "message": "Item taken",
-                    "inventory": inventory_data,
-                }
-            ),
-            200,
-        )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 
 @inventory_bp.route("/inventory/drop", methods=["POST"])
 def drop_item():
@@ -250,6 +200,16 @@ def drop_item():
         tile = player.universe.get_tile(player_x, player_y)
         if not tile:
             return jsonify({"success": False, "error": "Current tile not found"}), 400
+
+        # If equipped, unequip cleanly before dropping
+        if getattr(item_to_drop, "isequipped", False):
+            item_to_drop.isequipped = False
+            if hasattr(item_to_drop, "on_unequip"):
+                item_to_drop.on_unequip(player)
+            if getattr(item_to_drop, "maintype", None) == "Weapon":
+                player.eq_weapon = getattr(player, "fists", None)
+            from src import functions
+            functions.refresh_stat_bonuses(player)
 
         # Remove item from inventory and add to tile
         inventory_list = getattr(player, "inventory_list", None) or getattr(
@@ -353,6 +313,10 @@ def equip_item():
             item.isequipped = False
             if hasattr(item, "on_unequip"):
                 item.on_unequip(player)
+            if getattr(item, "maintype", None) == "Weapon":
+                player.eq_weapon = getattr(player, "fists", None)
+            from src import functions
+            functions.refresh_stat_bonuses(player)
             message = f"{item.name} unequipped"
         else:
             # Check if merchandise - can't equip until purchased

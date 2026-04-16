@@ -7,13 +7,17 @@ citizen classes communicate only through gesture and sound (no human speech).
 """
 
 import random
+from pathlib import Path
 
 import functions  # type: ignore
+
+_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
 import genericng  # type: ignore
 import moves  # type: ignore
 from neotermcolor import colored  # type: ignore
 
 from ._base import Friend
+from ._chat_llm import HumanNPCLLMMixin
 from ._llm import MynxLLMMixin
 
 
@@ -520,7 +524,7 @@ class GronditeConclaveElder(Friend):
             print(random.choice(lines))
 
 
-class Mara(Friend):
+class Mara(HumanNPCLLMMixin, Friend):
     """Scavenger, ferry operator, and guide. First human Jean encounters outside any
     institutional context. Sardonic, watchful, practical. Skilled in precision combat,
     positioning, and tactical awareness. Fights with the same observant efficiency as
@@ -574,6 +578,8 @@ class Mara(Friend):
         self.preferred_range = None  # Will be set dynamically based on combat distance
         self.bow_range = (8, 25)  # Bow effective range
         self.dagger_range = (0, 3)  # Dagger effective range
+        self._chat_config_path = str(_HUMAN_NPC_DIR / "mara.json")
+        self._init_chat_attrs()
 
     def talk(self, player):
         """Mara's dialogue is sparse, practical, observant."""
@@ -721,7 +727,7 @@ class Mara(Friend):
             return
 
 
-class Devet(Friend):
+class Devet(HumanNPCLLMMixin, Friend):
     """Camp cook, older, unhurried. Quietly observant. Offers food and healing.
     Uncle or relation of Mara — exact nature left ambiguous.
     """
@@ -759,9 +765,11 @@ class Devet(Friend):
             self.known_moves = [moves.NpcIdle(self)]
         except Exception:
             self.known_moves = []
+        self._chat_config_path = str(_HUMAN_NPC_DIR / "devet.json")
+        self._init_chat_attrs()
 
     def talk(self, player):
-        """Devet's dialogue is sparse but warm. He observes without commenting."""
+        """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
         lines = [
             "Devet hands Jean a bowl of warm food without asking if he's hungry. It's clear "
             "this is not a question.",
@@ -775,7 +783,7 @@ class Devet(Friend):
         print(random.choice(lines))
 
 
-class Liss(Friend):
+class Liss(HumanNPCLLMMixin, Friend):
     """Young, openly curious, observant. Part of Mara's nomad group. At the camp's edge,
     watching the river and the world beyond.
     """
@@ -813,9 +821,11 @@ class Liss(Friend):
             self.known_moves = [moves.NpcIdle(self)]
         except Exception:
             self.known_moves = []
+        self._chat_config_path = str(_HUMAN_NPC_DIR / "liss.json")
+        self._init_chat_attrs()
 
     def talk(self, player):
-        """Liss's dialogue is curious and direct. She asks questions without preface."""
+        """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
         lines = [
             "Liss says, 'Where's Jean headed?' She doesn't wait for an answer before asking "
             "another question. 'What's beyond the Badlands? Does anyone actually know?'",

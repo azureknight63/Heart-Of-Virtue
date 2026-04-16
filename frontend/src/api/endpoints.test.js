@@ -180,26 +180,12 @@ describe('endpoints', () => {
       expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', { item_id: 'item123' });
     });
 
-    it('calls dropItem endpoint', () => {
-      endpoints.inventory.dropItem('item123');
-      expect(apiClient.post).toHaveBeenCalledWith('/inventory/drop', { item_id: 'item123' });
-    });
-
-    it('calls pickupItem endpoint', () => {
-      endpoints.inventory.pickupItem('item123');
-      expect(apiClient.post).toHaveBeenCalledWith('/inventory/take', { item_id: 'item123' });
-    });
   });
 
   describe('equipment', () => {
     it('calls equipItem endpoint', () => {
       endpoints.equipment.equipItem('sword1', 'main_hand');
       expect(apiClient.post).toHaveBeenCalledWith('/inventory/equip', { item_id: 'sword1', slot: 'main_hand' });
-    });
-
-    it('calls unequipItem endpoint', () => {
-      endpoints.equipment.unequipItem('main_hand');
-      expect(apiClient.post).toHaveBeenCalledWith('/inventory/unequip', { slot: 'main_hand' });
     });
   });
 
