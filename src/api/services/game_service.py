@@ -716,10 +716,8 @@ class GameService:
                         mock_print_slow,
                     )
 
-                    # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
-                        f
-                    ), contextlib.ExitStack() as stack:
+                    # Capture stdout only (stderr is global/not thread-safe to redirect)
+                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -830,10 +828,8 @@ class GameService:
                 mock_print_slow,
             )
 
-            # Process the event with captured output
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
-                f
-            ), contextlib.ExitStack() as stack:
+            # Capture stdout only (stderr is global/not thread-safe to redirect)
+            with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
 
                 for p in patches:
                     try:
@@ -1336,7 +1332,7 @@ class GameService:
                 return "x"
 
             # Patch at multiple levels since different modules import differently
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f), patch(
+            with contextlib.redirect_stdout(f), patch(
                 "builtins.input", mock_input
             ), patch("functions.await_input", return_value=None), patch(
                 "functions.print_slow", mock_print_slow
@@ -1839,9 +1835,7 @@ class GameService:
                     )
 
                     # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.redirect_stderr(
-                        f
-                    ), contextlib.ExitStack() as stack:
+                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -2212,6 +2206,12 @@ class GameService:
                     "battle_state": None,
                 }
         else:
+            if not hasattr(player, "_combat_adapter"):
+                return {
+                    "combat_active": getattr(player, "in_combat", False),
+                    "log": getattr(player, "combat_log", []),
+                    "battle_state": None,
+                }
             adapter = player._combat_adapter
 
             # Resume logic: If battle is active but not awaiting input, check why
