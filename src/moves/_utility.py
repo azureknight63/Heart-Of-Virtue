@@ -629,19 +629,17 @@ class UseItem(Move):
         )
 
     def viable(self):
-        viability = True
         if not self.user.inventory:
-            viability = False
-        else:
-            for item in self.user.inventory:
-                if item.type == "Consumable" or "Special":
-                    viability = True
-                    break
-        return viability
+            return False
+        for item in self.user.inventory:
+            if item.type in ("Consumable", "Special"):
+                return True
+        return False
 
     def execute(self, player):
         possible_targets = [player] + [
-            a for a in player.combat_list_allies[1:] if a.is_alive()
+            a for a in player.combat_list_allies[1:]
+            if a.is_alive() and not getattr(a, "knocked_out", False)
         ]
         target = player
         if len(possible_targets) > 1:

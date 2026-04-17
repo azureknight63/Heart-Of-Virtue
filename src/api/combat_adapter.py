@@ -1462,7 +1462,9 @@ class ApiCombatAdapter:
             )
             return False
 
-        # Only remove the item after a successful use
+        # Stacked consumables self-remove via the user= parameter when count
+        # hits zero. This guard handles any item type that does NOT remove
+        # itself inside use() (e.g. a future reusable NPC consumable).
         if item in inventory:
             inventory.remove(item)
 
