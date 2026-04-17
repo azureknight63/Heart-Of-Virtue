@@ -6,6 +6,7 @@ import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
+from src.api.constants import ITEM_USE_RANGE
 from src.interface import get_gold
 
 if TYPE_CHECKING:
@@ -2344,11 +2345,18 @@ class GameService:
             "state": "normal",  # TODO: Get actual status effects
             "party_members": [
                 {
+                    "id": f"ally_{id(a)}",
                     "name": getattr(a, "name", "Unknown"),
                     "hp": getattr(a, "hp", 0),
                     "max_hp": getattr(a, "maxhp", 0),
                     "level": getattr(a, "level", 1),
                     "description": getattr(a, "description", "").strip(),
+                    "in_range": (
+                        getattr(player, "combat_proximity", {}).get(a, 0)
+                        <= ITEM_USE_RANGE
+                        if getattr(player, "in_combat", False)
+                        else True
+                    ),
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],

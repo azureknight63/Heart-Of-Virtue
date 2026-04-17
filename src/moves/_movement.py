@@ -120,7 +120,7 @@ class Parry(Move):
 
 class Advance(Move):
     def __init__(self, user):
-        description = "Get closer to a target enemy."
+        description = "Get closer to a target (enemy or ally)."
         prep = 0
         execute = 4
         recoil = 0
@@ -143,13 +143,19 @@ class Advance(Move):
             category="Maneuver",
         )
         self.fatigue_per_beat = 1
+        # Allows allies to be valid targets (e.g. to close distance for healing)
+        self.accepts_ally_target = True
         self.evaluate()
 
     def refresh_announcements(self, user):
         self.stage_announce = [f"{user.name} begins advancing...", "", "", ""]
 
     def viable(self):
-        """Advance is only viable if there are enemies beyond striking distance OR current target is at a good distance"""
+        """Advance is viable when the target is beyond adjacent range.
+
+        Targeting an ally closes distance for healing (no damage is dealt to
+        friendlies); targeting an enemy closes distance to attack.
+        """
         if not hasattr(self.user, "combat_proximity"):
             return False
 
@@ -159,8 +165,9 @@ class Advance(Move):
                 return True
             return False
 
-        for enemy, distance in self.user.combat_proximity.items():
-            if enemy.is_alive and distance > 1:
+        # Check for any combatant (enemy or ally) farther than adjacent
+        for combatant, distance in self.user.combat_proximity.items():
+            if combatant.is_alive and distance > 1:
                 return True
         return False
 

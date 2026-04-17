@@ -7,11 +7,14 @@ Provides endpoints for:
 - Currency/stat queries
 """
 
-from flask import Blueprint, current_app, jsonify, request
 import contextlib
 import io
 import re
 from unittest.mock import patch
+
+from flask import Blueprint, current_app, jsonify, request
+
+from src.api.constants import ITEM_USE_RANGE
 
 from src.api.services.validators import (
     validate_equipment_slot,
@@ -89,6 +92,24 @@ def get_item_and_index(player, item_id=None, item_index=None):
         return None, None
 
     return None, None
+
+
+def _resolve_ally_target(player, target_id: str):
+    """Resolve a target_id string to an NPC ally object.
+
+    Accepts IDs in the form "ally_<python-id>" as produced by the party_members
+    serializer and the combat serializer.  Returns None if not found.
+    """
+    for prefix in ("ally_", "enemy_"):
+        if target_id.startswith(prefix):
+            target_id = target_id[len(prefix) :]
+            break
+    raw_id = target_id
+    # Skip index 0 (the player) — allies start at index 1
+    for ally in getattr(player, "combat_list_allies", [])[1:]:
+        if str(id(ally)) == raw_id:
+            return ally
+    return None
 
 
 @inventory_bp.route("/inventory", methods=["GET"])
@@ -402,6 +423,9 @@ def use_item():
     JSON body:
         item_id: Unique ID of the item (preferred)
         item_index: Item index in inventory (fallback)
+        target_id: Optional ally ID (e.g. "ally_<python-id>"). When provided
+                   the item's effect is applied to that ally instead of self.
+                   In combat the target must be within 5 ft.
 
     Returns:
         JSON with result of item use
@@ -416,6 +440,7 @@ def use_item():
         # Get item ID or index from request
         item_id = data.get("item_id")
         item_index = data.get("item_index")
+        target_id = data.get("target_id")
 
         if not item_id and item_index is None:
             return (
@@ -455,6 +480,30 @@ def use_item():
                 400,
             )
 
+        # Resolve optional ally target
+        item_target = player
+        if target_id:
+            resolved = _resolve_ally_target(player, target_id)
+            if resolved is None:
+                return (
+                    jsonify({"success": False, "error": "Target not found"}),
+                    400,
+                )
+            # In combat, enforce 5 ft range
+            if getattr(player, "in_combat", False):
+                dist = player.combat_proximity.get(resolved, 9999)
+                if dist > ITEM_USE_RANGE:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": f"{resolved.name} is too far away ({int(dist)} ft). Use Advance to close the distance first.",
+                            }
+                        ),
+                        400,
+                    )
+            item_target = resolved
+
         # Capture output from item use
         f = io.StringIO()
 
@@ -472,7 +521,7 @@ def use_item():
             "time.sleep", return_value=None
         ):
             # Call the item's use method
-            item.use(player)
+            item.use(item_target)
 
         output = f.getvalue()
         # Clean up output (remove ANSI codes)
@@ -513,6 +562,11 @@ def use_item():
             "success": True,
             "message": clean_output,
             "inventory": inventory_data,
+            "target_name": (
+                getattr(item_target, "name", None)
+                if item_target is not player
+                else None
+            ),
         }
 
         # If in combat, also return updated combat state
