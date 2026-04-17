@@ -35,6 +35,7 @@ function InteractPanel({
     const [showQuantityInput, setShowQuantityInput] = useState(false)
     const [pendingAction, setPendingAction] = useState(null)
     const [showChatPanel, setShowChatPanel] = useState(false)
+    const [takingAllItems, setTakingAllItems] = useState(false)
 
     // Ref to track if we're currently syncing to prevent infinite loops
     const isSyncingTarget = useRef(false)
@@ -133,8 +134,52 @@ function InteractPanel({
         setShowChatPanel(false)
     }
 
+    const handleTakeAll = async () => {
+        if (isLocked || takingAllItems) return
+
+        const takeableItems = targets.filter(t => t.type === 'item')
+        if (takeableItems.length === 0) return
+
+        setTakingAllItems(true)
+        setInteractionOutput(null)
+        setError(null)
+        setShowQuantityInput(false)
+
+        for (const item of takeableItems) {
+            try {
+                const response = await apiEndpoints.world.interact(item.id, 'take', item.count)
+                const data = response.data
+
+                if (data.success) {
+                    const message = data.message || `Took ${item.name}`
+                    setInteractionOutput(message)
+                    if (onTypingChange) onTypingChange(true)
+                    setInteractionHistory(prev => [...prev, message])
+                } else {
+                    // Stop on error
+                    setError(data.error || data.message || 'Failed to take item')
+                    break
+                }
+            } catch (err) {
+                console.error('Take all error:', err)
+                setError('Network error')
+                break
+            }
+        }
+
+        if (onRefetch) await onRefetch()
+        if (onInteractionComplete) onInteractionComplete()
+        setTakingAllItems(false)
+    }
+
     const handleActionClick = async (action, qty = null) => {
         if (isLocked) return
+
+        // Handle take_all specially for ground items
+        if (action === 'take_all') {
+            await handleTakeAll()
+            return
+        }
 
         // Open LLM chat panel for talk action on LLM-capable NPCs
         if (action.toLowerCase() === 'talk' && selectedTarget?.llm_chat_enabled && selectedTarget?.loquacity_available !== false) {
@@ -326,6 +371,17 @@ function InteractPanel({
                             <GameButton onClick={handleBack} variant="secondary" size="small">
                                 ← Back
                             </GameButton>
+                            {/* Take All Items button for ground items */}
+                            {selectedTarget.type === 'item' && !selectedTarget.is_container && targets.filter(t => t.type === 'item').length > 1 && (
+                                <GameButton
+                                    onClick={() => handleActionClick('take_all')}
+                                    variant="primary"
+                                    size="small"
+                                    disabled={loading || takingAllItems}
+                                >
+                                    {takingAllItems ? '⏳ Taking...' : '📦 Take All Items'}
+                                </GameButton>
+                            )}
                         </div>
 
                         {/* Target Description */}

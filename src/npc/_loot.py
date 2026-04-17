@@ -41,6 +41,9 @@ class NPCLootMixin:
         if self.loot:
             self.roll_loot()  # checks to see if an item will drop
         self.drop_inventory()
+        # Stack items on the floor immediately after dropping them to prevent duplicates
+        if self.current_room and hasattr(self.current_room, "items_here"):
+            functions.stack_items_list(self.current_room.items_here)
         return True
 
     def drop_inventory(self):

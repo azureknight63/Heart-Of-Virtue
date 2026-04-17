@@ -5,6 +5,7 @@ import GameText from './GameText'
 import GameInput from './GameInput'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
+import { cleanTerminalLineBreaks } from '../utils/entityUtils'
 
 /**
  * EventDialog - Displays event output text and handles player input for events
@@ -40,7 +41,11 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     }, [])
 
     // Extract event data
-    const eventText = event?.output_text || event?.message || event?.description || ''
+    let eventText = event?.output_text || event?.message || event?.description || ''
+    // Clean up terminal-mode line breaks for better web display (except for death scenes which use pre formatting)
+    if (!event?.is_death_scene && eventText) {
+        eventText = cleanTerminalLineBreaks(eventText)
+    }
     const needsInput = event?.needs_input || false
     const inputType = event?.input_type || 'choice'
     const inputPrompt = event?.input_prompt || 'Your choice:'
