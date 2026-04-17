@@ -53,13 +53,13 @@ def test_cave_bat_basic_attributes():
     bat = CaveBat()
     # Name and basic stats
     assert bat.name.startswith("Cave Bat")
-    assert bat.maxhp == 8
+    assert bat.maxhp == 15
     assert bat.hp == bat.maxhp
-    assert bat.damage == 18
+    assert bat.damage == 23
     assert bat.awareness == 14
     assert bat.speed == 40
     assert bat.aggro is True
-    assert bat.exp_award == 4
+    assert bat.exp_award == 6
     # Flavor resistances
     assert pytest.approx(bat.resistance_base.get("light", 1.0), rel=1e-3) == 0.8
     assert pytest.approx(bat.resistance_base.get("earth", 1.0), rel=1e-3) == 1.1

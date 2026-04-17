@@ -138,7 +138,7 @@ class Player(
         ):  # initialize an exp pool for each skill subtype
             self.skill_exp[subtype] = 0
         self.level = 1
-        self.exp_to_level = 100
+        self.exp_to_level = 150
         self.location_x, self.location_y = (0, 0)
         self.prev_location_x, self.prev_location_y = (
             0,
