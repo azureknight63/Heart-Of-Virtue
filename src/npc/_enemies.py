@@ -21,11 +21,11 @@ class Slime(NPC):
         super().__init__(
             name="Slime " + genericng.generate(4, 5),
             description=description,
-            maxhp=10,
-            damage=20,
+            maxhp=20,
+            damage=26,
             awareness=12,
             aggro=True,
-            exp_award=1,
+            exp_award=2,
             idle_message=" is glopping about.",
             alert_message="burbles angrily at Jean!",
         )
@@ -65,12 +65,12 @@ class RockRumbler(NPC):
         super().__init__(
             name="Rock Rumbler " + genericng.generate(2, 4),
             description=description,
-            maxhp=30,
-            damage=22,
+            maxhp=55,
+            damage=30,
             protection=30,
             awareness=25,
             aggro=True,
-            exp_award=100,
+            exp_award=120,
         )
         self.resistance_base["earth"] = 0.5
         self.resistance_base["fire"] = 0.5
@@ -93,13 +93,13 @@ class Lurker(NPC):
         super().__init__(
             name="Lurker " + genericng.generate(2, 4),
             description=description,
-            maxhp=250,
-            damage=25,
+            maxhp=450,
+            damage=35,
             protection=0,
             awareness=60,
             endurance=20,
             aggro=True,
-            exp_award=800,
+            exp_award=950,
         )
         self.loot = loot.lev1
         self.resistance_base["dark"] = 0.5
@@ -153,13 +153,13 @@ class CaveBat(NPC):
         super().__init__(
             name="Cave Bat " + genericng.generate(2, 4),
             description=description,
-            maxhp=8,
-            damage=18,
+            maxhp=15,
+            damage=23,
             protection=0,
             awareness=14,
             speed=40,
             aggro=True,
-            exp_award=4,
+            exp_award=6,
             idle_message=" is hanging from the ceiling.",
             alert_message="screeches and dives!",
         )

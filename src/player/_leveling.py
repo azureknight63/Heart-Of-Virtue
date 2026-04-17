@@ -69,7 +69,7 @@ class PlayerLevelingMixin:
         # Level up bookkeeping (match terminal behavior)
         self.level += 1
         self.exp -= self.exp_to_level
-        self.exp_to_level = self.level * (150 - self.intelligence)
+        self.exp_to_level = self.level * (165 - self.intelligence)
 
         # Apply random bonus increases to base stats
         bonuses = {}
@@ -133,7 +133,7 @@ class PlayerLevelingMixin:
         self.level += 1
         print(colored("He is now level {}".format(self.level)))
         self.exp -= self.exp_to_level
-        self.exp_to_level = self.level * (150 - self.intelligence)
+        self.exp_to_level = self.level * (165 - self.intelligence)
         cprint(
             "{} exp needed for the next level.".format(self.exp_to_level - self.exp),
             "yellow",
