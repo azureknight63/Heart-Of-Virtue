@@ -203,6 +203,14 @@ _\\|//__( | )______)_/
             player.recall_friends()  # bring any party members along
             for actor in player.combat_list_allies:
                 actor.cycle_states()
+            if player.universe.game_tick % 5 == 0:
+                for actor in player.combat_list_allies:
+                    if actor is player:
+                        continue
+                    if actor.hp < actor.maxhp // 2:
+                        flavor = actor.wounded_flavor()
+                        if flavor:
+                            print(colored(flavor, "yellow"))
             player.current_room.evaluate_events()
             player.current_room.modify_player(player)
             if mark_health != player.hp:

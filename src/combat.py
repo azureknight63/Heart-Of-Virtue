@@ -120,6 +120,8 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
     # Set player reference on all combatants for config access
     for npc in player.combat_list + player.combat_list_allies:
         npc.player_ref = player
+        if getattr(npc, "knocked_out", False):
+            npc.knocked_out = False  # allies recover between battles
 
     def process_npc(npc):  # when an NPC's turn comes up, perform these actions
         npc.cycle_states()
@@ -565,25 +567,38 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
         ):  # advances moves one beat along the path toward cooldown zero.
             move.advance(player)
 
-        for i, ally in enumerate(player.combat_list_allies):
-            if not ally == player:  # make sure you don't select Jean!
-                if not ally.is_alive():
-                    ally.die()
-                if (
-                    not ally.is_alive()
-                ):  # check again in case some pre-death sequence saved the NPC
+        for ally in list(player.combat_list_allies):
+            if ally == player:
+                continue
+            if getattr(ally, "knocked_out", False):
+                continue  # sits out this fight; still follows Jean between battles
+            if not ally.is_alive():
+                if getattr(ally, "friend", False):
+                    # Named companions are knocked out rather than killed — 1 HP,
+                    # flagged out of this fight, but kept in the party list so
+                    # recall_friends() still brings them along between battles.
+                    ally.hp = 1
+                    ally.knocked_out = True
                     print(
                         colored(ally.name, "yellow", attrs="bold")
-                        + " has fallen in battle!"
+                        + " has been knocked out!"
                     )
-                    # not sure yet if I want to change this
-                    player.current_room.npcs_here.remove(ally)
-                    player.combat_list_allies.remove(ally)
                 else:
-                    process_npc(ally)
-                    gorran_beat_cooldown = maybe_combat_flavor(
-                        player, beat, gorran_beat_cooldown
-                    )
+                    ally.die()
+                    if not ally.is_alive():
+                        print(
+                            colored(ally.name, "yellow", attrs="bold")
+                            + " has fallen in battle!"
+                        )
+                        player.current_room.npcs_here.remove(ally)
+                        player.combat_list_allies.remove(ally)
+                    else:
+                        process_npc(ally)  # revived by before_death(); act this beat
+            else:
+                process_npc(ally)
+                gorran_beat_cooldown = maybe_combat_flavor(
+                    player, beat, gorran_beat_cooldown
+                )
 
         for enemy in player.combat_list:
             check_for_dead_enemy(

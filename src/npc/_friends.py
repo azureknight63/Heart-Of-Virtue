@@ -180,13 +180,20 @@ friendly enough to Jean.
     def name(self, value):
         self._name = value
 
-    def before_death(self):
-        print(
-            colored(self.name, "yellow", attrs=["bold"]) + " quaffs one of his potions!"
-        )
-        self.fatigue /= 2
-        self.hp = self.maxhp
-        return False
+    def wounded_flavor(self):
+        msgs = [
+            self.name + " moves with an uneven gait, stone scraping faintly.",
+            "A low subsonic pressure radiates from "
+            + self.name
+            + ". He pushes forward without comment.",
+            self.name + " pauses for a moment. His jaw shifts. He continues.",
+            "The cracks along "
+            + self.name
+            + "'s shoulder have widened. He gives no sign of noticing.",
+            self.name
+            + " produces a small stone chip from somewhere and rolls it in his palm. Keeps moving.",
+        ]
+        return random.choice(msgs)
 
     def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
@@ -602,6 +609,17 @@ class Mara(HumanNPCLLMMixin, Friend):
         self.dagger_range = (0, 3)  # Dagger effective range
         self._chat_config_path = str(_HUMAN_NPC_DIR / "mara.json")
         self._init_chat_attrs()
+
+    def wounded_flavor(self):
+        msgs = [
+            "Mara moves with precision, though she favors her right side.",
+            "Mara tears a strip from her pack cloth and binds something beneath her sleeve."
+            " She says nothing.",
+            "Mara exhales slowly. Her pace doesn't change.",
+            "Mara's eyes move to Jean once, assess, and return forward. She doesn't comment.",
+            "Mara adjusts her grip on her bag — a small, deliberate motion. She keeps moving.",
+        ]
+        return random.choice(msgs)
 
     def talk(self, player):
         """Mara's dialogue is sparse, practical, observant."""
