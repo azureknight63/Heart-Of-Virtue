@@ -1194,7 +1194,7 @@ class TestPlayerCore:
 
         with patch('builtins.input', return_value="y"):
             player.use_item("Potion")
-            mock_item.use.assert_called_once_with(player)
+            mock_item.use.assert_called_once_with(player, user=player)
 
     def test_use_item_interactive(self, player):
         mock_item = MagicMock(spec=items.Restorative)
@@ -1214,7 +1214,7 @@ class TestPlayerCore:
              patch('builtins.print'), \
              patch('functions.is_input_integer', side_effect=lambda x: x.isdigit()):
             player.use_item()
-            mock_item.use.assert_called_once_with(player)
+            mock_item.use.assert_called_once_with(player, user=player)
 
     def test_add_items_to_inventory_2(self, player):
         player.weight_tolerance = 100

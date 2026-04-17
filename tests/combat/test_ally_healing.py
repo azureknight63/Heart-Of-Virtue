@@ -125,7 +125,7 @@ def test_npc_try_heal_ally_heals_injured_friendly():
 
     result = _run_heal(adapter, npc)
 
-    item.use.assert_called_once_with(ally)
+    item.use.assert_called_once_with(ally, user=npc)
     assert result is True
     assert item not in npc.inventory
 
