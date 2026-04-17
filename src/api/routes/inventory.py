@@ -521,7 +521,7 @@ def use_item():
             "time.sleep", return_value=None
         ):
             # Call the item's use method
-            item.use(item_target)
+            item.use(item_target, user=player)
 
         output = f.getvalue()
         # Clean up output (remove ANSI codes)

@@ -2415,7 +2415,8 @@ class Restorative(Consumable):
     def drink(self, player: "Player") -> None:
         self.use(player)
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         # Prevent using merchandise items until purchased
         if getattr(self, "merchandise", False):
             cprint(
@@ -2440,7 +2441,7 @@ class Restorative(Consumable):
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
             raise ValueError(
                 "Jean is already at full health. He places the Restorative back into his bag."
@@ -2491,7 +2492,8 @@ class Draught(Consumable):
     def drink(self, player: "Player") -> None:
         self.use(player)
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using or equipping it.".format(
@@ -2516,10 +2518,10 @@ class Draught(Consumable):
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
             # Check if item is in inventory or on the ground
-            if self in player.inventory:
+            if self in _user.inventory:
                 print(
                     "Jean is already fully rested. He places the {} back into his bag.".format(
                         self.name
@@ -2580,7 +2582,8 @@ class Antidote(Consumable):
     def drink(self, player: "Player") -> None:
         self.use(player)
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using or equipping it.".format(
@@ -2614,11 +2617,11 @@ class Antidote(Consumable):
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
             return
         else:
             # Check if item is in inventory or on the ground
-            if self in player.inventory:
+            if self in _user.inventory:
                 print(
                     "Jean is not beset by poison. He places the Antidote back into his bag."
                 )
@@ -3320,9 +3323,10 @@ class DriedCrystalSap(Consumable):
                 "Chewing one seems to dull minor wounds."
             )
 
-    def use(self, player: "Player") -> None:  # type: ignore[override]
+    def use(self, player: "Player", user=None) -> None:  # type: ignore[override]
         import time as _time
 
+        _user = user if user is not None else player
         heal = min(self.power, player.maxhp - player.hp)
         if heal <= 0:
             print("Jean is already in good health. He pockets the sap.")
@@ -3334,8 +3338,8 @@ class DriedCrystalSap(Consumable):
         self.count -= 1
         self.stack_grammar()
         if self.count <= 0:
-            if self in player.inventory:
-                player.inventory.remove(self)
+            if self in _user.inventory:
+                _user.inventory.remove(self)
 
     def drink(self, player: "Player") -> None:  # type: ignore[override]
         self.use(player)
@@ -3705,7 +3709,8 @@ class IronRation(Consumable):
             )
             self.announce = "Jean notices a bundle of travel rations wrapped in cloth."
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using or equipping it.".format(
@@ -3729,7 +3734,7 @@ class IronRation(Consumable):
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
             print("Jean is already in good health. He stows the rations for later.")
 
@@ -3784,7 +3789,8 @@ class Bitterroot(Consumable):
                 "A dried root lies here, sharp-smelling even from a distance."
             )
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using it.".format(player.name, self.name),
@@ -3807,7 +3813,7 @@ class Bitterroot(Consumable):
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
             print("Jean is already in good health. He pockets the root for later.")
 

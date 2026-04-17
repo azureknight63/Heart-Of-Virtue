@@ -1455,7 +1455,7 @@ class ApiCombatAdapter:
         item_name = getattr(item, "name", "item")
         try:
             with self._capture_output():
-                item.use(heal_target)
+                item.use(heal_target, user=npc)
         except Exception:
             logger.exception(
                 "%s failed to use %s on %s", npc.name, item_name, heal_target.name
