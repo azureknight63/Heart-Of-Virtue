@@ -101,7 +101,7 @@ def _resolve_ally_target(player, target_id: str):
     serializer and the combat serializer.  Returns None if not found.
     """
     if target_id.startswith("ally_"):
-        target_id = target_id[len("ally_"):]
+        target_id = target_id[len("ally_") :]
     raw_id = target_id
     # Skip index 0 (the player) — allies start at index 1
     for ally in getattr(player, "combat_list_allies", [])[1:]:

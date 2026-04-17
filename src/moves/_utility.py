@@ -638,7 +638,8 @@ class UseItem(Move):
 
     def execute(self, player):
         possible_targets = [player] + [
-            a for a in player.combat_list_allies[1:]
+            a
+            for a in player.combat_list_allies[1:]
             if a.is_alive() and not getattr(a, "knocked_out", False)
         ]
         target = player

@@ -2428,9 +2428,9 @@ class Restorative(Consumable):
             return
         if player.hp < player.maxhp:
             print(
-                "{} quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
+                f"{player.name} quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
                 "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
-                "muscles relaxing, and the myriad of scratches and cuts closing up.\n".format(player.name)
+                "muscles relaxing, and the myriad of scratches and cuts closing up.\n"
             )
             amount: int = int((self.power * random.uniform(0.8, 1.2)))
             missing_hp: int = player.maxhp - player.hp
@@ -2518,15 +2518,7 @@ class Draught(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            # Check if item is in inventory or on the ground
-            if self in _user.inventory:
-                print(
-                    "{} is already fully rested.".format(player.name)
-                )
-            else:
-                print(
-                    "{} is already fully rested.".format(player.name)
-                )
+            print("{} is already fully rested.".format(player.name))
 
 
 class Antidote(Consumable):
@@ -2594,9 +2586,9 @@ class Antidote(Consumable):
 
         if poisons:
             print(
-                "{} sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
+                f"{player.name} sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
                 "his throat. He shudders uncontrollably for a moment as the medicine flows into his \n"
-                "bloodstream, doing its work on whatever toxic agent made its home there.\n".format(player.name)
+                "bloodstream, doing its work on whatever toxic agent made its home there.\n"
             )
             amount: int = int((self.power * random.uniform(0.8, 1.2)))
             missing_hp: int = player.maxhp - player.hp
@@ -2614,13 +2606,7 @@ class Antidote(Consumable):
                 _user.inventory.remove(self)
             return
         else:
-            # Check if item is in inventory or on the ground
-            if self in _user.inventory:
-                print(
-                    "{} is not beset by poison.".format(player.name)
-                )
-            else:
-                print("{} is not beset by poison.".format(player.name))
+            print("{} is not beset by poison.".format(player.name))
 
 
 # ---------------------------------------------------------------------------
@@ -3325,7 +3311,10 @@ class DriedCrystalSap(Consumable):
         if heal <= 0:
             print("{} is already in good health.".format(player.name))
             return
-        print("{} bites into the waxy lump. The ozone smell sharpens for a moment.".format(player.name))
+        print(
+            f"{player.name} bites into the waxy lump. "
+            "The ozone smell sharpens for a moment."
+        )
         _time.sleep(1)
         player.hp += heal
         cprint("{} recovered {} HP!".format(player.name, heal), "green")
