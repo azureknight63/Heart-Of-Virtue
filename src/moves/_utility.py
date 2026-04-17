@@ -647,7 +647,9 @@ class UseItem(Move):
             while True:
                 cprint("Use item on whom?", "cyan")
                 for i, t in enumerate(possible_targets):
-                    print(colored(str(i), "magenta") + ": " + colored(t.name, "magenta"))
+                    print(
+                        colored(str(i), "magenta") + ": " + colored(t.name, "magenta")
+                    )
                 cprint("x: Cancel", "magenta")
                 choice = input(colored("Target: ", "cyan"))
                 if choice.lower() == "x":
