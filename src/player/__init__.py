@@ -159,8 +159,6 @@ class Player(
             moves.Withdraw(self),
             moves.Attack(self),
             moves.Dodge(self),
-            moves.Parry(self),
-            moves.Jab(self),
         ]
         self.current_move = None
         self.heat = 1.0
