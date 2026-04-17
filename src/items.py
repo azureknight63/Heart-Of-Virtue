@@ -3598,7 +3598,9 @@ class ConclaveSignalStone(Key):
         )
         self.value = 0
         self.weight = 0.1
-        self.discovery_message = "a flat stone disc bearing a Conclave authorization sigil!"
+        self.discovery_message = (
+            "a flat stone disc bearing a Conclave authorization sigil!"
+        )
         self.announce = "A flat stone authorization disc rests here."
         self.interactions = ["examine", "drop"]
 
