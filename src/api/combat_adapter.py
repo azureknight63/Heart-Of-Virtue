@@ -20,6 +20,7 @@ from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
 )
+from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from ai.combat_strategist import CombatStrategist
 
 if TYPE_CHECKING:
@@ -30,15 +31,12 @@ _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
 logger = logging.getLogger(__name__)
 
-_ALLY_HEAL_THRESHOLD = 0.5  # NPC uses item on ally below this HP fraction
-_ITEM_USE_RANGE = 5  # ft — max range for in-combat item targeting
-
 
 def _strip_combatant_prefix(target_id: str) -> str:
     """Strip 'enemy_' or 'ally_' prefix and return the raw Python id string."""
     for prefix in ("enemy_", "ally_"):
         if target_id.startswith(prefix):
-            return target_id[len(prefix):]
+            return target_id[len(prefix) :]
     return target_id
 
 
@@ -1415,7 +1413,8 @@ class ApiCombatAdapter:
 
         inventory = getattr(npc, "inventory", [])
         consumables = [
-            it for it in inventory
+            it
+            for it in inventory
             if isinstance(it, items_module.Consumable) and hasattr(it, "use")
         ]
         if not consumables:
@@ -1436,10 +1435,10 @@ class ApiCombatAdapter:
                 continue
             maxhp = getattr(friendly, "maxhp", 1) or 1
             hp_frac = getattr(friendly, "hp", maxhp) / maxhp
-            if hp_frac >= _ALLY_HEAL_THRESHOLD:
+            if hp_frac >= ALLY_HEAL_THRESHOLD:
                 continue
             dist = npc.combat_proximity.get(friendly, 9999)
-            if dist > _ITEM_USE_RANGE:
+            if dist > ITEM_USE_RANGE:
                 continue
             # Prefer the most-injured friendly
             if heal_target is None:
@@ -1454,14 +1453,22 @@ class ApiCombatAdapter:
 
         item = consumables[0]
         item_name = getattr(item, "name", "item")
-        with self._capture_output():
-            item.use(heal_target)
+        try:
+            with self._capture_output():
+                item.use(heal_target)
+        except Exception:
+            logger.exception(
+                "%s failed to use %s on %s", npc.name, item_name, heal_target.name
+            )
+            return False
 
-        # Remove consumed item from NPC inventory
+        # Only remove the item after a successful use
         if item in inventory:
             inventory.remove(item)
 
-        target_label = "player" if heal_target == self.player else f"ally_{id(heal_target)}"
+        target_label = (
+            "player" if heal_target == self.player else f"ally_{id(heal_target)}"
+        )
         self._add_log_entry(
             self.player.combat_beat,
             f"{npc.name} uses {item_name} on {heal_target.name}!",

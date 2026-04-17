@@ -10,7 +10,7 @@ This module provides serialization for:
 
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
-_ITEM_USE_RANGE = 5
+from src.api.constants import ITEM_USE_RANGE
 
 if TYPE_CHECKING:
     from player import Player
@@ -204,10 +204,14 @@ class CombatantSerializer:
         # Derive in_range from distance to the reference (player). Allies within 5 ft
         # are targetable with healing items; enemies within range are attackable.
         distance_to_ref = CombatantSerializer._get_distance(combatant, reference)
-        in_range = distance_to_ref <= _ITEM_USE_RANGE if reference is not None else True
+        in_range = distance_to_ref <= ITEM_USE_RANGE if reference is not None else True
 
         return {
-            "id": "player" if is_player else (f"ally_{id(combatant)}" if is_ally else f"enemy_{id(combatant)}"),
+            "id": (
+                "player"
+                if is_player
+                else (f"ally_{id(combatant)}" if is_ally else f"enemy_{id(combatant)}")
+            ),
             "in_range": in_range,
             "name": getattr(combatant, "name", "Unknown"),
             "battle_symbol": getattr(combatant, "battle_symbol", None),

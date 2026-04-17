@@ -21,6 +21,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       })
       const data = response.data || response
       if (data.success) {
+        setActionMessage(`✓ ${item.name} used on ${ally.name}!`)
         setActionResult({
           message: (
             <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>

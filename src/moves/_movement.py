@@ -153,8 +153,8 @@ class Advance(Move):
     def viable(self):
         """Advance is viable when the target is beyond adjacent range.
 
-        Accepts both enemy and ally targets so the player can close distance
-        to an ally before using a healing item on them.
+        Targeting an ally closes distance for healing (no damage is dealt to
+        friendlies); targeting an enemy closes distance to attack.
         """
         if not hasattr(self.user, "combat_proximity"):
             return False

@@ -294,7 +294,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 2500,
+          zIndex: 2501,
         }}>
           <div style={{
             backgroundColor: 'rgba(10,20,10,0.98)',

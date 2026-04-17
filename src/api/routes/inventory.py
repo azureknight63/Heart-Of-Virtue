@@ -7,13 +7,14 @@ Provides endpoints for:
 - Currency/stat queries
 """
 
-from flask import Blueprint, current_app, jsonify, request
-
-_ITEM_USE_RANGE = 5
 import contextlib
 import io
 import re
 from unittest.mock import patch
+
+from flask import Blueprint, current_app, jsonify, request
+
+from src.api.constants import ITEM_USE_RANGE
 
 from src.api.services.validators import (
     validate_equipment_slot,
@@ -101,9 +102,10 @@ def _resolve_ally_target(player, target_id: str):
     """
     for prefix in ("ally_", "enemy_"):
         if target_id.startswith(prefix):
-            target_id = target_id[len(prefix):]
+            target_id = target_id[len(prefix) :]
             break
     raw_id = target_id
+    # Skip index 0 (the player) — allies start at index 1
     for ally in getattr(player, "combat_list_allies", [])[1:]:
         if str(id(ally)) == raw_id:
             return ally
@@ -490,7 +492,7 @@ def use_item():
             # In combat, enforce 5 ft range
             if getattr(player, "in_combat", False):
                 dist = player.combat_proximity.get(resolved, 9999)
-                if dist > _ITEM_USE_RANGE:
+                if dist > ITEM_USE_RANGE:
                     return (
                         jsonify(
                             {
@@ -560,7 +562,11 @@ def use_item():
             "success": True,
             "message": clean_output,
             "inventory": inventory_data,
-            "target_name": getattr(item_target, "name", None) if item_target is not player else None,
+            "target_name": (
+                getattr(item_target, "name", None)
+                if item_target is not player
+                else None
+            ),
         }
 
         # If in combat, also return updated combat state
