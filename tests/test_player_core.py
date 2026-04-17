@@ -542,7 +542,7 @@ class TestPlayerCore:
         assert player.strength_base == 13
         # 10 (base) + 1 (random bonus) + 3 (allocated) = 14
         assert player.finesse_base == 14
-        assert player.exp_to_level == 2 * (150 - 10) # 280
+        assert player.exp_to_level == 2 * (165 - 10)  # 310
 
     @patch('player.input', return_value='y')
     def test_equip_item_with_phrase(self, mock_input, player):
