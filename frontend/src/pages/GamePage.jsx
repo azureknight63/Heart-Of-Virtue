@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
@@ -363,6 +363,22 @@ export default function GamePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerLoading, worldLoading])
+
+  /**
+   * Guarantee checkPendingEvents runs once after world data is available.
+   * worldLoading starts as false (not true), so the effect above can fire
+   * before GET /world completes and pending_events are populated. This effect
+   * catches that race: it fires the first time location becomes non-null
+   * (i.e. the moment GET /world succeeds and starting-tile events are stored).
+   */
+  const initialWorldEventCheckDone = useRef(false)
+  useEffect(() => {
+    if (location && !initialWorldEventCheckDone.current) {
+      initialWorldEventCheckDone.current = true
+      checkPendingEvents()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location])
 
   // Loading state
   if ((playerLoading && !player) || (worldLoading && !location)) {
