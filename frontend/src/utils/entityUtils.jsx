@@ -1,6 +1,26 @@
 import { colors } from '../styles/theme'
 
 /**
+ * cleanTerminalLineBreaks - Clean up excessive/awkward line breaks from terminal-mode text
+ * Converts hard line breaks to soft word wrapping for better web display
+ * Preserves intentional paragraph breaks (double newlines)
+ */
+export const cleanTerminalLineBreaks = (text) => {
+    if (!text) return text
+
+    // Replace multiple consecutive newlines with a special marker to preserve paragraph breaks
+    let cleaned = text.replace(/\n\n+/g, '\n~~~PARA_BREAK~~~\n')
+
+    // Replace single newlines with spaces (soft wrapping)
+    cleaned = cleaned.replace(/\n(?!~~~)/g, ' ')
+
+    // Restore paragraph breaks
+    cleaned = cleaned.replace(/\n~~~PARA_BREAK~~~\n/g, '\n\n')
+
+    return cleaned
+}
+
+/**
  * getEntityColor - Returns the appropriate color for an entity type from the theme
  */
 export const getEntityColor = (type) => {

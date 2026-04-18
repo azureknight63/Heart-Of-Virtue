@@ -1316,41 +1316,35 @@ def instantiate_event(event_cls, player, tile, params=None, repeat=False, name=N
             return event_cls
 
 
-def stack_inv_items(target):
+def stack_items_list(items_list):
     """
-    Collapse stackable items in `target.inventory` by summing their `count`
+    Collapse stackable items in a list by summing their `count`
     and removing duplicate instances.
 
+    Args:
+        items_list: A list of items to stack (e.g., tile.items_here, player.inventory)
+
     Behavior:
-      - Operates only if `target.inventory` exists and is a list with 2+ items.
+      - Operates only if items_list is a list with 2+ items.
       - Only items with a `count` attribute are considered stackable.
       - Items are grouped by a best-effort stacking key:
-          1. If an item provides `stack_key()` or `stackable_key()`, that is used.
+          1. If an item provides `stack_key()`, that is used.
           2. Otherwise a tuple of (class, name, description) is used.
       - For each group, the first instance is kept as the master; other instances'
-        counts are added to the master and the duplicates are removed from the
-        inventory.
+        counts are added to the master and the duplicates are removed.
       - If an item has `stack_grammar()`, it is called on the master after stacking.
     """
-    if not hasattr(target, "inventory"):
-        return
-    inventory = target.inventory
-    if not isinstance(inventory, list):
-        return
-    if len(inventory) < 2:
+    if not isinstance(items_list, list) or len(items_list) < 2:
         return
 
-    # Build groups of stackable items without modifying the inventory in-place
+    # Build groups of stackable items without modifying the list in-place
     groups: dict[tuple, list] = {}
-    for item in list(inventory):
+    for item in list(items_list):
         if not hasattr(item, "count"):
             # leave non-stackable items alone
             continue
         # Prefer explicit stack key methods if provided by the item
         if hasattr(item, "stack_key"):
-            # Invoke if callable (previously the bound method object itself was used as part of the key
-            # which caused each instance to appear unique and blocked stacking). Falling back to the
-            # attribute value preserves legacy behavior for non-callable attributes.
             key_component = (
                 item.stack_key
                 if not callable(getattr(item, "stack_key"))
@@ -1370,6 +1364,7 @@ def stack_inv_items(target):
         groups.setdefault(key, []).append(item)
 
     # Merge each group into a single master item and remove duplicates
+    to_remove = set()
     for items in groups.values():
         master = items[0]
         # Sum counts from duplicates into master
@@ -1378,6 +1373,7 @@ def stack_inv_items(target):
                 continue
             try:
                 master.count += getattr(dup, "count", 0)
+                to_remove.add(id(dup))
             except Exception:
                 # Fail-safe: skip problematic duplicates
                 continue
@@ -1389,13 +1385,20 @@ def stack_inv_items(target):
                 master.stack_grammar()
             except Exception:
                 pass
-        # Remove duplicate instances from the inventory
-        for dup in items[1:]:
-            try:
-                if dup in inventory:
-                    inventory.remove(dup)
-            except ValueError:
-                pass
+    # Remove duplicate instances in O(n) instead of O(n²)
+    items_list[:] = [item for item in items_list if id(item) not in to_remove]
+
+
+def stack_inv_items(target):
+    """
+    Collapse stackable items in `target.inventory` by summing their `count`
+    and removing duplicate instances.
+
+    Delegates to stack_items_list() for the actual stacking logic.
+    """
+    if not hasattr(target, "inventory"):
+        return
+    stack_items_list(target.inventory)
 
 
 def advise_player_actions(player: "Player", room: "MapTile" = None):

@@ -206,6 +206,9 @@ heard. """
                 self.tile.objects_here.remove(room_object)
                 break
         time.sleep(0.5)
+        # Delay event dialog to prevent player from moving before understanding the exit is open
+        self.delay_duration = 2000  # milliseconds
+        self.delay_mode = "exploration"
 
 
 class Ch01BridgeWall(Event):
@@ -249,6 +252,9 @@ class Ch01BridgeWall(Event):
                 self.tile.objects_here.remove(room_object)
                 break
         time.sleep(0.5)
+        # Delay event dialog to prevent player from moving before understanding the exit is open
+        self.delay_duration = 2000  # milliseconds
+        self.delay_mode = "exploration"
 
 
 class Ch01ChestRumblerBattle(Event):

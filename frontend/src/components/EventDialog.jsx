@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import GameInput from './GameInput'
 import TypewriterOutput from './TypewriterOutput'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
+import { cleanTerminalLineBreaks } from '../utils/entityUtils'
 
 /**
  * EventDialog - Displays event output text and handles player input for events
@@ -40,7 +41,12 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     }, [])
 
     // Extract event data
-    const eventText = event?.output_text || event?.message || event?.description || ''
+    const rawText = event?.output_text || event?.message || event?.description || ''
+    // Memoize text cleaning to avoid recomputing 3-pass regex on every render
+    const eventText = useMemo(() => {
+        if (event?.is_death_scene || !rawText) return rawText
+        return cleanTerminalLineBreaks(rawText)
+    }, [rawText, event?.is_death_scene])
     const needsInput = event?.needs_input || false
     const inputType = event?.input_type || 'choice'
     const inputPrompt = event?.input_prompt || 'Your choice:'

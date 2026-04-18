@@ -423,6 +423,9 @@ class Gold(Item):
     def drop(self, player: "Player") -> None:
         pass  # cannot drop gold
 
+    def stack_key(self):
+        return "gold"
+
     def stack_grammar(self):
         self.amt = self.count
         self.description = "A small pouch containing {} gold pieces.".format(
