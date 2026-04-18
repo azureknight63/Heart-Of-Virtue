@@ -2415,10 +2415,11 @@ class Restorative(Consumable):
                 "reading, 'Restorative.'"
             )
 
-    def drink(self, player: "Player") -> None:
-        self.use(player)
+    def drink(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         # Prevent using merchandise items until purchased
         if getattr(self, "merchandise", False):
             cprint(
@@ -2430,7 +2431,7 @@ class Restorative(Consumable):
             return
         if player.hp < player.maxhp:
             print(
-                "Jean quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
+                f"{player.name} quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
                 "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
                 "muscles relaxing, and the myriad of scratches and cuts closing up.\n"
             )
@@ -2439,15 +2440,13 @@ class Restorative(Consumable):
             if amount > missing_hp:
                 amount = missing_hp
             player.hp += amount
-            cprint("Jean recovered {} HP!".format(amount), "green")
+            cprint("{} recovered {} HP!".format(player.name, amount), "green")
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
-            raise ValueError(
-                "Jean is already at full health. He places the Restorative back into his bag."
-            )
+            print("{} is already at full health.".format(player.name))
 
 
 class Draught(Consumable):
@@ -2491,10 +2490,11 @@ class Draught(Consumable):
                 "Its label reads, simply, 'Draught.'"
             )
 
-    def drink(self, player: "Player") -> None:
-        self.use(player)
+    def drink(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using or equipping it.".format(
@@ -2505,9 +2505,9 @@ class Draught(Consumable):
             return
         if player.fatigue < player.maxfatigue:
             print(
-                "Jean gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
+                "{} gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                 "to have lifted off of his shoulders for the time being.".format(
-                    self.name
+                    player.name, self.name
                 )
             )
             amount: int = int(math.ceil(self.power * random.uniform(0.8, 1.2)))
@@ -2515,25 +2515,13 @@ class Draught(Consumable):
             if amount > missing_fatigue:
                 amount = missing_fatigue
             player.fatigue += amount
-            cprint("Jean recovered {} fatigue!".format(amount), "green")
+            cprint("{} recovered {} fatigue!".format(player.name, amount), "green")
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
-            # Check if item is in inventory or on the ground
-            if self in player.inventory:
-                print(
-                    "Jean is already fully rested. He places the {} back into his bag.".format(
-                        self.name
-                    )
-                )
-            else:
-                print(
-                    "Jean is already fully rested. He sets the {} back down.".format(
-                        self.name
-                    )
-                )
+            print("{} is already fully rested.".format(player.name))
 
 
 class Antidote(Consumable):
@@ -2580,10 +2568,11 @@ class Antidote(Consumable):
                 "fluid inside and a label reading, 'Antidote.'"
             )
 
-    def drink(self, player: "Player") -> None:
-        self.use(player)
+    def drink(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using or equipping it.".format(
@@ -2600,7 +2589,7 @@ class Antidote(Consumable):
 
         if poisons:
             print(
-                "Jean sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
+                f"{player.name} sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
                 "his throat. He shudders uncontrollably for a moment as the medicine flows into his \n"
                 "bloodstream, doing its work on whatever toxic agent made its home there.\n"
             )
@@ -2610,23 +2599,17 @@ class Antidote(Consumable):
                 if amount > missing_hp:
                     amount = missing_hp
                 player.hp += amount
-                cprint("Jean recovered {} HP!".format(amount), "green")
+                cprint("{} recovered {} HP!".format(player.name, amount), "green")
             for poison in poisons:
                 poison.on_removal(poison.target)
                 player.states.remove(poison)
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
             return
         else:
-            # Check if item is in inventory or on the ground
-            if self in player.inventory:
-                print(
-                    "Jean is not beset by poison. He places the Antidote back into his bag."
-                )
-            else:
-                print("Jean is not beset by poison. He sets the Antidote back down.")
+            print("{} is not beset by poison.".format(player.name))
 
 
 # ---------------------------------------------------------------------------
@@ -3323,25 +3306,29 @@ class DriedCrystalSap(Consumable):
                 "Chewing one seems to dull minor wounds."
             )
 
-    def use(self, player: "Player") -> None:  # type: ignore[override]
+    def use(self, player: "Player", user=None) -> None:  # type: ignore[override]
         import time as _time
 
+        _user = user if user is not None else player
         heal = min(self.power, player.maxhp - player.hp)
         if heal <= 0:
-            print("Jean is already in good health. He pockets the sap.")
+            print("{} is already in good health.".format(player.name))
             return
-        print("Jean bites into the waxy lump. The ozone smell sharpens for a moment.")
+        print(
+            f"{player.name} bites into the waxy lump. "
+            "The ozone smell sharpens for a moment."
+        )
         _time.sleep(1)
         player.hp += heal
-        cprint(f"HP restored by {heal}.", "green")
+        cprint("{} recovered {} HP!".format(player.name, heal), "green")
         self.count -= 1
         self.stack_grammar()
         if self.count <= 0:
-            if self in player.inventory:
-                player.inventory.remove(self)
+            if self in _user.inventory:
+                _user.inventory.remove(self)
 
-    def drink(self, player: "Player") -> None:  # type: ignore[override]
-        self.use(player)
+    def drink(self, player: "Player", user=None) -> None:  # type: ignore[override]
+        self.use(player, user=user)
 
 
 class FabricariumRejectionShard(Special):
@@ -3708,7 +3695,8 @@ class IronRation(Consumable):
             )
             self.announce = "Jean notices a bundle of travel rations wrapped in cloth."
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using or equipping it.".format(
@@ -3719,28 +3707,28 @@ class IronRation(Consumable):
             return
         if player.hp < player.maxhp:
             print(
-                "Jean tears into the rations. The hardtack is stale, the meat tough, "
+                "{} tears into the rations. The hardtack is stale, the meat tough, "
                 "but he chews through them methodically. The familiar taste settles "
-                "something in him.\n"
+                "something in him.\n".format(player.name)
             )
             amount: int = int((self.power * random.uniform(0.9, 1.1)))
             missing_hp: int = player.maxhp - player.hp
             if amount > missing_hp:
                 amount = missing_hp
             player.hp += amount
-            cprint("Jean recovered {} HP!".format(amount), "green")
+            cprint("{} recovered {} HP!".format(player.name, amount), "green")
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
-            print("Jean is already in good health. He stows the rations for later.")
+            print("{} is already in good health.".format(player.name))
 
-    def eat(self, player: "Player") -> None:
-        self.use(player)
+    def eat(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
-    def consume(self, player: "Player") -> None:
-        self.use(player)
+    def consume(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
 
 class Bitterroot(Consumable):
@@ -3787,7 +3775,8 @@ class Bitterroot(Consumable):
                 "A dried root lies here, sharp-smelling even from a distance."
             )
 
-    def use(self, player: "Player") -> None:
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
         if getattr(self, "merchandise", False):
             cprint(
                 "{} must purchase {} before using it.".format(player.name, self.name),
@@ -3796,32 +3785,32 @@ class Bitterroot(Consumable):
             return
         if player.hp < player.maxhp:
             print(
-                "Jean places the bitterroot on his tongue. The taste is immediate — "
+                "{} places the bitterroot on his tongue. The taste is immediate — "
                 "sharp, almost painful, cutting through every sense. For a moment he gags. "
                 "Then warmth spreads from his chest outward, and the ache in his muscles "
-                "begins to fade.\n"
+                "begins to fade.\n".format(player.name)
             )
             amount: int = int((self.power * random.uniform(0.85, 1.15)))
             missing_hp: int = player.maxhp - player.hp
             if amount > missing_hp:
                 amount = missing_hp
             player.hp += amount
-            cprint("Jean recovered {} HP!".format(amount), "green")
+            cprint("{} recovered {} HP!".format(player.name, amount), "green")
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:
-                player.inventory.remove(self)
+                _user.inventory.remove(self)
         else:
-            print("Jean is already in good health. He pockets the root for later.")
+            print("{} is already in good health.".format(player.name))
 
-    def eat(self, player: "Player") -> None:
-        self.use(player)
+    def eat(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
-    def chew(self, player: "Player") -> None:
-        self.use(player)
+    def chew(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
-    def consume(self, player: "Player") -> None:
-        self.use(player)
+    def consume(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
 
 
 class MerchantJournalFragment(Book):

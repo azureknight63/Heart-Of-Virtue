@@ -445,7 +445,7 @@ class PlayerInventoryMixin:
                                 break
                             if "use" in item.interactions and hasattr(item, "use"):
                                 print("{} used {}!".format(self.name, item.name))
-                                item.use(_target)
+                                item.use(_target, user=self)
                             elif "prefer" in item.interactions and hasattr(
                                 item, "prefer"
                             ):
@@ -497,7 +497,7 @@ class PlayerInventoryMixin:
                             "YES",
                         ]
                         if confirm in acceptable_confirm_phrases:
-                            item.use(_target)
+                            item.use(_target, user=self)
                             break
 
     def stack_inv_items(self):

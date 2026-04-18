@@ -629,16 +629,38 @@ class UseItem(Move):
         )
 
     def viable(self):
-        viability = True
         if not self.user.inventory:
-            viability = False
-        else:
-            for item in self.user.inventory:
-                if item.type == "Consumable" or "Special":
-                    viability = True
-                    break
-        return viability
+            return False
+        for item in self.user.inventory:
+            if item.type in ("Consumable", "Special"):
+                return True
+        return False
 
     def execute(self, player):
-        player.use_item()  # opens the category view for the standard "use item" action
+        possible_targets = [player] + [
+            a
+            for a in player.combat_list_allies[1:]
+            if a.is_alive() and not getattr(a, "knocked_out", False)
+        ]
+        target = player
+        if len(possible_targets) > 1:
+            while True:
+                cprint("Use item on whom?", "cyan")
+                for i, t in enumerate(possible_targets):
+                    print(
+                        colored(str(i), "magenta") + ": " + colored(t.name, "magenta")
+                    )
+                cprint("x: Cancel", "magenta")
+                choice = input(colored("Target: ", "cyan"))
+                if choice.lower() == "x":
+                    return
+                if not functions.is_input_integer(choice):
+                    cprint("Invalid selection!", "red")
+                    continue
+                idx = int(choice)
+                if 0 <= idx < len(possible_targets):
+                    target = possible_targets[idx]
+                    break
+                cprint("Invalid selection!", "red")
+        player.use_item(target=target)
         player.combat_exp["Basic"] += 1

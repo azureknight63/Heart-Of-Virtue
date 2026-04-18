@@ -1455,14 +1455,16 @@ class ApiCombatAdapter:
         item_name = getattr(item, "name", "item")
         try:
             with self._capture_output():
-                item.use(heal_target)
+                item.use(heal_target, user=npc)
         except Exception:
             logger.exception(
                 "%s failed to use %s on %s", npc.name, item_name, heal_target.name
             )
             return False
 
-        # Only remove the item after a successful use
+        # Stacked consumables self-remove via the user= parameter when count
+        # hits zero. This guard handles any item type that does NOT remove
+        # itself inside use() (e.g. a future reusable NPC consumable).
         if item in inventory:
             inventory.remove(item)
 

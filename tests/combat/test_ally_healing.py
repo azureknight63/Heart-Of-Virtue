@@ -30,10 +30,11 @@ def test_resolve_ally_target_valid():
     assert _resolve_ally_target(player, f"ally_{id(ally)}") is ally
 
 
-def test_resolve_ally_target_enemy_prefix_stripped():
+def test_resolve_ally_target_enemy_prefix_not_stripped():
+    """enemy_ prefix must NOT be resolved as an ally — that was a bug (M2 fix)."""
     ally = MagicMock()
     player = _make_player_with_allies(ally)
-    assert _resolve_ally_target(player, f"enemy_{id(ally)}") is ally
+    assert _resolve_ally_target(player, f"enemy_{id(ally)}") is None
 
 
 def test_resolve_ally_target_unknown_id_returns_none():
@@ -125,7 +126,7 @@ def test_npc_try_heal_ally_heals_injured_friendly():
 
     result = _run_heal(adapter, npc)
 
-    item.use.assert_called_once_with(ally)
+    item.use.assert_called_once_with(ally, user=npc)
     assert result is True
     assert item not in npc.inventory
 
