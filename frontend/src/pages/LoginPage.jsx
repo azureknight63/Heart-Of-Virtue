@@ -171,6 +171,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min 16 characters"
                   required
+                  minLength={16}
                   aria-label="New Password"
                 />
                 <GameText variant="dim" size="xs" style={{ marginTop: spacing.xs }}>
