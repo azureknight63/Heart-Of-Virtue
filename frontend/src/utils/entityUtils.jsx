@@ -8,16 +8,14 @@ import { colors } from '../styles/theme'
 export const cleanTerminalLineBreaks = (text) => {
     if (!text) return text
 
-    // Replace multiple consecutive newlines with a special marker to preserve paragraph breaks
-    let cleaned = text.replace(/\n\n+/g, '\n~~~PARA_BREAK~~~\n')
-
-    // Replace single newlines with spaces (soft wrapping)
-    cleaned = cleaned.replace(/\n(?!~~~)/g, ' ')
-
-    // Restore paragraph breaks
-    cleaned = cleaned.replace(/\n~~~PARA_BREAK~~~\n/g, '\n\n')
-
-    return cleaned
+    // Split on paragraph breaks (2+ consecutive newlines), process each paragraph
+    // independently, then rejoin. This avoids corrupting the separator with the
+    // single-newline replacement step.
+    const paragraphs = text.split(/\n\n+/)
+    return paragraphs
+        .map(para => para.replace(/\n/g, ' ').trim())
+        .filter(para => para.length > 0)
+        .join('\n\n')
 }
 
 /**
