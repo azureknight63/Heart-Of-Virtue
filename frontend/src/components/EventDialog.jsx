@@ -291,7 +291,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             <div key={idx} style={{
                                 paddingBottom: idx === history.length - 1 ? '0' : spacing.lg,
                                 borderBottom: idx === history.length - 1 ? 'none' : `1px solid ${colors.border.light}`,
-                                whiteSpace: 'pre',
+                                whiteSpace: 'pre-wrap',
                                 opacity: idx === history.length - 1 ? 1 : 0.6
                             }}>
                                 <GameText variant="muted" size="xs" style={{ display: 'inline', marginRight: spacing.sm }}>
@@ -346,7 +346,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             overflowY: 'auto',
                             border: `2px solid ${colors.secondary}`,
                             color: colors.success,
-                            whiteSpace: isMemoryEvent ? 'pre' : 'pre-wrap',
+                            whiteSpace: 'pre-wrap',
                             fontSize: '16px',
                         }}
                     />

@@ -49,7 +49,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           )
         })
         if (onItemRemoved) onItemRemoved(item.id)
-        if (onRefetch) onRefetch()
+        if (onRefetch) await onRefetch()
       } else {
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }
@@ -91,7 +91,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
 
         // Trigger global refresh to ensure state persists when closing/reopening inventory
         if (onRefetch) {
-          onRefetch()
+          await onRefetch()
         }
 
         // We no longer auto-close/timeout here because the dialog handles it
@@ -129,7 +129,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         if (onItemRemoved) onItemRemoved(item.id)
 
         // Refresh player state to show healing/buffs
-        if (onRefetch) onRefetch()
+        if (onRefetch) await onRefetch()
       } else {
         setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
       }

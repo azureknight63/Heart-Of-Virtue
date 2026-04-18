@@ -35,7 +35,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
           message: data.message || '',
         })
         setUseItemTarget(null)
-        if (onRefetch) onRefetch()
+        if (onRefetch) await onRefetch()
       } else {
         setActionResult({ error: data.error || 'Failed to use item' })
         setUseItemTarget(null)
