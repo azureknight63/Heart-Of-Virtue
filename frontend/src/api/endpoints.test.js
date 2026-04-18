@@ -17,8 +17,8 @@ describe('endpoints', () => {
 
   describe('auth', () => {
     it('calls register endpoint', () => {
-      endpoints.auth.register('user', 'pass');
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/register', { username: 'user', password: 'pass' });
+      endpoints.auth.register('user', 'pass', 'user@example.com');
+      expect(apiClient.post).toHaveBeenCalledWith('/auth/register', { username: 'user', password: 'pass', email: 'user@example.com' });
     });
 
     it('calls login endpoint', () => {
