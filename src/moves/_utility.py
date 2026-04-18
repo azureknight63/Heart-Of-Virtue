@@ -475,7 +475,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
         execute = 1
 
-        cooldown = (2 + self.user.eq_weapon.weight) - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.speed / 10)
         if cooldown < 0:
             cooldown = 0
 
