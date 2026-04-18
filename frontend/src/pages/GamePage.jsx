@@ -458,6 +458,7 @@ export default function GamePage() {
             setIsInteractionDelayActive(true)
           }
         }}
+        onInteractionClose={() => setIsInteractionDelayActive(false)}
         onCombatAction={handleCombatActionWrapper}
         onLogProgress={setCurrentLogIndex}
         onLogProcessingChange={setIsCombatLogProcessing}

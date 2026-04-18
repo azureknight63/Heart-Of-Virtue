@@ -11,7 +11,10 @@
       "Bash(python -m black src/)",
       "Bash(python -m black --check src/)",
       "Skill(investigate)",
-      "Skill(investigate:*)"
+      "Skill(investigate:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   },
   "hooks": {

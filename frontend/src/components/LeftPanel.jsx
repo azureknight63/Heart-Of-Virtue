@@ -20,7 +20,7 @@ import FeedbackDialog from './FeedbackDialog'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
-function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
+function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
@@ -755,6 +755,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             setShowInteract(false)
             setInteractTarget(null)
             if (onInteractionTypingChange) onInteractionTypingChange(false)
+            if (onInteractionClose) onInteractionClose()
           }}
           onEventsTriggered={onEventsTriggered}
           onInteractionComplete={onInteractionComplete}

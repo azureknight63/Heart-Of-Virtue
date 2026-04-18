@@ -176,7 +176,7 @@ function InteractPanel({
         if (isLocked) return
 
         // Handle take_all specially for ground items
-        if (action === 'take_all') {
+        if (action === 'take_all_ground') {
             await handleTakeAll()
             return
         }
@@ -317,6 +317,20 @@ function InteractPanel({
                         overflowY: 'auto',
                         padding: spacing.xs,
                     }}>
+                        {targets.filter(t => t.type === 'item' && !t.is_container).length > 1 && (
+                            <GameButton
+                                onClick={() => handleActionClick('take_all_ground')}
+                                variant="primary"
+                                disabled={loading || takingAllItems}
+                                style={{
+                                    padding: spacing.md,
+                                    width: '100%',
+                                    marginBottom: spacing.xs
+                                }}
+                            >
+                                {takingAllItems ? '⏳ Taking...' : '📦 Take All Items'}
+                            </GameButton>
+                        )}
                         {targets.length === 0 ? (
                             <div style={{ padding: '40px 20px' }}>
                                 <GameText variant="muted" size="md" align="center" style={{ fontStyle: 'italic' }}>
@@ -371,17 +385,6 @@ function InteractPanel({
                             <GameButton onClick={handleBack} variant="secondary" size="small">
                                 ← Back
                             </GameButton>
-                            {/* Take All Items button for ground items */}
-                            {selectedTarget.type === 'item' && !selectedTarget.is_container && targets.filter(t => t.type === 'item').length > 1 && (
-                                <GameButton
-                                    onClick={() => handleActionClick('take_all')}
-                                    variant="primary"
-                                    size="small"
-                                    disabled={loading || takingAllItems}
-                                >
-                                    {takingAllItems ? '⏳ Taking...' : '📦 Take All Items'}
-                                </GameButton>
-                            )}
                         </div>
 
                         {/* Target Description */}
