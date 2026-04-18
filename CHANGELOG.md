@@ -2,7 +2,13 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.0.6.0] - 2026-04-17
+
+### Fixed
+- **Events — `~~~PARA_BREAK~~~` marker leaked into rendered text**: Memory flash events (and any event with double-newline paragraph breaks) were displaying the literal string `~~~PARA_BREAK~~~` instead of paragraph spacing. Root cause: the 3-pass regex in `cleanTerminalLineBreaks` was self-defeating — step 2 consumed the newline after the placeholder before step 3 could match it. Replaced with a clean `split/map/join` approach that never uses a placeholder. 9 regression tests added.
+
 ## [0.0.5.1] - 2026-04-14
+
 
 ### Fixed
 - **Combat — level-up dialog race condition**: Combat initialization is now deferred when the player has unspent attribute points. Previously, the next combat in a multi-battle chain would start immediately, dismissing the level-up dialog before the player could make selections and corrupting game state.
