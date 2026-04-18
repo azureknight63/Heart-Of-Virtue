@@ -80,7 +80,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
   const startY = location.y - centerIndex
 
   const getTileContent = (x, y) => {
-    const tileKey = `${x},${y}`
+    const tileKey = `${location.map_name}:${x},${y}`
     const isPlayerHere = x === location.x && y === location.y
     const isExplored = exploredTiles && exploredTiles.has(tileKey)
     const tileData = isExplored ? exploredTiles.get(tileKey) : null

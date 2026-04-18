@@ -398,7 +398,9 @@ class GameService:
         if not hasattr(player, "explored_tiles"):
             player.explored_tiles = {}
 
-        tile_key = f"{tile.x},{tile.y}"
+        current_map = getattr(player, "map", None)
+        map_name = current_map.get("name") if isinstance(current_map, dict) else None
+        tile_key = f"{map_name}:{tile.x},{tile.y}"
 
         # We need to manually serialize to avoid circular dependencies if we used TileSerializer here
         # (Though TileSerializer is imported at top level, let's keep it simple)

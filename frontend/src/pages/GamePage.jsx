@@ -132,7 +132,7 @@ export default function GamePage() {
    */
   useEffect(() => {
     if (location) {
-      const tileKey = `${location.x},${location.y}`
+      const tileKey = `${location.map_name}:${location.x},${location.y}`
       setExploredTiles(prev => {
         const newMap = new Map(prev)
         // Store tile data with items, NPCs, objects, and EXITS
