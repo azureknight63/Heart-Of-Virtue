@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import apiClient from '../api/client'
 
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
@@ -7,9 +7,28 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   const [showDropConfirm, setShowDropConfirm] = useState(false)
   const [actionResult, setActionResult] = useState(null)
   const [showAllyPicker, setShowAllyPicker] = useState(false)
+  const [freshPartyMembers, setFreshPartyMembers] = useState(null)
 
-  const partyMembers = player?.party_members || []
+  const partyMembers = freshPartyMembers || player?.party_members || []
   const hasPartyMembers = partyMembers.length > 0
+
+  useEffect(() => {
+    if (showAllyPicker && combatMode) {
+      const fetchFreshPartyMembers = async () => {
+        try {
+          const response = await apiClient.get('/player/status')
+          if (response.data?.status?.party_members) {
+            setFreshPartyMembers(response.data.status.party_members)
+          }
+        } catch (err) {
+          console.error('Failed to fetch fresh party members:', err)
+        }
+      }
+      fetchFreshPartyMembers()
+    } else {
+      setFreshPartyMembers(null)
+    }
+  }, [showAllyPicker, combatMode])
 
   const handleUseOnAlly = async (ally) => {
     setShowAllyPicker(false)
