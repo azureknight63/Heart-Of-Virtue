@@ -71,8 +71,19 @@ class NPCCombatMixin:
             for m in available_moves
         )
         if not can_attack and self.fatigue < self.maxfatigue:
-            # Only force-rest when advancing is not an option.  If a viable Advance move
-            # exists the NPC should close distance rather than stand still and recover.
+            # If an offensive move is already in range (just unaffordable due to low
+            # fatigue), rest to recover rather than uselessly advancing.  Advance floors
+            # at distance 3 in both movement systems, so an NPC at distance 2–3 with a
+            # range-0-5 attack would otherwise loop: Advance (no-op) → Advance → …
+            in_attack_range = any(
+                getattr(m, "category", "") == "Offensive" and m.viable()
+                for m in self.known_moves
+            )
+            if in_attack_range:
+                self.current_move = moves.NpcRest(self)
+                return
+            # Only force-rest when advancing is also not an option.  If a viable Advance
+            # move exists and the target is genuinely out of range, close distance instead.
             can_advance = any(
                 getattr(m, "name", "") == "Advance" for m in available_moves
             )
