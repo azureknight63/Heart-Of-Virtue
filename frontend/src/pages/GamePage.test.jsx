@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import GamePage from './GamePage';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
@@ -222,26 +222,32 @@ describe('GamePage', () => {
     });
 
 
-    it('shows victory dialog after combat win', async () => {
-        useCombat.mockReturnValue({
-            combat: {
-                combat_active: false,
-                end_state: { id: 'win-1', status: 'victory', message: 'You won!' }
-            },
-            inCombat: false,
-            loading: false,
-            fetchCombatStatus: vi.fn(),
-            performAction: vi.fn()
-        });
+    it('shows victory dialog after combat win', () => {
+        vi.useFakeTimers();
+        try {
+            useCombat.mockReturnValue({
+                combat: {
+                    combat_active: false,
+                    end_state: { id: 'win-1', status: 'victory', message: 'You won!' }
+                },
+                inCombat: false,
+                loading: false,
+                fetchCombatStatus: vi.fn(),
+                performAction: vi.fn()
+            });
 
-        renderGamePage();
+            renderGamePage();
 
-        await waitFor(() => {
+            act(() => vi.advanceTimersByTime(5000));
+
             expect(screen.getByText(/You won!/i)).toBeDefined();
-        });
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('shows BetaEndDialog after closing victory dialog with beta_end=true', async () => {
+        vi.useFakeTimers();
         const mockFetchCombatStatus = vi.fn().mockResolvedValue(undefined);
 
         useCombat.mockReturnValue({
@@ -270,17 +276,20 @@ describe('GamePage', () => {
 
         renderGamePage();
 
-        // Victory dialog should appear
-        await waitFor(() => {
-            expect(screen.getByText(/Victory!/i)).toBeDefined();
-        });
+        // Advance time to trigger the delayed victory dialog
+        act(() => vi.advanceTimersByTime(5000));
+
+        expect(screen.getByText(/Victory!/i)).toBeDefined();
 
         // Close button is enabled (no points to spend)
         const closeBtn = screen.getByText('CLOSE');
         expect(closeBtn.disabled).toBe(false);
         fireEvent.click(closeBtn);
 
-        // BetaEndDialog should appear
+        // Switch back to real timers so waitFor can retry for the BetaEndDialog
+        vi.useRealTimers();
+
+        // BetaEndDialog should appear after closing the victory dialog
         await waitFor(() => {
             expect(screen.getByText('END OF BETA')).toBeDefined();
         });
