@@ -44,16 +44,25 @@ const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
 // ---------------------------------------------------------------------------
 // Grid / camera constants — module level
 // ---------------------------------------------------------------------------
-const VIEW_SIZE = 13;  // viewport cell count in zoomed mode; shows enemies within attacking range (up to 9 cells) plus buffer
+export const VIEW_SIZE = 13;  // viewport cell count in zoomed mode; shows enemies within attacking range (up to 9 cells) plus buffer
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
 const CAMERA_EPSILON = 0.004; // settle threshold (cells)
 
-/** Snap a float camera origin to the nearest valid integer cell. */
-const computeSnapOrigin = (cam, cols, mapSz) => ({
-  leftX: Math.round(Math.max(0, Math.min(mapSz - cols, cam.x))),
-  topY:  Math.round(Math.min(mapSz - 1, Math.max(cols - 1, cam.y))),
-});
+/**
+ * Snap a float camera origin to the nearest valid integer cell.
+ * When the map is smaller than the viewport we skip edge-clamping so Jean stays
+ * centered; the surrounding "off-map" cells simply render as empty.
+ */
+const computeSnapOrigin = (cam, cols, mapSz) => {
+  if (mapSz < cols) {
+    return { leftX: Math.round(cam.x), topY: Math.round(cam.y) };
+  }
+  return {
+    leftX: Math.round(Math.max(0, Math.min(mapSz - cols, cam.x))),
+    topY:  Math.round(Math.min(mapSz - 1, Math.max(cols - 1, cam.y))),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Pure helpers — module level, stable references, never re-created
@@ -62,24 +71,55 @@ const computeSnapOrigin = (cam, cols, mapSz) => ({
 /** Returns the grid position of an entity, defaulting to origin if absent. */
 const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 
+/** Map an attack's impact-phase outcome to the corresponding SFX cue name. */
+const impactSfxFor = (outcome) => {
+  switch (outcome) {
+    case 'miss': return 'attack_miss';
+    case 'parry':
+    case 'block':
+    case 'deflect':
+      return 'attack_parry';
+    case 'hit':
+    default:
+      return 'attack_hit';
+  }
+};
+
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
-const CombatantMarker = React.memo(({ entity, isPlayer, isFullMode = false, isHovered = false, animationState = null }) => {
-  const getGlowStyle = (move) => {
-    if (!move) return {};
-    const cat = move.category || 'Miscellaneous';
-    switch (cat) {
-      case 'Attack': return { boxShadow: `0 0 15px 5px ${colors.alpha.danger[60]}`, borderColor: colors.danger };
-      case 'Maneuver': return { boxShadow: `0 0 15px 5px ${colors.alpha.primary[60]}`, borderColor: colors.primary };
-      case 'Special': return { boxShadow: `0 0 15px 5px ${colors.alpha.special[60]}`, borderColor: colors.special };
-      case 'Supernatural': return { boxShadow: `0 0 15px 5px ${colors.alpha.info[60]}`, borderColor: colors.info };
-      default: return { boxShadow: `0 0 15px 5px ${colors.text.bright}99`, borderColor: colors.text.bright };
-    }
-  };
+// Color per move category drives the pulsing pending-move glow (CSS var).
+const MOVE_CATEGORY_GLOW = {
+  Attack: colors.alpha.danger[60],
+  Maneuver: colors.alpha.primary[60],
+  Special: colors.alpha.special[60],
+  Supernatural: colors.alpha.info[60],
+  Miscellaneous: `${colors.text.bright}99`,
+};
+const MOVE_CATEGORY_BORDER = {
+  Attack: colors.danger,
+  Maneuver: colors.primary,
+  Special: colors.special,
+  Supernatural: colors.info,
+  Miscellaneous: colors.text.bright,
+};
 
+const CombatantMarker = React.memo(({
+  entity,
+  isPlayer,
+  isHero = false,
+  isFullMode = false,
+  isHovered = false,
+  animationState = null,
+}) => {
   const move = entity.current_move || entity.prepared_move;
-  const glowStyle = getGlowStyle(move);
+  const moveCategory = move ? (move.category || 'Miscellaneous') : null;
+  const pendingGlowColor = moveCategory ? MOVE_CATEGORY_GLOW[moveCategory] : null;
+  const pendingBorderColor = moveCategory ? MOVE_CATEGORY_BORDER[moveCategory] : null;
+
+  // Alignment border: lime for friend/player, red for enemy. When a pending
+  // move is set, its category color takes precedence on the border.
+  const alignmentBorder = isPlayer ? colors.primary : colors.danger;
 
   // Facing — API may send degrees (int) or a cardinal string
   let facing = 0;
@@ -132,18 +172,29 @@ const CombatantMarker = React.memo(({ entity, isPlayer, isFullMode = false, isHo
 
   return (
     <div
-      className="relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-2"
+      className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-[3px]${
+        pendingGlowColor ? ' battlefield-pending-glow' : ''
+      }`}
       style={{
-        ...glowStyle,
         ...getAnimationStyle(),
         backgroundColor: colors.bg.panelDeep,
-        borderColor: glowStyle.borderColor || colors.border.main
+        borderColor: pendingBorderColor || alignmentBorder,
+        // CSS var drives the pulsing glow animation; falls back to a static
+        // thin halo (alignment-colored) when no move is prepared so friend/foe
+        // remains visible even without move intent.
+        ['--pending-glow']: pendingGlowColor || 'transparent',
+        boxShadow: pendingGlowColor
+          ? undefined
+          : `0 0 6px 1px ${isPlayer ? colors.alpha.primary[40] : colors.alpha.danger[40]}`,
       }}
     >
-      {/* Background fill */}
+      {/* Background fill — saturated by alignment for high-contrast friend/foe */}
       <div
-        className="absolute inset-0 rounded-full opacity-80"
-        style={{ backgroundColor: isPlayer ? colors.alpha.primary[20] : colors.alpha.danger[20] }}
+        className="absolute inset-0 rounded-full"
+        style={{
+          backgroundColor: isPlayer ? colors.alpha.primary[30] : colors.alpha.danger[30],
+          opacity: 0.85,
+        }}
       />
 
       {/* HP / Fatigue torus */}
@@ -181,6 +232,25 @@ const CombatantMarker = React.memo(({ entity, isPlayer, isFullMode = false, isHo
       <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-xs select-none z-10 pointer-events-none">
         {content}
       </div>
+
+      {/* Hero marker — tiny gold star above Jean so players can always locate
+          her amid a crowd of allies. */}
+      {isHero && (
+        <div
+          className="absolute pointer-events-none z-20 select-none"
+          style={{
+            top: isFullMode ? '-4px' : '-10px',
+            right: isFullMode ? '-2px' : '-4px',
+            fontSize: isFullMode ? '8px' : '14px',
+            lineHeight: 1,
+            color: colors.gold,
+            textShadow: '0 0 4px rgba(0,0,0,0.9)',
+          }}
+          aria-label="Jean"
+        >
+          ★
+        </div>
+      )}
 
       {/* Status effects — fade to full on hover */}
       {!isFullMode && (
@@ -373,6 +443,7 @@ const EntityLayer = React.memo(({
             <CombatantMarker
               entity={item.entity}
               isPlayer={item.isPlayer}
+              isHero={item.isHero}
               isFullMode={isFullMode}
               isHovered={hoveredTargetId === entityId || hoveredEntity?.id === entityId}
               animationState={animState}
@@ -533,6 +604,34 @@ const DeathBurst = () => {
 };
 
 // ---------------------------------------------------------------------------
+// JeanSpotlight — pulsing ring overlaid on Jean's cell in full-map mode so the
+// player can always locate her at a glance when tokens are tiny.
+// ---------------------------------------------------------------------------
+const JeanSpotlight = React.memo(({ player, getEntityStyle }) => {
+  const pos = getPos(player);
+  const style = getEntityStyle(pos, 40);
+  if (!style) return null;
+  return (
+    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
+      <div
+        style={{
+          position: 'absolute',
+          ...style,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          className="battlefield-jean-spotlight"
+          style={{ width: '220%', height: '220%' }}
+        />
+      </div>
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // DeathAnimationLayer — renders burst effects at positions of dying entities
 // ---------------------------------------------------------------------------
 const DeathAnimationLayer = React.memo(({ dyingEntities, getEntityStyle }) => {
@@ -691,6 +790,18 @@ function BattlefieldGrid({
       }
       const phase = config.phases[currentPhaseIndex];
       setAnimationPhase(phase.name);
+
+      // Phase-aligned SFX cues for attacks — the log-derived animation events
+      // ship an `outcome` ('hit' | 'miss' | 'parry' | ...) which maps 1:1 to
+      // the pre-baked WAV cues in /assets/sounds/.
+      if (animData.type === 'attack') {
+        if (phase.name === 'strike') {
+          playSFX('attack_swipe');
+        } else if (phase.name === 'impact') {
+          playSFX(impactSfxFor(animData.outcome));
+        }
+      }
+
       setTimeout(() => {
         currentPhaseIndex++;
         advancePhase();
@@ -700,7 +811,7 @@ function BattlefieldGrid({
     advancePhase();
     // State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [playSFX]);
 
   useEffect(() => {
     if (!activeAnimation && animationQueue.length > 0) {
@@ -772,8 +883,16 @@ function BattlefieldGrid({
       return;
     }
 
-    const tgtX = Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW));
-    const tgtY = Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
+    // Jean must always be centered. For maps smaller than the viewport we
+    // skip edge-clamping and let the map float in the center; the surrounding
+    // cells render as empty.
+    const mapFitsInView = resolvedMapSize >= VIEW_SIZE;
+    const tgtX = mapFitsInView
+      ? Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW))
+      : playerPos.x - HALF_VIEW;
+    const tgtY = mapFitsInView
+      ? Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW))
+      : playerPos.y + HALF_VIEW;
     targetCamRef.current = { x: tgtX, y: tgtY };
 
     const snapImmediately = () => {
@@ -825,9 +944,13 @@ function BattlefieldGrid({
   } else if (snapState) {
     leftX = snapState.leftX;
     topY  = snapState.topY;
-  } else {
+  } else if (resolvedMapSize >= VIEW_SIZE) {
     leftX = Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW));
     topY  = Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
+  } else {
+    // Small-map fallback: center Jean even if the map is smaller than the view
+    leftX = playerPos.x - HALF_VIEW;
+    topY  = playerPos.y + HALF_VIEW;
   }
 
   /** Convert a world grid position to the absolute-CSS style needed by the layers. */
@@ -873,12 +996,12 @@ function BattlefieldGrid({
     const result = [];
     if (combat?.player) {
       const style = getEntityStyle(getPos(combat.player));
-      if (style) result.push({ entity: combat.player, style, isPlayer: true });
+      if (style) result.push({ entity: combat.player, style, isPlayer: true, isHero: true });
     }
     combat?.allies?.forEach((ally) => {
       if (ally.hp === undefined || ally.hp > 0 || (ally.health?.current ?? 0) > 0) {
         const style = getEntityStyle(getPos(ally));
-        if (style) result.push({ entity: ally, style, isPlayer: true });
+        if (style) result.push({ entity: ally, style, isPlayer: true, isHero: false });
       }
     });
     combat?.enemies?.forEach((enemy) => {
@@ -897,8 +1020,23 @@ function BattlefieldGrid({
     return result;
   }, [combat?.player, combat?.allies, combat?.enemies, dyingEntities, getEntityStyle]);
 
-  // Memoized background cell array — avoids reallocating on every render
-  const gridBgCells = useMemo(() => Array.from({ length: gridCols * gridCols }), [gridCols]);
+  // Memoized background cell array — each cell knows whether it lies inside
+  // the real map so off-map viewport cells can render slightly dimmer, giving
+  // the player an implicit sense of map boundaries when Jean is near an edge.
+  // In Full Map mode every cell is on-map, so we skip the per-cell array.
+  const gridBgCells = useMemo(() => {
+    if (isFullMode) return null;
+    const cells = [];
+    for (let row = 0; row < gridCols; row++) {
+      for (let col = 0; col < gridCols; col++) {
+        const worldX = leftX + col;
+        const worldY = topY - row;
+        const onMap = worldX >= 0 && worldX < resolvedMapSize && worldY >= 0 && worldY < resolvedMapSize;
+        cells.push(onMap);
+      }
+    }
+    return cells;
+  }, [isFullMode, gridCols, leftX, topY, resolvedMapSize]);
 
   // -------------------------------------------------------------------------
   // Enemies tab: flat list view
@@ -927,12 +1065,29 @@ function BattlefieldGrid({
           gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
           pointerEvents: 'none'
         }}>
-          {gridBgCells.map((_, i) => (
-            <div key={i} style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }} />
-          ))}
+          {gridBgCells === null
+            ? Array.from({ length: gridCols * gridCols }, (_, i) => (
+              <div
+                key={i}
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }}
+              />
+            ))
+            : gridBgCells.map((onMap, i) => (
+              <div
+                key={i}
+                style={{
+                  backgroundColor: onMap ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.35)',
+                  borderRadius: '2px'
+                }}
+              />
+            ))}
         </div>
 
         <BreadcrumbLayer breadcrumbs={breadcrumbs} />
+
+        {isFullMode && combat?.player && (
+          <JeanSpotlight player={combat.player} getEntityStyle={getEntityStyle} />
+        )}
 
         <EntityLayer
           entitiesToRender={entitiesToRender}

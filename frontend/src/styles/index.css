@@ -569,3 +569,49 @@ body.damage-flash-active::before {
   pointer-events: none;
   animation: damage-flash 0.42s ease-out forwards;
 }
+
+/* Battlefield — pulsing halo under a combatant with a prepared/current move.
+   The color is set via --pending-glow on the element. */
+@keyframes battlefield-pending-pulse {
+  0%, 100% { box-shadow: 0 0 10px 2px var(--pending-glow, rgba(255,255,255,0.5)); }
+  50%      { box-shadow: 0 0 20px 7px var(--pending-glow, rgba(255,255,255,0.5)); }
+}
+
+.battlefield-pending-glow {
+  animation: battlefield-pending-pulse 1.4s ease-in-out infinite;
+}
+
+/* Battlefield — spotlight ring around Jean in full-map mode so players can
+   always locate her at a glance. */
+@keyframes battlefield-jean-spotlight {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.9),
+                0 0 18px 6px rgba(255, 204, 0, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 240, 120, 1),
+                0 0 28px 12px rgba(255, 204, 0, 0.75);
+  }
+}
+
+.battlefield-jean-spotlight {
+  animation: battlefield-jean-spotlight 1.6s ease-in-out infinite;
+  border-radius: 9999px;
+}
+
+/* Battlefield — attention-grabbing glow for the zoom toggle when enemies are
+   off-screen in the current zoomed viewport. */
+@keyframes battlefield-zoom-hint {
+  0%, 100% {
+    box-shadow: 0 0 6px 1px rgba(255, 170, 0, 0.7),
+                0 0 14px 3px rgba(255, 170, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px rgba(255, 204, 64, 1),
+                0 0 22px 6px rgba(255, 170, 0, 0.6);
+  }
+}
+
+.battlefield-zoom-hint {
+  animation: battlefield-zoom-hint 1.3s ease-in-out infinite;
+}

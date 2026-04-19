@@ -1,6 +1,25 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 
-import BattlefieldGrid from './BattlefieldGrid'
+import BattlefieldGrid, { VIEW_SIZE } from './BattlefieldGrid'
+
+const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
+
+// Any living enemy whose position lies outside the zoomed viewport centered on Jean.
+function anyEnemyOffScreen(state) {
+  const player = state?.player;
+  const enemies = state?.enemies;
+  if (!player?.position || !enemies?.length) return false;
+  const px = player.position.x;
+  const py = player.position.y;
+  for (const e of enemies) {
+    const hp = e.hp ?? e.health?.current;
+    if (hp !== undefined && hp <= 0) continue;
+    const ep = e.position;
+    if (!ep) continue;
+    if (Math.abs(ep.x - px) > HALF_VIEW || Math.abs(ep.y - py) > HALF_VIEW) return true;
+  }
+  return false;
+}
 
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId }) {
   const [selectedTab, setSelectedTab] = useState('overview')
@@ -63,6 +82,13 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     }
   }, [currentLogIndex, combat?.beat_states])
 
+  // Hint the player to expand the view when a living enemy is beyond the
+  // zoomed viewport. The glow is suppressed while already in full-map mode.
+  const enemyOffScreen = useMemo(
+    () => zoom !== 'full' && anyEnemyOffScreen(displayState),
+    [zoom, displayState]
+  );
+
   if (!displayState) {
     return (
       <div className="w-full h-full flex items-center justify-center text-gray-500">
@@ -104,8 +130,10 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
               className={`px-3 py-1 text-xs font-bold rounded border transition-colors ${zoom === 'full'
                 ? 'bg-orange text-white border-orange'
                 : 'border-orange text-orange hover:bg-orange hover:text-white bg-[rgba(0,0,0,0.5)]'
-                }`}
-              title="Toggle View Mode"
+                }${enemyOffScreen ? ' battlefield-zoom-hint' : ''}`}
+              title={enemyOffScreen
+                ? 'Enemies are off-screen — switch to Full Map to see everything'
+                : 'Toggle View Mode'}
             >
               {zoom === 'full' ? 'View: Full Map' : 'View: Normal'}
             </button>
