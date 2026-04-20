@@ -1,5 +1,5 @@
-import { renderHook, act, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useCombatCoordinator } from './useCombatCoordinator'
 
 describe('useCombatCoordinator', () => {
@@ -50,7 +50,15 @@ describe('useCombatCoordinator', () => {
     })
 
     describe('victory/defeat dialog handling', () => {
-        it('should show victory dialog when combat ends with victory', async () => {
+        beforeEach(() => {
+            vi.useFakeTimers()
+        })
+
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        it('should show victory dialog when combat ends with victory', () => {
             const combat = {
                 end_state: {
                     id: 'victory-1',
@@ -64,13 +72,13 @@ describe('useCombatCoordinator', () => {
                 useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
             )
 
-            await waitFor(() => {
-                expect(result.current.showVictoryDialog).toBe(true)
-                expect(result.current.endState).toEqual(combat.end_state)
-            })
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(result.current.showVictoryDialog).toBe(true)
+            expect(result.current.endState).toEqual(combat.end_state)
         })
 
-        it('should show defeat dialog when combat ends with defeat', async () => {
+        it('should show defeat dialog when combat ends with defeat', () => {
             const combat = {
                 end_state: {
                     id: 'defeat-1',
@@ -84,10 +92,10 @@ describe('useCombatCoordinator', () => {
                 useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
             )
 
-            await waitFor(() => {
-                expect(result.current.showDefeatDialog).toBe(true)
-                expect(result.current.endState).toEqual(combat.end_state)
-            })
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(result.current.showDefeatDialog).toBe(true)
+            expect(result.current.endState).toEqual(combat.end_state)
         })
 
         it('should not show dialog if combat log is still processing', () => {
@@ -143,7 +151,7 @@ describe('useCombatCoordinator', () => {
             expect(result.current.showVictoryDialog).toBe(false)
         })
 
-        it('should not show same end state twice', async () => {
+        it('should not show same end state twice', () => {
             const combat = {
                 end_state: {
                     id: 'victory-1',
@@ -158,17 +166,18 @@ describe('useCombatCoordinator', () => {
                 { initialProps: { combat } }
             )
 
-            await waitFor(() => {
-                expect(result.current.showVictoryDialog).toBe(true)
-            })
+            // Advance time to trigger the delayed dialog
+            act(() => vi.advanceTimersByTime(5000))
+            expect(result.current.showVictoryDialog).toBe(true)
 
             // Close the dialog
             act(() => {
                 result.current.setShowVictoryDialog(false)
             })
 
-            // Re-render with same end state
+            // Re-render with same end state — lastEndStateId already matches so no timer fires
             rerender({ combat })
+            act(() => vi.advanceTimersByTime(5000))
 
             // Should not show again
             expect(result.current.showVictoryDialog).toBe(false)

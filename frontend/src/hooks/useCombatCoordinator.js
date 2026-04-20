@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 /**
  * Custom hook for managing combat coordination state and handlers.
@@ -44,8 +44,14 @@ export function useCombatCoordinator({
     // Target hover state
     const [hoveredTargetId, setHoveredTargetId] = useState(null)
 
+    // Timer ref for post-combat dialog delay
+    const endStateTimerRef = useRef(null)
+
     /**
-     * Handle victory/defeat dialog display when combat ends
+     * Handle victory/defeat dialog display when combat ends.
+     * Waits for the combat log to finish spooling, then delays 5 seconds
+     * so the final attack animation and result are fully visible before
+     * the dialog interrupts.
      */
     useEffect(() => {
         const maybeEnd = combat?.end_state
@@ -55,18 +61,31 @@ export function useCombatCoordinator({
         if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
             setEndState(maybeEnd)
             if (!isCombatLogProcessing && !hasPendingLogs && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
-                if (maybeEnd.status === 'victory') {
-                    setShowVictoryDialog(true)
-                    // Play fanfare as a one-shot sting (non-looping)
-                    if (playSting) playSting('fanfare')
-                } else {
-                    setShowDefeatDialog(true)
-                }
+                // Mark handled immediately so re-renders don't schedule a second timer
                 setLastEndStateId(maybeEnd.id)
                 sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
+
+                const isVictory = maybeEnd.status === 'victory'
+                endStateTimerRef.current = setTimeout(() => {
+                    endStateTimerRef.current = null
+                    if (isVictory) {
+                        setShowVictoryDialog(true)
+                        // Play fanfare as a one-shot sting (non-looping)
+                        if (playSting) playSting('fanfare')
+                    } else {
+                        setShowDefeatDialog(true)
+                    }
+                }, 5000)
             }
         }
     }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log, playSting])
+
+    // Cancel any pending end-state timer when the hook unmounts
+    useEffect(() => {
+        return () => {
+            if (endStateTimerRef.current) clearTimeout(endStateTimerRef.current)
+        }
+    }, [])
 
     /**
      * Reset combat dialog state when combat ends
