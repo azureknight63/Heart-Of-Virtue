@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamePage from './GamePage';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
@@ -248,51 +248,55 @@ describe('GamePage', () => {
 
     it('shows BetaEndDialog after closing victory dialog with beta_end=true', async () => {
         vi.useFakeTimers();
-        const mockFetchCombatStatus = vi.fn().mockResolvedValue(undefined);
+        try {
+            const mockFetchCombatStatus = vi.fn().mockResolvedValue(undefined);
 
-        useCombat.mockReturnValue({
-            combat: {
-                combat_active: false,
-                end_state: {
-                    id: 'lurker-win-1',
-                    status: 'victory',
-                    message: 'Victory!',
-                    beta_end: true,
-                    exp_gained: {},
-                    items_dropped: [],
-                    level_ups: [],
-                    attribute_points_available: 0,
-                    attributes: {
-                        strength_base: 10, finesse_base: 10, speed_base: 10,
-                        endurance_base: 10, charisma_base: 10, intelligence_base: 10,
-                    },
-                }
-            },
-            inCombat: false,
-            loading: false,
-            fetchCombatStatus: mockFetchCombatStatus,
-            performAction: vi.fn()
-        });
+            useCombat.mockReturnValue({
+                combat: {
+                    combat_active: false,
+                    end_state: {
+                        id: 'lurker-win-1',
+                        status: 'victory',
+                        message: 'Victory!',
+                        beta_end: true,
+                        exp_gained: {},
+                        items_dropped: [],
+                        level_ups: [],
+                        attribute_points_available: 0,
+                        attributes: {
+                            strength_base: 10, finesse_base: 10, speed_base: 10,
+                            endurance_base: 10, charisma_base: 10, intelligence_base: 10,
+                        },
+                    }
+                },
+                inCombat: false,
+                loading: false,
+                fetchCombatStatus: mockFetchCombatStatus,
+                performAction: vi.fn()
+            });
 
-        renderGamePage();
+            renderGamePage();
 
-        // Advance time to trigger the delayed victory dialog
-        act(() => vi.advanceTimersByTime(5000));
+            // Advance time to trigger the delayed victory dialog
+            act(() => vi.advanceTimersByTime(5000));
 
-        expect(screen.getByText(/Victory!/i)).toBeDefined();
+            expect(screen.getByText(/Victory!/i)).toBeDefined();
 
-        // Close button is enabled (no points to spend)
-        const closeBtn = screen.getByText('CLOSE');
-        expect(closeBtn.disabled).toBe(false);
-        fireEvent.click(closeBtn);
+            // Close button is enabled (no points to spend)
+            const closeBtn = screen.getByText('CLOSE');
+            expect(closeBtn.disabled).toBe(false);
+            fireEvent.click(closeBtn);
 
-        // Switch back to real timers so waitFor can retry for the BetaEndDialog
-        vi.useRealTimers();
+            // Switch back to real timers so waitFor can retry for the BetaEndDialog
+            vi.useRealTimers();
 
-        // BetaEndDialog should appear after closing the victory dialog
-        await waitFor(() => {
-            expect(screen.getByText('END OF BETA')).toBeDefined();
-        });
+            // BetaEndDialog should appear after closing the victory dialog
+            await waitFor(() => {
+                expect(screen.getByText('END OF BETA')).toBeDefined();
+            });
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 
