@@ -24,6 +24,11 @@ function anyEnemyOffScreen(state) {
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId }) {
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(1)
+  // Transient banner shown once per "enemy goes off-screen" transition, auto-
+  // dismissed after 2.5s or on zoom toggle so players who already understand
+  // the affordance aren't nagged.
+  const [showOffScreenBanner, setShowOffScreenBanner] = useState(false)
+  const offScreenLatchRef = useRef(false)
 
   // Display state - synchronized with combat log progress.
   // Initialise directly to the first beat state (same shape BattlefieldGrid expects)
@@ -88,6 +93,20 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     () => zoom !== 'full' && anyEnemyOffScreen(displayState),
     [zoom, displayState]
   );
+
+  // Rising edge on enemyOffScreen → flash a one-shot banner explaining the hint.
+  useEffect(() => {
+    if (enemyOffScreen && !offScreenLatchRef.current) {
+      offScreenLatchRef.current = true;
+      setShowOffScreenBanner(true);
+      const t = setTimeout(() => setShowOffScreenBanner(false), 2500);
+      return () => clearTimeout(t);
+    }
+    if (!enemyOffScreen) {
+      offScreenLatchRef.current = false;
+      setShowOffScreenBanner(false);
+    }
+  }, [enemyOffScreen]);
 
   if (!displayState) {
     return (
@@ -154,6 +173,29 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           hoveredTargetId={hoveredTargetId}
           mapSize={combat?.map_size}
         />
+
+        {selectedTab === 'overview' && showOffScreenBanner && (
+          <div
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-[160] pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200"
+            role="status"
+          >
+            <div className="bg-black/90 border border-orange/70 rounded px-3 py-1 text-[11px] font-bold text-orange shadow-lg backdrop-blur-sm whitespace-nowrap">
+              ⚠ Enemy off-screen — switch to Full Map
+            </div>
+          </div>
+        )}
+
+        {selectedTab === 'overview' && (
+          <div
+            className="absolute bottom-1.5 left-2 z-[140] pointer-events-none text-[9px] font-mono text-white/40 select-none flex items-center gap-1"
+            aria-label="Trailing dots show recent movement paths"
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00ff88] opacity-70"></span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00ff88] opacity-40"></span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00ff88] opacity-20"></span>
+            <span className="ml-1">recent paths</span>
+          </div>
+        )}
       </div>
 
     </div>
