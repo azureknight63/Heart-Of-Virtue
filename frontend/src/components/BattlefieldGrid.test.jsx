@@ -33,10 +33,11 @@ describe('BattlefieldGrid', () => {
         // Check if enemy marker exists (G for Goblin)
         expect(screen.getByText('G')).toBeDefined();
 
-        // Check for grid cells by style attribute
-        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        // Normal mode is 13x13 = 169 cells
-        expect(cells.length).toBe(169);
+        // Normal mode always renders a 13x13 viewport regardless of map size.
+        // On-map cells use a light gray background, off-map cells are dimmer.
+        const onMap = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
+        const offMap = container.querySelectorAll('[style*="background-color: rgba(0, 0, 0, 0.35)"]');
+        expect(onMap.length + offMap.length).toBe(169);
     });
 
     it('renders entire grid in full mode', () => {

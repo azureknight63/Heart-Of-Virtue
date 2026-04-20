@@ -3,8 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 import Battlefield from './Battlefield';
 import React from 'react';
 
-// Mock child components
+// Mock child components. Battlefield also imports the VIEW_SIZE constant for
+// its off-screen-enemy detection, so expose it on the mock.
 vi.mock('./BattlefieldGrid', () => ({
+    VIEW_SIZE: 13,
     default: ({ combat, tab, zoom }) => (
         <div data-testid="grid">
             Grid - Tab: {tab} - Zoom: {zoom}

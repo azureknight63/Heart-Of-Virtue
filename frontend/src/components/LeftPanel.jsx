@@ -14,6 +14,7 @@ import HeroPanel from './HeroPanel'
 import CombatMovePanel from './CombatMovePanel'
 import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
+import { getAnimationDuration } from '../utils/animationConfigs'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FeedbackDialog from './FeedbackDialog'
@@ -193,7 +194,16 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
         currentIndex++
 
-        const nextDelay = isAnimationEntry ? 0 : (msg.includes('victory') ? 2000 : delayPerLine)
+        // For animation entries, hold the log reveal for the animation's
+        // duration so the next (outcome) line doesn't appear before the
+        // player sees the swing/impact. Fall back to 0 when we don't know
+        // the animation type.
+        const animDuration = isAnimationEntry
+          ? getAnimationDuration(entry.animation?.type)
+          : 0
+        const nextDelay = isAnimationEntry
+          ? animDuration
+          : (msg.includes('victory') ? 2000 : delayPerLine)
         if (isMounted) {
           timeoutId = setTimeout(processNextLine, nextDelay)
         }
