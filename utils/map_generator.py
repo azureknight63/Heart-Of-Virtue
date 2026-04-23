@@ -3301,26 +3301,32 @@ def open_property_dialog(
 
         # Apply changes to existing object
         for k, v in kwargs.items():
-            # Skip 'items' if using 'inventory' (prevents spurious items attribute)
+            # For Container-like objects (has 'inventory' but no 'items' attr),
+            # redirect list edits to inventory; skip None so an unset field
+            # never clobbers existing contents.
             if (
                 k == "items"
                 and hasattr(existing, "inventory")
                 and not hasattr(existing, "items")
             ):
-                # Sync items to inventory instead
-                try:
-                    existing.inventory = list(v) if v else []
-                except Exception:
-                    pass
+                if isinstance(v, list):
+                    try:
+                        existing.inventory = v
+                    except Exception:
+                        pass
+                # v is None (field unset) – leave inventory untouched
             else:
                 setattr(existing, k, v)
-        # Special handling: if an object has 'inventory', keep items/inventory synced
-        # so game logic (which reads inventory) reflects editor changes.
+        # Sync fallback: objects that legitimately expose both 'items' and
+        # 'inventory' need them kept in step; guard None so an unset field
+        # doesn't wipe existing contents.
         if "items" in kwargs and hasattr(existing, "inventory"):
-            try:
-                existing.inventory = list(kwargs["items"]) if kwargs["items"] else []
-            except Exception:
-                pass
+            v = kwargs["items"]
+            if isinstance(v, list):
+                try:
+                    existing.inventory = v
+                except Exception:
+                    pass
 
         # Trigger callback to refresh UI if provided
         if callback:
@@ -3710,8 +3716,21 @@ def open_property_dialog(
                 tag_frame = create_element_frame(dlg, container, f"{p.name}_frame")
                 if is_list:
                     current_value = (
-                        getattr(existing, p.name, []) if existing is not None else []
+                        getattr(existing, p.name, None) if existing is not None else []
                     )
+                    # If the object uses 'inventory' as its canonical store but exposes
+                    # 'items' as an __init__ alias (e.g. Container), seed the editor
+                    # from 'inventory' so the user sees the real contents and a
+                    # save-without-edits never overwrites them with an empty list.
+                    if (
+                        current_value is None
+                        and p.name == "items"
+                        and existing is not None
+                        and hasattr(existing, "inventory")
+                    ):
+                        current_value = list(getattr(existing, "inventory", []))
+                    if current_value is None:
+                        current_value = []
                 else:
                     val = (
                         getattr(existing, p.name, None)
