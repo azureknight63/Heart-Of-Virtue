@@ -47,6 +47,9 @@ class CombatOutputCapture:
         self.log_entries = []
         self.current_round = 1
         self.player = player  # Reference to player for animation tracking
+        # Set by the adapter around each entity's advance() call so write() knows
+        # exactly which combatant's pending animation to match against impact text.
+        self.active_entity = None
 
     def write(self, text):
         """Capture text output."""
@@ -61,28 +64,39 @@ class CombatOutputCapture:
                     or "Animation not found" in clean_text
                 ):
                     return
-                trigger_animation = False
-                # Detect combat outcomes for animation metadata
-                if self.player and hasattr(self.player, "_pending_animation"):
-                    if "struck" in clean_text and "damage" in clean_text:
-                        self.player._pending_animation["outcome"] = "hit"
-                        trigger_animation = True
-                    elif "parried" in clean_text:
-                        self.player._pending_animation["outcome"] = "parry"
-                        trigger_animation = True
-                    elif "missed" in clean_text or "just missed" in clean_text:
-                        self.player._pending_animation["outcome"] = "miss"
-                        trigger_animation = True
 
-                self.log_entries.append(
-                    {
-                        "round": self.current_round,
-                        "message": clean_text,
-                        "type": "combat",
-                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        "trigger_animation": trigger_animation,
-                    }
-                )
+                trigger_anim_data = None
+                # Detect combat outcomes — only check the entity whose move is
+                # currently advancing so we never misattribute an impact line to
+                # a different combatant's pending animation.
+                entity = self.active_entity if self.active_entity is not None else self.player
+                if entity is not None and hasattr(entity, "_pending_animation"):
+                    is_impact = False
+                    if "struck" in clean_text and "damage" in clean_text:
+                        entity._pending_animation["outcome"] = "hit"
+                        is_impact = True
+                    elif "parried" in clean_text:
+                        entity._pending_animation["outcome"] = "parry"
+                        is_impact = True
+                    elif "missed" in clean_text or "just missed" in clean_text:
+                        entity._pending_animation["outcome"] = "miss"
+                        is_impact = True
+
+                    if is_impact:
+                        trigger_anim_data = entity._pending_animation
+                        delattr(entity, "_pending_animation")
+
+                entry = {
+                    "round": self.current_round,
+                    "message": clean_text,
+                    "type": "combat",
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                }
+                if trigger_anim_data:
+                    entry["trigger_animation"] = True
+                    entry["animation_data"] = trigger_anim_data
+
+                self.log_entries.append(entry)
 
     def flush(self):
         """Required for file-like object."""
@@ -977,16 +991,22 @@ class ApiCombatAdapter:
 
             # Store for outcome tracking (will be updated when combat output is captured)
             self.player._pending_animation = animation_data
+            # Tag the active entity so write() can find the right pending animation
+            self.output_capture.active_entity = self.player
 
             move.cast()
+
+        self.output_capture.active_entity = None
 
         # For instant moves, process all stages immediately without advancing beats
         if is_instant:
             with self._capture_output():
+                self.output_capture.active_entity = self.player
                 while self.player.current_move == move:
                     move.advance(self.player)
                     if self.player.current_move is None:
                         break
+                self.output_capture.active_entity = None
         else:
             # Loop until player is ready for input again
             # This handles multi-beat moves like Wait
@@ -1004,11 +1024,13 @@ class ApiCombatAdapter:
 
                 # Capture output for THIS beat only
                 with self._capture_output():
-                    # Advance all player moves
+                    # Advance all player moves — tag so write() matches the right animation
+                    self.output_capture.active_entity = self.player
                     for m in self.player.known_moves:
                         m.advance(self.player)
+                    self.output_capture.active_entity = None
 
-                    # Process NPC turns
+                    # Process NPC turns (each NPC sets active_entity internally)
                     self._process_npc_turns()
 
                     # Cycle states
@@ -1076,19 +1098,20 @@ class ApiCombatAdapter:
         ]  # Last 5 relevant entries
         self.player.last_move_summary = " ".join(move_logs)
 
-        # Emit animation data to combat log if available (fallback when no impact line triggered)
-        if hasattr(self.player, "_pending_animation"):
-            animation_data = self.player._pending_animation
-            # Add animation entry to log
-            self._add_log_entry(
-                self.player.combat_beat,
-                f"{move.name} animation",
-                "animation",
-                beat_index=self.current_beat_state_index,
-                animation_data=animation_data,
-            )
-            # Clean up pending animation
-            delattr(self.player, "_pending_animation")
+        # Fallback: emit any animation that never found a matching impact line.
+        # This can happen when a move deals no damage (e.g. a miss with unusual text),
+        # ensuring the animation is never silently dropped.
+        for entity in self._all_combatants():
+            if hasattr(entity, "_pending_animation"):
+                animation_data = entity._pending_animation
+                self._add_log_entry(
+                    self.player.combat_beat,
+                    f"{animation_data.get('move_name', 'Move')} animation",
+                    "animation",
+                    beat_index=self.current_beat_state_index,
+                    animation_data=animation_data,
+                )
+                delattr(entity, "_pending_animation")
 
         # Move execution finished
 
@@ -1375,32 +1398,32 @@ class ApiCombatAdapter:
                         "move_name": npc.current_move.name,
                     }
 
-                    # Capture outcome and add to log later or immediately?
-                    # For NPCs we'll just add it here before the check result happens, or store in a queue.
-                    # Actually, npc.current_move.cast() happens immediately.
+                    # Store pending animation on the NPC; write() will pair it with
+                    # the impact line printed during a future advance() call.
+                    npc._pending_animation = animation_data
 
                     with self._capture_output():
+                        # Tag entity so write() matches the cast prep text correctly
+                        self.output_capture.active_entity = npc
                         if hasattr(npc.current_move, "cast") and callable(
                             npc.current_move.cast
                         ):
                             npc.current_move.cast()
+                        self.output_capture.active_entity = None
 
-                    # Add animation entry
-                    self._add_log_entry(
-                        self.player.combat_beat,
-                        f"{npc.name} uses {npc.current_move.name}",
-                        "animation",
-                        beat_index=self.current_beat_state_index,
-                        animation_data=animation_data,
-                    )
-
-        # Advance moves (include dynamically selected current_move if not in known_moves)
+        # Advance moves — tag active_entity so write() resolves the impact animation
+        # to this NPC rather than any other combatant that also has _pending_animation.
         moves_to_advance = list(getattr(npc, "known_moves", []))
         if npc.current_move is not None and npc.current_move not in moves_to_advance:
             moves_to_advance.append(npc.current_move)
 
-        for move in moves_to_advance:
-            move.advance(npc)
+        self.output_capture.active_entity = npc
+        try:
+            for move in moves_to_advance:
+                move.advance(npc)
+        finally:
+            # Always clear so a subsequent entity doesn't inherit this NPC's context
+            self.output_capture.active_entity = None
 
     def _npc_try_heal_ally(self, npc) -> bool:
         """Check whether this NPC should spend its turn healing a nearby ally.
@@ -1912,6 +1935,14 @@ class ApiCombatAdapter:
         targets.sort(key=lambda t: t["distance"])
         return targets
 
+    def _all_combatants(self) -> List[Any]:
+        """Return a flat list of every entity currently in combat (player + allies + enemies)."""
+        return (
+            [self.player]
+            + list(getattr(self.player, "combat_list", []))
+            + list(getattr(self.player, "combat_list_allies", []))
+        )
+
     @contextlib.contextmanager
     def _capture_output(self):
         """Context manager to capture print output and sync to player log."""
@@ -1931,10 +1962,8 @@ class ApiCombatAdapter:
                     self.current_beat_state_index,
                     timestamp=entry.get("timestamp"),
                 )
-                if entry.get("trigger_animation") and hasattr(
-                    self.player, "_pending_animation"
-                ):
-                    animation_data = self.player._pending_animation
+                if entry.get("trigger_animation") and "animation_data" in entry:
+                    animation_data = entry["animation_data"]
                     self._add_log_entry(
                         current_beat,
                         f"{animation_data.get('move_name', 'Move')} animation",
@@ -1942,7 +1971,6 @@ class ApiCombatAdapter:
                         beat_index=self.current_beat_state_index,
                         animation_data=animation_data,
                     )
-                    delattr(self.player, "_pending_animation")
 
             # Clear capture for next time
             self.output_capture.clear()
