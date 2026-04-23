@@ -4,6 +4,7 @@ import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
 import { ANIMATION_CONFIGS } from '../utils/animationConfigs';
+import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -66,21 +67,8 @@ const impactSfxFor = (outcome) => {
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
-// Color per move category drives the pulsing pending-move glow (CSS var).
-const MOVE_CATEGORY_GLOW = {
-  Attack: colors.alpha.danger[80],
-  Maneuver: colors.alpha.primary[80],
-  Special: colors.alpha.special[80],
-  Supernatural: colors.alpha.info[80],
-  Miscellaneous: `${colors.text.bright}CC`,
-};
-const MOVE_CATEGORY_BORDER = {
-  Attack: colors.danger,
-  Maneuver: colors.primary,
-  Special: colors.special,
-  Supernatural: colors.info,
-  Miscellaneous: colors.text.bright,
-};
+// Aliases used locally — MOVE_CATEGORY_COLOR serves as the border color map.
+const MOVE_CATEGORY_BORDER = MOVE_CATEGORY_COLOR;
 
 const CombatantMarker = React.memo(({
   entity,

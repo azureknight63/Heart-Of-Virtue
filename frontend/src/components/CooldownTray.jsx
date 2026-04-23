@@ -1,33 +1,6 @@
 import React, { useState } from 'react'
 import { colors } from '../styles/theme'
-
-const CATEGORY_ICONS = {
-  Offensive: '⚔',
-  Maneuver: '↯',
-  Defensive: '◈',
-  Special: '✦',
-  Supernatural: '⬡',
-  Miscellaneous: '◈',
-  Utility: '◈',
-}
-
-const CATEGORY_COLORS = {
-  Offensive: colors.danger,
-  Maneuver: colors.primary,
-  Defensive: colors.primary,
-  Special: colors.special,
-  Supernatural: colors.info,
-  Miscellaneous: colors.gold,
-  Utility: colors.gold,
-}
-
-function getColor(category) {
-  return CATEGORY_COLORS[category] || colors.text.muted
-}
-
-function getIcon(category) {
-  return CATEGORY_ICONS[category] || '◈'
-}
+import { categoryColor, categoryIcon } from '../utils/categories'
 
 function CooldownTray({ moves }) {
   const [expanded, setExpanded] = useState(false)
@@ -89,8 +62,8 @@ function CooldownTray({ moves }) {
 }
 
 function CollapsedCard({ move }) {
-  const color = getColor(move.category)
-  const icon = getIcon(move.category)
+  const color = categoryColor(move.category)
+  const icon = categoryIcon(move.category)
 
   return (
     <div style={{
@@ -123,8 +96,8 @@ function CollapsedCard({ move }) {
 }
 
 function ExpandedCard({ move }) {
-  const color = getColor(move.category)
-  const icon = getIcon(move.category)
+  const color = categoryColor(move.category)
+  const icon = categoryIcon(move.category)
   const fillPct = move.cooldown_max > 0
     ? Math.round((1 - move.cooldown_remaining / move.cooldown_max) * 100)
     : 0
