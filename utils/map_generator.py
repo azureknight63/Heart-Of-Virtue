@@ -2630,7 +2630,15 @@ def open_property_dialog(parent_dialog_object: tk.Toplevel, cls, existing=None, 
 
         # Apply changes to existing object
         for k, v in kwargs.items():
-            setattr(existing, k, v)
+            # Skip 'items' if object uses 'inventory' instead (prevents spurious items attribute on Containers)
+            if k == 'items' and hasattr(existing, 'inventory') and not hasattr(existing, 'items'):
+                # Sync items to inventory instead
+                try:
+                    existing.inventory = list(v) if v else []
+                except Exception:
+                    pass
+            else:
+                setattr(existing, k, v)
         # Special handling: if an object defines an 'inventory' attribute and we edited an 'items' param,
         # keep them in sync so game logic (which reads inventory) reflects editor changes.
         if 'items' in kwargs and hasattr(existing, 'inventory'):
