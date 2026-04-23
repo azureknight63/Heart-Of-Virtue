@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HoV — Loot UI Mockup (Issue #125)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0a;color:#00FF00;font-family:'Courier New',monospace;font-size:13px;display:flex;flex-direction:column;align-items:center;padding:24px 16px;gap:20px}
+h1{color:#00FFFF;font-size:13px;letter-spacing:.15em;text-transform:uppercase}
+/* Dialog */
+.dialog{width:600px;max-width:98vw;border:2px solid #00FF00}
+.dialog-hdr{background:#00FF00;color:#0a0a0a;padding:7px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+.dialog-body{padding:16px;display:flex;flex-direction:column;gap:14px}
+/* Sections */
+.sec-hdr{color:#00FFFF;font-size:11px;text-transform:uppercase;letter-spacing:.2em;border-bottom:1px solid #003333;padding-bottom:4px;display:flex;justify-content:space-between}
+.badge{font-size:10px;color:#FF8800}
+/* Loot list */
+.loot-row{display:grid;grid-template-columns:18px 1fr 40px 80px 48px;align-items:center;gap:8px;padding:5px 7px;border:1px solid #001a00;cursor:pointer;transition:background .1s}
+.loot-row:hover{background:#001a00}
+.loot-row.sel{border-color:#00FF00;background:#001500}
+.loot-row.unsel{opacity:.45;border-color:#111}
+.chk{width:13px;height:13px;border:1px solid #00FF00;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+.chk.on{background:#00FF00;color:#0a0a0a}
+.item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item-qty{color:#FF8800;text-align:right;font-size:12px}
+.rar{font-size:10px;text-transform:uppercase;text-align:center}
+.rar-legendary{color:#FFD700}.rar-epic{color:#CC44FF}.rar-rare{color:#4488FF}
+.rar-uncommon{color:#44FF88}.rar-common{color:#888}.rar-none{color:#444}
+.item-wt{color:#555;font-size:11px;text-align:right}
+/* Buttons */
+.btn{border:1px solid currentColor;background:transparent;color:#00FF00;font-family:inherit;font-size:11px;padding:4px 10px;text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
+.btn:hover{background:#00FF00;color:#0a0a0a}
+.btn-dim{color:#555;border-color:#333}
+.btn-dim:hover{background:#333;color:#00FF00}
+.btn-orange{color:#FF8800;border-color:#FF8800}
+.btn-orange:hover{background:#FF8800;color:#0a0a0a}
+.btn-orange:disabled{color:#333;border-color:#333;cursor:not-allowed}
+.btn-orange:disabled:hover{background:transparent;color:#333}
+/* Weight tracker */
+.wt-box{background:#0d1a0d;border:1px solid #003300;padding:8px 12px;display:flex;flex-direction:column;gap:4px;font-size:11px}
+.wt-row{display:flex;justify-content:space-between}
+.wt-lbl{color:#555}
+.wt-val{color:#00FF00}
+.wt-warn{color:#FF8800}
+.wt-over{color:#FF4444}
+.bar-bg{height:4px;background:#002200;margin-top:4px}
+.bar-fill{height:100%;transition:width .2s}
+/* CTA */
+.cta{width:100%;border:2px solid #FF8800;background:transparent;color:#FF8800;font-family:inherit;font-size:12px;padding:10px;text-transform:uppercase;letter-spacing:.12em;cursor:pointer;transition:all .15s}
+.cta:hover:not(:disabled){background:#FF8800;color:#0a0a0a}
+.cta:disabled{border-color:#333;color:#333;cursor:not-allowed}
+.cta-lime{border-color:#00FF00;color:#00FF00}
+.cta-lime:hover:not(:disabled){background:#00FF00;color:#0a0a0a}
+.skip{text-align:center;font-size:11px;color:#333}
+.skip a{color:#444;cursor:pointer;text-decoration:underline}
+.skip a:hover{color:#666}
+/* EXP bars */
+.exp-row{display:flex;align-items:center;gap:8px;font-size:12px}
+.exp-lbl{color:#555;width:90px;flex-shrink:0;text-transform:capitalize}
+.exp-bar-bg{flex:1;height:8px;background:#001a00;display:flex;overflow:hidden}
+.exp-bar-cur{background:#00FF00;height:100%}
+.exp-bar-gain{background:#FFD700;height:100%}
+.exp-amt{color:#FFD700;font-size:11px;width:55px;text-align:right}
+/* Level-up banner */
+.lvl-banner{background:#1a1a00;border:1px solid #FFD700;padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:12px}
+.lvl-star{color:#FFD700;font-size:15px}
+.lvl-txt{color:#FFD700}
+.lvl-pts{color:#FF8800;margin-left:auto;font-size:11px}
+/* Attr rows */
+.attr-row{display:flex;align-items:center;gap:7px;font-size:12px}
+.attr-name{color:#00FFFF;width:76px;font-size:11px;text-transform:uppercase}
+.attr-btn{border:1px solid #00FF00;background:transparent;color:#00FF00;font-family:inherit;font-size:12px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.attr-btn:hover:not(:disabled){background:#00FF00;color:#0a0a0a}
+.attr-btn:disabled{border-color:#333;color:#333;cursor:not-allowed}
+.attr-val{color:#00FF00;width:22px;text-align:center}
+.attr-bar-bg{flex:1;height:3px;background:#001a00}
+.attr-bar-fill{height:100%;background:#00FFFF;transition:width .2s}
+/* Points counter */
+.pts-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.pts-lbl{color:#555}
+.pts-val{color:#FF8800;font-size:16px}
+/* Annotations */
+.notes{width:600px;max-width:98vw;background:#0d0d1a;border:1px solid #222266;padding:14px}
+.notes h2{color:#6666FF;font-size:12px;margin-bottom:10px;text-transform:uppercase;letter-spacing:.1em}
+.note{display:flex;gap:8px;margin-bottom:7px;font-size:11px;line-height:1.5}
+.note-badge{font-size:10px;padding:1px 6px;flex-shrink:0;height:fit-content;margin-top:1px}
+.nb-new{background:#1a3300;color:#66FF44}
+.nb-chg{background:#331a00;color:#FF8844}
+.nb-ext{background:#1a1a1a;color:#888}
+.note-txt{color:#7777AA}
+.confirm{color:#00FF00;font-size:12px;text-align:center;padding:6px;border:1px solid #003300;background:#001a00;display:none}
+/* Phase */
+#phase2{display:none}
+</style>
+</head>
+<body>
+
+<h1>Loot Management UI — Mockup (Issue #125)</h1>
+
+<!-- PHASE 1 -->
+<div class="dialog" id="phase1">
+  <div class="dialog-hdr">
+    <span>⚔ VICTORY ⚔</span>
+    <span>PHASE 1 OF 2: LOOT</span>
+  </div>
+  <div class="dialog-body">
+    <div style="color:#FFD700;font-style:italic;font-size:12px;border-left:3px solid #FFD700;padding-left:10px">
+      "Jean Claire stands victorious over the fallen Slime."
+    </div>
+
+    <div>
+      <div class="sec-hdr">
+        <span>Spoils of Battle</span>
+        <span class="badge" id="item-count-hdr">4 items found</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;margin-top:8px" id="loot-list"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" onclick="selectAll(true)">Take All</button>
+        <button class="btn btn-dim" onclick="selectAll(false)">Leave All</button>
+      </div>
+    </div>
+
+    <div class="wt-box">
+      <div class="wt-row"><span class="wt-lbl">Current carry weight:</span><span class="wt-val">38.5 / 100.0 lb</span></div>
+      <div class="wt-row"><span class="wt-lbl">Selected loot adds:</span><span id="wt-add" class="wt-val">0.0 lb</span></div>
+      <div class="wt-row"><span class="wt-lbl">Total after pickup:</span><span id="wt-total" class="wt-val">38.5 lb</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="wt-bar" style="width:38.5%;background:#00FF00"></div></div>
+    </div>
+
+    <button class="cta" id="collect-btn" onclick="goPhase2()">COLLECT SELECTED ITEMS (4 of 4)  →</button>
+    <div class="skip"><a onclick="goPhase2()">skip loot and continue →</a></div>
+  </div>
+</div>
+
+<!-- PHASE 2 -->
+<div class="dialog" id="phase2">
+  <div class="dialog-hdr">
+    <span>⚔ VICTORY ⚔</span>
+    <span>PHASE 2 OF 2: SPOILS</span>
+  </div>
+  <div class="dialog-body">
+    <div>
+      <div class="sec-hdr"><span>Experience Gained</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        <div class="exp-row">
+          <span class="exp-lbl">combat</span>
+          <div class="exp-bar-bg">
+            <div class="exp-bar-cur" style="width:45%"></div>
+            <div class="exp-bar-gain" style="width:15%"></div>
+          </div>
+          <span class="exp-amt">+150</span>
+        </div>
+        <div class="exp-row">
+          <span class="exp-lbl">exploration</span>
+          <div class="exp-bar-bg">
+            <div class="exp-bar-cur" style="width:16%"></div>
+            <div class="exp-bar-gain" style="width:5%"></div>
+          </div>
+          <span class="exp-amt">+25</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lvl-banner">
+      <span class="lvl-star">★</span>
+      <span class="lvl-txt">LEVEL UP! &nbsp; Jean Claire: Level 5 → 6</span>
+      <span class="lvl-pts" id="pts-banner">3 POINTS TO SPEND</span>
+    </div>
+
+    <div>
+      <div class="sec-hdr"><span>Attribute Points</span></div>
+      <div class="pts-row" style="margin-top:8px">
+        <span class="pts-lbl">Points remaining:</span>
+        <span class="pts-val" id="pts-val">3</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px" id="attr-list"></div>
+    </div>
+
+    <button class="cta cta-lime" id="continue-btn" disabled onclick="showConfirm()">
+      SPEND ALL POINTS TO CONTINUE
+    </button>
+    <div class="confirm" id="confirm-msg">✓ Dialog would close — Jean returns to the world.</div>
+  </div>
+</div>
+
+<!-- Annotations -->
+<div class="notes">
+  <h2>Mockup Notes — Issue #125</h2>
+  <div class="note"><span class="note-badge nb-new">NEW</span><span class="note-txt">Phase 1 loot screen — player selects which items to keep before they enter inventory.</span></div>
+  <div class="note"><span class="note-badge nb-new">NEW</span><span class="note-txt">Item rarity, weight, and type visible during loot phase. Requires backend enrichment of <code>items_dropped</code> in <code>combat_adapter.py</code>.</span></div>
+  <div class="note"><span class="note-badge nb-new">NEW</span><span class="note-txt">Live carry-weight tracker with orange/red overflow warning.</span></div>
+  <div class="note"><span class="note-badge nb-chg">CHANGED</span><span class="note-txt">Loot is no longer auto-collected — player explicitly confirms pickup. Skipping drops all loot on the current tile.</span></div>
+  <div class="note"><span class="note-badge nb-chg">CHANGED</span><span class="note-txt">VictoryDialog split into 2 phases. EXP/level-up is now Phase 2 (sequencing question: should it be Phase 1 instead?).</span></div>
+  <div class="note"><span class="note-badge nb-ext">EXISTING</span><span class="note-txt">Attribute allocation logic is unchanged from the current VictoryDialog.</span></div>
+</div>
+
+<script>
+const ITEMS = [
+  {name:"Bone Sword",qty:1,rarity:"uncommon",wt:4.0,type:"Weapon"},
+  {name:"Health Potion",qty:3,rarity:"common",wt:0.5,type:"Consumable"},
+  {name:"Gold Coins",qty:50,rarity:null,wt:0.1,type:"Currency"},
+  {name:"Tattered Wrap",qty:1,rarity:"common",wt:2.0,type:"Armor"},
+];
+const BASE_WT = 38.5, MAX_WT = 100.0;
+const selected = new Set([0,1,2,3]);
+
+function rarClass(r){return r?`rar-${r}`:'rar-none'}
+function rarLabel(r){return r?r.toUpperCase():'—'}
+
+function renderLoot(){
+  const list = document.getElementById('loot-list');
+  list.innerHTML = '';
+  ITEMS.forEach((item,i)=>{
+    const isSel = selected.has(i);
+    const row = document.createElement('div');
+    row.className = `loot-row ${isSel?'sel':'unsel'}`;
+    row.onclick = ()=>toggle(i);
+    row.innerHTML = `
+      <div class="chk ${isSel?'on':''}">${isSel?'✓':''}</div>
+      <div class="item-name">${item.name} <span style="color:#333;font-size:10px">[${item.type}]</span></div>
+      <div class="item-qty">×${item.qty}</div>
+      <div class="rar ${rarClass(item.rarity)}">${rarLabel(item.rarity)}</div>
+      <div class="item-wt">${(item.wt*item.qty).toFixed(1)}lb</div>`;
+    list.appendChild(row);
+  });
+  updateWeight();
+}
+
+function toggle(i){
+  selected.has(i)?selected.delete(i):selected.add(i);
+  renderLoot();
+}
+
+function selectAll(v){
+  ITEMS.forEach((_,i)=>v?selected.add(i):selected.delete(i));
+  renderLoot();
+}
+
+function updateWeight(){
+  let add = 0;
+  selected.forEach(i=>add+=ITEMS[i].wt*ITEMS[i].qty);
+  const total = BASE_WT + add;
+  const pct = Math.min(total/MAX_WT*100,100);
+  document.getElementById('wt-add').textContent = add.toFixed(1)+' lb';
+  const tv = document.getElementById('wt-total');
+  tv.textContent = total.toFixed(1)+' lb';
+  tv.className = pct>=100?'wt-over':pct>=80?'wt-warn':'wt-val';
+  const bar = document.getElementById('wt-bar');
+  bar.style.width = pct+'%';
+  bar.style.background = pct>=100?'#FF4444':pct>=80?'#FF8800':'#00FF00';
+  const n = selected.size;
+  const btn = document.getElementById('collect-btn');
+  btn.textContent = n>0?`COLLECT SELECTED ITEMS (${n} of ${ITEMS.length})  →`:'NOTHING SELECTED';
+  btn.disabled = n===0;
+  document.getElementById('item-count-hdr').textContent = `${ITEMS.length} items found`;
+}
+
+function goPhase2(){
+  document.getElementById('phase1').style.display='none';
+  document.getElementById('phase2').style.display='block';
+}
+
+// Attributes
+const ATTRS=[
+  {abbr:'STR',name:'Strength',val:15},
+  {abbr:'FIN',name:'Finesse',val:12},
+  {abbr:'SPD',name:'Speed',val:10},
+  {abbr:'END',name:'Endurance',val:14},
+  {abbr:'CHA',name:'Charisma',val:8},
+  {abbr:'INT',name:'Intelligence',val:11},
+];
+const alloc={};
+ATTRS.forEach(a=>alloc[a.abbr]=0);
+let pts=3;
+
+function renderAttrs(){
+  const list = document.getElementById('attr-list');
+  list.innerHTML='';
+  ATTRS.forEach(a=>{
+    const cur = a.val+alloc[a.abbr];
+    const row = document.createElement('div');
+    row.className='attr-row';
+    row.innerHTML=`
+      <span class="attr-name">${a.abbr}</span>
+      <button class="attr-btn" ${alloc[a.abbr]<=0?'disabled':''} onclick="adjAttr('${a.abbr}',-1)">−</button>
+      <span class="attr-val">${cur}</span>
+      <button class="attr-btn" ${pts<=0?'disabled':''} onclick="adjAttr('${a.abbr}',1)">+</button>
+      <div class="attr-bar-bg"><div class="attr-bar-fill" style="width:${Math.round(cur/30*100)}%"></div></div>`;
+    list.appendChild(row);
+  });
+  document.getElementById('pts-val').textContent=pts;
+  document.getElementById('pts-banner').textContent=pts>0?`${pts} POINT${pts!==1?'S':''} TO SPEND`:'All points spent';
+  const btn=document.getElementById('continue-btn');
+  btn.disabled=pts>0;
+  btn.textContent=pts>0?'SPEND ALL POINTS TO CONTINUE':'RETURN TO WORLD  →';
+}
+
+function adjAttr(abbr,d){
+  if(d>0&&pts<=0)return;
+  if(d<0&&alloc[abbr]<=0)return;
+  alloc[abbr]+=d; pts-=d;
+  renderAttrs();
+}
+
+function showConfirm(){
+  const m=document.getElementById('confirm-msg');
+  m.style.display='block';
+}
+
+renderLoot();
+renderAttrs();
+</script>
+</body>
+</html>
