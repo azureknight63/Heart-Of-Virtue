@@ -69,7 +69,11 @@ class CombatOutputCapture:
                 # Detect combat outcomes — only check the entity whose move is
                 # currently advancing so we never misattribute an impact line to
                 # a different combatant's pending animation.
-                entity = self.active_entity if self.active_entity is not None else self.player
+                entity = (
+                    self.active_entity
+                    if self.active_entity is not None
+                    else self.player
+                )
                 if entity is not None and hasattr(entity, "_pending_animation"):
                     is_impact = False
                     if "struck" in clean_text and "damage" in clean_text:
