@@ -188,7 +188,30 @@
                             "__class__": "Gold",
                             "__module__": "items",
                             "props": {
-                                "amt": 75
+                                "amt": 75,
+                                "maintype": "Gold",
+                                "name": "Gold",
+                                "description": "A small pouch containing 75 gold pieces.",
+                                "value": 75,
+                                "type": "Currency",
+                                "subtype": "Gold",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": false,
+                                "discovery_message": "a small pouch of gold.",
+                                "announce": "There's a small pouch of gold on the ground.",
+                                "aliases": [
+                                    "pouch of gold"
+                                ],
+                                "action_aliases": [],
+                                "interactions": [],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "count": 75
                             }
                         },
                         {
@@ -296,7 +319,16 @@
                     "player": null,
                     "tile": null,
                     "repeat": false,
-                    "has_run": false
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "combat_effect": false,
+                    "delay_duration": 3000,
+                    "delay_mode": "combat",
+                    "completed": false,
+                    "api_event_id": null,
+                    "needs_input": false
                 }
             }
         ],
@@ -413,7 +445,7 @@
     "(4, 2)": {
         "id": "tile_4_2",
         "title": "RockLedgeWest",
-        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as Jean approaches — not alarmed, just waiting.",
+        "description": "Daylight dazzles as a ledge spans roaring blue below.\nSpray lifts in glittering prisms before cold wind scatters it inland.\nA small, sharp-eyed creature perches at the lip of the ledge, tail flicking.\nIt turns to watch as Jean approaches - not alarmed, just waiting.",
         "exits": [
             "east",
             "west",
@@ -427,7 +459,7 @@
         "npcs": [
             {
                 "__class__": "Mynx",
-                "__module__": "npc",
+                "__module__": "npc._friends",
                 "props": {
                     "keywords": [
                         "talk",
@@ -546,7 +578,7 @@
                     "known_moves": [
                         {
                             "__class__": "NpcIdle",
-                            "__module__": "moves",
+                            "__module__": "moves._npc",
                             "props": {
                                 "name": "Idle",
                                 "description": "What?",
@@ -607,7 +639,8 @@
                         "intensive": "itself"
                     },
                     "player_ref": null,
-                    "ai_config": null
+                    "ai_config": null,
+                    "knocked_out": false
                 }
             }
         ],
@@ -1313,7 +1346,9 @@
                     ],
                     "events": [],
                     "tile": null,
-                    "player": null
+                    "player": null,
+                    "items": [],
+                    "allowed_subtypes": []
                 }
             }
         ],
