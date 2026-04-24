@@ -1335,22 +1335,17 @@ class GameService:
                 return "x"
 
             # Patch at multiple levels since different modules import differently
-            with contextlib.redirect_stdout(f), patch(
-                "builtins.input", mock_input
-            ), patch("functions.await_input", return_value=None), patch(
-                "functions.print_slow", mock_print_slow
-            ), patch(
-                "time.sleep", return_value=None
-            ), patch(
-                "neotermcolor.cprint", mock_cprint
-            ), patch(
-                "src.functions.await_input", return_value=None
-            ), patch(
-                "src.functions.print_slow", mock_print_slow
-            ), patch(
-                "src.items.cprint", mock_cprint
-            ), patch(
-                "items.cprint", mock_cprint
+            with (
+                contextlib.redirect_stdout(f),
+                patch("builtins.input", mock_input),
+                patch("functions.await_input", return_value=None),
+                patch("functions.print_slow", mock_print_slow),
+                patch("time.sleep", return_value=None),
+                patch("neotermcolor.cprint", mock_cprint),
+                patch("src.functions.await_input", return_value=None),
+                patch("src.functions.print_slow", mock_print_slow),
+                patch("src.items.cprint", mock_cprint),
+                patch("items.cprint", mock_cprint),
             ):
 
                 try:
