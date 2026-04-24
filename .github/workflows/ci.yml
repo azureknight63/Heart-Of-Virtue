@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -36,15 +37,28 @@ jobs:
           MYNX_LLM_PROVIDER: "none"
 
       - name: Check formatting (black)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          python -m black --diff --no-cache src/api/combat_adapter.py > /tmp/bdiff.txt 2>&1 || true
-          if grep -q '^@@' /tmp/bdiff.txt; then
-            n=0
-            while IFS= read -r bline && [ $n -lt 40 ]; do
-              encoded="${bline//%/%25}"
-              echo "::error file=src/api/combat_adapter.py,line=67,title=bdiff[${n}]::${encoded}"
-              n=$((n+1))
-            done < /tmp/bdiff.txt
+          UDIFF=$(python -m black --diff --no-cache src/api/combat_adapter.py 2>&1) || true
+          if echo "$UDIFF" | grep -q '^@@'; then
+            BODY=$(printf '**CI black diff** (run %s)\n\n```diff\n%s\n```' \
+              "$GITHUB_RUN_ID" "$UDIFF")
+            if [ -n "$PR_NUMBER" ]; then
+              echo "$BODY" | python3 -c "
+import sys, json, urllib.request, os
+body = sys.stdin.read()
+data = json.dumps({'body': body}).encode()
+req = urllib.request.Request(
+    f'https://api.github.com/repos/{os.environ[\"GITHUB_REPOSITORY\"]}/issues/{os.environ[\"PR_NUMBER\"]}/comments',
+    data=data,
+    headers={'Authorization': f'token {os.environ[\"GH_TOKEN\"]}', 'Content-Type': 'application/json'}
+)
+urllib.request.urlopen(req)
+print('Posted diff comment')
+"
+            fi
           fi
           python -m black --check src/
 
