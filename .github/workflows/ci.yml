@@ -37,6 +37,11 @@ jobs:
 
       - name: Check formatting (black)
         run: |
+          python -m black --version
+          echo "pyproject.toml contents:"
+          cat pyproject.toml 2>/dev/null || echo "NOT FOUND"
+          echo "checking src/api/combat_adapter.py specifically:"
+          python -m black --diff --no-cache src/api/combat_adapter.py 2>&1 || true
           DIFF=$(python -m black --diff src/ 2>&1)
           if [ -n "$DIFF" ]; then
             echo "$DIFF"
