@@ -7,37 +7,72 @@ import asyncio
 
 auth_bp = Blueprint("auth", __name__)
 
+
 def require_auth(f):
     @wraps(f)
     async def async_decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return jsonify({"success": False, "error": "Missing or invalid Authorization header"}), 401
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Missing or invalid Authorization header",
+                    }
+                ),
+                401,
+            )
         session_id = auth_header[7:]
         from flask import current_app
+
         session_manager = current_app.session_manager
         if not session_manager:
-            return jsonify({"success": False, "error": "Session manager not initialized"}), 500
+            return (
+                jsonify({"success": False, "error": "Session manager not initialized"}),
+                500,
+            )
         session = session_manager.get_session(session_id)
         if not session:
-            return jsonify({"success": False, "error": "Session not found or already expired"}), 401
+            return (
+                jsonify(
+                    {"success": False, "error": "Session not found or already expired"}
+                ),
+                401,
+            )
         request.session_obj = session
         request.session_manager = session_manager
         return await f(*args, **kwargs)
-        
+
     @wraps(f)
     def sync_decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return jsonify({"success": False, "error": "Missing or invalid Authorization header"}), 401
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Missing or invalid Authorization header",
+                    }
+                ),
+                401,
+            )
         session_id = auth_header[7:]
         from flask import current_app
+
         session_manager = current_app.session_manager
         if not session_manager:
-            return jsonify({"success": False, "error": "Session manager not initialized"}), 500
+            return (
+                jsonify({"success": False, "error": "Session manager not initialized"}),
+                500,
+            )
         session = session_manager.get_session(session_id)
         if not session:
-            return jsonify({"success": False, "error": "Session not found or already expired"}), 401
+            return (
+                jsonify(
+                    {"success": False, "error": "Session not found or already expired"}
+                ),
+                401,
+            )
         request.session_obj = session
         request.session_manager = session_manager
         return f(*args, **kwargs)
@@ -382,6 +417,7 @@ def validate_session():
             500,
         )
 
+
 @auth_bp.route("/auth/settings", methods=["GET", "PUT"])
 @require_auth
 async def settings():
@@ -402,38 +438,48 @@ async def settings():
         session = request.session_obj
         if not session.db_user_id:
             return jsonify({"success": False, "error": "Unauthorized"}), 401
-            
+
         user_id = session.db_user_id
 
         if request.method == "GET":
             # Just read from session cache
-            return jsonify({
-                "success": True,
-                "data": {
-                    "timezone": session.data.get("timezone", "US/Eastern")
-                }
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "data": {
+                            "timezone": session.data.get("timezone", "US/Eastern")
+                        },
+                    }
+                ),
+                200,
+            )
 
         elif request.method == "PUT":
             data = request.get_json()
             if not data or "timezone" not in data:
                 return jsonify({"success": False, "error": "Missing timezone"}), 400
-                
+
             timezone = data["timezone"]
             success = await auth_service.update_user_timezone(user_id, timezone)
-            
+
             if success:
                 session.data["timezone"] = timezone
-                return jsonify({
-                    "success": True,
-                    "message": "Settings updated successfully",
-                    "data": {
-                        "timezone": timezone
-                    }
-                }), 200
+                return (
+                    jsonify(
+                        {
+                            "success": True,
+                            "message": "Settings updated successfully",
+                            "data": {"timezone": timezone},
+                        }
+                    ),
+                    200,
+                )
             else:
-                return jsonify({"success": False, "error": "Failed to update settings"}), 500
+                return (
+                    jsonify({"success": False, "error": "Failed to update settings"}),
+                    500,
+                )
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-

@@ -1335,22 +1335,17 @@ class GameService:
                 return "x"
 
             # Patch at multiple levels since different modules import differently
-            with contextlib.redirect_stdout(f), patch(
-                "builtins.input", mock_input
-            ), patch("functions.await_input", return_value=None), patch(
-                "functions.print_slow", mock_print_slow
-            ), patch(
-                "time.sleep", return_value=None
-            ), patch(
-                "neotermcolor.cprint", mock_cprint
-            ), patch(
-                "src.functions.await_input", return_value=None
-            ), patch(
-                "src.functions.print_slow", mock_print_slow
-            ), patch(
-                "src.items.cprint", mock_cprint
-            ), patch(
-                "items.cprint", mock_cprint
+            with (
+                contextlib.redirect_stdout(f),
+                patch("builtins.input", mock_input),
+                patch("functions.await_input", return_value=None),
+                patch("functions.print_slow", mock_print_slow),
+                patch("time.sleep", return_value=None),
+                patch("neotermcolor.cprint", mock_cprint),
+                patch("src.functions.await_input", return_value=None),
+                patch("src.functions.print_slow", mock_print_slow),
+                patch("src.items.cprint", mock_cprint),
+                patch("items.cprint", mock_cprint),
             ):
 
                 try:
@@ -2735,7 +2730,6 @@ class GameService:
         Returns:
             Loaded Player instance or None
         """
-        import pickle
         from src.api.db import db
 
         sql = "SELECT data FROM saves WHERE id = ? AND user_id = ?"
@@ -2747,10 +2741,10 @@ class GameService:
         try:
             import io
             from src.functions import _safe_pickle_load
-            
+
             save_data = result.rows[0][0]
             player = _safe_pickle_load(io.BytesIO(save_data))
-            
+
             if player is None:
                 print(f"Error loading save {save_id}: _safe_pickle_load returned None")
                 return None
@@ -2778,7 +2772,9 @@ class GameService:
             print(f"Error loading save {save_id}: {e}")
             return None
 
-    async def list_saves(self, user_id: str, timezone: str = "US/Eastern") -> List[Dict[str, Any]]:
+    async def list_saves(
+        self, user_id: str, timezone: str = "US/Eastern"
+    ) -> List[Dict[str, Any]]:
         """List all saved games for a user from Turso.
 
         Returns:
@@ -2787,7 +2783,7 @@ class GameService:
         from src.api.db import db
         import zoneinfo
         from datetime import datetime
-            
+
         try:
             user_tz = zoneinfo.ZoneInfo(timezone)
         except Exception:
@@ -2812,7 +2808,7 @@ class GameService:
                 # Format to a nice string e.g. "2026-04-23 18:15:00 EDT"
                 ts_str = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
             except Exception:
-                pass # fallback to original string
+                pass  # fallback to original string
 
             saves.append(
                 {

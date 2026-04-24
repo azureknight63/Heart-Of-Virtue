@@ -36,11 +36,23 @@ class AuthService:
         INSERT INTO users (id, username, password_hash, email_encrypted, is_premium, timezone)
         VALUES (?, ?, ?, ?, ?, ?)
         """
-        params = [user_id, username, password_hash, email_encrypted, False, "US/Eastern"]
+        params = [
+            user_id,
+            username,
+            password_hash,
+            email_encrypted,
+            False,
+            "US/Eastern",
+        ]
 
         await db.execute(sql, params)
 
-        return {"id": user_id, "username": username, "is_premium": False, "timezone": "US/Eastern"}
+        return {
+            "id": user_id,
+            "username": username,
+            "is_premium": False,
+            "timezone": "US/Eastern",
+        }
 
     async def authenticate_user(self, username, password) -> Optional[Dict[str, Any]]:
         """Authenticate a user by username and password."""

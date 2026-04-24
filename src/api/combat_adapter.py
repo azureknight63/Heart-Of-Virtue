@@ -76,6 +76,7 @@ class CombatOutputCapture:
                 )
                 if entity is not None and hasattr(entity, "_pending_animation"):
                     is_impact = False
+                    # fmt: off
                     if "struck" in clean_text and "damage" in clean_text:
                         entity._pending_animation["outcome"] = "hit"
                         is_impact = True
@@ -85,6 +86,7 @@ class CombatOutputCapture:
                     elif "missed" in clean_text or "just missed" in clean_text:
                         entity._pending_animation["outcome"] = "miss"
                         is_impact = True
+                    # fmt: on
 
                     if is_impact:
                         trigger_anim_data = entity._pending_animation
@@ -1819,10 +1821,17 @@ class ApiCombatAdapter:
                 "targeted": is_targeted,
                 "viable_targets": viable_targets,
                 "requires_target_selection": is_targeted and len(viable_targets) > 1,
+                "cooldown_remaining": 0,
+                "cooldown_max": 0,
             }
 
             # Check various conditions that might make the move unavailable
             if move.current_stage == 3:
+                stage_beats = getattr(move, "stage_beat", [])
+                cd_remaining = move.beats_left + 1 if move.beats_left > 0 else 1
+                cd_max = stage_beats[3] + 1 if len(stage_beats) > 3 else cd_remaining
+                move_data["cooldown_remaining"] = cd_remaining
+                move_data["cooldown_max"] = max(cd_max, cd_remaining)
                 if move.beats_left > 0:
                     move_data["available"] = False
                     move_data["reason"] = f"Available in {move.beats_left + 1} beats"

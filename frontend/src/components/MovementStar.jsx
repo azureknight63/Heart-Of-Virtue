@@ -7,8 +7,6 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
   const [hoveredDirection, setHoveredDirection] = useState(null)
   const { playSFX } = useAudio()
 
-  const { playSFX } = useAudio()
-
   // Direction configuration with positions for proper 8-point star layout
   // Container is 220x220px, button is 40x40px
   // Calculations center button around the star using calc()

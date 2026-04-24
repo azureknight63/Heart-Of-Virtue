@@ -125,7 +125,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <GameButton onClick={() => setIsMinimized(false)} variant="primary">
+          <GameButton onClick={() => setIsMinimized(false)} variant="primary" title="Restore dialog">
             RESTORE
           </GameButton>
           {canClose && (
@@ -149,7 +149,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {/* Header Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: spacing.sm }}>
-          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '11px', padding: '4px 10px' }}>
+          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '11px', padding: '4px 10px' }} title="Minimize dialog">
             MINIMIZE
           </GameButton>
           <GameButton onClick={onClose} disabled={!canClose} variant={canClose ? 'primary' : 'secondary'} style={{ fontSize: '11px', padding: '4px 10px' }}>
