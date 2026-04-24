@@ -38,9 +38,12 @@ jobs:
       - name: Check formatting (black)
         run: |
           UDIFF=$(python -m black --diff --no-cache src/api/combat_adapter.py 2>&1)
-          HUNKS=$(echo "$UDIFF" | grep '^@@')
-          if [ -n "$HUNKS" ]; then
-            echo "::error file=src/api/combat_adapter.py,title=black hunks::$HUNKS"
+          if echo "$UDIFF" | grep -q '^@@'; then
+            n=0
+            while IFS= read -r bline && [ $n -lt 50 ]; do
+              echo "::warning title=bdiff[${n}]::${bline}"
+              n=$((n+1))
+            done <<< "$UDIFF"
           fi
           python -m black --check src/
 
