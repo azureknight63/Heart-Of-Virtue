@@ -41,23 +41,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          UDIFF=$(python -m black --diff --no-cache src/api/combat_adapter.py 2>&1) || true
-          if echo "$UDIFF" | grep -q '^@@'; then
-            BODY=$(printf '**CI black diff** (run %s)\n\n```diff\n%s\n```' \
-              "$GITHUB_RUN_ID" "$UDIFF")
+          python -m black --diff --no-cache src/ > /tmp/bdiff.txt 2>&1 || true
+          if grep -q '^@@' /tmp/bdiff.txt; then
             if [ -n "$PR_NUMBER" ]; then
-              echo "$BODY" | python3 -c "
-import sys, json, urllib.request, os
-body = sys.stdin.read()
+              python3 - <<'PYEOF'
+import os, json, urllib.request
+with open('/tmp/bdiff.txt') as f:
+    udiff = f.read()
+body = f"**CI black diff** (run {os.environ['GITHUB_RUN_ID']})\n\n```diff\n{udiff}\n```"
 data = json.dumps({'body': body}).encode()
 req = urllib.request.Request(
-    f'https://api.github.com/repos/{os.environ[\"GITHUB_REPOSITORY\"]}/issues/{os.environ[\"PR_NUMBER\"]}/comments',
+    f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/{os.environ['PR_NUMBER']}/comments",
     data=data,
-    headers={'Authorization': f'token {os.environ[\"GH_TOKEN\"]}', 'Content-Type': 'application/json'}
+    headers={'Authorization': f"token {os.environ['GH_TOKEN']}", 'Content-Type': 'application/json'},
 )
 urllib.request.urlopen(req)
-print('Posted diff comment')
-"
+print('Posted diff comment to PR')
+PYEOF
             fi
           fi
           python -m black --check src/
