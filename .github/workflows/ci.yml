@@ -37,19 +37,11 @@ jobs:
 
       - name: Check formatting (black)
         run: |
-          VER=$(python -m black --version 2>&1 | head -1)
-          echo "::warning::black version in CI: $VER"
-          HAS_TOML=$(test -f pyproject.toml && echo "found" || echo "MISSING")
-          echo "::warning::pyproject.toml: $HAS_TOML"
-          CADIFF=$(python -m black --diff --no-cache src/api/combat_adapter.py 2>&1)
-          if [ -n "$CADIFF" ]; then
-            echo "::error file=src/api/combat_adapter.py::DIFF: $CADIFF"
-          fi
-          DIFF=$(python -m black --diff src/ 2>&1)
+          cp src/api/combat_adapter.py /tmp/combat_adapter_ci.py
+          python -m black --no-cache /tmp/combat_adapter_ci.py 2>/dev/null
+          DIFF=$(diff src/api/combat_adapter.py /tmp/combat_adapter_ci.py || true)
           if [ -n "$DIFF" ]; then
-            echo "$DIFF" | grep '^--- ' | awk '{print $2}' | while read f; do
-              echo "::error file=$f,title=black formatting required::run: python -m black $f"
-            done
+            echo "::error file=src/api/combat_adapter.py,title=black diff::$DIFF"
           fi
           python -m black --check src/
 
