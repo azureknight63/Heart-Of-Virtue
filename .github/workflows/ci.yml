@@ -36,7 +36,15 @@ jobs:
           MYNX_LLM_PROVIDER: "none"
 
       - name: Check formatting (black)
-        run: python -m black --check src/
+        run: |
+          DIFF=$(python -m black --diff src/ 2>&1)
+          if [ -n "$DIFF" ]; then
+            echo "$DIFF"
+            echo "$DIFF" | grep '^--- ' | awk '{print $2}' | while read f; do
+              echo "::error file=$f,title=black formatting required::run: python -m black $f"
+            done
+          fi
+          python -m black --check src/
 
       - name: Lint (flake8)
         run: flake8 --extend-ignore=E501,E203 src/  # E203: Black formats slices with spaces (known Black/flake8 conflict)
