@@ -313,7 +313,7 @@ function HeroPanel({
           )
         })}
       </div>
-    </div >
+    </div>
   )
 }
 

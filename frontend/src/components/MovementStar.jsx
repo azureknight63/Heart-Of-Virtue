@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useAudio } from '../context/AudioContext'
 
+const isDirectionValid = (exits, direction) => exits && exits.includes(direction)
+
 export default function MovementStar({ exits = [], onMove, loading = false }) {
   const [hoveredDirection, setHoveredDirection] = useState(null)
   const { playSFX } = useAudio()
 
-  // Determine which directions are valid (available in exits)
-  const isDirectionValid = (direction) => exits && exits.includes(direction)
+  const { playSFX } = useAudio()
 
   // Direction configuration with positions for proper 8-point star layout
   // Container is 220x220px, button is 40x40px
@@ -25,7 +26,7 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
   ]
 
   const handleMove = async (direction) => {
-    if (!isDirectionValid(direction) || loading) return
+    if (!isDirectionValid(exits, direction) || loading) return
     playSFX('move')
     try {
       await onMove(direction)
@@ -40,7 +41,6 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
       flexDirection: 'column',
       gap: '8px',
       alignItems: 'center',
-      padding: '0',
     }}>
       <div style={{
         color: '#00ff88',
@@ -76,7 +76,7 @@ export default function MovementStar({ exits = [], onMove, loading = false }) {
 
         {/* Direction arrows */}
         {directions.map(({ key, label, top, left, transform, ariaLabel }) => {
-          const isValid = isDirectionValid(key)
+          const isValid = isDirectionValid(exits, key)
           const isHovered = hoveredDirection === key
 
           return (

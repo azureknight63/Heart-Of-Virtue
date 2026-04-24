@@ -3,6 +3,8 @@ import { colors } from '../styles/theme'
 
 export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover }) {
     const [isVisible, setIsVisible] = useState(false)
+    const [hoveredSuggestionName, setHoveredSuggestionName] = useState(null)
+    const [hoveredRepeatBtn, setHoveredRepeatBtn] = useState(false)
 
     useEffect(() => {
         if (isPlayerTurn) {
@@ -47,22 +49,12 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     borderRadius: '50%',
                     backgroundColor: colors.primary,
                     boxShadow: `0 0 8px ${colors.primary}`,
-                    animation: 'blink 1.5s infinite ease-in-out'
+                    animation: 'suggested-blink 1.5s infinite ease-in-out'
                 }} />
                 <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px' }}>
                     TACTICAL ADVISOR
                 </span>
             </div>
-
-            <style>
-                {`
-          @keyframes blink {
-            0% { opacity: 0.3; transform: scale(0.8); }
-            50% { opacity: 1; transform: scale(1.2); }
-            100% { opacity: 0.3; transform: scale(0.8); }
-          }
-        `}
-            </style>
 
             {/* Outcome Section & Repeat Action */}
             {lastOutcome && (
@@ -88,7 +80,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         style={{
                             width: '100%',
                             padding: '6px',
-                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            backgroundColor: hoveredRepeatBtn ? 'rgba(0, 255, 136, 0.2)' : 'rgba(0, 255, 136, 0.1)',
                             border: `1px solid ${colors.primary}`,
                             borderRadius: '4px',
                             color: colors.primary,
@@ -101,8 +93,8 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                             justifyContent: 'center',
                             gap: '6px'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.2)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'}
+                        onMouseEnter={() => setHoveredRepeatBtn(true)}
+                        onMouseLeave={() => setHoveredRepeatBtn(false)}
                     >
                         <span>🔄</span> DO IT AGAIN
                     </button>}
@@ -149,35 +141,34 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         NO TACTICAL ADVANTAGE IDENTIFIED
                     </div>
                 ) : (
-                    suggestions.map((s, idx) => (
+                    suggestions.map((s) => {
+                        const isHovered = hoveredSuggestionName === s.move_name;
+                        return (
                         <div
-                            key={idx}
+                            key={s.move_name}
                             onClick={() => {
                                 if (onTargetHover) onTargetHover(null);
                                 onSuggestClick?.(s);
                             }}
                             style={{
                                 padding: '10px',
-                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                border: `1px solid rgba(0, 255, 136, 0.15)`,
+                                backgroundColor: isHovered ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                border: `1px solid ${isHovered ? colors.primary : 'rgba(0, 255, 136, 0.15)'}`,
                                 borderRadius: '4px',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
                                 position: 'relative',
-                                overflow: 'hidden'
+                                overflow: 'hidden',
+                                boxShadow: isHovered ? `0 0 10px ${colors.primary}33` : 'none'
                             }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = 'rgba(0, 255, 136, 0.1)'
-                                e.currentTarget.style.borderColor = colors.primary
-                                e.currentTarget.style.boxShadow = `0 0 10px ${colors.primary}33`
+                            onMouseEnter={() => {
+                                setHoveredSuggestionName(s.move_name)
                                 if (s.target_id?.startsWith('enemy_') && onTargetHover) {
                                     onTargetHover(s.target_id);
                                 }
                             }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-                                e.currentTarget.style.borderColor = 'rgba(0, 255, 136, 0.15)'
-                                e.currentTarget.style.boxShadow = 'none'
+                            onMouseLeave={() => {
+                                setHoveredSuggestionName(null)
                                 if (onTargetHover) {
                                     onTargetHover(null);
                                 }
@@ -214,7 +205,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                                 opacity: 0.6
                             }} />
                         </div>
-                    ))
+                    )})
                 )}
             </div>
 

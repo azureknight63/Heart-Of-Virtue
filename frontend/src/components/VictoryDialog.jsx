@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useAudio } from '../context/AudioContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
@@ -41,9 +41,12 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
   const drops = useMemo(() => endState?.items_dropped || [], [endState])
   const levelUps = useMemo(() => endState?.level_ups || [], [endState])
 
+  const playSFXRef = React.useRef(playSFX)
+  React.useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
+
   useEffect(() => {
-    if (levelUps.length > 0) playSFX('level_up')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (levelUps.length > 0) playSFXRef.current('level_up')
+  }, [levelUps.length])
 
   const canClose = remainingPoints <= 0
 
@@ -189,7 +192,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
               </GameText>
               <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
                 {drops.length > 0 ? drops.map((d, idx) => (
-                  <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <GameText variant="muted" size="xs">{d.name}</GameText>
                     <GameText variant="secondary" size="xs" weight="bold">x{d.quantity}</GameText>
                   </div>
@@ -200,13 +203,13 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
 
           {/* Level Up & Attributes Section */}
           <div style={{
-            padding: '12px',
-            backgroundColor: 'rgba(0, 204, 255, 0.05)',
-            border: `1px solid ${colors.text.highlight}33`,
+            padding: spacing.md,
+            backgroundColor: colors.bg.panelDeep,
+            border: `1px solid ${colors.border.light}`,
             borderRadius: '12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px'
+            gap: spacing.md
           }}>
             <GameText variant="accent" size="xs" weight="bold" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>
               ⭐ Level Ups & Growth
