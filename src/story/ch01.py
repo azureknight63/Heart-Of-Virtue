@@ -614,27 +614,16 @@ class Ch01PostRumbler3(Event):
             params=params,
             combat_effect=True,
         )
-        self.needs_input = (
-            False  # Initialize to False, will be set to True in process()
-        )
+        self.needs_input = False
         self.input_type = "choice"
-        self.input_prompt = "Which should Jean choose?"
+        self.input_prompt = "What does Jean do?"
         self.description = "Jean must decide his next move quickly."
         self.input_options = [
             {
                 "value": "a",
                 "label": "A man doesn't leave someone to die. (Stand with the rock-man)",
             },
-            {
-                "value": "b",
-                "label": "I can't help anyone if I'm dead. (Make a break for it)",
-            },
-            {
-                "value": "c",
-                "label": "There has to be another way out. (Think it through)",
-            },
         ]
-        self._choice = None  # Saved initial choice (a/b/c) for multi-stage narrative
         self._stage = 1
 
     def check_combat_conditions(self):
@@ -652,205 +641,59 @@ class Ch01PostRumbler3(Event):
                 "The hole in the chamber wall is open. Jean could make it in ten seconds flat."
             )
             cprint("\n" + narrative)
-            # Build description for API clients: prepend narrative to the prompt text set in __init__
             self.description = narrative + "\n\n" + self.description
             self.needs_input = True
             self._stage = 2
             return
 
-        choice_input = user_input.lower() if user_input else ""
+        # Stage 2: Jean stands with the rock-man
+        cprint(
+            "Jean grits his teeth, then begins running toward one of the beasts"
+            "\nsurrounding the rock man. He shouts loudly, and plants his mace"
+            "\nsquarely between the ferocious snapper's eyes. The beast explodes"
+            "\ninto brilliant fragments of light."
+        )
+        time.sleep(1)
+        cprint(
+            "The other creatures turn toward Jean in alarm. Rock-man takes this"
+            "\nopportunity to smash one of them into the wall with a great swing"
+            "\nfrom his large column."
+        )
+        time.sleep(1)
+        cprint(
+            "Rock-man glances over at Jean and with another gesticulation,"
+            "\nnods his head in respect. Both prepare themselves for the "
+            "\ndifficult fight that remains."
+        )
+        time.sleep(1)
 
-        # At stage 2, record the player's actual choice (a/b/c) for use in later stages
-        if self._stage == 2:
-            self._choice = choice_input
+        # Add Gorran as an ally
+        gorran = self.tile.spawn_npc("Gorran", delay=0)
+        self.player.combat_list_allies.append(gorran)
+        gorran.in_combat = True
+        gorran.reset_combat_moves()
 
-        # Wrong choices (b or c) - multi-stage defeat narrative
-        if self._choice in ("b", "c"):
-            # Stage 2: Show Jean's response to the wrong choice
-            if self._stage == 2:
-                if self._choice == "b":
-                    cprint(
-                        "Jean swallows hard and begins sprinting toward the hole in the chamber wall."
-                    )
-                else:
-                    cprint(
-                        "Unsure of what to do, Jean stands frozen, glancing between the rock-man and his"
-                        "\navenue of escape."
-                    )
-                self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
-                self.input_prompt = "Continue"
-                self._stage = 3
-                return
+        # Set up Gorran's combat lists
+        gorran.combat_list = self.player.combat_list
+        gorran.combat_list_allies = self.player.combat_list_allies
 
-            # Stage 3: Rock-man's defeat
-            elif self._stage == 3:
-                cprint(
-                    "Rock-man manages to smash one of the beasts beneath his large column-turned-bludgeon,"
-                    "\nhowever one of the other beasts jumps on his back at that moment, knocking him "
-                    "\nquickly to the ground. The other beasts pile on and begin slashing and biting"
-                    "\nmercilessly."
-                )
-                self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
-                self.input_prompt = "Continue"
-                self._stage = 4
-                return
+        # Spawn new enemies and add them properly to combat
+        new_enemies = []
+        for x in range(0, 5):
+            rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
+            new_enemies.append(rumbler)
 
-            # Stage 4: Jean's escape attempt and initial flight
-            elif self._stage == 4:
-                cprint(
-                    "Just before Jean can make his escape, a beast jumps and slides between Jean and"
-                    "\nhis salvation, kicking up loose dirt and pebbles. Jean quickly dodges to the side"
-                    "\nand tries to circle back to the entrance from which he came."
-                    "\nJumping around the snapping jaws and swinging tails of the other beasts,"
-                    "\nHe manages to make it back to the long bridge connecting the two spires."
-                )
-                self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
-                self.input_prompt = "Continue"
-                self._stage = 5
-                return
+        from functions import add_enemies_to_combat
 
-            # Stage 5: Jean reaches the bridge safely (false hope)
-            elif self._stage == 5:
-                cprint(
-                    "He can hear the beasts behind him, but they seemed to have stopped at"
-                    "\nthe threshold separating the chamber entrance and the outside,"
-                    "\nas if they are afraid of the daylight."
-                )
-                cprint(
-                    "Jean straightens up and begins to catch his breath. Just as he breathes"
-                    "\na sigh of relief, a piercing screech rings through his ears,"
-                    "\na great cold wind blows over him, and two sharp claws dig"
-                    "\nruthlessly into his shoulders, picking him up off of the"
-                    "\nbridge."
-                )
-                self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
-                self.input_prompt = "Continue"
-                self._stage = 6
-                return
+        add_enemies_to_combat(self.player, new_enemies)
 
-            # Stage 6: The monster's terrible appearance and initial attack
-            elif self._stage == 6:
-                cprint(
-                    "He looks up at the horrible monster that grabbed him and"
-                    "\nis terrified at the ugly abomination. Rows upon rows"
-                    "\nof jagged teeth, three sunken black eyes staring"
-                    "\nhungrily at him, a froth of saliva spilling out of"
-                    "\nits disgusting maw."
-                )
-                cprint(
-                    "Jean gasps and gropes uselessly at the sharp claws"
-                    "\nstill digging painfully into his flesh. He swings"
-                    "\nhis mace and lands a blow on the twisted, scaly"
-                    "\nleg of the abominable demon."
-                )
-                cprint(
-                    "The monster lets out a loud screech, and swooping"
-                    "\nquickly, smashes Jean's body against the wall of rock."
-                )
-                cprint(
-                    "Jean suffers " + str(random.randint(30, 90)) + " damage!",
-                    "red",
-                )
-                self.needs_input = True
-                self.input_options = [{"value": "continue", "label": "Continue"}]
-                self.input_prompt = "Continue"
-                self._stage = 7
-                return
-
-            # Stage 7: Continued pummeling and death
-            elif self._stage == 7:
-                cprint(
-                    "Jean screams in pain, his mace arm swinging uselessly by"
-                    "\nhis side, broken."
-                )
-                cprint(
-                    "Again, the monster smashes Jean against the wall,"
-                    "\nrepeatedly and without hesitation or mercy,"
-                    "\nbears it slams him hard into the ground."
-                )
-                cprint(
-                    "Jean suffers " + str(random.randint(30, 90)) + " damage!",
-                    "red",
-                )
-                cprint(
-                    "Jean suffers " + str(random.randint(10, 60)) + " damage!",
-                    "red",
-                )
-                cprint(
-                    "Jean suffers " + str(random.randint(30, 90)) + " damage!",
-                    "red",
-                )
-                cprint(
-                    "Jean suffers " + str(random.randint(85, 155)) + " damage!",
-                    "red",
-                )
-                cprint(SKULL_ART, "red")
-                cprint("Jean has died.", "red")
-                self.player.hp = 0
-                self.needs_input = False
-                self.completed = True
-                # Remove from combat_events since this is non-repeating (matches Ch01PostRumbler pattern)
-                if self in self.player.combat_events:
-                    self.player.combat_events.remove(self)
-                return
-
-        # Correct choice (a) - virtuous path with ally
-        else:
-            cprint(
-                "Jean grits his teeth, then begins running toward one of the beasts"
-                "\nsurrounding the rock man. He shouts loudly, and plants his mace"
-                "\nsquarely between the ferocious snapper's eyes. The beast explodes"
-                "\ninto brilliant fragments of light."
-            )
-            time.sleep(1)
-            cprint(
-                "The other creatures turn toward Jean in alarm. Rock-man takes this"
-                "\nopportunity to smash one of them into the wall with a great swing"
-                "\nfrom his large column."
-            )
-            time.sleep(1)
-            cprint(
-                "Rock-man glances over at Jean and with another gesticulation,"
-                "\nnods his head in respect. Both prepare themselves for the "
-                "\ndifficult fight that remains."
-            )
-            time.sleep(1)
-
-            # Add Gorran as an ally
-            gorran = self.tile.spawn_npc("Gorran", delay=0)
-            self.player.combat_list_allies.append(gorran)
-            gorran.in_combat = True
-            gorran.reset_combat_moves()
-
-            # Set up Gorran's combat lists
-            gorran.combat_list = self.player.combat_list  # Gorran targets enemies
-            gorran.combat_list_allies = (
-                self.player.combat_list_allies
-            )  # Gorran is allied with player's team
-
-            # Spawn new enemies and add them properly to combat
-            new_enemies = []
-            for x in range(0, 5):
-                rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
-                new_enemies.append(rumbler)
-
-            # Use add_enemies_to_combat to properly initialize battlefield positions
-            from functions import add_enemies_to_combat
-
-            add_enemies_to_combat(self.player, new_enemies)
-
-            self.tile.events_here.append(
-                AfterTheRumblerFight(self.player, self.tile, None)
-            )
-            self.needs_input = False
-            self.completed = True
-            # Remove from combat_events since this is non-repeating (matches Ch01PostRumbler pattern)
-            if self in self.player.combat_events:
-                self.player.combat_events.remove(self)
+        self.tile.events_here.append(
+            AfterTheRumblerFight(self.player, self.tile, None)
+        )
+        self.needs_input = False
+        self.completed = True
+        if self in self.player.combat_events:
+            self.player.combat_events.remove(self)
 
 
 class AfterTheRumblerFight(Event):
