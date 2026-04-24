@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { useAudio } from '../context/AudioContext';
 import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
+import { colors } from '../styles/theme';
+
+const INPUT_TYPE_CONFIG = {
+    target_selection: { title: '🎯 SELECT TARGET' },
+    direction_selection: { title: '🧭 SELECT DIRECTION' },
+    item_selection: { title: '🎒 SELECT ITEM' },
+    number_input: { title: '🔢 ENTER VALUE' },
+};
 
 /**
  * CombatInputDialog - Versatile dialog for combat-specific inputs (targeting, directions, etc.)
@@ -10,13 +18,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
     const { playSFX } = useAudio();
 
     const getTitle = () => {
-        switch (inputType) {
-            case 'target_selection': return '🎯 SELECT TARGET';
-            case 'direction_selection': return '🧭 SELECT DIRECTION';
-            case 'item_selection': return '🎒 SELECT ITEM';
-            case 'number_input': return '🔢 ENTER VALUE';
-            default: return '❓ SELECT OPTION';
-        }
+        return INPUT_TYPE_CONFIG[inputType]?.title || '❓ SELECT OPTION';
     };
 
     const handleSelect = (option) => {
@@ -29,7 +31,7 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
     const renderOptions = () => {
         if (!options || (Array.isArray(options) && options.length === 0)) {
             return (
-                <div style={{ color: '#888', fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
+                <div style={{ color: colors.text.muted, fontStyle: 'italic', textAlign: 'center', padding: '40px' }}>
                     No valid targets or options available.
                 </div>
             );
@@ -160,9 +162,9 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
 
 // Internal components for specific input types
 const NumberInput = ({ options, onSubmit }) => {
-    const [inputValue, setInputValue] = useState(options?.default || options?.min || 5);
-    const min = options?.min || 1;
-    const max = options?.max || 100;
+    const [inputValue, setInputValue] = useState(options?.default ?? options?.min ?? 5);
+    const min = options?.min ?? 1;
+    const max = options?.max ?? 100;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', alignItems: 'center' }}>

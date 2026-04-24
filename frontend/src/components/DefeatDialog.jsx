@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuth } from '../hooks/useApi'
 import { useAudio } from '../context/AudioContext'
@@ -38,9 +38,12 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
 
   const message = endState?.message || 'You have been defeated.'
 
+  const playSFXRef = React.useRef(playSFX)
+  React.useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
+
   useEffect(() => {
-    playSFX('player_death')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    playSFXRef.current('player_death')
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -101,7 +104,13 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
   }
 
   const handleStartOver = async () => {
-    await logout()
+    try {
+      setLoading(true)
+      await logout()
+    } catch (e) {
+      setError(e?.message || 'Failed to start over.')
+      setLoading(false)
+    }
   }
 
   return (

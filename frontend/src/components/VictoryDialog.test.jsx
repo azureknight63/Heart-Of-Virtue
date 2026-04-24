@@ -214,4 +214,29 @@ describe('VictoryDialog', () => {
     expect(screen.getByText('Available Points:')).toBeDefined();
     expect(screen.getByText('3')).toBeDefined();
   });
+
+  it('can minimize and restore the dialog when points are pending', () => {
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    // Dialog should start expanded (CLOSE button visible)
+    expect(screen.getByText('CLOSE')).toBeDefined();
+
+    // Find the minimize button (▼ or similar toggle)
+    const minimizeBtn = screen.getByTitle(/minimize/i);
+    fireEvent.click(minimizeBtn);
+
+    // After minimizing, the main content should be hidden but a restore button visible
+    const restoreBtn = screen.getByTitle(/restore/i);
+    expect(restoreBtn).toBeDefined();
+
+    // Restore the dialog
+    fireEvent.click(restoreBtn);
+    expect(screen.getByText('CLOSE')).toBeDefined();
+  });
 });

@@ -51,8 +51,9 @@ async def list_saves():
         from flask import current_app
 
         game_service = current_app.game_service
+        timezone = session.data.get("timezone", "US/Eastern")
 
-        saves = await game_service.list_saves(session.db_user_id)
+        saves = await game_service.list_saves(session.db_user_id, timezone=timezone)
 
         return jsonify({"success": True, "saves": saves}), 200
 
