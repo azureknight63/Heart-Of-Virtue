@@ -2649,7 +2649,7 @@ class GameService:
         # Strip it before serializing; restore immediately after.
         combat_adapter = player.__dict__.pop("_combat_adapter", None)
         try:
-            save_data = pickle.dumps(player)
+            save_data = pickle.dumps(player, protocol=pickle.HIGHEST_PROTOCOL)
         finally:
             if combat_adapter is not None:
                 player._combat_adapter = combat_adapter
@@ -2745,8 +2745,15 @@ class GameService:
             return None
 
         try:
+            import io
+            from src.functions import _safe_pickle_load
+            
             save_data = result.rows[0][0]
-            player = pickle.loads(save_data)
+            player = _safe_pickle_load(io.BytesIO(save_data))
+            
+            if player is None:
+                print(f"Error loading save {save_id}: _safe_pickle_load returned None")
+                return None
 
             if player:
                 # Re-initialize universe connections
@@ -2771,13 +2778,20 @@ class GameService:
             print(f"Error loading save {save_id}: {e}")
             return None
 
-    async def list_saves(self, user_id: str) -> List[Dict[str, Any]]:
+    async def list_saves(self, user_id: str, timezone: str = "US/Eastern") -> List[Dict[str, Any]]:
         """List all saved games for a user from Turso.
 
         Returns:
             List of save metadata dictionaries
         """
         from src.api.db import db
+        import zoneinfo
+        from datetime import datetime
+            
+        try:
+            user_tz = zoneinfo.ZoneInfo(timezone)
+        except Exception:
+            user_tz = zoneinfo.ZoneInfo("US/Eastern")
 
         sql = """
         SELECT id, name, timestamp, is_autosave, level, map_name, room_title, playtime
@@ -2789,11 +2803,22 @@ class GameService:
 
         saves = []
         for row in result.rows:
+            ts_str = str(row[2])
+            try:
+                # SQLite CURRENT_TIMESTAMP is in UTC 'YYYY-MM-DD HH:MM:SS'
+                dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                dt_local = dt.astimezone(user_tz)
+                # Format to a nice string e.g. "2026-04-23 18:15:00 EDT"
+                ts_str = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+            except Exception:
+                pass # fallback to original string
+
             saves.append(
                 {
                     "id": str(row[0]),
                     "name": str(row[1]),
-                    "timestamp": str(row[2]),
+                    "timestamp": ts_str,
                     "is_autosave": bool(row[3]),
                     "level": int(row[4]) if row[4] is not None else "?",
                     "map_name": str(row[5]) if row[5] else "Unknown",

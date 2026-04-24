@@ -11,7 +11,8 @@ async def init_db():
             password_hash TEXT NOT NULL,
             email_encrypted TEXT NOT NULL,
             is_premium BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            timezone TEXT DEFAULT 'US/Eastern'
         );
         """,
         """
@@ -37,6 +38,13 @@ async def init_db():
     print("Initializing database...")
     try:
         await db.batch(statements)
+        
+        # Add timezone column for existing databases (will fail harmlessly if already exists)
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'US/Eastern'")
+        except Exception:
+            pass
+
         print("Database initialized successfully.")
     except Exception as e:
         print(f"Error initializing database: {e}")
