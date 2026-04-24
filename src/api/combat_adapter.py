@@ -1800,7 +1800,7 @@ class ApiCombatAdapter:
             if move.current_stage == 3:
                 stage_beats = getattr(move, "stage_beat", [])
                 cd_remaining = move.beats_left + 1 if move.beats_left > 0 else 1
-                cd_max = (stage_beats[3] + 1) if len(stage_beats) > 3 else cd_remaining
+                cd_max = stage_beats[3] + 1 if len(stage_beats) > 3 else cd_remaining
                 move_data["cooldown_remaining"] = cd_remaining
                 move_data["cooldown_max"] = max(cd_max, cd_remaining)
                 if move.beats_left > 0:
