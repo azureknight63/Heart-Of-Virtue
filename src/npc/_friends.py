@@ -197,6 +197,11 @@ friendly enough to Jean.
 
     def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
+            print(colored(
+                "The Rock-Man turns toward you slowly. His massive form shifts, and he "
+                "raises one broad hand — not a greeting, but a direction. He begins to move.",
+                "yellow",
+            ))
             self.current_room.events_here.append(
                 functions.seek_class("AfterGorranIntro", "story")(
                     player, self.current_room, None, False
