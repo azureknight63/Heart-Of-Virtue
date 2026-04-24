@@ -64,6 +64,7 @@ class CombatOutputCapture:
                 trigger_animation = False
                 # Detect combat outcomes for animation metadata
                 if self.player and hasattr(self.player, "_pending_animation"):
+                    # fmt: off
                     if "struck" in clean_text and "damage" in clean_text:
                         self.player._pending_animation["outcome"] = "hit"
                         trigger_animation = True
@@ -73,6 +74,7 @@ class CombatOutputCapture:
                     elif "missed" in clean_text or "just missed" in clean_text:
                         self.player._pending_animation["outcome"] = "miss"
                         trigger_animation = True
+                    # fmt: on
 
                 self.log_entries.append(
                     {
