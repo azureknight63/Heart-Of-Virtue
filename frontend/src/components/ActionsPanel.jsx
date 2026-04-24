@@ -278,3 +278,4 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
       </div>
     </BaseDialog>
   )
+}
