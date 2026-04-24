@@ -37,11 +37,10 @@ jobs:
 
       - name: Check formatting (black)
         run: |
-          cp src/api/combat_adapter.py /tmp/combat_adapter_ci.py
-          python -m black --no-cache /tmp/combat_adapter_ci.py 2>/dev/null
-          DIFF=$(diff src/api/combat_adapter.py /tmp/combat_adapter_ci.py || true)
-          if [ -n "$DIFF" ]; then
-            echo "::error file=src/api/combat_adapter.py,title=black diff::$DIFF"
+          UDIFF=$(python -m black --diff --no-cache src/api/combat_adapter.py 2>&1)
+          HUNKS=$(echo "$UDIFF" | grep '^@@')
+          if [ -n "$HUNKS" ]; then
+            echo "::error file=src/api/combat_adapter.py,title=black hunks::$HUNKS"
           fi
           python -m black --check src/
 
