@@ -37,13 +37,14 @@ jobs:
 
       - name: Check formatting (black)
         run: |
-          UDIFF=$(python -m black --diff --no-cache src/api/combat_adapter.py 2>&1)
-          if echo "$UDIFF" | grep -q '^@@'; then
+          python -m black --diff --no-cache src/api/combat_adapter.py > /tmp/bdiff.txt 2>&1 || true
+          if grep -q '^@@' /tmp/bdiff.txt; then
             n=0
-            while IFS= read -r bline && [ $n -lt 50 ]; do
-              echo "::warning title=bdiff[${n}]::${bline}"
+            while IFS= read -r bline && [ $n -lt 40 ]; do
+              encoded="${bline//%/%25}"
+              echo "::error file=src/api/combat_adapter.py,line=67,title=bdiff[${n}]::${encoded}"
               n=$((n+1))
-            done <<< "$UDIFF"
+            done < /tmp/bdiff.txt
           fi
           python -m black --check src/
 
