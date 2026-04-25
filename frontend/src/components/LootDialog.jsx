@@ -14,6 +14,7 @@ function enchStars(count) {
 
 function ItemTooltip({ item, anchorRef }) {
   const [pos, setPos] = useState({ top: 0, left: 0 })
+  const ench = enchStars(item.enchantment_count)
 
   useEffect(() => {
     if (!anchorRef.current) return
@@ -42,9 +43,9 @@ function ItemTooltip({ item, anchorRef }) {
       <div style={{ color: '#FFD700', fontSize: '14px', fontWeight: 'bold', borderBottom: `1px solid #664400`, paddingBottom: 6, marginBottom: 8 }}>
         {item.name}
       </div>
-      {enchStars(item.enchantment_count) && (
-        <div style={{ color: enchStars(item.enchantment_count).color, fontSize: '11px', marginBottom: 6 }}>
-          {'✦'.repeat(Math.min(item.enchantment_count, 2))} Enchanted
+      {ench && (
+        <div style={{ color: ench.color, fontSize: '11px', marginBottom: 6 }}>
+          {ench.stars} Enchanted
         </div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: '#664400', marginBottom: 8 }}>

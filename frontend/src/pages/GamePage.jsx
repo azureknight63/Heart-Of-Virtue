@@ -3,6 +3,7 @@ import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
 import { colors, spacing, fonts } from '../styles/theme'
+import { combat as combatApi } from '../api/endpoints'
 import GameText from '../components/GameText'
 import { useAudio } from '../context/AudioContext'
 import { useToast } from '../context/ToastContext'
@@ -438,30 +439,40 @@ export default function GamePage() {
    * Player confirmed loot selection — call backend to collect chosen items.
    */
   const handleCollectLoot = async (itemNames) => {
-    const { combat: combatApi } = await import('../api/endpoints')
-    await combatApi.collectLoot(itemNames)
-    setShowLootDialog(false)
-    setEndState(null)
-    setMode('exploration')
+    const isBetaEnd = endState?.beta_end
+    try {
+      await combatApi.collectLoot(itemNames)
+    } catch (err) {
+      console.error('collect-loot failed:', err)
+    } finally {
+      setShowLootDialog(false)
+      setEndState(null)
+      setMode('exploration')
+    }
     await handleRefetch()
     await fetchCombatStatus()
     await checkPendingEvents()
-    if (endState?.beta_end) setShowBetaEndDialog(true)
+    if (isBetaEnd) setShowBetaEndDialog(true)
   }
 
   /**
    * Player skipped loot — items remain on tile, close dialog and return to world.
    */
   const handleSkipLoot = async () => {
-    const { combat: combatApi } = await import('../api/endpoints')
-    await combatApi.collectLoot([])
-    setShowLootDialog(false)
-    setEndState(null)
-    setMode('exploration')
+    const isBetaEnd = endState?.beta_end
+    try {
+      await combatApi.collectLoot([])
+    } catch (err) {
+      console.error('collect-loot (skip) failed:', err)
+    } finally {
+      setShowLootDialog(false)
+      setEndState(null)
+      setMode('exploration')
+    }
     await handleRefetch()
     await fetchCombatStatus()
     await checkPendingEvents()
-    if (endState?.beta_end) setShowBetaEndDialog(true)
+    if (isBetaEnd) setShowBetaEndDialog(true)
   }
 
   /**

@@ -4694,30 +4694,36 @@ class GameService:
 
         capacity = float(getattr(player, "carrying_capacity", 100.0) or 100.0)
 
-        # Build a name → item mapping from the tile (first match per name)
-        tile_by_name: Dict[str, Any] = {}
+        # Build a name → [item, ...] mapping from the tile (all matches per name)
+        tile_by_name: Dict[str, list] = {}
         for item in list(tile.items_here):
             name = getattr(item, "name", None)
-            if name and name not in tile_by_name:
-                tile_by_name[name] = item
+            if name:
+                tile_by_name.setdefault(name, []).append(item)
 
         collected = []
         skipped = []
 
         for name in item_names:
-            item = tile_by_name.get(name)
-            if not item:
+            candidates = tile_by_name.get(name)
+            if not candidates:
                 skipped.append({"name": name, "reason": "not_found"})
                 continue
-            current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
-            item_weight = float(getattr(item, "weight", 0) or 0)
-            if current_weight + item_weight > capacity:
-                skipped.append({"name": name, "reason": "over_capacity"})
-                continue
-            if item in tile.items_here:
-                tile.items_here.remove(item)
-            inventory.append(item)
-            collected.append(name)
+            # Pick up every physical item object with this name (handles stacked drops)
+            any_collected = False
+            for item in list(candidates):
+                current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
+                item_weight = float(getattr(item, "weight", 0) or 0)
+                if current_weight + item_weight > capacity:
+                    skipped.append({"name": name, "reason": "over_capacity"})
+                    break
+                if item in tile.items_here:
+                    tile.items_here.remove(item)
+                inventory.append(item)
+                collected.append(name)
+                any_collected = True
+            if not any_collected and not any(s["name"] == name for s in skipped):
+                skipped.append({"name": name, "reason": "not_found"})
 
         player.combat_drops = []
         return {"success": True, "collected": collected, "skipped": skipped}
