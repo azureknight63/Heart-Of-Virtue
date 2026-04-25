@@ -1213,6 +1213,8 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         enchantments[group] = enchant
         ench_pool -= 1
 
+    item._enchantment_count = sum(1 for e in enchantments if e)
+
     for ench in enchantments:
         if ench:
             try:

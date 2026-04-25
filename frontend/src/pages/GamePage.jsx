@@ -54,6 +54,7 @@ export default function GamePage() {
     combatDialogShown,
     showVictoryDialog,
     showDefeatDialog,
+    showLootDialog,
     endState,
     lastEndStateId,
     isCombatLogProcessing,
@@ -62,6 +63,7 @@ export default function GamePage() {
     setCombatDialogShown,
     setShowVictoryDialog,
     setShowDefeatDialog,
+    setShowLootDialog,
     setEndState,
     setIsCombatLogProcessing,
     setCurrentLogIndex,
@@ -406,7 +408,8 @@ export default function GamePage() {
   }
 
   /**
-   * Handle victory dialog close
+   * Handle victory dialog close (only reached when no loot drops exist).
+   * When drops exist, VictoryDialog routes to loot phase via onContinueToLoot instead.
    */
   const handleVictoryClose = async () => {
     const isBetaEnd = endState?.beta_end
@@ -421,6 +424,44 @@ export default function GamePage() {
     if (isBetaEnd) {
       setShowBetaEndDialog(true)
     }
+  }
+
+  /**
+   * Transition from VictoryDialog (Phase 1) to LootDialog (Phase 2).
+   */
+  const handleContinueToLoot = () => {
+    setShowVictoryDialog(false)
+    setShowLootDialog(true)
+  }
+
+  /**
+   * Player confirmed loot selection — call backend to collect chosen items.
+   */
+  const handleCollectLoot = async (itemNames) => {
+    const { combat: combatApi } = await import('../api/endpoints')
+    await combatApi.collectLoot(itemNames)
+    setShowLootDialog(false)
+    setEndState(null)
+    setMode('exploration')
+    await handleRefetch()
+    await fetchCombatStatus()
+    await checkPendingEvents()
+    if (endState?.beta_end) setShowBetaEndDialog(true)
+  }
+
+  /**
+   * Player skipped loot — items remain on tile, close dialog and return to world.
+   */
+  const handleSkipLoot = async () => {
+    const { combat: combatApi } = await import('../api/endpoints')
+    await combatApi.collectLoot([])
+    setShowLootDialog(false)
+    setEndState(null)
+    setMode('exploration')
+    await handleRefetch()
+    await fetchCombatStatus()
+    await checkPendingEvents()
+    if (endState?.beta_end) setShowBetaEndDialog(true)
   }
 
   /**
@@ -513,10 +554,16 @@ export default function GamePage() {
       <CombatManager
         showVictoryDialog={showVictoryDialog}
         showDefeatDialog={showDefeatDialog}
+        showLootDialog={showLootDialog}
         endState={endState}
+        playerWeight={player?.weight_current ?? 0}
+        weightLimit={player?.carrying_capacity ?? 100}
         onAllocatePoints={handleAllocatePoints}
         onVictoryClose={handleVictoryClose}
         onDefeatClose={handleDefeatClose}
+        onContinueToLoot={handleContinueToLoot}
+        onCollectLoot={handleCollectLoot}
+        onSkipLoot={handleSkipLoot}
       />
 
       {/* Game Over Screen - shown when Jean dies via narrative event */}

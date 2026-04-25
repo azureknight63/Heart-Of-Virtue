@@ -9,7 +9,7 @@ import { colors, spacing, fonts, shadows } from '../styles/theme'
  * VictoryDialog - Shown after combat victory
  * Handles EXP display, loot, and attribute point allocation
  */
-export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
+export default function VictoryDialog({ endState, onClose, onAllocatePoints, onContinueToLoot }) {
   const [selectedAttr, setSelectedAttr] = useState('strength_base')
   const [amount, setAmount] = useState('1')
   const [error, setError] = useState('')
@@ -40,6 +40,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
 
   const drops = useMemo(() => endState?.items_dropped || [], [endState])
   const levelUps = useMemo(() => endState?.level_ups || [], [endState])
+  const hasLoot = drops.length > 0
 
   useEffect(() => {
     if (levelUps.length > 0) playSFX('level_up')
@@ -67,11 +68,14 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
       // Check for backend success (some APIs might return result directly or result.data)
       // Based on GamePage.jsx, it returns result.data which should have .success
       if (result && result.success) {
-        // If all points are now spent, auto-close the dialog so the parent can
-        // cleanly start any deferred combat without stale state blocking things.
+        // If all points are now spent, advance to loot phase (or close if no loot).
         if ((result.remaining_points ?? 1) === 0) {
           setIsSubmitting(false)
-          onClose()
+          if (hasLoot && onContinueToLoot) {
+            onContinueToLoot()
+          } else {
+            onClose()
+          }
           return
         }
         // Success - reset amount to 1 and the parent will refresh endState
@@ -126,8 +130,8 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
             RESTORE
           </GameButton>
           {canClose && (
-            <GameButton onClick={onClose} variant="secondary">
-              CONTINUE
+            <GameButton onClick={() => { if (hasLoot && onContinueToLoot) onContinueToLoot(); else onClose() }} variant="secondary">
+              {hasLoot ? 'COLLECT LOOT →' : 'CONTINUE'}
             </GameButton>
           )}
         </div>
@@ -149,8 +153,13 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
           <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '11px', padding: '4px 10px' }}>
             MINIMIZE
           </GameButton>
-          <GameButton onClick={onClose} disabled={!canClose} variant={canClose ? 'primary' : 'secondary'} style={{ fontSize: '11px', padding: '4px 10px' }}>
-            CLOSE
+          <GameButton
+            onClick={() => { if (hasLoot && onContinueToLoot) onContinueToLoot(); else onClose() }}
+            disabled={!canClose}
+            variant={canClose ? 'primary' : 'secondary'}
+            style={{ fontSize: '11px', padding: '4px 10px' }}
+          >
+            {hasLoot ? 'COLLECT LOOT →' : 'CLOSE'}
           </GameButton>
         </div>
 
@@ -177,25 +186,14 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints }) {
               </div>
             </div>
 
-            {/* Loot Section */}
-            <div style={{
-              padding: spacing.md,
-              backgroundColor: colors.bg.panelDeep,
-              border: `1px solid ${colors.border.light}`,
-              borderRadius: '12px'
-            }}>
-              <GameText variant="secondary" size="xs" weight="bold" style={{ marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                🎁 Loot Collected
-              </GameText>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-                {drops.length > 0 ? drops.map((d, idx) => (
-                  <div key={`${d.name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <GameText variant="muted" size="xs">{d.name}</GameText>
-                    <GameText variant="secondary" size="xs" weight="bold">x{d.quantity}</GameText>
-                  </div>
-                )) : <GameText variant="muted" size="xs" style={{ fontStyle: 'italic' }}>None</GameText>}
+            {/* Loot is handled in the separate LootDialog (Phase 2) */}
+            {hasLoot && (
+              <div style={{ padding: spacing.sm, background: `${colors.secondary}11`, border: `1px solid ${colors.secondary}44`, borderRadius: '8px' }}>
+                <GameText variant="secondary" size="xs" style={{ fontStyle: 'italic' }}>
+                  🎁 {drops.length} item{drops.length !== 1 ? 's' : ''} available to collect — next step
+                </GameText>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Level Up & Attributes Section */}

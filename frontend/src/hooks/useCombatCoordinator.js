@@ -32,6 +32,7 @@ export function useCombatCoordinator({
     const [combatDialogShown, setCombatDialogShown] = useState(false)
     const [showVictoryDialog, setShowVictoryDialog] = useState(false)
     const [showDefeatDialog, setShowDefeatDialog] = useState(false)
+    const [showLootDialog, setShowLootDialog] = useState(false)
     const [endState, setEndState] = useState(null)
     const [lastEndStateId, setLastEndStateId] = useState(
         () => sessionStorage.getItem('hov_last_end_state_id')
@@ -162,6 +163,7 @@ export function useCombatCoordinator({
         combatDialogShown,
         showVictoryDialog,
         showDefeatDialog,
+        showLootDialog,
         endState,
         lastEndStateId,
         isCombatLogProcessing,
@@ -172,6 +174,7 @@ export function useCombatCoordinator({
         setCombatDialogShown,
         setShowVictoryDialog,
         setShowDefeatDialog,
+        setShowLootDialog,
         setEndState,
         setLastEndStateId,
         setIsCombatLogProcessing,

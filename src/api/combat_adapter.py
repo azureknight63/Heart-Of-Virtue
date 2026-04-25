@@ -1740,8 +1740,30 @@ class ApiCombatAdapter:
                 continue
             drops_by_name[name] = drops_by_name.get(name, 0) + max(0, qty)
 
+        # Build a lookup of item objects on the current tile for detail enrichment
+        tile = getattr(self.player, "current_room", None)
+        tile_items = getattr(tile, "items_here", []) if tile else []
+        tile_by_name: Dict[str, Any] = {}
+        for _item in tile_items:
+            _name = getattr(_item, "name", None)
+            if _name and _name not in tile_by_name:
+                tile_by_name[_name] = _item
+
+        def _item_details(name: str) -> Dict[str, Any]:
+            obj = tile_by_name.get(name)
+            if not obj:
+                return {}
+            return {
+                "type": getattr(obj, "type", getattr(obj, "maintype", "")),
+                "subtype": getattr(obj, "subtype", ""),
+                "weight": round(float(getattr(obj, "weight", 0.0) or 0.0), 2),
+                "value": int(getattr(obj, "value", 0) or 0),
+                "description": getattr(obj, "description", ""),
+                "enchantment_count": int(getattr(obj, "_enchantment_count", 0) or 0),
+            }
+
         items_dropped = [
-            {"name": name, "quantity": qty}
+            {"name": name, "quantity": qty, **_item_details(name)}
             for name, qty in sorted(drops_by_name.items(), key=lambda kv: kv[0].lower())
             if qty > 0
         ]

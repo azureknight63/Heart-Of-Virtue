@@ -1,29 +1,27 @@
 import VictoryDialog from './VictoryDialog'
 import DefeatDialog from './DefeatDialog'
+import LootDialog from './LootDialog'
 
 /**
- * CombatManager - Wrapper component for combat-related UI rendering
- * 
- * Responsibilities:
- * - Render VictoryDialog when victory state exists
- * - Render DefeatDialog when defeat state exists
- * - Handle victory/defeat dialog interactions
- * 
- * @param {Object} props - Component props
- * @param {boolean} props.showVictoryDialog - Whether to show victory dialog
- * @param {boolean} props.showDefeatDialog - Whether to show defeat dialog
- * @param {Object} props.endState - Combat end state object
- * @param {Function} props.onAllocatePoints - Point allocation handler
- * @param {Function} props.onVictoryClose - Victory dialog close handler
- * @param {Function} props.onDefeatClose - Defeat dialog close handler
+ * CombatManager - Wrapper component for combat-related UI rendering.
+ *
+ * Phase sequencing after victory:
+ *   1. VictoryDialog  — EXP display + attribute point allocation
+ *   2. LootDialog     — per-item loot selection (only if items dropped)
  */
 export default function CombatManager({
     showVictoryDialog,
     showDefeatDialog,
+    showLootDialog,
     endState,
+    playerWeight,
+    weightLimit,
     onAllocatePoints,
     onVictoryClose,
-    onDefeatClose
+    onDefeatClose,
+    onContinueToLoot,
+    onCollectLoot,
+    onSkipLoot,
 }) {
     return (
         <>
@@ -32,6 +30,17 @@ export default function CombatManager({
                     endState={endState}
                     onAllocatePoints={onAllocatePoints}
                     onClose={onVictoryClose}
+                    onContinueToLoot={onContinueToLoot}
+                />
+            )}
+
+            {showLootDialog && endState && (
+                <LootDialog
+                    endState={endState}
+                    playerWeight={playerWeight}
+                    weightLimit={weightLimit}
+                    onCollect={onCollectLoot}
+                    onSkip={onSkipLoot}
                 />
             )}
 

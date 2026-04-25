@@ -4669,3 +4669,55 @@ class GameService:
                 "loquacity_max": hist.get("loquacity_max", 0),
             },
         }
+
+    def collect_combat_loot(self, player: Any, item_names: list) -> Dict[str, Any]:
+        """Move selected post-combat drops from the current tile into the player's inventory.
+
+        Items listed in item_names are picked up; all others remain on the tile.
+        combat_drops is cleared regardless so the loot phase cannot be repeated.
+
+        Args:
+            player: The Player instance.
+            item_names: List of item names the player chose to take.
+
+        Returns:
+            Dict with success, collected list, and skipped list.
+        """
+        tile = getattr(player, "current_room", None)
+        if not tile or not hasattr(tile, "items_here"):
+            player.combat_drops = []
+            return {"success": True, "collected": [], "skipped": []}
+
+        inventory = getattr(player, "inventory_list", None)
+        if inventory is None:
+            inventory = getattr(player, "inventory", [])
+
+        capacity = float(getattr(player, "carrying_capacity", 100.0) or 100.0)
+
+        # Build a name → item mapping from the tile (first match per name)
+        tile_by_name: Dict[str, Any] = {}
+        for item in list(tile.items_here):
+            name = getattr(item, "name", None)
+            if name and name not in tile_by_name:
+                tile_by_name[name] = item
+
+        collected = []
+        skipped = []
+
+        for name in item_names:
+            item = tile_by_name.get(name)
+            if not item:
+                skipped.append({"name": name, "reason": "not_found"})
+                continue
+            current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
+            item_weight = float(getattr(item, "weight", 0) or 0)
+            if current_weight + item_weight > capacity:
+                skipped.append({"name": name, "reason": "over_capacity"})
+                continue
+            if item in tile.items_here:
+                tile.items_here.remove(item)
+            inventory.append(item)
+            collected.append(name)
+
+        player.combat_drops = []
+        return {"success": True, "collected": collected, "skipped": skipped}
