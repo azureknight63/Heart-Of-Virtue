@@ -683,6 +683,7 @@ class Ch01PostRumbler3(Event):
             rumbler = self.tile.spawn_npc("RockRumbler", delay=random.randint(0, 5))
             new_enemies.append(rumbler)
 
+        # add_enemies_to_combat initializes battlefield positions — don't append to combat_list directly
         from functions import add_enemies_to_combat
 
         add_enemies_to_combat(self.player, new_enemies)
@@ -692,6 +693,7 @@ class Ch01PostRumbler3(Event):
         )
         self.needs_input = False
         self.completed = True
+        # non-repeating: remove manually since this is a combat_effect event, not a tile event
         if self in self.player.combat_events:
             self.player.combat_events.remove(self)
 
