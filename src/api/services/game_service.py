@@ -2346,6 +2346,8 @@ class GameService:
                     "name": getattr(a, "name", "Unknown"),
                     "hp": getattr(a, "hp", 0),
                     "max_hp": getattr(a, "maxhp", 0),
+                    "fatigue": getattr(a, "fatigue", 0),
+                    "max_fatigue": getattr(a, "maxfatigue", 0),
                     "level": getattr(a, "level", 1),
                     "description": getattr(a, "description", "").strip(),
                     "in_range": (
@@ -2354,6 +2356,15 @@ class GameService:
                         if getattr(player, "in_combat", False)
                         else True
                     ),
+                    "states": [
+                        {
+                            "name": s.name,
+                            "status_type": getattr(s, "statustype", "generic"),
+                            "beats_left": getattr(s, "beats_left", 0),
+                        }
+                        for s in getattr(a, "states", [])
+                        if not getattr(s, "hidden", False)
+                    ],
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],

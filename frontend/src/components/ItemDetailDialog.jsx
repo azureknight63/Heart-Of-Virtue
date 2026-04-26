@@ -784,8 +784,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {partyMembers.map((member) => {
-                const hpPct = Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)
                 const outOfRange = member.in_range === false
+                const memberStates = member.states || []
+                const effects = item.effects || []
+                const healEffects = effects.filter(e => e.type === 'heal')
+                const chipEffects = effects.filter(e => e.type !== 'heal')
+                const hasEffects = effects.length > 0
+                const hpPct = Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)
                 return (
                   <button
                     key={member.id}
@@ -803,17 +808,132 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                       transition: 'all 0.15s',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    {/* Header: name + active status badges + out-of-range label */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <span style={{ color: outOfRange ? '#888' : '#00ccff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px' }}>{member.name}</span>
-                      {outOfRange && <span style={{ color: '#ff6666', fontSize: '11px', fontFamily: 'monospace' }}>OUT OF RANGE</span>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '10px', color: '#ff6666', fontFamily: 'monospace', minWidth: '28px' }}>HP</span>
-                      <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                        <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444', borderRadius: '2px' }} />
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        {memberStates.map(s => (
+                          <span key={s.name} style={{
+                            fontSize: '9px', padding: '1px 5px', borderRadius: '3px', border: '1px solid', fontFamily: 'monospace',
+                            backgroundColor: s.status_type === 'poison' ? 'rgba(160,0,160,0.18)' : 'rgba(0,255,136,0.1)',
+                            borderColor: s.status_type === 'poison' ? 'rgba(160,0,160,0.5)' : 'rgba(0,255,136,0.3)',
+                            color: s.status_type === 'poison' ? '#cc55cc' : '#00ff88',
+                          }}>
+                            ◆ {s.name}{s.beats_left > 0 ? ` · ${s.beats_left}` : ''}
+                          </span>
+                        ))}
+                        {outOfRange && <span style={{ color: '#ff6666', fontSize: '11px', fontFamily: 'monospace' }}>OUT OF RANGE</span>}
                       </div>
-                      <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{member.hp}/{member.max_hp}</span>
                     </div>
+
+                    {/* Stat bars: one per heal effect, or legacy HP bar if no effects data */}
+                    {hasEffects ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {healEffects.map(effect => {
+                          const isHp = effect.stat === 'hp'
+                          const current = isHp ? (member.hp || 0) : (member.fatigue || 0)
+                          const max = isHp ? (member.max_hp || 100) : (member.max_fatigue || 100)
+                          const missing = Math.max(0, max - current)
+                          const currentPct = Math.min(100, (current / (max || 1)) * 100)
+                          const minHeal = effect.range?.[0] ?? effect.power
+                          const maxHeal = effect.range?.[1] ?? effect.power
+                          const goldPct = Math.min(missing, effect.power) / (max || 1) * 100
+                          const projectedMin = Math.min(max, current + minHeal)
+                          const projectedMax = Math.min(max, current + maxHeal)
+                          const willFull = current + minHeal >= max
+                          const barColor = isHp ? (currentPct > 50 ? '#44ff88' : currentPct > 25 ? '#ffaa00' : '#ff4444') : '#00ccff'
+                          const healDisplay = minHeal === maxHeal ? `+${minHeal}` : `+${minHeal}–${maxHeal}`
+                          const afterDisplay = willFull ? 'full' : `~${projectedMin}${projectedMin !== projectedMax ? `–${projectedMax}` : ''}`
+                          return (
+                            <div key={effect.stat}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '10px', color: isHp ? '#ff6666' : '#00ccff', fontFamily: 'monospace', minWidth: '28px', fontWeight: 'bold' }}>
+                                  {isHp ? 'HP' : 'FAT'}
+                                </span>
+                                <div style={{ flex: 1, height: '4px', backgroundColor: isHp ? 'rgba(255,0,0,0.15)' : 'rgba(0,204,255,0.1)', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
+                                  <div style={{ width: `${currentPct}%`, height: '100%', backgroundColor: barColor, flexShrink: 0 }} />
+                                  {goldPct > 0 && (
+                                    <div style={{ width: `${goldPct}%`, height: '100%', backgroundColor: '#FFDD00', opacity: 0.9, flexShrink: 0 }} />
+                                  )}
+                                </div>
+                                <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{current}/{max}</span>
+                              </div>
+                              {missing > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '2px' }}>
+                                  <span style={{ fontSize: '10px', color: '#FFDD00', fontFamily: 'monospace', fontWeight: 'bold' }}>{healDisplay} {isHp ? 'HP' : 'FAT'}</span>
+                                  <span style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>→ {afterDisplay}</span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '10px', color: '#ff6666', fontFamily: 'monospace', minWidth: '28px' }}>HP</span>
+                        <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
+                          <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444', borderRadius: '2px' }} />
+                        </div>
+                        <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{member.hp}/{member.max_hp}</span>
+                      </div>
+                    )}
+
+                    {/* Effect chips: status removals, status applications, attribute buffs */}
+                    {chipEffects.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '6px' }}>
+                        {chipEffects.map((effect, i) => {
+                          if (effect.type === 'status_remove') {
+                            const active = memberStates.some(s => s.status_type === effect.status_type)
+                            return (
+                              <span key={`remove-${effect.status_name}`} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold',
+                                fontFamily: 'monospace', border: '1px solid',
+                                backgroundColor: active ? 'rgba(255,68,68,0.12)' : 'rgba(60,60,60,0.15)',
+                                borderColor: active ? 'rgba(255,68,68,0.45)' : 'rgba(80,80,80,0.3)',
+                                color: active ? '#ff6666' : '#555',
+                                textDecoration: active ? 'none' : 'line-through',
+                              }}>
+                                ✗ {effect.status_name}{active ? ' removed' : ' (none)'}
+                              </span>
+                            )
+                          }
+                          if (effect.type === 'status_apply') {
+                            const existing = memberStates.find(s => s.name === effect.status_name)
+                            return (
+                              <span key={`apply-${effect.status_name}`} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold',
+                                fontFamily: 'monospace', border: '1px solid',
+                                backgroundColor: existing ? 'rgba(153,68,255,0.1)' : 'rgba(0,255,136,0.1)',
+                                borderColor: existing ? 'rgba(153,68,255,0.4)' : 'rgba(0,255,136,0.35)',
+                                color: existing ? '#9944ff' : '#00ff88',
+                              }}>
+                                {existing
+                                  ? `↻ ${effect.status_name} · refreshes to ${effect.duration} beats`
+                                  : `+ ${effect.status_name} · ${effect.duration} beats`}
+                              </span>
+                            )
+                          }
+                          if (effect.type === 'attr_buff') {
+                            const isFin = ['finesse', 'fin'].includes(effect.stat?.toLowerCase())
+                            return (
+                              <span key={`attr-${effect.stat}-${i}`} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                padding: '2px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold',
+                                fontFamily: 'monospace', border: '1px solid',
+                                backgroundColor: isFin ? 'rgba(0,204,255,0.1)' : 'rgba(255,170,0,0.1)',
+                                borderColor: isFin ? 'rgba(0,204,255,0.4)' : 'rgba(255,170,0,0.4)',
+                                color: isFin ? '#00ccff' : '#ffaa00',
+                              }}>
+                                ↑ {effect.label || effect.stat?.toUpperCase()} +{effect.amount} · {effect.duration} beats
+                              </span>
+                            )
+                          }
+                          return null
+                        })}
+                      </div>
+                    )}
                   </button>
                 )
               })}

@@ -14,6 +14,31 @@ Classes:
 
 from typing import Dict, Optional
 
+# Effect descriptors for consumable items, keyed by class name.
+# Each list entry has a `type` discriminator used by the frontend chip renderer.
+# New consumables only need a new entry here — no frontend layout changes required.
+_CONSUMABLE_EFFECTS = {
+    "Restorative": [
+        {"type": "heal", "stat": "hp", "power": 60, "range": [48, 72]},
+    ],
+    "Draught": [
+        {"type": "heal", "stat": "fatigue", "power": 100, "range": [80, 120]},
+    ],
+    "Antidote": [
+        {"type": "heal", "stat": "hp", "power": 15, "range": [12, 18]},
+        {"type": "status_remove", "status_name": "Poisoned", "status_type": "poison"},
+    ],
+    "IronRation": [
+        {"type": "heal", "stat": "hp", "power": 30, "range": [27, 33]},
+    ],
+    "Bitterroot": [
+        {"type": "heal", "stat": "hp", "power": 60, "range": [51, 69]},
+    ],
+    "DriedCrystalSap": [
+        {"type": "heal", "stat": "hp", "power": 20, "range": [20, 20]},
+    ],
+}
+
 
 class InventoryItemSerializer:
     """Serialize a single item in player inventory."""
@@ -73,6 +98,10 @@ class InventoryItemSerializer:
             "Accessory",
         ] or maintype in ["Armor", "Boots", "Helm", "Gloves", "Accessory"]:
             item_data["protection"] = getattr(item, "protection", 0)
+
+        # Add composable effects array for usable (consumable) items
+        if item_data["can_use"]:
+            item_data["effects"] = _CONSUMABLE_EFFECTS.get(item_type, [])
 
         return item_data
 
