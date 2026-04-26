@@ -1485,6 +1485,9 @@ class GameService:
         if not clean_output:
             if action == "take_all":
                 clean_output = "Jean collects all of the available items."
+            elif action == "talk":
+                target_name = getattr(target, "name", None)
+                clean_output = f"{target_name} does not respond." if target_name else "No response."
             else:
                 clean_output = f"Jean successfully completes the '{action}' action."
 
