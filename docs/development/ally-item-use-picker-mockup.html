@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ally Item Use Picker — Issue #124 Mockup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      font-family: 'Courier New', monospace;
+      color: #e0e0e0;
+      padding: 32px;
+      min-height: 100vh;
+    }
+
+    /* ── Page Header ── */
+    .page-header {
+      border-bottom: 1px solid rgba(0,153,204,0.4);
+      padding-bottom: 16px;
+      margin-bottom: 36px;
+    }
+    .page-title {
+      font-size: 18px;
+      color: #00ccff;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .page-meta {
+      font-size: 11px;
+      color: #555;
+      margin-top: 6px;
+    }
+    .page-meta span { color: #888; margin-right: 20px; }
+
+    /* ── Section headers ── */
+    .section-title {
+      font-size: 13px;
+      color: #ffaa00;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,170,0,0.2);
+    }
+
+    /* ── Three-column layout ── */
+    .states-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-bottom: 48px;
+    }
+    .state-col { display: flex; flex-direction: column; gap: 12px; }
+    .state-label {
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 4px 8px;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+    }
+    .state-label.current  { border-color: #444; color: #666; }
+    .state-label.proposed { border-color: rgba(0,153,204,0.5); color: #00ccff; }
+    .state-label.fatigue  { border-color: rgba(153,68,255,0.5); color: #9944ff; }
+
+    /* ── Modal shell ── */
+    .modal {
+      background: rgba(0, 20, 40, 0.98);
+      border: 2px solid #0099cc;
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 0 20px rgba(0,153,204,0.3);
+      width: 100%;
+    }
+    .modal-header {
+      font-size: 14px;
+      font-weight: bold;
+      color: #00ccff;
+      border-bottom: 1px solid #0099cc;
+      padding-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+    .modal-list { display: flex; flex-direction: column; gap: 8px; }
+    .modal-cancel {
+      padding: 7px 20px;
+      background: transparent;
+      color: #888;
+      border: 1px solid #444;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      align-self: center;
+    }
+
+    /* ── Ally card ── */
+    .ally-card {
+      padding: 10px 12px;
+      background: rgba(0,30,50,0.8);
+      border: 1px solid #0099cc;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .ally-card.out-of-range {
+      background: rgba(40,40,40,0.6);
+      border-color: #444;
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .ally-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 7px;
+    }
+    .ally-name {
+      color: #00ccff;
+      font-weight: bold;
+      font-size: 13px;
+    }
+    .ally-card.out-of-range .ally-name { color: #888; }
+    .out-of-range-badge {
+      color: #ff6666;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Stat row ── */
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .stat-label {
+      font-size: 10px;
+      color: #ff6666;
+      min-width: 28px;
+      font-weight: bold;
+    }
+    .stat-label.fat { color: #00ccff; }
+    .bar-track {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,0,0,0.15);
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+    }
+    .bar-track.fat-track { background: rgba(0,204,255,0.1); }
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px 0 0 3px;
+      flex-shrink: 0;
+    }
+    .bar-fill.hp-high   { background: #44ff88; }
+    .bar-fill.hp-mid    { background: #ffaa00; }
+    .bar-fill.hp-low    { background: #ff4444; }
+    .bar-fill.fat-fill  { background: #00ccff; }
+    /* Projected gain segment — gold, distinct from HP color */
+    .bar-projected {
+      height: 100%;
+      background: #FFDD00;
+      opacity: 0.85;
+      flex-shrink: 0;
+    }
+    .stat-nums {
+      font-size: 10px;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    /* ── Effect chips (status & attr modifiers) ── */
+    .effect-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+    .effect-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 0.3px;
+      border: 1px solid;
+      white-space: nowrap;
+    }
+    .chip-remove  { background: rgba(255,68,68,0.12);   border-color: rgba(255,68,68,0.45);   color: #ff6666; }
+    .chip-apply   { background: rgba(0,255,136,0.1);    border-color: rgba(0,255,136,0.35);   color: #00ff88; }
+    .chip-attr    { background: rgba(255,170,0,0.1);    border-color: rgba(255,170,0,0.4);    color: #ffaa00; }
+    .chip-attr-fin{ background: rgba(0,204,255,0.1);    border-color: rgba(0,204,255,0.4);    color: #00ccff; }
+    .chip-refresh { background: rgba(153,68,255,0.1);   border-color: rgba(153,68,255,0.4);   color: #9944ff; }
+    .chip-inert   { background: rgba(60,60,60,0.15);    border-color: rgba(80,80,80,0.3);     color: #555;    text-decoration: line-through; }
+
+    /* ── Current status badges (ally header) ── */
+    .status-badges { display: flex; gap: 4px; align-items: center; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      letter-spacing: 0.3px;
+      border: 1px solid;
+    }
+    .badge-poison  { background: rgba(160,0,160,0.18); border-color: rgba(160,0,160,0.5); color: #cc55cc; }
+    .badge-buff    { background: rgba(0,255,136,0.1);  border-color: rgba(0,255,136,0.3); color: #00ff88; }
+
+    /* ── Effect preview label (new in proposed states) ── */
+    .effect-preview {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .effect-label {
+      font-size: 10px;
+      color: #FFDD00;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+    .projected-range {
+      font-size: 10px;
+      color: #888;
+    }
+
+    /* ── Annotations ── */
+    .annotations {
+      margin-top: 12px;
+      padding: 14px 16px;
+      background: rgba(255,170,0,0.05);
+      border: 1px solid rgba(255,170,0,0.2);
+      border-radius: 6px;
+    }
+    .annotation-title {
+      font-size: 11px;
+      color: #ffaa00;
+      font-weight: bold;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .annotation-item {
+      font-size: 11px;
+      color: #ffaa00;
+      line-height: 1.7;
+      margin-bottom: 2px;
+    }
+    .annotation-item::before { content: "▸ "; opacity: 0.6; }
+    .annotation-item code {
+      background: rgba(255,221,0,0.12);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 10px;
+      color: #FFDD00;
+    }
+
+    /* ── Close-up section ── */
+    .closeup-section { margin-top: 40px; }
+    .closeup-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 28px;
+      margin-top: 16px;
+    }
+    .closeup-card {
+      background: rgba(0,20,40,0.7);
+      border: 1px solid rgba(0,153,204,0.3);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .closeup-label {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Enlarged bar for close-up */
+    .bar-large .bar-track { height: 10px; border-radius: 5px; }
+    .bar-large .stat-label { font-size: 11px; min-width: 38px; }
+    .bar-large .stat-nums { font-size: 11px; }
+    .bar-large .effect-label { font-size: 12px; }
+    .bar-large .projected-range { font-size: 11px; }
+
+    /* Color legend */
+    .legend {
+      margin-top: 32px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #888;
+    }
+    .legend-swatch {
+      width: 18px;
+      height: 6px;
+      border-radius: 3px;
+    }
+
+    /* Implementation notes */
+    .impl-notes {
+      margin-top: 40px;
+      padding: 20px;
+      background: rgba(0,255,136,0.04);
+      border: 1px solid rgba(0,255,136,0.15);
+      border-radius: 8px;
+    }
+    .impl-title {
+      font-size: 12px;
+      color: #00ff88;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+    .impl-item {
+      font-size: 11px;
+      color: #aaa;
+      line-height: 1.8;
+    }
+    .impl-item code {
+      color: #00ff88;
+      background: rgba(0,255,136,0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+    .impl-item strong { color: #e0e0e0; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Page Header ── -->
+  <div class="page-header">
+    <div class="page-title">▸ ALLY ITEM USE PICKER — UI IMPROVEMENT MOCKUP</div>
+    <div class="page-meta">
+      <span>Issue #124</span>
+      <span>Branch: claude/improve-ally-item-ui-I1tTC</span>
+      <span>2026-04-26</span>
+    </div>
+  </div>
+
+  <!-- ── Three States Row ── -->
+  <div class="section-title">State Comparison</div>
+
+  <div class="states-row">
+
+    <!-- ─ State 1: Current (no preview) ─ -->
+    <div class="state-col">
+      <div class="state-label current">State 1 · Current (no preview)</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Restorative</div>
+        <div class="modal-list">
+
+          <!-- Gorran — active, low HP -->
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">HP</span>
+              <div class="bar-track">
+                <!-- 25% HP — red -->
+                <div class="bar-fill hp-low" style="width:25%"></div>
+              </div>
+              <span class="stat-nums">30 / 120</span>
+            </div>
+          </div>
+
+          <!-- Aldric — out of range -->
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">HP</span>
+              <div class="bar-track">
+                <div class="bar-fill hp-high" style="width:78%"></div>
+              </div>
+              <span class="stat-nums">70 / 90</span>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Problem</div>
+        <div class="annotation-item">No indication of what the Restorative will do</div>
+        <div class="annotation-item">HP bar looks the same as any other panel — is this "current" or "projected"?</div>
+        <div class="annotation-item">No cue that this item heals HP (vs fatigue or a status)</div>
+      </div>
+    </div>
+
+    <!-- ─ State 2: Proposed — HP item (Restorative) ─ -->
+    <div class="state-col">
+      <div class="state-label proposed">State 2 · Proposed — HP Item (Restorative)</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Restorative</div>
+        <div class="modal-list">
+
+          <!-- Gorran — active, low HP with projected heal -->
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">HP</span>
+              <!-- Bar: 25% current (red) + 50% projected (gold) = 75% total -->
+              <div class="bar-track">
+                <div class="bar-fill hp-low" style="width:25%"></div>
+                <div class="bar-projected" style="width:50%"></div>
+              </div>
+              <span class="stat-nums">30 / 120</span>
+            </div>
+            <!-- Effect preview label -->
+            <div class="effect-preview">
+              <span class="effect-label">+48–72 HP</span>
+              <span class="projected-range">→ ~78–102</span>
+            </div>
+          </div>
+
+          <!-- Aldric — out of range (still shows projected, greyed) -->
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">HP</span>
+              <!-- 78% current (green) + capped at 22% remaining = full bar -->
+              <div class="bar-track">
+                <div class="bar-fill hp-high" style="width:78%"></div>
+                <div class="bar-projected" style="width:22%"></div>
+              </div>
+              <span class="stat-nums">70 / 90</span>
+            </div>
+            <div class="effect-preview">
+              <span class="effect-label" style="opacity:0.5">+48–72 HP</span>
+              <span class="projected-range">→ full</span>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Changes</div>
+        <div class="annotation-item">Gold (<code>#FFDD00</code>) segment appended after the current HP fill — clearly "not current HP"</div>
+        <div class="annotation-item">Text label <code>+48–72 HP</code> (item's min/max heal range) — visible at a glance</div>
+        <div class="annotation-item">Projected value <code>→ ~78–102</code> confirms the outcome without ambiguity</div>
+        <div class="annotation-item">Capped case: if projected exceeds max HP, gold fills to bar end + shows "→ full"</div>
+        <div class="annotation-item">Out-of-range allies also show the projection (dimmed) for informational value</div>
+      </div>
+    </div>
+
+    <!-- ─ State 3: Fatigue item variant (Draught) ─ -->
+    <div class="state-col">
+      <div class="state-label fatigue">State 3 · Fatigue Item Variant (Draught)</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Draught</div>
+        <div class="modal-list">
+
+          <!-- Gorran — shows FATIGUE bar, not HP -->
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+            </div>
+            <!-- Fatigue stat row (cyan label, cyan bar) -->
+            <div class="stat-row">
+              <span class="stat-label fat">FAT</span>
+              <!-- 40% current fatigue (cyan) + 55% projected (gold, capped at 60% remaining) -->
+              <div class="bar-track fat-track">
+                <div class="bar-fill fat-fill" style="width:40%"></div>
+                <div class="bar-projected" style="width:55%"></div>
+              </div>
+              <span class="stat-nums">40 / 100</span>
+            </div>
+            <!-- Effect preview label for fatigue -->
+            <div class="effect-preview">
+              <span class="effect-label">+80–120 FAT</span>
+              <span class="projected-range">→ full</span>
+            </div>
+          </div>
+
+          <!-- Aldric — out of range, shows fatigue bar -->
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label fat">FAT</span>
+              <div class="bar-track fat-track">
+                <div class="bar-fill fat-fill" style="width:65%"></div>
+                <div class="bar-projected" style="width:35%"></div>
+              </div>
+              <span class="stat-nums">65 / 100</span>
+            </div>
+            <div class="effect-preview">
+              <span class="effect-label" style="opacity:0.5">+80–120 FAT</span>
+              <span class="projected-range">→ full</span>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Stat-Aware Display</div>
+        <div class="annotation-item">When item affects <code>fatigue</code>, show the FAT bar (cyan) instead of HP</div>
+        <div class="annotation-item">Label color matches the stat: <code>#00ccff</code> for fatigue vs <code>#ff6666</code> for HP</div>
+        <div class="annotation-item">Same gold projection mechanic applies regardless of stat</div>
+        <div class="annotation-item">Draught restores up to 120 fatigue — both allies would hit max, so "→ full" shown</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Close-up Section ── -->
+  <div class="closeup-section">
+    <div class="section-title">Component Close-up — Stat Bar Detail</div>
+
+    <div class="closeup-grid">
+
+      <!-- Close-up: HP item, partial heal -->
+      <div class="closeup-card">
+        <div class="closeup-label">HP item · Partial heal (Gorran, 30/120 HP)</div>
+        <div class="bar-large">
+          <div class="stat-row" style="margin-bottom:10px;">
+            <span class="stat-label">HP</span>
+            <div class="bar-track" style="height:10px; border-radius:5px;">
+              <div class="bar-fill hp-low" style="width:25%; border-radius:5px 0 0 5px;"></div>
+              <div class="bar-projected" style="width:50%; border-radius:0;"></div>
+            </div>
+            <span class="stat-nums" style="font-size:12px;">30 / 120</span>
+          </div>
+          <div class="effect-preview">
+            <span class="effect-label" style="font-size:13px;">+48–72 HP</span>
+            <span class="projected-range" style="font-size:12px;">→ ~78–102 / 120</span>
+          </div>
+        </div>
+        <div class="annotations" style="margin-top:14px;">
+          <div class="annotation-title">Bar anatomy</div>
+          <div class="annotation-item">Red segment = current HP (25% of max) — color follows existing HP thresholds</div>
+          <div class="annotation-item">Gold segment = projected gain (midpoint of 48–72 = 60 HP → 50% of max)</div>
+          <div class="annotation-item">Text shows range not a single number — variance is part of the game's design</div>
+          <div class="annotation-item">Bar never exceeds 100% — gold segment is <code>min(projected, remaining)</code></div>
+        </div>
+      </div>
+
+      <!-- Close-up: HP item, near-full (cap case) -->
+      <div class="closeup-card">
+        <div class="closeup-label">HP item · Near-full (Aldric, 70/90 HP)</div>
+        <div class="bar-large">
+          <div class="stat-row" style="margin-bottom:10px;">
+            <span class="stat-label">HP</span>
+            <div class="bar-track" style="height:10px; border-radius:5px;">
+              <div class="bar-fill hp-high" style="width:77.8%; border-radius:5px 0 0 5px;"></div>
+              <div class="bar-projected" style="width:22.2%;"></div>
+            </div>
+            <span class="stat-nums" style="font-size:12px;">70 / 90</span>
+          </div>
+          <div class="effect-preview">
+            <span class="effect-label" style="font-size:13px;">+48–72 HP</span>
+            <span class="projected-range" style="font-size:12px;">→ full (20 hp missing)</span>
+          </div>
+        </div>
+        <div class="annotations" style="margin-top:14px;">
+          <div class="annotation-title">Cap behaviour</div>
+          <div class="annotation-item">Only 20 HP missing — gold segment fills the remaining bar gap (22.2%)</div>
+          <div class="annotation-item">Label text changes to "→ full" when <code>hp + min_heal ≥ max_hp</code></div>
+          <div class="annotation-item">Communicates "this is overkill" without blocking the action</div>
+        </div>
+      </div>
+
+      <!-- Close-up: Fatigue item -->
+      <div class="closeup-card">
+        <div class="closeup-label">Fatigue item · Partial restore (Gorran, 40/100 fatigue)</div>
+        <div class="bar-large">
+          <div class="stat-row" style="margin-bottom:10px;">
+            <span class="stat-label fat" style="font-size:11px;">FAT</span>
+            <div class="bar-track fat-track" style="height:10px; border-radius:5px;">
+              <div class="bar-fill fat-fill" style="width:40%; border-radius:5px 0 0 5px;"></div>
+              <div class="bar-projected" style="width:55%;"></div>
+            </div>
+            <span class="stat-nums" style="font-size:12px;">40 / 100</span>
+          </div>
+          <div class="effect-preview">
+            <span class="effect-label" style="font-size:13px;">+80–120 FAT</span>
+            <span class="projected-range" style="font-size:12px;">→ full</span>
+          </div>
+        </div>
+        <div class="annotations" style="margin-top:14px;">
+          <div class="annotation-title">Stat-aware rendering</div>
+          <div class="annotation-item">FAT label in <code>#00ccff</code> (cyan) signals: "this bar is not HP"</div>
+          <div class="annotation-item">Bar fill uses cyan to match; same gold projection layer on top</div>
+          <div class="annotation-item">Stat determined by item's <code>stat_affected</code> field (new API field)</div>
+          <div class="annotation-item">HP bar is hidden when stat_affected ≠ "hp" — cleaner, less noise</div>
+        </div>
+      </div>
+
+      <!-- Close-up: no effect data (fallback) -->
+      <div class="closeup-card">
+        <div class="closeup-label">Fallback · No effect data (graceful degradation)</div>
+        <div class="bar-large">
+          <div class="stat-row" style="margin-bottom:10px;">
+            <span class="stat-label">HP</span>
+            <div class="bar-track" style="height:10px; border-radius:5px;">
+              <div class="bar-fill hp-mid" style="width:60%; border-radius:5px;"></div>
+            </div>
+            <span class="stat-nums" style="font-size:12px;">72 / 120</span>
+          </div>
+          <!-- No effect preview label shown in fallback -->
+        </div>
+        <div class="annotations" style="margin-top:14px;">
+          <div class="annotation-title">Graceful degradation</div>
+          <div class="annotation-item">If <code>stat_affected</code> or <code>power</code> are absent from item data → show current state only</div>
+          <div class="annotation-item">No gold segment, no effect label — identical to current (State 1) behavior</div>
+          <div class="annotation-item">Backward-compatible: old items without serialized effect data still work</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Color Legend ── -->
+  <div class="legend" style="margin-top:32px;">
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#44ff88;"></div>
+      HP &gt; 50% (existing)
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#ffaa00;"></div>
+      HP 25–50% (existing)
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#ff4444;"></div>
+      HP &lt; 25% (existing)
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#00ccff;"></div>
+      Fatigue (new)
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#FFDD00;"></div>
+      Projected gain — gold (new)
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <hr style="border: none; border-top: 1px solid rgba(255,170,0,0.12); margin: 48px 0;" />
+
+  <!-- ── Status Modifier Items ── -->
+  <div class="section-title">Status Modifier Items</div>
+  <div class="states-row">
+
+    <!-- ─ Col 1: Status removal (Antidote: heals + removes Poisoned) ─ -->
+    <div class="state-col">
+      <div class="state-label proposed">Removal — Antidote</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Antidote</div>
+        <div class="modal-list">
+
+          <!-- Gorran — poisoned, low HP -->
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+              <div class="status-badges">
+                <span class="status-badge badge-poison">◆ POISONED</span>
+              </div>
+            </div>
+            <!-- Small HP heal from Antidote (power=15 → 12–18) -->
+            <div class="stat-row">
+              <span class="stat-label">HP</span>
+              <div class="bar-track">
+                <div class="bar-fill hp-low" style="width:25%"></div>
+                <div class="bar-projected" style="width:12%"></div>
+              </div>
+              <span class="stat-nums">30 / 120</span>
+            </div>
+            <div class="effect-preview">
+              <span class="effect-label">+12–18 HP</span>
+              <span class="projected-range">→ ~42–48</span>
+            </div>
+            <!-- Status effect chips -->
+            <div class="effect-chips">
+              <span class="effect-chip chip-remove">✗ POISONED removed</span>
+            </div>
+          </div>
+
+          <!-- Aldric — out of range, not poisoned -->
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">HP</span>
+              <div class="bar-track">
+                <div class="bar-fill hp-high" style="width:78%"></div>
+                <div class="bar-projected" style="width:12%"></div>
+              </div>
+              <span class="stat-nums">70 / 90</span>
+            </div>
+            <div class="effect-chips">
+              <!-- Aldric not poisoned — chip shown dimmed, signals "no poison to remove" -->
+              <span class="effect-chip chip-inert">✗ POISONED (none)</span>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Status removal</div>
+        <div class="annotation-item">Status badges in ally header show what conditions are active</div>
+        <div class="annotation-item">Removal chip <code>chip-remove</code> (red) = will be cured</div>
+        <div class="annotation-item">If ally has no poison, chip renders as <code>chip-inert</code> with strikethrough — warns player before wasting the item</div>
+        <div class="annotation-item">HP bar still shown when item has a heal component alongside removal</div>
+      </div>
+    </div>
+
+    <!-- ─ Col 2: Status addition (hypothetical "Brightwater" — grants Hawkeye 30 beats) ─ -->
+    <div class="state-col">
+      <div class="state-label proposed">Addition — Brightwater</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Brightwater</div>
+        <div class="modal-list">
+
+          <!-- Gorran — no current Hawkeye -->
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+            </div>
+            <!-- No stat bar — pure status item, no HP heal -->
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-apply">+ HAWKEYE · 30 beats</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Aldric — out of range -->
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-apply" style="opacity:0.4;">+ HAWKEYE · 30 beats</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Pure status addition</div>
+        <div class="annotation-item">No stat bar shown — item has no heal component</div>
+        <div class="annotation-item">Apply chip <code>chip-apply</code> (green) = effect will be granted</div>
+        <div class="annotation-item">Duration label <code>· 30 beats</code> tells player how long it lasts</div>
+        <div class="annotation-item">Out-of-range ally shows chip dimmed but still shows intent</div>
+      </div>
+    </div>
+
+    <!-- ─ Col 3: Status already active (Brightwater on ally who already has Hawkeye) ─ -->
+    <div class="state-col">
+      <div class="state-label fatigue">Addition — effect already active</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Brightwater</div>
+        <div class="modal-list">
+
+          <!-- Gorran — already has Hawkeye; chip shows refresh -->
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+              <div class="status-badges">
+                <span class="status-badge badge-buff">◆ HAWKEYE · 14 left</span>
+              </div>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <!-- Refresh: same state, but duration resets -->
+                <span class="effect-chip chip-refresh">↻ HAWKEYE · refreshes to 30 beats</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Aldric — out of range, no Hawkeye -->
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-apply" style="opacity:0.4;">+ HAWKEYE · 30 beats</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Refresh case</div>
+        <div class="annotation-item">Active status badge in header shows remaining beats</div>
+        <div class="annotation-item">Apply chip changes to <code>chip-refresh</code> (purple) when status is already running</div>
+        <div class="annotation-item">Tells player the item won't be wasted — it will reset the timer</div>
+        <div class="annotation-item">Frontend checks <code>member.states</code> (returned by <code>/player/status</code>) against the effect's status name</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <hr style="border: none; border-top: 1px solid rgba(255,170,0,0.12); margin: 48px 0;" />
+
+  <!-- ── Temporary Attribute Modifier Items ── -->
+  <div class="section-title">Temporary Attribute Modifier Items</div>
+  <div class="states-row" style="grid-template-columns: repeat(2, 1fr);">
+
+    <!-- ─ Col 1: Single attr buff ("Ironbrew" — +5 STR for 25 beats) ─ -->
+    <div class="state-col">
+      <div class="state-label proposed">Single buff — Ironbrew (+5 STR)</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Ironbrew</div>
+        <div class="modal-list">
+
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-attr">↑ STR +5 · 25 beats</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-attr" style="opacity:0.4;">↑ STR +5 · 25 beats</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Attribute buff</div>
+        <div class="annotation-item">Attr chip <code>chip-attr</code> (orange) = temporary stat increase</div>
+        <div class="annotation-item">Format: <code>↑ STAT +amount · duration beats</code></div>
+        <div class="annotation-item">No stat bar — the buff affects combat stats, not current HP/FAT pools</div>
+      </div>
+    </div>
+
+    <!-- ─ Col 2: Multi-attr buff ("Warrior's Draught" — +5 STR 25b + +3 FIN 50b) ─ -->
+    <div class="state-col">
+      <div class="state-label proposed">Multi-buff — Warrior's Draught (+STR +FIN)</div>
+      <div class="modal">
+        <div class="modal-header">👥 USE ON — Warrior's Draught</div>
+        <div class="modal-list">
+
+          <div class="ally-card">
+            <div class="ally-card-header">
+              <span class="ally-name">Gorran</span>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-attr">↑ STR +5 · 25 beats</span>
+                <span class="effect-chip chip-attr-fin">↑ FIN +3 · 50 beats</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ally-card out-of-range">
+            <div class="ally-card-header">
+              <span class="ally-name">Aldric</span>
+              <span class="out-of-range-badge">OUT OF RANGE</span>
+            </div>
+            <div style="padding: 4px 0 2px;">
+              <div class="effect-chips">
+                <span class="effect-chip chip-attr" style="opacity:0.4;">↑ STR +5 · 25 beats</span>
+                <span class="effect-chip chip-attr-fin" style="opacity:0.4;">↑ FIN +3 · 50 beats</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <button class="modal-cancel">Cancel</button>
+      </div>
+      <div class="annotations">
+        <div class="annotation-title">Multi-stat buff</div>
+        <div class="annotation-item">Each stat gets its own chip — different stats use different chip colors</div>
+        <div class="annotation-item">STR → orange (<code>#ffaa00</code>); FIN → cyan (<code>#00ccff</code>) — distinguishable at a glance</div>
+        <div class="annotation-item">Chips wrap naturally if more stats are present — no fixed layout</div>
+        <div class="annotation-item">Different durations per stat shown individually — not combined into one label</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <hr style="border: none; border-top: 1px solid rgba(255,170,0,0.12); margin: 48px 0;" />
+
+  <!-- ── Combined Multi-Effect Card ── -->
+  <div class="section-title">Combined Multi-Effect Item — Versatile Card Design</div>
+  <p style="font-size:12px; color:#888; margin-bottom:24px; max-width:760px;">
+    The card design handles any combination of effect types in a single item. A hypothetical
+    <strong style="color:#e0e0e0;">"Valor Draught"</strong> demonstrates all four modifier types
+    stacking in one card: heal + status removal + status addition + attribute buff.
+  </p>
+
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:32px; max-width:860px;">
+
+    <!-- Full combined card — Gorran (poisoned, low HP) -->
+    <div>
+      <div class="state-label proposed" style="margin-bottom:12px;">Gorran — poisoned, 25% HP</div>
+      <div class="ally-card" style="padding:14px 14px 12px;">
+        <div class="ally-card-header" style="margin-bottom:9px;">
+          <span class="ally-name" style="font-size:14px;">Gorran</span>
+          <div class="status-badges">
+            <span class="status-badge badge-poison">◆ POISONED</span>
+          </div>
+        </div>
+        <!-- HP heal bar -->
+        <div class="stat-row" style="margin-bottom:5px;">
+          <span class="stat-label">HP</span>
+          <div class="bar-track">
+            <div class="bar-fill hp-low" style="width:25%"></div>
+            <div class="bar-projected" style="width:20%"></div>
+          </div>
+          <span class="stat-nums">30 / 120</span>
+        </div>
+        <div class="effect-preview" style="margin-bottom:8px;">
+          <span class="effect-label">+20–30 HP</span>
+          <span class="projected-range">→ ~50–60</span>
+        </div>
+        <!-- All effect chips in one row, wrap naturally -->
+        <div class="effect-chips">
+          <span class="effect-chip chip-remove">✗ POISONED removed</span>
+          <span class="effect-chip chip-apply">+ HAWKEYE · 30 beats</span>
+          <span class="effect-chip chip-attr">↑ STR +5 · 25 beats</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Full combined card — Aldric (no poison, 78% HP) -->
+    <div>
+      <div class="state-label proposed" style="margin-bottom:12px;">Aldric — healthy, no poison</div>
+      <div class="ally-card" style="padding:14px 14px 12px;">
+        <div class="ally-card-header" style="margin-bottom:9px;">
+          <span class="ally-name" style="font-size:14px;">Aldric</span>
+        </div>
+        <!-- HP heal bar — near-full, gold fills gap -->
+        <div class="stat-row" style="margin-bottom:5px;">
+          <span class="stat-label">HP</span>
+          <div class="bar-track">
+            <div class="bar-fill hp-high" style="width:77.8%"></div>
+            <div class="bar-projected" style="width:16.7%"></div>
+          </div>
+          <span class="stat-nums">70 / 90</span>
+        </div>
+        <div class="effect-preview" style="margin-bottom:8px;">
+          <span class="effect-label">+20–30 HP</span>
+          <span class="projected-range">→ full (20 hp missing)</span>
+        </div>
+        <!-- Removal chip dimmed — Aldric not poisoned -->
+        <div class="effect-chips">
+          <span class="effect-chip chip-inert">✗ POISONED (none)</span>
+          <span class="effect-chip chip-apply">+ HAWKEYE · 30 beats</span>
+          <span class="effect-chip chip-attr">↑ STR +5 · 25 beats</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="annotations" style="margin-top:16px; max-width:860px;">
+    <div class="annotation-title">Combined card logic</div>
+    <div class="annotation-item">Each effect in <code>item.effects[]</code> array renders independently — order: heal bars first, then chips (removal → application → attr)</div>
+    <div class="annotation-item">Removal chips are conditionally styled: <code>chip-remove</code> if the target has the status, <code>chip-inert</code> (strikethrough) if not — no surprises</div>
+    <div class="annotation-item">Application chips check <code>member.states</code>: if already active → <code>chip-refresh</code>; otherwise → <code>chip-apply</code></div>
+    <div class="annotation-item">New item types never require a new card layout — just add a new entry to the <code>effects</code> array; the chip row handles it</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <hr style="border: none; border-top: 1px solid rgba(255,170,0,0.12); margin: 48px 0;" />
+
+  <!-- ── Implementation Notes (updated) ── -->
+  <div class="impl-notes" style="margin-top:40px;">
+    <div class="impl-title">Implementation Notes (Updated)</div>
+    <div class="impl-item">
+      <strong>Backend — composable effects array:</strong> Replace the single <code>effect</code> field
+      with an <code>effects: []</code> array in <code>InventoryItemSerializer.serialize()</code>.
+      Each element has a <code>type</code> discriminator:
+    </div>
+    <div style="margin: 10px 0 10px 16px; font-size: 11px; color: #00ff88; background: rgba(0,255,136,0.05); border: 1px solid rgba(0,255,136,0.15); border-radius:6px; padding: 12px 14px; font-family: 'Courier New', monospace; line-height: 1.8;">
+      { "type": "heal",          "stat": "hp",       "power": 25, "range": [20, 30] }<br>
+      { "type": "heal",          "stat": "fatigue",  "power": 100, "range": [80, 120] }<br>
+      { "type": "status_remove", "status_name": "Poisoned", "status_type": "poison" }<br>
+      { "type": "status_apply",  "status_name": "Hawkeye",  "duration": 30 }<br>
+      { "type": "attr_buff",     "stat": "strength", "label": "STR", "amount": 5, "duration": 25 }
+    </div>
+    <div class="impl-item">
+      <strong>Frontend rendering loop:</strong> Iterate <code>item.effects</code>. For each:
+      <code>"heal"</code> → render a stat bar row with projected gold segment;
+      <code>"status_remove"</code> → render red chip (check target's <code>member.states</code> for styling);
+      <code>"status_apply"</code> → render green chip (check if already active → purple refresh chip);
+      <code>"attr_buff"</code> → render orange/cyan chip (per-stat color table).
+    </div>
+    <div class="impl-item" style="margin-top:8px;">
+      <strong>Extensibility:</strong> New item types in Python only require a new <code>type</code> string and a
+      corresponding chip renderer on the frontend — no new card layout, no prop threading.
+    </div>
+    <div class="impl-item" style="margin-top:8px;">
+      <strong>Fallback:</strong> If <code>item.effects</code> is absent or empty, render current HP bar only —
+      no regression for items without serialized effect data.
+    </div>
+    <div class="impl-item" style="margin-top:8px;">
+      <strong>State data source:</strong> The fresh party fetch (<code>/player/status</code>) already runs when
+      "Use on..." is clicked — extend the party member data to include <code>states: ["Poisoned", ...]</code>
+      so the frontend can conditionally style chips per-target.
+    </div>
+  </div>
+
+</body>
+</html>
