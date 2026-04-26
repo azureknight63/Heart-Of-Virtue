@@ -17,6 +17,8 @@ from typing import Dict, Optional
 # Effect descriptors for consumable items, keyed by class name.
 # Each list entry has a `type` discriminator used by the frontend chip renderer.
 # New consumables only need a new entry here — no frontend layout changes required.
+# SYNC RISK: ranges are pre-computed from each item's power and variance in items.py.
+# If items.py changes power or variance for a consumable, update its range here too.
 _CONSUMABLE_EFFECTS = {
     "Restorative": [
         {"type": "heal", "stat": "hp", "power": 60, "range": [48, 72]},

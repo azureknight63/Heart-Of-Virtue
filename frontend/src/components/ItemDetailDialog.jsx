@@ -790,7 +790,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                 const healEffects = effects.filter(e => e.type === 'heal')
                 const chipEffects = effects.filter(e => e.type !== 'heal')
                 const hasEffects = effects.length > 0
-                const hpPct = Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)
                 return (
                   <button
                     key={member.id}
@@ -808,7 +807,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                       transition: 'all 0.15s',
                     }}
                   >
-                    {/* Header: name + active status badges + out-of-range label */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <span style={{ color: outOfRange ? '#888' : '#00ccff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '14px' }}>{member.name}</span>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -826,7 +824,6 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                       </div>
                     </div>
 
-                    {/* Stat bars: one per heal effect, or legacy HP bar if no effects data */}
                     {hasEffects ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {healEffects.map(effect => {
@@ -869,16 +866,20 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                         })}
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '10px', color: '#ff6666', fontFamily: 'monospace', minWidth: '28px' }}>HP</span>
-                        <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                          <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444', borderRadius: '2px' }} />
-                        </div>
-                        <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{member.hp}/{member.max_hp}</span>
-                      </div>
+                      (() => {
+                        const hpPct = Math.min(100, ((member.hp || 0) / (member.max_hp || 100)) * 100)
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '10px', color: '#ff6666', fontFamily: 'monospace', minWidth: '28px' }}>HP</span>
+                            <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
+                              <div style={{ width: `${hpPct}%`, height: '100%', backgroundColor: hpPct > 50 ? '#44ff88' : hpPct > 25 ? '#ffaa00' : '#ff4444', borderRadius: '2px' }} />
+                            </div>
+                            <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{member.hp}/{member.max_hp}</span>
+                          </div>
+                        )
+                      })()
                     )}
 
-                    {/* Effect chips: status removals, status applications, attribute buffs */}
                     {chipEffects.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '6px' }}>
                         {chipEffects.map((effect, i) => {
