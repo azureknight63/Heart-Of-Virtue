@@ -48,6 +48,11 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
 
   const canClose = remainingPoints <= 0
 
+  const handleAdvance = () => {
+    if (hasLoot && onContinueToLoot) onContinueToLoot()
+    else onClose()
+  }
+
   const handleAllocate = async () => {
     setError('')
 
@@ -130,7 +135,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
             RESTORE
           </GameButton>
           {canClose && (
-            <GameButton onClick={() => { if (hasLoot && onContinueToLoot) onContinueToLoot(); else onClose() }} variant="secondary">
+            <GameButton onClick={handleAdvance} variant="secondary">
               {hasLoot ? 'COLLECT LOOT →' : 'CONTINUE'}
             </GameButton>
           )}
@@ -154,7 +159,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
             MINIMIZE
           </GameButton>
           <GameButton
-            onClick={() => { if (hasLoot && onContinueToLoot) onContinueToLoot(); else onClose() }}
+            onClick={handleAdvance}
             disabled={!canClose}
             variant={canClose ? 'primary' : 'secondary'}
             style={{ fontSize: '11px', padding: '4px 10px' }}

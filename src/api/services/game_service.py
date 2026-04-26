@@ -4703,6 +4703,7 @@ class GameService:
 
         collected = []
         skipped = []
+        current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
 
         for name in item_names:
             candidates = tile_by_name.get(name)
@@ -4712,16 +4713,16 @@ class GameService:
             # Pick up every physical item object with this name (handles stacked drops)
             any_collected = False
             for item in list(candidates):
-                current_weight = sum(float(getattr(i, "weight", 0) or 0) for i in inventory)
                 item_weight = float(getattr(item, "weight", 0) or 0)
                 if current_weight + item_weight > capacity:
                     skipped.append({"name": name, "reason": "over_capacity"})
                     break
                 if item in tile.items_here:
                     tile.items_here.remove(item)
-                inventory.append(item)
-                collected.append(name)
-                any_collected = True
+                    inventory.append(item)
+                    collected.append(name)
+                    current_weight += item_weight
+                    any_collected = True
             if not any_collected and not any(s["name"] == name for s in skipped):
                 skipped.append({"name": name, "reason": "not_found"})
 
