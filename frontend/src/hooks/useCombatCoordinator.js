@@ -19,6 +19,8 @@ import { useState, useEffect, useRef } from 'react'
  * @param {Function} params.playSFX - Sound effect player
  * @returns {Object} Combat coordinator state and handlers
  */
+const VICTORY_DIALOG_DELAY_MS = 5000
+
 export function useCombatCoordinator({
     combat,
     inCombat,
@@ -76,7 +78,7 @@ export function useCombatCoordinator({
                     } else {
                         setShowDefeatDialog(true)
                     }
-                }, 5000)
+                }, VICTORY_DIALOG_DELAY_MS)
             }
         }
     }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log, playSting])
@@ -140,15 +142,20 @@ export function useCombatCoordinator({
      * @returns {Promise<Object>} Action result
      */
     const handleCombatAction = async (action, target, onEventsTriggered, triggerTick) => {
-        const result = await performAction(action, target)
-        if (result && result.events_triggered) {
-            onEventsTriggered(result.events_triggered)
+        try {
+            const result = await performAction(action, target)
+            if (result && result.events_triggered) {
+                onEventsTriggered(result.events_triggered)
+            }
+            // Trigger autosave tick on combat action
+            if (triggerTick) {
+                triggerTick()
+            }
+            return result
+        } catch (err) {
+            console.error('Action failed:', err)
+            throw err
         }
-        // Trigger autosave tick on combat action
-        if (triggerTick) {
-            triggerTick()
-        }
-        return result
     }
 
     /**
@@ -165,7 +172,6 @@ export function useCombatCoordinator({
         showDefeatDialog,
         showLootDialog,
         endState,
-        lastEndStateId,
         isCombatLogProcessing,
         currentLogIndex,
         hoveredTargetId,
@@ -176,7 +182,6 @@ export function useCombatCoordinator({
         setShowDefeatDialog,
         setShowLootDialog,
         setEndState,
-        setLastEndStateId,
         setIsCombatLogProcessing,
         setCurrentLogIndex,
         setHoveredTargetId,

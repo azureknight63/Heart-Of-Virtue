@@ -4,6 +4,7 @@ import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
 import { ANIMATION_CONFIGS } from '../utils/animationConfigs';
+import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -66,21 +67,23 @@ const impactSfxFor = (outcome) => {
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
-// Color per move category drives the pulsing pending-move glow (CSS var).
-const MOVE_CATEGORY_GLOW = {
-  Attack: colors.alpha.danger[80],
-  Maneuver: colors.alpha.primary[80],
-  Special: colors.alpha.special[80],
-  Supernatural: colors.alpha.info[80],
-  Miscellaneous: `${colors.text.bright}CC`,
-};
-const MOVE_CATEGORY_BORDER = {
-  Attack: colors.danger,
-  Maneuver: colors.primary,
-  Special: colors.special,
-  Supernatural: colors.info,
-  Miscellaneous: colors.text.bright,
-};
+// Aliases used locally — MOVE_CATEGORY_COLOR serves as the border color map.
+const MOVE_CATEGORY_BORDER = MOVE_CATEGORY_COLOR;
+
+const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
+
+function resolveEntityStats(entity) {
+  if (!entity) return { hp: 0, maxHp: 1, fatigue: 0, maxFatigue: 1, hpPct: 0, fatPct: 0 };
+  const hp = entity.hp !== undefined ? entity.hp : (entity.health?.current || 0);
+  const maxHp = entity.max_hp !== undefined ? entity.max_hp : (entity.health?.max || 100);
+  const fatigue = entity.fatigue || 0;
+  const maxFatigue = entity.max_fatigue || entity.maxfatigue || 100;
+  
+  const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
+  const fatPct = maxFatigue > 0 ? Math.min(1, Math.max(0, fatigue / maxFatigue)) : 0;
+  
+  return { hp, maxHp, fatigue, maxFatigue, hpPct, fatPct };
+}
 
 const CombatantMarker = React.memo(({
   entity,
@@ -96,6 +99,7 @@ const CombatantMarker = React.memo(({
   const moveCategory = move ? (move.category || 'Miscellaneous') : null;
   const pendingGlowColor = moveCategory ? MOVE_CATEGORY_GLOW[moveCategory] : null;
   const pendingBorderColor = moveCategory ? MOVE_CATEGORY_BORDER[moveCategory] : null;
+  const [isHoveredEffect, setIsHoveredEffect] = React.useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
   // move is set, its category color takes precedence on the border.
@@ -107,19 +111,12 @@ const CombatantMarker = React.memo(({
     if (typeof entity.position.facing === 'number') {
       facing = entity.position.facing;
     } else {
-      const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
       facing = FACING_MAP[entity.position.facing] || 0;
     }
   }
 
-  // HP / Fatigue stats — support both player and enemy field names
-  const hp = entity.hp !== undefined ? entity.hp : (entity.health?.current || 0);
-  const maxHp = entity.max_hp !== undefined ? entity.max_hp : (entity.health?.max || 100);
-  const fatigue = entity.fatigue || 0;
-  const maxFatigue = entity.max_fatigue || entity.maxfatigue || 100;
-
-  const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
-  const fatPct = maxFatigue > 0 ? Math.min(1, Math.max(0, fatigue / maxFatigue)) : 0;
+  // HP / Fatigue stats
+  const { hpPct, fatPct } = resolveEntityStats(entity);
 
   const content = displaySymbol || entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
@@ -127,7 +124,7 @@ const CombatantMarker = React.memo(({
     ? 'absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90'
     : 'absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent filter drop-shadow opacity-90';
 
-  const getAnimationStyle = () => {
+  const animationStyle = React.useMemo(() => {
     if (!animationState) return {};
     if (animationState.isTarget && animationState.phase === 'impact') {
       switch (animationState.outcome) {
@@ -148,7 +145,7 @@ const CombatantMarker = React.memo(({
         return { transform: 'scale(1)', transition: 'all 0.2s ease-in' };
     }
     return {};
-  };
+  }, [animationState]);
 
   return (
     <div
@@ -156,7 +153,7 @@ const CombatantMarker = React.memo(({
         pendingGlowColor ? ' battlefield-pending-glow' : ''
       }`}
       style={{
-        ...getAnimationStyle(),
+        ...animationStyle,
         // Slightly lighter than panelDeep so the pulsing glow reads through the
         // token edge. panelHeavy keeps the marker legible without muddying the glow.
         backgroundColor: colors.bg.panelHeavy,
@@ -238,9 +235,9 @@ const CombatantMarker = React.memo(({
       {!isFullMode && (
         <div
           className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-auto transition-opacity duration-200"
-          style={{ opacity: 0.35 }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.35'; }}
+          style={{ opacity: isHoveredEffect ? 1 : 0.35 }}
+          onMouseEnter={() => setIsHoveredEffect(true)}
+          onMouseLeave={() => setIsHoveredEffect(false)}
         >
           <StatusEffectsIconPanel effects={entity.status_effects} />
         </div>
@@ -698,6 +695,7 @@ function BattlefieldGrid({
   const [dyingEntities, setDyingEntities] = useState([]);
   // Guard ref: set to true on unmount to prevent stale setTimeout callbacks
   const animationCancelRef = useRef(false);
+  const animationTimeoutsRef = useRef([]);
 
   const [hoveredEntity, setHoveredEntity] = useState(null);
   const [selectedEntity, setSelectedEntity] = useState(null);
@@ -748,7 +746,11 @@ function BattlefieldGrid({
   // Set/clear the unmount guard
   useEffect(() => {
     animationCancelRef.current = false;
-    return () => { animationCancelRef.current = true; };
+    return () => {
+      animationCancelRef.current = true;
+      animationTimeoutsRef.current.forEach(clearTimeout);
+      animationTimeoutsRef.current = [];
+    };
   }, []);
 
   // Enqueue new animations from the combat log as entries are revealed
@@ -833,14 +835,15 @@ function BattlefieldGrid({
         }
       }
 
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         currentPhaseIndex++;
         advancePhase();
       }, phase.duration);
+      animationTimeoutsRef.current.push(timeoutId);
     };
 
     advancePhase();
-    // State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level
+    // Safe: State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level, keeping playAnimation reference stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playSFX]);
 
@@ -898,7 +901,7 @@ function BattlefieldGrid({
     }
 
     cameraRafRef.current = requestAnimationFrame(animateCamera);
-    // No deps — all state accessed via refs; setSnapState is a stable setter
+    // Safe: animateCamera only reads mutable refs; setSnapState is a stable setter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -24,7 +24,7 @@ const CombatCheckDialog = ({ checkData, onClose }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
                 {checkData.map((combatant, idx) => (
                     <div
-                        key={`${combatant.name}-${idx}`}
+                        key={combatant.id || `${combatant.name}-${idx}`}
                         style={{
                             backgroundColor: combatant.is_ally ? colors.bg.positive : colors.bg.negative,
                             border: `1px solid ${combatant.is_ally ? colors.primary : colors.danger}`,

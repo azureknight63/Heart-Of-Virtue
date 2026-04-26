@@ -1335,22 +1335,17 @@ class GameService:
                 return "x"
 
             # Patch at multiple levels since different modules import differently
-            with contextlib.redirect_stdout(f), patch(
-                "builtins.input", mock_input
-            ), patch("functions.await_input", return_value=None), patch(
-                "functions.print_slow", mock_print_slow
-            ), patch(
-                "time.sleep", return_value=None
-            ), patch(
-                "neotermcolor.cprint", mock_cprint
-            ), patch(
-                "src.functions.await_input", return_value=None
-            ), patch(
-                "src.functions.print_slow", mock_print_slow
-            ), patch(
-                "src.items.cprint", mock_cprint
-            ), patch(
-                "items.cprint", mock_cprint
+            with (
+                contextlib.redirect_stdout(f),
+                patch("builtins.input", mock_input),
+                patch("functions.await_input", return_value=None),
+                patch("functions.print_slow", mock_print_slow),
+                patch("time.sleep", return_value=None),
+                patch("neotermcolor.cprint", mock_cprint),
+                patch("src.functions.await_input", return_value=None),
+                patch("src.functions.print_slow", mock_print_slow),
+                patch("src.items.cprint", mock_cprint),
+                patch("items.cprint", mock_cprint),
             ):
 
                 try:
@@ -1490,6 +1485,9 @@ class GameService:
         if not clean_output:
             if action == "take_all":
                 clean_output = "Jean collects all of the available items."
+            elif action == "talk":
+                target_name = getattr(target, "name", None)
+                clean_output = f"{target_name} does not respond." if target_name else "No response."
             else:
                 clean_output = f"Jean successfully completes the '{action}' action."
 
@@ -2351,6 +2349,8 @@ class GameService:
                     "name": getattr(a, "name", "Unknown"),
                     "hp": getattr(a, "hp", 0),
                     "max_hp": getattr(a, "maxhp", 0),
+                    "fatigue": getattr(a, "fatigue", 0),
+                    "max_fatigue": getattr(a, "maxfatigue", 0),
                     "level": getattr(a, "level", 1),
                     "description": getattr(a, "description", "").strip(),
                     "in_range": (
@@ -2359,6 +2359,15 @@ class GameService:
                         if getattr(player, "in_combat", False)
                         else True
                     ),
+                    "states": [
+                        {
+                            "name": s.name,
+                            "status_type": getattr(s, "statustype", "generic"),
+                            "beats_left": getattr(s, "beats_left", 0),
+                        }
+                        for s in getattr(a, "states", [])
+                        if not getattr(s, "hidden", False)
+                    ],
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],
@@ -2649,7 +2658,7 @@ class GameService:
         # Strip it before serializing; restore immediately after.
         combat_adapter = player.__dict__.pop("_combat_adapter", None)
         try:
-            save_data = pickle.dumps(player)
+            save_data = pickle.dumps(player, protocol=pickle.HIGHEST_PROTOCOL)
         finally:
             if combat_adapter is not None:
                 player._combat_adapter = combat_adapter
@@ -2735,7 +2744,6 @@ class GameService:
         Returns:
             Loaded Player instance or None
         """
-        import pickle
         from src.api.db import db
 
         sql = "SELECT data FROM saves WHERE id = ? AND user_id = ?"
@@ -2745,8 +2753,15 @@ class GameService:
             return None
 
         try:
+            import io
+            from src.functions import _safe_pickle_load
+
             save_data = result.rows[0][0]
-            player = pickle.loads(save_data)
+            player = _safe_pickle_load(io.BytesIO(save_data))
+
+            if player is None:
+                print(f"Error loading save {save_id}: _safe_pickle_load returned None")
+                return None
 
             if player:
                 # Re-initialize universe connections
@@ -2771,13 +2786,22 @@ class GameService:
             print(f"Error loading save {save_id}: {e}")
             return None
 
-    async def list_saves(self, user_id: str) -> List[Dict[str, Any]]:
+    async def list_saves(
+        self, user_id: str, timezone: str = "US/Eastern"
+    ) -> List[Dict[str, Any]]:
         """List all saved games for a user from Turso.
 
         Returns:
             List of save metadata dictionaries
         """
         from src.api.db import db
+        import zoneinfo
+        from datetime import datetime
+
+        try:
+            user_tz = zoneinfo.ZoneInfo(timezone)
+        except Exception:
+            user_tz = zoneinfo.ZoneInfo("US/Eastern")
 
         sql = """
         SELECT id, name, timestamp, is_autosave, level, map_name, room_title, playtime
@@ -2789,11 +2813,22 @@ class GameService:
 
         saves = []
         for row in result.rows:
+            ts_str = str(row[2])
+            try:
+                # SQLite CURRENT_TIMESTAMP is in UTC 'YYYY-MM-DD HH:MM:SS'
+                dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                dt_local = dt.astimezone(user_tz)
+                # Format to a nice string e.g. "2026-04-23 18:15:00 EDT"
+                ts_str = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+            except Exception:
+                pass  # fallback to original string
+
             saves.append(
                 {
                     "id": str(row[0]),
                     "name": str(row[1]),
-                    "timestamp": str(row[2]),
+                    "timestamp": ts_str,
                     "is_autosave": bool(row[3]),
                     "level": int(row[4]) if row[4] is not None else "?",
                     "map_name": str(row[5]) if row[5] else "Unknown",

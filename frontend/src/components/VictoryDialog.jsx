@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useAudio } from '../context/AudioContext'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
@@ -42,9 +42,12 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
   const levelUps = useMemo(() => endState?.level_ups || [], [endState])
   const hasLoot = drops.length > 0
 
+  const playSFXRef = React.useRef(playSFX)
+  React.useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
+
   useEffect(() => {
-    if (levelUps.length > 0) playSFX('level_up')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (levelUps.length > 0) playSFXRef.current('level_up')
+  }, [levelUps.length])
 
   const canClose = remainingPoints <= 0
 
@@ -131,7 +134,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
           )}
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <GameButton onClick={() => setIsMinimized(false)} variant="primary">
+          <GameButton onClick={() => setIsMinimized(false)} variant="primary" title="Restore dialog">
             RESTORE
           </GameButton>
           {canClose && (
@@ -155,7 +158,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {/* Header Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: spacing.sm }}>
-          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '11px', padding: '4px 10px' }}>
+          <GameButton onClick={() => setIsMinimized(true)} variant="secondary" style={{ fontSize: '11px', padding: '4px 10px' }} title="Minimize dialog">
             MINIMIZE
           </GameButton>
           <GameButton
@@ -203,13 +206,13 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
 
           {/* Level Up & Attributes Section */}
           <div style={{
-            padding: '12px',
-            backgroundColor: 'rgba(0, 204, 255, 0.05)',
-            border: `1px solid ${colors.text.highlight}33`,
+            padding: spacing.md,
+            backgroundColor: colors.bg.panelDeep,
+            border: `1px solid ${colors.border.light}`,
             borderRadius: '12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px'
+            gap: spacing.md
           }}>
             <GameText variant="accent" size="xs" weight="bold" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>
               ⭐ Level Ups & Growth

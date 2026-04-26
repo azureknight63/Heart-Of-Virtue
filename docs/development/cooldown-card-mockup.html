@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cooldown Card Mockup — Heart of Virtue</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    font-family: 'Courier New', monospace;
+    color: #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 24px;
+    min-height: 100vh;
+    gap: 48px;
+  }
+
+  h1 {
+    color: #00ff88;
+    font-size: 1.1rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(0,255,136,0.3);
+    padding-bottom: 8px;
+    width: 100%;
+    max-width: 800px;
+    text-align: center;
+  }
+
+  .section-label {
+    color: #888888;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+
+  /* ── LEFT PANEL shell ── */
+  .left-panel {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border: 2px solid #00ff88;
+    border-radius: 8px;
+    box-shadow: 0 0 25px -5px rgba(0,255,136,0.3);
+    width: 220px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ── HeroPanel stub ── */
+  .hero-panel-stub {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+  }
+  .hero-panel-stub .hero-name {
+    color: #00ff88;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+  .hero-panel-stub .hero-bars {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+  .bar-stub {
+    height: 8px;
+    border-radius: 4px;
+    flex: 1;
+  }
+  .bar-stub.hp  { background: linear-gradient(90deg, #ff4444 70%, rgba(255,68,68,0.2)); border: 1px solid #ff4444; }
+  .bar-stub.fat { background: linear-gradient(90deg, #ffaa00 50%, rgba(255,170,0,0.2)); border: 1px solid #ffaa00; }
+
+  .panel-divider {
+    height: 1px;
+    background: rgba(0,255,136,0.2);
+  }
+
+  /* ── Cooldown section header ── */
+  .cooldown-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+  .cooldown-header .label {
+    font-size: 0.65rem;
+    color: #888888;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .cooldown-header .count {
+    font-size: 0.65rem;
+    color: rgba(0,255,136,0.6);
+  }
+
+  /* ── Card Tray ── */
+  .card-tray {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  /* ── COLLAPSED CARD ── */
+  .card-collapsed {
+    position: relative;
+    width: 44px;
+    height: 42px;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .card-collapsed .cat-icon {
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .card-collapsed .beats {
+    font-size: 0.7rem;
+    font-weight: bold;
+    line-height: 1;
+  }
+
+  /* Category color variants */
+  .cat-attack {
+    border-color: rgba(255,68,68,0.6);
+    box-shadow: 0 0 6px rgba(255,68,68,0.25);
+  }
+  .cat-attack .cat-icon { color: #ff4444; }
+  .cat-attack .beats { color: #ff8888; }
+
+  .cat-maneuver {
+    border-color: rgba(0,255,136,0.6);
+    box-shadow: 0 0 6px rgba(0,255,136,0.25);
+  }
+  .cat-maneuver .cat-icon { color: #00ff88; }
+  .cat-maneuver .beats { color: #88ffcc; }
+
+  .cat-special {
+    border-color: rgba(153,68,255,0.6);
+    box-shadow: 0 0 6px rgba(153,68,255,0.25);
+  }
+  .cat-special .cat-icon { color: #9944ff; }
+  .cat-special .beats { color: #cc99ff; }
+
+  .cat-supernatural {
+    border-color: rgba(0,204,255,0.6);
+    box-shadow: 0 0 6px rgba(0,204,255,0.25);
+  }
+  .cat-supernatural .cat-icon { color: #00ccff; }
+  .cat-supernatural .beats { color: #99eeff; }
+
+  .cat-misc {
+    border-color: rgba(255,204,0,0.6);
+    box-shadow: 0 0 6px rgba(255,204,0,0.25);
+  }
+  .cat-misc .cat-icon { color: #ffcc00; }
+  .cat-misc .beats { color: #ffee99; }
+
+  /* ── EXPANDED CARD ── */
+  .card-expanded {
+    position: relative;
+    width: 100%;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid;
+    padding: 7px 9px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .card-expanded .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-expanded .left {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .card-expanded .icon-lg {
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+  .card-expanded .move-name {
+    font-size: 0.75rem;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    line-height: 1;
+  }
+  .card-expanded .beats-big {
+    font-size: 1.1rem;
+    font-weight: bold;
+    line-height: 1;
+    min-width: 24px;
+    text-align: right;
+  }
+  .card-expanded .beats-label {
+    font-size: 0.55rem;
+    color: #666666;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: right;
+    line-height: 1;
+    margin-top: 1px;
+  }
+  .card-expanded .progress-track {
+    margin-top: 6px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+  }
+  .card-expanded .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    opacity: 0.8;
+  }
+
+  /* Expanded category variants */
+  .exp-attack { border-color: rgba(255,68,68,0.55); box-shadow: 0 0 8px rgba(255,68,68,0.2); }
+  .exp-attack .icon-lg { color: #ff4444; }
+  .exp-attack .move-name { color: #ffaaaa; }
+  .exp-attack .beats-big { color: #ff6666; }
+  .exp-attack .progress-fill { background: #ff4444; }
+
+  .exp-maneuver { border-color: rgba(0,255,136,0.55); box-shadow: 0 0 8px rgba(0,255,136,0.2); }
+  .exp-maneuver .icon-lg { color: #00ff88; }
+  .exp-maneuver .move-name { color: #ccffee; }
+  .exp-maneuver .beats-big { color: #00ff88; }
+  .exp-maneuver .progress-fill { background: #00ff88; }
+
+  .exp-special { border-color: rgba(153,68,255,0.55); box-shadow: 0 0 8px rgba(153,68,255,0.2); }
+  .exp-special .icon-lg { color: #9944ff; }
+  .exp-special .move-name { color: #ddbbff; }
+  .exp-special .beats-big { color: #bb88ff; }
+  .exp-special .progress-fill { background: #9944ff; }
+
+  /* ── LAYOUT: two columns for the showcase ── */
+  .showcase {
+    display: flex;
+    flex-direction: row;
+    gap: 60px;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    max-width: 800px;
+  }
+
+  .showcase-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* ── Annotation arrows ── */
+  .annotation {
+    font-size: 0.65rem;
+    color: #ffaa00;
+    letter-spacing: 0.08em;
+    text-align: center;
+    line-height: 1.5;
+  }
+  .annotation span { color: #888888; }
+
+  /* ── Card Detail Showcase ── */
+  .detail-row {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    max-width: 800px;
+  }
+  .detail-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    max-width: 340px;
+  }
+  .detail-col-label {
+    font-size: 0.7rem;
+    color: #ffaa00;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,170,0,0.3);
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Issue #127 — Move Cooldown Cards — Mockup</h1>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 1: In-context LeftPanel preview
+     ═══════════════════════════════════════════════════════ -->
+
+<div class="section-label">Section 1 — In-context placement (LeftPanel)</div>
+
+<div class="showcase">
+
+  <!-- COLLAPSED STATE in panel -->
+  <div class="showcase-col">
+    <div class="annotation">COLLAPSED (default)<br><span>icon + beat count</span></div>
+    <div class="left-panel">
+      <!-- HeroPanel stub -->
+      <div class="hero-panel-stub">
+        <div class="hero-name">JEAN CLAIRE</div>
+        <div class="hero-bars">
+          <div class="bar-stub hp"></div>
+          <div class="bar-stub fat"></div>
+        </div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <!-- Cooldown tray -->
+      <div class="cooldown-header">
+        <span class="label">Cooldown</span>
+        <span class="count">4</span>
+      </div>
+      <div class="card-tray">
+        <div class="card-collapsed cat-attack">
+          <span class="cat-icon">⚔</span>
+          <span class="beats">3</span>
+        </div>
+        <div class="card-collapsed cat-maneuver">
+          <span class="cat-icon">↯</span>
+          <span class="beats">1</span>
+        </div>
+        <div class="card-collapsed cat-special">
+          <span class="cat-icon">✦</span>
+          <span class="beats">5</span>
+        </div>
+        <div class="card-collapsed cat-supernatural">
+          <span class="cat-icon">⬡</span>
+          <span class="beats">2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPANDED STATE in panel -->
+  <div class="showcase-col">
+    <div class="annotation">EXPANDED (hover / click)<br><span>full move name + progress bar</span></div>
+    <div class="left-panel">
+      <!-- HeroPanel stub -->
+      <div class="hero-panel-stub">
+        <div class="hero-name">JEAN CLAIRE</div>
+        <div class="hero-bars">
+          <div class="bar-stub hp"></div>
+          <div class="bar-stub fat"></div>
+        </div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <!-- Cooldown tray — expanded cards -->
+      <div class="cooldown-header">
+        <span class="label">Cooldown</span>
+        <span class="count">4</span>
+      </div>
+      <div class="card-tray" style="flex-direction: column; gap: 5px;">
+
+        <div class="card-expanded exp-attack">
+          <div class="top-row">
+            <div class="left">
+              <span class="icon-lg">⚔</span>
+              <span class="move-name">Riposte</span>
+            </div>
+            <div>
+              <div class="beats-big" style="color:#ff6666">3</div>
+              <div class="beats-label">beats</div>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 40%"></div>
+          </div>
+        </div>
+
+        <div class="card-expanded exp-maneuver">
+          <div class="top-row">
+            <div class="left">
+              <span class="icon-lg">↯</span>
+              <span class="move-name">Bull Charge</span>
+            </div>
+            <div>
+              <div class="beats-big" style="color:#00ff88">1</div>
+              <div class="beats-label">beats</div>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 80%"></div>
+          </div>
+        </div>
+
+        <div class="card-expanded exp-special">
+          <div class="top-row">
+            <div class="left">
+              <span class="icon-lg">✦</span>
+              <span class="move-name">Reaper's Mark</span>
+            </div>
+            <div>
+              <div class="beats-big" style="color:#bb88ff">5</div>
+              <div class="beats-label">beats</div>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 10%"></div>
+          </div>
+        </div>
+
+        <div class="card-expanded" style="border-color: rgba(0,204,255,0.55); box-shadow: 0 0 8px rgba(0,204,255,0.2);">
+          <div class="top-row">
+            <div class="left">
+              <span class="icon-lg" style="color:#00ccff">⬡</span>
+              <span class="move-name" style="color:#99eeff">Tidal Surge</span>
+            </div>
+            <div>
+              <div class="beats-big" style="color:#00ccff">2</div>
+              <div class="beats-label">beats</div>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 60%; background:#00ccff;"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SECTION 2: Card detail close-ups
+     ═══════════════════════════════════════════════════════ -->
+
+<div class="section-label" style="margin-top:8px;">Section 2 — Card anatomy close-up</div>
+
+<div class="detail-row">
+
+  <!-- COLLAPSED close-ups -->
+  <div class="detail-col">
+    <div class="detail-col-label">Collapsed — all categories</div>
+
+    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+      <div class="card-collapsed cat-attack" style="width:56px; height:52px;">
+        <span class="cat-icon">⚔</span>
+        <span class="beats">3</span>
+      </div>
+      <div class="card-collapsed cat-maneuver" style="width:56px; height:52px;">
+        <span class="cat-icon">↯</span>
+        <span class="beats">1</span>
+      </div>
+      <div class="card-collapsed cat-special" style="width:56px; height:52px;">
+        <span class="cat-icon">✦</span>
+        <span class="beats">5</span>
+      </div>
+      <div class="card-collapsed cat-supernatural" style="width:56px; height:52px;">
+        <span class="cat-icon">⬡</span>
+        <span class="beats">2</span>
+      </div>
+      <div class="card-collapsed cat-misc" style="width:56px; height:52px;">
+        <span class="cat-icon">◈</span>
+        <span class="beats">4</span>
+      </div>
+    </div>
+
+    <div class="annotation" style="margin-top:4px;">
+      ⚔ Attack &nbsp;↯ Maneuver &nbsp;✦ Special<br>
+      ⬡ Supernatural &nbsp;◈ Miscellaneous
+    </div>
+  </div>
+
+  <!-- EXPANDED close-ups -->
+  <div class="detail-col">
+    <div class="detail-col-label">Expanded — beat count &amp; progress</div>
+
+    <div class="card-expanded exp-attack" style="width:240px;">
+      <div class="top-row">
+        <div class="left">
+          <span class="icon-lg">⚔</span>
+          <span class="move-name">Disarming Slash</span>
+        </div>
+        <div>
+          <div class="beats-big" style="color:#ff6666">3</div>
+          <div class="beats-label">beats</div>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" style="width:40%"></div>
+      </div>
+    </div>
+
+    <div class="card-expanded exp-maneuver" style="width:240px;">
+      <div class="top-row">
+        <div class="left">
+          <span class="icon-lg">↯</span>
+          <span class="move-name">Tactical Retreat</span>
+        </div>
+        <div>
+          <div class="beats-big" style="color:#00ff88">1</div>
+          <div class="beats-label">beats</div>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" style="width:80%"></div>
+      </div>
+    </div>
+
+    <div class="card-expanded exp-special" style="width:240px;">
+      <div class="top-row">
+        <div class="left">
+          <span class="icon-lg">✦</span>
+          <span class="move-name">Reaper's Mark</span>
+        </div>
+        <div>
+          <div class="beats-big" style="color:#bb88ff">5</div>
+          <div class="beats-label">beats</div>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" style="width:10%"></div>
+      </div>
+    </div>
+
+    <div class="annotation" style="margin-top:4px;">
+      Progress bar = (max_cooldown − remaining) / max_cooldown<br>
+      <span>fills left→right as beats tick down to zero</span>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
