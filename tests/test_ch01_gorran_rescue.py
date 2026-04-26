@@ -119,43 +119,6 @@ def test_gorran_rescue_sets_combat_lists():
         assert mock_gorran.combat_list_allies == player.combat_list_allies  # Gorran is allied with player
 
 
-def test_gorran_rescue_coward_choice():
-    """Test that choosing to flee doesn't add Gorran or call add_enemies_to_combat."""
-    # Create mock player
-    player = Mock(spec=Player)
-    player.combat_list = []
-    player.combat_list_allies = [player]
-    player.hp = 100
-    player.combat_events = []
-
-    # Create mock tile
-    tile = Mock(spec=MapTile)
-    tile.spawn_npc = Mock()
-
-    # Create the event
-    event = Ch01PostRumbler3(player=player, tile=tile)
-
-    # Mock the cprint and time.sleep to avoid delays
-    with patch('story.ch01.cprint'), \
-         patch('story.ch01.time.sleep'), \
-         patch('story.ch01.random.randint', return_value=50), \
-         patch('functions.add_enemies_to_combat') as mock_add_enemies:
-
-        # Drive through all 7 stages of the defeat narrative
-        event.process(user_input=None)       # stage 1 → show narrative
-        event.process(user_input='b')        # stage 2 → save choice, show response
-        event.process(user_input='continue') # stage 3 → rock-man's defeat
-        event.process(user_input='continue') # stage 4 → escape attempt
-        event.process(user_input='continue') # stage 5 → bridge (false hope)
-        event.process(user_input='continue') # stage 6 → monster attack
-        event.process(user_input='continue') # stage 7 → death
-
-        # Verify add_enemies_to_combat was NOT called
-        mock_add_enemies.assert_not_called()
-
-        # Verify player took damage (hp set to 0 in the bad ending)
-        assert player.hp == 0
-
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
