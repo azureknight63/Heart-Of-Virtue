@@ -34,7 +34,7 @@ function MobileTabBar({ activeTab, onTabChange, mode }) {
       right: 0,
       height: '56px',
       display: 'flex',
-      backgroundColor: '#0d0d1a',
+      backgroundColor: colors.bg.panelDeep,
       borderTop: `2px solid ${colors.border.main}`,
       zIndex: 1000,
       paddingBottom: 'env(safe-area-inset-bottom)',

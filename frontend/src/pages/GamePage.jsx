@@ -48,7 +48,6 @@ export default function GamePage() {
 
   // Mobile tab navigation
   const [activeMobileTab, setActiveMobileTab] = useState('character')
-  const [moveJustSubmitted, setMoveJustSubmitted] = useState(false)
 
   // Game over state (triggered by narrative events that kill the player)
   const [showGameOver, setShowGameOver] = useState(false)
@@ -172,16 +171,6 @@ export default function GamePage() {
       setActiveMobileTab('character')
     }
   }, [isMobile, combat?.awaiting_input, combat?.end_state, isEventDialogActive])
-
-  /**
-   * Mobile: switch to the map/battlefield right after the player submits a move.
-   */
-  useEffect(() => {
-    if (moveJustSubmitted && isMobile) {
-      setActiveMobileTab('map')
-      setMoveJustSubmitted(false)
-    }
-  }, [moveJustSubmitted, isMobile])
 
   /**
    * Poll for combat status when suggestions are loading (fallback for missing socket events)
@@ -474,7 +463,9 @@ export default function GamePage() {
     return result.data
   }
 
-  // Panel wrapper styles: on mobile, show only the active tab; on desktop, transparent wrappers.
+  // Panel wrapper styles: on mobile, show only the active tab; on desktop, use `display: contents`
+  // which makes the div layout-invisible so LeftPanel/RightPanel's flex-1 class participates
+  // directly in the parent flex context (no extra box in the tree).
   const panelWrap = (tabName) => isMobile ? {
     display: activeMobileTab === tabName ? 'flex' : 'none',
     flex: 1,
@@ -519,7 +510,7 @@ export default function GamePage() {
           onLogProcessingChange={setIsCombatLogProcessing}
           onDisplayedLogCountChange={setDisplayedLogCount}
           onTargetHover={setHoveredTargetId}
-          onMoveSubmitted={isMobile ? () => setMoveJustSubmitted(true) : undefined}
+          onMoveSubmitted={isMobile ? () => setActiveMobileTab('map') : undefined}
         />
       </div>
 
