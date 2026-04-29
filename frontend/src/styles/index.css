@@ -29,6 +29,26 @@ body {
   background-color: #0a0a0a;
   color: #e0e0e0;
   line-height: 1.5;
+  /* Disable text selection on touch to prevent accidental selection during gameplay */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Touch optimizations */
+button, [role="button"], a {
+  /* Eliminates the 300ms double-tap-to-zoom delay on mobile */
+  touch-action: manipulation;
+}
+
+/* Prevent iOS from zooming in on form inputs (requires font-size >= 16px) */
+input, select, textarea {
+  font-size: 16px;
+}
+
+/* Safe-area padding for notched phones (iPhone X+) */
+@media (max-width: 767px) {
+  #root {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* Custom scrollbar */

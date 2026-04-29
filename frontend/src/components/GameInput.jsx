@@ -21,6 +21,8 @@ export default function GameInput({
         borderRadius: '4px',
         padding: `${spacing.sm} ${spacing.md}`,
         fontFamily: 'monospace',
+        fontSize: '16px', // prevents iOS zoom-on-focus
+        minHeight: '44px',
         outline: 'none',
         transition: 'all 200ms',
         ...style

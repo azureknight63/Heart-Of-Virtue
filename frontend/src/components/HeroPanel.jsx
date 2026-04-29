@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
+import { useMobile } from '../hooks/useMobile'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
 
@@ -23,6 +24,7 @@ function HeroPanel({
   onManeuverClick,
   onMiscellaneousClick
 }) {
+  const isMobile = useMobile()
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
   const [focusedBar, setFocusedBar] = useState(null)
@@ -85,43 +87,47 @@ function HeroPanel({
         justifyContent: 'center',
         overflow: 'visible',
       }}>
-        {/* Passive Effects Icons (Left Side) */}
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '-135px',
-          transform: 'translateY(-50%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '4px',
-          zIndex: 10,
-          pointerEvents: 'auto'
-        }}>
-          {player?.passives?.length > 0 && (
-            <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>PASSIVES</GameText>
-          )}
-          <StatusEffectsIconPanel effects={player?.passives} vertical />
-        </div>
+        {/* Passive Effects Icons — side column on desktop, hidden here on mobile (shown below) */}
+        {!isMobile && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '-135px',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '4px',
+            zIndex: 10,
+            pointerEvents: 'auto'
+          }}>
+            {player?.passives?.length > 0 && (
+              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>PASSIVES</GameText>
+            )}
+            <StatusEffectsIconPanel effects={player?.passives} vertical />
+          </div>
+        )}
 
-        {/* Status Effects Icons (Right Side) */}
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          right: '-135px',
-          transform: 'translateY(-50%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '4px',
-          zIndex: 10,
-          pointerEvents: 'auto'
-        }}>
-          {player?.status_effects?.length > 0 && (
-            <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>STATUS</GameText>
-          )}
-          <StatusEffectsIconPanel effects={player?.status_effects} vertical />
-        </div>
+        {/* Status Effects Icons — side column on desktop, hidden here on mobile (shown below) */}
+        {!isMobile && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            right: '-135px',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '4px',
+            zIndex: 10,
+            pointerEvents: 'auto'
+          }}>
+            {player?.status_effects?.length > 0 && (
+              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px', marginBottom: '2px' }}>STATUS</GameText>
+            )}
+            <StatusEffectsIconPanel effects={player?.status_effects} vertical />
+          </div>
+        )}
 
         <img
           src={`${import.meta.env.BASE_URL}hero-heart.png`}
@@ -313,6 +319,24 @@ function HeroPanel({
           )
         })}
       </div>
+
+      {/* Mobile-only: passives + status icons as a compact inline row */}
+      {isMobile && (player?.passives?.length > 0 || player?.status_effects?.length > 0) && (
+        <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          {player?.passives?.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px' }}>PASSIVES</GameText>
+              <StatusEffectsIconPanel effects={player.passives} />
+            </div>
+          )}
+          {player?.status_effects?.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <GameText variant="muted" size="xs" weight="bold" style={{ fontSize: '7px' }}>STATUS</GameText>
+              <StatusEffectsIconPanel effects={player.status_effects} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

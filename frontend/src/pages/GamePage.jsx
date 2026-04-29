@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
+import { useMobile } from '../hooks/useMobile'
 import { colors, spacing, fonts } from '../styles/theme'
 import GameText from '../components/GameText'
 import { useAudio } from '../context/AudioContext'
@@ -13,8 +14,11 @@ import CombatManager from '../components/CombatManager'
 import GameOverScreen from '../components/GameOverScreen'
 import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
+import MobileTabBar from '../components/MobileTabBar'
 
 export default function GamePage() {
+  const isMobile = useMobile()
+
   // API hooks
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
@@ -41,6 +45,10 @@ export default function GamePage() {
   // Beta end dialog state
   const [showBetaEndDialog, setShowBetaEndDialog] = useState(false)
   const [showBetaFeedback, setShowBetaFeedback] = useState(false)
+
+  // Mobile tab navigation
+  const [activeMobileTab, setActiveMobileTab] = useState('character')
+  const [moveJustSubmitted, setMoveJustSubmitted] = useState(false)
 
   // Game over state (triggered by narrative events that kill the player)
   const [showGameOver, setShowGameOver] = useState(false)
@@ -155,6 +163,25 @@ export default function GamePage() {
       setMode('combat')
     }
   }, [inCombat, mode, combatDialogShown])
+
+  /**
+   * Mobile: show character/combat panel when it becomes the player's turn.
+   */
+  useEffect(() => {
+    if (isMobile && combat?.awaiting_input && !combat?.end_state && !isEventDialogActive) {
+      setActiveMobileTab('character')
+    }
+  }, [isMobile, combat?.awaiting_input, combat?.end_state, isEventDialogActive])
+
+  /**
+   * Mobile: switch to the map/battlefield right after the player submits a move.
+   */
+  useEffect(() => {
+    if (moveJustSubmitted && isMobile) {
+      setActiveMobileTab('map')
+      setMoveJustSubmitted(false)
+    }
+  }, [moveJustSubmitted, isMobile])
 
   /**
    * Poll for combat status when suggestions are loading (fallback for missing socket events)
@@ -447,53 +474,78 @@ export default function GamePage() {
     return result.data
   }
 
+  // Panel wrapper styles: on mobile, show only the active tab; on desktop, transparent wrappers.
+  const panelWrap = (tabName) => isMobile ? {
+    display: activeMobileTab === tabName ? 'flex' : 'none',
+    flex: 1,
+    flexDirection: 'column',
+    overflow: 'hidden',
+    minHeight: 0,
+  } : { display: 'contents' }
+
   return (
     <div style={{
       width: '100vw',
       height: '100vh',
       backgroundColor: colors.bg.main,
       display: 'flex',
-      gap: spacing.md,
-      padding: spacing.sm,
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: isMobile ? 0 : spacing.md,
+      padding: isMobile ? 0 : spacing.sm,
+      paddingBottom: isMobile ? '56px' : spacing.sm,
       overflow: 'hidden'
     }}>
       {/* Left Panel - Narrative & Controls */}
-      <LeftPanel
-        player={player}
-        location={location}
-        mode={mode}
-        combat={combat}
-        isEventDialogActive={isEventDialogActive}
-        onMove={handleMove}
-        onRefetch={handleRefetch}
-        onEventsTriggered={handleEventsTriggered}
-        onInteractionComplete={handleInteractionComplete}
-        onInteractionTypingChange={(isTyping) => {
-          setIsInteractionTyping(isTyping)
-          if (isTyping) {
-            setIsInteractionDelayActive(true)
-          }
-        }}
-        onInteractionClose={() => setIsInteractionDelayActive(false)}
-        onCombatAction={handleCombatActionWrapper}
-        onLogProgress={setCurrentLogIndex}
-        onLogProcessingChange={setIsCombatLogProcessing}
-        onDisplayedLogCountChange={setDisplayedLogCount}
-        onTargetHover={setHoveredTargetId}
-      />
+      <div style={panelWrap('character')}>
+        <LeftPanel
+          player={player}
+          location={location}
+          mode={mode}
+          combat={combat}
+          isEventDialogActive={isEventDialogActive}
+          onMove={handleMove}
+          onRefetch={handleRefetch}
+          onEventsTriggered={handleEventsTriggered}
+          onInteractionComplete={handleInteractionComplete}
+          onInteractionTypingChange={(isTyping) => {
+            setIsInteractionTyping(isTyping)
+            if (isTyping) {
+              setIsInteractionDelayActive(true)
+            }
+          }}
+          onInteractionClose={() => setIsInteractionDelayActive(false)}
+          onCombatAction={handleCombatActionWrapper}
+          onLogProgress={setCurrentLogIndex}
+          onLogProcessingChange={setIsCombatLogProcessing}
+          onDisplayedLogCountChange={setDisplayedLogCount}
+          onTargetHover={setHoveredTargetId}
+          onMoveSubmitted={isMobile ? () => setMoveJustSubmitted(true) : undefined}
+        />
+      </div>
 
       {/* Right Panel - Battlefield/Map */}
-      <RightPanel
-        mode={mode}
-        combat={combat}
-        location={location}
-        onMoveToLocation={handleMove}
-        onModeChange={setMode}
-        exploredTiles={exploredTiles}
-        currentLogIndex={currentLogIndex}
-        displayedLogCount={displayedLogCount}
-        hoveredTargetId={hoveredTargetId}
-      />
+      <div style={panelWrap('map')}>
+        <RightPanel
+          mode={mode}
+          combat={combat}
+          location={location}
+          onMoveToLocation={handleMove}
+          onModeChange={setMode}
+          exploredTiles={exploredTiles}
+          currentLogIndex={currentLogIndex}
+          displayedLogCount={displayedLogCount}
+          hoveredTargetId={hoveredTargetId}
+        />
+      </div>
+
+      {/* Mobile Tab Bar */}
+      {isMobile && (
+        <MobileTabBar
+          activeTab={activeMobileTab}
+          onTabChange={setActiveMobileTab}
+          mode={mode}
+        />
+      )}
 
       {/* Event Manager */}
       <EventManager

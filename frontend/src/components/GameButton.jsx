@@ -72,6 +72,8 @@ export default function GameButton({
         justifyContent: 'center',
         textTransform: 'uppercase',
         letterSpacing: '0.5px',
+        minHeight: '44px',
+        touchAction: 'manipulation',
         ...currentSize,
         ...style,
     }
