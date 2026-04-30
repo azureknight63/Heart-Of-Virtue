@@ -474,7 +474,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         boxShadow: `0 0 10px ${colors.primary}80`,
         flexShrink: 0,
       }}>
-        <span>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 1 }}>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={() => setShowAudio(true)}
