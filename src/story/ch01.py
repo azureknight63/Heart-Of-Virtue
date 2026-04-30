@@ -688,9 +688,7 @@ class Ch01PostRumbler3(Event):
 
         add_enemies_to_combat(self.player, new_enemies)
 
-        self.tile.events_here.append(
-            AfterTheRumblerFight(self.player, self.tile, None)
-        )
+        self.tile.events_here.append(AfterTheRumblerFight(self.player, self.tile, None))
         self.needs_input = False
         self.completed = True
         # non-repeating: remove manually since this is a combat_effect event, not a tile event
