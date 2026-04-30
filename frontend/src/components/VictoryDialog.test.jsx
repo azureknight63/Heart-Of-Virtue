@@ -227,16 +227,20 @@ describe('VictoryDialog', () => {
     // Dialog should start expanded (CLOSE button visible)
     expect(screen.getByText('CLOSE')).toBeDefined();
 
-    // Find the minimize button (▼ or similar toggle)
-    const minimizeBtn = screen.getByTitle(/minimize/i);
+    // Click the MINIMIZE button
+    const minimizeBtn = screen.getByText('MINIMIZE');
+    expect(minimizeBtn).toBeDefined();
     fireEvent.click(minimizeBtn);
 
-    // After minimizing, the main content should be hidden but a restore button visible
-    const restoreBtn = screen.getByTitle(/restore/i);
-    expect(restoreBtn).toBeDefined();
+    // After minimizing, CLOSE should no longer be in the document
+    expect(screen.queryByText('CLOSE')).toBeNull();
 
-    // Restore the dialog
+    // A restore/expand button should now be visible
+    const restoreBtn = screen.getByText(/EXPAND|RESTORE|OPEN/i);
+    expect(restoreBtn).toBeDefined();
     fireEvent.click(restoreBtn);
+
+    // Dialog should be back to expanded state
     expect(screen.getByText('CLOSE')).toBeDefined();
   });
 });
