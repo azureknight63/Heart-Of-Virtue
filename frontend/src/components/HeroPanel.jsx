@@ -289,7 +289,8 @@ function HeroPanel({
                 left,
                 transform,
                 width: '70px',
-                height: '40px',
+                height: '44px',
+                minHeight: '44px',
                 borderRadius: '6px',
                 border: `2px solid ${isHovered ? hoverColor : baseColor}`,
                 backgroundColor: isHovered
