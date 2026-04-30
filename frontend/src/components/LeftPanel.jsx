@@ -422,7 +422,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // Default flow for everything else
     try {
       setPendingMoveSelection(true)
-      if (onMoveSubmitted) onMoveSubmitted()
+      notifyMoveSubmitted()
       await onCombatAction('move', { move_id: move.id })
     } catch (err) {
       console.error('Failed to execute move:', err)
@@ -433,7 +433,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
   const handleInputSelection = async (selectedValue) => {
     try {
-      if (onMoveSubmitted) onMoveSubmitted()
+      notifyMoveSubmitted()
       // Send the selected input based on the input type
       const inputType = combat.input_type
       if (inputType === 'target_selection') {

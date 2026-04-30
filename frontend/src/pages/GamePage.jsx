@@ -14,7 +14,7 @@ import CombatManager from '../components/CombatManager'
 import GameOverScreen from '../components/GameOverScreen'
 import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
-import MobileTabBar from '../components/MobileTabBar'
+import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -483,7 +483,7 @@ export default function GamePage() {
       flexDirection: isMobile ? 'column' : 'row',
       gap: isMobile ? 0 : spacing.md,
       padding: isMobile ? 0 : spacing.sm,
-      paddingBottom: isMobile ? '56px' : spacing.sm,
+      paddingBottom: isMobile ? MOBILE_TAB_BAR_HEIGHT : spacing.sm,
       overflow: 'hidden'
     }}>
       {/* Left Panel - Narrative & Controls */}

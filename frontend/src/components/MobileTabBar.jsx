@@ -1,5 +1,7 @@
 import { colors, fonts } from '../styles/theme'
 
+export const MOBILE_TAB_BAR_HEIGHT = '56px'
+
 function MobileTabBar({ activeTab, onTabChange, mode }) {
   const isCharActive = activeTab === 'character'
   const isMapActive = activeTab === 'map'
@@ -31,7 +33,7 @@ function MobileTabBar({ activeTab, onTabChange, mode }) {
       bottom: 0,
       left: 0,
       right: 0,
-      height: '56px',
+      height: MOBILE_TAB_BAR_HEIGHT,
       display: 'flex',
       backgroundColor: colors.bg.panelDeep,
       borderTop: `2px solid ${colors.border.main}`,
