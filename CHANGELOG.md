@@ -2,6 +2,27 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.1.0.0] - 2026-04-30
+
+### Added
+- **Mobile tab bar navigation**: Heart of Virtue is now playable on phones. At viewports narrower than 768px, a fixed bottom tab bar replaces the side-by-side panel layout. Tabs switch between the full-screen Character/Combat panel and the Map panel. Context-aware auto-switching activates the Character tab when it's your turn and jumps to the Map tab after a move is submitted.
+- **Collapsible room description**: Room tile descriptions can be collapsed on both mobile (Map tab) and desktop right panel, keeping the map uncluttered during long explorations.
+- **`CollapsibleRoomDescription` component**: Reusable collapsible wrapper for tile descriptions, used in both layout modes.
+- **`useMobile` hook**: `matchMedia`-based breakpoint detection at <768px for consistent mobile/desktop switching with proper SSR-safe initialization.
+- **`MobileTabBar` component**: Fixed 56px tab bar at viewport bottom, touch-optimized with context-aware labels (CHARACTER/COMBAT, MAP/BATTLEFIELD).
+
+### Changed
+- **Status effect icons on mobile**: HeroPanel status effect and passive move icons now render below the hero heart image on mobile instead of floating at `left: -135px` / `right: -135px` and disappearing off-screen.
+- **Touch targets**: All header buttons (Audio, Feedback, Account) and orbit navigation buttons meet the 44px touch target minimum on mobile.
+- **Touch optimization**: Global `touch-action: manipulation` on all interactive elements eliminates the 300ms double-tap delay on iOS and Android. Input font sizes set to 16px to prevent iOS viewport zoom on focus.
+- **`LoginPage` and `MainMenuPage`**: Submit buttons and menu buttons hardened to 44px minimum height; modal dialogs gain `maxHeight: 85vh` / `overflowY: auto` so they don't clip on small screens.
+
+### Fixed
+- **Header title overflow on narrow viewports**: Title text now truncates with ellipsis instead of wrapping and pushing the Audio/Feedback/Account buttons off-screen.
+- **`useMobile` boundary value**: Both initial state and the `matchMedia` change handler now use `(max-width: 767px)` consistently — the previous initializer used `window.innerWidth < 768` which gave a different result at exactly 768px.
+- **`MOBILE_TAB_BAR_HEIGHT` constant**: The `56px` value is now an exported constant from `MobileTabBar` so `GamePage` doesn't duplicate it as a magic string.
+- **`notifyMoveSubmitted` call sites**: All call sites in `LeftPanel` normalized to the `notifyMoveSubmitted()` helper, eliminating inconsistent inline null-check pattern.
+
 ## [0.0.6.0] - 2026-04-17
 
 ### Fixed
