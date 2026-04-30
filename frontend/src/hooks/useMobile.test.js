@@ -14,7 +14,10 @@ describe('useMobile', () => {
     })
   }
 
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true })
+  })
 
   it('returns false when innerWidth is above breakpoint (desktop)', () => {
     Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true })

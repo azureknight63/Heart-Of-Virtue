@@ -26,6 +26,8 @@ vi.mock('./HeroPanel', () => ({
     )
 }));
 vi.mock('./CombatLog', () => ({ default: ({ log }) => <div data-testid="combat-log">{log.map((e, i) => <div key={i}>{e.message}</div>)}</div> }));
+vi.mock('./CombatInputDialog', () => ({ default: ({ onSelect }) => <div data-testid="combat-input-dialog"><button onClick={() => onSelect('target-1')}>Select Target</button></div> }));
+vi.mock('./CombatMovePanel', () => ({ default: () => <div data-testid="combat-move-panel" /> }));
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
@@ -139,4 +141,33 @@ describe('LeftPanel', () => {
             expect(screen.getByText('Jean hit Slime for 10 damage')).toBeDefined();
         }, { timeout: 3000 });
     });
+
+    it('calls onMoveSubmitted when a target is selected via CombatInputDialog', async () => {
+        const onMoveSubmitted = vi.fn()
+        const onCombatAction = vi.fn().mockResolvedValue({})
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'target_selection',
+            available_options: [{ id: 'target-1', name: 'Slime' }],
+            beat_states: [{ enemies: [] }]
+        }
+        render(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="combat"
+                combat={combat}
+                onMoveSubmitted={onMoveSubmitted}
+                onCombatAction={onCombatAction}
+            />
+        )
+        await waitFor(() => {
+            expect(screen.getByTestId('combat-input-dialog')).toBeDefined()
+        }, { timeout: 3000 })
+        fireEvent.click(screen.getByText('Select Target'))
+        await waitFor(() => {
+            expect(onMoveSubmitted).toHaveBeenCalledTimes(1)
+        }, { timeout: 1000 })
+    })
 });
