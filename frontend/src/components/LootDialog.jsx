@@ -134,6 +134,11 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
   const [selected, setSelected] = useState(() => new Set(drops.map((_, i) => i)))
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [toastMsg, setToastMsg] = useState('')
+  const toastTimerRef = useRef(null)
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }
+  }, [])
 
   const baseWeight = playerWeight ?? 0
   const maxWeight = weightLimit ?? 100
@@ -154,8 +159,9 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
   const barAddColor = totalPct >= 100 ? colors.danger : totalPct >= 80 ? colors.secondary : '#FFD700'
 
   const showToast = useCallback((msg) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setToastMsg(msg)
-    setTimeout(() => setToastMsg(''), 3000)
+    toastTimerRef.current = setTimeout(() => { toastTimerRef.current = null; setToastMsg('') }, 3000)
   }, [])
 
   function toggleItem(i) {

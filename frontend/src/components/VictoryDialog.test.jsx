@@ -217,9 +217,11 @@ describe('VictoryDialog', () => {
   });
 
   it('can minimize and restore the dialog when points are pending', () => {
+    // Use no-drops state so button reads CLOSE (with drops it reads COLLECT LOOT →)
+    const noDropsEndState = { ...mockEndState, items_dropped: [] };
     render(
       <VictoryDialog
-        endState={mockEndState}
+        endState={noDropsEndState}
         onClose={mockOnClose}
         onAllocatePoints={mockOnAllocatePoints}
       />

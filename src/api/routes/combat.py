@@ -283,7 +283,10 @@ def collect_loot():
         data = request.get_json() or {}
         item_names = data.get("item_names", [])
         if not isinstance(item_names, list):
-            return jsonify({"success": False, "error": "item_names must be a list"}), 400
+            return (
+                jsonify({"success": False, "error": "item_names must be a list"}),
+                400,
+            )
 
         from flask import current_app
 
