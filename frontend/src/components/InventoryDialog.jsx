@@ -370,6 +370,23 @@ function ItemCard({ item, onClick, isShop }) {
         </div>
       )}
 
+      {item.quantity > 1 && (
+        <div style={{
+          position: 'absolute',
+          top: '-6px',
+          right: isEquipped ? '50px' : '-6px',
+          backgroundColor: colors.gold,
+          color: '#000',
+          fontSize: '9px',
+          padding: '2px 6px',
+          borderRadius: '10px',
+          fontWeight: 'bold',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
+        }}>
+          x{item.quantity}
+        </div>
+      )}
+
       <div style={{
         fontSize: '13px',
         fontWeight: 'bold',

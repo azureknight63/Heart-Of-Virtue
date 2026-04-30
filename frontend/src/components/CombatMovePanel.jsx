@@ -6,7 +6,7 @@ import GameText from './GameText';
 
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover }) => {
     const { playSFX } = useAudio();
-    const [hoveredMoveIndex, setHoveredMoveIndex] = useState(null);
+    const [hoveredMoveName, setHoveredMoveName] = useState(null);
 
     const filteredMoves = useMemo(() => moves.filter(move => {
         if (category === 'Miscellaneous') {
@@ -68,7 +68,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                     filteredMoves.map((move, index) => {
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
-                        const isHovered = hoveredMoveIndex === index;
+                        const isHovered = hoveredMoveName === move.name;
 
                         // Single target detection for hover effect
                         const firstTarget = move.viable_targets?.[0];
@@ -78,7 +78,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
 
                         return (
                             <button
-                                key={index}
+                                key={move.name}
                                 onClick={() => {
                                     if (isAvailable) {
                                         playSFX('attack');
@@ -88,14 +88,14 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                                 }}
                                 onMouseEnter={() => {
                                     if (isAvailable) {
-                                        setHoveredMoveIndex(index);
+                                        setHoveredMoveName(move.name);
                                         if (singleTargetId && onTargetHover) {
                                             onTargetHover(singleTargetId);
                                         }
                                     }
                                 }}
                                 onMouseLeave={() => {
-                                    setHoveredMoveIndex(null);
+                                    setHoveredMoveName(null);
                                     if (onTargetHover) {
                                         onTargetHover(null);
                                     }

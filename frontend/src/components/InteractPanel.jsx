@@ -145,16 +145,15 @@ function InteractPanel({
         setError(null)
         setShowQuantityInput(false)
 
+        const takenLabels = []
         for (const item of takeableItems) {
             try {
                 const response = await apiEndpoints.world.interact(item.id, 'take', item.count)
                 const data = response.data
 
                 if (data.success) {
-                    const message = data.message || `Took ${item.name}`
-                    setInteractionOutput(message)
-                    if (onTypingChange) onTypingChange(true)
-                    setInteractionHistory(prev => [...prev, message])
+                    const label = (item.count > 1) ? `${item.count}× ${item.name}` : item.name
+                    takenLabels.push(label)
                 } else {
                     // Stop on error
                     setError(data.error || data.message || 'Failed to take item')
@@ -165,6 +164,13 @@ function InteractPanel({
                 setError('Network error')
                 break
             }
+        }
+
+        if (takenLabels.length > 0) {
+            const summary = `Jean takes: ${takenLabels.join(', ')}.`
+            setInteractionOutput(summary)
+            if (onTypingChange) onTypingChange(true)
+            setInteractionHistory(prev => [...prev, summary])
         }
 
         if (onRefetch) await onRefetch()

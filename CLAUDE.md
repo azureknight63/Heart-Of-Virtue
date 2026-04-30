@@ -17,7 +17,7 @@ The Python game engine is the source of truth. The web layer wraps it without re
 | Database | LibSQL (Turso) via `libsql-client` |
 | Testing (backend) | pytest, pytest-cov |
 | Testing (frontend) | Vitest, React Testing Library |
-| Code quality | black (formatter), flake8 (linter) |
+| Code quality | flake8 (linter) |
 | AI integration | OpenAI/OpenRouter for Mynx NPC ambient behavior |
 
 ## Project Structure
@@ -494,6 +494,40 @@ Key capabilities:
 - AI music generation mastery (Suno, MusicGen, AIVA, etc.)
 - Prompt engineering for music (model-specific language, iteration strategies)
 - Game audio integration (looping, transitions, adaptive systems)
+
+---
+
+## UI Mockup Skill
+
+**Retro terminal UI mockup designer.** The `/mockup` skill generates self-contained HTML mockup files that match the project's design language, saves them to `docs/development/`, and pushes to the remote branch so the user can view them immediately — without checking out code.
+
+Use when you need to:
+- Show what a new component looks like before implementation
+- Explore state variations (collapsed/expanded, hover, empty, error)
+- Get sign-off on a design before writing React code
+- Document a UI design decision for the repo
+
+```bash
+/mockup
+component: move cooldown card
+states: collapsed, expanded
+context: below HeroPanel in LeftPanel
+issue: #127
+
+/mockup
+component: quest tracker panel
+states: no quests, active quest, completed
+```
+
+**Output**: A single HTML file at `docs/development/<name>-mockup.html`, committed and pushed to the current remote branch. Screenshot shown inline if Playwright is available.
+
+**Branch rule**: The skill always pushes before reporting done. A mockup the user cannot view on the remote is not finished.
+
+Key capabilities:
+- Reads `frontend/src/styles/theme.js` for live design tokens (colors, spacing, fonts)
+- Reads adjacent components to match padding and border styles exactly
+- Shows in-context placement, state variations, and annotated close-ups
+- Covers all move category color variants (Attack, Maneuver, Special, Supernatural, Misc)
 
 ---
 

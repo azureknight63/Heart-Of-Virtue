@@ -178,4 +178,26 @@ describe('InventoryDialog', () => {
 
     expect(screen.getByText('EQUIPPED')).toBeDefined();
   });
+
+  it('shows stack count for items with quantity > 1', () => {
+    const playerWithStacks = {
+      ...mockPlayer,
+      inventory: [
+        ...mockPlayer.inventory,
+        { id: 9, name: 'Test Potion', maintype: 'Consumable', subtype: 'Potion', value: 15, weight: 0.5, quantity: 3 }
+      ]
+    };
+    const { container } = render(<InventoryDialog player={playerWithStacks} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+
+    // Navigate to Consumables tab
+    const consumablesTab = screen.getByTitle('Consumables');
+    fireEvent.click(consumablesTab);
+
+    // Check that Test Potion with quantity 3 is displayed with the quantity badge
+    expect(screen.getByText(/Test Potion/)).toBeDefined();
+    // The x3 badge should be in the DOM
+    const badges = container.querySelectorAll('div');
+    const quantityBadges = Array.from(badges).filter(div => div.textContent?.includes('x3'));
+    expect(quantityBadges.length).toBeGreaterThan(0);
+  });
 });

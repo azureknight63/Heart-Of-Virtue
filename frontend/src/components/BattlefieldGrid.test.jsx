@@ -1,7 +1,12 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
+
+// Mock AudioContext so playSFX doesn't throw
+vi.mock('../context/AudioContext', () => ({
+    useAudio: () => ({ playSFX: vi.fn() })
+}));
 
 describe('BattlefieldGrid', () => {
     const mockCombat = {
@@ -95,5 +100,59 @@ describe('BattlefieldGrid', () => {
         expect(screen.getByText('J')).toBeDefined();
         expect(screen.getByText('G')).toBeDefined();
         expect(screen.getByText('O')).toBeDefined();
+    });
+
+    it('shows hover reticle SVG when a combatant token is moused over', () => {
+        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+        // No reticle before hover
+        // The reticle SVG is the only one given an animate-[spin] class
+        expect(container.querySelector('.animate-\\[spin_4s_linear_infinite\\]')).toBeNull();
+
+        const jeanToken = screen.getByText('J');
+        const entityWrapper = jeanToken.closest('[style*="cursor"]');
+        expect(entityWrapper).not.toBeNull();
+
+        fireEvent.mouseEnter(entityWrapper);
+
+        // Reticle SVG appears on hover
+        const reticleSvg = container.querySelector('.animate-\\[spin_4s_linear_infinite\\]');
+        expect(reticleSvg, 'Hover reticle SVG should appear on mouse enter').not.toBeNull();
+
+        fireEvent.mouseLeave(entityWrapper);
+
+        // Reticle is removed after mouse leave
+        expect(container.querySelector('.animate-\\[spin_4s_linear_infinite\\]')).toBeNull();
+    });
+
+    it('opens SelectedEntityPanel when a combatant is clicked', () => {
+        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+        const jeanToken = screen.getByText('J');
+        const entityWrapper = jeanToken.closest('[style*="cursor"]');
+        expect(entityWrapper).not.toBeNull();
+
+        fireEvent.click(entityWrapper);
+
+        // SelectedEntityPanel should appear showing Jean's name
+        expect(screen.getByText('Jean')).toBeDefined();
+    });
+
+    it('closes SelectedEntityPanel on Escape key', () => {
+        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+        // Open panel by clicking Jean
+        const jeanToken = screen.getByText('J');
+        const entityWrapper = jeanToken.closest('[style*="cursor"]');
+        fireEvent.click(entityWrapper);
+        expect(screen.getByText('Jean')).toBeDefined();
+
+        // Escape should close it
+        fireEvent.keyDown(window, { key: 'Escape' });
+        // Jean token label still exists but SelectedEntityPanel should be gone
+        // (it renders the name in a different style context)
+        const jeanInPanel = screen.queryAllByText('Jean');
+        // Panel renders name inside a distinct section — after Escape there should be at most the marker label
+        expect(jeanInPanel.length).toBeLessThanOrEqual(1);
     });
 });

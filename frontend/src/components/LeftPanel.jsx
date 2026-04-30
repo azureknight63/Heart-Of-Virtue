@@ -18,6 +18,7 @@ import { getAnimationDuration } from '../utils/animationConfigs'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FeedbackDialog from './FeedbackDialog'
+import CooldownTray from './CooldownTray'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
@@ -272,6 +273,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           return name !== 'UseItem' && name !== 'Use Item'
         })
       : [],
+    [movesForButtons]
+  )
+
+  const cooldownMoves = useMemo(
+    () => movesForButtons.filter(m => (m.cooldown_remaining || 0) > 0),
     [movesForButtons]
   )
 
@@ -624,6 +630,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             />
           </div>
         </div>
+
+        {/* Cooldown Tray — moves currently on cooldown */}
+        {mode === 'combat' && cooldownMoves.length > 0 && (
+          <CooldownTray moves={cooldownMoves} />
+        )}
 
         {/* Combat Move Panel */}
         {showCombatMoves && mode === 'combat' && isMyTurn && (

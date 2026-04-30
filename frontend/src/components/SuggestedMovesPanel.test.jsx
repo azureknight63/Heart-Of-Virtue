@@ -84,4 +84,44 @@ describe('SuggestedMovesPanel', () => {
         expect(screen.getByText(`"${lastOutcome}"`)).toBeDefined();
         vi.useRealTimers();
     });
+
+    it('shows "DO IT AGAIN" button when lastOutcome and lastMoveViable are provided', async () => {
+        vi.useFakeTimers();
+        const lastOutcome = 'Slash hit for 15 damage.';
+        const onSuggestClick = vi.fn();
+        render(
+            <SuggestedMovesPanel
+                isPlayerTurn={true}
+                suggestions={mockSuggestions}
+                lastOutcome={lastOutcome}
+                lastMoveViable={true}
+                onSuggestClick={onSuggestClick}
+            />
+        );
+
+        act(() => { vi.advanceTimersByTime(500); });
+
+        const repeatBtn = screen.getByText('DO IT AGAIN');
+        expect(repeatBtn).toBeDefined();
+        fireEvent.click(repeatBtn);
+        expect(onSuggestClick).toHaveBeenCalled();
+        vi.useRealTimers();
+    });
+
+    it('does not show "DO IT AGAIN" button when lastMoveViable is false', async () => {
+        vi.useFakeTimers();
+        render(
+            <SuggestedMovesPanel
+                isPlayerTurn={true}
+                suggestions={mockSuggestions}
+                lastOutcome='Hit for 5 damage.'
+                lastMoveViable={false}
+            />
+        );
+
+        act(() => { vi.advanceTimersByTime(500); });
+
+        expect(screen.queryByText('DO IT AGAIN')).toBeNull();
+        vi.useRealTimers();
+    });
 });

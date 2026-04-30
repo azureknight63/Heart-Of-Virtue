@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 
 import BattlefieldGrid, { VIEW_SIZE } from './BattlefieldGrid'
+import { colors, spacing } from '../styles/theme'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
+const MAX_BEAT_STATES = 200;
 
 // Any living enemy whose position lies outside the zoomed viewport centered on Jean.
 function anyEnemyOffScreen(state) {
@@ -65,7 +67,6 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
     }
 
     setAccBeatStates(prev => {
-      const MAX_BEAT_STATES = 200
       const next = [...prev, ...incoming]
       if (next.length > MAX_BEAT_STATES) {
         const dropped = next.length - MAX_BEAT_STATES
@@ -110,32 +111,36 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
   if (!displayState) {
     return (
-      <div className="w-full h-full flex items-center justify-center text-gray-500">
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.text.muted }}>
         <p>No active combat</p>
       </div>
     )
   }
 
   return (
-    <div className="w-full h-full flex flex-col gap-2">
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
       {/* Tab Selector */}
-      <div className="flex gap-1.5 items-center justify-between">
-        <div className="flex gap-1.5">
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
           <button
             onClick={() => setSelectedTab('overview')}
-            className={`px-2 py-1 text-xs font-bold rounded border transition-all ${selectedTab === 'overview'
-              ? 'bg-orange text-white border-orange'
-              : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
-              }`}
+            style={{
+              padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
+              backgroundColor: selectedTab === 'overview' ? colors.secondary : 'transparent',
+              color: selectedTab === 'overview' ? '#fff' : colors.secondary,
+              cursor: 'pointer'
+            }}
           >
             Overview
           </button>
           <button
             onClick={() => setSelectedTab('enemies')}
-            className={`px-2 py-1 text-xs font-bold rounded border transition-all ${selectedTab === 'enemies'
-              ? 'bg-orange text-white border-orange'
-              : 'bg-transparent text-orange border-orange hover:bg-orange hover:text-white'
-              }`}
+            style={{
+              padding: '4px 8px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'all 0.2s',
+              backgroundColor: selectedTab === 'enemies' ? colors.secondary : 'transparent',
+              color: selectedTab === 'enemies' ? '#fff' : colors.secondary,
+              cursor: 'pointer'
+            }}
           >
             Enemies ({combat?.enemies?.length || 0})
           </button>
@@ -143,13 +148,16 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
         {/* Zoom Controls */}
         {selectedTab === 'overview' && (
-          <div className="flex gap-1">
+          <div style={{ display: 'flex', gap: '4px' }}>
             <button
               onClick={() => setZoom(zoom === 1 ? 'full' : 1)}
-              className={`px-3 py-1 text-xs font-bold rounded border transition-colors ${zoom === 'full'
-                ? 'bg-orange text-white border-orange'
-                : 'border-orange text-orange hover:bg-orange hover:text-white bg-[rgba(0,0,0,0.5)]'
-                }${enemyOffScreen ? ' battlefield-zoom-hint' : ''}`}
+              className={enemyOffScreen ? 'battlefield-zoom-hint' : ''}
+              style={{
+                padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'colors 0.2s',
+                backgroundColor: zoom === 'full' ? colors.secondary : 'rgba(0,0,0,0.5)',
+                color: zoom === 'full' ? '#fff' : colors.secondary,
+                cursor: 'pointer'
+              }}
               title={enemyOffScreen
                 ? 'Enemies are off-screen — switch to Full Map to see everything'
                 : 'Toggle View Mode'}
@@ -161,7 +169,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
       </div>
 
       {/* Battlefield Grid */}
-      <div className="flex-1 overflow-hidden rounded border border-[#333] bg-[rgba(0,0,0,0.3)] relative">
+      <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: 'rgba(0,0,0,0.3)', position: 'relative' }}>
         <BattlefieldGrid
           combat={displayState}
           allBeatStates={accBeatStates}
@@ -176,10 +184,11 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
         {selectedTab === 'overview' && showOffScreenBanner && (
           <div
-            className="absolute top-2 left-1/2 -translate-x-1/2 z-[160] pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200"
+            className="animate-in fade-in slide-in-from-top-2 duration-200"
+            style={{ position: 'absolute', top: '8px', left: '50%', transform: 'translateX(-50%)', zIndex: 160, pointerEvents: 'none' }}
             role="status"
           >
-            <div className="bg-black/90 border border-orange/70 rounded px-3 py-1 text-[11px] font-bold text-orange shadow-lg backdrop-blur-sm whitespace-nowrap">
+            <div style={{ backgroundColor: 'rgba(0,0,0,0.9)', border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
               ⚠ Enemy off-screen — switch to Full Map
             </div>
           </div>
@@ -187,13 +196,13 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
         {selectedTab === 'overview' && (
           <div
-            className="absolute bottom-1.5 left-2 z-[140] pointer-events-none text-[9px] font-mono text-white/40 select-none flex items-center gap-1"
+            style={{ position: 'absolute', bottom: '6px', left: '8px', zIndex: 140, pointerEvents: 'none', fontSize: '9px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
             aria-label="Trailing dots show recent movement paths"
           >
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00ff88] opacity-70"></span>
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00ff88] opacity-40"></span>
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00ff88] opacity-20"></span>
-            <span className="ml-1">recent paths</span>
+            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accent, opacity: 0.7 }}></span>
+            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accent, opacity: 0.4 }}></span>
+            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.accent, opacity: 0.2 }}></span>
+            <span style={{ marginLeft: '4px' }}>recent paths</span>
           </div>
         )}
       </div>

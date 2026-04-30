@@ -3,6 +3,14 @@ import DOMPurify from 'dompurify'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
 
+const LOG_ENTRY_COLORS = {
+  damage: colors.danger,
+  heal: colors.success,
+  ability: colors.accent,
+  info: colors.text.muted,
+  system: colors.gold
+}
+
 export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [height, setHeight] = useState(150)
@@ -54,7 +62,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
         flexDirection: 'column',
         boxShadow: shadows.main,
         overflow: 'hidden',
-        transition: 'height 0.3s ease',
+        transition: allowResize ? 'none' : 'height 0.3s ease',
       }}
       className={className}
     >
@@ -100,15 +108,10 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
               </GameText>
             )}
             {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => {
-              let textColor = colors.text.main
-              if (entry.type === 'damage') textColor = colors.danger
-              else if (entry.type === 'heal') textColor = colors.success
-              else if (entry.type === 'ability') textColor = colors.accent
-              else if (entry.type === 'info') textColor = colors.text.muted
-              else if (entry.type === 'system') textColor = colors.gold
+              const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
 
               return (
-                <div key={idx} style={{ fontSize: '13px', lineHeight: '1.4' }}>
+                <div key={entry.id ?? entry.timestamp ?? idx} style={{ fontSize: '13px', lineHeight: '1.4' }}>
                   <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
                     [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
                   </span>

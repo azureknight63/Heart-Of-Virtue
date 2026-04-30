@@ -444,12 +444,15 @@ class Container(Object):
 
         # Snapshot inventory since transfer_item modifies it
         snapshot = self.inventory[:]
-        print(f"Jean begins gathering everything from the {self.nickname}...")
+        taken_labels = []
         for item in snapshot:
             qty = getattr(item, "count", 1)
             transfer_item(self, player, item, qty)
+            label = f"{qty}× {item.name}" if qty > 1 else item.name
+            taken_labels.append(label)
 
-        print("Jean collects all of the available items.")
+        if taken_labels:
+            print(f"Jean takes {', '.join(taken_labels)}.")
         self.refresh_description()
         self.process_events()
 

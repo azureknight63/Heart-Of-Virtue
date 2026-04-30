@@ -19,6 +19,11 @@ const COMMAND_TOOLTIPS = {
   'Refresh Merchants': '[DEBUG] Refresh all merchant inventories',
 }
 
+function isDebugMode() {
+  // Show debug label when running in development mode
+  return import.meta.env.DEV;
+}
+
 /**
  * ActionsPanel - Display available actions player can take
  */
@@ -68,44 +73,55 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
     fetchCommands()
   }, [location])
 
+  const handleSearch = async () => {
+    setActionMessage('Searching...')
+    const response = await apiEndpoints.world.search()
+
+    if (response.data) {
+      const data = response.data
+      if (data.messages && data.messages.length > 0) {
+        setTimedMessage(data.messages.join(' '), 5000)
+      } else {
+        setTimedMessage('Search complete.', 2000)
+      }
+      // Refresh room data to show newly discovered items
+      if (onRefetch) onRefetch()
+    } else {
+      setTimedMessage('Search failed.', 2000)
+    }
+  }
+
+  const handleMenu = () => {
+    setActionMessage('Opening menu...')
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => navigate('/menu'), 300)
+  }
+
+  const handleSave = async () => {
+    setActionMessage('Saving game...')
+    const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
+    const response = await apiEndpoints.saves.save(saveName)
+
+    if (response.data && response.data.success) {
+      setTimedMessage(response.data.message || 'Game saved successfully!', 3000)
+    } else {
+      setTimedMessage(response.data?.error || 'Save failed.', 3000)
+    }
+  }
+
+  const COMMAND_HANDLERS = {
+    'Search': handleSearch,
+    'Menu': handleMenu,
+    'Save': handleSave
+  }
+
   const handleAction = async (command) => {
     playSFX('click')
 
     try {
-      if (command.name === 'Search') {
-        setActionMessage('Searching...')
-        const response = await apiEndpoints.world.search()
-
-        if (response.data) {
-          const data = response.data
-          if (data.messages && data.messages.length > 0) {
-            setTimedMessage(data.messages.join(' '), 5000)
-          } else {
-            setTimedMessage('Search complete.', 2000)
-          }
-          // Refresh room data to show newly discovered items
-          if (onRefetch) {
-            onRefetch()
-          }
-        } else {
-          setTimedMessage('Search failed.', 2000)
-        }
-      } else if (command.name === 'Menu') {
-        setTimedMessage('Opening menu...', 300)
-        clearTimeout(timerRef.current)
-        timerRef.current = setTimeout(() => navigate('/menu'), 300)
-      } else if (command.name === 'Save') {
-        setActionMessage('Saving game...')
-        const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
-        const response = await apiEndpoints.saves.save(saveName)
-
-        if (response.data && response.data.success) {
-          const data = response.data
-          setTimedMessage(data.message || 'Game saved successfully!', 3000)
-        } else {
-          const errorMsg = response.data?.error || 'Save failed.'
-          setTimedMessage(errorMsg, 3000)
-        }
+      const handler = COMMAND_HANDLERS[command.name]
+      if (handler) {
+        await handler()
       } else {
         // Default behavior for other commands
         setTimedMessage(`${command.name}...`, 1500)
@@ -263,9 +279,3 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
     </BaseDialog>
   )
 }
-
-function isDebugMode() {
-  // Show debug label when running in development mode
-  return import.meta.env.DEV;
-}
-
