@@ -526,6 +526,8 @@ export default function GamePage() {
           currentLogIndex={currentLogIndex}
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
+          showDescription={isMobile}
+          onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
         />
       </div>
 

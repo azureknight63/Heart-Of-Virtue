@@ -7,7 +7,7 @@ import AccountDialog from './AccountDialog'
 import AudioControlDialog from './AudioControlDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
-import RoomContents from './RoomContents'
+import CollapsibleRoomDescription from './CollapsibleRoomDescription'
 import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
@@ -573,17 +573,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         padding: '14px',
         gap: '14px',
       }}>
-        {/* Room Contents - Scrollable portion */}
+        {/* Room Contents - Collapsible description */}
         {mode === 'exploration' && location && (
           <div style={{
             flex: '0 1 auto',
-            overflowY: 'auto',
-            maxHeight: '40%',
-            minHeight: '80px',
+            minHeight: '36px',
             borderBottom: `1px solid ${colors.primary}1A`,
-            paddingBottom: '10px'
+            paddingBottom: '4px'
           }}>
-            <RoomContents location={location} onInteract={handleOpenInteract} />
+            <CollapsibleRoomDescription
+              location={location}
+              onInteract={handleOpenInteract}
+              defaultOpen={true}
+            />
           </div>
         )}
 
