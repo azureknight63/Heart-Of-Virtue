@@ -1,4 +1,3 @@
-import React from 'react'
 import { colors, fonts } from '../styles/theme'
 
 function MobileTabBar({ activeTab, onTabChange, mode }) {

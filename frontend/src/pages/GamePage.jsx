@@ -494,6 +494,7 @@ export default function GamePage() {
           mode={mode}
           combat={combat}
           isEventDialogActive={isEventDialogActive}
+          isMobile={isMobile}
           onMove={handleMove}
           onRefetch={handleRefetch}
           onEventsTriggered={handleEventsTriggered}

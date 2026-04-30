@@ -10,7 +10,7 @@ vi.mock('./AccountDialog', () => ({ default: ({ onClose }) => <div data-testid="
 vi.mock('./AudioControlDialog', () => ({ default: ({ onClose }) => <div data-testid="audio-dialog"><button onClick={onClose}>Close Aud</button></div> }));
 vi.mock('./StatsPanel', () => ({ default: ({ onClose }) => <div data-testid="stats-panel"><button onClick={onClose}>Close Stats</button></div> }));
 vi.mock('./SkillsPanel', () => ({ default: ({ onClose }) => <div data-testid="skills-panel"><button onClick={onClose}>Close Skills</button></div> }));
-vi.mock('./RoomContents', () => ({ default: ({ onInteract }) => <div data-testid="room-contents"><button onClick={() => onInteract()}>Interact Button</button></div> }));
+vi.mock('./CollapsibleRoomDescription', () => ({ default: ({ onInteract }) => <div data-testid="room-contents"><button onClick={() => onInteract()}>Interact Button</button></div> }));
 vi.mock('./ActionsPanel', () => ({ default: ({ onClose }) => <div data-testid="actions-panel"><button onClick={onClose}>Close Actions</button></div> }));
 vi.mock('./InteractPanel', () => ({ default: ({ onClose }) => <div data-testid="interact-panel"><button onClick={onClose}>Close Interact</button></div> }));
 vi.mock('./HeroPanel', () => ({

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import RoomContents from './RoomContents'
-import { colors, fonts } from '../styles/theme'
+import { colors, fonts, accessibility } from '../styles/theme'
 
 export default function CollapsibleRoomDescription({ location, onInteract, defaultOpen = true }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
@@ -27,7 +27,7 @@ export default function CollapsibleRoomDescription({ location, onInteract, defau
           textTransform: 'uppercase',
           letterSpacing: '1px',
           touchAction: 'manipulation',
-          minHeight: '36px',
+          minHeight: accessibility.touchTarget,
           width: '100%',
           textAlign: 'left',
         }}

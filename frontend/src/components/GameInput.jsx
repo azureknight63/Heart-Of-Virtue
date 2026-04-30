@@ -1,4 +1,4 @@
-import { colors, spacing } from '../styles/theme'
+import { colors, spacing, accessibility } from '../styles/theme'
 import GameText from './GameText'
 
 /**
@@ -22,7 +22,7 @@ export default function GameInput({
         padding: `${spacing.sm} ${spacing.md}`,
         fontFamily: 'monospace',
         fontSize: '16px', // prevents iOS zoom-on-focus
-        minHeight: '44px',
+        minHeight: accessibility.touchTarget,
         outline: 'none',
         transition: 'all 200ms',
         ...style

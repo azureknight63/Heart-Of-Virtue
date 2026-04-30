@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
-import { colors, spacing, fonts, shadows } from '../styles/theme'
-import { useMobile } from '../hooks/useMobile'
+import { colors, spacing, fonts, shadows, accessibility } from '../styles/theme'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
 
 function HeroPanel({
   player,
+  isMobile,
   inCombat,
   hasSpecialMoves,
   hasDefensiveMoves,
@@ -24,7 +24,6 @@ function HeroPanel({
   onManeuverClick,
   onMiscellaneousClick
 }) {
-  const isMobile = useMobile()
   const [hoveredButton, setHoveredButton] = useState(null)
   const [hoveredBar, setHoveredBar] = useState(null)
   const [focusedBar, setFocusedBar] = useState(null)
@@ -289,8 +288,8 @@ function HeroPanel({
                 left,
                 transform,
                 width: '70px',
-                height: '44px',
-                minHeight: '44px',
+                height: accessibility.touchTarget,
+                minHeight: accessibility.touchTarget,
                 borderRadius: '6px',
                 border: `2px solid ${isHovered ? hoverColor : baseColor}`,
                 backgroundColor: isHovered

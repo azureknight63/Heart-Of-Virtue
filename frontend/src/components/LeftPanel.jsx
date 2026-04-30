@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { colors } from '../styles/theme'
+import { colors, accessibility } from '../styles/theme'
 import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
@@ -22,7 +22,9 @@ import CooldownTray from './CooldownTray'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
-function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted }) {
+function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted }) {
+  const notifyMoveSubmitted = () => { if (onMoveSubmitted) onMoveSubmitted() }
+
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
@@ -393,7 +395,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       const target = move.viable_targets[0];
       try {
         setPendingMoveSelection(true)
-        if (onMoveSubmitted) onMoveSubmitted()
+        notifyMoveSubmitted()
         await onCombatAction('select_move_and_target', {
           move_name: move.name,
           target_id: target.id
@@ -480,8 +482,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onClick={() => setShowAudio(true)}
             style={{
               padding: '4px 8px',
-              minHeight: '44px',
-              minWidth: '44px',
+              minHeight: accessibility.touchTarget,
+              minWidth: accessibility.touchTarget,
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
               border: `1px solid ${colors.text.inverse}`,
@@ -510,7 +512,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             className={BETA_MODE ? 'beta-feedback-glow' : undefined}
             style={{
               padding: '4px 10px',
-              minHeight: '44px',
+              minHeight: accessibility.touchTarget,
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
               border: BETA_MODE ? '1px solid #00FFFF' : `1px solid ${colors.text.inverse}`,
@@ -538,7 +540,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onClick={() => setShowAccount(true)}
             style={{
               padding: '4px 12px',
-              minHeight: '44px',
+              minHeight: accessibility.touchTarget,
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
               border: `1px solid ${colors.text.inverse}`,
@@ -616,6 +618,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           }}>
             <HeroPanel
               player={activePlayer}
+              isMobile={isMobile}
               inCombat={mode === 'combat'}
               hasSpecialMoves={hasSpecialMoves}
               hasDefensiveMoves={hasDefensiveMoves}
@@ -669,7 +672,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onSelect={async (selectedValue) => {
               if (localCombatInput) {
                 try {
-                  if (onMoveSubmitted) onMoveSubmitted()
+                  notifyMoveSubmitted()
                   await onCombatAction('select_move_and_target', {
                     move_name: localCombatInput.moveName,
                     target_id: selectedValue
