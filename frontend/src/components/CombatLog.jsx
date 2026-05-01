@@ -111,7 +111,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
               const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
 
               return (
-                <div key={entry.id ?? entry.timestamp ?? idx} style={{ fontSize: '13px', lineHeight: '1.4' }}>
+                <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>
                   <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
                     [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
                   </span>
