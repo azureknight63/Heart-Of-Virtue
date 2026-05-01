@@ -1060,14 +1060,8 @@ def seek_class(classname, package="all", allow_other_modules=True):
 
     def add_modules_for(base_pkg):
         try:
-            # __import__ for dotted names (e.g. "src.tilesets") returns the top-level package,
-            # so root_pkg.__path__ covers the entire parent directory — intentional when
-            # allow_other_modules=True.  When strict mode is requested, importlib.import_module
-            # returns the exact subpackage so only its own directory is walked.
-            if allow_other_modules:
-                root_pkg = __import__(base_pkg)
-            else:
-                root_pkg = importlib.import_module(base_pkg)
+            # importlib returns the exact subpackage; __import__ returns only the top-level package
+            root_pkg = __import__(base_pkg) if allow_other_modules else importlib.import_module(base_pkg)
             # Walk the package tree recursively to include nested modules (effects, ch01, etc.)
             for modinfo in pkgutil.walk_packages(root_pkg.__path__, prefix=root_pkg.__name__ + "."):  # type: ignore
                 module_paths.add(modinfo.name)
