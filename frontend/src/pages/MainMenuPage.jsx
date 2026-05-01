@@ -235,6 +235,25 @@ export default function MainMenuPage() {
                     <GameButton onClick={() => setShowCredits(true)} size="large" style={{ width: '100%' }}>Credits</GameButton>
                     <GameButton onClick={handleLogout} variant="danger" size="large" style={{ width: '100%' }}>Logout</GameButton>
                 </nav>
+
+                <div style={{ marginTop: spacing.xl, textAlign: 'center' }}>
+                    <a
+                        href="https://nexusfidei.dev"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            color: colors.text.dim,
+                            fontFamily: fonts.main,
+                            fontSize: '11px',
+                            textDecoration: 'underline',
+                            transition: 'color 0.2s',
+                        }}
+                        onMouseEnter={(e) => e.target.style.color = colors.text.muted}
+                        onMouseLeave={(e) => e.target.style.color = colors.text.dim}
+                    >
+                        Nexus Fidei
+                    </a>
+                </div>
             </GamePanel>
 
             {/* Settings Modal */}

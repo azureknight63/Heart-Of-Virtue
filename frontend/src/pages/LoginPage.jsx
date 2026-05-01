@@ -264,6 +264,22 @@ export default function LoginPage() {
           >
             Terms of Service &amp; Privacy Policy
           </button>
+          <a
+            href="https://nexusfidei.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: colors.text.dim,
+              fontFamily: 'monospace',
+              fontSize: '11px',
+              textDecoration: 'underline',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={(e) => e.target.style.color = colors.text.muted}
+            onMouseLeave={(e) => e.target.style.color = colors.text.dim}
+          >
+            Nexus Fidei
+          </a>
         </div>
       </div>
 
