@@ -2791,7 +2791,7 @@ class GameService:
             return None
 
     async def list_saves(
-        self, user_id: str, timezone: str = "US/Eastern"
+        self, user_id: str, timezone: str = "America/New_York"
     ) -> List[Dict[str, Any]]:
         """List all saved games for a user from Turso.
 
@@ -2805,7 +2805,7 @@ class GameService:
         try:
             user_tz = zoneinfo.ZoneInfo(timezone)
         except Exception:
-            user_tz = zoneinfo.ZoneInfo("US/Eastern")
+            user_tz = zoneinfo.ZoneInfo("America/New_York")
 
         sql = """
         SELECT id, name, timestamp, is_autosave, level, map_name, room_title, playtime

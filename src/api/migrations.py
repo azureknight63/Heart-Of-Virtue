@@ -12,7 +12,7 @@ async def init_db():
             email_encrypted TEXT NOT NULL,
             is_premium BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            timezone TEXT DEFAULT 'US/Eastern'
+            timezone TEXT DEFAULT 'America/New_York'
         );
         """,
         """
@@ -42,7 +42,7 @@ async def init_db():
         # Add timezone column for existing databases (will fail harmlessly if already exists)
         try:
             await db.execute(
-                "ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'US/Eastern'"
+                "ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'America/New_York'"
             )
         except Exception:
             pass

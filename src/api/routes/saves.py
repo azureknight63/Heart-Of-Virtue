@@ -51,7 +51,7 @@ async def list_saves():
         from flask import current_app
 
         game_service = current_app.game_service
-        timezone = session.data.get("timezone", "US/Eastern")
+        timezone = session.data.get("timezone", "America/New_York")
 
         saves = await game_service.list_saves(session.db_user_id, timezone=timezone)
 

@@ -42,7 +42,7 @@ class AuthService:
             password_hash,
             email_encrypted,
             False,
-            "US/Eastern",
+            "America/New_York",
         ]
 
         await db.execute(sql, params)
@@ -51,7 +51,7 @@ class AuthService:
             "id": user_id,
             "username": username,
             "is_premium": False,
-            "timezone": "US/Eastern",
+            "timezone": "America/New_York",
         }
 
     async def authenticate_user(self, username, password) -> Optional[Dict[str, Any]]:
@@ -79,7 +79,7 @@ class AuthService:
                 "id": str(user_id),
                 "username": str(uname),
                 "is_premium": bool(is_premium),
-                "timezone": str(timezone) if timezone else "US/Eastern",
+                "timezone": str(timezone) if timezone else "America/New_York",
             }
         except Exception:
             return None
@@ -94,7 +94,7 @@ class AuthService:
             "id": str(user[0]),
             "username": str(user[1]),
             "is_premium": bool(user[2]),
-            "timezone": str(user[3]) if len(user) > 3 and user[3] else "US/Eastern",
+            "timezone": str(user[3]) if len(user) > 3 and user[3] else "America/New_York",
         }
 
     async def update_user_timezone(self, user_id: str, timezone: str) -> bool:

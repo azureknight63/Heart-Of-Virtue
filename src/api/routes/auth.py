@@ -180,7 +180,7 @@ async def register():
         # Link session to DB user ID
         session = session_manager.get_session(session_id)
         session.db_user_id = user["id"]
-        session.data["timezone"] = user.get("timezone", "US/Eastern")
+        session.data["timezone"] = user.get("timezone", "America/New_York")
 
         return (
             jsonify(
@@ -271,7 +271,7 @@ async def login():
         # Link session to DB user ID
         session = session_manager.get_session(session_id)
         session.db_user_id = user["id"]
-        session.data["timezone"] = user.get("timezone", "US/Eastern")
+        session.data["timezone"] = user.get("timezone", "America/New_York")
 
         return (
             jsonify(
@@ -448,7 +448,7 @@ async def settings():
                     {
                         "success": True,
                         "data": {
-                            "timezone": session.data.get("timezone", "US/Eastern")
+                            "timezone": session.data.get("timezone", "America/New_York")
                         },
                     }
                 ),
