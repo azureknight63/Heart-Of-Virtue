@@ -392,6 +392,9 @@ const EntityLayer = React.memo(({
   <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
     {entitiesToRender.map((item, idx) => {
       const entityId = item.entity.id;
+      const isEntityHovered = hoveredEntity != null && (
+        entityId != null ? hoveredEntity.id === entityId : hoveredEntity === item.entity
+      );
 
       // Derive per-entity animation state
       let animState = null;
@@ -420,7 +423,7 @@ const EntityLayer = React.memo(({
         transformStyle = { transform: 'translate(0, 0)', transition: 'transform 0.2s ease-in-out' };
       }
 
-      const isHighlighted = hoveredEntity?.id === entityId || selectedEntity?.id === entityId;
+      const isHighlighted = isEntityHovered || (entityId != null && selectedEntity?.id === entityId);
 
       return (
         <div
@@ -458,15 +461,15 @@ const EntityLayer = React.memo(({
               isPlayer={item.isPlayer}
               isHero={item.isHero}
               isFullMode={isFullMode}
-              isHovered={hoveredTargetId === entityId || hoveredEntity?.id === entityId}
-              isSelected={selectedEntity?.id === entityId}
+              isHovered={(entityId != null && hoveredTargetId === entityId) || isEntityHovered}
+              isSelected={entityId != null && selectedEntity?.id === entityId}
               animationState={animState}
               displaySymbol={item.displaySymbol}
             />
           </div>
 
           {/* Hover tooltip */}
-          {hoveredEntity?.id === entityId && !selectedEntity && (
+          {isEntityHovered && !selectedEntity && (
             <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 z-[100] animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
               <div className="bg-black/90 border border-orange/40 rounded px-2 py-1 shadow-2xl backdrop-blur-md min-w-[120px]">
                 <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1">
