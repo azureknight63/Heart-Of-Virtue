@@ -693,11 +693,11 @@
                 "props": {
                     "name": "Wall Depression",
                     "description": "A shallow indentation beside the gap where the ledge ends. Something mechanical, perhaps - built to bridge what the stone cannot. You may be able to PRESS it.",
-                    "idle_message": "There's a shallow indentation in the rock beside the gap.",
+                    "idle_message": "There's a shallow depression in the rock beside the gap.",
                     "hidden": false,
                     "hide_factor": 0,
-                    "discovery_message": "a shallow indentation in the rock!",
-                    "announce": "There's a shallow indentation in the rock beside the gap.",
+                    "discovery_message": "a shallow depression in the rock!",
+                    "announce": "There's a shallow depression in the rock beside the gap.",
                     "aliases": [
                         "depression",
                         "small depression"
