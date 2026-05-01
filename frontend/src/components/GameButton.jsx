@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { colors, spacing } from '../styles/theme'
+import { colors, spacing, accessibility } from '../styles/theme'
 
 /**
  * GameButton - A standardized button component for the Heart of Virtue UI.
@@ -72,6 +72,8 @@ export default function GameButton({
         justifyContent: 'center',
         textTransform: 'uppercase',
         letterSpacing: '0.5px',
+        minHeight: accessibility.touchTarget,
+        touchAction: 'manipulation',
         ...currentSize,
         ...style,
     }

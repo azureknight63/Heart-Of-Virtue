@@ -136,6 +136,10 @@ export const fonts = {
     serif: "Georgia, 'Times New Roman', serif",
 }
 
+export const accessibility = {
+    touchTarget: '44px', // Apple/Google HIG minimum touch target size
+}
+
 export const commonStyles = {
     typewriterBox: {
         marginTop: spacing.sm,
@@ -183,5 +187,6 @@ export default {
     shadows,
     spacing,
     fonts,
+    accessibility,
     commonStyles
 }

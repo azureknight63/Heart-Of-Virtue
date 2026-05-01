@@ -214,4 +214,34 @@ describe('HeroPanel', () => {
     fireEvent.mouseEnter(fatigueBar);
     expect(screen.getByText(/150\/150/i)).toBeDefined();
   });
+
+  it('renders mobile inline passives row when isMobile=true and player has passives', () => {
+    const mobilePlayer = { ...mockPlayer, passives: [{ name: 'IronFist', icon: '🥊' }] }
+    render(<HeroPanel {...mockProps} isMobile={true} player={mobilePlayer} />)
+    expect(screen.getByText('PASSIVES')).toBeDefined()
+  })
+
+  it('renders mobile inline status row when isMobile=true and player has status effects', () => {
+    const mobilePlayer = { ...mockPlayer, status_effects: [{ name: 'Burning', icon: '🔥' }] }
+    render(<HeroPanel {...mockProps} isMobile={true} player={mobilePlayer} />)
+    expect(screen.getByText('STATUS')).toBeDefined()
+  })
+
+  it('renders passives in desktop side column (not mobile row) when isMobile=false', () => {
+    const mobilePlayer = { ...mockPlayer, passives: [{ name: 'IronFist', icon: '🥊' }] }
+    const { container } = render(<HeroPanel {...mockProps} isMobile={false} player={mobilePlayer} />)
+    expect(screen.getByText('PASSIVES')).toBeDefined()
+    // Desktop side column uses absolute positioning; mobile row uses flex-direction: row
+    const allDivs = container.querySelectorAll('div[style*="flex-direction: row"]')
+    const mobileRow = Array.from(allDivs).find(d =>
+      d.style.justifyContent === 'center' && d.style.flexWrap === 'wrap'
+    )
+    expect(mobileRow).toBeUndefined()
+  })
+
+  it('does not render mobile inline row when isMobile=true but no passives or status', () => {
+    render(<HeroPanel {...mockProps} isMobile={true} player={mockPlayer} />)
+    expect(screen.queryByText('PASSIVES')).toBeNull()
+    expect(screen.queryByText('STATUS')).toBeNull()
+  })
 });

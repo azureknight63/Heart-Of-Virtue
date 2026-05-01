@@ -119,5 +119,6 @@ def test_gorran_rescue_sets_combat_lists():
         assert mock_gorran.combat_list_allies == player.combat_list_allies  # Gorran is allied with player
 
 
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

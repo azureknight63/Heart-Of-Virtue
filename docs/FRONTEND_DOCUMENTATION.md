@@ -163,24 +163,27 @@ frontend/
     │   └── GamePage.jsx          # Main game wrapper
     │
     ├── components/               # Reusable UI components
-    │   ├── LeftPanel.jsx         # Left sidebar (40% width)
-    │   ├── RightPanel.jsx        # Right sidebar (60% width)
-    │   ├── PlayerStatus.jsx      # HP/Stats display
-    │   ├── Inventory.jsx         # Item list
-    │   ├── ActionButtons.jsx     # Command buttons
-    │   ├── Battlefield.jsx       # Combat layout
-    │   ├── BattlefieldGrid.jsx   # 10x10 combat grid
-    │   ├── CombatLog.jsx         # Combat message log
-    │   ├── WorldMap.jsx          # ASCII map view
-    │   ├── FeedbackDialog.jsx    # In-game feedback form (→ GitHub Issues)
-    │   └── LoadingScreen.jsx     # Loading state
+    │   ├── LeftPanel.jsx                 # Left sidebar (40% width)
+    │   ├── RightPanel.jsx                # Right sidebar (60% width)
+    │   ├── PlayerStatus.jsx              # HP/Stats display
+    │   ├── Inventory.jsx                 # Item list
+    │   ├── ActionButtons.jsx             # Command buttons
+    │   ├── Battlefield.jsx               # Combat layout
+    │   ├── BattlefieldGrid.jsx           # 10x10 combat grid
+    │   ├── CombatLog.jsx                 # Combat message log
+    │   ├── WorldMap.jsx                  # ASCII map view
+    │   ├── MobileTabBar.jsx              # Bottom tab bar (phones <768px)
+    │   ├── CollapsibleRoomDescription.jsx # Collapsible tile description wrapper
+    │   ├── FeedbackDialog.jsx            # In-game feedback form (→ GitHub Issues)
+    │   └── LoadingScreen.jsx             # Loading state
     │
     ├── api/                      # API client
     │   ├── client.js             # Axios instance with auth
     │   └── endpoints.js          # API endpoint definitions
     │
     ├── hooks/                    # Custom React hooks
-    │   └── useApi.js             # useAuth, usePlayer, useCombat, useWorld
+    │   ├── useApi.js             # useAuth, usePlayer, useCombat, useWorld
+    │   └── useMobile.js          # matchMedia breakpoint hook (<768px)
     │
     └── styles/
         └── index.css             # Global styling & Tailwind
@@ -496,7 +499,7 @@ export default function GamePage() {
 
 ### Custom Hooks
 
-All hooks are defined in `src/hooks/useApi.js` and provide state management for different aspects of the game.
+Most hooks live in `src/hooks/useApi.js`. `useMobile` (breakpoint detection) is in `src/hooks/useMobile.js`.
 
 #### `useAuth()`
 

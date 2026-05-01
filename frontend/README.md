@@ -19,17 +19,20 @@ frontend/
 │   │   ├── client.js      # Axios client with interceptors
 │   │   └── endpoints.js   # API endpoint definitions
 │   ├── components/
-│   │   ├── LeftPanel.jsx     # Narrative & controls
-│   │   ├── RightPanel.jsx    # Battlefield/Map view
-│   │   ├── Battlefield.jsx   # Combat grid
-│   │   ├── CombatLog.jsx     # Resizable combat log
-│   │   ├── WorldMap.jsx      # Exploration map
-│   │   ├── PlayerStatus.jsx  # HP/stats display
-│   │   ├── Inventory.jsx     # Item list
-│   │   ├── ActionButtons.jsx # Command buttons
-│   │   └── LoadingScreen.jsx # Loading state
+│   │   ├── LeftPanel.jsx                 # Narrative & controls
+│   │   ├── RightPanel.jsx                # Battlefield/Map view
+│   │   ├── Battlefield.jsx               # Combat grid
+│   │   ├── CombatLog.jsx                 # Resizable combat log
+│   │   ├── WorldMap.jsx                  # Exploration map
+│   │   ├── PlayerStatus.jsx              # HP/stats display
+│   │   ├── Inventory.jsx                 # Item list
+│   │   ├── ActionButtons.jsx             # Command buttons
+│   │   ├── MobileTabBar.jsx              # Bottom tab bar for <768px
+│   │   ├── CollapsibleRoomDescription.jsx # Collapsible tile description
+│   │   └── LoadingScreen.jsx             # Loading state
 │   ├── hooks/
-│   │   └── useApi.js      # Custom hooks for API calls
+│   │   ├── useApi.js      # Custom hooks for API calls
+│   │   └── useMobile.js   # matchMedia breakpoint hook (<768px)
 │   ├── pages/
 │   │   ├── LoginPage.jsx  # Auth page
 │   │   └── GamePage.jsx   # Main game interface
@@ -53,7 +56,10 @@ frontend/
 - ✅ Right panel with battlefield grid and map view
 - ✅ Combat log with resizable height
 - ✅ Action buttons (exploration & combat)
-- ✅ Responsive grid layout
+- ✅ Responsive grid layout (desktop + tablet + mobile)
+- ✅ Mobile bottom tab bar navigation (<768px viewports) — `MobileTabBar` + `useMobile`
+- ✅ Collapsible room description on mobile and desktop — `CollapsibleRoomDescription`
+- ✅ Touch-optimized inputs (44px targets, no double-tap delay, no iOS zoom)
 - ✅ Retro terminal styling with lime/cyan/orange colors
 - ✅ Auth token management
 

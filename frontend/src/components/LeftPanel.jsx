@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { colors } from '../styles/theme'
+import { colors, accessibility } from '../styles/theme'
 import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
@@ -7,7 +7,7 @@ import AccountDialog from './AccountDialog'
 import AudioControlDialog from './AudioControlDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
-import RoomContents from './RoomContents'
+import CollapsibleRoomDescription from './CollapsibleRoomDescription'
 import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
@@ -22,7 +22,9 @@ import CooldownTray from './CooldownTray'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
-function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover }) {
+function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted }) {
+  const notifyMoveSubmitted = () => { if (onMoveSubmitted) onMoveSubmitted() }
+
   const [showInventory, setShowInventory] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showAudio, setShowAudio] = useState(false)
@@ -393,6 +395,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       const target = move.viable_targets[0];
       try {
         setPendingMoveSelection(true)
+        notifyMoveSubmitted()
         await onCombatAction('select_move_and_target', {
           move_name: move.name,
           target_id: target.id
@@ -419,6 +422,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // Default flow for everything else
     try {
       setPendingMoveSelection(true)
+      notifyMoveSubmitted()
       await onCombatAction('move', { move_id: move.id })
     } catch (err) {
       console.error('Failed to execute move:', err)
@@ -429,6 +433,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
   const handleInputSelection = async (selectedValue) => {
     try {
+      notifyMoveSubmitted()
       // Send the selected input based on the input type
       const inputType = combat.input_type
       if (inputType === 'target_selection') {
@@ -471,12 +476,14 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         boxShadow: `0 0 10px ${colors.primary}80`,
         flexShrink: 0,
       }}>
-        <span>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 1 }}>Heart of Virtue - {mode === 'combat' ? 'Combat' : 'Exploration'}</span>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={() => setShowAudio(true)}
             style={{
               padding: '4px 8px',
+              minHeight: accessibility.touchTarget,
+              minWidth: accessibility.touchTarget,
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
               border: `1px solid ${colors.text.inverse}`,
@@ -486,6 +493,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               fontWeight: 'bold',
               fontFamily: 'monospace',
               transition: 'all 0.2s',
+              touchAction: 'manipulation',
             }}
             onMouseEnter={(e) => {
               e.target.style.backgroundColor = colors.primary
@@ -504,6 +512,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             className={BETA_MODE ? 'beta-feedback-glow' : undefined}
             style={{
               padding: '4px 10px',
+              minHeight: accessibility.touchTarget,
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
               border: BETA_MODE ? '1px solid #00FFFF' : `1px solid ${colors.text.inverse}`,
@@ -513,6 +522,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               fontWeight: 'bold',
               fontFamily: 'monospace',
               transition: 'all 0.2s',
+              touchAction: 'manipulation',
             }}
             onMouseEnter={(e) => {
               e.target.style.backgroundColor = colors.primary
@@ -530,6 +540,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onClick={() => setShowAccount(true)}
             style={{
               padding: '4px 12px',
+              minHeight: accessibility.touchTarget,
               backgroundColor: colors.primaryDark,
               color: colors.text.inverse,
               border: `1px solid ${colors.text.inverse}`,
@@ -539,6 +550,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               fontWeight: 'bold',
               fontFamily: 'monospace',
               transition: 'all 0.2s',
+              touchAction: 'manipulation',
             }}
             onMouseEnter={(e) => {
               e.target.style.backgroundColor = colors.primary
@@ -563,17 +575,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         padding: '14px',
         gap: '14px',
       }}>
-        {/* Room Contents - Scrollable portion */}
+        {/* Room Contents - Collapsible description */}
         {mode === 'exploration' && location && (
           <div style={{
             flex: '0 1 auto',
-            overflowY: 'auto',
-            maxHeight: '40%',
-            minHeight: '80px',
+            minHeight: '36px',
             borderBottom: `1px solid ${colors.primary}1A`,
-            paddingBottom: '10px'
+            paddingBottom: '4px'
           }}>
-            <RoomContents location={location} onInteract={handleOpenInteract} />
+            <CollapsibleRoomDescription
+              location={location}
+              onInteract={handleOpenInteract}
+              defaultOpen={true}
+            />
           </div>
         )}
 
@@ -604,6 +618,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           }}>
             <HeroPanel
               player={activePlayer}
+              isMobile={isMobile}
               inCombat={mode === 'combat'}
               hasSpecialMoves={hasSpecialMoves}
               hasDefensiveMoves={hasDefensiveMoves}
@@ -657,6 +672,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             onSelect={async (selectedValue) => {
               if (localCombatInput) {
                 try {
+                  notifyMoveSubmitted()
                   await onCombatAction('select_move_and_target', {
                     move_name: localCombatInput.moveName,
                     target_id: selectedValue
