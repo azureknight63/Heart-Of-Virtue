@@ -2667,6 +2667,20 @@ class GameService:
             if combat_adapter is not None:
                 player._combat_adapter = combat_adapter
 
+        # Derive save metadata from current player state
+        _map = getattr(player, "map", None)
+        _map_name = (
+            _map.get("name", "Unknown")
+            if isinstance(_map, dict)
+            else getattr(_map, "name", "Unknown")
+        )
+        _tile = getattr(player, "current_room", None)
+        if _tile is not None:
+            _raw = getattr(_tile, "name", None) or type(_tile).__name__
+            _room_title = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", _raw)
+        else:
+            _room_title = "Unknown"
+
         # 2. Hybrid Autosave Logic: UPSERT for the single autosave
         if is_autosave:
             # Check if an autosave already exists for this user
@@ -2685,12 +2699,8 @@ class GameService:
                 params = [
                     save_data,
                     getattr(player, "level", 1),
-                    getattr(getattr(player, "map", None), "name", "Unknown"),
-                    getattr(
-                        getattr(player, "current_room", None),
-                        "name",
-                        "Unknown",
-                    ),
+                    _map_name,
+                    _room_title,
                     getattr(player, "time_elapsed", 0),
                     save_id,
                 ]
@@ -2707,12 +2717,8 @@ class GameService:
                     save_data,
                     True,
                     getattr(player, "level", 1),
-                    getattr(getattr(player, "map", None), "name", "Unknown"),
-                    getattr(
-                        getattr(player, "current_room", None),
-                        "name",
-                        "Unknown",
-                    ),
+                    _map_name,
+                    _room_title,
                     getattr(player, "time_elapsed", 0),
                 ]
         else:
@@ -2728,8 +2734,8 @@ class GameService:
                 save_data,
                 False,
                 getattr(player, "level", 1),
-                getattr(getattr(player, "map", None), "name", "Unknown"),
-                getattr(getattr(player, "current_room", None), "name", "Unknown"),
+                _map_name,
+                _room_title,
                 getattr(player, "time_elapsed", 0),
             ]
 

@@ -306,7 +306,15 @@ export default function MainMenuPage() {
                                 {saveList.map(save => (
                                     <div
                                         key={save.id}
+                                        role="button"
+                                        tabIndex={0}
                                         onClick={() => handleLoadConfirm(save.id, save.isLocal)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                handleLoadConfirm(save.id, save.isLocal);
+                                            }
+                                        }}
                                         style={{
                                             padding: spacing.lg,
                                             background: colors.bg.panelLight,
