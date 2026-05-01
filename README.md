@@ -85,7 +85,7 @@ A modern React + Vite web UI is available for playing the game in your browser, 
 - **Retro Terminal Aesthetic**: Lime green, cyan, and orange colors on dark background
 - **Dual-Panel Layout**: Narrative box + player controls (left), Battlefield or World Map (right)
 - **Real-Time Updates**: Combat grid, HP bars, inventory management
-- **Responsive Design**: Works on desktop and tablets
+- **Mobile-Ready**: Full phone support with bottom tab bar navigation at <768px; also works on desktop and tablets
 - **Full API Integration**: Connects to the Flask backend API
 - **In-Game Feedback Form**: Report bugs, request features, or send general feedback without leaving the game — creates real GitHub issues automatically
 
