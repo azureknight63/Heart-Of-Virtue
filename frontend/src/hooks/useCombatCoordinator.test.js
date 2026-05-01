@@ -13,7 +13,8 @@ describe('useCombatCoordinator', () => {
         displayedLogCount: 0,
         performAction: vi.fn(),
         fetchCombatStatus: vi.fn(),
-        playSFX: vi.fn()
+        playSFX: vi.fn(),
+        playSting: vi.fn()
     }
 
     describe('initialization', () => {
@@ -279,6 +280,27 @@ describe('useCombatCoordinator', () => {
             expect(performAction).toHaveBeenCalledWith('attack', 'enemy_1')
             expect(onEventsTriggered).toHaveBeenCalledWith([{ event_id: 'evt-1', name: 'Event' }])
             expect(triggerTick).toHaveBeenCalled()
+        })
+
+        it('should not call triggerTick when performAction throws', async () => {
+            const performAction = vi.fn().mockRejectedValue(new Error('Network failure'))
+            const onEventsTriggered = vi.fn()
+            const triggerTick = vi.fn()
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, performAction })
+            )
+
+            // handleCombatAction re-throws after logging, so expect rejection
+            await act(async () => {
+                await expect(
+                    result.current.handleCombatAction('attack', 'enemy_1', onEventsTriggered, triggerTick)
+                ).rejects.toThrow('Network failure')
+            })
+
+            // triggerTick must not have been called on the error path
+            expect(triggerTick).not.toHaveBeenCalled()
+            expect(onEventsTriggered).not.toHaveBeenCalled()
         })
 
         it('should not trigger events if none returned', async () => {

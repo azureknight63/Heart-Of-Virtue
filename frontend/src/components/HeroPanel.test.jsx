@@ -162,30 +162,37 @@ describe('HeroPanel', () => {
     const hpBar = screen.getByTestId('hp-bar');
     const fatigueBar = screen.getByTestId('fatigue-bar');
 
-    // HP Bar
+    // --- HP Bar ---
+    // Hover shows tooltip; leave hides it
     fireEvent.mouseEnter(hpBar);
     expect(screen.getByText(/HP/i)).toBeDefined();
     fireEvent.mouseLeave(hpBar);
     expect(screen.queryByText(/HP/i)).toBeNull();
 
+    // Click pins; second click un-pins
     fireEvent.click(hpBar);
     expect(screen.getByText(/HP/i)).toBeDefined();
     fireEvent.click(hpBar); // Toggle off
     expect(screen.queryByText(/HP/i)).toBeNull();
 
+    // TouchStart acts as a pin toggle (pins when unpinned)
     fireEvent.touchStart(hpBar);
     expect(screen.getByText(/HP/i)).toBeDefined();
+    // TouchStart again un-pins
+    fireEvent.touchStart(hpBar);
+    expect(screen.queryByText(/HP/i)).toBeNull();
 
-    // Fatigue Bar
+    // --- Fatigue Bar ---
+    // Hover shows tooltip; leave hides it
     fireEvent.mouseEnter(fatigueBar);
     expect(screen.getByText(/Fatigue/i)).toBeDefined();
     fireEvent.mouseLeave(fatigueBar);
     expect(screen.queryByText(/Fatigue/i)).toBeNull();
 
+    // Click pins; touchStart un-pins (explicit toggle from known state)
     fireEvent.click(fatigueBar);
     expect(screen.getByText(/Fatigue/i)).toBeDefined();
-    fireEvent.touchStart(fatigueBar);
-    // Toggle off via touch
+    fireEvent.touchStart(fatigueBar); // Toggle off from pinned state
     expect(screen.queryByText(/Fatigue/i)).toBeNull();
   });
 
