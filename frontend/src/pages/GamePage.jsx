@@ -3,6 +3,7 @@ import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
 import { colors, spacing, fonts } from '../styles/theme'
+import { combat as combatApi } from '../api/endpoints'
 import GameText from '../components/GameText'
 import { useAudio } from '../context/AudioContext'
 import { useToast } from '../context/ToastContext'
@@ -54,6 +55,7 @@ export default function GamePage() {
     combatDialogShown,
     showVictoryDialog,
     showDefeatDialog,
+    showLootDialog,
     endState,
     lastEndStateId,
     isCombatLogProcessing,
@@ -62,6 +64,7 @@ export default function GamePage() {
     setCombatDialogShown,
     setShowVictoryDialog,
     setShowDefeatDialog,
+    setShowLootDialog,
     setEndState,
     setIsCombatLogProcessing,
     setCurrentLogIndex,
@@ -406,7 +409,8 @@ export default function GamePage() {
   }
 
   /**
-   * Handle victory dialog close
+   * Handle victory dialog close (only reached when no loot drops exist).
+   * When drops exist, VictoryDialog routes to loot phase via onContinueToLoot instead.
    */
   const handleVictoryClose = async () => {
     const isBetaEnd = endState?.beta_end
@@ -421,6 +425,54 @@ export default function GamePage() {
     if (isBetaEnd) {
       setShowBetaEndDialog(true)
     }
+  }
+
+  /**
+   * Transition from VictoryDialog (Phase 1) to LootDialog (Phase 2).
+   */
+  const handleContinueToLoot = () => {
+    setShowVictoryDialog(false)
+    setShowLootDialog(true)
+  }
+
+  /**
+   * Player confirmed loot selection — call backend to collect chosen items.
+   */
+  const handleCollectLoot = async (itemNames) => {
+    const isBetaEnd = endState?.beta_end
+    try {
+      await combatApi.collectLoot(itemNames)
+    } catch (err) {
+      console.error('collect-loot failed:', err)
+    } finally {
+      setShowLootDialog(false)
+      setEndState(null)
+      setMode('exploration')
+    }
+    await handleRefetch()
+    await fetchCombatStatus()
+    await checkPendingEvents()
+    if (isBetaEnd) setShowBetaEndDialog(true)
+  }
+
+  /**
+   * Player skipped loot — items remain on tile, close dialog and return to world.
+   */
+  const handleSkipLoot = async () => {
+    const isBetaEnd = endState?.beta_end
+    try {
+      await combatApi.collectLoot([])
+    } catch (err) {
+      console.error('collect-loot (skip) failed:', err)
+    } finally {
+      setShowLootDialog(false)
+      setEndState(null)
+      setMode('exploration')
+    }
+    await handleRefetch()
+    await fetchCombatStatus()
+    await checkPendingEvents()
+    if (isBetaEnd) setShowBetaEndDialog(true)
   }
 
   /**
@@ -513,10 +565,16 @@ export default function GamePage() {
       <CombatManager
         showVictoryDialog={showVictoryDialog}
         showDefeatDialog={showDefeatDialog}
+        showLootDialog={showLootDialog}
         endState={endState}
+        playerWeight={player?.weight_current ?? 0}
+        weightLimit={player?.carrying_capacity ?? 100}
         onAllocatePoints={handleAllocatePoints}
         onVictoryClose={handleVictoryClose}
         onDefeatClose={handleDefeatClose}
+        onContinueToLoot={handleContinueToLoot}
+        onCollectLoot={handleCollectLoot}
+        onSkipLoot={handleSkipLoot}
       />
 
       {/* Game Over Screen - shown when Jean dies via narrative event */}

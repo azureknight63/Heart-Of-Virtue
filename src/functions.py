@@ -1213,6 +1213,8 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         enchantments[group] = enchant
         ench_pool -= 1
 
+    item._enchantment_count = sum(1 for e in enchantments if e)
+
     for ench in enchantments:
         if ench:
             try:
@@ -1414,7 +1416,7 @@ def advise_player_actions(player: "Player", room: "MapTile" = None):
     actions_split = available_moves.split("|")
     chunk_size = 5
     for i in range(0, len(actions_split), chunk_size):
-        chunk = "|".join(actions_split[i : i + chunk_size])
+        chunk = "|".join(actions_split[i:i + chunk_size])
         print(chunk)
     print("\nFor a list of additional commands, enter 'c'.\n")
 
