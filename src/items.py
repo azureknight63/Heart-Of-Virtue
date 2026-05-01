@@ -2957,8 +2957,8 @@ class Book(Special):
 
                 # Split the long sentence into chunks
                 while len(sentence) > self.chars_per_page:
-                    pages.append(sentence[: self.chars_per_page].rstrip())
-                    sentence = sentence[self.chars_per_page :]
+                    pages.append(sentence[:self.chars_per_page].rstrip())
+                    sentence = sentence[self.chars_per_page:]
 
                 # Add remaining part to current page
                 if sentence.strip():

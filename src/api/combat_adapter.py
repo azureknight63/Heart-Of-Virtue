@@ -36,7 +36,7 @@ def _strip_combatant_prefix(target_id: str) -> str:
     """Strip 'enemy_' or 'ally_' prefix and return the raw Python id string."""
     for prefix in ("enemy_", "ally_"):
         if target_id.startswith(prefix):
-            return target_id[len(prefix) :]
+            return target_id[len(prefix):]
     return target_id
 
 
