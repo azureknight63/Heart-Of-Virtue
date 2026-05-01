@@ -109,6 +109,7 @@ describe('BattlefieldGrid', () => {
         // rendered by any other pathway before hover.
         const simpleCombat = {
             player: {
+                id: 'player',
                 name: 'Jean',
                 hp: 100,
                 max_hp: 100,
