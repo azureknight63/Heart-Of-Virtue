@@ -11,6 +11,7 @@ vi.mock('../context/AudioContext', () => ({
 describe('BattlefieldGrid', () => {
     const mockCombat = {
         player: {
+            id: 'player',
             name: 'Jean',
             hp: 100,
             max_hp: 100,
@@ -21,6 +22,7 @@ describe('BattlefieldGrid', () => {
         },
         enemies: [
             {
+                id: 'enemy_goblin',
                 name: 'Goblin',
                 hp: 50,
                 max_hp: 50,
