@@ -168,12 +168,24 @@ export default function GamePage() {
 
   /**
    * Mobile: show character/combat panel when it becomes the player's turn.
+   *
+   * We include combat?.log?.length so the effect re-fires on every new log
+   * entry, not only when awaiting_input flips value.  This handles cases
+   * where the backend keeps awaiting_input=true across consecutive player
+   * actions (e.g. Check, which is instant and does not consume the turn)
+   * and the value never actually transitions false→true between polls.
    */
   useEffect(() => {
     if (isMobile && combat?.awaiting_input && !combat?.end_state && !isEventDialogActive) {
       setActiveMobileTab('character')
     }
-  }, [isMobile, combat?.awaiting_input, combat?.end_state, isEventDialogActive])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // combat?.log?.length is intentionally included: the linter treats it as
+  // unnecessary because the effect body doesn't read it, but we need the
+  // effect to re-fire on every new log entry so the tab switch isn't missed
+  // when awaiting_input stays `true` across back-to-back instant actions
+  // (e.g. Check, which is non-turn-consuming and never transitions false→true).
+  }, [isMobile, combat?.awaiting_input, combat?.log?.length, combat?.end_state, isEventDialogActive])
 
   /**
    * Poll for combat status when suggestions are loading (fallback for missing socket events)

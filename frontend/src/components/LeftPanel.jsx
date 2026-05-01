@@ -22,6 +22,14 @@ import CooldownTray from './CooldownTray'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
+/**
+ * Moves that are instant / non-turn-consuming on the backend.
+ * When the player uses one of these the view stays on the Combat tab so
+ * any result dialog (e.g. CombatCheckDialog) is immediately visible.
+ * Add new instant moves here — one place, no other changes needed.
+ */
+const KEEP_TAB_MOVES = new Set(['Check'])
+
 function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted }) {
   const notifyMoveSubmitted = () => { if (onMoveSubmitted) onMoveSubmitted() }
 
@@ -390,12 +398,16 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // Execute move via API
     if (!move.available) return;
 
+    // Instant/non-turn-consuming moves stay on the Combat tab so result
+    // dialogs (e.g. CombatCheckDialog for Check) remain visible.
+    const isInstantMove = KEEP_TAB_MOVES.has(move.name)
+
     // Auto-select single target if it doesn't require selection
     if (move.targeted && !move.requires_target_selection && move.viable_targets?.length === 1) {
       const target = move.viable_targets[0];
       try {
         setPendingMoveSelection(true)
-        notifyMoveSubmitted()
+        if (!isInstantMove) notifyMoveSubmitted()
         await onCombatAction('select_move_and_target', {
           move_name: move.name,
           target_id: target.id
@@ -422,7 +434,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     // Default flow for everything else
     try {
       setPendingMoveSelection(true)
-      notifyMoveSubmitted()
+      if (!isInstantMove) notifyMoveSubmitted()
       await onCombatAction('move', { move_id: move.id })
     } catch (err) {
       console.error('Failed to execute move:', err)
@@ -718,15 +730,18 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
                 const targetId = combat?.last_move_target_id
 
                 if (moveName) {
+                  if (!KEEP_TAB_MOVES.has(moveName)) notifyMoveSubmitted()
                   onCombatAction('select_move_and_target', { move_name: moveName, target_id: targetId })
                 } else {
                   // Fallback to the first recommended suggestion if no last move found
                   if (combat?.suggested_moves?.length > 0) {
                     const firstSug = combat.suggested_moves[0];
+                    if (!KEEP_TAB_MOVES.has(firstSug.move_name)) notifyMoveSubmitted()
                     onCombatAction('select_move_and_target', { move_name: firstSug.move_name, target_id: firstSug.target_id })
                   }
                 }
               } else {
+                if (!KEEP_TAB_MOVES.has(s.move_name)) notifyMoveSubmitted()
                 onCombatAction('select_move_and_target', { move_name: s.move_name, target_id: s.target_id })
               }
             }}

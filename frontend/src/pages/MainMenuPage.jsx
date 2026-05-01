@@ -282,9 +282,9 @@ export default function MainMenuPage() {
                     <div style={{ padding: spacing.xl, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
                         <div>
                             <GameText variant="accent" size="lg" weight="bold">The Development Team</GameText>
-                            <GameText size="md" style={{ marginTop: spacing.xs }}>Created by the Alpha Project Team</GameText>
+                            <GameText size="md" style={{ marginTop: spacing.xs }}>Created by Alex Egbert</GameText>
                         </div>
-                        <GameText variant="muted" size="sm">Powered by Vitest & React</GameText>
+                        <GameText variant="muted" size="sm">Powered by Claude, Gemini, Vitest & React</GameText>
                     </div>
                 </BaseDialog>
             )}
