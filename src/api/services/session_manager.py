@@ -721,8 +721,9 @@ class SessionManager:
         # Replace existing player
         self.players[player_id] = player
 
-        # Explicitly clear any combat state if game_service exists (though we don't have ref here easily)
-        # Actually replacing the player object should be enough as combat is usually linked to player
+        # Clear stale per-game session data (e.g. initial_tile_events_done, pending_events,
+        # tile_modifications) so the new game starts with a clean slate.
+        session.data.clear()
 
         return True
 
