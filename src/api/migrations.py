@@ -39,13 +39,19 @@ async def init_db():
     try:
         await db.batch(statements)
 
-        # Add timezone column for existing databases (will fail harmlessly if already exists)
-        try:
-            await db.execute(
-                "ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'America/New_York'"
-            )
-        except Exception:
-            pass
+        # Add columns for existing databases (will fail harmlessly if already exist)
+        backfill = [
+            "ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'America/New_York'",
+            "ALTER TABLE saves ADD COLUMN level INTEGER",
+            "ALTER TABLE saves ADD COLUMN map_name TEXT",
+            "ALTER TABLE saves ADD COLUMN room_title TEXT",
+            "ALTER TABLE saves ADD COLUMN playtime INTEGER",
+        ]
+        for stmt in backfill:
+            try:
+                await db.execute(stmt)
+            except Exception:
+                pass
 
         print("Database initialized successfully.")
     except Exception as e:
