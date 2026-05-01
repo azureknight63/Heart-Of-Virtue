@@ -298,7 +298,7 @@ class MynxLLMMixin:
 
             parts, last_end = [], 0
             for sep in re.finditer(r"[.!?]+", text):
-                parts.append(text[last_end : sep.end()])
+                parts.append(text[last_end:sep.end()])
                 last_end = sep.end()
             if last_end < len(text):
                 parts.append(text[last_end:])
@@ -572,7 +572,7 @@ class MynxLLMMixin:
             action_print = "Jean offers a morsel of food to the mynx."
         elif p.startswith("play with ") or p in ("play", "toy", "tease"):
             item_name = (
-                p[len("play with ") :].strip() if p.startswith("play with ") else None
+                p[len("play with "):].strip() if p.startswith("play with ") else None
             )
             action_print = (
                 f"Jean plays with the mynx using {item_name}."

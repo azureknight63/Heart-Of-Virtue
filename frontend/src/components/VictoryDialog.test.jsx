@@ -48,10 +48,8 @@ describe('VictoryDialog', () => {
     expect(screen.getByText(/\+100/)).toBeDefined();
     expect(screen.getByText(/Exploration/i)).toBeDefined();
     expect(screen.getByText(/\+50/)).toBeDefined();
-    expect(screen.getByText(/Rusty Sword/i)).toBeDefined();
-    expect(screen.getByText(/x1/)).toBeDefined();
-    expect(screen.getByText(/Health Potion/i)).toBeDefined();
-    expect(screen.getByText(/x2/)).toBeDefined();
+    // Loot is now shown as a count notice (items appear in LootDialog Phase 2)
+    expect(screen.getByText(/2 items available to collect/i)).toBeDefined();
     expect(screen.getByText(/LEVEL 1/)).toBeDefined();
     expect(screen.getByText(/Available Points:/)).toBeDefined();
     expect(screen.getByText(/\+5 Points awarded/)).toBeDefined();
@@ -74,14 +72,17 @@ describe('VictoryDialog', () => {
       />
     );
 
+    // Only EXP shows "None" now — loot section moved to LootDialog Phase 2
     const noneElements = screen.getAllByText('None');
-    expect(noneElements.length).toBe(2); // EXP and Items
+    expect(noneElements.length).toBe(1);
   });
 
-  it('disables CLOSE button if points are remaining', () => {
+  it('disables advance button if points are remaining', () => {
+    // With no drops, the button says CLOSE; with drops it says COLLECT LOOT →
+    const noDropsEndState = { ...mockEndState, items_dropped: [] };
     render(
       <VictoryDialog
-        endState={mockEndState}
+        endState={noDropsEndState}
         onClose={mockOnClose}
         onAllocatePoints={mockOnAllocatePoints}
       />
@@ -92,11 +93,11 @@ describe('VictoryDialog', () => {
     expect(screen.getByText('Must spend all points to continue expedition.')).toBeDefined();
   });
 
-  it('enables CLOSE button if no points are remaining', () => {
-    const noPointsEndState = { ...mockEndState, attribute_points_available: 0 };
+  it('enables advance button if no points are remaining', () => {
+    const noPointsNoDrops = { ...mockEndState, attribute_points_available: 0, items_dropped: [] };
     render(
       <VictoryDialog
-        endState={noPointsEndState}
+        endState={noPointsNoDrops}
         onClose={mockOnClose}
         onAllocatePoints={mockOnAllocatePoints}
       />
@@ -216,9 +217,11 @@ describe('VictoryDialog', () => {
   });
 
   it('can minimize and restore the dialog when points are pending', () => {
+    // Use no-drops state so button reads CLOSE (with drops it reads COLLECT LOOT →)
+    const noDropsEndState = { ...mockEndState, items_dropped: [] };
     render(
       <VictoryDialog
-        endState={mockEndState}
+        endState={noDropsEndState}
         onClose={mockOnClose}
         onAllocatePoints={mockOnAllocatePoints}
       />
@@ -227,16 +230,20 @@ describe('VictoryDialog', () => {
     // Dialog should start expanded (CLOSE button visible)
     expect(screen.getByText('CLOSE')).toBeDefined();
 
-    // Find the minimize button (▼ or similar toggle)
-    const minimizeBtn = screen.getByTitle(/minimize/i);
+    // Click the MINIMIZE button
+    const minimizeBtn = screen.getByText('MINIMIZE');
+    expect(minimizeBtn).toBeDefined();
     fireEvent.click(minimizeBtn);
 
-    // After minimizing, the main content should be hidden but a restore button visible
-    const restoreBtn = screen.getByTitle(/restore/i);
-    expect(restoreBtn).toBeDefined();
+    // After minimizing, CLOSE should no longer be in the document
+    expect(screen.queryByText('CLOSE')).toBeNull();
 
-    // Restore the dialog
+    // A restore/expand button should now be visible
+    const restoreBtn = screen.getByText(/EXPAND|RESTORE|OPEN/i);
+    expect(restoreBtn).toBeDefined();
     fireEvent.click(restoreBtn);
+
+    // Dialog should be back to expanded state
     expect(screen.getByText('CLOSE')).toBeDefined();
   });
 });

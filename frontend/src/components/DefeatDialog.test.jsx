@@ -137,11 +137,8 @@ describe('DefeatDialog', () => {
       expect(screen.getByText('No saves found.')).toBeDefined();
     });
 
-    // Manually trigger handleLoad if possible, or just check the logic
-    // Since the button is disabled when !selectedSaveId, we might need to force it or check if it's disabled
+    // With no saves, no LOAD button should be rendered at all
     const loadBtn = screen.queryByText('LOAD');
-    if (loadBtn) {
-      expect(loadBtn.disabled).toBe(true);
-    }
+    expect(loadBtn, 'LOAD button should not render when no saves exist').toBeNull();
   });
 });

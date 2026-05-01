@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HoV — Loot UI Mockup v2 (Issue #125)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0a;color:#00FF00;font-family:'Courier New',monospace;font-size:13px;display:flex;flex-direction:column;align-items:center;padding:24px 16px;gap:20px}
+h1{color:#00FFFF;font-size:12px;letter-spacing:.15em;text-transform:uppercase}
+.dialog{width:620px;max-width:98vw;border:2px solid #00FF00}
+.dialog-hdr{background:#00FF00;color:#0a0a0a;padding:7px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+.dialog-body{padding:16px;display:flex;flex-direction:column;gap:14px}
+.sec-hdr{color:#00FFFF;font-size:11px;text-transform:uppercase;letter-spacing:.2em;border-bottom:1px solid #003333;padding-bottom:4px;display:flex;justify-content:space-between}
+/* EXP bars */
+.exp-row{display:flex;align-items:center;gap:8px;font-size:12px}
+.exp-lbl{color:#555;width:90px;flex-shrink:0;text-transform:capitalize}
+.exp-bar-bg{flex:1;height:8px;background:#001a00;display:flex;overflow:hidden}
+.exp-bar-cur{background:#00FF00;height:100%}
+.exp-bar-gain{background:#FFD700;height:100%}
+.exp-amt{color:#FFD700;font-size:11px;width:55px;text-align:right}
+/* Level-up banner */
+.lvl-banner{background:#1a1a00;border:1px solid #FFD700;padding:8px 12px;display:flex;align-items:center;gap:10px;font-size:12px}
+.lvl-star{color:#FFD700;font-size:15px}
+.lvl-txt{color:#FFD700}
+.lvl-pts{color:#FF8800;margin-left:auto;font-size:11px}
+/* Attrs */
+.pts-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.pts-lbl{color:#555}
+.pts-val{color:#FF8800;font-size:16px}
+.attr-row{display:flex;align-items:center;gap:7px;font-size:12px}
+.attr-name{color:#00FFFF;width:76px;font-size:11px;text-transform:uppercase}
+.attr-btn{border:1px solid #00FF00;background:transparent;color:#00FF00;font-family:inherit;font-size:12px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;line-height:1}
+.attr-btn:hover:not(:disabled){background:#00FF00;color:#0a0a0a}
+.attr-btn:disabled{border-color:#333;color:#333;cursor:not-allowed}
+.attr-val{color:#00FF00;width:22px;text-align:center}
+.attr-bar-bg{flex:1;height:4px;background:#001a00;display:flex;overflow:hidden}
+.attr-bar-base{background:#00FFFF;height:100%;transition:width .2s}
+.attr-bar-alloc{background:#FFD700;height:100%;transition:width .2s}
+/* Loot rows */
+.loot-row{display:grid;grid-template-columns:18px 1fr 36px 36px 48px;align-items:center;gap:8px;padding:5px 7px;border:1px solid #001a00;cursor:pointer;transition:background .1s;position:relative}
+.loot-row:hover{background:#001500}
+.loot-row.sel{border-color:#00FF00;background:#001500}
+.loot-row.unsel{opacity:.4;border-color:#111}
+.chk{width:13px;height:13px;border:1px solid #00FF00;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+.chk.on{background:#00FF00;color:#0a0a0a}
+.item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.item-qty{color:#FF8800;text-align:right;font-size:12px}
+.ench-badge{font-size:11px;text-align:center;color:#FFD700;letter-spacing:-1px}
+.item-wt{color:#555;font-size:11px;text-align:right}
+/* Buttons */
+.btn{border:1px solid currentColor;background:transparent;color:#00FF00;font-family:inherit;font-size:11px;padding:4px 10px;text-transform:uppercase;letter-spacing:.08em;cursor:pointer}
+.btn:hover{background:#00FF00;color:#0a0a0a}
+.btn-dim{color:#555;border-color:#333}
+.btn-dim:hover{background:#333;color:#00FF00}
+/* Weight tracker */
+.wt-box{background:#0d1a0d;border:1px solid #003300;padding:8px 12px;display:flex;flex-direction:column;gap:4px;font-size:11px}
+.wt-row{display:flex;justify-content:space-between}
+.wt-lbl{color:#555}
+.wt-val{color:#00FF00}
+.wt-warn{color:#FF8800}
+.wt-over{color:#FF4444}
+.bar-bg{height:4px;background:#002200;margin-top:4px;position:relative;overflow:hidden}
+.bar-base{height:100%;background:#00FF00;position:absolute;top:0;left:0;transition:width .2s}
+.bar-add{height:100%;background:#FFD700;position:absolute;top:0;transition:width .2s}
+/* CTA */
+.cta{width:100%;border:2px solid #FF8800;background:transparent;color:#FF8800;font-family:inherit;font-size:12px;padding:10px;text-transform:uppercase;letter-spacing:.12em;cursor:pointer;transition:all .15s}
+.cta:hover:not(:disabled){background:#FF8800;color:#0a0a0a}
+.cta:disabled{border-color:#333;color:#333;cursor:not-allowed}
+.cta-lime{border-color:#00FF00;color:#00FF00}
+.cta-lime:hover:not(:disabled){background:#00FF00;color:#0a0a0a}
+.skip{text-align:center;font-size:11px}
+.skip a{color:#444;cursor:pointer;text-decoration:underline}
+.skip a:hover{color:#777}
+/* Toast */
+.toast{display:none;background:#330000;border:1px solid #FF4444;color:#FF4444;padding:8px 12px;font-size:11px;text-align:center;animation:fadeIn .2s}
+/* Hover tooltip */
+.item-tooltip{display:none;position:fixed;z-index:100;width:240px;background:#0d1a0d;border:2px solid #FF8800;padding:12px;pointer-events:none}
+.tt-name{color:#FFD700;font-size:14px;font-weight:bold;border-bottom:1px solid #664400;padding-bottom:6px;margin-bottom:8px}
+.tt-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#664400;margin-bottom:8px}
+.tt-cell{background:#0d0800;padding:5px 6px;text-align:center}
+.tt-cell-lbl{color:#FF8800;font-size:10px;text-transform:uppercase;margin-bottom:2px}
+.tt-cell-val{color:#FFD700;font-size:12px}
+.tt-desc{color:#ffee99;font-style:italic;font-size:11px;line-height:1.5;border-top:1px solid #664400;padding-top:6px}
+.tt-ench{color:#FFD700;font-size:11px;margin-bottom:4px}
+/* Annotations */
+.notes{width:620px;max-width:98vw;background:#0d0d1a;border:1px solid #222266;padding:14px}
+.notes h2{color:#6666FF;font-size:12px;margin-bottom:10px;text-transform:uppercase;letter-spacing:.1em}
+.note{display:flex;gap:8px;margin-bottom:7px;font-size:11px;line-height:1.5}
+.nb{font-size:10px;padding:1px 6px;flex-shrink:0;height:fit-content;margin-top:1px}
+.nb-new{background:#1a3300;color:#66FF44}
+.nb-chg{background:#331a00;color:#FF8844}
+.nb-ext{background:#1a1a1a;color:#888}
+.note-txt{color:#7777AA}
+#phase2{display:none}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+
+<h1>Loot Management UI — Mockup v2 (Issue #125)</h1>
+
+<!-- PHASE 1: EXP & LEVEL-UP -->
+<div class="dialog" id="phase1">
+  <div class="dialog-hdr">
+    <span>⚔ VICTORY ⚔</span>
+    <span>PHASE 1 OF 2: SPOILS</span>
+  </div>
+  <div class="dialog-body">
+    <div style="color:#FFD700;font-style:italic;font-size:12px;border-left:3px solid #FFD700;padding-left:10px">
+      "Jean Claire stands victorious over the fallen Slime."
+    </div>
+
+    <div>
+      <div class="sec-hdr"><span>Experience Gained</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+        <div class="exp-row">
+          <span class="exp-lbl">combat</span>
+          <div class="exp-bar-bg"><div class="exp-bar-cur" style="width:45%"></div><div class="exp-bar-gain" style="width:15%"></div></div>
+          <span class="exp-amt">+150</span>
+        </div>
+        <div class="exp-row">
+          <span class="exp-lbl">exploration</span>
+          <div class="exp-bar-bg"><div class="exp-bar-cur" style="width:16%"></div><div class="exp-bar-gain" style="width:5%"></div></div>
+          <span class="exp-amt">+25</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lvl-banner">
+      <span class="lvl-star">★</span>
+      <span class="lvl-txt">LEVEL UP! &nbsp; Jean Claire: Level 5 → 6</span>
+      <span class="lvl-pts" id="pts-banner">3 POINTS TO SPEND</span>
+    </div>
+
+    <div>
+      <div class="sec-hdr"><span>Attribute Points</span></div>
+      <div class="pts-row" style="margin-top:8px">
+        <span class="pts-lbl">Points remaining:</span>
+        <span class="pts-val" id="pts-val">3</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px" id="attr-list"></div>
+    </div>
+
+    <button class="cta cta-lime" id="phase1-next" disabled onclick="goPhase2()">
+      SPEND ALL POINTS TO CONTINUE
+    </button>
+    <div class="skip"><a onclick="goPhase2()">skip and collect loot →</a></div>
+  </div>
+</div>
+
+<!-- PHASE 2: LOOT -->
+<div class="dialog" id="phase2">
+  <div class="dialog-hdr">
+    <span>⚔ VICTORY ⚔</span>
+    <span>PHASE 2 OF 2: LOOT</span>
+  </div>
+  <div class="dialog-body">
+    <div>
+      <div class="sec-hdr">
+        <span>Spoils of Battle</span>
+        <span style="color:#FF8800;font-size:11px" id="item-count-hdr">5 items found</span>
+      </div>
+      <div style="font-size:10px;color:#444;margin:4px 0 8px;display:grid;grid-template-columns:18px 1fr 36px 36px 48px;gap:8px;padding:0 7px">
+        <span></span><span>ITEM</span><span style="text-align:right">QTY</span><span style="text-align:center">ENCH</span><span style="text-align:right">WEIGHT</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px" id="loot-list"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" onclick="selectAll(true)">Take All</button>
+        <button class="btn btn-dim" onclick="selectAll(false)">Leave All</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast">⚠ Cannot collect — carry weight would exceed capacity.</div>
+
+    <div class="wt-box">
+      <div class="wt-row"><span class="wt-lbl">Current carry weight:</span><span class="wt-val">38.5 / 100.0 lb</span></div>
+      <div class="wt-row"><span class="wt-lbl">Selected loot adds:</span><span id="wt-add" class="wt-val">0.0 lb</span></div>
+      <div class="wt-row"><span class="wt-lbl">Total after pickup:</span><span id="wt-total" class="wt-val">38.5 lb</span></div>
+      <div class="bar-bg">
+        <div class="bar-base" id="wt-bar-base" style="width:38.5%"></div>
+        <div class="bar-add" id="wt-bar-add" style="width:0%;left:38.5%"></div>
+      </div>
+    </div>
+
+    <button class="cta" id="collect-btn" onclick="collectItems()">COLLECT SELECTED ITEMS (5 of 5)  →</button>
+    <div class="skip"><a onclick="skipLoot()">skip — drop all items on tile →</a></div>
+    <div class="confirm" id="confirm-msg" style="display:none;color:#00FF00;font-size:12px;text-align:center;padding:6px;border:1px solid #003300;background:#001a00">
+      ✓ Selected items added to inventory. Unchosen items left on tile.
+    </div>
+  </div>
+</div>
+
+<!-- Hover tooltip (global) -->
+<div class="item-tooltip" id="tooltip">
+  <div class="tt-name" id="tt-name"></div>
+  <div class="tt-ench" id="tt-ench"></div>
+  <div class="tt-grid" id="tt-grid"></div>
+  <div class="tt-desc" id="tt-desc"></div>
+</div>
+
+<!-- Annotations -->
+<div class="notes">
+  <h2>Mockup Notes — Issue #125 (v2)</h2>
+  <div class="note"><span class="nb nb-new">NEW</span><span class="note-txt">Phase 1 is now EXP/level-up so carry capacity increases are visible before loot selection.</span></div>
+  <div class="note"><span class="nb nb-new">NEW</span><span class="note-txt">Attribute bars show gold gain-segment overlay for allocated points.</span></div>
+  <div class="note"><span class="nb nb-new">NEW</span><span class="note-txt">Enchantment indicator (✦ stars) replaces rarity badge. Stars inferred from prefix/suffix count on item name. Requires backend to pass enchantment_count in items_dropped.</span></div>
+  <div class="note"><span class="nb nb-new">NEW</span><span class="note-txt">Hover tooltip on loot rows shows item detail (type, subtype, weight, value, description) — same data as ItemDetailDialog minus action buttons.</span></div>
+  <div class="note"><span class="nb nb-new">NEW</span><span class="note-txt">Overweight collection is blocked with a toast. The collect button checks total weight before proceeding.</span></div>
+  <div class="note"><span class="nb nb-chg">CHANGED</span><span class="note-txt">Loot is no longer auto-collected. Player explicitly chooses items. Deselected items and "skip" both drop to the current tile.</span></div>
+  <div class="note"><span class="nb nb-ext">EXISTING</span><span class="note-txt">Attribute allocation logic unchanged from current VictoryDialog.</span></div>
+</div>
+
+<script>
+// ── Attribute phase ───────────────────────────────────────────────
+const ATTRS=[
+  {abbr:'STR',name:'Strength',val:15},
+  {abbr:'FIN',name:'Finesse',val:12},
+  {abbr:'SPD',name:'Speed',val:10},
+  {abbr:'END',name:'Endurance',val:14},
+  {abbr:'CHA',name:'Charisma',val:8},
+  {abbr:'INT',name:'Intelligence',val:11},
+];
+const MAX_ATTR=30;
+let alloc={};
+ATTRS.forEach(a=>alloc[a.abbr]=0);
+let pts=3;
+
+function renderAttrs(){
+  const list=document.getElementById('attr-list');
+  list.innerHTML='';
+  ATTRS.forEach(a=>{
+    const cur=a.val+alloc[a.abbr];
+    const basePct=Math.round(a.val/MAX_ATTR*100);
+    const allocPct=Math.round(alloc[a.abbr]/MAX_ATTR*100);
+    const row=document.createElement('div');
+    row.className='attr-row';
+    row.innerHTML=`
+      <span class="attr-name">${a.abbr}</span>
+      <button class="attr-btn" ${alloc[a.abbr]<=0?'disabled':''} onclick="adjAttr('${a.abbr}',-1)">−</button>
+      <span class="attr-val">${cur}</span>
+      <button class="attr-btn" ${pts<=0?'disabled':''} onclick="adjAttr('${a.abbr}',1)">+</button>
+      <div class="attr-bar-bg">
+        <div class="attr-bar-base" style="width:${basePct}%"></div>
+        <div class="attr-bar-alloc" style="width:${allocPct}%"></div>
+      </div>`;
+    list.appendChild(row);
+  });
+  document.getElementById('pts-val').textContent=pts;
+  document.getElementById('pts-banner').textContent=
+    pts>0?`${pts} POINT${pts!==1?'S':''} TO SPEND`:'All points spent ✓';
+  const btn=document.getElementById('phase1-next');
+  btn.disabled=pts>0;
+  btn.textContent=pts>0?'SPEND ALL POINTS TO CONTINUE':'COLLECT LOOT  →';
+}
+
+function adjAttr(abbr,d){
+  if(d>0&&pts<=0)return;
+  if(d<0&&alloc[abbr]<=0)return;
+  alloc[abbr]+=d; pts-=d;
+  renderAttrs();
+}
+
+function goPhase2(){
+  document.getElementById('phase1').style.display='none';
+  document.getElementById('phase2').style.display='block';
+}
+
+// ── Loot phase ───────────────────────────────────────────────────
+const BASE_WT=38.5, MAX_WT=100.0;
+
+const ITEMS=[
+  {
+    name:'Sharp Bone Sword', qty:1, ench:1, wt:4.2, value:264, type:'Weapon', subtype:'Sword',
+    desc:'A bone sword honed to a vicious edge. The sharpening has left faint stress fractures along the flat — beautiful, and probably fine.'
+  },
+  {
+    name:'Balanced Iron Mace of Flame', qty:1, ench:2, wt:5.1, value:310, type:'Weapon', subtype:'Mace',
+    desc:'An iron mace weighted for clean arcs, with a flame enchantment scorched into the head. The grip is warm to the touch.'
+  },
+  {
+    name:'Health Potion', qty:3, ench:0, wt:0.5, value:30, type:'Consumable', subtype:'Potion',
+    desc:'A stoppered vial of deep red fluid. Restores a moderate amount of health when consumed.'
+  },
+  {
+    name:'Gold Coins', qty:50, ench:0, wt:0.1, value:50, type:'Currency', subtype:'Coin',
+    desc:'Standard Realm coinage. Accepted throughout the settled lands.'
+  },
+  {
+    name:'Tattered Wrap', qty:1, ench:0, wt:2.0, value:8, type:'Armor', subtype:'Chest',
+    desc:'Strips of cloth wound around the torso in rough layers. Provides minimal protection but better than nothing.'
+  },
+];
+
+const selected=new Set([0,1,2,3,4]);
+
+function enchStars(n){
+  if(n<=0)return'';
+  return'✦'.repeat(Math.min(n,2));
+}
+
+function renderLoot(){
+  const list=document.getElementById('loot-list');
+  list.innerHTML='';
+  ITEMS.forEach((item,i)=>{
+    const isSel=selected.has(i);
+    const row=document.createElement('div');
+    row.className=`loot-row ${isSel?'sel':'unsel'}`;
+    row.onclick=()=>toggle(i);
+    row.onmouseenter=(e)=>showTooltip(e,item);
+    row.onmousemove=(e)=>moveTooltip(e);
+    row.onmouseleave=hideTooltip;
+    row.innerHTML=`
+      <div class="chk ${isSel?'on':''}">${isSel?'✓':''}</div>
+      <div class="item-name">${item.name} <span style="color:#333;font-size:10px">[${item.type}]</span></div>
+      <div class="item-qty">×${item.qty}</div>
+      <div class="ench-badge">${enchStars(item.ench)}</div>
+      <div class="item-wt">${(item.wt*item.qty).toFixed(1)}lb</div>`;
+    list.appendChild(row);
+  });
+  updateWeight();
+}
+
+function toggle(i){
+  selected.has(i)?selected.delete(i):selected.add(i);
+  renderLoot();
+}
+
+function selectAll(v){
+  ITEMS.forEach((_,i)=>v?selected.add(i):selected.delete(i));
+  renderLoot();
+}
+
+function updateWeight(){
+  let add=0;
+  selected.forEach(i=>add+=ITEMS[i].wt*ITEMS[i].qty);
+  const total=BASE_WT+add;
+  const basePct=Math.min(BASE_WT/MAX_WT*100,100);
+  const addPct=Math.min(add/MAX_WT*100, 100-basePct);
+  const totalPct=total/MAX_WT*100;
+
+  document.getElementById('wt-add').textContent=add.toFixed(1)+' lb';
+  const tv=document.getElementById('wt-total');
+  tv.textContent=total.toFixed(1)+' lb';
+  tv.className=totalPct>=100?'wt-over':totalPct>=80?'wt-warn':'wt-val';
+
+  document.getElementById('wt-bar-base').style.width=basePct+'%';
+  const addBar=document.getElementById('wt-bar-add');
+  addBar.style.left=basePct+'%';
+  addBar.style.width=addPct+'%';
+  addBar.style.background=totalPct>=100?'#FF4444':totalPct>=80?'#FF8800':'#FFD700';
+
+  const n=selected.size;
+  const btn=document.getElementById('collect-btn');
+  btn.textContent=n>0?`COLLECT SELECTED ITEMS (${n} of ${ITEMS.length})  →`:'NOTHING SELECTED';
+  btn.disabled=n===0;
+  document.getElementById('item-count-hdr').textContent=`${ITEMS.length} items found`;
+}
+
+function collectItems(){
+  let add=0;
+  selected.forEach(i=>add+=ITEMS[i].wt*ITEMS[i].qty);
+  if(BASE_WT+add>MAX_WT){
+    const toast=document.getElementById('toast');
+    toast.style.display='block';
+    setTimeout(()=>toast.style.display='none',3000);
+    return;
+  }
+  document.getElementById('collect-btn').style.display='none';
+  document.querySelector('.skip').style.display='none';
+  document.getElementById('confirm-msg').style.display='block';
+}
+
+function skipLoot(){
+  document.getElementById('collect-btn').style.display='none';
+  document.querySelector('.skip').style.display='none';
+  const m=document.getElementById('confirm-msg');
+  m.textContent='All items dropped to the current tile.';
+  m.style.display='block';
+}
+
+// ── Tooltip ──────────────────────────────────────────────────────
+function showTooltip(e,item){
+  const tt=document.getElementById('tooltip');
+  document.getElementById('tt-name').textContent=item.name;
+  document.getElementById('tt-ench').textContent=
+    item.ench>0?'✦'.repeat(item.ench)+' Enchanted':'';
+  document.getElementById('tt-grid').innerHTML=`
+    <div class="tt-cell"><div class="tt-cell-lbl">Type</div><div class="tt-cell-val">${item.type}</div></div>
+    <div class="tt-cell"><div class="tt-cell-lbl">Subtype</div><div class="tt-cell-val">${item.subtype}</div></div>
+    <div class="tt-cell"><div class="tt-cell-lbl">Weight</div><div class="tt-cell-val">${item.wt}w</div></div>
+    <div class="tt-cell"><div class="tt-cell-lbl">Value</div><div class="tt-cell-val">${item.value}g</div></div>`;
+  document.getElementById('tt-desc').textContent=item.desc;
+  tt.style.display='block';
+  moveTooltip(e);
+}
+
+function moveTooltip(e){
+  const tt=document.getElementById('tooltip');
+  const x=e.clientX+16, y=e.clientY+8;
+  const overRight=x+tt.offsetWidth>window.innerWidth-8;
+  tt.style.left=(overRight?e.clientX-tt.offsetWidth-8:x)+'px';
+  tt.style.top=Math.min(y,window.innerHeight-tt.offsetHeight-8)+'px';
+}
+
+function hideTooltip(){
+  document.getElementById('tooltip').style.display='none';
+}
+
+renderAttrs();
+renderLoot();
+</script>
+</body>
+</html>

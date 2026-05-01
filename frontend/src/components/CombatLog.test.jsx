@@ -49,15 +49,11 @@ describe('CombatLog', () => {
 
   it('handles resizing', () => {
     const { container } = render(<CombatLog log={mockLog} allowResize={true} />);
-    // Query by style attribute since the component uses inline styles
     const resizeHandle = container.querySelector('[style*="cursor: ns-resize"], [style*="ns-resize"]');
-    
-    if (!resizeHandle) {
-      // If we can't find the resize handle, skip this test
-      // The component structure may have changed
-      return;
-    }
-    
+
+    // Resize handle must be present when allowResize=true
+    expect(resizeHandle, 'resize handle not found — check CombatLog resize implementation').not.toBeNull();
+
     // Mock getBoundingClientRect for logRef
     const logElement = container.firstChild;
     vi.spyOn(logElement, 'getBoundingClientRect').mockReturnValue({
@@ -65,7 +61,7 @@ describe('CombatLog', () => {
     });
 
     fireEvent.mouseDown(resizeHandle);
-    
+
     // Move mouse down by 50px (delta = 550 - 500 = 50)
     // height = height - delta = 150 - 50 = 100
     fireEvent.mouseMove(document, { clientY: 550 });

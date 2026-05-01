@@ -17,7 +17,7 @@ The Python game engine is the source of truth. The web layer wraps it without re
 | Database | LibSQL (Turso) via `libsql-client` |
 | Testing (backend) | pytest, pytest-cov |
 | Testing (frontend) | Vitest, React Testing Library |
-| Code quality | black (formatter), flake8 (linter) |
+| Code quality | flake8 (linter) |
 | AI integration | OpenAI/OpenRouter for Mynx NPC ambient behavior |
 
 ## Project Structure

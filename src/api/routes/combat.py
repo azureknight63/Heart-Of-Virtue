@@ -254,3 +254,49 @@ def get_combat_log():
             jsonify({"success": False, "error": "An internal error occurred"}),
             500,
         )
+
+
+@combat_bp.route("/collect-loot", methods=["POST"])
+def collect_loot():
+    """Move selected post-combat drops from the tile into the player's inventory.
+
+    Headers:
+        Authorization: Bearer <session_id>
+
+    Request body:
+        {
+            "item_names": ["Iron Sword", "Health Potion", ...]
+        }
+
+    Returns:
+        {
+            "success": bool,
+            "collected": [...],
+            "skipped": [...]
+        }
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error
+
+        data = request.get_json() or {}
+        item_names = data.get("item_names", [])
+        if not isinstance(item_names, list):
+            return (
+                jsonify({"success": False, "error": "item_names must be a list"}),
+                400,
+            )
+
+        from flask import current_app
+
+        game_service = current_app.game_service
+        result = game_service.collect_combat_loot(player, item_names)
+        return jsonify(result), 200
+
+    except Exception:
+        logger.exception("Unhandled error in collect_loot")
+        return (
+            jsonify({"success": False, "error": "An internal error occurred"}),
+            500,
+        )
