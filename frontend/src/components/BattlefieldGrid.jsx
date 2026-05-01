@@ -716,6 +716,14 @@ function BattlefieldGrid({
   const cameraRafRef  = useRef(null);
   const [snapState, setSnapState] = useState(null); // triggers re-render on cell boundary cross
 
+  // Touch pan — a separate layer that moves independently of the RAF camera,
+  // so panning doesn't interfere with the smooth camera animation.
+  const panLayerRef = useRef(null);
+  const gridContainerRef = useRef(null);
+  const touchPanRef = useRef({ x: 0, y: 0 }); // current pan offset in pixels
+  const touchStartRef = useRef(null);           // { x, y } of last touch point
+  const panDecayRafRef = useRef(null);
+
   // Resolve effective map size: API value → bounding box of entity positions → 9
   const resolvedMapSize = useMemo(() => {
     if (mapSize && mapSize > 0) return mapSize;
@@ -730,6 +738,76 @@ function BattlefieldGrid({
   // Keep a ref so the RAF loop can read the latest value without being recreated
   const mapSizeRef = useRef(resolvedMapSize);
   useEffect(() => { mapSizeRef.current = resolvedMapSize; }, [resolvedMapSize]);
+
+  // Touch pan handlers — attached via useEffect so touchmove can be non-passive
+  const applyPanTransform = useCallback(() => {
+    if (panLayerRef.current) {
+      const { x, y } = touchPanRef.current;
+      panLayerRef.current.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    }
+  }, []);
+
+  const decayPan = useCallback(() => {
+    const pan = touchPanRef.current;
+    if (Math.abs(pan.x) < 0.5 && Math.abs(pan.y) < 0.5) {
+      touchPanRef.current = { x: 0, y: 0 };
+      applyPanTransform();
+      panDecayRafRef.current = null;
+      return;
+    }
+    touchPanRef.current = { x: pan.x * 0.85, y: pan.y * 0.85 };
+    applyPanTransform();
+    panDecayRafRef.current = requestAnimationFrame(decayPan);
+  }, [applyPanTransform]);
+
+  useEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el) return;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      if (panDecayRafRef.current) {
+        cancelAnimationFrame(panDecayRafRef.current);
+        panDecayRafRef.current = null;
+      }
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+
+    const onTouchMove = (e) => {
+      if (!touchStartRef.current || e.touches.length !== 1) return;
+      e.preventDefault();
+      const dx = e.touches[0].clientX - touchStartRef.current.x;
+      const dy = e.touches[0].clientY - touchStartRef.current.y;
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+      // Clamp to ~40% of container dims so the map never flies off-screen
+      const { width, height } = el.getBoundingClientRect();
+      const maxX = width * 0.4;
+      const maxY = height * 0.4;
+      touchPanRef.current = {
+        x: Math.max(-maxX, Math.min(maxX, touchPanRef.current.x + dx)),
+        y: Math.max(-maxY, Math.min(maxY, touchPanRef.current.y + dy)),
+      };
+      applyPanTransform();
+    };
+
+    const onTouchEnd = () => {
+      touchStartRef.current = null;
+      // Smoothly decay pan offset back to (0, 0)
+      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
+      panDecayRafRef.current = requestAnimationFrame(decayPan);
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
+    };
+  }, [applyPanTransform, decayPan]);
 
   const handleGridClick = useCallback((e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);
@@ -1096,15 +1174,16 @@ function BattlefieldGrid({
 
   return (
     <div
+      ref={gridContainerRef}
       onClick={handleGridClick}
-      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden' }}
+      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden', touchAction: 'none' }}
     >
       {/*
-        contentDivRef receives a sub-cell CSS transform each RAF frame,
-        smoothly sliding the grid between integer snap positions without
-        triggering a React re-render. The outer container clips the overflow
-        so the edges of the map never become visible.
+        panLayerRef: touch-drag pan offset layer. Translates independently of the
+        RAF camera so finger panning doesn't interfere with smooth camera animation.
+        contentDivRef sits inside it and receives the per-frame sub-cell transform.
       */}
+      <div ref={panLayerRef} style={{ position: 'absolute', inset: 0 }}>
       <div ref={contentDivRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
         {/* Background grid */}
         <div style={{
@@ -1171,9 +1250,10 @@ function BattlefieldGrid({
 
         <DeathAnimationLayer dyingEntities={dyingEntities} getEntityStyle={getEntityStyle} />
       </div>
+      </div>{/* end panLayerRef */}
 
-      {/* SelectedEntityPanel lives outside contentDivRef — it is screen-fixed
-          relative to the grid container and must not be translated with the map. */}
+      {/* SelectedEntityPanel and overlays live outside panLayerRef — screen-fixed
+          relative to the grid container and must not translate with the map. */}
       {selectedEntity && (
         <SelectedEntityPanel
           entity={selectedEntity}
@@ -1191,6 +1271,20 @@ function BattlefieldGrid({
           {` · q${animationQueue.length}`}
         </div>
       )}
+
+      {/* Drag-to-pan hint — visible on all devices, useful as a first-use affordance */}
+      <div
+        style={{
+          position: 'absolute', bottom: '28px', right: '6px',
+          zIndex: 140, pointerEvents: 'none',
+          fontSize: '9px', fontFamily: 'monospace',
+          color: 'rgba(255,255,255,0.35)', userSelect: 'none',
+          display: 'flex', alignItems: 'center', gap: '3px',
+        }}
+        aria-label="Drag to pan the map"
+      >
+        <span>drag to pan</span>
+      </div>
     </div>
   );
 }

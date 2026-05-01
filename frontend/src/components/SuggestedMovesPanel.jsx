@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { colors } from '../styles/theme'
 
-export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover }) {
+export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false }) {
     const [isVisible, setIsVisible] = useState(false)
     const [hoveredSuggestionName, setHoveredSuggestionName] = useState(null)
     const [hoveredRepeatBtn, setHoveredRepeatBtn] = useState(false)
+    const [mobileExpanded, setMobileExpanded] = useState(false)
 
     useEffect(() => {
         if (isPlayerTurn) {
@@ -12,10 +13,62 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             return () => clearTimeout(timer)
         } else {
             setIsVisible(false)
+            setMobileExpanded(false)
         }
     }, [isPlayerTurn])
 
     if (!isPlayerTurn) return null
+
+    // Mobile collapsed view — just a compact tap-to-expand header
+    if (isMobile && !mobileExpanded) {
+        return (
+            <div
+                onClick={() => setMobileExpanded(true)}
+                style={{
+                    width: '100%',
+                    backgroundColor: 'rgba(10, 15, 10, 0.9)',
+                    border: `1px solid ${colors.primary}66`,
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '7px 10px',
+                    fontFamily: 'monospace',
+                    cursor: 'pointer',
+                    opacity: isVisible ? 1 : 0,
+                    transition: 'all 0.4s ease-out',
+                    flexShrink: 0,
+                    touchAction: 'manipulation',
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{
+                        width: '6px', height: '6px', borderRadius: '50%',
+                        backgroundColor: colors.primary,
+                        boxShadow: `0 0 6px ${colors.primary}`,
+                        animation: 'suggested-blink 1.5s infinite ease-in-out',
+                        flexShrink: 0,
+                    }} />
+                    <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '11px', letterSpacing: '1px' }}>
+                        TACTICAL ADVISOR
+                    </span>
+                    {!suggestionsLoading && suggestions.length > 0 && (
+                        <span style={{
+                            color: colors.primary, fontSize: '10px',
+                            backgroundColor: `${colors.primary}22`,
+                            padding: '1px 5px', borderRadius: '8px',
+                        }}>
+                            {suggestions.length} tips
+                        </span>
+                    )}
+                    {suggestionsLoading && (
+                        <span style={{ color: colors.text.muted, fontSize: '10px' }}>analyzing…</span>
+                    )}
+                </div>
+                <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>▼</span>
+            </div>
+        )
+    }
 
     return (
         <div style={{
@@ -35,14 +88,19 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             flexShrink: 0
         }}>
             {/* Header */}
-            <div style={{
-                padding: '12px',
-                backgroundColor: `${colors.primary}22`,
-                borderBottom: `1px solid ${colors.primary}44`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-            }}>
+            <div
+                onClick={isMobile ? () => setMobileExpanded(false) : undefined}
+                style={{
+                    padding: '12px',
+                    backgroundColor: `${colors.primary}22`,
+                    borderBottom: `1px solid ${colors.primary}44`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: isMobile ? 'pointer' : 'default',
+                    touchAction: isMobile ? 'manipulation' : undefined,
+                }}
+            >
                 <div style={{
                     width: '8px',
                     height: '8px',
@@ -51,9 +109,12 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     boxShadow: `0 0 8px ${colors.primary}`,
                     animation: 'suggested-blink 1.5s infinite ease-in-out'
                 }} />
-                <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px' }}>
+                <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px', flex: 1 }}>
                     TACTICAL ADVISOR
                 </span>
+                {isMobile && (
+                    <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>▲</span>
+                )}
             </div>
 
             {/* Outcome Section & Repeat Action */}

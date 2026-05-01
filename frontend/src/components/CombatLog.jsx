@@ -99,7 +99,9 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
               gap: '4px',
               fontFamily: fonts.main,
               scrollbarWidth: 'thin',
-              scrollbarColor: `${colors.border.main} transparent`
+              scrollbarColor: `${colors.border.main} transparent`,
+              WebkitOverflowScrolling: 'touch',
+              touchAction: 'pan-y',
             }}
           >
             {log?.length === 0 && (
