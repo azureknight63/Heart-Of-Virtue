@@ -1044,11 +1044,15 @@ def randomize_amount(param):
         return int(param)
 
 
-def seek_class(classname, package="all"):
+def seek_class(classname, package="all", allow_other_modules=True):
     """
     Searches through the requested package(s) and returns the matching class object
     :param str classname: the classname of the desired object as a string
     :param str package: optionally provide the desired package to search, leave default to search all packages
+    :param bool allow_other_modules: when False, restricts the search strictly to the named package.
+        The default (True) uses __import__ which resolves dotted names to the top-level package,
+        so "src.tilesets" walks all of src/; set to False when callers must avoid class-name collisions
+        with unrelated modules in the same root package.
     :return object or None:
     """
     packages = ["story", "tilesets"]
@@ -1056,7 +1060,14 @@ def seek_class(classname, package="all"):
 
     def add_modules_for(base_pkg):
         try:
-            root_pkg = __import__(base_pkg)
+            # __import__ for dotted names (e.g. "src.tilesets") returns the top-level package,
+            # so root_pkg.__path__ covers the entire parent directory — intentional when
+            # allow_other_modules=True.  When strict mode is requested, importlib.import_module
+            # returns the exact subpackage so only its own directory is walked.
+            if allow_other_modules:
+                root_pkg = __import__(base_pkg)
+            else:
+                root_pkg = importlib.import_module(base_pkg)
             # Walk the package tree recursively to include nested modules (effects, ch01, etc.)
             for modinfo in pkgutil.walk_packages(root_pkg.__path__, prefix=root_pkg.__name__ + "."):  # type: ignore
                 module_paths.add(modinfo.name)

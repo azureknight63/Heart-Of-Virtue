@@ -339,7 +339,7 @@
     },
     "(2, 2)": {
         "id": "tile_2_2",
-        "title": "Hollow",
+        "title": "HollowClearing",
         "description": "The boulders open briefly into a rough oval clearing — not large, but large enough to see the sky directly overhead. The ground here is darker than the surrounding scree: earth and old leaf litter carried by the wind over years. Deep scratches mark the boulders on all sides at roughly hip height.",
         "exits": [
             "north",
