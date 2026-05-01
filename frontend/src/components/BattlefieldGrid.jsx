@@ -1173,7 +1173,7 @@ function BattlefieldGrid({
     <div
       ref={gridContainerRef}
       onClick={handleGridClick}
-      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden' }}
+      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden', touchAction: 'none' }}
     >
       {/*
         panLayerRef: touch-drag pan offset layer. Translates independently of the
@@ -1269,7 +1269,7 @@ function BattlefieldGrid({
         </div>
       )}
 
-      {/* Drag-to-pan hint — only shown on touch devices, fades after first interaction */}
+      {/* Drag-to-pan hint — visible on all devices, useful as a first-use affordance */}
       <div
         style={{
           position: 'absolute', bottom: '28px', right: '6px',

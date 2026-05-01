@@ -21,7 +21,6 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
 
     // Mobile collapsed view — just a compact tap-to-expand header
     if (isMobile && !mobileExpanded) {
-        const suggCount = suggestionsLoading ? '…' : suggestions.length
         return (
             <div
                 onClick={() => setMobileExpanded(true)}
@@ -59,7 +58,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                             backgroundColor: `${colors.primary}22`,
                             padding: '1px 5px', borderRadius: '8px',
                         }}>
-                            {suggCount} tips
+                            {suggestions.length} tips
                         </span>
                     )}
                     {suggestionsLoading && (
