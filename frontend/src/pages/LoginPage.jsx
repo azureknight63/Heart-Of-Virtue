@@ -38,8 +38,10 @@ export default function LoginPage() {
     } catch (err) {
       if (err.response?.status === 401) {
         setError('Invalid username or password; try again or register a new account.')
+      } else if (!err.response || err.response.status >= 500) {
+        setError('The game server is unreachable. Please try again later.')
       } else {
-        setError(err.response?.data?.message || err.message || 'Authentication failed. Please try again.')
+        setError(err.response?.data?.message || 'Authentication failed. Please try again.')
       }
     } finally {
       setLoading(false)
