@@ -702,6 +702,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             suggestions={combat?.suggested_moves || []}
             suggestionsLoading={combat?.battle_state?.suggestions_loading || combat?.suggestions_loading || false}
             lastOutcome={combat?.last_move_outcome || ""}
+            isMobile={isMobile}
             lastMoveViable={
               Array.isArray(combat?.available_options) &&
               combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available) &&
