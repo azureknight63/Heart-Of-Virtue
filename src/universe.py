@@ -207,7 +207,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             title = tile_data.get("title") or tile_data.get("id") or f"tile_{x}_{y}"
             description = tile_data.get("description", "")
             try:
-                tile_cls = functions.seek_class(title, "tilesets")
+                tile_cls = functions.seek_class(title, "tilesets", allow_other_modules=False)
             except Exception:
                 try:
                     tiles_mod = importlib.import_module("tiles")
@@ -366,7 +366,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if block_contents:
                     block_list = block_contents.split("|")
                     tile_name = block_list[0]
-                    this_map[(x, y)] = functions.seek_class(tile_name, "tilesets")(
+                    this_map[(x, y)] = functions.seek_class(tile_name, "tilesets", allow_other_modules=False)(
                         self, this_map, x, y
                     )
                     if len(block_list) > 1:

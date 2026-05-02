@@ -53,6 +53,8 @@ class TestPlayerCore:
         target.hp = 100
         target.is_alive.return_value = True
         target.alert_message = "is angry!"
+        target.current_health = 100
+        target.maxhealth = 100
 
         player.current_room.npcs_here = [target]
         player.strength = 10
@@ -70,7 +72,7 @@ class TestPlayerCore:
             with patch('random.randint', return_value=50): # hit_chance = (98-10)+10 = 98. 50 < 98 is a hit.
                 with patch('random.uniform', return_value=1.0):
                     with patch('functions.check_for_combat', return_value=[]):
-                        with patch('combat.combat') as mock_combat_module:
+                        with patch('player._combat.combat.combat') as mock_combat_module:
                             player.attack()
                             assert target.hp < 100
                             assert target.in_combat is True
@@ -732,7 +734,7 @@ class TestPlayerCore:
         assert npc.hidden is False
 
     @patch('builtins.input', return_value='0')
-    @patch('combat.combat')
+    @patch('player._combat.combat.combat')
     @patch('functions.check_for_combat', return_value=[])
     @patch('random.randint', return_value=50)
     @patch('random.uniform', return_value=1.0)
@@ -745,6 +747,8 @@ class TestPlayerCore:
         npc.hp = 20
         npc.is_alive.return_value = True
         npc.alert_message = "attacks!"
+        npc.current_health = 20
+        npc.maxhealth = 20
 
         player.current_room = MagicMock()
         player.current_room.npcs_here = [npc]
@@ -779,6 +783,8 @@ class TestPlayerCore:
         npc.alert_message = "attacks!"
         npc.announce = "A green creature"
         npc.idle_message = ""
+        npc.current_health = 20
+        npc.maxhealth = 20
 
         player.current_room = MagicMock()
         player.current_room.npcs_here = [npc]
@@ -791,7 +797,7 @@ class TestPlayerCore:
         player.finesse = 10
         player.combat_exp = {"Basic": 0}
 
-        with patch('combat.combat') as mock_combat_mod:
+        with patch('player._combat.combat.combat') as mock_combat_mod:
             player.attack(phrase="green")
             assert npc.hp == 5
             mock_combat_mod.assert_called_once_with(player)

@@ -183,7 +183,7 @@ def test_load_single_json_map(monkeypatch, tmp_path):
             self.items_here = []
             self.npcs_here = []
             self.objects_here = []
-    monkeypatch.setattr(functions, 'seek_class', lambda title, mod: DummyTile)
+    monkeypatch.setattr(functions, 'seek_class', lambda title, mod, **kw: DummyTile)
     # Create dummy map JSON
     map_json = tmp_path / 'testmap.json'
     map_json.write_text('{"(1,2)": {"title": "DummyTile", "description": "desc", "block_exit": ["N"], "symbol": "#", "events": [], "items": [], "npcs": [], "objects": []}}')
@@ -208,7 +208,7 @@ def test_load_tiles(monkeypatch, tmp_path):
         def __init__(self, universe, this_map, x, y):
             self.x = x
             self.y = y
-    monkeypatch.setattr(functions, 'seek_class', lambda name, mod: DummyTile)
+    monkeypatch.setattr(functions, 'seek_class', lambda name, mod, **kw: DummyTile)
     # Create dummy txt file
     txt_path = tmp_path / 'testmap.txt'
     txt_path.write_text('DummyTile\t\n\n')
