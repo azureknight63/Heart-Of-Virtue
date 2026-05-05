@@ -2363,6 +2363,37 @@ class SilverBracelet(Accessory):
         )
 
 
+class HardenedEarPlug(Accessory):
+    """Dense wax ear stopple used by the Pillar Readers in the Wailing Badlands.
+
+    Reduces the penetrating power of sonic attacks — it does not block the wail
+    entirely, but the resonance has less purchase with a plugged ear canal.
+    """
+
+    level: int = 0
+    add_status_resistance: Dict[str, float]
+
+    def __init__(self, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Hardened Ear Plug",
+            description="A dense wax plug, hardened with Grondelith mineral oil.\n"
+            "The Pillar Readers carry them when working near the wail.\n"
+            "Reduces the chance of sonic effects landing.",
+            isequipped=False,
+            value=150,
+            protection=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=0.05,
+            maintype="Accessory",
+            subtype="Trinket",
+            merchandise=merchandise,
+        )
+        self.add_status_resistance = {"stun": 0.5}
+        self.discovery_message = "A small, dense wax plug coated in mineral oil."
+        self.announce = "A small hardened ear plug rests here. Something for those who know the wail."
+
+
 # ---------------------------------------------------------------------------
 # Consumables
 # ---------------------------------------------------------------------------
@@ -2610,6 +2641,230 @@ class Antidote(Consumable):
             return
         else:
             print("{} is not beset by poison.".format(player.name))
+
+
+# ---------------------------------------------------------------------------
+# Lore-specific consumables (Grondelith area and beyond)
+# ---------------------------------------------------------------------------
+
+class SlimeFlask(Consumable):
+    """A vial of purified Grondelith water. Cuts through corrosive slime residue.
+
+    Cheaper and more abundant near the pools than a full Antidote.
+    Only dissolves the slime coating — deeper toxins require something stronger.
+    """
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Slime Flask",
+            description="A small vial of water drawn from the Grondelith Grotto.\n"
+            "The mineral-clean water cuts through slime residue where\n"
+            "ordinary water would not.",
+            value=80,
+            weight=0.2,
+            maintype="Consumable",
+            subtype="Potion",
+            count=count,
+            merchandise=merchandise,
+        )
+        self.count = count
+        self.interactions = ["use", "drink", "drop"]
+        self.announce = (
+            "A small glass vial of luminous water with a hand-drawn label reading 'Slime Flask.'"
+        )
+
+    def drink(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
+
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
+        if getattr(self, "merchandise", False):
+            cprint(
+                "{} must purchase {} before using it.".format(player.name, self.name),
+                "red",
+            )
+            return
+        targets = [s for s in player.states if getattr(s, "name", "") == "Slimed"]
+        if targets:
+            print(
+                f"{player.name} splashes the Grondelith water across the slime coating. "
+                "The corrosive residue hisses and dissolves."
+            )
+            for state in targets:
+                state.on_removal(state.target)
+                player.states.remove(state)
+            import functions as _fn
+            _fn.refresh_stat_bonuses(player)
+            self.count -= 1
+            if self.count <= 0:
+                _user.inventory.remove(self)
+        else:
+            print("{} has no slime coating to dissolve.".format(player.name))
+
+
+class MineralSolvent(Consumable):
+    """Bottled water from the Grondelith Grotto — dissolves mineral encrustation.
+
+    Sold by Golemite merchants who know the pools well. The clean water
+    from the Grotto counteracts the mineral sediment before it hardens further.
+    """
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Mineral Solvent",
+            description="A corked bottle of milky-blue water from the Grondelith Grotto.\n"
+            "Applied to hardened mineral crust, it dissolves the sediment\n"
+            "and restores normal movement.",
+            value=120,
+            weight=0.25,
+            maintype="Consumable",
+            subtype="Potion",
+            count=count,
+            merchandise=merchandise,
+        )
+        self.count = count
+        self.interactions = ["use", "drink", "drop"]
+        self.announce = (
+            "A corked bottle of pale, milky-blue liquid. The label reads 'Mineral Solvent.'"
+        )
+
+    def drink(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
+
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
+        if getattr(self, "merchandise", False):
+            cprint(
+                "{} must purchase {} before using it.".format(player.name, self.name),
+                "red",
+            )
+            return
+        targets = [s for s in player.states if getattr(s, "statustype", "") == "stone"]
+        if targets:
+            print(
+                f"{player.name} applies the Grotto water to the mineral crust. "
+                "The sediment cracks and crumbles away."
+            )
+            for state in targets:
+                state.on_removal(state.target)
+                player.states.remove(state)
+            import functions as _fn
+            _fn.refresh_stat_bonuses(player)
+            self.count -= 1
+            if self.count <= 0:
+                _user.inventory.remove(self)
+        else:
+            print("{} has no mineral crust to dissolve.".format(player.name))
+
+
+class Respite(Consumable):
+    """Cool water from the Grondelith Sacred Atrium. Not medicinal — simply human.
+
+    Calms the fire of desperation as quickly as it ignited it.
+    Something about the Atrium water quiets what burns without reason.
+    """
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Respite",
+            description="A small draught of cool water from the Grondelith Sacred Atrium.\n"
+            "Not medicinal. Simply the right kind of quiet for the right moment.",
+            value=60,
+            weight=0.15,
+            maintype="Consumable",
+            subtype="Potion",
+            count=count,
+            merchandise=merchandise,
+        )
+        self.count = count
+        self.interactions = ["use", "drink", "drop"]
+        self.announce = "A small clay flask of cool, clear water. No label."
+
+    def drink(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
+
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
+        if getattr(self, "merchandise", False):
+            cprint(
+                "{} must purchase {} before using it.".format(player.name, self.name),
+                "red",
+            )
+            return
+        targets = [s for s in player.states if getattr(s, "statustype", "") == "enraged"]
+        if targets:
+            print(
+                f"{player.name} drinks the Atrium water slowly. "
+                "The fire in the chest subsides. The quiet is not empty — it is chosen."
+            )
+            for state in targets:
+                state.on_removal(state.target)
+                player.states.remove(state)
+            fatigue_restore = int(player.maxfatigue * 0.10)
+            player.fatigue = min(player.maxfatigue, player.fatigue + fatigue_restore)
+            if fatigue_restore > 0:
+                cprint("{} restored {} fatigue.".format(player.name, fatigue_restore), "green")
+            import functions as _fn
+            _fn.refresh_stat_bonuses(player)
+            self.count -= 1
+            if self.count <= 0:
+                _user.inventory.remove(self)
+        else:
+            print("{} is not burning.".format(player.name))
+
+
+class Relic(Consumable):
+    """A fragment of stone from the Via Dolorosa. Jean carried it from Jerusalem.
+
+    It has no power except the weight of what it remembers.
+    Some things are healed not by medicine but by the act of holding still.
+    Single use. Story-locked.
+    """
+
+    def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        super().__init__(
+            name="Relic",
+            description="A small, dark stone. Jean brought it from Jerusalem — from the Via Dolorosa.\n"
+            "It has smooth edges from being handled.\n"
+            "He is not sure why he kept it. He is not sure he needs a reason.",
+            value=0,
+            weight=0.05,
+            maintype="Consumable",
+            subtype="Relic",
+            count=count,
+            merchandise=merchandise,
+        )
+        self.count = count
+        self.interactions = ["use", "hold", "drop"]
+        self.announce = (
+            "A small, dark stone rests here. It looks unremarkable until you pick it up."
+        )
+
+    def hold(self, player: "Player", user=None) -> None:
+        self.use(player, user=user)
+
+    def use(self, player: "Player", user=None) -> None:
+        _user = user if user is not None else player
+        targets = [s for s in player.states if getattr(s, "statustype", "") == "apathy"]
+        if targets:
+            print(
+                f"{player.name} holds the stone from the Via Dolorosa. "
+                "He is not sure how long he stands there. Long enough."
+            )
+            for state in targets:
+                state.on_removal(state.target)
+                player.states.remove(state)
+            import functions as _fn
+            _fn.refresh_stat_bonuses(player)
+            self.count -= 1
+            if self.count <= 0:
+                _user.inventory.remove(self)
+        else:
+            print(
+                "{} turns the stone over in their hand. Nothing needs healing right now.".format(
+                    player.name
+                )
+            )
 
 
 # ---------------------------------------------------------------------------

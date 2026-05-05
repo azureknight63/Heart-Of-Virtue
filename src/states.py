@@ -298,6 +298,288 @@ class Hawkeye(State):
         super().__init__(name="Hawkeye", target=target, beats_max=30)
 
 
+class Slimed(State):
+    """Corrosive slime residue clings to Jean's limbs and armor.
+
+    The slime doesn't wash off. It seeps into every joint, every stitched seam,
+    filling cracks Jean didn't know he had. The smell alone is enough to turn the stomach.
+    """
+
+    def __init__(self, target):
+        duration = random.randint(30, 80)
+        steps = random.randint(10, 40)
+        super().__init__(
+            name="Slimed",
+            target=target,
+            beats_max=duration,
+            steps_max=steps,
+            compounding=True,
+            combat=True,
+            world=True,
+            statustype="poison",
+            persistent=True,
+        )
+        self.tick = 0
+        self.execute_on = 6
+        self.add_fin = -int(target.finesse * 0.20)
+        self.sub_protection = int(target.protection * 0.15)
+
+    def on_application(self, target):
+        target.protection = max(0, target.protection - self.sub_protection)
+        functions.refresh_stat_bonuses(target)
+        cprint("{} is coated in corrosive slime!".format(target.name), "cyan")
+
+    def on_removal(self, target):
+        target.protection += self.sub_protection
+        cprint("The corrosive slime finally sloughs away from {}.".format(target.name), "white")
+
+    def effect(self, target):
+        self.tick += 1
+        if self.tick % self.execute_on == 0:
+            damage = max(1, int(target.maxhp * random.uniform(0.008, 0.018)))
+            cprint(
+                "The slime burns into {}'s flesh! ({} damage)".format(target.name, damage),
+                "red",
+            )
+            target.hp -= damage
+
+    def compound(self, target):
+        cprint("The slime coating on {} thickens!".format(target.name), "cyan")
+        self.add_fin -= int(target.finesse * 0.05)
+        self.beats_max = int(self.beats_max * 1.1)
+        self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
+        self.steps_max = int(self.steps_max * 1.1)
+        self.steps_left = min(self.steps_max, self.steps_left + int(self.steps_max / 4))
+        functions.refresh_stat_bonuses(target)
+
+
+class Resonant(State):
+    """The Wailing Badlands leave their mark in the chest, behind the sternum.
+
+    A vibration that has no interest in your armor, that moves through iron and bone
+    with equal indifference. The wail does not stop at the skin.
+    """
+
+    def __init__(self, target):
+        duration = random.randint(12, 22)
+        super().__init__(
+            name="Resonant",
+            target=target,
+            beats_max=duration,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="stun",
+            persistent=False,
+        )
+        self.tick = 0
+        self.execute_on = 5
+        self.add_fin = -int(target.finesse * 0.25)
+
+    def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
+        cprint(
+            "{} staggers as the resonant wail tears through his defenses!".format(target.name),
+            "yellow",
+        )
+
+    def on_removal(self, target):
+        cprint(
+            "The wail fades from {}. The silence, when it comes, is sudden.".format(target.name),
+            "white",
+        )
+
+    def effect(self, target):
+        self.tick += 1
+        if self.tick % self.execute_on == 0:
+            damage = max(1, int(target.maxhp * random.uniform(0.010, 0.020)))
+            cprint(
+                "The resonance within {} rebounds! ({} armor-bypassing damage)".format(
+                    target.name, damage
+                ),
+                "yellow",
+            )
+            target.hp -= damage  # bypasses protection intentionally
+
+
+class Petrified(State):
+    """Mineral sediment from the corrupted pools settles into joints and sinew.
+
+    Not encasing, not crushing — just gradually convincing the body that movement
+    costs too much. The crust is heavier than it looks. It is also harder.
+    """
+
+    def __init__(self, target):
+        duration = random.randint(20, 45)
+        steps = random.randint(15, 30)
+        super().__init__(
+            name="Petrified",
+            target=target,
+            beats_max=duration,
+            steps_max=steps,
+            compounding=True,
+            combat=True,
+            world=True,
+            statustype="stone",
+            persistent=False,
+        )
+        self.tick = 0
+        self.execute_on = 6
+        self.add_fin = -int(target.finesse * 0.20)
+        self.add_speed = -int(target.speed * 0.35)
+        self.prot_bonus = int(target.protection * 0.25)
+
+    def on_application(self, target):
+        target.protection += self.prot_bonus
+        functions.refresh_stat_bonuses(target)
+        cprint(
+            "Mineral sediment from the pools settles into {}'s joints.".format(target.name),
+            "white",
+        )
+
+    def on_removal(self, target):
+        target.protection = max(0, target.protection - self.prot_bonus)
+        cprint(
+            "The mineral crust cracks and falls away from {}.".format(target.name),
+            "white",
+        )
+
+    def effect(self, target):
+        self.tick += 1
+        if self.tick % self.execute_on == 0:
+            drain = int(target.maxfatigue * 0.05)
+            target.fatigue = max(0, target.fatigue - drain)
+            if drain > 0:
+                cprint(
+                    "Moving against the mineral crust exhausts {}. ({} fatigue)".format(
+                        target.name, drain
+                    ),
+                    "white",
+                )
+
+    def compound(self, target):
+        cprint(
+            "The mineral sediment deepens its grip on {}.".format(target.name),
+            "white",
+        )
+        self.add_fin -= int(target.finesse * 0.10)
+        self.add_speed -= int(target.speed * 0.10)
+        self.beats_max = int(self.beats_max * 1.1)
+        self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
+        self.steps_max = int(self.steps_max * 1.1)
+        self.steps_left = min(self.steps_max, self.steps_left + int(self.steps_max / 4))
+        functions.refresh_stat_bonuses(target)
+
+
+class Hollowed(State):
+    """A profound spiritual emptiness. Jean knows this better than anyone.
+
+    The absence of feeling that follows overwhelming loss. In Aurelion, it manifests
+    as a wound that can be inflicted and — with enough time, or the right presence — healed.
+    """
+
+    def __init__(self, target):
+        duration = random.randint(40, 80)
+        steps = random.randint(30, 60)
+        super().__init__(
+            name="Hollowed",
+            target=target,
+            beats_max=duration,
+            steps_max=steps,
+            compounding=False,
+            combat=True,
+            world=True,
+            statustype="apathy",
+            persistent=True,
+        )
+        self.tick = 0
+        self.execute_on = 8
+        self.add_faith = -3
+        self.add_charisma = -2
+        self.add_endurance = -2
+
+    def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
+        cprint(
+            "Something goes quiet in {}. The grief has emptied them out.".format(target.name),
+            "white",
+        )
+
+    def on_removal(self, target):
+        cprint("The hollowness in {}'s chest recedes.".format(target.name), "white")
+        cprint("It is replaced by something harder to name.", "white")
+
+    def effect(self, target):
+        self.tick += 1
+        if self.tick % self.execute_on == 0:
+            hp_drain = max(1, int(target.maxhp * 0.005))
+            fatigue_drain = int(target.maxfatigue * 0.06)
+            target.hp -= hp_drain
+            target.fatigue = max(0, target.fatigue - fatigue_drain)
+
+
+class Fervent(State):
+    """The moment the sword arm stops calculating and the heart takes over entirely.
+
+    It is not wise. It is not safe. But it is real, and in a world this strange,
+    that counts for something.
+    """
+
+    def __init__(self, target):
+        duration = random.randint(25, 50)
+        super().__init__(
+            name="Fervent",
+            target=target,
+            beats_max=duration,
+            compounding=True,
+            combat=True,
+            world=False,
+            statustype="enraged",
+            persistent=False,
+        )
+        self.tick = 0
+        self.execute_on = 5
+        self.add_str = int(target.strength * 0.30)
+        self.add_fin = int(target.finesse * 0.15)
+        self.add_endurance = -3
+
+    def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
+        cprint(
+            "The fire of conviction ignites in {}!".format(target.name),
+            "red",
+        )
+
+    def on_removal(self, target):
+        cprint(
+            "The fire in {}'s chest gutters out. The cost of that intensity settles into his limbs.".format(
+                target.name
+            ),
+            "yellow",
+        )
+
+    def effect(self, target):
+        self.tick += 1
+        if self.tick % self.execute_on == 0:
+            self_damage = max(1, int(target.maxhp * random.uniform(0.008, 0.015)))
+            fatigue_drain = int(target.maxfatigue * 0.04)
+            cprint(
+                "{}'s body pays for the oath. ({} overexertion damage)".format(
+                    target.name, self_damage
+                ),
+                "yellow",
+            )
+            target.hp -= self_damage
+            target.fatigue = max(0, target.fatigue - fatigue_drain)
+
+    def compound(self, target):
+        cprint("The fire in {} burns hotter!".format(target.name), "red")
+        self.add_str += int(target.strength * 0.15)
+        self.add_endurance -= 2
+        self.beats_left = min(self.beats_max, self.beats_left + 10)
+        functions.refresh_stat_bonuses(target)
+
+
 class PhoenixRevive(State):
     def __init__(self, target):
         super().__init__(
