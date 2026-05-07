@@ -87,7 +87,7 @@ class InventoryItemSerializer:
 
         # Add weapon-specific stats
         if item_type == "Weapon" or maintype == "Weapon":
-            item_data["damage"] = getattr(item, "damage", 0)
+            item_data["damage"] = round(getattr(item, "damage", 0))
             item_data["str_mod"] = getattr(item, "str_mod", 0)
             item_data["fin_mod"] = getattr(item, "fin_mod", 0)
 
@@ -179,7 +179,7 @@ class EquipmentSlotSerializer:
             "item_name": getattr(item, "name", "Unknown"),
             "item_type": item.__class__.__name__,
             "armor": getattr(item, "armor", 0),
-            "damage": getattr(item, "damage", 0),
+            "damage": round(getattr(item, "damage", 0)),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
             "stat_bonuses": getattr(item, "stat_bonuses", {}),
@@ -309,7 +309,7 @@ class ItemDetailSerializer:
             "can_drop": True,  # Most items can be dropped
             "stats": {
                 "armor": getattr(item, "armor", 0),
-                "damage": getattr(item, "damage", 0),
+                "damage": round(getattr(item, "damage", 0)),
                 "magic_attack": getattr(item, "magic_attack", 0),
                 "magic_defense": getattr(item, "magic_defense", 0),
                 "accuracy": getattr(item, "accuracy", 0),
