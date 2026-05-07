@@ -207,6 +207,7 @@ class WallInscription(Object):
         )
         self.events = []
         self.keywords.append("read")
+        self.keywords.append("examine")
         self.text = text
 
     def read(self):
@@ -216,6 +217,9 @@ class WallInscription(Object):
             functions.await_input()
         else:
             print(self.description)
+
+    def examine(self):
+        self.read()
 
 
 class Container(Object):
