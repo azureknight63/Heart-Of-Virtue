@@ -242,11 +242,15 @@ class SessionManager:
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
         self.starting_map_name = "dark-grotto"
-        self.starting_item_types = []  # List of item class names to spawn
+        self.starting_item_types = []  # List of item class names to spawn (ground)
+        self.starting_equipment = []  # List of "ClassName:enchant_level" specs for Jean's inventory
+        self.starting_gold = 0
         self.game_config = None  # Full GameConfig object
         self._load_starting_position_from_config()
         self._load_game_config()
         self._load_starting_items_from_config()
+        self._load_starting_equipment_from_config()
+        self._load_starting_gold_from_config()
 
     def _load_starting_position_from_config(self):
         """Load starting position from config file specified in .env."""
@@ -363,7 +367,7 @@ class SessionManager:
                         items_str = parser.get("game", "starting_items")
                         # Parse comma-separated list of item types
                         self.starting_item_types = [
-                            item.strip() for item in items_str.split(",")
+                            item.strip() for item in items_str.split(",") if item.strip()
                         ]
                         print(
                             f"[SessionManager] [OK] Loaded starting items from config: {self.starting_item_types}",
@@ -382,6 +386,61 @@ class SessionManager:
                     flush=True,
                 )
                 traceback.print_exc()
+
+    def _load_starting_equipment_from_config(self):
+        """Load starting_equipment specs from config file."""
+        config_file = os.environ.get("CONFIG_FILE")
+        if not config_file:
+            return
+        try:
+            config_file = config_file.strip("'\"")
+            config_path = Path(config_file)
+            if not config_path.is_absolute():
+                project_root = Path(__file__).resolve().parent.parent.parent.parent
+                config_path = project_root / config_file
+            if config_path.exists():
+                parser = configparser.ConfigParser()
+                parser.read(config_path)
+                if parser.has_option("game", "starting_equipment"):
+                    eq_str = parser.get("game", "starting_equipment")
+                    self.starting_equipment = [
+                        item.strip() for item in eq_str.split(",") if item.strip()
+                    ]
+                    print(
+                        f"[SessionManager] [OK] Loaded starting_equipment from config: {self.starting_equipment}",
+                        flush=True,
+                    )
+        except Exception as e:
+            print(
+                f"[SessionManager] [ERROR] Error loading starting_equipment config: {e}",
+                flush=True,
+            )
+
+    def _load_starting_gold_from_config(self):
+        """Load starting_gold from config file."""
+        config_file = os.environ.get("CONFIG_FILE")
+        if not config_file:
+            return
+        try:
+            config_file = config_file.strip("'\"")
+            config_path = Path(config_file)
+            if not config_path.is_absolute():
+                project_root = Path(__file__).resolve().parent.parent.parent.parent
+                config_path = project_root / config_file
+            if config_path.exists():
+                parser = configparser.ConfigParser()
+                parser.read(config_path)
+                if parser.has_option("game", "starting_gold"):
+                    self.starting_gold = parser.getint("game", "starting_gold")
+                    print(
+                        f"[SessionManager] [OK] Loaded starting_gold from config: {self.starting_gold}",
+                        flush=True,
+                    )
+        except Exception as e:
+            print(
+                f"[SessionManager] [ERROR] Error loading starting_gold config: {e}",
+                flush=True,
+            )
 
     def _load_game_config(self):
         """Load full game configuration using ConfigManager."""
@@ -556,6 +615,73 @@ class SessionManager:
                 flush=True,
             )
 
+    def _apply_starting_equipment(self, player) -> None:
+        """Add and auto-equip starting_equipment items from config to the player's inventory."""
+        if not self.starting_equipment:
+            return
+        try:
+            try:
+                import items as items_module
+            except ImportError:
+                from src import items as items_module
+
+            for eq_spec in self.starting_equipment:
+                item_class_name, enchantment_level_str = (
+                    eq_spec.split(":") if ":" in eq_spec else (eq_spec, "0")
+                )
+                item_class_name = item_class_name.strip()
+                try:
+                    enchantment_level = int(enchantment_level_str.strip())
+                except ValueError:
+                    enchantment_level = 0
+
+                if hasattr(items_module, item_class_name):
+                    item_class = getattr(items_module, item_class_name)
+                    try:
+                        item = item_class(enchantment_level=enchantment_level)
+                    except Exception as e:
+                        print(
+                            f"[SessionManager] [ERROR] Could not create {item_class_name}: {e}",
+                            flush=True,
+                        )
+                        continue
+                    new_maintype = getattr(item, "maintype", None)
+                    if hasattr(player, "inventory") and isinstance(player.inventory, list):
+                        # Unequip any existing item of the same maintype (slot conflict resolution)
+                        if new_maintype and new_maintype != "Accessory":
+                            for existing in player.inventory:
+                                if (
+                                    getattr(existing, "maintype", None) == new_maintype
+                                    and getattr(existing, "isequipped", False)
+                                ):
+                                    existing.isequipped = False
+                                    if hasattr(existing, "interactions"):
+                                        if "unequip" in existing.interactions:
+                                            existing.interactions.remove("unequip")
+                                        if "equip" not in existing.interactions:
+                                            existing.interactions.append("equip")
+                        player.inventory.append(item)
+                    if hasattr(item, "isequipped"):
+                        item.isequipped = True
+                        if hasattr(item, "interactions") and "unequip" not in item.interactions:
+                            item.interactions.append("unequip")
+                        if hasattr(item, "interactions") and "equip" in item.interactions:
+                            item.interactions.remove("equip")
+                    print(
+                        f"[SessionManager] [OK] Applied starting equipment: {item_class_name} (enchant {enchantment_level})",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[SessionManager] [ERROR] Equipment class not found: {item_class_name}",
+                        flush=True,
+                    )
+        except Exception as e:
+            print(
+                f"[SessionManager] [ERROR] Error applying starting equipment: {e}",
+                flush=True,
+            )
+
     def _create_player_for_session(self, username: str) -> object:
         """Create a fresh player instance for a session.
 
@@ -624,6 +750,38 @@ class SessionManager:
                         f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories",
                         flush=True,
                     )
+                if self.game_config.learn_all_skills:
+                    try:
+                        from src.functions import learn_all_skills_from_skilltree
+                        learn_all_skills_from_skilltree(player)
+                        print(
+                            "[SessionManager] [OK] Learned all skills (learn_all_skills=True)",
+                            flush=True,
+                        )
+                    except Exception as e:
+                        print(
+                            f"[SessionManager] [ERROR] learn_all_skills failed: {e}",
+                            flush=True,
+                        )
+
+            # Apply starting gold
+            if self.starting_gold > 0:
+                try:
+                    try:
+                        import items as items_module
+                    except ImportError:
+                        from src import items as items_module
+                    if hasattr(player, "inventory") and isinstance(player.inventory, list):
+                        player.inventory.append(items_module.Gold(self.starting_gold))
+                        print(
+                            f"[SessionManager] [OK] Applied starting_gold: {self.starting_gold}",
+                            flush=True,
+                        )
+                except Exception as e:
+                    print(
+                        f"[SessionManager] [ERROR] Error applying starting_gold: {e}",
+                        flush=True,
+                    )
 
             # Set starting position — validate it exists in the chosen map; fall back to first valid tile
             eff_x, eff_y = self.start_x, self.start_y
@@ -650,6 +808,9 @@ class SessionManager:
                         flush=True,
                     )
 
+            # Apply starting equipment (equipped gear) from config
+            self._apply_starting_equipment(player)
+
             # Apply player stats from config if available
             self._apply_player_stats_from_config(player)
 
@@ -671,6 +832,21 @@ class SessionManager:
                         f"[SessionManager] [OK] Added {len(config_items)} starting items to player inventory",
                         flush=True,
                     )
+
+            # Apply starting gold
+            if self.starting_gold > 0:
+                try:
+                    try:
+                        import items as items_module
+                    except ImportError:
+                        from src import items as items_module
+                    if hasattr(player, "inventory") and isinstance(player.inventory, list):
+                        player.inventory.append(items_module.Gold(self.starting_gold))
+                except Exception:
+                    pass
+
+            # Apply starting equipment (equipped gear) from config
+            self._apply_starting_equipment(player)
 
             # Apply player stats from config if available
             self._apply_player_stats_from_config(player)

@@ -49,6 +49,8 @@ def create_app(config_class=None):
     start_x, start_y = 2, 2  # defaults
     starting_exp = 0
     starting_map_name = "default"
+    starting_gold = 0
+    starting_equipment = []
     config_file = os.environ.get("CONFIG_FILE")
 
     if config_file:
@@ -80,6 +82,15 @@ def create_app(config_class=None):
 
                 if parser.has_option("game", "startmap"):
                     starting_map_name = parser.get("game", "startmap")
+
+                if parser.has_option("game", "starting_gold"):
+                    starting_gold = parser.getint("game", "starting_gold")
+
+                if parser.has_option("game", "starting_equipment"):
+                    eq_str = parser.get("game", "starting_equipment")
+                    starting_equipment = [
+                        item.strip() for item in eq_str.split(",") if item.strip()
+                    ]
         except Exception as e:
             print(f"Warning: Could not load config: {e}")
 
@@ -99,6 +110,7 @@ def create_app(config_class=None):
         try:
             # Import Player to create a test player for universe initialization
             from src.player import Player
+            import src.items as items
 
             # Create a test player
             test_player = Player()
@@ -127,10 +139,56 @@ def create_app(config_class=None):
             test_player.map = starting_map
             test_player.location_x, test_player.location_y = start_x, start_y
 
-            # Apply starting exp
+            # Apply starting exp (for both leveling and skill learning)
             if starting_exp > 0:
+                # Set experience for leveling system
+                test_player.exp = starting_exp
+                # Trigger level-ups if needed (without prompts since we're in API mode)
+                while test_player.exp >= test_player.exp_to_level:
+                    test_player._level_up_api()
+                # Set experience for skill tree learning
                 for category in test_player.skilltree.subtypes.keys():
                     test_player.skill_exp[category] = starting_exp
+
+            # Apply starting gold
+            if starting_gold > 0:
+                test_player.inventory.append(items.Gold(starting_gold))
+
+            # Apply starting equipment
+            if starting_equipment:
+                for eq_spec in starting_equipment:
+                    item_class_name, enchantment_level_str = (
+                        eq_spec.split(":") if ":" in eq_spec else (eq_spec, "0")
+                    )
+                    item_class_name = item_class_name.strip()
+                    try:
+                        enchantment_level = int(enchantment_level_str.strip())
+                    except ValueError:
+                        enchantment_level = 0
+
+                    # Get the item class from the items module
+                    if hasattr(items, item_class_name):
+                        item_class = getattr(items, item_class_name)
+                        # Create item with enchantment_level
+                        item = item_class(enchantment_level=enchantment_level)
+                        test_player.inventory.append(item)
+                        # Auto-equip armor/weapons for convenience
+                        if hasattr(item, "isequipped"):
+                            item.isequipped = True
+                            if "unequip" not in item.interactions:
+                                item.interactions.append("unequip")
+                            if "equip" in item.interactions:
+                                item.interactions.remove("equip")
+                            # Special handling for weapons
+                            if (
+                                hasattr(item, "maintype")
+                                and item.maintype == "Weapon"
+                            ):
+                                test_player.eq_weapon = item
+
+                # Refresh stat bonuses after equipping all items
+                import src.functions as functions
+                functions.refresh_stat_bonuses(test_player)
 
             # Create a get_tile wrapper for accessing tiles from the player's current map only
             def get_tile_from_maps(x, y):
