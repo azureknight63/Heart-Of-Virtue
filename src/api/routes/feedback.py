@@ -225,7 +225,7 @@ def submit_feedback():
             429,
         )
 
-    username = _MARKDOWN_UNSAFE.sub("", getattr(player, "name", "Unknown Player"))
+    username = _MARKDOWN_UNSAFE.sub("", getattr(session, "username", "Unknown Player"))
 
     data = request.get_json(silent=True) or {}
     feedback_type = data.get("type", "").lower()
