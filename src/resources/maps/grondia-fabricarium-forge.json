@@ -138,12 +138,12 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
@@ -199,7 +199,7 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             }
