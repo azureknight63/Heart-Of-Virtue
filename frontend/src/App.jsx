@@ -20,6 +20,7 @@ function App() {
         <Routes>
           <Route path="/" element={isAuthenticated ? <Navigate to="/game" /> : <LandingPage />} />
           <Route path="/home" element={isAuthenticated ? <Navigate to="/game" /> : <LandingPage />} />
+          <Route path="/landing" element={<LandingPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/game" /> : <LoginPage />} />
           <Route path="/menu" element={isAuthenticated ? <MainMenuPage /> : <Navigate to="/" />} />
           <Route path="/game" element={isAuthenticated ? <GamePage /> : <Navigate to="/" />} />

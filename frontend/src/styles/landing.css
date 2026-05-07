@@ -245,8 +245,8 @@
 
 /* accent elements keep their colour regardless of cursor */
 .landing-page .hero-title em,
+.landing-page .character-initial,
 .landing-page .character-role,
-.landing-page .character-prose p:first-of-type::first-letter,
 .landing-page .hero-prose::first-letter,
 .landing-page .character-quote::before,
 .landing-page .character-quote::after {
@@ -560,20 +560,28 @@
 }
 .landing-page .character-prose.revealed { opacity: 1; transform: translateY(0); }
 
+.landing-page .character-name-group {
+  display: flex;
+  align-items: baseline;
+  margin: 0 0 6px;
+}
 .landing-page .character-initial {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.4em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 0 0 12px;
+  font-family: var(--font-title);
+  font-style: italic;
+  font-weight: 300;
+  font-size: clamp(56px, 10vw, 132px);
+  line-height: 1;
+  color: var(--accent);
+  margin: 0;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .landing-page .character-name {
   font-family: var(--font-title);
   font-weight: 400;
   font-size: clamp(40px, 4vw, 58px);
   line-height: 1;
-  margin: 0 0 6px;
+  margin: 0;
   color: var(--ink);
   letter-spacing: 0.005em;
 }
@@ -592,16 +600,6 @@
   margin: 0 0 1.25em;
 }
 .landing-page .character-prose p + p { margin-top: 0.6em; }
-.landing-page .character-prose p:first-of-type::first-letter {
-  font-family: var(--font-title);
-  font-size: 4.4em;
-  line-height: 0.8;
-  float: left;
-  padding: 0.08em 0.1em 0 0;
-  color: var(--accent);
-  font-style: italic;
-  font-weight: 400;
-}
 .landing-page .character-quote {
   margin-top: 28px;
   padding: 18px 0 18px 24px;

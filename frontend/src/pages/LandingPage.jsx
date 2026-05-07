@@ -2,9 +2,8 @@
 // Illuminated-manuscript aesthetic; oil-lamp cursor; calligraphy-swipe portraits;
 // hand-drawn world map; inline login/register wired to the real auth API.
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../hooks/useApi'
 import SketchPortrait from '../components/landing/SketchPortrait'
 import LandingWorldMap from '../components/landing/LandingWorldMap'
 import '../styles/landing.css'
@@ -16,14 +15,14 @@ const CHARACTERS = [
   {
     key: 'jean',
     name: 'Jean Claire',
-    role: 'The Crusader Who Was Not',
+    role: 'The Crusader Adrift',
     caption: 'fig. i — the pilgrim, rendered in pen and memory',
     prose: [
-      'Jean believes he was a crusader. A knight called toward Jerusalem, clearing the enemies of humanity square by square. The memory has the specific weight of something lived. It is not.',
-      'He was an HVAC technician. He went to Jerusalem on pilgrimage with his wife Amelia and his daughter Regina. In the crowded lanes of the Old City, a bomb found them. He was holding Regina when it went off. He survived; she did not.',
-      "The world of Aurelion receives him now — all of it, every stone and every stranger — while his body lies quiet in a hospital he does not remember. His faith has not broken cleanly. It has collapsed at the center, because he chose the pilgrimage, and he cannot be angry at God without implicating himself.",
+      'Jean remembers he was a crusader. A knight called toward Jerusalem, clearing the enemies of humanity square by square. The memory has the specific weight of something lived.',
+      'In the crowded lanes of the Old City, chaos and fury found him. Suddenly, all went dark.',
+      "The world of Aurelion receives him now — all of it, every stone and every stranger. He knows he must find his way home. He knows there are some waiting for him there - if only he could remember.",
     ],
-    quote: "I'm sorry.",
+    quote: "I can figure out what's broken and fix it.",
     image: `${BASE}assets/landing/portraits/jean.png`,
   },
   {
@@ -34,9 +33,9 @@ const CHARACTERS = [
     prose: [
       'Gorran is one thousand five hundred years old, which for a Golemite is adulthood — seasoned, but not ancient. He stood watch over a sealed passage for centuries, companioned only by the slow trickle of water and the grinding of stone. The long quiet taught him to attend.',
       'He wears a star-shaped patch of luminous moss on his shoulder, grown over a wound from the War of the Shifting Sands. He grieves quietly for a companion long dead beneath a rockfall. He sees that grief again in Jean, and so he follows.',
-      'He cannot, at first, speak Jean\'s language. He will learn, word by effortful word, until a particular scene at a particular crisis demands the few sentences he has earned. He does not deflect questions. He allows them to stay in the air.',
+      'He is not one for many words and cannot speak Jean\'s language. He tends to let questions hang in the air or eventually answer themselves.',
     ],
-    quote: 'He is there, and you may look, and that is all.',
+    quote: '*Unintelligible rumbling*',
     image: `${BASE}assets/landing/portraits/gorran.png`,
   },
   {
@@ -45,11 +44,11 @@ const CHARACTERS = [
     role: 'Scavenger, River-Crosser, Reader of Small Things',
     caption: 'fig. iii — the cartographer of unclaimed places',
     prose: [
-      'Mara is twenty-seven and occupies exactly as much space as she needs. Her gaze arrives before you do — green, immediate, extracting without cruelty. She is reading. She reads everything. She has not yet admitted to herself that looking is what she is doing.',
+      'Mara occupies exactly as much space as she needs. Her gaze arrives before you do — sharp, immediate, extracting without cruelty, like a surgeon\'s scalpel. She is reading - she reads everything.',
       'She works the western approaches: the river crossings, the cave systems, the outer edges of the Wailing Badlands. She charges a fair fee and does not negotiate it down. Her sardonic wit is a walking stick, not a weapon. She uses it to keep a steady pace through terrain that might otherwise give her trouble.',
-      'Around her neck, on a worn cord, hangs a crucifix she will call an oddity — something she found in a ruin that felt preserved, and has never catalogued and never sold. It sits outside her system entirely. Jean notices it, and then works not to notice it. She notices him noticing, and notices him look away, and files both without comment.',
+      'Around her neck, on a worn cord, hangs a crucifix she will call an oddity — in truth, a mystery she cannot read. That is why she keeps it.',
     ],
-    quote: "The locals call it the Wailing Badlands. They don't come here.",
+    quote: "The locals call it the Wailing Badlands. Not sure if it's the lands that wail, or those who flee it.",
     image: `${BASE}assets/landing/portraits/mara.png`,
   },
   {
@@ -71,11 +70,11 @@ const CHARACTERS = [
     role: 'The Child Who Asks',
     caption: 'fig. v — a pocket of stones, a feather, a question',
     prose: [
-      'Liss is old enough to carry her share of camp work and young enough that she has not yet learned which questions are rude to ask. She speaks at the pace of her thinking, which is faster than most conversations. She has started and abandoned more sentences than she has finished.',
-      'She collects interesting things — a strangely-colored stone, a feather with a bent shaft, a scrap of something whose origin she has invented a story about. She leaves most of it behind when camp moves. New interesting things will present themselves.',
-      'She is not reading Jean\'s grief. She does not have the architecture for it. She asks him where he is going and whether he knows which plants are edible on that route, and this is, paradoxically, a relief. She circles Gorran like a patient project. She has never been this close to a Golemite.',
+      'Liss is old enough to carry her share of camp work and young enough for unbridled questions. She speaks at the pace of thought. She has started and abandoned more sentences than she has finished.',
+      'She collects interesting things — a strangely-colored stone, a feather with a bent shaft, a scrap of some unknown material - about whose origin she has invented a story. She leaves most of it behind when camp moves. New interesting things will always present themselves.',
+      'She does not read grief. She does not have the architecture for it. She asks where one is going and whether one knows which plants are edible on that route. She circles Gorran like a curious cat. She has never been this close to a Golemite.',
     ],
-    quote: "You look like you're dressed for a different story.",
+    quote: "You look like you're dressed for a very strange party.",
     image: `${BASE}assets/landing/portraits/liss.png`,
   },
 ]
@@ -264,152 +263,7 @@ function useReveal() {
   }, [])
 }
 
-// ── tweaks panel ──────────────────────────────────────────────────────────────
-const TWEAK_DEFAULTS = {
-  accent: '#a8c0d4',
-  titleFont: 'Cormorant Garamond',
-  sketchSpeed: 0.5,
-}
-
-const ACCENT_PRESETS = [
-  { value: '#a8c0d4', label: 'Moonlight' },
-  { value: '#c9a76a', label: 'Candle' },
-  { value: '#b85a3e', label: 'Ember' },
-  { value: '#7a8a7a', label: 'Moss' },
-  { value: '#e8e4d8', label: 'Chalk' },
-]
-
-const FONT_OPTIONS = [
-  { value: 'Cormorant Garamond', label: 'Cormorant' },
-  { value: 'EB Garamond', label: 'Garamond' },
-  { value: 'Cinzel', label: 'Cinzel' },
-  { value: 'IM Fell English', label: 'IM Fell' },
-  { value: 'Uncial Antiqua', label: 'Uncial' },
-]
-
-const tweakPanelStyle = {
-  position: 'fixed',
-  right: 16,
-  bottom: 16,
-  width: 280,
-  maxHeight: 'calc(100vh - 32px)',
-  display: 'flex',
-  flexDirection: 'column',
-  background: 'rgba(250,249,247,.9)',
-  color: '#29261b',
-  backdropFilter: 'blur(24px) saturate(160%)',
-  WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-  border: '.5px solid rgba(255,255,255,.6)',
-  borderRadius: 14,
-  boxShadow: '0 1px 0 rgba(255,255,255,.5) inset, 0 12px 40px rgba(0,0,0,.18)',
-  font: '11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif',
-  overflow: 'hidden',
-  zIndex: 2147483646,
-  cursor: 'auto',
-}
-
-function TweaksPanel({ tweaks, setTweak, open, onClose }) {
-  if (!open) return null
-  return (
-    <div style={tweakPanelStyle}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 8px 10px 14px',
-          userSelect: 'none',
-          borderBottom: '1px solid rgba(0,0,0,.06)',
-        }}
-      >
-        <b style={{ fontSize: 12, fontWeight: 600 }}>Tweaks</b>
-        <button
-          onClick={onClose}
-          style={{
-            appearance: 'none',
-            border: 0,
-            background: 'transparent',
-            color: 'rgba(41,38,27,.55)',
-            width: 22,
-            height: 22,
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 13,
-          }}
-          aria-label="Close tweaks"
-        >
-          ✕
-        </button>
-      </div>
-      <div
-        style={{
-          padding: '2px 14px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          overflowY: 'auto',
-        }}
-      >
-        {/* Accent colour */}
-        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'rgba(41,38,27,.45)', paddingTop: 10 }}>Accent</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 500, fontSize: 11.5 }}>Interaction glow</span>
-            <input
-              type="color"
-              value={tweaks.accent}
-              onChange={(e) => setTweak('accent', e.target.value)}
-              style={{ width: 56, height: 22, border: '.5px solid rgba(0,0,0,.1)', borderRadius: 6, padding: 0, cursor: 'pointer', background: 'transparent' }}
-            />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={{ fontWeight: 500, fontSize: 11.5 }}>Preset</span>
-            <select
-              value={tweaks.accent}
-              onChange={(e) => setTweak('accent', e.target.value)}
-              style={{ appearance: 'none', WebkitAppearance: 'none', height: 26, padding: '0 8px', border: '.5px solid rgba(0,0,0,.1)', borderRadius: 7, background: 'rgba(255,255,255,.6)', font: 'inherit', outline: 'none', cursor: 'pointer' }}
-            >
-              {ACCENT_PRESETS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Title font */}
-        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'rgba(41,38,27,.45)', paddingTop: 10 }}>Title font</div>
-        <select
-          value={tweaks.titleFont}
-          onChange={(e) => setTweak('titleFont', e.target.value)}
-          style={{ appearance: 'none', WebkitAppearance: 'none', height: 26, padding: '0 8px', border: '.5px solid rgba(0,0,0,.1)', borderRadius: 7, background: 'rgba(255,255,255,.6)', font: 'inherit', outline: 'none', cursor: 'pointer' }}
-        >
-          {FONT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-
-        {/* Sketch speed */}
-        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'rgba(41,38,27,.45)', paddingTop: 10 }}>Sketch animation</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontWeight: 500, fontSize: 11.5 }}>Speed</span>
-            <span style={{ color: 'rgba(41,38,27,.5)' }}>{tweaks.sketchSpeed}×</span>
-          </div>
-          <input
-            type="range"
-            min={0.4} max={3} step={0.1}
-            value={tweaks.sketchSpeed}
-            onChange={(e) => setTweak('sketchSpeed', Number(e.target.value))}
-            style={{ width: '100%', accentColor: '#a8c0d4', cursor: 'pointer' }}
-          />
-        </div>
-        <p style={{ margin: '8px 0 0', fontSize: 10, color: 'rgba(41,38,27,.4)', lineHeight: 1.5 }}>
-          Open with <kbd style={{ background: 'rgba(0,0,0,.06)', padding: '1px 5px', borderRadius: 4, fontFamily: 'monospace' }}>Ctrl+Shift+T</kbd>
-        </p>
-      </div>
-    </div>
-  )
-}
+const SKETCH_SPEED = 0.5
 
 // ── ornament SVG ──────────────────────────────────────────────────────────────
 function Ornament({ className }) {
@@ -438,7 +292,7 @@ function Hero({ onBegin }) {
   return (
     <section className="hero">
       <Ornament className="hero-ornament" />
-      <p className="hero-eyebrow">A text adventure of faith, grief &amp; quiet companions</p>
+      <p className="hero-eyebrow">An adventure of wonder, faith, grief, &amp; companionship</p>
       <h1 className="hero-title">
         Heart
         <span className="of">of</span>
@@ -446,7 +300,7 @@ function Hero({ onBegin }) {
       </h1>
       <div className="hero-rule" />
       <p className="hero-sub">
-        A theatre of the mind. All graphics drawn in the ink of sentences —
+        A theatre of the mind. Most graphics drawn in the ink of sentences —
         rendered, as they always have been, on the page behind your eyes.
       </p>
       <button className="cta" onClick={onBegin}>
@@ -457,19 +311,26 @@ function Hero({ onBegin }) {
       <div className="hero-prose">
         <p>
           Jean Claire opens his eyes to a world that is not his own. The sky above Aurelion is
-          the colour of old chalk on slate. A stone-skinned figure waits beside him, patient
-          as geology. Somewhere further west — beyond the mountain citadels, across a river
-          he cannot yet name — a woman is already reading him before he has registered her
-          as a person rather than a feature of the camp.
+          the colour of old chalk on slate.
         </p>
+        <div style={{ textAlign: 'center', color: 'var(--ink-faint)', margin: '20px 0', fontSize: '12px' }}>◆</div>
         <p>
-          He believes he was a crusader. He carries a mace that was once religious kit. The
-          memories he has of a market lane in Jerusalem come back in fragments he is not
-          yet ready to assemble. This world has been placed around him with care, although
-          he will never know this, and the game will never state it. You will only infer.
+          A stone-skinned figure, patient as geology, becomes his timely savior.
         </p>
+        <div style={{ textAlign: 'center', color: 'var(--ink-faint)', margin: '20px 0', fontSize: '12px' }}>◆</div>
+        <p>
+          Somewhere to the southwest — beyond the mountain citadels, across a river
+          he cannot yet name — a woman is moving travelers for a price, waiting to discover her true purpose.
+        </p>
+        <div style={{ textAlign: 'center', color: 'var(--ink-faint)', margin: '20px 0', fontSize: '12px' }}>◆</div>
+        <p>
+          Jean remembers he was a crusader. It's etched into the depths of his mind. The
+          memories he has of a market lane in Jerusalem come back in fragments he is not
+          yet ready to assemble. This world seems to have been placed around him with care.
+        </p>
+        <div style={{ textAlign: 'center', color: 'var(--ink-faint)', margin: '20px 0', fontSize: '12px' }}>◆</div>
         <p style={{ textAlign: 'center', fontStyle: 'italic', color: 'var(--ink-faint)', marginTop: 40 }}>
-          — what follows is a chronicle of the companions he meets along the way.
+          — what will he discover as his story unfolds?
         </p>
       </div>
       <div className="hero-scroll-hint">
@@ -489,11 +350,10 @@ function Characters({ speed }) {
     <section className="characters" id="characters">
       <div className="reveal">
         <p className="section-eyebrow">Dramatis Personae</p>
-        <h2 className="section-title">Those who walk with Jean</h2>
+        <h2 className="section-title">Those who walk the path</h2>
         <div className="section-rule" />
         <p className="section-sub">
-          Five companions, each drawn in the same ink. Each is the shape of a
-          grief Jean does not yet recognise as his own.
+          Five companions, each drawn in the same ink. Each ready to turn the page.
         </p>
       </div>
 
@@ -504,10 +364,12 @@ function Characters({ speed }) {
             <div className="character-caption">{c.caption}</div>
           </div>
           <div className="character-prose">
-            <p className="character-initial" aria-hidden="true">
-              {c.name.charAt(0)}
-            </p>
-            <h3 className="character-name">{c.name}</h3>
+            <div className="character-name-group">
+              <h2 className="character-initial" aria-hidden="true">
+                {c.name.charAt(0)}
+              </h2>
+              <h3 className="character-name">{c.name.slice(1)}</h3>
+            </div>
             <p className="character-role">{c.role}</p>
             {c.prose.map((para, j) => (
               <p key={j}>{para}</p>
@@ -529,8 +391,7 @@ function WorldSection({ speed }) {
         <h2 className="section-title">The World of Aurelion</h2>
         <div className="section-rule" />
         <p className="section-sub">
-          A land built, some say, by a careful hand for a single soul — and
-          kind enough not to say so aloud.
+          A land of darkness and light - of strife and peace - of grief and hope.
         </p>
       </div>
       <LandingWorldMap speed={speed} />
@@ -538,45 +399,8 @@ function WorldSection({ speed }) {
   )
 }
 
-// ── Begin (login/register) ────────────────────────────────────────────────────
-function BeginSection() {
-  const [tab, setTab] = useState('enter')
-  const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const { login, register } = useAuth()
-  const navigate = useNavigate()
-
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    setError(null)
-    setLoading(true)
-    const data = new FormData(e.target)
-    try {
-      await login(data.get('username'), data.get('password'))
-      navigate('/game')
-    } catch (err) {
-      setError(err?.response?.data?.error || err?.message || 'Invalid credentials.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRegister = async (e) => {
-    e.preventDefault()
-    setError(null)
-    setLoading(true)
-    const data = new FormData(e.target)
-    // AuthContext signature: register(username, password, email)
-    try {
-      await register(data.get('username'), data.get('password'), data.get('email'))
-      navigate('/game')
-    } catch (err) {
-      setError(err?.response?.data?.error || err?.message || 'Registration failed.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+// ── Begin ─────────────────────────────────────────────────────────────────────
+function BeginSection({ onBegin }) {
   return (
     <section className="begin" id="begin">
       <div className="reveal">
@@ -587,65 +411,11 @@ function BeginSection() {
           Sign your name into the book. Or take up one already written.
         </p>
       </div>
-      <div className="begin-card">
-        <div className="tabs">
-          <button
-            className={tab === 'enter' ? 'active' : ''}
-            onClick={() => { setTab('enter'); setError(null) }}
-          >
-            Return
-          </button>
-          <button
-            className={tab === 'new' ? 'active' : ''}
-            onClick={() => { setTab('new'); setError(null) }}
-          >
-            Begin anew
-          </button>
-        </div>
-
-        {tab === 'enter' ? (
-          <form onSubmit={handleLogin}>
-            <div className="field">
-              <label>Name of traveller</label>
-              <input name="username" type="text" placeholder="Jean, son of…" required />
-            </div>
-            <div className="field">
-              <label>Passphrase</label>
-              <input name="password" type="password" placeholder="something you remember" required />
-            </div>
-            {error && <p className="begin-error">{error}</p>}
-            <button className="submit" type="submit" disabled={loading}>
-              {loading ? '…' : '✦ Enter Aurelion ✦'}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister}>
-            <div className="field">
-              <label>Name the traveller</label>
-              <input name="username" type="text" placeholder="what they will call you at the fire" required />
-            </div>
-            <div className="field">
-              <label>A way to reach you</label>
-              <input name="email" type="email" placeholder="your.carrier@pigeon.net" required />
-            </div>
-            <div className="field">
-              <label>Passphrase</label>
-              <input name="password" type="password" placeholder="at least a sentence long" minLength={16} required />
-            </div>
-            {error && <p className="begin-error">{error}</p>}
-            <button className="submit" type="submit" disabled={loading}>
-              {loading ? '…' : '✦ Take up the lance ✦'}
-            </button>
-          </form>
-        )}
-
-        <p className="begin-foot">
-          The journey is free.{' '}
-          <a href="https://github.com/azureknight63/Heart-Of-Virtue" target="_blank" rel="noreferrer">
-            A closer reckoning of what that means.
-          </a>
-        </p>
-      </div>
+      <button className="cta" onClick={onBegin}>
+        <span className="cta-mark">✦</span>
+        Begin The Journey
+        <span className="cta-mark">✦</span>
+      </button>
     </section>
   )
 }
@@ -675,42 +445,15 @@ function Footer() {
 
 // ── LandingPage ───────────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const [tweaks, setTweaksState] = useState(TWEAK_DEFAULTS)
-  const [tweaksOpen, setTweaksOpen] = useState(false)
-
-  const setTweak = (key, val) =>
-    setTweaksState((prev) => ({ ...prev, [key]: val }))
-
-  // Apply tweaks to CSS custom properties
-  useEffect(() => {
-    document.documentElement.style.setProperty('--accent', tweaks.accent)
-    document.documentElement.style.setProperty('--accent-dim', tweaks.accent + '99')
-    document.documentElement.style.setProperty(
-      '--font-title',
-      `"${tweaks.titleFont}", Georgia, serif`,
-    )
-    document.documentElement.style.setProperty('--sketch-speed', tweaks.sketchSpeed)
-  }, [tweaks])
-
-  // Ctrl+Shift+T toggles the tweaks panel
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
-        setTweaksOpen((v) => !v)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
-
   useEmbers()
   useReveal()
   useCandleCursor()
   useLitText()
 
+  const navigate = useNavigate()
   const handleBegin = (e) => {
     e.preventDefault()
-    document.getElementById('begin')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    navigate('/login')
   }
 
   return (
@@ -744,19 +487,11 @@ export default function LandingPage() {
       {/* Page content */}
       <div className="lp-page">
         <Hero onBegin={handleBegin} />
-        <Characters speed={tweaks.sketchSpeed} />
-        <WorldSection speed={tweaks.sketchSpeed} />
-        <BeginSection />
+        <Characters speed={SKETCH_SPEED} />
+        <WorldSection speed={SKETCH_SPEED} />
+        <BeginSection onBegin={handleBegin} />
         <Footer />
       </div>
-
-      {/* Tweaks panel (Ctrl+Shift+T) */}
-      <TweaksPanel
-        tweaks={tweaks}
-        setTweak={setTweak}
-        open={tweaksOpen}
-        onClose={() => setTweaksOpen(false)}
-      />
     </div>
   )
 }

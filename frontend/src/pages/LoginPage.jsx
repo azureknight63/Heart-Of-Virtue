@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useApi'
 import { colors, spacing } from '../styles/theme'
@@ -7,6 +7,70 @@ import GamePanel from '../components/GamePanel'
 import GameInput from '../components/GameInput'
 import GameText from '../components/GameText'
 import TermsOfServiceModal from '../components/TermsOfServiceModal'
+
+function useEmbers() {
+  useEffect(() => {
+    const canvas = document.getElementById('login-embers')
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    let raf
+    let particles = []
+
+    const resize = () => {
+      canvas.width = window.innerWidth * window.devicePixelRatio
+      canvas.height = window.innerHeight * window.devicePixelRatio
+      canvas.style.width = window.innerWidth + 'px'
+      canvas.style.height = window.innerHeight + 'px'
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    const spawn = () => ({
+      x: Math.random() * window.innerWidth,
+      y: window.innerHeight + Math.random() * 40,
+      vy: -0.15 - Math.random() * 0.35,
+      vx: (Math.random() - 0.5) * 0.15,
+      r: 0.6 + Math.random() * 1.4,
+      life: 0,
+      maxLife: 400 + Math.random() * 900,
+      hue: Math.random() < 0.25 ? 'ember' : 'dust',
+    })
+
+    for (let i = 0; i < 60; i++) {
+      const p = spawn()
+      p.y = Math.random() * window.innerHeight
+      p.life = Math.random() * p.maxLife
+      particles.push(p)
+    }
+
+    const tick = () => {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+      particles.forEach((p) => {
+        p.x += p.vx
+        p.y += p.vy
+        p.life += 1
+        const alpha = Math.sin((p.life / p.maxLife) * Math.PI) * 0.5
+        ctx.fillStyle =
+          p.hue === 'ember'
+            ? `rgba(200,170,130,${alpha * 0.7})`
+            : `rgba(232,228,216,${alpha * 0.4})`
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+        ctx.fill()
+      })
+      particles = particles.filter((p) => p.life < p.maxLife && p.y > -20)
+      while (particles.length < 60) particles.push(spawn())
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', resize)
+    }
+  }, [])
+}
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
@@ -18,6 +82,7 @@ export default function LoginPage() {
   const [showTos, setShowTos] = useState(false)
   const navigate = useNavigate()
   const { login, register } = useAuth()
+  useEmbers()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -51,13 +116,26 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: colors.bg.main,
+      backgroundColor: '#0d0d10',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: spacing.lg
+      padding: spacing.lg,
+      position: 'relative',
     }}>
-      <div style={{ width: '100%', maxWidth: '28rem' }}>
+      <canvas
+        id="login-embers"
+        style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 2 }}
+      />
+      <div style={{
+        position: 'fixed',
+        bottom: 0, left: 0, right: 0,
+        height: '320px',
+        background: 'radial-gradient(ellipse at 50% 100%, rgba(168,192,212,0.07), transparent 70%)',
+        pointerEvents: 'none',
+        zIndex: 1,
+      }} />
+      <div style={{ width: '100%', maxWidth: '28rem', position: 'relative', zIndex: 3 }}>
         <GamePanel padding="xxl" borderVariant="success" className="animate-fade-in">
           <div style={{ textAlign: 'center', marginBottom: spacing.xxl }}>
             <GameText variant="primary" size="xxl" weight="bold" as="h1" style={{ textAlign: 'center', marginBottom: spacing.xs }}>
@@ -243,6 +321,24 @@ export default function LoginPage() {
           alignItems: 'center',
           gap: spacing.sm,
         }}>
+          <button
+            onClick={() => navigate('/landing')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#8a8578',
+              cursor: 'pointer',
+              fontFamily: 'monospace',
+              fontSize: '11px',
+              padding: 0,
+              marginBottom: spacing.xs,
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={(e) => e.target.style.color = '#b8b2a3'}
+            onMouseLeave={(e) => e.target.style.color = '#8a8578'}
+          >
+            ← Back to home
+          </button>
           <GameText variant="dim" size="xs" style={{ fontFamily: 'monospace' }}>
             A text-based RPG adventure
           </GameText>
