@@ -38,6 +38,74 @@ class AfterDefeatingLurker(Event):
         pass
 
 
+class BetaTesterBriefing(Event):
+    """
+    One-shot briefing that fires the first time Jean enters Grondia (tile 1,2).
+    Presents a story-so-far recap and beta tester instructions, including a
+    prompt to use the Feedback button for credited feedback.
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="BetaTesterBriefing"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        self.pass_conditions_to_process()
+
+    def process(self, user_input=None):
+        if not hasattr(self, "_stage"):
+            self._stage = 1
+
+        if self._stage == 1:
+            self.needs_input = True
+            self.input_type = "choice"
+            self.description = (
+                "[ HEART OF VIRTUE — BETA ]\n\n"
+                "Jean Claire woke in the dark with no memory of how he arrived. "
+                "In the caves above Grondia he found Gorran — a Golemite, stone-skinned and quiet — "
+                "who chose to fight beside him without explanation. "
+                "Together they pressed deeper through the Verdette Caverns, following the drift of air, "
+                "until Jean faced and defeated the Lurker: a creature of shadow and venom that kills from concealment. "
+                "Now Gorran has led him here, to the threshold of Grondia — the living city of the Grondites, "
+                "Gorran’s people — and whatever waits inside."
+            )
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 2
+            return
+
+        elif self._stage == 2:
+            self.needs_input = True
+            self.input_type = "choice"
+            self.description = (
+                "── BETA TESTER NOTICE ──\n\n"
+                "Welcome to the Grondia arc beta. Your task is to play through the sequence below and "
+                "note anything that feels broken, inconsistent, or unclear:\n\n"
+                "  1. Explore Grondia and speak with its inhabitants.\n"
+                "  2. Reach the Grondelith Mineral Pools and defeat the King Slime.\n"
+                "  3. Return to the Citadel and speak with Votha Krr.\n"
+                "  4. Exit Grondia and head east to the river.\n"
+                "  5. Find Mara at the river camp and attempt to cross.\n\n"
+                "Use the Feedback button (left panel) to record anything worth reporting.\n"
+                "If you send feedback with your name or contact, you will be listed in the game credits.\n"
+                "Anonymous feedback is still valuable — you just won’t be credited.\n\n"
+                "Thank you for playing."
+            )
+            self.input_prompt = ""
+            self.input_options = [{"value": "begin", "label": "Begin"}]
+            self._stage = 3
+            return
+
+        elif self._stage == 3:
+            self.needs_input = False
+            self.completed = True
+            if self.tile is not None and self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+
+
 class Ch02GuideToCitadel(
     Event
 ):  # When first in Grondia, Gorran guides Jean to the Citadel

@@ -7,7 +7,13 @@
       "south"
     ],
     "block_exit": [],
-    "events": [],
+    "events": [
+      {
+        "__class__": "BetaTesterBriefing",
+        "__module__": "story.ch02",
+        "props": {}
+      }
+    ],
     "items": [],
     "npcs": [],
     "objects": [
