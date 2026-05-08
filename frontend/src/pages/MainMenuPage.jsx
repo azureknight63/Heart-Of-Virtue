@@ -1,5 +1,69 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+function useEmbers() {
+  useEffect(() => {
+    const canvas = document.getElementById('menu-embers')
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    let raf
+    let particles = []
+
+    const resize = () => {
+      canvas.width = window.innerWidth * window.devicePixelRatio
+      canvas.height = window.innerHeight * window.devicePixelRatio
+      canvas.style.width = window.innerWidth + 'px'
+      canvas.style.height = window.innerHeight + 'px'
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    const spawn = () => ({
+      x: Math.random() * window.innerWidth,
+      y: window.innerHeight + Math.random() * 40,
+      vy: -0.15 - Math.random() * 0.35,
+      vx: (Math.random() - 0.5) * 0.15,
+      r: 0.6 + Math.random() * 1.4,
+      life: 0,
+      maxLife: 400 + Math.random() * 900,
+      hue: Math.random() < 0.25 ? 'ember' : 'dust',
+    })
+
+    for (let i = 0; i < 60; i++) {
+      const p = spawn()
+      p.y = Math.random() * window.innerHeight
+      p.life = Math.random() * p.maxLife
+      particles.push(p)
+    }
+
+    const tick = () => {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+      particles.forEach((p) => {
+        p.x += p.vx
+        p.y += p.vy
+        p.life += 1
+        const alpha = Math.sin((p.life / p.maxLife) * Math.PI) * 0.5
+        ctx.fillStyle =
+          p.hue === 'ember'
+            ? `rgba(200,170,130,${alpha * 0.7})`
+            : `rgba(232,228,216,${alpha * 0.4})`
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+        ctx.fill()
+      })
+      particles = particles.filter((p) => p.life < p.maxLife && p.y > -20)
+      while (particles.length < 60) particles.push(spawn())
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', resize)
+    }
+  }, [])
+}
 import { useAuth } from '../hooks/useApi'
 import { saves } from '../api/endpoints'
 import { useAudio } from '../context/AudioContext'
@@ -13,6 +77,7 @@ import BaseDialog from '../components/BaseDialog'
 export default function MainMenuPage() {
     const navigate = useNavigate()
     const { logout } = useAuth()
+    useEmbers()
     const { warning: showWarning } = useToast()
     const {
         playBGM,
@@ -189,13 +254,25 @@ export default function MainMenuPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.bg.main,
-            backgroundImage: `radial-gradient(circle at 50% 50%, #1a2a3a 0%, #000000 100%)`,
+            backgroundColor: '#0d0d10',
             color: colors.text.main,
             fontFamily: fonts.main,
             position: 'relative',
             overflow: 'hidden'
         }}>
+            <canvas
+                id="menu-embers"
+                style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 2 }}
+            />
+            <div style={{
+                position: 'fixed',
+                bottom: 0, left: 0, right: 0,
+                height: '320px',
+                background: 'radial-gradient(ellipse at 50% 100%, rgba(168,192,212,0.07), transparent 70%)',
+                pointerEvents: 'none',
+                zIndex: 1,
+            }} />
+            <div style={{ position: 'relative', zIndex: 3, width: '100%', maxWidth: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <GamePanel
                 padding="xxl"
                 borderVariant="success"
@@ -255,6 +332,27 @@ export default function MainMenuPage() {
                     </a>
                 </div>
             </GamePanel>
+
+            <div style={{ marginTop: spacing.xl, textAlign: 'center' }}>
+                <button
+                    onClick={() => navigate('/landing')}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#8a8578',
+                        cursor: 'pointer',
+                        fontFamily: 'monospace',
+                        fontSize: '11px',
+                        padding: 0,
+                        transition: 'color 0.2s',
+                    }}
+                    onMouseEnter={(e) => e.target.style.color = '#b8b2a3'}
+                    onMouseLeave={(e) => e.target.style.color = '#8a8578'}
+                >
+                    ← Back to home
+                </button>
+            </div>
+            </div>{/* end column wrapper */}
 
             {/* Settings Modal */}
             {showSettings && (
