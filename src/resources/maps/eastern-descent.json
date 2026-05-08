@@ -844,7 +844,22 @@
             "east"
         ],
         "block_exit": [],
-        "events": [],
+        "events": [
+            {
+                "__class__": "NomadCampArrivalEvent",
+                "__module__": "story.ch03",
+                "props": {
+                    "name": "NomadCampArrival",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null
+                }
+            }
+        ],
         "items": [],
         "npcs": [
             {

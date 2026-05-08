@@ -674,9 +674,83 @@ class AfterDefeatingKingSlime(Event):
         )
         time.sleep(1)
 
-        # TODO: All of the map tiles referencing active corruption or "rumbling" (in reference to the now-defeated King Slime) need to get revised descriptions to match the present state of affairs.
+        self._cleanse_pool_tiles(self.player, current_map)
 
         self.tile.remove_event(self.name)
+
+    def _cleanse_pool_tiles(self, player, current_map):
+        """Update corrupted channel tile descriptions to reflect the post-cleansing state.
+
+        Physical damage (acid pitting, dissolved floors, staining) persists as geological
+        evidence. Active slime, living corruption, and all rumbling references are gone.
+        """
+        cleansed = {
+            (2, 2): (
+                "The colour has returned. Where the channels ran green, they run clear now — "
+                "milky-blue, lit from below, moving with quiet purpose. The walls carry the "
+                "memory of what was here: a dark tide line, scored stone, old acid pitting. "
+                "The air is cold and mineral-clean. The crevice on the west wall is visible "
+                "now, no longer obscured — a thin gap breathing the same clean air as the "
+                "rest of the passage."
+            ),
+            (3, 2): (
+                "The walkway holds. The channel below is clear — mineral water moving slowly "
+                "east, washing over stone that shows where the slime ate in: pitting, softened "
+                "edges, the marks of something that fed here for a long time. To the east, the "
+                "sealed chamber is silent now. Whatever was feeding there is gone."
+            ),
+            (4, 2): (
+                "The pocket has drained. Walls that were sheeted in thick slime are bare — "
+                "acid-scored and stained, but bare. A stone shelf juts from the east wall, "
+                "its surface worn smooth. Whatever this room was before the infestation, it "
+                "is only an empty chamber now: still, cold, smelling of mineral water and "
+                "old stone."
+            ),
+            (2, 3): (
+                "The walkway is intact. Below it, the pool is clear — deep blue, faintly "
+                "luminous, the same light as the atrium above. The acid pitting on the walls "
+                "hasn't changed; the dissolution is old work, stone already spent. Above: "
+                "silence. Whatever was nesting in the ceiling has gone. The rumbling from "
+                "the south is gone too. It is quiet here in a way it wasn't before."
+            ),
+            (3, 3): (
+                "The wider cavern is still. The dissolution is visible — the walls stripped "
+                "back to raw mineral where the slime ate through centuries of accumulated "
+                "stone — but the slime itself is gone. The chamber is deep and cold and very "
+                "quiet. The far wall is bare."
+            ),
+            (4, 3): (
+                "The low chamber is unchanged by the cleansing — the ceiling is still "
+                "collapsed, the rubble still fills half the floor. The old slime residue has "
+                "dried to a thin dark crust on the stone: harmless, inert, the ghost of a "
+                "longer infestation. The collapsed section exposes raw mineral beneath, "
+                "unchanged. It is quiet here. It was quiet here before too."
+            ),
+            (2, 4): (
+                "The passage is as narrow as ever — the walls close to arm's width for a "
+                "long stretch — but the slime that coated them is gone, leaving bare stone "
+                "that shows where it was: long staining, dissolution marks where it ran "
+                "thickest. The south end opens into a larger space. No rumbling. No sound "
+                "at all except Jean's footsteps and the faint movement of water."
+            ),
+            (3, 4): (
+                "The floor is still dissolved — the passage still crosses stone islands "
+                "above where the slime ate through — but the water between them is clear "
+                "now: cold, still, faintly luminous. The high-water mark is still visible: "
+                "a clean band of stone above the old slime line, dissolution below. It is "
+                "just water now."
+            ),
+            (2, 5): (
+                "The passage is open and still. The walls are bare stone — stained where "
+                "the slime reached, but bare. The rumbling is gone. Jean's footsteps land "
+                "without answer. The passage south opens into a large space: blue-white "
+                "light, clean water, the quiet aftermath of something enormous being undone."
+            ),
+        }
+        for coords, description in cleansed.items():
+            if coords in current_map.tiles:
+                tile = current_map.tiles[coords]
+                tile.spawn_object("TileDescription", player, tile, description=description)
 
 
 class Ch02FragmentReminder(Event):
