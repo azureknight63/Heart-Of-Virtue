@@ -351,7 +351,7 @@ class CombatantSerializer:
     def _serialize_combat_stats(combatant: Any) -> Dict[str, Any]:
         """Serialize combat-relevant stats."""
         return {
-            "damage": int(getattr(combatant, "damage", 0)),
+            "damage": round(getattr(combatant, "damage", 0)),
             "armor": int(getattr(combatant, "armor", 0)),
             "speed": int(getattr(combatant, "speed", 5)),
             "accuracy": int(getattr(combatant, "accuracy", 80)),
