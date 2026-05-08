@@ -31,6 +31,7 @@ from ._utility import (
     Rest,
     UseItem,
     Attack,
+    CrusaderOath,
 )
 from ._movement import (
     Dodge,
@@ -82,6 +83,9 @@ from ._npc import (
     VenomClaw,
     SpiderBite,
     BatBite,
+    MineralSpit,
+    SoulDrain,
+    WailStrike,
 )
 
 __all__ = [
@@ -98,6 +102,7 @@ __all__ = [
     "Rest",
     "UseItem",
     "Attack",
+    "CrusaderOath",
     # Movement
     "Dodge",
     "Parry",
@@ -173,4 +178,7 @@ __all__ = [
     "VenomClaw",
     "SpiderBite",
     "BatBite",
+    "MineralSpit",
+    "SoulDrain",
+    "WailStrike",
 ]

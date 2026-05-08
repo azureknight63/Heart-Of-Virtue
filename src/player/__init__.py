@@ -114,6 +114,12 @@ class Player(
         # Resistance dicts are defined canonically in Combatant (combatant.py).
         # This also fixes the "inflamed" → "enflamed" key to match State.statustype.
         self._init_resistances()
+        # Default status_resistance_base is 1.0 (immune) for all types.
+        # Jean is a mortal crusader — he is vulnerable to these status effects.
+        # Each value of 0.0 means fully vulnerable; items/levels can raise it.
+        for _stype in ("poison", "stun", "stone", "apathy", "enraged", "disoriented"):
+            self.status_resistance_base[_stype] = 0.0
+            self.status_resistance[_stype] = 0.0
         self.weight_tolerance = 20.00
         self.weight_tolerance_base = 20.00
         self.weight_current = 0.00
@@ -159,6 +165,7 @@ class Player(
             moves.Withdraw(self),
             moves.Attack(self),
             moves.Dodge(self),
+            moves.CrusaderOath(self),
         ]
         self.current_move = None
         self.heat = 1.0

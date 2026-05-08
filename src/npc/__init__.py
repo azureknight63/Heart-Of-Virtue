@@ -36,6 +36,7 @@ from ._enemies import (
     ElderSlime,
     KingSlime,
     StatusDummy,
+    CorruptedStoneCreature,
 )
 from ._merchants import Merchant, MiloCurioDealer, JamboHealsU
 from ._friends import (
@@ -68,6 +69,7 @@ __all__ = [
     "ElderSlime",
     "KingSlime",
     "StatusDummy",
+    "CorruptedStoneCreature",
     # Merchant NPCs
     "Merchant",
     "MiloCurioDealer",

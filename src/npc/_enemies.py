@@ -109,6 +109,7 @@ class Lurker(NPC):
         self.status_resistance_base["doom"] = 1
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.VenomClaw(self), 5)
+        self.add_move(moves.SoulDrain(self), 3)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self))
         self.add_move(moves.NpcIdle(self))
@@ -473,3 +474,43 @@ class StatusDummy(NPC):
             self.resistance_base[key] = 1.0
         self.add_move(moves.NpcIdle(self), 5)
         self.add_move(moves.NpcAttack(self), 1)
+
+
+class CorruptedStoneCreature(NPC):
+    """Animated mineral sediment from the Grondelith Mineral Pools.
+
+    Not a true Golemite — no soul, no awakening. Just corrupted mineral mass
+    reacting blindly to intrusion. A failed formation. The stone gone wrong.
+    Highly resistant to slashing and piercing; fire and crushing break the crust.
+    """
+
+    def __init__(self):
+        description = (
+            "A mass of mineral sediment loosely bound into a lurching shape. "
+            "It moves without hesitation, trailing a grey slurry that hardens on contact."
+        )
+        super().__init__(
+            name="Stone Creature " + genericng.generate(2, 4),
+            description=description,
+            maxhp=60,
+            damage=22,
+            protection=18,
+            awareness=15,
+            speed=5,
+            aggro=True,
+            exp_award=18,
+            idle_message=" scrapes slowly across the stone floor.",
+            alert_message=" lurches toward Jean, mineral slurry trailing behind it!",
+        )
+        self.resistance_base["slashing"] = 0.4
+        self.resistance_base["piercing"] = 0.4
+        self.resistance_base["crushing"] = 1.6
+        self.resistance_base["fire"] = 1.4
+        self.resistance_base["earth"] = 0.5
+        self.status_resistance_base["stone"] = 0.0  # immune to its own petrification
+        self.status_resistance_base["slow"] = -0.5  # extra vulnerable to slow-type states
+        self.add_move(moves.NpcAttack(self), 4)
+        self.add_move(moves.MineralSpit(self), 3)
+        self.add_move(moves.Advance(self), 4)
+        self.add_move(moves.Withdraw(self), 1)
+        self.add_move(moves.NpcIdle(self), 2)
