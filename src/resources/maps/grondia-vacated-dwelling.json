@@ -51,7 +51,7 @@
                     "hide_factor": 0,
                     "discovery_message": "the dwelling door leading back to the residential lane!",
                     "announce": "A narrow stone door leads back to the residential lane.",
-                    "keywords": ["leave", "exit", "go", "outside", "door"],
+                    "keywords": ["enter", "go", "leave", "exit"],
                     "events": [],
                     "tile": null,
                     "player": null,
