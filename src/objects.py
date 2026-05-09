@@ -206,13 +206,16 @@ class WallInscription(Object):
             aliases=["words inscribed", "inscription", "words etched"],
         )
         self.events = []
-        self.keywords.append("read")
-        self.keywords.append("examine")
+        # Ensure keywords are always properly set
+        self.keywords = ["read", "examine"]
         self.text = text
 
     def read(self):
         if self.text:
-            cprint(f"{self.player.name} begins reading...", color="cyan")
+            if self.player and hasattr(self.player, 'name'):
+                cprint(f"{self.player.name} begins reading...", color="cyan")
+            else:
+                cprint("You begin reading...", color="cyan")
             functions.print_slow(self.text, speed="fast")
             functions.await_input()
         else:
