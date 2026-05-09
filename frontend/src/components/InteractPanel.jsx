@@ -361,7 +361,7 @@ function InteractPanel({
                                 style={{
                                     width: '100%',
                                     padding: `${spacing.sm} ${spacing.md}`,
-                                    backgroundColor: searchHovered ? 'rgba(0, 204, 255, 0.1)' : 'transparent',
+                                    backgroundColor: searchHovered ? colors.alpha.info[10] : 'transparent',
                                     border: `1.5px solid ${colors.accent}`,
                                     borderRadius: '8px',
                                     color: colors.accent,
@@ -377,7 +377,7 @@ function InteractPanel({
                                     justifyContent: 'center',
                                     gap: spacing.sm,
                                     opacity: searchLoading ? 0.7 : 1,
-                                    boxShadow: searchHovered ? '0 0 10px rgba(0, 204, 255, 0.25)' : 'none',
+                                    boxShadow: searchHovered ? `0 0 10px ${colors.alpha.info[40]}` : 'none',
                                 }}
                             >
                                 🔍 {searchLoading ? 'Searching...' : 'Search Area'}
@@ -387,7 +387,7 @@ function InteractPanel({
                                     marginTop: spacing.xs,
                                     padding: `${spacing.xs} ${spacing.md}`,
                                     backgroundColor: 'rgba(0, 204, 255, 0.05)',
-                                    border: `1px solid rgba(0, 204, 255, 0.2)`,
+                                    border: `1px solid ${colors.alpha.info[20]}`,
                                     borderRadius: '6px',
                                     fontSize: '12px',
                                     color: colors.accent,
