@@ -256,6 +256,8 @@ class GameService:
                 bgm = "verdette_caverns"
             elif "mineral" in name_lower:
                 bgm = "mineral_pools"
+            elif "grondia" in name_lower:
+                bgm = "grondia"
         return bgm
 
     def _calculate_exits(
