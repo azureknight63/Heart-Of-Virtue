@@ -36,6 +36,9 @@ function InteractPanel({
     const [pendingAction, setPendingAction] = useState(null)
     const [showChatPanel, setShowChatPanel] = useState(false)
     const [takingAllItems, setTakingAllItems] = useState(false)
+    const [searchLoading, setSearchLoading] = useState(false)
+    const [searchOutput, setSearchOutput] = useState(null)
+    const [searchHovered, setSearchHovered] = useState(false)
 
     // Ref to track if we're currently syncing to prevent infinite loops
     const isSyncingTarget = useRef(false)
@@ -132,6 +135,31 @@ function InteractPanel({
         setQuantity(1)
         setIsLocked(false)
         setShowChatPanel(false)
+    }
+
+    const handleSearch = async () => {
+        if (searchLoading) return
+        setSearchLoading(true)
+        setSearchOutput(null)
+        try {
+            const response = await apiEndpoints.world.search()
+            if (response.data) {
+                const data = response.data
+                if (data.messages && data.messages.length > 0) {
+                    setSearchOutput(data.messages.join(' '))
+                } else {
+                    setSearchOutput('Nothing new found.')
+                }
+                if (onRefetch) onRefetch()
+            } else {
+                setSearchOutput('Search failed.')
+            }
+        } catch (err) {
+            console.error('Search error:', err)
+            setSearchOutput('Search failed.')
+        } finally {
+            setSearchLoading(false)
+        }
     }
 
     const handleTakeAll = async () => {
@@ -323,6 +351,53 @@ function InteractPanel({
                         overflowY: 'auto',
                         padding: spacing.xs,
                     }}>
+                        {/* Search Area Button — room-level action, always visible */}
+                        <div style={{ marginBottom: spacing.xs }}>
+                            <button
+                                onClick={handleSearch}
+                                disabled={searchLoading}
+                                onMouseEnter={() => setSearchHovered(true)}
+                                onMouseLeave={() => setSearchHovered(false)}
+                                style={{
+                                    width: '100%',
+                                    padding: `${spacing.sm} ${spacing.md}`,
+                                    backgroundColor: searchHovered ? 'rgba(0, 204, 255, 0.1)' : 'transparent',
+                                    border: `1.5px solid ${colors.accent}`,
+                                    borderRadius: '8px',
+                                    color: colors.accent,
+                                    fontFamily: fonts.main,
+                                    fontSize: '13px',
+                                    fontWeight: 'bold',
+                                    cursor: searchLoading ? 'default' : 'pointer',
+                                    transition: 'all 0.2s',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '1px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: spacing.sm,
+                                    opacity: searchLoading ? 0.7 : 1,
+                                    boxShadow: searchHovered ? '0 0 10px rgba(0, 204, 255, 0.25)' : 'none',
+                                }}
+                            >
+                                🔍 {searchLoading ? 'Searching...' : 'Search Area'}
+                            </button>
+                            {searchOutput && (
+                                <div style={{
+                                    marginTop: spacing.xs,
+                                    padding: `${spacing.xs} ${spacing.md}`,
+                                    backgroundColor: 'rgba(0, 204, 255, 0.05)',
+                                    border: `1px solid rgba(0, 204, 255, 0.2)`,
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    color: colors.accent,
+                                    fontFamily: fonts.main,
+                                    fontStyle: 'italic',
+                                }}>
+                                    {searchOutput}
+                                </div>
+                            )}
+                        </div>
                         {targets.filter(t => t.type === 'item' && !t.is_container).length > 1 && (
                             <GameButton
                                 onClick={() => handleActionClick('take_all_ground')}
