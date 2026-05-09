@@ -219,7 +219,8 @@ class WallInscription(Object):
             print(self.description)
 
     def examine(self):
-        print(self.description)
+        # Alias of read
+        self.read()
 
 
 class Container(Object):
