@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Eastern Descent — Remodel Plan</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0a0a0a;
+  font-family: 'Courier New', monospace;
+  color: #e0e0e0;
+  padding: 24px 28px 40px;
+  min-width: 1380px;
+}
+h1 {
+  color: #00ff88;
+  font-size: 1.15rem;
+  letter-spacing: 1px;
+  margin-bottom: 5px;
+}
+.subtitle {
+  color: #555;
+  font-size: 0.68rem;
+  margin-bottom: 18px;
+  border-bottom: 1px solid rgba(255,170,0,0.15);
+  padding-bottom: 11px;
+}
+.main-row {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+}
+
+/* ─── Diagram ─── */
+.diagram-wrap {
+  position: relative;
+  width: 970px;
+  height: 690px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,170,0,0.22);
+  background: #060606;
+}
+.diagram-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255,170,0,0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  pointer-events: none;
+  z-index: 0;
+}
+.conn-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+}
+.tile {
+  position: absolute;
+  width: 84px;
+  height: 42px;
+  border: 1.5px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2px 2px;
+  line-height: 1.25;
+  z-index: 2;
+  background: rgba(4,4,4,0.88);
+}
+.tile-name {
+  font-size: 0.5rem;
+  font-weight: bold;
+  color: inherit;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-sub {
+  font-size: 0.44rem;
+  color: #aaa;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile.is-hidden {
+  opacity: 0.58;
+  border-style: dashed !important;
+}
+.tile.is-blocked { opacity: 0.62; }
+.tile.is-junction { border-width: 2px; }
+.jct-label {
+  position: absolute;
+  font-size: 0.46rem;
+  color: #ffaa00;
+  z-index: 5;
+  background: rgba(0,0,0,0.93);
+  padding: 1px 5px;
+  border: 1px solid rgba(255,170,0,0.38);
+  white-space: nowrap;
+  border-radius: 2px;
+}
+.entry-label {
+  position: absolute;
+  font-size: 0.55rem;
+  color: #00ff88;
+  z-index: 5;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(0,255,136,0.45);
+}
+.zone-label {
+  position: absolute;
+  font-size: 0.42rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.5;
+  z-index: 0;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ─── Right panel ─── */
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  width: 320px;
+  flex-shrink: 0;
+}
+.panel-box {
+  border: 1px solid;
+  padding: 11px 13px;
+  background: rgba(0,0,0,0.55);
+}
+.panel-box h3 {
+  font-size: 0.63rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 9px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.61rem;
+  color: #c0c0c0;
+}
+.z-swatch {
+  width: 16px;
+  height: 10px;
+  border: 1.5px solid;
+  flex-shrink: 0;
+}
+.icon-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 3px;
+  font-size: 0.61rem;
+  color: #c0c0c0;
+}
+.icon-sym {
+  min-width: 18px;
+  text-align: center;
+  font-size: 0.72rem;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+}
+.stat-label { font-size: 0.61rem; color: #777; }
+.stat-val   { font-size: 0.61rem; color: #fff; font-weight: bold; text-align: right; }
+.callout-list { list-style: none; padding: 0; }
+.callout-list li {
+  font-size: 0.59rem;
+  color: #aaa;
+  padding: 3px 0 3px 11px;
+  border-left: 2px solid;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.callout-list li strong { color: #ddd; }
+.notes-bar {
+  margin-top: 13px;
+  border-top: 1px solid rgba(255,170,0,0.13);
+  padding-top: 10px;
+  font-size: 0.57rem;
+  color: #4a4a4a;
+  line-height: 1.6;
+}
+.notes-bar .key { color: #ffaa00; }
+</style>
+</head>
+<body>
+
+<h1>► EASTERN DESCENT — PROPOSED REMODEL</h1>
+<div class="subtitle">
+  Winding path replaces rectangular 6×5 grid &nbsp;·&nbsp; ~40 tiles &nbsp;·&nbsp;
+  Chapter 3 opening (Anger arc) &nbsp;·&nbsp; branch: claude/eastern-descent-winding-path-YCvyA
+</div>
+
+<div class="main-row">
+
+  <!-- ════════════════════ DIAGRAM ════════════════════ -->
+  <div class="diagram-wrap">
+    <svg class="conn-svg" id="connSvg"></svg>
+
+    <!-- Zone background labels -->
+    <div class="zone-label" style="color:#00ff88; left:82px; top:214px;">── ZONE 1: GATE APPROACH ──────────────────────────────────────</div>
+    <div class="zone-label" style="color:#00ccff; left:628px; top:64px;">ZONE 2: NE BRANCH (β) ──────────────────────</div>
+    <div class="zone-label" style="color:#ff8800; left:290px; top:291px;">── ZONE 3: DESCENT / MAZE ───────────────────────────</div>
+    <div class="zone-label" style="color:#ffcc00; left:518px; top:366px;">── ZONE 4: SE BRANCH (β) ─────────────────</div>
+    <div class="zone-label" style="color:#ffaa00; left:82px; top:366px;">ZONE 5: SW ──</div>
+    <div class="zone-label" style="color:#00ffcc; left:82px; top:516px;">── ZONE 6: NOMAD CAMP / RIVER ────────────────────────────</div>
+
+    <!-- Entry label -->
+    <div class="entry-label" style="left:6px; top:238px;">◄ Grondia</div>
+
+    <!-- ── ZONE 1: Gate Approach (#00ff88) ── -->
+
+    <!-- GTE (0,2) left=80 top=230 -->
+    <div class="tile is-junction" style="left:80px;top:230px;border-color:#00ff88;color:#00ff88;box-shadow:0 0 9px rgba(0,255,136,0.22);">
+      <div class="tile-name">EasternGate</div>
+      <div class="tile-sub">⚡ GorranGesture</div>
+    </div>
+
+    <!-- LDG (1,2) left=190 top=230 -->
+    <div class="tile" style="left:190px;top:230px;border-color:#00ff88;color:#00ff88;">
+      <div class="tile-name">HighLedge</div>
+      <div class="tile-sub">first open sky</div>
+    </div>
+
+    <!-- WBK (2,2) left=300 top=230 -->
+    <div class="tile" style="left:300px;top:230px;border-color:#00ff88;color:#00ff88;">
+      <div class="tile-name">Windbreak</div>
+      <div class="tile-sub">boulder shelter</div>
+    </div>
+
+    <!-- WMK (3,2) left=410 top=230 -->
+    <div class="tile" style="left:410px;top:230px;border-color:#00ff88;color:#00ff88;">
+      <div class="tile-name">WaymarkerStone</div>
+      <div class="tile-sub">★ Golemite lore</div>
+    </div>
+
+    <!-- CP / Junction 1 (4,2) left=520 top=230 -->
+    <div class="tile is-junction" style="left:520px;top:230px;border-color:#00ff88;color:#00ff88;box-shadow:0 0 14px rgba(0,255,136,0.38);">
+      <div class="tile-name">CrowsPerch</div>
+      <div class="tile-sub">⬦ JUNCTION 1</div>
+    </div>
+    <div class="jct-label" style="left:458px;top:279px;">⬦ J1 — NE branch · south descent</div>
+
+    <!-- WCV hidden (3,1) left=410 top=155 -->
+    <div class="tile is-hidden" style="left:410px;top:155px;border-color:#00ff88;color:#7ab87a;">
+      <div class="tile-name">WaymarkerCave</div>
+      <div class="tile-sub">👁 ★ lore cache</div>
+    </div>
+
+    <!-- ── ZONE 2: NE Branch (#00ccff) ── -->
+
+    <!-- NFT (5,1) left=630 top=155 -->
+    <div class="tile" style="left:630px;top:155px;border-color:#00ccff;color:#00ccff;">
+      <div class="tile-name">NorthFaceTrail</div>
+      <div class="tile-sub">☠ RockRumbler</div>
+    </div>
+
+    <!-- PRE (6,1) left=740 top=155 -->
+    <div class="tile" style="left:740px;top:155px;border-color:#00ccff;color:#00ccff;">
+      <div class="tile-name">Precipice</div>
+      <div class="tile-sub">◉ plains vista</div>
+    </div>
+
+    <!-- EO blocked (7,1) left=850 top=155 -->
+    <div class="tile is-blocked" style="left:850px;top:155px;border-color:#00ccff;color:#00ccff;">
+      <div class="tile-name">EasternOverlook</div>
+      <div class="tile-sub" style="color:#ff4444;">✕ β-BLOCKED →</div>
+    </div>
+
+    <!-- EN hidden (5,0) left=630 top=80 -->
+    <div class="tile is-hidden" style="left:630px;top:80px;border-color:#00ccff;color:#7aaacc;">
+      <div class="tile-name">EagleNest</div>
+      <div class="tile-sub">👁 ★ cache</div>
+    </div>
+
+    <!-- ── ZONE 3: Descent / Boulder Maze (#ff8800) ── -->
+
+    <!-- FSB (4,3) left=520 top=305 -->
+    <div class="tile" style="left:520px;top:305px;border-color:#ff8800;color:#ff8800;">
+      <div class="tile-name">FirstSwitchback</div>
+      <div class="tile-sub">descent begins</div>
+    </div>
+
+    <!-- SCR (3,3) left=410 top=305 -->
+    <div class="tile" style="left:410px;top:305px;border-color:#ff8800;color:#ff8800;">
+      <div class="tile-name">ScreeShelf</div>
+      <div class="tile-sub">☠ RockRumbler</div>
+    </div>
+
+    <!-- HWN / Junction 2 (3,4) left=410 top=380 -->
+    <div class="tile is-junction" style="left:410px;top:380px;border-color:#ff8800;color:#ff8800;box-shadow:0 0 14px rgba(255,136,0,0.38);">
+      <div class="tile-name">HoundsWarren</div>
+      <div class="tile-sub">☠☠ Hound ⬦ J2</div>
+    </div>
+    <div class="jct-label" style="left:352px;top:429px;">⬦ J2 — SE branch · SW to camp</div>
+
+    <!-- BGT (2,3) left=300 top=305 -->
+    <div class="tile" style="left:300px;top:305px;border-color:#ff8800;color:#ff8800;">
+      <div class="tile-name">BoulderGate</div>
+      <div class="tile-sub">narrows</div>
+    </div>
+
+    <!-- HCL (2,4) left=300 top=380 -->
+    <div class="tile" style="left:300px;top:380px;border-color:#ff8800;color:#ff8800;">
+      <div class="tile-name">HollowClearing</div>
+      <div class="tile-sub">☠☠ TalusHound</div>
+    </div>
+
+    <!-- DCK hidden (5,2) left=630 top=230 -->
+    <div class="tile is-hidden" style="left:630px;top:230px;border-color:#ff8800;color:#bb7733;">
+      <div class="tile-name">DeepCrack</div>
+      <div class="tile-sub">👁 ☠ ScarpAdder</div>
+    </div>
+
+    <!-- FAR hidden (5,3) left=630 top=305 -->
+    <div class="tile is-hidden" style="left:630px;top:305px;border-color:#ff8800;color:#bb7733;">
+      <div class="tile-name">FarReach</div>
+      <div class="tile-sub">👁 ★★ lore+sword</div>
+    </div>
+
+    <!-- ── ZONE 4: SE Branch (#ffcc00) ── -->
+
+    <!-- ETH (4,4) left=520 top=380 -->
+    <div class="tile" style="left:520px;top:380px;border-color:#ffcc00;color:#ffcc00;">
+      <div class="tile-name">EasternTrailhead</div>
+      <div class="tile-sub">☠ ScarpAdder</div>
+    </div>
+
+    <!-- RE blocked (5,4) left=630 top=380 -->
+    <div class="tile is-blocked" style="left:630px;top:380px;border-color:#ffcc00;color:#ffcc00;">
+      <div class="tile-name">RoadEast</div>
+      <div class="tile-sub" style="color:#ff4444;">✕ β-BLOCKED →</div>
+    </div>
+
+    <!-- ── ZONE 5: SW Descent (#ffaa00) ── -->
+
+    <!-- LBD (2,5) left=300 top=455 -->
+    <div class="tile" style="left:300px;top:455px;border-color:#ffaa00;color:#ffaa00;">
+      <div class="tile-name">LowerBend</div>
+      <div class="tile-sub">slope eases</div>
+    </div>
+
+    <!-- MSH hidden (1,4) left=190 top=380 -->
+    <div class="tile is-hidden" style="left:190px;top:380px;border-color:#ffaa00;color:#bb9944;">
+      <div class="tile-name">MossShelf</div>
+      <div class="tile-sub">👁 ★ cache</div>
+    </div>
+
+    <!-- LWS (1,5) left=190 top=455 -->
+    <div class="tile" style="left:190px;top:455px;border-color:#ffaa00;color:#ffaa00;">
+      <div class="tile-name">LowerSlope</div>
+      <div class="tile-sub">first grass</div>
+    </div>
+
+    <!-- FOT (1,6) left=190 top=530 -->
+    <div class="tile" style="left:190px;top:530px;border-color:#ffaa00;color:#ffaa00;">
+      <div class="tile-name">Footing</div>
+      <div class="tile-sub">river sound</div>
+    </div>
+
+    <!-- ── ZONE 6: Nomad Camp (#00ffcc) ── -->
+
+    <!-- BNK (0,6) left=80 top=530 -->
+    <div class="tile" style="left:80px;top:530px;border-color:#00ffcc;color:#00ffcc;">
+      <div class="tile-name">BankApproach</div>
+      <div class="tile-sub">river track</div>
+    </div>
+
+    <!-- EBK (1,7) left=190 top=605 -->
+    <div class="tile" style="left:190px;top:605px;border-color:#00ffcc;color:#00ffcc;">
+      <div class="tile-name">EasternBank</div>
+      <div class="tile-sub">river edge</div>
+    </div>
+
+    <!-- NCP (2,7) left=300 top=605 -->
+    <div class="tile is-junction" style="left:300px;top:605px;border-color:#00ffcc;color:#00ffcc;box-shadow:0 0 11px rgba(0,255,204,0.3);">
+      <div class="tile-name">NomadCamp</div>
+      <div class="tile-sub">♦ Mara ♦ Devet</div>
+    </div>
+
+    <!-- CDE (3,7) left=410 top=605 -->
+    <div class="tile" style="left:410px;top:605px;border-color:#00ffcc;color:#00ffcc;">
+      <div class="tile-name">CampsEdge</div>
+      <div class="tile-sub">♦ Liss</div>
+    </div>
+
+    <!-- RVL (3,6) left=410 top=530 -->
+    <div class="tile" style="left:410px;top:530px;border-color:#00ffcc;color:#00ffcc;">
+      <div class="tile-name">RiverOutlook</div>
+      <div class="tile-sub">◉ river vista</div>
+    </div>
+
+  </div><!-- /diagram-wrap -->
+
+  <!-- ════════════════════ RIGHT PANEL ════════════════════ -->
+  <div class="right-panel">
+
+    <!-- Legend -->
+    <div class="panel-box" style="border-color:rgba(255,170,0,0.28);">
+      <h3 style="color:#ffaa00;">Legend</h3>
+      <div style="margin-bottom:10px;">
+        <div class="legend-item"><div class="z-swatch" style="border-color:#00ff88;background:rgba(0,255,136,0.1)"></div>Zone 1 — Gate Approach</div>
+        <div class="legend-item"><div class="z-swatch" style="border-color:#00ccff;background:rgba(0,204,255,0.1)"></div>Zone 2 — NE Branch (β-blocked)</div>
+        <div class="legend-item"><div class="z-swatch" style="border-color:#ff8800;background:rgba(255,136,0,0.1)"></div>Zone 3 — Descent / Maze</div>
+        <div class="legend-item"><div class="z-swatch" style="border-color:#ffcc00;background:rgba(255,204,0,0.1)"></div>Zone 4 — SE Branch (β-blocked)</div>
+        <div class="legend-item"><div class="z-swatch" style="border-color:#ffaa00;background:rgba(255,170,0,0.1)"></div>Zone 5 — SW Descent to Camp</div>
+        <div class="legend-item"><div class="z-swatch" style="border-color:#00ffcc;background:rgba(0,255,204,0.1)"></div>Zone 6 — Nomad Camp / River</div>
+      </div>
+      <div style="border-top:1px solid rgba(255,170,0,0.18);padding-top:8px;">
+        <div class="icon-item"><span class="icon-sym">☠</span>Enemy encounter</div>
+        <div class="icon-item"><span class="icon-sym">♦</span>Story NPC</div>
+        <div class="icon-item"><span class="icon-sym">★</span>Loot cache / lore item</div>
+        <div class="icon-item"><span class="icon-sym">⚡</span>Story event trigger</div>
+        <div class="icon-item"><span class="icon-sym">◉</span>Vista / narrative tile</div>
+        <div class="icon-item"><span class="icon-sym">⬦</span>Junction / path fork</div>
+        <div class="icon-item"><span class="icon-sym" style="font-size:0.56rem;color:#666;">- - -</span>Hidden tile (dashed, 👁)</div>
+        <div class="icon-item"><span class="icon-sym" style="color:#ff4444;font-weight:bold;">✕</span>Beta-blocked exit</div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel-box" style="border-color:rgba(255,204,0,0.3);">
+      <h3 style="color:#ffcc00;">Map Statistics</h3>
+      <div class="stats-grid">
+        <span class="stat-label">Total tiles</span><span class="stat-val">~40</span>
+        <span class="stat-label">Current map</span><span class="stat-val">35</span>
+        <span class="stat-label">New hidden tiles</span><span class="stat-val">5</span>
+        <span class="stat-label">Junction tiles</span><span class="stat-val">2</span>
+        <span class="stat-label">β-blocked exits</span><span class="stat-val">2</span>
+        <span class="stat-label">Enemy tiles</span><span class="stat-val">7</span>
+        <span class="stat-label">Story NPC tiles</span><span class="stat-val">3</span>
+        <span class="stat-label">Loot caches</span><span class="stat-val">4 + 2 new</span>
+        <span class="stat-label">Lore items</span><span class="stat-val">3</span>
+      </div>
+    </div>
+
+    <!-- Preserved -->
+    <div class="panel-box" style="border-color:rgba(0,255,136,0.28);">
+      <h3 style="color:#00ff88;">✓ Preserved</h3>
+      <ul class="callout-list">
+        <li style="border-color:rgba(0,255,136,0.4);">All existing tile descriptions (reused / adapted)</li>
+        <li style="border-color:rgba(0,255,136,0.4);"><strong>GorranGestureEvent</strong> on EasternGate</li>
+        <li style="border-color:rgba(0,255,136,0.4);"><strong>EasternRoadTurnbackEvent</strong> on RoadEast</li>
+        <li style="border-color:rgba(0,255,136,0.4);">All 4 existing loot caches (Rocky Crevice, Rain Catch, Moss Crack, Shallow Recess)</li>
+        <li style="border-color:rgba(0,255,136,0.4);"><strong>WaymarkerStone</strong> Golemite inscription object</li>
+        <li style="border-color:rgba(0,255,136,0.4);"><strong>MerchantJournalFragment</strong> + Longsword in FarReach</li>
+        <li style="border-color:rgba(0,255,136,0.4);">Mara, Devet, Liss at nomad camp</li>
+        <li style="border-color:rgba(0,255,136,0.4);">TalusHound, ScarpAdder, RockRumbler</li>
+      </ul>
+    </div>
+
+    <!-- New -->
+    <div class="panel-box" style="border-color:rgba(0,204,255,0.28);">
+      <h3 style="color:#00ccff;">✦ New / Changed</h3>
+      <ul class="callout-list">
+        <li style="border-color:rgba(0,204,255,0.4);">Winding path topology — no longer a filled rectangle</li>
+        <li style="border-color:rgba(0,204,255,0.4);"><strong>2 β-blocked branches</strong> (NE + SE) with live tiles ready for post-beta content</li>
+        <li style="border-color:rgba(0,204,255,0.4);"><strong>WaymarkerCave</strong> — hidden cave off WaymarkerStone (north)</li>
+        <li style="border-color:rgba(0,204,255,0.4);"><strong>EagleNest</strong> — hidden cache off NorthFaceTrail (north)</li>
+        <li style="border-color:rgba(0,204,255,0.4);"><strong>DeepCrack</strong> now hidden (was open in old grid)</li>
+        <li style="border-color:rgba(0,204,255,0.4);">Revised flow: Gate → J1 → Maze → J2 → Camp / SE stub</li>
+        <li style="border-color:rgba(0,204,255,0.4);">~5 extra tiles vs. current map</li>
+      </ul>
+    </div>
+
+  </div><!-- /right-panel -->
+</div><!-- /main-row -->
+
+<div class="notes-bar">
+  <span class="key">β-blocked exits:</span> EasternOverlook (NE branch) and RoadEast (SE branch) are fully authored tiles — story event fires on entry, returning Jean. They stage future content (Golemite ruins / Resolute Plains) without dead-ends.
+  &nbsp;·&nbsp; <span class="key">Hidden tiles</span> (dashed border) require a search/examine action; they do not appear in the exits list.
+  &nbsp;·&nbsp; <span class="key">Coordinates</span> are indicative — final grid values confirmed during JSON implementation.
+  &nbsp;·&nbsp; <span class="key">Connections</span> are bidirectional exits unless otherwise noted.
+</div>
+
+<script>
+const svg = document.getElementById('connSvg');
+const ns  = 'http://www.w3.org/2000/svg';
+
+// Returns tile center from its left/top position
+function c(l, t) { return [l + 42, t + 21]; }
+
+// [left1, top1, left2, top2, strokeColor, isDashed, strokeWidth]
+const conns = [
+  // ── Zone 1: Gate Approach east-running path ──
+  [ 80,230,  190,230, '#00ff88', false, 2  ],
+  [190,230,  300,230, '#00ff88', false, 2  ],
+  [300,230,  410,230, '#00ff88', false, 2  ],
+  [410,230,  520,230, '#00ff88', false, 2  ],
+
+  // Hidden: WaymarkerStone → WaymarkerCave (north)
+  [410,230,  410,155, '#00ff88', true,  1  ],
+
+  // ── NE Branch: CrowsPerch → NorthFaceTrail (diagonal NE) ──
+  [520,230,  630,155, '#00ccff', false, 1.5],
+  [630,155,  740,155, '#00ccff', false, 1.5],
+  [740,155,  850,155, '#00ccff', false, 1.5],
+
+  // Hidden: NorthFaceTrail → EagleNest (north)
+  [630,155,  630, 80, '#00ccff', true,  1  ],
+
+  // Hidden chain: NorthFaceTrail → DeepCrack → FarReach (south)
+  [630,155,  630,230, '#ff8800', true,  1  ],
+  [630,230,  630,305, '#ff8800', true,  1  ],
+
+  // ── South descent: CrowsPerch → FirstSwitchback ──
+  [520,230,  520,305, '#ff8800', false, 2  ],
+
+  // FSB → SCR (west through descent)
+  [520,305,  410,305, '#ff8800', false, 1.5],
+  // SCR → HWN/Junction2 (south)
+  [410,305,  410,380, '#ff8800', false, 1.5],
+  // SCR → BGT (west, into maze)
+  [410,305,  300,305, '#ff8800', false, 1.5],
+  // BGT → HCL (south)
+  [300,305,  300,380, '#ff8800', false, 1.5],
+  // HCL → HWN (east, closes the maze loop)
+  [300,380,  410,380, '#ff8800', false, 1.5],
+
+  // Hidden: LowerSlope → MossShelf (north)
+  [190,455,  190,380, '#ffaa00', true,  1  ],
+
+  // ── SE Branch: HoundsWarren → EasternTrailhead → RoadEast ──
+  [410,380,  520,380, '#ffcc00', false, 1.5],
+  [520,380,  630,380, '#ffcc00', false, 1.5],
+
+  // ── SW path: HoundsWarren → LowerBend (diagonal SW) ──
+  [410,380,  300,455, '#ffaa00', false, 2  ],
+  // LBD → LWS (west)
+  [300,455,  190,455, '#ffaa00', false, 1.5],
+  // LWS → FOT (south)
+  [190,455,  190,530, '#ffaa00', false, 1.5],
+
+  // ── Camp: FOT → BankApproach (west) ──
+  [190,530,   80,530, '#00ffcc', false, 1.5],
+  // BNK → EBK (diagonal SE)
+  [ 80,530,  190,605, '#00ffcc', false, 1.5],
+  // EBK → NCP (east)
+  [190,605,  300,605, '#00ffcc', false, 1.5],
+  // NCP → CDE (east)
+  [300,605,  410,605, '#00ffcc', false, 1.5],
+  // NCP → RVL (diagonal NE)
+  [300,605,  410,530, '#00ffcc', false, 1.5],
+  // RVL → CDE (south)
+  [410,530,  410,605, '#00ffcc', false, 1.5],
+];
+
+conns.forEach(([l1,t1,l2,t2, color, dashed, sw]) => {
+  const [x1,y1] = c(l1,t1);
+  const [x2,y2] = c(l2,t2);
+  const line = document.createElementNS(ns,'line');
+  line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', sw);
+  line.setAttribute('stroke-opacity', dashed ? '0.42' : '0.62');
+  if (dashed) line.setAttribute('stroke-dasharray', '5,4');
+  svg.appendChild(line);
+});
+</script>
+</body>
+</html>
