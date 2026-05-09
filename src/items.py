@@ -3540,7 +3540,6 @@ class DriedCrystalSap(Consumable):
             maintype="Consumable",
             subtype="Natural",
             discovery_message="a small waxy amber lump!",
-            power=20,
         )
         self.merchandise = False
         self.interactions = ["use", "drop"]
