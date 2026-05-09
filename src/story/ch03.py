@@ -44,10 +44,10 @@ class GorranGestureEvent(Event):
 
 class EasternRoadTurnbackEvent(Event):
     """
-    Jean reaches the eastern road at (5,2) — the road that would lead to the Resolute Plains.
+    Jean reaches the eastern road — the road that would lead to the Resolute Plains.
     The moment pulls at him: the open land, the escape, the direction that is not west.
     But Gorran's presence anchors him, and the moment passes.
-    This event repeats: the player is always turned back west to (4,2).
+    This event repeats: the player is always turned back west to the preceding tile.
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class EasternRoadTurnbackEvent(Event):
         )
 
     def check_conditions(self):
-        """Fire on entry to the eastern road tile (5,2)."""
+        """Fire on entry to the eastern road tile."""
         self.pass_conditions_to_process()
 
     def process(self):
@@ -80,11 +80,10 @@ class EasternRoadTurnbackEvent(Event):
             print_slow(colored("South. That's where this goes.", "cyan") + "\n")
             time.sleep(0.5)
 
-        # Move player west to (4, 2)
+        # Move player west to AddersShelf (5, 4) — tile immediately west of RoadEast
         if self.tile and self.player:
             universe = getattr(self.player, "universe", None)
             if universe:
-                # Move player west
                 self.player.current_tile = universe.tiles.get(
-                    (4, 2), self.player.current_tile
+                    (5, 4), self.player.current_tile
                 )
