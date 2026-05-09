@@ -10,7 +10,6 @@ vi.mock('../api/endpoints', () => ({
   default: {
     world: {
       getCommands: vi.fn(),
-      search: vi.fn(),
     },
     saves: {
       save: vi.fn(),
@@ -28,7 +27,6 @@ vi.mock('../context/AudioContext', () => ({
 
 describe('ActionsPanel', () => {
   const mockCommands = [
-    { name: 'Search', debug: false },
     { name: 'Menu', debug: false },
     { name: 'Save', debug: false },
     { name: 'Teleport', debug: true },
@@ -56,30 +54,10 @@ describe('ActionsPanel', () => {
     expect(screen.getByText(/Communicating with world spirits.../i)).toBeDefined();
 
     await waitFor(() => {
-      expect(screen.getByText(/Search/i)).toBeDefined();
+      expect(screen.getByText(/Menu/i)).toBeDefined();
+      expect(screen.getByText(/Save/i)).toBeDefined();
+      expect(screen.queryByText(/^Search$/i)).toBeNull();
     }, { timeout: 2000 });
-  });
-
-  it('handles Search action', async () => {
-    apiEndpoints.world.search.mockResolvedValue({
-      data: {
-        messages: ['You found something!']
-      }
-    });
-
-    renderWithRouter(<ActionsPanel onClose={mockOnClose} onRefetch={mockOnRefetch} />);
-
-    await waitFor(() => screen.getByText(/Search/i));
-
-    fireEvent.click(screen.getByText(/Search/i));
-
-    expect(screen.getByText(/Searching.../i)).toBeDefined();
-
-    await waitFor(() => {
-      expect(apiEndpoints.world.search).toHaveBeenCalled();
-      expect(screen.getByText(/You found something!/i)).toBeDefined();
-      expect(mockOnRefetch).toHaveBeenCalled();
-    });
   });
 
   it('handles Menu action', async () => {
@@ -127,15 +105,15 @@ describe('ActionsPanel', () => {
   it('shows tooltip on hover', async () => {
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
-    await waitFor(() => screen.getByText(/Search/i));
+    await waitFor(() => screen.getByText(/Menu/i));
 
-    const searchButton = screen.getAllByText(/Search/i)[0];
-    fireEvent.mouseEnter(searchButton);
+    const menuButton = screen.getByText(/Menu/i);
+    fireEvent.mouseEnter(menuButton);
 
-    expect(screen.getByText(/Search the current location/i)).toBeDefined();
+    expect(screen.getByText(/Open the main menu/i)).toBeDefined();
 
-    fireEvent.mouseLeave(searchButton);
-    expect(screen.queryByText(/Search the current location/i)).toBeNull();
+    fireEvent.mouseLeave(menuButton);
+    expect(screen.queryByText(/Open the main menu/i)).toBeNull();
   });
 
   it('handles error state', async () => {
@@ -158,36 +136,6 @@ describe('ActionsPanel', () => {
     });
   });
 
-  it('handles Search with no messages', async () => {
-    apiEndpoints.world.search.mockResolvedValue({
-      data: {
-        messages: []
-      }
-    });
-
-    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
-
-    await waitFor(() => screen.getByText(/Search/i));
-    fireEvent.click(screen.getByText(/Search/i));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Search complete./i)).toBeDefined();
-    });
-  });
-
-  it('handles Search failure', async () => {
-    apiEndpoints.world.search.mockResolvedValue({ data: null });
-
-    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
-
-    await waitFor(() => screen.getByText(/Search/i));
-    fireEvent.click(screen.getByText(/Search/i));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Search failed./i)).toBeDefined();
-    });
-  });
-
   it('handles Save failure', async () => {
     apiEndpoints.saves.save.mockResolvedValue({ data: null });
 
@@ -202,12 +150,12 @@ describe('ActionsPanel', () => {
   });
 
   it('handles action execution error', async () => {
-    apiEndpoints.world.search.mockRejectedValue(new Error('Execution error'));
+    apiEndpoints.saves.save.mockRejectedValue(new Error('Execution error'));
 
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
-    await waitFor(() => screen.getByText(/Search/i));
-    fireEvent.click(screen.getByText(/Search/i));
+    await waitFor(() => screen.getByText(/Save/i));
+    fireEvent.click(screen.getByText(/Save/i));
 
     await waitFor(() => {
       expect(screen.getByText(/Command failed./i)).toBeDefined();

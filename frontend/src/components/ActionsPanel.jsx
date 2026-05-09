@@ -7,7 +7,6 @@ import { colors, spacing } from '../styles/theme'
 
 // Tooltip descriptions for each command
 const COMMAND_TOOLTIPS = {
-  'Search': 'Search the current location for hidden items or clues',
   'Menu': 'Open the main menu',
   'Save': 'Save your game progress',
   'Teleport': '[DEBUG] Teleport to a specific location',
@@ -73,24 +72,6 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
     fetchCommands()
   }, [location])
 
-  const handleSearch = async () => {
-    setActionMessage('Searching...')
-    const response = await apiEndpoints.world.search()
-
-    if (response.data) {
-      const data = response.data
-      if (data.messages && data.messages.length > 0) {
-        setTimedMessage(data.messages.join(' '), 5000)
-      } else {
-        setTimedMessage('Search complete.', 2000)
-      }
-      // Refresh room data to show newly discovered items
-      if (onRefetch) onRefetch()
-    } else {
-      setTimedMessage('Search failed.', 2000)
-    }
-  }
-
   const handleMenu = () => {
     setActionMessage('Opening menu...')
     clearTimeout(timerRef.current)
@@ -110,7 +91,6 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
   }
 
   const COMMAND_HANDLERS = {
-    'Search': handleSearch,
     'Menu': handleMenu,
     'Save': handleSave
   }
@@ -194,7 +174,7 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
               gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
               gap: '10px'
             }}>
-              {commands.map((command, idx) => {
+              {commands.filter(cmd => cmd.name !== 'Search').map((command, idx) => {
                 const isDebug = command.debug === true
                 const isHovered = hoveredCommand === idx
                 const borderColor = isDebug ? 'rgba(200, 200, 200, 0.4)' : colors.secondary

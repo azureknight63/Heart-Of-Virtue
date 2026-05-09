@@ -9,6 +9,7 @@ vi.mock('../api/endpoints', () => ({
   default: {
     world: {
       interact: vi.fn(),
+      search: vi.fn(),
       getEvents: vi.fn().mockResolvedValue({ data: { success: true, events: [] } }),
     },
   },
@@ -345,6 +346,54 @@ describe('InteractPanel', () => {
     render(<InteractPanel location={closedContainer} onClose={mockOnClose} />);
     fireEvent.click(screen.getAllByText(/Chest/i)[0]);
     expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
+  });
+
+  it('renders Search Area button when no target is selected', () => {
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    expect(screen.getByText(/Search Area/i)).toBeDefined();
+  });
+
+  it('hides Search Area button when a target is selected', () => {
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    expect(screen.queryByText(/Search Area/i)).toBeNull();
+  });
+
+  it('calls search endpoint and shows result message', async () => {
+    apiEndpoints.world.search.mockResolvedValue({
+      data: { messages: ['You found a hidden key!'] }
+    });
+
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+    fireEvent.click(screen.getByText(/Search Area/i));
+
+    await waitFor(() => {
+      expect(apiEndpoints.world.search).toHaveBeenCalled();
+      expect(screen.getByText(/You found a hidden key!/i)).toBeDefined();
+      expect(mockOnRefetch).toHaveBeenCalled();
+    });
+  });
+
+  it('shows nothing-found message when search returns empty messages', async () => {
+    apiEndpoints.world.search.mockResolvedValue({ data: { messages: [] } });
+
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText(/Search Area/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Nothing new found./i)).toBeDefined();
+    });
+  });
+
+  it('shows failure message when search response has no data', async () => {
+    apiEndpoints.world.search.mockResolvedValue({ data: null });
+
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText(/Search Area/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Search failed./i)).toBeDefined();
+    });
   });
 
   it('resets isLocked state when clicking a new target after a locking action', async () => {
