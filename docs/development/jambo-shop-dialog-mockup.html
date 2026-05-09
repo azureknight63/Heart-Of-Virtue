@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jambo Shop Dialog — Mockup</title>
+<style>
+  /* ── Design Tokens (from theme.js) ─────────────────────── */
+  :root {
+    --primary:      #00ff88;
+    --primary-20:   #00ff8833;
+    --primary-10:   #00ff881A;
+    --secondary:    #ffaa00;
+    --secondary-10: #ffaa001A;
+    --danger:       #ff4444;
+    --danger-10:    #ff44441A;
+    --gold:         #ffcc00;
+    --accent:       #00ccff;
+    --bg-main:      #0a0a0a;
+    --bg-panel:     rgba(0,0,0,0.4);
+    --bg-overlay:   rgba(0,0,0,0.75);
+    --text-main:    #e0e0e0;
+    --text-muted:   #888888;
+    --text-bright:  #ffffff;
+    --text-warning: #ffcc88;
+    --text-dim:     #666666;
+    --border-main:  rgba(255,170,0,0.3);
+    --border-light: rgba(255,170,0,0.1);
+    --font:         'Courier New', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-main);
+    font-family: var(--font);
+    color: var(--text-main);
+    padding: 40px 20px;
+  }
+
+  /* ── Page Layout ───────────────────────────────────────── */
+  .page-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-header h1 {
+    color: var(--gold);
+    font-size: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+  }
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .section {
+    margin-bottom: 64px;
+  }
+  .section-label {
+    color: var(--secondary);
+    font-size: 0.7rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 1px solid var(--border-main);
+    padding-bottom: 6px;
+    margin-bottom: 24px;
+  }
+  .annotation {
+    color: var(--secondary);
+    font-size: 0.7rem;
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: rgba(255,170,0,0.05);
+    border-left: 2px solid var(--secondary);
+    border-radius: 0 4px 4px 0;
+    line-height: 1.6;
+  }
+
+  /* ── Fake Game Background ───────────────────────────────── */
+  .game-bg {
+    position: relative;
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(0,255,136,0.04) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(0,204,255,0.03) 0%, transparent 50%),
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(255,255,255,0.01) 2px,
+        rgba(255,255,255,0.01) 4px
+      ),
+      #0a0a0a;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    min-height: 520px;
+  }
+
+  /* ── Modal Shell (mirrors BaseDialog) ──────────────────── */
+  .modal-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(3px);
+    border-radius: 8px;
+  }
+  .modal {
+    width: 90%;
+    max-width: 620px;
+    background: var(--bg-main);
+    border: 3px solid var(--primary);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 0 20px rgba(0,255,136,0.4);
+    font-family: var(--font);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 86vh;
+  }
+
+  /* ── Dialog Header ──────────────────────────────────────── */
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px solid rgba(0,255,136,0.25);
+    padding-bottom: 10px;
+  }
+  .modal-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .modal-subtitle {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    font-style: italic;
+  }
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.3rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    transition: color 0.2s;
+  }
+  .close-btn:hover { color: var(--text-warning); }
+
+  /* ── NPC Strip ──────────────────────────────────────────── */
+  .npc-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: rgba(0,204,255,0.05);
+    border: 1px solid rgba(0,204,255,0.2);
+    border-radius: 6px;
+  }
+  .npc-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2a1a00, #3d2800);
+    border: 2px solid var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(255,204,0,0.3);
+  }
+  .npc-info { flex: 1; }
+  .npc-name {
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: bold;
+  }
+  .npc-tagline {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-style: italic;
+    margin-top: 2px;
+  }
+  .player-gold {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--gold);
+    font-size: 0.85rem;
+    font-weight: bold;
+  }
+
+  /* ── Tab Bar ────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    background: rgba(0,0,0,0.3);
+    padding: 4px;
+    border-radius: 6px;
+    border: 1px solid var(--border-main);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 7px 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-family: var(--font);
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .tab-btn.active {
+    background: rgba(0,255,136,0.12);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+  .tab-btn:not(.active):hover {
+    background: rgba(255,255,255,0.04);
+    border-color: var(--border-main);
+    color: var(--text-main);
+  }
+  .tab-btn.sell-active {
+    background: rgba(255,170,0,0.12);
+    border-color: var(--secondary);
+    color: var(--secondary);
+  }
+
+  /* ── Item List ──────────────────────────────────────────── */
+  .item-list {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-main);
+    border-radius: 8px;
+    overflow: hidden;
+    flex: 1;
+  }
+  .item-list-header {
+    display: grid;
+    grid-template-columns: 2fr 60px 70px 90px;
+    gap: 0;
+    padding: 6px 14px;
+    background: rgba(0,0,0,0.5);
+    border-bottom: 1px solid var(--border-main);
+  }
+  .item-list-header span {
+    color: var(--text-dim);
+    font-size: 0.6rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .item-list-header span:nth-child(2),
+  .item-list-header span:nth-child(3),
+  .item-list-header span:nth-child(4) {
+    text-align: right;
+  }
+
+  .item-row {
+    display: grid;
+    grid-template-columns: 2fr 60px 70px 90px;
+    gap: 0;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,170,0,0.08);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .item-row:last-child { border-bottom: none; }
+  .item-row:hover {
+    background: rgba(0,255,136,0.05);
+  }
+  .item-row.selected {
+    background: rgba(0,255,136,0.1);
+    border-left: 3px solid var(--primary);
+    padding-left: 11px;
+  }
+  .item-row.selected-danger {
+    background: rgba(255,68,68,0.08);
+    border-left: 3px solid var(--danger);
+    padding-left: 11px;
+  }
+  .item-row.sell-selected {
+    background: rgba(255,170,0,0.1);
+    border-left: 3px solid var(--secondary);
+    padding-left: 11px;
+  }
+
+  .item-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-main);
+    font-weight: 500;
+  }
+  .item-icon { font-size: 1rem; line-height: 1; }
+  .item-name .qty-badge {
+    font-size: 0.6rem;
+    background: rgba(255,204,0,0.2);
+    color: var(--gold);
+    border: 1px solid rgba(255,204,0,0.3);
+    padding: 1px 5px;
+    border-radius: 8px;
+    font-weight: bold;
+  }
+
+  .item-weight {
+    text-align: right;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+  .item-type {
+    text-align: right;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .item-price {
+    text-align: right;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: var(--gold);
+  }
+  .item-price .offer-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-weight: normal;
+    display: block;
+    margin-bottom: 1px;
+  }
+  .item-price.cant-afford {
+    color: var(--danger);
+  }
+
+  /* ── Action Row (below selected item) ─────────────────── */
+  .action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(0,255,136,0.05);
+    border-top: 1px solid rgba(0,255,136,0.2);
+    border-radius: 0 0 8px 8px;
+    gap: 12px;
+  }
+  .action-row.sell-action {
+    background: rgba(255,170,0,0.05);
+    border-top-color: rgba(255,170,0,0.2);
+  }
+  .action-row.danger-action {
+    background: rgba(255,68,68,0.05);
+    border-top-color: rgba(255,68,68,0.2);
+  }
+  .action-item-name {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .action-item-name strong {
+    color: var(--text-main);
+    display: block;
+    font-size: 0.82rem;
+  }
+  .btn {
+    padding: 7px 20px;
+    border-radius: 5px;
+    font-family: var(--font);
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-buy {
+    background: rgba(0,255,136,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+  }
+  .btn-buy:hover {
+    background: rgba(0,255,136,0.35);
+    box-shadow: 0 0 10px rgba(0,255,136,0.3);
+  }
+  .btn-sell {
+    background: rgba(255,170,0,0.2);
+    border: 2px solid var(--secondary);
+    color: var(--secondary);
+  }
+  .btn-sell:hover {
+    background: rgba(255,170,0,0.35);
+    box-shadow: 0 0 10px rgba(255,170,0,0.3);
+  }
+  .btn-disabled {
+    background: rgba(255,68,68,0.08);
+    border: 2px solid rgba(255,68,68,0.3);
+    color: rgba(255,68,68,0.5);
+    cursor: not-allowed;
+  }
+  .cant-afford-msg {
+    font-size: 0.65rem;
+    color: var(--danger);
+    margin-top: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ── Quantity Picker ────────────────────────────────────── */
+  .qty-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+  .qty-step-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,255,136,0.4);
+    background: rgba(0,255,136,0.1);
+    color: var(--primary);
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    font-family: var(--font);
+    line-height: 1;
+  }
+  .qty-step-btn:hover {
+    background: rgba(0,255,136,0.25);
+  }
+  .qty-input {
+    width: 38px;
+    text-align: center;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 3px;
+    color: var(--text-bright);
+    font-family: var(--font);
+    font-size: 0.85rem;
+    font-weight: bold;
+    padding: 3px 4px;
+  }
+  .qty-max {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .qty-total {
+    font-size: 0.65rem;
+    color: var(--gold);
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+
+  /* ── Sell Tab Merchant Gold ─────────────────────────────── */
+  .merch-gold-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    background: rgba(255,170,0,0.06);
+    border: 1px solid rgba(255,170,0,0.2);
+    border-radius: 6px;
+    font-size: 0.72rem;
+  }
+  .merch-gold-bar .label { color: var(--text-muted); }
+  .merch-gold-bar .amount { color: var(--gold); font-weight: bold; }
+  .merch-gold-note { color: var(--text-dim); font-size: 0.62rem; }
+
+  /* ── Divider ────────────────────────────────────────────── */
+  .divider {
+    border: none;
+    border-top: 1px dashed rgba(255,255,255,0.07);
+    margin: 4px 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     STANDALONE CLOSE-UPS (outside the game bg)
+  ───────────────────────────────────────────────────────── */
+  .closeup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+  }
+  .closeup-card {
+    background: #111;
+    border: 1px solid var(--border-main);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .closeup-title {
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-light);
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Jambo Shop Dialog — UI Mockup</h1>
+  <p>Heart of Virtue · Retro Terminal Design Language · Branch: claude/jambo-shop-ui-mockup-I2uda</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     STATE 1: BUY TAB — Default Browsing
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">State 1 — Buy Tab: Default Browsing (Antidote selected)</div>
+
+  <div class="game-bg" style="min-height:600px;">
+    <div class="modal-overlay">
+      <div class="modal">
+
+        <!-- Header -->
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">🏪 Jambo Heals U</div>
+            <div class="modal-subtitle">Apothecary &amp; Consumables</div>
+          </div>
+          <button class="close-btn">✕</button>
+        </div>
+
+        <!-- NPC Strip -->
+        <div class="npc-strip">
+          <div class="npc-avatar">🧕</div>
+          <div class="npc-info">
+            <div class="npc-name">Jambo</div>
+            <div class="npc-tagline">"When you blue, Jambo Heals U!"</div>
+          </div>
+          <div class="player-gold">💰 42</div>
+        </div>
+
+        <!-- Tab Bar -->
+        <div class="tab-bar">
+          <button class="tab-btn active">⬇ Buy</button>
+          <button class="tab-btn">⬆ Sell</button>
+        </div>
+
+        <!-- Item List -->
+        <div class="item-list">
+          <div class="item-list-header">
+            <span>Item</span>
+            <span>Type</span>
+            <span>Weight</span>
+            <span>Price</span>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🧪</span> Restorative <span class="qty-badge">×4</span></div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price">30 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💧</span> Draught</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.1 kg</div>
+            <div class="item-price">15 💰</div>
+          </div>
+
+          <div class="item-row selected">
+            <div class="item-name"><span class="item-icon">💊</span> Antidote</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price">20 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🌿</span> Salve</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.3 kg</div>
+            <div class="item-price">45 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💉</span> Elixir</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.4 kg</div>
+            <div class="item-price">80 💰</div>
+          </div>
+
+          <!-- Action Row (expands when row is selected) -->
+          <div class="action-row">
+            <div class="action-item-name">
+              Selected:
+              <strong>💊 Antidote</strong>
+            </div>
+            <button class="btn btn-buy">Buy · 20 💰</button>
+          </div>
+        </div>
+
+      </div><!-- /modal -->
+    </div><!-- /overlay -->
+  </div><!-- /game-bg -->
+
+  <div class="annotation">
+    <strong>Layout:</strong> Modal mirrors BaseDialog — fixed overlay, blur(3px), #0a0a0a bg, 3px solid #00ff88 border, glow.<br>
+    <strong>NPC strip:</strong> Jambo's name + tagline + player gold pinned to top-right. Cyan accent border (items.entities.npc).<br>
+    <strong>Tab bar:</strong> Horizontal (Buy / Sell). Active tab: lime bg + border. Inactive: muted.<br>
+    <strong>Item rows:</strong> Click any row → highlights with lime left-border (3px) + tinted bg. Action row expands at list bottom.<br>
+    <strong>Buy button:</strong> Shows selected item name + price inline. Lime border/text. Hover: brighter + glow.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     STATE 2: BUY TAB — Insufficient Gold
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">State 2 — Buy Tab: Insufficient Gold (Elixir selected, costs 80 💰, player has 42 💰)</div>
+
+  <div class="game-bg" style="min-height:600px;">
+    <div class="modal-overlay">
+      <div class="modal">
+
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">🏪 Jambo Heals U</div>
+            <div class="modal-subtitle">Apothecary &amp; Consumables</div>
+          </div>
+          <button class="close-btn">✕</button>
+        </div>
+
+        <div class="npc-strip">
+          <div class="npc-avatar">🧕</div>
+          <div class="npc-info">
+            <div class="npc-name">Jambo</div>
+            <div class="npc-tagline">"When you blue, Jambo Heals U!"</div>
+          </div>
+          <div class="player-gold" style="color: var(--danger);">💰 42</div>
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn active">⬇ Buy</button>
+          <button class="tab-btn">⬆ Sell</button>
+        </div>
+
+        <div class="item-list">
+          <div class="item-list-header">
+            <span>Item</span>
+            <span>Type</span>
+            <span>Weight</span>
+            <span>Price</span>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🧪</span> Restorative <span class="qty-badge">×4</span></div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price">30 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💧</span> Draught</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.1 kg</div>
+            <div class="item-price">15 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💊</span> Antidote</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price">20 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🌿</span> Salve</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.3 kg</div>
+            <div class="item-price">45 💰</div>
+          </div>
+
+          <!-- Selected but can't afford -->
+          <div class="item-row selected-danger">
+            <div class="item-name"><span class="item-icon">💉</span> Elixir</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.4 kg</div>
+            <div class="item-price cant-afford">80 💰</div>
+          </div>
+
+          <!-- Action row — disabled state -->
+          <div class="action-row danger-action">
+            <div>
+              <div class="action-item-name">
+                Selected:
+                <strong>💉 Elixir</strong>
+              </div>
+              <div class="cant-afford-msg">⚠ Not enough gold (need 38 more)</div>
+            </div>
+            <button class="btn btn-disabled" disabled>Buy · 80 💰</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>Trigger:</strong> Player gold (42) &lt; item price (80).<br>
+    <strong>Visual signals:</strong> (1) Selected row gets danger red left-border instead of lime. (2) Price text turns red. (3) Player gold display turns red. (4) Action row background is red-tinted. (5) Buy button is disabled: grey border, muted text, cursor:not-allowed.<br>
+    <strong>Message:</strong> "Not enough gold (need N more)" — N = price − player_gold. Orange warning icon. No dismiss needed — automatically clears when selection changes.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     STATE 3: BUY TAB — Quantity Picker
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">State 3 — Buy Tab: Quantity Picker (Restorative ×4 in stock, buying 2)</div>
+
+  <div class="game-bg" style="min-height:600px;">
+    <div class="modal-overlay">
+      <div class="modal">
+
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">🏪 Jambo Heals U</div>
+            <div class="modal-subtitle">Apothecary &amp; Consumables</div>
+          </div>
+          <button class="close-btn">✕</button>
+        </div>
+
+        <div class="npc-strip">
+          <div class="npc-avatar">🧕</div>
+          <div class="npc-info">
+            <div class="npc-name">Jambo</div>
+            <div class="npc-tagline">"When you blue, Jambo Heals U!"</div>
+          </div>
+          <div class="player-gold">💰 42</div>
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab-btn active">⬇ Buy</button>
+          <button class="tab-btn">⬆ Sell</button>
+        </div>
+
+        <div class="item-list">
+          <div class="item-list-header">
+            <span>Item</span>
+            <span>Type</span>
+            <span>Weight</span>
+            <span>Price ea.</span>
+          </div>
+
+          <!-- Selected stackable item -->
+          <div class="item-row selected">
+            <div class="item-name"><span class="item-icon">🧪</span> Restorative <span class="qty-badge">×4</span></div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price">30 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💧</span> Draught</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.1 kg</div>
+            <div class="item-price">15 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💊</span> Antidote</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price">20 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🌿</span> Salve</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.3 kg</div>
+            <div class="item-price">45 💰</div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">💉</span> Elixir</div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.4 kg</div>
+            <div class="item-price">80 💰</div>
+          </div>
+
+          <!-- Quantity Picker Action Row -->
+          <div class="action-row">
+            <div class="action-item-name">
+              🧪 Restorative
+              <div style="margin-top:4px; display:flex; align-items:center; gap:6px;">
+                <div class="qty-picker">
+                  <button class="qty-step-btn">−</button>
+                  <input class="qty-input" type="number" value="2" min="1" max="4" readonly>
+                  <button class="qty-step-btn">+</button>
+                  <span class="qty-max">/ 4</span>
+                </div>
+                <span class="qty-total">= 60 💰</span>
+              </div>
+            </div>
+            <button class="btn btn-buy">Buy 2 · 60 💰</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>Trigger:</strong> Player clicks a stackable item row (item.quantity &gt; 1 in merchant stock).<br>
+    <strong>Quantity picker:</strong> Appears inline in the action row. − button (min 1) / + button (max = stock count). Input field accepts direct edit. Live total = qty × price_ea shown beside picker.<br>
+    <strong>Buy button:</strong> Updates label live: "Buy N · total_cost 💰". Checks affordability at each qty change — disables if total exceeds player gold.<br>
+    <strong>Single items</strong> (qty = 1) skip the picker and show the standard Buy button directly.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     STATE 4: SELL TAB — Player Items
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">State 4 — Sell Tab: Player Inventory with 50% Offer Prices (Iron Dagger selected)</div>
+
+  <div class="game-bg" style="min-height:640px;">
+    <div class="modal-overlay">
+      <div class="modal">
+
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">🏪 Jambo Heals U</div>
+            <div class="modal-subtitle">Apothecary &amp; Consumables</div>
+          </div>
+          <button class="close-btn">✕</button>
+        </div>
+
+        <!-- NPC strip w/ Jambo's gold -->
+        <div class="npc-strip" style="border-color: rgba(255,170,0,0.3); background: rgba(255,170,0,0.05);">
+          <div class="npc-avatar">🧕</div>
+          <div class="npc-info">
+            <div class="npc-name" style="color: var(--secondary);">Jambo</div>
+            <div class="npc-tagline">Sell your goods — Jambo pays fair!</div>
+          </div>
+          <div class="player-gold">💰 42</div>
+        </div>
+
+        <!-- Tab Bar (Sell active) -->
+        <div class="tab-bar">
+          <button class="tab-btn">⬇ Buy</button>
+          <button class="tab-btn sell-active">⬆ Sell</button>
+        </div>
+
+        <!-- Merchant gold bar -->
+        <div class="merch-gold-bar">
+          <span class="label">Jambo's gold:</span>
+          <span class="amount">800 💰</span>
+          <span class="merch-gold-note">Max single purchase Jambo can make</span>
+        </div>
+
+        <!-- Item List (player's sellable items) -->
+        <div class="item-list">
+          <div class="item-list-header" style="grid-template-columns: 2fr 60px 70px 90px;">
+            <span>Your Item</span>
+            <span>Type</span>
+            <span>Weight</span>
+            <span>Offer</span>
+          </div>
+
+          <!-- Selected item -->
+          <div class="item-row sell-selected">
+            <div class="item-name"><span class="item-icon">🗡️</span> Iron Dagger</div>
+            <div class="item-type">Dagger</div>
+            <div class="item-weight">0.5 kg</div>
+            <div class="item-price" style="color: var(--secondary);">
+              <span class="offer-label">Offer:</span>
+              12 💰
+            </div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🧪</span> Restorative <span class="qty-badge">×2</span></div>
+            <div class="item-type">Potion</div>
+            <div class="item-weight">0.2 kg</div>
+            <div class="item-price" style="color: var(--secondary);">
+              <span class="offer-label">Offer ea.:</span>
+              15 💰
+            </div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🥩</span> Ration</div>
+            <div class="item-type">Food</div>
+            <div class="item-weight">0.1 kg</div>
+            <div class="item-price" style="color: var(--secondary);">
+              <span class="offer-label">Offer:</span>
+              3 💰
+            </div>
+          </div>
+
+          <div class="item-row">
+            <div class="item-name"><span class="item-icon">🍵</span> Bitter Leaf Tea</div>
+            <div class="item-type">Tonic</div>
+            <div class="item-weight">0.15 kg</div>
+            <div class="item-price" style="color: var(--secondary);">
+              <span class="offer-label">Offer:</span>
+              8 💰
+            </div>
+          </div>
+
+          <!-- Action row (sell) -->
+          <div class="action-row sell-action">
+            <div>
+              <div class="action-item-name">
+                Selling:
+                <strong>🗡️ Iron Dagger</strong>
+              </div>
+              <div style="font-size:0.62rem; color:var(--text-dim); margin-top:2px;">
+                Value 25 💰 → Jambo offers 50% = 12 💰
+              </div>
+            </div>
+            <button class="btn btn-sell">Sell · +12 💰</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>Tab switch:</strong> Sell tab uses orange accent (--secondary) instead of lime throughout — tab border, NPC strip border, selected row border, action row tint, sell button.<br>
+    <strong>Offer pricing:</strong> Each row shows "Offer:" sub-label + 50% of item value (base_sell_modifier = 0.5). Full value not displayed — only the offer.<br>
+    <strong>Merchant gold bar:</strong> Shows Jambo's current gold. If player tries to sell an item worth more than Jambo's gold, sell button disables with "Jambo can't afford this" message.<br>
+    <strong>Sell button:</strong> "+12 💰" with plus sign reinforces that player receives gold. Orange border/text to match sell context.<br>
+    <strong>Non-sellable items</strong> (quest items, equipped items) are greyed out with a 🔒 badge and non-clickable.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     CLOSE-UP: Component Details
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">Component Close-ups &amp; Dimensions</div>
+
+  <div class="closeup-grid">
+
+    <!-- Item row states -->
+    <div class="closeup-card">
+      <div class="closeup-title">Item Row — All States</div>
+      <!-- Default -->
+      <div class="item-row" style="border-radius:6px 6px 0 0;">
+        <div class="item-name"><span class="item-icon">💧</span> Draught</div>
+        <div class="item-type">Potion</div>
+        <div class="item-weight">0.1 kg</div>
+        <div class="item-price">15 💰</div>
+      </div>
+      <!-- Hover (simulated) -->
+      <div class="item-row" style="background:rgba(0,255,136,0.05);">
+        <div class="item-name"><span class="item-icon">💊</span> Antidote</div>
+        <div class="item-type">Potion</div>
+        <div class="item-weight">0.2 kg</div>
+        <div class="item-price">20 💰</div>
+      </div>
+      <!-- Selected buy -->
+      <div class="item-row selected">
+        <div class="item-name"><span class="item-icon">🌿</span> Salve</div>
+        <div class="item-type">Potion</div>
+        <div class="item-weight">0.3 kg</div>
+        <div class="item-price">45 💰</div>
+      </div>
+      <!-- Selected + can't afford -->
+      <div class="item-row selected-danger">
+        <div class="item-name"><span class="item-icon">💉</span> Elixir</div>
+        <div class="item-type">Potion</div>
+        <div class="item-weight">0.4 kg</div>
+        <div class="item-price cant-afford">80 💰</div>
+      </div>
+      <!-- Sell selected -->
+      <div class="item-row sell-selected" style="border-radius:0 0 6px 6px; border-bottom:none;">
+        <div class="item-name"><span class="item-icon">🗡️</span> Iron Dagger</div>
+        <div class="item-type">Dagger</div>
+        <div class="item-weight">0.5 kg</div>
+        <div class="item-price" style="color:var(--secondary);">12 💰</div>
+      </div>
+      <div style="margin-top:8px; font-size:0.6rem; color:var(--text-dim); line-height:1.5;">
+        Row height: ~44px · Left border: 3px · Grid: 2fr 60px 70px 90px
+      </div>
+    </div>
+
+    <!-- Button states -->
+    <div class="closeup-card">
+      <div class="closeup-title">Action Buttons — All States</div>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:4px;">
+        <button class="btn btn-buy">Buy · 20 💰</button>
+        <button class="btn btn-buy">Buy 2 · 60 💰</button>
+        <button class="btn btn-disabled" disabled>Buy · 80 💰</button>
+        <button class="btn btn-sell">Sell · +12 💰</button>
+        <div style="font-size:0.6rem; color:var(--text-dim); margin-top:4px; line-height:1.5;">
+          Buy: #00ff88 border/text, rgba(0,255,136,0.2) bg<br>
+          Sell: #ffaa00 border/text, rgba(255,170,0,0.2) bg<br>
+          Disabled: rgba(255,68,68,0.3) border, muted red text
+        </div>
+      </div>
+    </div>
+
+    <!-- Qty picker -->
+    <div class="closeup-card">
+      <div class="closeup-title">Quantity Picker — Close-up</div>
+      <div style="padding: 10px 0;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div class="qty-picker">
+            <button class="qty-step-btn">−</button>
+            <input class="qty-input" type="number" value="2" readonly>
+            <button class="qty-step-btn">+</button>
+            <span class="qty-max">/ 4</span>
+          </div>
+          <span class="qty-total">= 60 💰</span>
+        </div>
+      </div>
+      <div style="font-size:0.6rem; color:var(--text-dim); margin-top:8px; line-height:1.6;">
+        Appears in action row when item.quantity &gt; 1<br>
+        Buttons: 26×26px, lime border, rgba(0,255,136,0.1) bg<br>
+        Input: 38px wide, direct keyboard edit supported<br>
+        Max: merchant stock qty · Min: 1<br>
+        Total updates live on every change
+      </div>
+    </div>
+
+    <!-- Jambo gold bar -->
+    <div class="closeup-card">
+      <div class="closeup-title">Merchant Gold Bar (Sell Tab only)</div>
+      <div style="margin-top:8px;">
+        <div class="merch-gold-bar">
+          <span class="label">Jambo's gold:</span>
+          <span class="amount">800 💰</span>
+          <span class="merch-gold-note">Max he can pay</span>
+        </div>
+        <!-- Low gold variant -->
+        <div class="merch-gold-bar" style="margin-top:8px; border-color:rgba(255,68,68,0.3); background:rgba(255,68,68,0.05);">
+          <span class="label">Jambo's gold:</span>
+          <span class="amount" style="color:var(--danger);">8 💰</span>
+          <span class="merch-gold-note" style="color:rgba(255,68,68,0.6);">Jambo is running low</span>
+        </div>
+      </div>
+      <div style="font-size:0.6rem; color:var(--text-dim); margin-top:10px; line-height:1.6;">
+        Normal: orange accent border<br>
+        Low (&lt; 50gp): switches to danger red accent<br>
+        Jambo starts with 800 gold (from npc config)
+      </div>
+    </div>
+
+  </div><!-- /closeup-grid -->
+
+  <div class="annotation" style="margin-top:16px;">
+    <strong>All close-ups above</strong> are lifted directly from the states shown above — same CSS, no modifications. Use these as the reference when implementing React components.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Color / Token Reference
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">Shop-Specific Color Mapping</div>
+  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:12px;">
+    <div class="closeup-card" style="display:flex; align-items:center; gap:12px;">
+      <div style="width:32px;height:32px;border-radius:4px;background:#00ff88;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:0.75rem;font-weight:bold;">#00ff88 — Primary</div>
+        <div style="font-size:0.6rem;color:var(--text-muted);">Buy tab, selected row, buy button</div>
+      </div>
+    </div>
+    <div class="closeup-card" style="display:flex; align-items:center; gap:12px;">
+      <div style="width:32px;height:32px;border-radius:4px;background:#ffaa00;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:0.75rem;font-weight:bold;">#ffaa00 — Secondary</div>
+        <div style="font-size:0.6rem;color:var(--text-muted);">Sell tab, offer prices, sell button</div>
+      </div>
+    </div>
+    <div class="closeup-card" style="display:flex; align-items:center; gap:12px;">
+      <div style="width:32px;height:32px;border-radius:4px;background:#ffcc00;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:0.75rem;font-weight:bold;">#ffcc00 — Gold</div>
+        <div style="font-size:0.6rem;color:var(--text-muted);">Player gold, item prices, qty totals</div>
+      </div>
+    </div>
+    <div class="closeup-card" style="display:flex; align-items:center; gap:12px;">
+      <div style="width:32px;height:32px;border-radius:4px;background:#ff4444;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:0.75rem;font-weight:bold;">#ff4444 — Danger</div>
+        <div style="font-size:0.6rem;color:var(--text-muted);">Can't afford state, disabled button</div>
+      </div>
+    </div>
+    <div class="closeup-card" style="display:flex; align-items:center; gap:12px;">
+      <div style="width:32px;height:32px;border-radius:4px;background:#00ccff;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:0.75rem;font-weight:bold;">#00ccff — Accent</div>
+        <div style="font-size:0.6rem;color:var(--text-muted);">NPC name, NPC strip border</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
