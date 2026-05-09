@@ -835,7 +835,18 @@ class Passageway(Object):
             for event in self.events_before:
                 event.process()
         if self.teleport_map and self.teleport_tile:
-            print(f"Jean steps through the {self.name.lower()}...")
+            # Build a natural article phrase.
+            # Possessives (Jambo's Tent) are proper nouns — no article.
+            # Names already starting with "The" strip the duplicate and preserve rest.
+            # Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
+            _n = self.name
+            if "'" in _n:
+                _ref = _n
+            elif _n.lower().startswith("the "):
+                _ref = f"the {_n[4:]}"
+            else:
+                _ref = f"the {_n.lower()}"
+            print(f"Jean steps through {_ref}...")
             time.sleep(0.5)
             player.teleport(self.teleport_map, self.teleport_tile)
             if self.events_after:
