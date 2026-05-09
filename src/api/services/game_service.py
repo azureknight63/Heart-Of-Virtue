@@ -1317,6 +1317,11 @@ class GameService:
                 "message": f"Cannot {action} this target.",
             }
 
+        # Record pre-action location to detect passageway teleportation
+        _pre_map_name = player.map.get("name") if player.map else None
+        _pre_x = player.location_x
+        _pre_y = player.location_y
+
         # Execute action and capture output
         f = io.StringIO()
         events_triggered = []
@@ -1462,6 +1467,16 @@ class GameService:
             r"\n\s*\n", "\n", clean_output
         )  # Replace multiple newlines with single
         clean_output = clean_output.strip()
+
+        # If a teleport occurred, strip the destination tile's description from the
+        # interaction output — the frontend fetches the new room via /world/current-room.
+        _post_map_name = player.map.get("name") if player.map else None
+        if _post_map_name != _pre_map_name or player.location_x != _pre_x or player.location_y != _pre_y:
+            dest_tile = player.universe.get_tile(player.location_x, player.location_y)
+            if dest_tile and hasattr(dest_tile, "description"):
+                dest_desc = ansi_escape.sub("", dest_tile.description).strip()
+                if dest_desc:
+                    clean_output = clean_output.replace(dest_desc, "").strip()
 
         # Strip internal LLM diagnostic lines that must never reach the UI.
         pre_filter_output = clean_output
