@@ -3311,7 +3311,7 @@ class Book(Special):
                 self.event = None
             functions.await_input()
 
-    def use(self, player=None) -> None:
+    def use(self, player: "Player", user=None) -> None:
         """API-friendly reading method: prints the full text without interactive pagination.
         This is called by the /inventory/use endpoint so text can be captured via redirect_stdout.
         """
