@@ -58,4 +58,15 @@ describe('CollapsibleRoomDescription', () => {
     render(<CollapsibleRoomDescription location={{ description: 'Some place.' }} defaultOpen={true} />)
     expect(screen.getByText('Current Location')).toBeDefined()
   })
+
+  it('scrolls description to top when location changes', () => {
+    const { rerender } = render(<CollapsibleRoomDescription location={{ id: 'loc1', name: 'Grotto 1', description: 'First location' }} defaultOpen={true} />)
+    const scrollContainer = screen.getByTestId('room-contents').parentElement
+    scrollContainer.scrollTop = 100
+    expect(scrollContainer.scrollTop).toBe(100)
+
+    rerender(<CollapsibleRoomDescription location={{ id: 'loc2', name: 'Grotto 2', description: 'Second location' }} defaultOpen={true} />)
+
+    expect(scrollContainer.scrollTop).toBe(0)
+  })
 })

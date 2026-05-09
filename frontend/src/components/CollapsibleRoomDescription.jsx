@@ -1,9 +1,16 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import RoomContents from './RoomContents'
 import { colors, fonts, accessibility } from '../styles/theme'
 
 export default function CollapsibleRoomDescription({ location, onInteract, defaultOpen = true }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const scrollContainerRef = useRef(null)
+
+  useEffect(() => {
+    if (isOpen && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0
+    }
+  }, [location, isOpen])
 
   if (!location) return null
 
@@ -46,7 +53,7 @@ export default function CollapsibleRoomDescription({ location, onInteract, defau
       </button>
 
       {isOpen && (
-        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+        <div ref={scrollContainerRef} style={{ maxHeight: '200px', overflowY: 'auto' }}>
           <RoomContents location={location} onInteract={onInteract} />
         </div>
       )}
