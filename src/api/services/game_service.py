@@ -4821,6 +4821,16 @@ class GameService:
         if merchant.shop is None:
             merchant.initialize_shop()
 
+        # Stock the merchant on first API access — update_goods() is normally
+        # triggered by game_tick events (every 1000 ticks) but the API skips
+        # the terminal game loop entirely.
+        non_gold = [
+            item for item in getattr(merchant, "inventory", [])
+            if getattr(item, "name", None) != "Gold"
+        ]
+        if not non_gold and hasattr(merchant, "update_goods"):
+            merchant.update_goods()
+
         current_tick = self._game_tick(player)
         shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
         sell_inventory = ShopSerializer.serialize_player_sellable(
