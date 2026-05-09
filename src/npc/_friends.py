@@ -523,7 +523,7 @@ class GronditeConclaveElder(Friend):
             )
             time.sleep(1.5)
             print(
-                "He studies him. Then he reaches into the folds of his stone-mantle and "
+                "He studies Jean. Then he reaches into the folds of his stone-mantle and "
                 "produces something: a small disc, cracked cleanly in half, one piece "
                 "missing. He holds it out toward Jean."
             )
@@ -535,27 +535,63 @@ class GronditeConclaveElder(Friend):
             time.sleep(1)
             print(
                 "Jean doesn't know what he is asking. But the broken disc is clearly "
-                "meant to show him."
+                "meant to show him — and the Elder's eyes, fixed on Jean's face, are "
+                "reading something there. Jean's hands. His posture. The weight in him "
+                "that he hasn't put down."
+            )
+            time.sleep(1.5)
+            print(
+                "Whatever he finds, it is not the answer he was hoping for. He doesn't "
+                "react to that — his expression doesn't change — but the disc lowers "
+                "slightly. He makes one short sound: not a dismissal. More like a comma."
+            )
+            time.sleep(1.5)
+            print(
+                "He holds Jean's gaze a moment longer than comfort requires. Then, "
+                "carefully, he folds the broken disc back into his mantle. He turns "
+                "to face the plinth. His back is not a rejection; it is simply where "
+                "he was before Jean arrived."
             )
             time.sleep(1)
             print(
-                "\n[A side quest would begin here — the Elder is looking for a missing "
-                "clan token. This quest is not yet available.]"
-            )
-            time.sleep(0.5)
-            print(
-                "\nThe Elder lowers the broken disc. He makes one short sound — patient, "
-                "not disappointed — and turns back to the plinth."
+                "Jean has the distinct sense that the question is still open. That the "
+                "Elder expects him to come back."
             )
             universe_story = getattr(getattr(player, "universe", None), "story", None)
             if universe_story is not None:
                 universe_story[self._INTRO_RUN_KEY] = "1"
+                universe_story["conclave_elder_disc_acknowledged"] = "1"
         else:
             lines = [
-                "The Elder turns and regards Jean for a moment. Then he produces the broken "
-                "disc again and holds it in the space between them.",
-                "The Elder makes the same rising sound as before. The question hasn't changed.",
-                "The Elder looks at Jean. Looks at the plinth. Looks at Jean again.",
+                (
+                    "The Elder turns when Jean enters. He produces the broken disc without "
+                    "preamble and holds it in the space between them. The question hasn't "
+                    "changed."
+                ),
+                (
+                    "The Elder regards Jean for a moment — unhurried, attentive. Then he "
+                    "reaches into his mantle and shows Jean the disc again. He makes the "
+                    "same rising sound as before."
+                ),
+                (
+                    "The Elder doesn't speak. He simply holds up the broken disc. His eyes "
+                    "find Jean's face with the patience of someone who has been waiting far "
+                    "longer than this visit."
+                ),
+                (
+                    "He produces the disc. He looks at Jean. He looks at the plinth. He "
+                    "looks at Jean again. The disc remains extended, one half of something "
+                    "that should be whole."
+                ),
+                (
+                    "The Elder turns as Jean approaches. He makes a low sound — not the "
+                    "question again, not exactly, but a variant of it. The disc is already "
+                    "in his hand."
+                ),
+                (
+                    "He holds up the broken disc. Jean still doesn't know where the missing "
+                    "piece is. The Elder still believes Jean is the one to find it."
+                ),
             ]
             print(random.choice(lines))
 
