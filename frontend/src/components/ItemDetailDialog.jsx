@@ -111,39 +111,39 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     }
   }
 
-  const handleUse = async () => {
-    setIsLoading(true)
-    try {
-      const response = await apiClient.post('/inventory/use', {
-        item_id: item.id,
-      })
-      const data = response.data || response
-      if (data.success) {
-        setActionMessage('✓ Item used!')
-        // Show success dialog with the actual message from the backend
-        setActionResult({
-          message: <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>{data.message}</div>
+  const makeItemActionHandler = (actionName, successMsg, errorMsg, shouldRemoveItem = false) => {
+    return async () => {
+      setIsLoading(true)
+      try {
+        const response = await apiClient.post('/inventory/use', {
+          item_id: item.id,
         })
+        const data = response.data || response
+        if (data.success) {
+          setActionMessage(`✓ ${successMsg}`)
+          setActionResult({
+            message: <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>{data.message}</div>
+          })
 
-        // For consumables, remove from inventory
-        if (onItemRemoved) onItemRemoved(item.id)
-
-        // Refresh player state to show healing/buffs
-        if (onRefetch) await onRefetch()
-      } else {
-        setActionMessage('✗ ' + (data.error || 'Cannot use this item'))
+          if (shouldRemoveItem && onItemRemoved) onItemRemoved(item.id)
+          if (onRefetch) await onRefetch()
+        } else {
+          setActionMessage('✗ ' + (data.error || errorMsg))
+        }
+      } catch (err) {
+        if (err.response?.data?.error) {
+          setActionMessage(err.response.data.error)
+        } else {
+          setActionMessage('✗ Error: ' + err.message)
+        }
+      } finally {
+        setIsLoading(false)
       }
-    } catch (err) {
-      // For server responses with error messages (400s), show without ✗ prefix
-      if (err.response?.data?.error) {
-        setActionMessage(err.response.data.error)
-      } else {
-        setActionMessage('✗ Error: ' + err.message)
-      }
-    } finally {
-      setIsLoading(false)
     }
   }
+
+  const handleUse = makeItemActionHandler('use', 'Item used!', 'Cannot use this item', true)
+  const handleRead = makeItemActionHandler('read', 'Book opened!', 'Cannot read this item', false)
 
   const handleDrop = async () => {
     setIsLoading(true)
@@ -524,6 +524,39 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               </button>
             )}
           </>
+        )}
+
+        {item.can_read && !combatMode && (
+          <button
+            onClick={handleRead}
+            disabled={isLoading}
+            style={{
+              flex: 1,
+              padding: '10px',
+              backgroundColor: '#003366',
+              color: '#00dddd',
+              border: '1px solid #00dddd',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '15px',
+              fontFamily: 'monospace',
+              fontWeight: 'bold',
+              transition: 'all 0.2s',
+              opacity: isLoading ? 0.6 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading) {
+                e.target.style.backgroundColor = '#004488'
+                e.target.style.boxShadow = '0 0 8px rgba(0, 221, 221, 0.6)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#003366'
+              e.target.style.boxShadow = 'none'
+            }}
+          >
+            📖 Read
+          </button>
         )}
 
         {item.can_drop && !combatMode && (
