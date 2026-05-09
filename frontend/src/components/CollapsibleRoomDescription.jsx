@@ -7,10 +7,10 @@ export default function CollapsibleRoomDescription({ location, onInteract, defau
   const scrollContainerRef = useRef(null)
 
   useEffect(() => {
-    if (scrollContainerRef.current) {
+    if (isOpen && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0
     }
-  }, [location?.id])
+  }, [location, isOpen])
 
   if (!location) return null
 
