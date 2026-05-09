@@ -14,7 +14,7 @@ class GorranGestureEvent(Event):
     Gorran pauses to place his palm against the sealed gate — a moment of farewell,
     or acknowledgment, or something Jean cannot name.
     This is Gorran's first step into the world beyond the stone city.
-    Event fires once on first entry to (0,0) when arriving from the west (Grondia).
+    Event fires once on first entry to (0,2) when arriving from the west (Grondia).
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name="GorranGesture"):
