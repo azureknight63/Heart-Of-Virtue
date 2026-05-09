@@ -1495,8 +1495,6 @@
           "keywords": [
             "enter",
             "go",
-            "guesthold",
-            "inn",
             "inside"
           ],
           "events": [],
@@ -1995,11 +1993,7 @@
           "discovery_message": "a wide doorway leading into the Fabricarium Forge!",
           "announce": "The entrance to the Fabricarium Forge is here.",
           "keywords": [
-            "enter",
-            "forge",
-            "workshop",
-            "go",
-            "inside"
+            "enter"
           ],
           "events": [],
           "tile": null,
@@ -2622,11 +2616,7 @@
           "discovery_message": "a descending passage!",
           "announce": "A descending passage leads southwest toward the Grondelith Mineral Pools.",
           "keywords": [
-            "enter",
-            "go",
-            "descend",
-            "pools",
-            "passage"
+            "enter"
           ],
           "events": [],
           "tile": null,
