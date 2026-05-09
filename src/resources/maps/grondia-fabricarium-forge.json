@@ -62,10 +62,10 @@
           "discovery_message": "the doorway leading back to the workshop gallery!",
           "announce": "The forge entrance leads back to the workshop gallery.",
           "keywords": [
-            "leave",
-            "exit",
+            "enter",
             "go",
-            "outside"
+            "leave",
+            "exit"
           ],
           "events": [],
           "tile": null,
@@ -138,12 +138,12 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
@@ -199,7 +199,7 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             }

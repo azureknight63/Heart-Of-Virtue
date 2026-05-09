@@ -63,11 +63,10 @@
           "discovery_message": "the archive door leading back to the Conclave annex!",
           "announce": "The archive door leads back to the Conclave annex.",
           "keywords": [
-            "leave",
-            "exit",
+            "enter",
             "go",
-            "outside",
-            "door"
+            "leave",
+            "exit"
           ],
           "events": [],
           "tile": null,

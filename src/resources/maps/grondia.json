@@ -135,7 +135,7 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
@@ -377,7 +377,7 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
@@ -420,10 +420,9 @@
           "announce": "A low stone archway into the Conclave Archive is here.",
           "keywords": [
             "enter",
-            "archive",
             "go",
-            "door",
-            "inside"
+            "leave",
+            "exit"
           ],
           "events": [],
           "tile": null,
@@ -844,7 +843,7 @@
               "props": {}
             },
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             }
@@ -1663,7 +1662,7 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
@@ -1876,10 +1875,9 @@
           "announce": "A narrow dwelling door stands ajar in the lane wall here.",
           "keywords": [
             "enter",
-            "door",
-            "dwelling",
             "go",
-            "inside"
+            "leave",
+            "exit"
           ],
           "events": [],
           "tile": null,
@@ -2236,7 +2234,7 @@
               }
             },
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             }
@@ -2299,7 +2297,7 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
@@ -2567,7 +2565,7 @@
               "props": {}
             },
             {
-              "__class__": "MineralFragment",
+              "__class__": "MineralPowder",
               "__module__": "items",
               "props": {}
             },
