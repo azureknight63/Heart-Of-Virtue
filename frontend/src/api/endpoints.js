@@ -107,6 +107,18 @@ export const feedback = {
     apiClient.post('/feedback/issue', { type, title, fields, anonymous }),
 }
 
+// Shop endpoints
+export const shop = {
+  getState: (npcId) =>
+    apiClient.get('/shop/state', { params: { npc_id: npcId } }),
+  buy: (npcId, itemId, quantity) =>
+    apiClient.post('/shop/buy', { npc_id: npcId, item_id: itemId, quantity }),
+  sell: (npcId, itemId, quantity) =>
+    apiClient.post('/shop/sell', { npc_id: npcId, item_id: itemId, quantity }),
+  buyback: (npcId, itemId) =>
+    apiClient.post('/shop/buyback', { npc_id: npcId, item_id: itemId }),
+}
+
 export default {
   auth,
   player,
@@ -116,4 +128,5 @@ export default {
   equipment,
   saves,
   feedback,
+  shop,
 }

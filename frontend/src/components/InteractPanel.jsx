@@ -13,12 +13,15 @@ import { renderTextWithLinks, getEntityColor } from '../utils/entityUtils'
  * InteractPanel - Dedicated panel for interacting with objects, NPCs, and items
  * Provides target selection, detailed item/object info, and action execution
  */
+const SHOP_KEYWORDS = new Set(['buy', 'sell', 'trade'])
+
 function InteractPanel({
     location,
     onInteractionComplete,
     onEventsTriggered,
     onRefetch,
     onClose,
+    onOpenShop,
     initialTarget = null,
     history = [],
     onTypingChange
@@ -212,6 +215,13 @@ function InteractPanel({
         // Handle take_all specially for ground items
         if (action === 'take_all_ground') {
             await handleTakeAll()
+            return
+        }
+
+        // Route shop keywords to ShopDialog instead of world.interact
+        if (SHOP_KEYWORDS.has(action.toLowerCase()) && onOpenShop && selectedTarget) {
+            const initialTab = action.toLowerCase() === 'sell' ? 'sell' : 'buy'
+            onOpenShop(selectedTarget.id, selectedTarget.name, initialTab)
             return
         }
 

@@ -4788,3 +4788,352 @@ class GameService:
 
         player.combat_drops = []
         return {"success": True, "collected": collected, "skipped": skipped}
+
+    # ── Shop ──────────────────────────────────────────────────────────────────
+
+    def _find_merchant(self, player: Any, npc_id: str):
+        """Return the merchant NPC on the player's current tile, or None."""
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        for npc in getattr(tile, "npcs_here", []):
+            if str(id(npc)) == npc_id and hasattr(npc, "shop"):
+                return npc
+        return None
+
+    def get_shop_state(self, player: Any, npc_id: str) -> Dict[str, Any]:
+        """Return the full shop state for a merchant NPC.
+
+        Also serializes the player's sellable inventory so the frontend has
+        everything it needs in one request.
+
+        Args:
+            player: The Player instance.
+            npc_id: str(id(npc)) of the target merchant.
+
+        Returns:
+            Dict with success, shop_state, and sell_inventory.
+        """
+        from src.api.serializers.shop_serializer import ShopSerializer
+
+        merchant = self._find_merchant(player, npc_id)
+        if merchant is None:
+            return {"success": False, "error": "Merchant not found at this location"}
+
+        if merchant.shop is None:
+            merchant.initialize_shop()
+
+        current_tick = self._game_tick(player)
+        shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
+        sell_inventory = ShopSerializer.serialize_player_sellable(
+            player, shop_state["sell_modifier"]
+        )
+
+        return {
+            "success": True,
+            "shop_state": shop_state,
+            "sell_inventory": sell_inventory,
+        }
+
+    def shop_buy(
+        self, player: Any, npc_id: str, item_id: str, quantity: int
+    ) -> Dict[str, Any]:
+        """Purchase an item from a merchant.
+
+        All price computation and validation happens server-side. The client
+        only sends identifiers and quantity.
+
+        Args:
+            player: The Player instance.
+            npc_id: str(id(npc)) of the merchant.
+            item_id: str(id(item)) of the item in merchant inventory.
+            quantity: Number of units to purchase (≥ 1).
+
+        Returns:
+            Dict with success, updated shop_state, sell_inventory, and message.
+        """
+        from src.interface import transfer_gold, transfer_item
+        from src.api.serializers.shop_serializer import ShopSerializer
+
+        merchant = self._find_merchant(player, npc_id)
+        if merchant is None:
+            return {"success": False, "error": "Merchant not found at this location"}
+
+        if merchant.shop is None:
+            merchant.initialize_shop()
+
+        buy_mod = getattr(merchant.shop, "buy_modifier", 1.0)
+
+        # Locate item in merchant inventory
+        target_item = None
+        for item in getattr(merchant, "inventory", []):
+            if getattr(item, "name", None) != "Gold" and str(id(item)) == item_id:
+                target_item = item
+                break
+
+        if target_item is None:
+            return {"success": False, "error": "Item not found in merchant inventory"}
+
+        # Clamp and validate quantity
+        quantity = max(1, int(quantity))
+        if hasattr(target_item, "count") and quantity > target_item.count:
+            quantity = target_item.count
+
+        unit_price = max(1, int(getattr(target_item, "value", 0) * buy_mod))
+        total_price = unit_price * quantity
+
+        player_gold = get_gold(player.inventory)
+        if player_gold < total_price:
+            needed = total_price - player_gold
+            return {
+                "success": False,
+                "error": f"Not enough gold — need {needed} more",
+            }
+
+        # Weight check
+        player.refresh_weight()
+        item_weight = getattr(target_item, "weight", 0.0)
+        if player.weight_current + item_weight * quantity > player.weight_tolerance:
+            return {"success": False, "error": "Exceeds carry limit"}
+
+        # Execute transfer
+        transfer_gold(player.inventory, merchant.inventory, total_price)
+        transfer_item(merchant, player, target_item, quantity)
+
+        current_tick = self._game_tick(player)
+        shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
+        sell_inventory = ShopSerializer.serialize_player_sellable(
+            player, shop_state["sell_modifier"]
+        )
+
+        return {
+            "success": True,
+            "message": f"Purchased {quantity}× {target_item.name} for {total_price} gold.",
+            "gold_spent": total_price,
+            "shop_state": shop_state,
+            "sell_inventory": sell_inventory,
+        }
+
+    def shop_sell(
+        self, player: Any, npc_id: str, item_id: str, quantity: int
+    ) -> Dict[str, Any]:
+        """Sell an item from the player's inventory to a merchant.
+
+        After a successful sale the item is added to the merchant's buyback
+        ledger at the exact price paid, tied to the current game_tick so the
+        frontend can offer instant repurchase until the beat advances.
+
+        Args:
+            player: The Player instance.
+            npc_id: str(id(npc)) of the merchant.
+            item_id: str(id(item)) of the item in player inventory.
+            quantity: Number of units to sell (≥ 1).
+
+        Returns:
+            Dict with success, updated shop_state, sell_inventory, and message.
+        """
+        from src.interface import transfer_gold, transfer_item
+        from src.api.serializers.shop_serializer import ShopSerializer
+
+        merchant = self._find_merchant(player, npc_id)
+        if merchant is None:
+            return {"success": False, "error": "Merchant not found at this location"}
+
+        if merchant.shop is None:
+            merchant.initialize_shop()
+
+        sell_mod = getattr(merchant.shop, "sell_modifier", 0.5)
+
+        # Locate item in player inventory
+        target_item = None
+        for item in getattr(player, "inventory", []):
+            if getattr(item, "name", None) != "Gold" and str(id(item)) == item_id:
+                target_item = item
+                break
+
+        if target_item is None:
+            return {"success": False, "error": "Item not found in inventory"}
+
+        if getattr(target_item, "is_equipped", False) or getattr(
+            target_item, "isequipped", False
+        ):
+            return {"success": False, "error": "Cannot sell equipped items"}
+
+        base_value = getattr(target_item, "value", 0)
+        if not base_value:
+            return {"success": False, "error": "This item has no sell value"}
+
+        # Clamp and validate quantity
+        quantity = max(1, int(quantity))
+        if hasattr(target_item, "count") and quantity > target_item.count:
+            quantity = target_item.count
+
+        unit_offer = max(1, int(base_value * sell_mod))
+        total_offer = unit_offer * quantity
+
+        merchant_gold = get_gold(merchant.inventory)
+        if merchant_gold < total_offer:
+            return {"success": False, "error": "Merchant has insufficient funds"}
+
+        # Capture pre-transfer metadata for the buyback ledger
+        item_name = getattr(target_item, "name", "Unknown")
+        item_weight = getattr(target_item, "weight", 0.0)
+        item_type = type(target_item).__name__
+        item_subtype = getattr(target_item, "subtype", "")
+        item_description = getattr(target_item, "description", "")
+        item_power = getattr(target_item, "power", None)
+
+        # Execute transfer
+        transfer_gold(merchant.inventory, player.inventory, total_offer)
+        transfer_item(player, merchant, target_item, quantity)
+
+        # The item is now in merchant.inventory — record its new id for buyback.
+        # transfer_item() moves the same Python object for non-stackables (id
+        # unchanged) but creates a new object for partial stack splits (new id).
+        # We prefer a new-id match (split case) and fall back to the original id
+        # (moved-object case) so the ledger always references the correct object.
+        transferred_item = None
+        for item in getattr(merchant, "inventory", []):
+            if (
+                getattr(item, "name", None) == item_name
+                and str(id(item)) != item_id  # could be same object; use it if so
+            ) or str(id(item)) == item_id:
+                if getattr(item, "name", None) == item_name:
+                    transferred_item = item
+                    break
+
+        new_item_id = str(id(transferred_item)) if transferred_item else item_id
+
+        if not hasattr(merchant, "_buyback_ledger"):
+            merchant._buyback_ledger = []
+
+        merchant._buyback_ledger.append({
+            "item_id": new_item_id,
+            "item_name": item_name,
+            "buyback_price": unit_offer,
+            "weight": item_weight,
+            "count": quantity,
+            "type": item_type,
+            "subtype": item_subtype,
+            "description": item_description,
+            "value": base_value,
+            "power": item_power,
+            "beat_acquired": self._game_tick(player),
+        })
+
+        current_tick = self._game_tick(player)
+        shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
+        sell_inventory = ShopSerializer.serialize_player_sellable(
+            player, shop_state["sell_modifier"]
+        )
+
+        return {
+            "success": True,
+            "message": f"Sold {quantity}× {item_name} for {total_offer} gold.",
+            "gold_gained": total_offer,
+            "shop_state": shop_state,
+            "sell_inventory": sell_inventory,
+        }
+
+    def shop_buyback(
+        self, player: Any, npc_id: str, item_id: str
+    ) -> Dict[str, Any]:
+        """Repurchase a recently sold item from the merchant's buyback ledger.
+
+        The buyback price equals what the merchant paid — no markup. The ledger
+        entry is removed on success regardless of whether the game tick has
+        advanced (the frontend is responsible for only showing active entries).
+
+        Args:
+            player: The Player instance.
+            npc_id: str(id(npc)) of the merchant.
+            item_id: The item_id from the buyback ledger entry.
+
+        Returns:
+            Dict with success, updated shop_state, sell_inventory, and message.
+        """
+        from src.interface import transfer_gold, transfer_item
+        from src.api.serializers.shop_serializer import ShopSerializer
+
+        merchant = self._find_merchant(player, npc_id)
+        if merchant is None:
+            return {"success": False, "error": "Merchant not found at this location"}
+
+        if merchant.shop is None:
+            merchant.initialize_shop()
+
+        # Flush stale entries first
+        current_tick = self._game_tick(player)
+        ledger = getattr(merchant, "_buyback_ledger", [])
+        merchant._buyback_ledger = [
+            e for e in ledger if e["beat_acquired"] >= current_tick
+        ]
+
+        # Find the ledger entry
+        entry = None
+        for e in merchant._buyback_ledger:
+            if e["item_id"] == item_id:
+                entry = e
+                break
+
+        if entry is None:
+            return {
+                "success": False,
+                "error": "Buyback offer has expired or was not found",
+            }
+
+        total_price = entry["buyback_price"] * entry["count"]
+
+        player_gold = get_gold(player.inventory)
+        if player_gold < total_price:
+            needed = total_price - player_gold
+            return {
+                "success": False,
+                "error": f"Not enough gold — need {needed} more",
+            }
+
+        # Weight check
+        player.refresh_weight()
+        added_weight = entry["weight"] * entry["count"]
+        if player.weight_current + added_weight > player.weight_tolerance:
+            return {"success": False, "error": "Exceeds carry limit"}
+
+        # Find the actual item object in merchant inventory
+        target_item = None
+        for item in getattr(merchant, "inventory", []):
+            if str(id(item)) == item_id:
+                target_item = item
+                break
+
+        if target_item is None:
+            # Item may have been re-stacked; search by name as fallback
+            item_name = entry["item_name"]
+            for item in getattr(merchant, "inventory", []):
+                if getattr(item, "name", None) == item_name:
+                    target_item = item
+                    break
+
+        if target_item is None:
+            merchant._buyback_ledger.remove(entry)
+            return {"success": False, "error": "Buyback item no longer in merchant stock"}
+
+        # Execute transfer
+        transfer_gold(player.inventory, merchant.inventory, total_price)
+        transfer_item(merchant, player, target_item, entry["count"])
+
+        # Remove ledger entry
+        merchant._buyback_ledger.remove(entry)
+
+        shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
+        sell_inventory = ShopSerializer.serialize_player_sellable(
+            player, shop_state["sell_modifier"]
+        )
+
+        return {
+            "success": True,
+            "message": (
+                f"Bought back {entry['count']}× {entry['item_name']} "
+                f"for {total_price} gold."
+            ),
+            "gold_spent": total_price,
+            "shop_state": shop_state,
+            "sell_inventory": sell_inventory,
+        }

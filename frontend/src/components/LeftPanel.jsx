@@ -19,6 +19,7 @@ import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
+import ShopDialog from './ShopDialog'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
 
@@ -43,6 +44,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const [showActions, setShowActions] = useState(false)
   const [showInteract, setShowInteract] = useState(false)
   const [interactTarget, setInteractTarget] = useState(null)
+  const [shopContext, setShopContext] = useState(null)
 
   const handleOpenInteract = (target = null) => {
     // If clicking the main interact button while panel is open, close it
@@ -815,6 +817,23 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           onInteractionTypingChange={onInteractionTypingChange}
           onRefetch={onRefetch}
           onTypingChange={onInteractionTypingChange}
+          onOpenShop={(npcId, npcName, initialTab) => {
+            setShowInteract(false)
+            setInteractTarget(null)
+            setShopContext({ npcId, npcName, initialTab })
+          }}
+        />
+      )}
+
+      {shopContext && player && (
+        <ShopDialog
+          npcId={shopContext.npcId}
+          npcName={shopContext.npcName}
+          initialTab={shopContext.initialTab}
+          player={player}
+          onClose={() => setShopContext(null)}
+          onRefetch={onRefetch}
+          isMobile={isMobile}
         />
       )}
 
