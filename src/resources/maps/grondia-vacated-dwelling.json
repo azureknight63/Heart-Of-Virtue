@@ -99,7 +99,7 @@
                     "hide_factor": 4,
                     "discovery_message": "a flagstone that sits slightly proud of the floor, its edge clean!",
                     "announce": "One flagstone near the north wall sits slightly higher than the rest.",
-                    "keywords": ["open", "loot", "check", "examine", "lift", "pry"],
+                    "keywords": ["open", "loot", "check", "examine"],
                     "events": [],
                     "tile": null,
                     "player": null
