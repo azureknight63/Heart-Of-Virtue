@@ -247,7 +247,7 @@ class NomadCampArrivalEvent(Event):
         time.sleep(0.5)
         print_slow("Not a question.", delay=0.05)
         time.sleep(1)
-        dialogue("Jean", "It was.", "white")
+        dialogue("Jean", "It was.", "cyan")
         time.sleep(1)
         print_slow(
             "She doesn't follow up. She files it. The sorting continues.",
