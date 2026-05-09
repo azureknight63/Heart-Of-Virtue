@@ -287,6 +287,7 @@ class SlimeVolley(TelegraphedSurge):
     """
     Telegraphed directional surge used by ElderSlime. The extended prep phase gives
     the player time to Dodge; if unparried, deals significantly amplified damage.
+    On a solid hit, the wave of corrosive slime can coat the target.
     """
 
     _DAMAGE_MULTIPLIER = 2.2
@@ -311,11 +312,18 @@ class SlimeVolley(TelegraphedSurge):
     def _recoil_text(self, npc):
         return f"{npc.name} trembles, spent by the effort."
 
+    def hit(self, damage, glance):
+        super().hit(damage, glance)
+        if self.target and not glance:
+            status = states.Slimed(self.target)
+            functions.inflict(status, self.target, chance=0.35)
+
 
 class TidalSurge(TelegraphedSurge):
     """
     Boss-tier telegraphed surge used by KingSlime. Same two-turn structure as
     SlimeVolley but with dramatically higher damage multiplier and longer prep.
+    The sheer volume of the surge makes coating the target almost certain.
     """
 
     _DAMAGE_MULTIPLIER = 2.5
@@ -339,6 +347,12 @@ class TidalSurge(TelegraphedSurge):
 
     def _recoil_text(self, npc):
         return f"{npc.name} settles back, the surge spent."
+
+    def hit(self, damage, glance):
+        super().hit(damage, glance)
+        if self.target:
+            status = states.Slimed(self.target)
+            functions.inflict(status, self.target, chance=0.55)
 
 
 class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
@@ -885,6 +899,181 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
                 # Heal the user for a fraction of the damage dealt (rounded)
                 heal_amount = max(1, int(damage * 0.5)) if damage > 0 else 0
                 self.user.hp = min(self.user.maxhp, self.user.hp + heal_amount)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
+
+
+class MineralSpit(NpcAttack):
+    """Ranged mineral-slurry attack used by CorruptedStoneCreature.
+
+    Flings a viscous mineral slurry that hardens on contact. Even a near-miss
+    leaves residue that can begin the calcification process.
+    """
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Mineral Spit"
+        self.mvrange = (1, 3)
+
+    def _prep_text(self, npc):
+        return f"{npc.name} gurgles, mineral slurry building in its mass."
+
+    def _hit_text(self, npc, target_name):
+        return f"{npc.name} expels a spray of grey slurry at {target_name}!"
+
+    def refresh_announcements(self, npc):
+        self.stage_announce = [
+            colored(f"{npc.name} gurgles, mineral slurry building in its mass.", "yellow"),
+            colored(
+                f"{npc.name} expels a spray of grey slurry at {self.target.name}!",
+                "red",
+            ),
+            f"{npc.name} shudders after the expulsion.",
+            "",
+        ]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        print(self.stage_announce[1])
+        self.prep_colors()
+        glance = False
+        if self.viable():
+            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        damage = max(0, int(self.power * 0.4) - self.target.protection)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage = damage // 2
+            glance = True
+        damage = int(damage)
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                status = states.Petrified(self.target)
+                functions.inflict(status, self.target, chance=0.50)
+        else:
+            self.miss()
+            # Near-miss: slight chance of residue landing anyway
+            if random.random() < 0.15:
+                status = states.Petrified(self.target)
+                functions.inflict(status, self.target, chance=0.15)
+        self.user.fatigue -= self.fatigue_cost
+
+
+class SoulDrain(NpcAttack):
+    """A spiritual attack used by the Lurker. Feeds on Jean's grief and emptiness.
+
+    The Lurker is a predator of the hollow places. Where grief has already opened
+    a wound, it finds purchase. Where faith has lapsed, it reaches through.
+    """
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Soul Drain"
+
+    def refresh_announcements(self, npc):
+        self.stage_announce = [
+            colored(
+                f"{npc.name} reaches toward {self.target.name if self.target else 'its target'} "
+                f"with something that is not a hand.",
+                "magenta",
+            ),
+            colored(
+                f"{npc.name} presses into the hollow in {self.target.name if self.target else 'its target'}'s chest!",
+                "magenta",
+            ),
+            f"{npc.name} withdraws, sated for a moment.",
+            "",
+        ]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        print(self.stage_announce[1])
+        self.prep_colors()
+        glance = False
+        if self.viable():
+            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        damage = max(0, int(self.power * 0.6) - self.target.protection)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage = damage // 2
+            glance = True
+        damage = int(damage)
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                status = states.Hollowed(self.target)
+                functions.inflict(status, self.target, chance=0.25)
+                heal = max(1, damage // 3)
+                self.user.hp = min(self.user.maxhp, self.user.hp + heal)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
+
+
+class WailStrike(NpcAttack):
+    """A sonic attack channelling the Wailing Badlands, used by the WailWraith.
+
+    The creature doesn't scream at you. It opens its chest cavity and lets the
+    wail through. The sound arrives inside before it arrives outside.
+    """
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Wail Strike"
+        self.mvrange = (1, 4)
+
+    def refresh_announcements(self, npc):
+        target_name = self.target.name if self.target else "its target"
+        self.stage_announce = [
+            colored(
+                f"{npc.name} opens wide — the wail floods through it toward {target_name}.",
+                "yellow",
+            ),
+            colored(
+                f"The wail tears through {target_name} — armor is no shelter from this!",
+                "yellow",
+            ),
+            f"{npc.name} closes itself, the wail receding.",
+            "",
+        ]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        print(self.stage_announce[1])
+        self.prep_colors()
+        glance = False
+        if self.viable():
+            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        damage = max(0, int(self.power * 0.7))  # ignores protection (sonic)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage = damage // 2
+            glance = True
+        damage = int(damage)
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+                status = states.Resonant(self.target)
+                functions.inflict(status, self.target, chance=0.45)
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost

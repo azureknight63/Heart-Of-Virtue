@@ -664,3 +664,63 @@ class UseItem(Move):
                 cprint("Invalid selection!", "red")
         player.use_item(target=target)
         player.combat_exp["Basic"] += 1
+
+
+class CrusaderOath(Move):
+    """Jean swears a fighting oath, igniting desperate conviction.
+
+    Voluntarily entering the Fervent state — a risk/reward move.
+    Cannot be used while Hollowed (the oath requires faith to swear on).
+    Long cooldown prevents chaining.
+    """
+
+    def __init__(self, player):
+        prep = 2
+        execute = 1
+        recoil = 3
+        cooldown = 30
+        fatigue_cost = 20
+        super().__init__(
+            name="Crusader's Oath",
+            description=(
+                "Swear a fighting oath and enter the Fervent state — "
+                "striking harder, but paying for it in blood and fatigue."
+            ),
+            xp_gain=2,
+            current_stage=0,
+            targeted=False,
+            stage_beat=[prep, execute, recoil, cooldown],
+            stage_announce=[
+                colored(
+                    f"{player.name} steadies his breathing and begins to swear an oath.",
+                    "yellow",
+                ),
+                colored(f"The fire of conviction ignites in {player.name}!", "red"),
+                colored(
+                    f"{player.name} feels the cost of the oath settling into his limbs.",
+                    "yellow",
+                ),
+                "",
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=player,
+            user=player,
+            category="Utility",
+        )
+
+    def viable(self):
+        if not getattr(self.user, "in_combat", False):
+            return False
+        if any(getattr(s, "statustype", "") == "apathy" for s in self.user.states):
+            return False
+        if any(isinstance(s, states.Fervent) for s in self.user.states):
+            return False
+        return True
+
+    def execute(self, player):
+        print(self.stage_announce[1])
+        fervent = states.Fervent(player)
+        functions.inflict(fervent, player, force=True)
+        player.fatigue = max(0, player.fatigue - self.fatigue_cost)
+        player.combat_exp["Basic"] += 2

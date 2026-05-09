@@ -6,6 +6,7 @@ function useEmbers() {
     const canvas = document.getElementById('menu-embers')
     if (!canvas) return
     const ctx = canvas.getContext('2d')
+    if (!ctx) return
     let raf
     let particles = []
 
