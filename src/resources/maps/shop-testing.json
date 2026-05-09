@@ -1,0 +1,22 @@
+{
+    "metadata": {
+        "bgm": "dream_space"
+    },
+    "(0, 0)": {
+        "id": "tile_0_0",
+        "title": "Market Stall",
+        "description": "A small market stall sheltered by a colourful awning. The sharp, clean smell of tinctures and herbs hangs in the warm air. Rows of small glass vials catch the light from a lantern hung at the entrance.",
+        "exits": [],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "objects": [],
+        "npcs": [
+            {
+                "__class__": "JamboHealsU",
+                "__module__": "npc",
+                "props": {}
+            }
+        ]
+    }
+}
